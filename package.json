@@ -1,0 +1,13 @@
+{
+  "name": "ibems-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "iBEMS web dashboard — Stage 1 (local, live-data via Node-RED bridge, view-only)",
+  "scripts": {
+    "build:flow": "node node-red-bridge/build-flow.mjs",
+    "mock": "node mock-bridge/server.mjs",
+    "mock:stop": "node mock-bridge/stop.mjs",
+    "test": "node --test \"test/**/*.test.mjs\""
+  }
+}
