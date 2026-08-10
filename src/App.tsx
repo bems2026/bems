@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
 import { AppShell } from '@/components/layout/AppShell';
 import { useLiveConnection } from '@/hooks/useLiveConnection';
-import { SystemGauges } from '@/components/overview/SystemGauges';
-import { EnergyTotals } from '@/components/overview/EnergyTotals';
-import { SpatialView } from '@/components/overview/SpatialView';
+import { KpiRow } from '@/components/overview/KpiRow';
+import { OverviewHero } from '@/components/overview/OverviewHero';
+import { EnergyByDevice } from '@/components/overview/EnergyByDevice';
 import { TrendChart } from '@/components/trends/TrendChart';
 import { useDeviceStore } from '@/stores/deviceStore';
 
@@ -24,11 +24,10 @@ export function App() {
             <p className="section-sub">Live building energy at a glance</p>
           </div>
         </div>
-        <SystemGauges />
-        <EnergyTotals />
-        {/* Full hero layout (KPI row + flanking cards around this) is Phase I. */}
-        <div style={{ marginTop: 'var(--sp-5)' }}>
-          <SpatialView />
+        <div className="overview-stack">
+          <KpiRow />
+          <OverviewHero />
+          <EnergyByDevice />
         </div>
       </section>
 
@@ -41,7 +40,7 @@ export function App() {
             </p>
           </div>
         </div>
-        <p className="section-placeholder">Device status list — Phase I.</p>
+        <p className="section-placeholder">Full device list view — Phase J. A compact version already lives on Overview.</p>
       </section>
 
       <section id="trends" className="app-section">
