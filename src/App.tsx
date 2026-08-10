@@ -9,31 +9,48 @@ import { useDeviceStore } from '@/stores/deviceStore';
 
 export function App() {
   useLiveConnection();
-  // Trend charts are generated from the live catalogue, not a hardcoded id list — the
-  // branch meters are what a facilities view actually needs trended; individual outlets
-  // can get their own chart from a future device detail view without touching this.
-  //
-  // Deriving `meters` via useMemo off the stable `devices` reference, rather than
-  // filtering inside the Zustand selector itself, is load-bearing: a selector that
-  // returns a new array on every call (`s.devices.filter(...)`) makes
-  // useSyncExternalStore see a "changed" snapshot on every render, which is an infinite
-  // render loop, not a style preference.
+  // Deriving via useMemo off the stable `devices` reference, rather than filtering inside
+  // the Zustand selector, is load-bearing: a selector returning a new array each call makes
+  // useSyncExternalStore see a changed snapshot every render — an infinite loop.
   const devices = useDeviceStore((s) => s.devices);
   const meters = useMemo(() => devices.filter((d) => d.class === 'meter'), [devices]);
 
   return (
     <AppShell>
       <section id="overview" className="app-section">
-        <h2>Overview</h2>
+        <div className="section-head">
+          <div>
+            <h2 className="section-title">Overview</h2>
+            <p className="section-sub">Live building energy at a glance</p>
+          </div>
+        </div>
         <SystemGauges />
         <EnergyTotals />
+        {/* Becomes the 2D half of the hero's 2D/3D toggle in Phase H. */}
+        <div style={{ marginTop: 'var(--sp-5)' }}>
+          <FloorPlanView />
+        </div>
       </section>
-      <section id="floorplan" className="app-section">
-        <h2>Floor Plan</h2>
-        <FloorPlanView />
+
+      <section id="devices" className="app-section">
+        <div className="section-head">
+          <div>
+            <h2 className="section-title">Devices</h2>
+            <p className="section-sub">
+              {devices.length ? `${devices.length} devices in the registry` : 'Waiting for the device catalogue…'}
+            </p>
+          </div>
+        </div>
+        <p className="section-placeholder">Device status list — Phase I.</p>
       </section>
+
       <section id="trends" className="app-section">
-        <h2>Trends</h2>
+        <div className="section-head">
+          <div>
+            <h2 className="section-title">Trends</h2>
+            <p className="section-sub">24-hour power draw per branch meter</p>
+          </div>
+        </div>
         {meters.length === 0 ? (
           <p className="section-placeholder">Waiting for the device catalogue…</p>
         ) : (

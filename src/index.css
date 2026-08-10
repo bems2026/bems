@@ -1,53 +1,226 @@
 @import 'tailwindcss';
+@import '@fontsource-variable/inter';
 
 /**
- * Design tokens ported from `Bems.html:9-32` — the engineering branch of the three
- * legacy dashboards, the only one with a working collapse + off-canvas sidebar.
+ * iBEMS design system — dark base, amber accent.
+ *
+ * Replaces the tokens previously ported from `Bems.html`, which made this look like the
+ * legacy tool it replaces. Direction comes from the approved reference set: dark shell and
+ * card language, amber/gold as the single accent, green reserved for healthy/active so it
+ * never competes with the accent for attention.
  */
 :root {
-  --bg: #060b13;
-  --panel: rgba(17, 28, 47, 0.55);
-  --panel2: rgba(22, 35, 61, 0.75);
-  --line: #22304d;
-  --txt: #e6edf7;
-  --muted: #90a0bd;
-  --accent: #2f80ed;
-  --accent2: #27c79a;
-  --warn: #f2a33c;
-  --bad: #ef5b5b;
-  --good: #27c79a;
+  /* --- surfaces: near-black, very slightly warm so amber doesn't read as dirty --- */
+  --bg-base: #0a0b0d;
+  --bg-surface: #131519;
+  --bg-surface-2: #1a1d23;
+  --bg-inset: #0e1013;
 
-  --r-sm: 9px;
-  --r-md: 12px;
-  --r-lg: 16px;
+  --border: #24272e;
+  --border-strong: #32363f;
+
+  --txt: #f0eee9;
+  --muted: #8b8f99;
+  --muted-2: #5c606b;
+
+  /* --- accent + semantics --- */
+  --accent: #e8a33d;
+  --accent-dim: #a8752b;
+  --accent-soft: rgb(232 163 61 / 0.12);
+  --good: #4ade80;
+  --good-soft: rgb(74 222 128 / 0.12);
+  --warn: #fbbf24;
+  --warn-soft: rgb(251 191 36 / 0.12);
+  --bad: #f87171;
+  --bad-soft: rgb(248 113 113 / 0.12);
+  --info: #60a5fa;
+
+  --r-card: 14px;
+  --r-inner: 10px;
+  --r-sm: 8px;
   --r-pill: 999px;
 
+  --sp-1: 4px;
   --sp-2: 8px;
   --sp-3: 12px;
   --sp-4: 16px;
-  --sp-5: 24px;
+  --sp-5: 20px;
+  --sp-6: 28px;
 
-  --sidebar-w: 236px;
+  --sidebar-w: 232px;
   --sidebar-w-collapsed: 64px;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-pop: 0 12px 32px rgb(0 0 0 / 0.55);
+
+  /**
+   * Legacy aliases. `FloorPlanView` and `TrendChart` still reference these directly in JSX
+   * (SVG fills, Recharts stroke props). They're restyled in Phase J, at which point these
+   * four are deleted — not kept as a permanent parallel vocabulary.
+   */
+  --line: var(--border);
+  --panel: var(--bg-surface);
+  --panel2: var(--bg-surface-2);
 }
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  color-scheme: dark;
+}
+
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--bg-base);
   color: var(--txt);
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    sans-serif;
+  font-family: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ---------------------------------------------------------------------------
- * App shell — CSS Grid, ported verbatim from Bems.html:72-96
+ * UI primitives — the vocabulary every view is built from.
+ * ------------------------------------------------------------------------ */
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  padding: var(--sp-5);
+  box-shadow: var(--shadow-card);
+}
+.card--inset {
+  background: var(--bg-inset);
+}
+.card--flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+.card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--txt);
+  margin: 0;
+}
+.card-sub {
+  font-size: 11px;
+  color: var(--muted-2);
+  margin: 2px 0 0;
+}
+
+/* Small uppercase-ish label above a number. Used everywhere a metric appears. */
+.metric-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+/* Light-weight tabular numerals — tabular so live-updating digits don't jitter. */
+.metric-value {
+  font-size: 26px;
+  font-weight: 300;
+  line-height: 1.15;
+  color: var(--txt);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.metric-value--sm {
+  font-size: 19px;
+}
+.metric-value--lg {
+  font-size: 34px;
+}
+.metric-value--muted {
+  color: var(--muted-2);
+  font-weight: 400;
+}
+.metric-unit {
+  font-size: 0.62em;
+  color: var(--muted);
+  margin-left: 3px;
+  font-weight: 400;
+}
+
+.stat-tile {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  padding: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.stat-tile__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.stat-tile__icon {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  flex: none;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--bg-surface-2);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.badge--good {
+  background: var(--good-soft);
+  color: var(--good);
+}
+.badge--warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.badge--bad {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.badge--accent {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.badge__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: currentColor;
+  flex: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * App shell — CSS Grid + collapsible sidebar. Structure proven in Bems.html:72-130;
+ * only the styling is new.
  * ------------------------------------------------------------------------ */
 .app-shell {
   display: grid;
@@ -69,13 +242,13 @@ body {
   display: flex;
   flex-direction: column;
   z-index: 20;
-  background: var(--panel2);
-  border-right: 1px solid var(--line);
-  transition: width 0.22s ease;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
 }
 
 .app-shell.collapsed .sidebar-title,
 .app-shell.collapsed .nav-label,
+.app-shell.collapsed .nav-group,
 .app-shell.collapsed .sidebar-status-text {
   display: none;
 }
@@ -83,28 +256,67 @@ body {
   justify-content: center;
   padding: 10px;
 }
+.app-shell.collapsed .sidebar-header {
+  justify-content: center;
+}
 
 .sidebar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--sp-2);
   padding: var(--sp-4);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--border);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.brand-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: #17130a;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 700;
+  flex: none;
 }
 .sidebar-title {
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 #sidebarToggle {
   background: none;
-  border: 1px solid var(--line);
-  color: var(--txt);
+  border: 1px solid var(--border);
+  color: var(--muted);
   border-radius: var(--r-sm);
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   cursor: pointer;
+  flex: none;
+  font-size: 10px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+#sidebarToggle:hover {
+  color: var(--txt);
+  border-color: var(--border-strong);
 }
 
+.nav-group {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+  padding: var(--sp-4) var(--sp-3) var(--sp-2);
+}
 .nav-list {
   list-style: none;
   margin: 0;
@@ -117,22 +329,28 @@ body {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  padding: 10px var(--sp-3);
-  border-radius: var(--r-sm);
+  padding: 9px var(--sp-3);
+  border-radius: var(--r-inner);
   color: var(--muted);
   text-decoration: none;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s ease, color 0.15s ease;
 }
-.nav-item:hover,
-.nav-item:focus-visible {
-  background: var(--panel);
+.nav-item:hover {
+  background: var(--bg-surface-2);
   color: var(--txt);
 }
+.nav-item--active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
 .nav-icon {
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1;
+  flex: none;
+  width: 18px;
+  text-align: center;
 }
 
 .sidebar-footer {
@@ -141,13 +359,13 @@ body {
   align-items: center;
   gap: var(--sp-2);
   padding: var(--sp-4);
-  border-top: 1px solid var(--line);
-  font-size: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
   color: var(--muted);
 }
 .status-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: var(--r-pill);
   background: var(--bad);
   flex: none;
@@ -161,12 +379,12 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
- * Off-canvas drawer at <900px — ported verbatim from Bems.html:115-130
+ * Off-canvas drawer at <900px — behaviour ported from Bems.html:115-130
  * ------------------------------------------------------------------------ */
 #mobileMenuBtn {
   display: none;
   background: none;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   color: var(--txt);
   border-radius: var(--r-sm);
   width: 32px;
@@ -177,7 +395,7 @@ body {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgb(0 0 0 / 0.6);
   z-index: 15;
   border: none;
   padding: 0;
@@ -195,13 +413,14 @@ body {
     height: 100vh;
     transform: translateX(-100%);
     transition: transform 0.22s ease;
-    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6);
+    box-shadow: var(--shadow-pop);
   }
   .app-shell.mobile-open .sidebar {
     transform: translateX(0);
   }
   .app-shell.mobile-open .sidebar-title,
   .app-shell.mobile-open .nav-label,
+  .app-shell.mobile-open .nav-group,
   .app-shell.mobile-open .sidebar-status-text {
     display: block;
   }
@@ -219,8 +438,7 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
- * Accessibility media queries — ported from TEST2.html:1093,1102 (worth keeping
- * even though the rest of TEST2's data layer wasn't reused).
+ * Accessibility — kept from TEST2.html:1093,1102
  * ------------------------------------------------------------------------ */
 @media (prefers-reduced-motion: reduce) {
   * {
@@ -231,8 +449,9 @@ body {
 }
 @media (prefers-contrast: high) {
   :root {
-    --line: #5a6a8a;
-    --muted: #c0cbe0;
+    --border: #5a6070;
+    --muted: #c0c5d0;
+    --muted-2: #99a0ad;
   }
 }
 
@@ -248,48 +467,72 @@ body {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  padding: var(--sp-4) var(--sp-5);
-  border-bottom: 1px solid var(--line);
+  padding: var(--sp-3) var(--sp-6);
+  border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
-  background: var(--bg);
+  background: rgb(10 11 13 / 0.85);
+  backdrop-filter: blur(8px);
   z-index: 10;
+  min-height: 56px;
 }
 .app-title {
   font-weight: 600;
+  font-size: 14px;
   flex: 1;
+  letter-spacing: -0.01em;
 }
 .app-content {
-  padding: var(--sp-5);
+  padding: var(--sp-6);
   display: flex;
   flex-direction: column;
-  gap: var(--sp-5);
+  gap: var(--sp-6);
+  max-width: 1600px;
+  width: 100%;
 }
 .app-section {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  padding: var(--sp-5);
   scroll-margin-top: 72px;
+}
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+.section-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+.section-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 3px 0 0;
 }
 .section-placeholder {
   color: var(--muted);
-  font-size: 14px;
+  font-size: 13px;
+  margin: 0;
 }
 
 /* ---------------------------------------------------------------------------
- * Connection status — ported from Bems.html:1254-1271 (three-state colour + last-updated)
+ * Connection status — bridge link health (distinct from per-device staleness)
  * ------------------------------------------------------------------------ */
 .connection-status {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  font-size: 12px;
+  font-size: 11px;
   color: var(--muted);
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
 }
 .connection-dot {
-  width: 9px;
-  height: 9px;
+  width: 7px;
+  height: 7px;
   border-radius: var(--r-pill);
   flex: none;
 }
@@ -305,10 +548,12 @@ body {
 .connection-dot--stale {
   opacity: 0.4;
 }
+.connection-last {
+  color: var(--muted-2);
+}
 
 /* ---------------------------------------------------------------------------
- * Stale data badge — per-device/per-totals dimming, distinct from ConnectionStatus
- * (bridge link health) above. Ported threshold logic from Bems.html:1272-1274.
+ * Stale data badge — per-device freshness, threshold from Bems.html:1272-1274
  * ------------------------------------------------------------------------ */
 .stale-wrap {
   position: relative;
@@ -333,71 +578,78 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
- * SystemGauges
+ * Overview: gauges + energy totals (restyled in place; rebuilt in Phase I)
  * ------------------------------------------------------------------------ */
 .gauges-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: var(--sp-3);
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--sp-4);
 }
 .gauge-card {
-  background: var(--panel2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: var(--sp-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  padding: var(--sp-5);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 .gauge-card--muted {
-  opacity: 0.6;
+  background: var(--bg-inset);
+}
+.gauge-card--muted .gauge-value {
+  color: var(--muted-2);
+  font-size: 15px;
+  font-weight: 400;
 }
 .gauge-label {
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 500;
   color: var(--muted);
+  letter-spacing: 0.04em;
 }
 .gauge-value {
-  font-size: 22px;
-  font-weight: 700;
+  font-size: 26px;
+  font-weight: 300;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }
 
-/* ---------------------------------------------------------------------------
- * EnergyTotals
- * ------------------------------------------------------------------------ */
 .energy-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: var(--sp-3);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--sp-4);
   margin-top: var(--sp-4);
 }
 .energy-card {
-  background: var(--panel2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: var(--sp-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  padding: var(--sp-5);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 .energy-label {
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 500;
   color: var(--muted);
+  letter-spacing: 0.04em;
 }
 .energy-value {
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 22px;
+  font-weight: 300;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }
 .energy-caption {
-  margin: var(--sp-2) 0 0;
+  margin: var(--sp-3) 0 0;
   font-size: 11px;
-  color: var(--muted);
+  color: var(--muted-2);
 }
 
 /* ---------------------------------------------------------------------------
- * FloorPlanView — geometry itself lives in the SVG (ported from the live
- * ui_template nodes); this just frames the two cards side by side.
+ * Floor plan (2D) — restyled in Phase J
  * ------------------------------------------------------------------------ */
 .floorplan-grid {
   display: grid;
@@ -405,16 +657,17 @@ body {
   gap: var(--sp-4);
 }
 .floorplan-card {
-  background: var(--panel2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: var(--sp-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  padding: var(--sp-5);
 }
 .floorplan-title {
-  margin: 0 0 var(--sp-3);
-  font-size: 13px;
+  margin: 0 0 var(--sp-4);
+  font-size: 12px;
   font-weight: 600;
   color: var(--muted);
+  letter-spacing: 0.03em;
 }
 .floorplan-svg {
   width: 100%;
@@ -423,7 +676,7 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
- * TrendChart
+ * Trend charts — restyled in Phase J
  * ------------------------------------------------------------------------ */
 .trends-grid {
   display: grid;
@@ -431,30 +684,31 @@ body {
   gap: var(--sp-4);
 }
 .trend-card {
-  background: var(--panel2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: var(--sp-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  padding: var(--sp-5);
 }
 .trend-header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin-bottom: var(--sp-2);
+  margin-bottom: var(--sp-3);
 }
 .trend-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--muted);
+  letter-spacing: 0.03em;
 }
 .trend-status {
   font-size: 11px;
-  color: var(--muted);
+  color: var(--muted-2);
 }
 .trend-empty {
   margin: 0;
-  padding: var(--sp-5) 0;
+  padding: var(--sp-6) 0;
   text-align: center;
-  font-size: 13px;
-  color: var(--muted);
+  font-size: 12px;
+  color: var(--muted-2);
 }

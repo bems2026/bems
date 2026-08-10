@@ -10,7 +10,7 @@
   {
     "id": "b41dc00000000003",
     "type": "link in",
-    "z": "12a0ea5e7b516a4c",
+    "z": "b91949ed325c0ab6",
     "name": "bridge/collect/energy",
     "links": [],
     "x": 280,
@@ -24,7 +24,7 @@
   {
     "id": "b41dc00000000002",
     "type": "function",
-    "z": "12a0ea5e7b516a4c",
+    "z": "b91949ed325c0ab6",
     "name": "Bridge collect: Energy Monitoring - Set time",
     "func": "// READ-ONLY. Reads this tab's flow context; writes nothing.\nconst keys = ['co_yel', 'lo_red', 'arec', 'lo_yel2'];\nconst meters = {};\nfor (const k of keys) {\n  meters[k] = {\n    v: flow.get(k + '_last_v'), c: flow.get(k + '_last_c'), p: flow.get(k + '_last_p'),\n    e: flow.get(k + '_energy'), h: flow.get(k + '_health')\n  };\n}\nmsg.snapshot = msg.snapshot || {};\nmsg.snapshot.energy = {\n  meters,\n  totals: {\n    today: flow.get('bems_energy_today'),\n    week: flow.get('bems_energy_week'),\n    month: flow.get('bems_energy_month')\n  }\n};\nreturn msg;",
     "outputs": 1,
@@ -44,7 +44,7 @@
   {
     "id": "b41dc00000000001",
     "type": "link out",
-    "z": "12a0ea5e7b516a4c",
+    "z": "b91949ed325c0ab6",
     "name": "",
     "mode": "return",
     "links": [],
@@ -55,7 +55,7 @@
   {
     "id": "b41dc00000000006",
     "type": "link in",
-    "z": "ac87d748b5788895",
+    "z": "f034cec8ea750f69",
     "name": "bridge/collect/outlet",
     "links": [],
     "x": 280,
@@ -69,7 +69,7 @@
   {
     "id": "b41dc00000000005",
     "type": "function",
-    "z": "ac87d748b5788895",
+    "z": "f034cec8ea750f69",
     "name": "Bridge collect: Outlet",
     "func": "// READ-ONLY. Reads this tab's flow context; writes nothing.\nconst meters = {};\nfor (let i = 1; i <= 7; i++) {\n  const k = 'co' + i;\n  meters[k] = {\n    v: flow.get(k + '_last_v'), c: flow.get(k + '_last_c'), p: flow.get(k + '_last_p'),\n    e: flow.get(k + '_energy'), h: flow.get(k + '_health'), t: flow.get(k + '_last_time')\n  };\n}\nmsg.snapshot = msg.snapshot || {};\nmsg.snapshot.outlet = { meters, state: flow.get('bems_outlets_state') || {} };\nreturn msg;",
     "outputs": 1,
@@ -89,7 +89,7 @@
   {
     "id": "b41dc00000000004",
     "type": "link out",
-    "z": "ac87d748b5788895",
+    "z": "f034cec8ea750f69",
     "name": "",
     "mode": "return",
     "links": [],
@@ -100,7 +100,7 @@
   {
     "id": "b41dc00000000009",
     "type": "link in",
-    "z": "8550151b1adeabd1",
+    "z": "5ba0bb77c042d889",
     "name": "bridge/collect/switch",
     "links": [],
     "x": 280,
@@ -114,7 +114,7 @@
   {
     "id": "b41dc00000000008",
     "type": "function",
-    "z": "8550151b1adeabd1",
+    "z": "5ba0bb77c042d889",
     "name": "Bridge collect: Switch",
     "func": "// READ-ONLY. Reads this tab's flow context; writes nothing.\nmsg.snapshot = msg.snapshot || {};\nmsg.snapshot.switch = { state: flow.get('bems_lights_state') || {} };\nreturn msg;",
     "outputs": 1,
@@ -134,7 +134,7 @@
   {
     "id": "b41dc00000000007",
     "type": "link out",
-    "z": "8550151b1adeabd1",
+    "z": "5ba0bb77c042d889",
     "name": "",
     "mode": "return",
     "links": [],
@@ -145,7 +145,7 @@
   {
     "id": "b41dc00000000012",
     "type": "link in",
-    "z": "1715dabc6d837b3b",
+    "z": "5ae2a6bf87435d7a",
     "name": "bridge/collect/aircon",
     "links": [],
     "x": 280,
@@ -159,7 +159,7 @@
   {
     "id": "b41dc00000000011",
     "type": "function",
-    "z": "1715dabc6d837b3b",
+    "z": "5ae2a6bf87435d7a",
     "name": "Bridge collect: Aircon",
     "func": "// READ-ONLY. Reads this tab's flow context; writes nothing.\nmsg.snapshot = msg.snapshot || {};\nmsg.snapshot.aircon = { state: flow.get('ac_dash_state') || {} };\nreturn msg;",
     "outputs": 1,
@@ -179,7 +179,7 @@
   {
     "id": "b41dc00000000010",
     "type": "link out",
-    "z": "1715dabc6d837b3b",
+    "z": "5ae2a6bf87435d7a",
     "name": "",
     "mode": "return",
     "links": [],

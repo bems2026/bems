@@ -47,12 +47,18 @@ const OUT = join(HERE, 'bridge-flow.json');
 const BUILD_LATEST_SRC = readFileSync(join(HERE, '..', 'shared', 'buildLatest.mjs'), 'utf8')
   .replace(/^export /gm, '');
 
-/** Tab ids of the live flow. Verified against flows.json — do not invent these. */
+/**
+ * Tab ids of the live flow. Verified against the real Pi's ~/.node-red/flows.json on
+ * 2026-08-10, over SSH (bems@100.73.48.96) — NOT the same ids as a dev-machine copy of
+ * this file would have. Same four tab labels, entirely different ids; this is exactly
+ * the mismatch deploy.mjs's tab-verification check exists to catch. Don't reuse ids from
+ * any other copy of flows.json without re-verifying against the actual deploy target.
+ */
 const SOURCE_TABS = {
-  energy: { z: '12a0ea5e7b516a4c', label: 'Energy Monitoring - Set time' },
-  outlet: { z: 'ac87d748b5788895', label: 'Outlet' },
-  switch: { z: '8550151b1adeabd1', label: 'Switch' },
-  aircon: { z: '1715dabc6d837b3b', label: 'Aircon' },
+  energy: { z: 'b91949ed325c0ab6', label: 'Energy Monitoring - Set time' },
+  outlet: { z: 'f034cec8ea750f69', label: 'Outlet' },
+  switch: { z: '5ba0bb77c042d889', label: 'Switch' },
+  aircon: { z: '5ae2a6bf87435d7a', label: 'Aircon' },
 };
 
 const BRIDGE_TAB = 'b41d9e0000000001';
