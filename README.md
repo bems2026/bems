@@ -3,6 +3,7 @@
 Local, live-data (Node-RED bridge), view-only. See:
 
 - [`docs/bridge-contract.md`](docs/bridge-contract.md) — the JSON contract, single source of truth
+- [`docs/phase-f-runbook.md`](docs/phase-f-runbook.md) — deploying to the real Pi once it's reachable
 - [`C:\Users\g16\BEMS\ibems-dashboard-stage1-plan.md`](../ibems-dashboard-stage1-plan.md) — original Stage 1 plan
 - The implementation plan this repo follows (Phases A–F) is `ibems-onboarding-wizar-agile-donut.md` in the Claude plans directory.
 
@@ -11,11 +12,12 @@ Local, live-data (Node-RED bridge), view-only. See:
 ```
 shared/registry.mjs        canonical device registry — edit this, nothing else
 shared/buildLatest.mjs     the readings-payload transform, shared by both bridges
-node-red-bridge/           generated Node-RED flow (`npm run build:flow` to regenerate)
+node-red-bridge/           generated Node-RED flow (`npm run build:flow` to regenerate),
+                            plus deploy.mjs/verify.mjs for the real Pi (see phase-f-runbook.md)
 mock-bridge/                local fake bridge, same contract, no hardware needed
 test/                      bridge/mock contract tests (Node's test runner)
-src/                       React + Vite + TS frontend (Phase C: foundation only —
-                            Overview/FloorPlan/Trends are placeholders until Phase D/E)
+src/                       React + Vite + TS frontend — Overview, Floor Plan, and Trends
+                            are all live against the bridge (Phases C–E complete)
 ```
 
 ## Quickstart
@@ -40,6 +42,17 @@ npm run build:flow        # regenerate node-red-bridge/bridge-flow.json after ed
 ```
 
 If a previous mock is still holding the port: `npm run mock:stop`.
+
+## Against the real Pi (Phase F)
+
+```bash
+npm run verify:pi -- --host=<pi-ip>              # read-only health check, safe any time
+npm run deploy:pi -- --host=<pi-ip>               # dry run — no writes
+npm run deploy:pi -- --host=<pi-ip> --apply       # actually deploys
+```
+Full walkthrough: [`docs/phase-f-runbook.md`](docs/phase-f-runbook.md). `deploy.mjs` is the
+only script in this repo that writes to a live system, and it refuses to unless the real
+Pi's tab ids/labels match what `build-flow.mjs` assumed and there are no node id collisions.
 
 ## Rules
 

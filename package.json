@@ -12,6 +12,8 @@
     "build:flow": "node node-red-bridge/build-flow.mjs",
     "mock": "node mock-bridge/server.mjs",
     "mock:stop": "node mock-bridge/stop.mjs",
+    "verify:pi": "node node-red-bridge/verify.mjs",
+    "deploy:pi": "node node-red-bridge/deploy.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:bridge": "node --test \"test/**/*.test.mjs\""
