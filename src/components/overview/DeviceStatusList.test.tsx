@@ -45,8 +45,23 @@ describe('DeviceStatusList', () => {
     expect(screen.getByText('unknown')).toBeInTheDocument();
   });
 
-  it('shows the waiting placeholder before the catalogue loads', () => {
+  it('shows skeletons before the catalogue loads', () => {
     render(<DeviceStatusList />);
-    expect(screen.getByText(/Waiting for the device catalogue/)).toBeInTheDocument();
+    expect(document.querySelectorAll('.skeleton').length).toBeGreaterThan(0);
+  });
+
+  it('shows a preview of the first 8 devices plus a "View all" link once more than 8 are loaded', () => {
+    useDeviceStore.setState({
+      devices: Array.from({ length: 12 }, (_, i) => device(`co${i}`, `Outlet ${i}`, 'outlet_dual')),
+    });
+    render(<DeviceStatusList />);
+    expect(screen.getAllByText(/^Outlet/).length).toBe(8);
+    expect(screen.getByText('View all 12 devices →')).toBeInTheDocument();
+  });
+
+  it('shows no "View all" link when everything already fits in the preview', () => {
+    useDeviceStore.setState({ devices: [device('l1', 'Light 1', 'switch')] });
+    render(<DeviceStatusList />);
+    expect(screen.queryByText(/View all/)).not.toBeInTheDocument();
   });
 });

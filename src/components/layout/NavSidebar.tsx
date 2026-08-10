@@ -1,3 +1,4 @@
+import { Zap, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useConnectionStore } from '@/stores/connectionStore';
 import type { ConnStatus } from '@/lib/bridgeClient';
 import { NAV_ITEMS } from './navItems';
@@ -36,7 +37,7 @@ export function NavSidebar({ collapsed, activeId, onToggleCollapse, onNavigate }
       <div className="sidebar-header">
         <span className="brand">
           <span className="brand-mark" aria-hidden="true">
-            ⌁
+            <Zap size={15} strokeWidth={2.5} />
           </span>
           <span className="sidebar-title">iBEMS</span>
         </span>
@@ -47,7 +48,7 @@ export function NavSidebar({ collapsed, activeId, onToggleCollapse, onNavigate }
           aria-expanded={!collapsed}
           onClick={onToggleCollapse}
         >
-          {collapsed ? '▶' : '◀'}
+          {collapsed ? <ChevronRight size={14} aria-hidden="true" /> : <ChevronLeft size={14} aria-hidden="true" />}
         </button>
       </div>
 
@@ -62,7 +63,7 @@ export function NavSidebar({ collapsed, activeId, onToggleCollapse, onNavigate }
               aria-current={item.id === activeId ? 'true' : undefined}
             >
               <span className="nav-icon" aria-hidden="true">
-                {item.icon}
+                <item.icon size={16} strokeWidth={2} />
               </span>
               <span className="nav-label">{item.label}</span>
             </a>

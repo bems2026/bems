@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Maximize2, Minimize2 } from 'lucide-react';
 import { SpatialView } from './SpatialView';
 import { EnergyRing } from './EnergyRing';
 import { PhaseBalance } from './PhaseBalance';
@@ -45,7 +46,7 @@ export function OverviewHero() {
           onClick={toggleFullscreen}
           aria-label={isFullscreen ? 'Exit fullscreen' : 'Expand to fullscreen'}
         >
-          {isFullscreen ? '⤡' : '⤢'}
+          {isFullscreen ? <Minimize2 size={14} aria-hidden="true" /> : <Maximize2 size={14} aria-hidden="true" />}
         </button>
       </div>
       <div className="hero-grid">

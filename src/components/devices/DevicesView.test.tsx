@@ -20,9 +20,10 @@ afterEach(() => {
 });
 
 describe('DevicesView', () => {
-  it('shows the waiting placeholder before the catalogue loads', () => {
+  it('shows skeletons before the catalogue loads', () => {
     render(<DevicesView />);
-    expect(screen.getByText(/Waiting for the device catalogue/)).toBeInTheDocument();
+    expect(document.querySelectorAll('.skeleton').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Outlets')).not.toBeInTheDocument();
   });
 
   it('groups devices into class sections with correct labels and counts', () => {

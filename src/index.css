@@ -44,6 +44,28 @@
   --bad-soft: rgb(248 113 113 / 0.12);
   --info: #60a5fa;
 
+  /**
+   * Type scale. Replaces 10 ad-hoc hardcoded sizes. Smallest is 11px — the two former
+   * 10px uses moved up, since sub-11px labels fail legibility guidance even when their
+   * contrast passes.
+   */
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 14px;
+  --fs-md: 15px;
+  --fs-lg: 18px;
+  --fs-xl: 20px;
+  --fs-2xl: 26px;
+  --fs-3xl: 34px;
+
+  /**
+   * `--lh-tight` is for single-line numerics only. The 1.5 body minimum exists for prose
+   * readability; applying it to a 34px tabular metric just adds dead space above and below
+   * a number that has no second line to lead into.
+   */
+  --lh-tight: 1.2;
+  --lh-base: 1.5;
+
   --r-card: 14px;
   --r-inner: 10px;
   --r-sm: 8px;
@@ -76,8 +98,29 @@ body {
   background: var(--bg-base);
   color: var(--txt);
   font-family: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  font-size: 14px;
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
   -webkit-font-smoothing: antialiased;
+}
+
+/* Skip-to-content — the first focusable element on the page, invisible until it receives
+   keyboard focus. Targets #main-content on <main> in AppShell.tsx. */
+.skip-link {
+  position: fixed;
+  top: -100px;
+  left: var(--sp-4);
+  z-index: 100;
+  background: var(--accent);
+  color: #17130a;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-inner);
+  text-decoration: none;
+  transition: top 0.15s ease;
+}
+.skip-link:focus-visible {
+  top: var(--sp-4);
 }
 
 :focus-visible {
@@ -121,38 +164,38 @@ body {
   margin-bottom: var(--sp-4);
 }
 .card-title {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--txt);
   margin: 0;
 }
 .card-sub {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--muted-2);
   margin: 2px 0 0;
 }
 
 /* Small uppercase-ish label above a number. Used everywhere a metric appears. */
 .metric-label {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 500;
   color: var(--muted);
   letter-spacing: 0.04em;
 }
 /* Light-weight tabular numerals — tabular so live-updating digits don't jitter. */
 .metric-value {
-  font-size: 26px;
+  font-size: var(--fs-2xl);
   font-weight: 300;
-  line-height: 1.15;
+  line-height: var(--lh-tight);
   color: var(--txt);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
 }
 .metric-value--sm {
-  font-size: 19px;
+  font-size: var(--fs-xl);
 }
 .metric-value--lg {
-  font-size: 34px;
+  font-size: var(--fs-3xl);
 }
 .metric-value--muted {
   color: var(--muted-2);
@@ -186,7 +229,7 @@ body {
   border-radius: var(--r-sm);
   display: grid;
   place-items: center;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   background: var(--accent-soft);
   color: var(--accent);
   flex: none;
@@ -198,7 +241,7 @@ body {
   gap: 4px;
   padding: 2px 8px;
   border-radius: var(--r-pill);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 500;
   background: var(--bg-surface-2);
   color: var(--muted);
@@ -292,13 +335,13 @@ body {
   color: #17130a;
   display: grid;
   place-items: center;
-  font-size: 15px;
+  font-size: var(--fs-md);
   font-weight: 700;
   flex: none;
 }
 .sidebar-title {
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--fs-base);
   letter-spacing: -0.01em;
   white-space: nowrap;
 }
@@ -311,7 +354,7 @@ body {
   height: 26px;
   cursor: pointer;
   flex: none;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   transition: color 0.15s ease, border-color 0.15s ease;
 }
 #sidebarToggle:hover {
@@ -320,7 +363,7 @@ body {
 }
 
 .nav-group {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -343,7 +386,7 @@ body {
   border-radius: var(--r-inner);
   color: var(--muted);
   text-decoration: none;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: 500;
   transition: background 0.15s ease, color 0.15s ease;
 }
@@ -356,7 +399,7 @@ body {
   color: var(--accent);
 }
 .nav-icon {
-  font-size: 15px;
+  font-size: var(--fs-md);
   line-height: 1;
   flex: none;
   width: 18px;
@@ -370,7 +413,7 @@ body {
   gap: var(--sp-2);
   padding: var(--sp-4);
   border-top: 1px solid var(--border);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--muted);
 }
 .status-dot {
@@ -448,6 +491,25 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
+ * Loading skeleton — see Skeleton.tsx for when (and when not) to use it.
+ * ------------------------------------------------------------------------ */
+.skeleton {
+  display: inline-block;
+  border-radius: var(--r-sm);
+  background: linear-gradient(90deg, var(--bg-surface-2) 25%, var(--bg-inset) 50%, var(--bg-surface-2) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* ---------------------------------------------------------------------------
  * Accessibility — kept from TEST2.html:1093,1102
  * ------------------------------------------------------------------------ */
 @media (prefers-reduced-motion: reduce) {
@@ -488,7 +550,7 @@ body {
 }
 .app-title {
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--fs-base);
   flex: 1;
   letter-spacing: -0.01em;
   margin: 0; /* it's an <h1> now — reset the browser default block margin */
@@ -512,19 +574,19 @@ body {
   margin-bottom: var(--sp-4);
 }
 .section-title {
-  font-size: 18px;
+  font-size: var(--fs-lg);
   font-weight: 600;
   margin: 0;
   letter-spacing: -0.02em;
 }
 .section-sub {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--muted);
   margin: 3px 0 0;
 }
 .section-placeholder {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   margin: 0;
 }
 
@@ -535,7 +597,7 @@ body {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--muted);
   padding: 5px 10px;
   border: 1px solid var(--border);
@@ -579,7 +641,7 @@ body {
   right: 0;
   background: var(--warn);
   color: #1a1206;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -632,7 +694,7 @@ body {
   width: 28px;
   height: 28px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   transition: color 0.15s ease, border-color 0.15s ease;
 }
 .hero-expand-btn:hover {
@@ -703,7 +765,7 @@ body {
 .energy-ring__caption {
   margin: var(--sp-3) 0 0;
   text-align: center;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--muted);
 }
 .energy-ring__secondary {
@@ -731,7 +793,7 @@ body {
   gap: var(--sp-2);
 }
 .phase-balance__label {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--muted);
 }
 .phase-balance__bar-track {
@@ -751,13 +813,13 @@ body {
   inset: 0;
   display: flex;
   align-items: center;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: var(--muted-2);
   padding-left: 6px;
   letter-spacing: 0.02em;
 }
 .phase-balance__value {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
@@ -769,8 +831,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 260px;
-  overflow-y: auto;
+  /* Deliberately no max-height/overflow-y here — that was a nested scroll region trapping
+     wheel/keyboard interaction inside a small card. The list shows a fixed-size preview
+     (DeviceStatusList.tsx's PREVIEW_LIMIT) with a "View all" link instead of scrolling. */
 }
 .device-status-row {
   display: flex;
@@ -779,10 +842,32 @@ body {
   gap: var(--sp-2);
   padding: 7px 2px;
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  transition: background 0.15s ease;
+}
+.device-status-row:hover {
+  background: var(--bg-surface-2);
 }
 .device-status-row:last-child {
   border-bottom: none;
+}
+.device-status-row-skeleton {
+  margin-bottom: var(--sp-2);
+}
+.device-status-view-all {
+  display: block;
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--accent);
+  text-decoration: none;
+  text-align: center;
+}
+.device-status-view-all:hover {
+  text-decoration: underline;
 }
 .device-status-row__name {
   color: var(--txt);
@@ -797,7 +882,7 @@ body {
   flex: none;
 }
 .device-status-row__power {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -826,7 +911,7 @@ body {
   gap: var(--sp-3);
 }
 .power-bar__label {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -845,7 +930,7 @@ body {
   transition: width 0.4s ease;
 }
 .power-bar__value {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   text-align: right;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
@@ -867,7 +952,7 @@ body {
   border: none;
   background: none;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 500;
   padding: 5px 14px;
   border-radius: var(--r-pill);
@@ -911,14 +996,14 @@ body {
   border: 1px solid var(--border-strong);
   border-radius: var(--r-inner);
   padding: 6px 10px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   display: flex;
   flex-direction: column;
   gap: 2px;
   box-shadow: var(--shadow-pop);
 }
 .scene3d-tooltip strong {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 600;
 }
 .scene3d-tooltip span {
@@ -937,7 +1022,7 @@ body {
   border: none;
   color: var(--muted);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   padding: 2px;
 }
 .scene3d-inspector-close:hover {
@@ -964,7 +1049,7 @@ body {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--muted);
   letter-spacing: 0.03em;
@@ -972,7 +1057,7 @@ body {
   margin: 0 0 var(--sp-3);
 }
 .devices-group__count {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 500;
   color: var(--muted-2);
   background: var(--bg-inset);
@@ -984,11 +1069,22 @@ body {
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   gap: var(--sp-4);
 }
+.devices-skeleton-title {
+  margin-bottom: var(--sp-2);
+}
+.devices-skeleton-sub {
+  display: block;
+}
 .device-card-wrap {
   height: 100%;
 }
 .device-card-wrap .card {
   height: 100%;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.device-card-wrap .card:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-surface-2);
 }
 .device-card-metrics {
   display: flex;
@@ -1014,7 +1110,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-2);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--muted);
   background: var(--bg-inset);
   border-radius: var(--r-sm);
@@ -1037,7 +1133,7 @@ body {
 }
 .floorplan-title {
   margin: 0 0 var(--sp-4);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--muted);
   letter-spacing: 0.03em;
@@ -1069,19 +1165,50 @@ body {
   margin-bottom: var(--sp-3);
 }
 .trend-title {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--muted);
   letter-spacing: 0.03em;
-}
-.trend-status {
-  font-size: 11px;
-  color: var(--muted-2);
 }
 .trend-empty {
   margin: 0;
   padding: var(--sp-6) 0;
   text-align: center;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--muted-2);
+}
+
+/* ---------------------------------------------------------------------------
+ * Touch targets — enforced only where a coarse pointer is actually in use (the CARE
+ * kiosk touchscreen, phones). Desktop keeps its compact chrome; a mouse doesn't need
+ * 44px hit areas, and this is a data-dense view where that space matters.
+ *
+ * Deliberately the LAST rule block in this file. `min-width`/`min-height` survive
+ * being placed anywhere (they constrain the box regardless of which `width`/`height`
+ * wins the cascade), but `padding-block` does not — a later same-specificity `padding`
+ * shorthand elsewhere silently overwrites it. Confirmed by measurement: with this block
+ * positioned earlier in the file, .nav-item measured 36px tall under pointer:coarse, not
+ * the intended 44px, because its own `padding: 9px ...` rule appears later in the file
+ * and won on source order. Keep this block last so it always wins.
+ * ------------------------------------------------------------------------ */
+@media (pointer: coarse) {
+  #sidebarToggle,
+  #mobileMenuBtn,
+  .hero-expand-btn,
+  .scene3d-inspector-close {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .spatial-toggle__btn {
+    min-height: 44px;
+    padding-inline: var(--sp-5);
+  }
+  .nav-item {
+    /* --sp-3 (12px) measured 42px total — 2px short of 44. --sp-4 clears it with margin
+       rather than passing right at the threshold. */
+    padding-block: var(--sp-4);
+  }
+  .device-status-row {
+    padding-block: var(--sp-3);
+  }
 }

@@ -11,27 +11,37 @@ afterEach(() => {
 });
 
 describe('StaleDataBadge', () => {
-  it('is stale with no reading in the store yet', () => {
+  it('is stale with no reading in the store yet, with an accessible live-region description', () => {
     render(
-      <StaleDataBadge deviceId="co3">
+      <StaleDataBadge deviceId="co3" label="Outlet 3">
         <span>content</span>
       </StaleDataBadge>,
     );
     expect(screen.getByText('content').parentElement).toHaveClass('stale-wrap--stale');
-    expect(screen.getByTitle('No recent reading for this device')).toBeInTheDocument();
+    const flag = screen.getByRole('status');
+    expect(flag).toHaveAccessibleName('Outlet 3: no reading in the last 30 seconds');
   });
 
-  it('is not stale for a fresh, online device reading', () => {
-    useDeviceStore.setState({
-      latestReadings: { co3: { device_id: 'co3', ts: new Date().toISOString(), online: true, state: 'on', power_w: 400 } },
-    });
+  it('falls back to a generic subject when no label is given', () => {
     render(
       <StaleDataBadge deviceId="co3">
         <span>content</span>
       </StaleDataBadge>,
     );
+    expect(screen.getByRole('status')).toHaveAccessibleName('This device: no reading in the last 30 seconds');
+  });
+
+  it('is not stale for a fresh, online device reading, and has no live region at all', () => {
+    useDeviceStore.setState({
+      latestReadings: { co3: { device_id: 'co3', ts: new Date().toISOString(), online: true, state: 'on', power_w: 400 } },
+    });
+    render(
+      <StaleDataBadge deviceId="co3" label="Outlet 3">
+        <span>content</span>
+      </StaleDataBadge>,
+    );
     expect(screen.getByText('content').parentElement).not.toHaveClass('stale-wrap--stale');
-    expect(screen.queryByTitle('No recent reading for this device')).not.toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
   it('is stale when the device is explicitly reported offline', () => {
@@ -65,5 +75,6 @@ describe('StaleDataBadge', () => {
       </StaleDataBadge>,
     );
     expect(screen.getByText('content').parentElement).toHaveClass('stale-wrap--stale');
+    expect(screen.getByRole('status')).toHaveAccessibleName('Building totals: no reading in the last 30 seconds');
   });
 });

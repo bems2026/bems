@@ -45,6 +45,7 @@ export default defineConfig({
         manualChunks(id) {
           if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-')) return 'charts';
           if (id.includes('node_modules/three')) return 'three';
+          if (id.includes('node_modules/lucide-react')) return 'icons';
         },
       },
     },

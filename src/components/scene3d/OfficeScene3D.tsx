@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { X } from 'lucide-react';
 import { OfficeScene, type PickResult } from './officeScene';
 import { FloorPlanView } from '@/components/floorplan/FloorPlanView';
 import { useDeviceStore } from '@/stores/deviceStore';
@@ -195,7 +196,7 @@ function DeviceInspector({ selection, onClose }: { selection: Selection; onClose
         subtitle={device.branch_circuit}
         action={
           <button type="button" className="scene3d-inspector-close" onClick={onClose} aria-label="Close">
-            ✕
+            <X size={14} aria-hidden="true" />
           </button>
         }
       >

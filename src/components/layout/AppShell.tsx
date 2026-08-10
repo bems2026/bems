@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { Menu } from 'lucide-react';
 import { NavSidebar } from './NavSidebar';
 import { NAV_ITEMS } from './navItems';
 import { ConnectionStatus } from '@/components/common/ConnectionStatus';
@@ -76,6 +77,11 @@ export function AppShell({ children }: AppShellProps) {
 
   return (
     <div className={shellClass}>
+      {/* First focusable element on the page. Invisible until it receives keyboard focus
+          (see .skip-link in index.css) — lets a keyboard user bypass the sidebar entirely. */}
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
       <NavSidebar
         collapsed={collapsed}
         activeId={activeId}
@@ -96,13 +102,17 @@ export function AppShell({ children }: AppShellProps) {
             aria-expanded={mobileOpen}
             onClick={() => setMobileOpen(true)}
           >
-            ☰
+            <Menu size={18} aria-hidden="true" />
           </button>
           {/* The page's only <h1> — was a plain <span>; every page needs exactly one. */}
           <h1 className="app-title">CARE Office</h1>
           <ConnectionStatus />
         </header>
-        <main className="app-content">{children}</main>
+        {/* id targeted by the skip link above. tabIndex=-1 lets it receive programmatic
+            focus on skip-link activation without adding it to the normal tab order. */}
+        <main id="main-content" className="app-content" tabIndex={-1}>
+          {children}
+        </main>
       </div>
     </div>
   );

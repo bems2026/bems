@@ -4,6 +4,7 @@ import { hasSwitchableState } from '@/lib/deviceClass';
 import { Card } from '@/components/ui/Card';
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
 import { MetricValue } from '@/components/ui/MetricValue';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { StaleDataBadge } from '@/components/common/StaleDataBadge';
 import type { Device, DeviceClass, Reading, SwitchState } from '@/lib/types';
 
@@ -40,7 +41,16 @@ export function DevicesView() {
   }, [devices]);
 
   if (devices.length === 0) {
-    return <p className="section-placeholder">Waiting for the device catalogue…</p>;
+    return (
+      <div className="devices-grid" aria-busy="true" aria-label="Loading devices">
+        {Array.from({ length: 6 }, (_, i) => (
+          <div className="card" key={i}>
+            <Skeleton height="14px" width="70%" className="devices-skeleton-title" />
+            <Skeleton height="12px" width="50%" className="devices-skeleton-sub" />
+          </div>
+        ))}
+      </div>
+    );
   }
 
   return (
@@ -71,7 +81,7 @@ function DeviceCard({ device }: { device: Device }) {
   const tone: BadgeTone = reading?.state === 'on' ? 'good' : reading?.state === 'off' ? 'neutral' : 'warn';
 
   return (
-    <StaleDataBadge deviceId={device.id} className="device-card-wrap">
+    <StaleDataBadge deviceId={device.id} label={device.display_name} className="device-card-wrap">
       <Card
         title={device.display_name}
         subtitle={device.branch_circuit ?? device.description}

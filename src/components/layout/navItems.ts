@@ -1,7 +1,9 @@
+import { LayoutDashboard, LayoutGrid, Activity, type LucideIcon } from 'lucide-react';
+
 export interface NavItem {
   id: string;
   label: string;
-  icon: string;
+  icon: LucideIcon;
 }
 
 /**
@@ -16,7 +18,7 @@ export interface NavItem {
  * the spatial view sits with the data it annotates.
  */
 export const NAV_ITEMS: NavItem[] = [
-  { id: 'overview', label: 'Overview', icon: '◲' },
-  { id: 'devices', label: 'Devices', icon: '⊞' },
-  { id: 'trends', label: 'Trends', icon: '◵' },
+  { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { id: 'devices', label: 'Devices', icon: LayoutGrid },
+  { id: 'trends', label: 'Trends', icon: Activity },
 ];

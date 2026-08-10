@@ -12,10 +12,18 @@ afterEach(() => {
 const device = (id: string): Device => ({ id, display_name: id, class: 'outlet_dual', room: null, dps_map: null, status: 'active' });
 
 describe('KpiRow', () => {
-  it('shows placeholders before any data arrives, including Devices Online', () => {
+  it('shows skeletons before the device catalogue loads — not fabricated "—" placeholders', () => {
     render(<KpiRow />);
-    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3);
+    expect(document.querySelectorAll('.skeleton').length).toBeGreaterThan(0);
+    expect(screen.queryByText('—')).not.toBeInTheDocument();
     expect(screen.queryByText(/\//)).not.toBeInTheDocument();
+  });
+
+  it('shows real "—" placeholders (not skeletons) once devices are loaded but totals have not arrived yet', () => {
+    useDeviceStore.setState({ devices: [device('co1')] });
+    render(<KpiRow />);
+    expect(document.querySelectorAll('.skeleton')).toHaveLength(0);
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3);
   });
 
   it('shows an online/total count once the catalogue and readings arrive', () => {

@@ -4,6 +4,8 @@ import { getHistory } from '@/lib/bridgeClient';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { TIMING } from '@/lib/timing';
 import { Card } from '@/components/ui/Card';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { summarizeTrend } from './chartSummary';
 import type { HistoryResponse } from '@/lib/types';
 
 type Range = HistoryResponse['range'];
@@ -61,35 +63,44 @@ export function TrendChart({ deviceId, title, range = '24h' }: TrendChartProps) 
 
   const data = (points ?? []).map((p) => ({ t: Date.parse(p.ts), power_w: p.power_w }));
   const loading = status === 'loading' && data.length === 0;
+  const summary = summarizeTrend(title, range, points ?? []);
 
   return (
-    <Card title={title} action={loading ? <span className="trend-status">Loading…</span> : undefined}>
-      {data.length === 0 ? (
+    <Card title={title}>
+      {loading ? (
+        <Skeleton height="180px" />
+      ) : data.length === 0 ? (
         <p className="trend-empty">
           {status === 'error' ? 'History unavailable right now.' : 'No history yet — the buffer fills at 1 point/min.'}
         </p>
       ) : (
-        <ResponsiveContainer width="100%" height={180}>
-          <LineChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
-            <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
-            <XAxis
-              dataKey="t"
-              type="number"
-              domain={['dataMin', 'dataMax']}
-              tickFormatter={formatTick}
-              stroke="var(--muted)"
-              fontSize={11}
-              tickLine={false}
-            />
-            <YAxis stroke="var(--muted)" fontSize={11} width={44} tickLine={false} />
-            <Tooltip
-              labelFormatter={(t) => new Date(t as number).toLocaleString('en-PH', { hour12: false })}
-              formatter={(v) => [`${Number(v).toFixed(1)} W`, 'Power']}
-              contentStyle={{ background: 'var(--bg-surface-2)', border: '1px solid var(--border)', borderRadius: 8 }}
-            />
-            <Line type="monotone" dataKey="power_w" stroke="var(--accent)" dot={false} strokeWidth={2} isAnimationActive={false} />
-          </LineChart>
-        </ResponsiveContainer>
+        // A Recharts SVG conveys nothing to a screen reader on its own — role="img" plus
+        // this generated aria-label is the chart's only accessible name. role="img" also
+        // means its descendants aren't individually exposed, so nothing further is needed
+        // on the LineChart itself.
+        <div role="img" aria-label={summary}>
+          <ResponsiveContainer width="100%" height={180}>
+            <LineChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+              <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+              <XAxis
+                dataKey="t"
+                type="number"
+                domain={['dataMin', 'dataMax']}
+                tickFormatter={formatTick}
+                stroke="var(--muted)"
+                fontSize={11}
+                tickLine={false}
+              />
+              <YAxis stroke="var(--muted)" fontSize={11} width={44} tickLine={false} />
+              <Tooltip
+                labelFormatter={(t) => new Date(t as number).toLocaleString('en-PH', { hour12: false })}
+                formatter={(v) => [`${Number(v).toFixed(1)} W`, 'Power']}
+                contentStyle={{ background: 'var(--bg-surface-2)', border: '1px solid var(--border)', borderRadius: 8 }}
+              />
+              <Line type="monotone" dataKey="power_w" stroke="var(--accent)" dot={false} strokeWidth={2} isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
       )}
     </Card>
   );

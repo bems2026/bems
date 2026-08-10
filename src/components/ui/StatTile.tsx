@@ -6,8 +6,8 @@ interface StatTileProps {
   value: number | string | null | undefined;
   unit?: string;
   digits?: number;
-  /** Emoji or glyph shown in the tinted leading chip. */
-  icon?: string;
+  /** A lucide icon element, e.g. `<Zap size={14} />` — shown in the tinted leading chip. */
+  icon?: ReactNode;
   /** Right-aligned slot in the header — typically a `<Badge>`. */
   badge?: ReactNode;
   muted?: boolean;
