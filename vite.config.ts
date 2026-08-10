@@ -29,6 +29,16 @@ export default defineConfig({
   },
   build: {
     target: 'es2022',
+    rollupOptions: {
+      output: {
+        // Recharts alone pushes the default bundle past Vite's 500kB warning; splitting
+        // it into its own chunk keeps the initial load lean without needing route-level
+        // code-splitting this app's single-page layout doesn't otherwise call for.
+        manualChunks(id) {
+          if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-')) return 'charts';
+        },
+      },
+    },
   },
   test: {
     environment: 'jsdom',

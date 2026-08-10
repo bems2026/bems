@@ -394,3 +394,67 @@ body {
   font-size: 11px;
   color: var(--muted);
 }
+
+/* ---------------------------------------------------------------------------
+ * FloorPlanView — geometry itself lives in the SVG (ported from the live
+ * ui_template nodes); this just frames the two cards side by side.
+ * ------------------------------------------------------------------------ */
+.floorplan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--sp-4);
+}
+.floorplan-card {
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--sp-4);
+}
+.floorplan-title {
+  margin: 0 0 var(--sp-3);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.floorplan-svg {
+  width: 100%;
+  height: auto;
+  max-height: 420px;
+}
+
+/* ---------------------------------------------------------------------------
+ * TrendChart
+ * ------------------------------------------------------------------------ */
+.trends-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--sp-4);
+}
+.trend-card {
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--sp-4);
+}
+.trend-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--sp-2);
+}
+.trend-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.trend-status {
+  font-size: 11px;
+  color: var(--muted);
+}
+.trend-empty {
+  margin: 0;
+  padding: var(--sp-5) 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
