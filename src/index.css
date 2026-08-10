@@ -305,3 +305,92 @@ body {
 .connection-dot--stale {
   opacity: 0.4;
 }
+
+/* ---------------------------------------------------------------------------
+ * Stale data badge — per-device/per-totals dimming, distinct from ConnectionStatus
+ * (bridge link health) above. Ported threshold logic from Bems.html:1272-1274.
+ * ------------------------------------------------------------------------ */
+.stale-wrap {
+  position: relative;
+  transition: opacity 0.2s ease;
+}
+.stale-wrap--stale {
+  opacity: 0.45;
+}
+.stale-flag {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: var(--warn);
+  color: #1a1206;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  z-index: 1;
+}
+
+/* ---------------------------------------------------------------------------
+ * SystemGauges
+ * ------------------------------------------------------------------------ */
+.gauges-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--sp-3);
+}
+.gauge-card {
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.gauge-card--muted {
+  opacity: 0.6;
+}
+.gauge-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+.gauge-value {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------------------
+ * EnergyTotals
+ * ------------------------------------------------------------------------ */
+.energy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--sp-3);
+  margin-top: var(--sp-4);
+}
+.energy-card {
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.energy-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+.energy-value {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.energy-caption {
+  margin: var(--sp-2) 0 0;
+  font-size: 11px;
+  color: var(--muted);
+}
