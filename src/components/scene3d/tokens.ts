@@ -15,6 +15,6 @@ export const TOKENS = {
   bgSurface2: '#1a1d23',
   border: '#24272e',
   muted: '#8b8f99',
-  muted2: '#5c606b',
+  muted2: '#82858b', // WCAG AA fix, Phase J — see index.css's --muted-2 comment
   txt: '#f0eee9',
 } as const;

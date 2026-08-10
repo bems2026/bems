@@ -4,6 +4,7 @@ import { useLiveConnection } from '@/hooks/useLiveConnection';
 import { KpiRow } from '@/components/overview/KpiRow';
 import { OverviewHero } from '@/components/overview/OverviewHero';
 import { EnergyByDevice } from '@/components/overview/EnergyByDevice';
+import { DevicesView } from '@/components/devices/DevicesView';
 import { TrendChart } from '@/components/trends/TrendChart';
 import { useDeviceStore } from '@/stores/deviceStore';
 
@@ -40,7 +41,7 @@ export function App() {
             </p>
           </div>
         </div>
-        <p className="section-placeholder">Full device list view — Phase J. A compact version already lives on Overview.</p>
+        <DevicesView />
       </section>
 
       <section id="trends" className="app-section">

@@ -98,7 +98,8 @@ export function AppShell({ children }: AppShellProps) {
           >
             ☰
           </button>
-          <span className="app-title">CARE Office</span>
+          {/* The page's only <h1> — was a plain <span>; every page needs exactly one. */}
+          <h1 className="app-title">CARE Office</h1>
           <ConnectionStatus />
         </header>
         <main className="app-content">{children}</main>

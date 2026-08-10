@@ -21,7 +21,16 @@
 
   --txt: #f0eee9;
   --muted: #8b8f99;
-  --muted-2: #5c606b;
+  /**
+   * WCAG AA fix (Phase J a11y pass): the original #5c606b measured 2.91:1 against
+   * --bg-surface — well under the 4.5:1 normal-text minimum, and every use of this token
+   * is real content, not decoration: card subtitles, the muted-value "—" that signals
+   * missing data, and .phase-balance__not-metered — the text carrying this project's most
+   * repeated correctness guarantee ("Blue stays Not metered, never a number"). #82858b
+   * clears 4.5:1 against all four surface tokens (4.56:1 on the tightest, --bg-surface-2);
+   * see the contrast computation in the Phase J session notes if this ever needs re-deriving.
+   */
+  --muted-2: #82858b;
 
   /* --- accent + semantics --- */
   --accent: #e8a33d;
@@ -52,15 +61,6 @@
 
   --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
   --shadow-pop: 0 12px 32px rgb(0 0 0 / 0.55);
-
-  /**
-   * Legacy aliases. `FloorPlanView` and `TrendChart` still reference these directly in JSX
-   * (SVG fills, Recharts stroke props). They're restyled in Phase J, at which point these
-   * four are deleted — not kept as a permanent parallel vocabulary.
-   */
-  --line: var(--border);
-  --panel: var(--bg-surface);
-  --panel2: var(--bg-surface-2);
 }
 
 * {
@@ -94,6 +94,16 @@ body {
   border-radius: var(--r-card);
   padding: var(--sp-5);
   box-shadow: var(--shadow-card);
+  /*
+   * min-width: 0 — Grid/flex items default to min-width: auto, which lets content with
+   * its own intrinsic sizing (Recharts' ResponsiveContainer, in particular) push the item
+   * past its track's constrained width instead of shrinking to fit. Confirmed via a real
+   * horizontal-overflow bug at 768px: `.trends-grid`'s TrendChart cards were forcing the
+   * whole page to scroll sideways. `.card` is the shared primitive every grid/flex layout
+   * in this app places charts and content into, so the fix belongs here once, not
+   * per-container.
+   */
+  min-width: 0;
 }
 .card--inset {
   background: var(--bg-inset);
@@ -481,6 +491,7 @@ body {
   font-size: 14px;
   flex: 1;
   letter-spacing: -0.01em;
+  margin: 0; /* it's an <h1> now — reset the browser default block margin */
 }
 .app-content {
   padding: var(--sp-6);
@@ -740,7 +751,7 @@ body {
   inset: 0;
   display: flex;
   align-items: center;
-  font-size: 9px;
+  font-size: 10px;
   color: var(--muted-2);
   padding-left: 6px;
   letter-spacing: 0.02em;
@@ -939,6 +950,75 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--sp-3);
+}
+
+/* ---------------------------------------------------------------------------
+ * Devices view
+ * ------------------------------------------------------------------------ */
+.devices-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+}
+.devices-group__title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  margin: 0 0 var(--sp-3);
+}
+.devices-group__count {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-2);
+  background: var(--bg-inset);
+  border-radius: var(--r-pill);
+  padding: 1px 7px;
+}
+.devices-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: var(--sp-4);
+}
+.device-card-wrap {
+  height: 100%;
+}
+.device-card-wrap .card {
+  height: 100%;
+}
+.device-card-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.device-metric-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.device-card-sockets {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+}
+.device-socket-pill {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--bg-inset);
+  border-radius: var(--r-sm);
+  padding: 5px 8px;
 }
 
 /* ---------------------------------------------------------------------------

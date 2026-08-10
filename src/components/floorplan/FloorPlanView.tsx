@@ -58,8 +58,8 @@ function PlanFrame({ title, children }: { title: string; children: ReactNode }) 
     <div className="floorplan-card">
       <h3 className="floorplan-title">{title}</h3>
       <svg viewBox={VIEWBOX} className="floorplan-svg" role="img" aria-label={title}>
-        <rect x={10} y={10} width={300} height={530} fill="none" stroke="var(--line)" strokeWidth={2} rx={5} />
-        <line x1={10} y1={100} x2={310} y2={100} stroke="var(--line)" strokeWidth={2} />
+        <rect x={10} y={10} width={300} height={530} fill="none" stroke="var(--border)" strokeWidth={2} rx={5} />
+        <line x1={10} y1={100} x2={310} y2={100} stroke="var(--border)" strokeWidth={2} />
         {children}
       </svg>
     </div>
@@ -73,7 +73,7 @@ function LightingPlan({ readings }: { readings: Record<string, Reading> }) {
         const reading = readings[id];
         const stale = isReadingStale(reading);
         const on = reading?.state === 'on';
-        const fill = stale ? 'var(--muted)' : on ? '#ffff00' : '#1a1a1a';
+        const fill = stale ? 'var(--muted-2)' : on ? 'var(--accent)' : 'var(--bg-surface-2)';
         const y = 480 - (row - 1) * 65;
         return (
           <g key={id}>
@@ -86,7 +86,7 @@ function LightingPlan({ readings }: { readings: Record<string, Reading> }) {
                 height={18}
                 rx={2}
                 fill={fill}
-                stroke="#888"
+                stroke="var(--border-strong)"
                 opacity={stale ? 0.5 : 1}
               />
             ))}
@@ -113,15 +113,15 @@ function OutletPlan({ readings }: { readings: Record<string, Reading> }) {
           <g key={id}>
             <path
               d={`M ${x} ${y - 12} A 12 12 0 0 0 ${x} ${y + 12} Z`}
-              fill={stale ? 'var(--muted)' : s1 ? '#00ffff' : '#0d1117'}
-              stroke="#00ffff"
+              fill={stale ? 'var(--muted-2)' : s1 ? 'var(--accent)' : 'var(--bg-inset)'}
+              stroke="var(--accent)"
               strokeWidth={1.5}
               opacity={stale ? 0.5 : 1}
             />
             <path
               d={`M ${x} ${y - 12} A 12 12 0 0 1 ${x} ${y + 12} Z`}
-              fill={stale ? 'var(--muted)' : s2 ? '#00ffff' : '#0d1117'}
-              stroke="#00ffff"
+              fill={stale ? 'var(--muted-2)' : s2 ? 'var(--accent)' : 'var(--bg-inset)'}
+              stroke="var(--accent)"
               strokeWidth={1.5}
               opacity={stale ? 0.5 : 1}
             />
@@ -131,7 +131,7 @@ function OutletPlan({ readings }: { readings: Record<string, Reading> }) {
               fontSize={8}
               fontWeight={900}
               textAnchor="middle"
-              fill={stale ? 'var(--muted)' : s1 ? '#00ff88' : '#ff4d4d'}
+              fill={stale ? 'var(--muted)' : s1 ? 'var(--good)' : 'var(--bad)'}
             >
               {stale ? '?' : s1 ? 'ON' : 'OFF'}
             </text>
@@ -141,7 +141,7 @@ function OutletPlan({ readings }: { readings: Record<string, Reading> }) {
               fontSize={8}
               fontWeight={900}
               textAnchor="middle"
-              fill={stale ? 'var(--muted)' : s2 ? '#00ff88' : '#ff4d4d'}
+              fill={stale ? 'var(--muted)' : s2 ? 'var(--good)' : 'var(--bad)'}
             >
               {stale ? '?' : s2 ? 'ON' : 'OFF'}
             </text>

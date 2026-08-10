@@ -27,7 +27,7 @@ export function SpatialView() {
 
   return (
     <div>
-      <div className="spatial-toggle" role="tablist" aria-label="Floor plan view">
+      <div className="spatial-toggle" role="group" aria-label="Floor plan view">
         <ToggleButton active={mode === '3d'} onClick={() => setMode('3d')}>
           3D
         </ToggleButton>
@@ -46,12 +46,17 @@ export function SpatialView() {
   );
 }
 
+/**
+ * A plain pressed-toggle button, not `role="tab"`. Using the ARIA tabs pattern without its
+ * required keyboard behavior (arrow-key roving focus, a linked `role="tabpanel"`) is worse
+ * for screen reader users than not using it at all — it announces affordances that don't
+ * work. `aria-pressed` is the correct, fully-supported semantic for a 2-state toggle.
+ */
 function ToggleButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: string }) {
   return (
     <button
       type="button"
-      role="tab"
-      aria-selected={active}
+      aria-pressed={active}
       className={`spatial-toggle__btn${active ? ' spatial-toggle__btn--active' : ''}`}
       onClick={onClick}
     >

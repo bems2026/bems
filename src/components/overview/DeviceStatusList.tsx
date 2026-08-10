@@ -1,9 +1,8 @@
 import { useDeviceStore } from '@/stores/deviceStore';
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
 import { StaleDataBadge } from '@/components/common/StaleDataBadge';
+import { hasSwitchableState } from '@/lib/deviceClass';
 import type { DeviceClass } from '@/lib/types';
-
-const SWITCHABLE: DeviceClass[] = ['outlet_dual', 'switch', 'acu_ir'];
 
 /** Compact, scrollable read-only device list — image 1's pattern, not image 5's toggles. */
 export function DeviceStatusList() {
@@ -26,7 +25,6 @@ export function DeviceStatusList() {
 
 function DeviceStatusRow({ deviceId, label, deviceClass }: { deviceId: string; label: string; deviceClass: DeviceClass }) {
   const reading = useDeviceStore((s) => s.latestReadings[deviceId]);
-  const hasSwitchableState = SWITCHABLE.includes(deviceClass);
   const state = reading?.state;
   const tone: BadgeTone = state === 'on' ? 'good' : state === 'off' ? 'neutral' : 'warn';
 
@@ -38,7 +36,7 @@ function DeviceStatusRow({ deviceId, label, deviceClass }: { deviceId: string; l
         {/* Meters and sensors have no switchable state at all — that's a real fact about
             them, not missing data, so they get a neutral "metering" pill rather than an
             "unknown" state badge that implies a state concept exists but wasn't reported. */}
-        {hasSwitchableState ? <Badge tone={tone}>{state ?? 'unknown'}</Badge> : <Badge tone="neutral">metering</Badge>}
+        {hasSwitchableState(deviceClass) ? <Badge tone={tone}>{state ?? 'unknown'}</Badge> : <Badge tone="neutral">metering</Badge>}
       </span>
     </StaleDataBadge>
   );

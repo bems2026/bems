@@ -28,7 +28,11 @@ export function NavSidebar({ collapsed, activeId, onToggleCollapse, onNavigate }
   };
 
   return (
-    <aside className="sidebar" aria-label="Main navigation">
+    // <nav>, not <aside> — this element's job IS navigation (aside maps to the
+    // "complementary" landmark, which a screen reader's landmark-navigation shortcut
+    // wouldn't surface as the site nav at all). The collapse button and connection-status
+    // footer riding along inside it is fine; <nav> doesn't require every child to be a link.
+    <nav className="sidebar" aria-label="Main">
       <div className="sidebar-header">
         <span className="brand">
           <span className="brand-mark" aria-hidden="true">
@@ -70,6 +74,6 @@ export function NavSidebar({ collapsed, activeId, onToggleCollapse, onNavigate }
         <span className={`status-dot status-dot--${wsStatus}`} aria-hidden="true" />
         <span className="sidebar-status-text">{STATUS_LABEL[wsStatus]}</span>
       </div>
-    </aside>
+    </nav>
   );
 }

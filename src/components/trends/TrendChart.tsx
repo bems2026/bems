@@ -3,6 +3,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { getHistory } from '@/lib/bridgeClient';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { TIMING } from '@/lib/timing';
+import { Card } from '@/components/ui/Card';
 import type { HistoryResponse } from '@/lib/types';
 
 type Range = HistoryResponse['range'];
@@ -59,24 +60,18 @@ export function TrendChart({ deviceId, title, range = '24h' }: TrendChartProps) 
   }, [deviceId, range]);
 
   const data = (points ?? []).map((p) => ({ t: Date.parse(p.ts), power_w: p.power_w }));
+  const loading = status === 'loading' && data.length === 0;
 
   return (
-    <div className="trend-card">
-      <div className="trend-header">
-        <span className="trend-title">{title}</span>
-        {status === 'loading' && data.length === 0 && <span className="trend-status">Loading…</span>}
-      </div>
-
+    <Card title={title} action={loading ? <span className="trend-status">Loading…</span> : undefined}>
       {data.length === 0 ? (
         <p className="trend-empty">
-          {status === 'error'
-            ? "History unavailable right now."
-            : 'No history yet — the buffer fills at 1 point/min.'}
+          {status === 'error' ? 'History unavailable right now.' : 'No history yet — the buffer fills at 1 point/min.'}
         </p>
       ) : (
         <ResponsiveContainer width="100%" height={180}>
           <LineChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
-            <CartesianGrid stroke="var(--line)" strokeDasharray="3 3" vertical={false} />
+            <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
             <XAxis
               dataKey="t"
               type="number"
@@ -90,13 +85,13 @@ export function TrendChart({ deviceId, title, range = '24h' }: TrendChartProps) 
             <Tooltip
               labelFormatter={(t) => new Date(t as number).toLocaleString('en-PH', { hour12: false })}
               formatter={(v) => [`${Number(v).toFixed(1)} W`, 'Power']}
-              contentStyle={{ background: 'var(--panel2)', border: '1px solid var(--line)', borderRadius: 8 }}
+              contentStyle={{ background: 'var(--bg-surface-2)', border: '1px solid var(--border)', borderRadius: 8 }}
             />
             <Line type="monotone" dataKey="power_w" stroke="var(--accent)" dot={false} strokeWidth={2} isAnimationActive={false} />
           </LineChart>
         </ResponsiveContainer>
       )}
-    </div>
+    </Card>
   );
 }
 
