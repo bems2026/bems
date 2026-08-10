@@ -649,6 +649,107 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
+ * 2D/3D toggle
+ * ------------------------------------------------------------------------ */
+.spatial-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  margin-bottom: var(--sp-3);
+}
+.spatial-toggle__btn {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 14px;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.spatial-toggle__btn:hover {
+  color: var(--txt);
+}
+.spatial-toggle__btn--active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ---------------------------------------------------------------------------
+ * 3D office scene
+ * ------------------------------------------------------------------------ */
+.scene3d-container {
+  position: relative;
+  width: 100%;
+  height: 420px;
+  border-radius: var(--r-card);
+  overflow: hidden;
+  background: var(--bg-inset);
+}
+.scene3d-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+  touch-action: none;
+}
+.scene3d-canvas:active {
+  cursor: grabbing;
+}
+.scene3d-tooltip {
+  position: fixed;
+  z-index: 40;
+  pointer-events: none;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-inner);
+  padding: 6px 10px;
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-shadow: var(--shadow-pop);
+}
+.scene3d-tooltip strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.scene3d-tooltip span {
+  color: var(--muted);
+  text-transform: capitalize;
+}
+.scene3d-inspector {
+  position: absolute;
+  top: var(--sp-3);
+  right: var(--sp-3);
+  width: 220px;
+  z-index: 30;
+}
+.scene3d-inspector-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px;
+}
+.scene3d-inspector-close:hover {
+  color: var(--txt);
+}
+.scene3d-inspector-row {
+  margin-bottom: var(--sp-3);
+}
+.scene3d-inspector-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-3);
+}
+
+/* ---------------------------------------------------------------------------
  * Floor plan (2D) — restyled in Phase J
  * ------------------------------------------------------------------------ */
 .floorplan-grid {

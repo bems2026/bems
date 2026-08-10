@@ -3,7 +3,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { useLiveConnection } from '@/hooks/useLiveConnection';
 import { SystemGauges } from '@/components/overview/SystemGauges';
 import { EnergyTotals } from '@/components/overview/EnergyTotals';
-import { FloorPlanView } from '@/components/floorplan/FloorPlanView';
+import { SpatialView } from '@/components/overview/SpatialView';
 import { TrendChart } from '@/components/trends/TrendChart';
 import { useDeviceStore } from '@/stores/deviceStore';
 
@@ -26,9 +26,9 @@ export function App() {
         </div>
         <SystemGauges />
         <EnergyTotals />
-        {/* Becomes the 2D half of the hero's 2D/3D toggle in Phase H. */}
+        {/* Full hero layout (KPI row + flanking cards around this) is Phase I. */}
         <div style={{ marginTop: 'var(--sp-5)' }}>
-          <FloorPlanView />
+          <SpatialView />
         </div>
       </section>
 

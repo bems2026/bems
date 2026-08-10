@@ -29,13 +29,22 @@ export default defineConfig({
   },
   build: {
     target: 'es2022',
+    // three.js's own chunk is ~520KB minified — expected for a 3D library and no longer
+    // actionable once it's already split out and lazy-loaded (see manualChunks below);
+    // raised so the build's warning output stays meaningful for chunks that actually
+    // indicate a code-splitting gap, rather than re-flagging this one every build.
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
-        // Recharts alone pushes the default bundle past Vite's 500kB warning; splitting
-        // it into its own chunk keeps the initial load lean without needing route-level
-        // code-splitting this app's single-page layout doesn't otherwise call for.
+        // Recharts and three.js each alone push the default bundle past Vite's 500kB
+        // warning; splitting them into their own chunks keeps the initial load lean
+        // without needing route-level code-splitting this single-page layout otherwise
+        // has no use for. three is additionally behind React.lazy() at the call site
+        // (OfficeScene3D isn't imported until the Overview hero mounts it), so this chunk
+        // isn't fetched at all on a first paint that never reaches the 3D view.
         manualChunks(id) {
           if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-')) return 'charts';
+          if (id.includes('node_modules/three')) return 'three';
         },
       },
     },
