@@ -13,21 +13,40 @@ shared/registry.mjs        canonical device registry — edit this, nothing else
 shared/buildLatest.mjs     the readings-payload transform, shared by both bridges
 node-red-bridge/           generated Node-RED flow (`npm run build:flow` to regenerate)
 mock-bridge/                local fake bridge, same contract, no hardware needed
-test/                      contract tests — guard against mock/bridge drift
+test/                      bridge/mock contract tests (Node's test runner)
+src/                       React + Vite + TS frontend (Phase C: foundation only —
+                            Overview/FloorPlan/Trends are placeholders until Phase D/E)
 ```
 
 ## Quickstart
 
+Two terminals:
+
 ```bash
-npm run mock            # starts the fake bridge on :1880
-npm test                # contract tests
-npm run build:flow      # regenerate node-red-bridge/bridge-flow.json after editing shared/
+npm run mock             # fake bridge on :1880
+npm run dev              # frontend on :5183, proxies /api and /ws to the mock
+```
+
+Deliberately not port 5173 — this repo sits alongside other Vite projects on the same
+machine and must never shadow another dev server's default port.
+
+```bash
+npm test                 # frontend unit tests (vitest) — includes bridgeClient's
+                          # backoff/stale-detection logic and a TIMING drift guard
+npm run test:bridge      # bridge/mock contract tests (node --test)
+npm run lint              # eslint
+npm run build             # tsc -b && vite build
+npm run build:flow        # regenerate node-red-bridge/bridge-flow.json after editing shared/
 ```
 
 If a previous mock is still holding the port: `npm run mock:stop`.
 
-## Rule
+## Rules
 
-**Never hand-edit `bridge-flow.json`.** It's generated from `shared/registry.mjs` and
-`shared/buildLatest.mjs`. Edit those, then `npm run build:flow`. `npm test` fails loudly
-if the two drift apart.
+- **Never hand-edit `bridge-flow.json`.** It's generated from `shared/registry.mjs` and
+  `shared/buildLatest.mjs`. Edit those, then `npm run build:flow`. `npm run test:bridge`
+  fails loudly if the two drift apart.
+- **The only place a bridge URL appears is `src/config/bridge.ts`.** Don't hardcode one
+  elsewhere.
+- **Stage 1 is view-only.** No `POST` endpoints, no control wiring, no toggles anywhere
+  in this repo. That's Stage 2.

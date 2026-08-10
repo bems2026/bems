@@ -1,0 +1,307 @@
+@import 'tailwindcss';
+
+/**
+ * Design tokens ported from `Bems.html:9-32` — the engineering branch of the three
+ * legacy dashboards, the only one with a working collapse + off-canvas sidebar.
+ */
+:root {
+  --bg: #060b13;
+  --panel: rgba(17, 28, 47, 0.55);
+  --panel2: rgba(22, 35, 61, 0.75);
+  --line: #22304d;
+  --txt: #e6edf7;
+  --muted: #90a0bd;
+  --accent: #2f80ed;
+  --accent2: #27c79a;
+  --warn: #f2a33c;
+  --bad: #ef5b5b;
+  --good: #27c79a;
+
+  --r-sm: 9px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-pill: 999px;
+
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+
+  --sidebar-w: 236px;
+  --sidebar-w-collapsed: 64px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--txt);
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+}
+
+/* ---------------------------------------------------------------------------
+ * App shell — CSS Grid, ported verbatim from Bems.html:72-96
+ * ------------------------------------------------------------------------ */
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  min-height: 100vh;
+  transition: grid-template-columns 0.22s ease;
+}
+.app-shell.collapsed {
+  grid-template-columns: var(--sidebar-w-collapsed) 1fr;
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+  background: var(--panel2);
+  border-right: 1px solid var(--line);
+  transition: width 0.22s ease;
+}
+
+.app-shell.collapsed .sidebar-title,
+.app-shell.collapsed .nav-label,
+.app-shell.collapsed .sidebar-status-text {
+  display: none;
+}
+.app-shell.collapsed .nav-item {
+  justify-content: center;
+  padding: 10px;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-4);
+  border-bottom: 1px solid var(--line);
+}
+.sidebar-title {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+#sidebarToggle {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--txt);
+  border-radius: var(--r-sm);
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+}
+
+.nav-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 10px var(--sp-3);
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  text-decoration: none;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.nav-item:hover,
+.nav-item:focus-visible {
+  background: var(--panel);
+  color: var(--txt);
+}
+.nav-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--bad);
+  flex: none;
+}
+.status-dot--connected {
+  background: var(--good);
+}
+.status-dot--polling-fallback,
+.status-dot--reconnecting {
+  background: var(--warn);
+}
+
+/* ---------------------------------------------------------------------------
+ * Off-canvas drawer at <900px — ported verbatim from Bems.html:115-130
+ * ------------------------------------------------------------------------ */
+#mobileMenuBtn {
+  display: none;
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--txt);
+  border-radius: var(--r-sm);
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+}
+.sidebar-scrim {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 15;
+  border: none;
+  padding: 0;
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr !important;
+  }
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: min(80vw, 280px);
+    height: 100vh;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6);
+  }
+  .app-shell.mobile-open .sidebar {
+    transform: translateX(0);
+  }
+  .app-shell.mobile-open .sidebar-title,
+  .app-shell.mobile-open .nav-label,
+  .app-shell.mobile-open .sidebar-status-text {
+    display: block;
+  }
+  .app-shell.mobile-open .sidebar-scrim {
+    display: block;
+  }
+  #mobileMenuBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #sidebarToggle {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Accessibility media queries — ported from TEST2.html:1093,1102 (worth keeping
+ * even though the rest of TEST2's data layer wasn't reused).
+ * ------------------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+@media (prefers-contrast: high) {
+  :root {
+    --line: #5a6a8a;
+    --muted: #c0cbe0;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Main content area
+ * ------------------------------------------------------------------------ */
+.app-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.app-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 10;
+}
+.app-title {
+  font-weight: 600;
+  flex: 1;
+}
+.app-content {
+  padding: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+.app-section {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: var(--sp-5);
+  scroll-margin-top: 72px;
+}
+.section-placeholder {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Connection status — ported from Bems.html:1254-1271 (three-state colour + last-updated)
+ * ------------------------------------------------------------------------ */
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: 12px;
+  color: var(--muted);
+}
+.connection-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--r-pill);
+  flex: none;
+}
+.connection-dot--good {
+  background: var(--good);
+}
+.connection-dot--warn {
+  background: var(--warn);
+}
+.connection-dot--bad {
+  background: var(--bad);
+}
+.connection-dot--stale {
+  opacity: 0.4;
+}
