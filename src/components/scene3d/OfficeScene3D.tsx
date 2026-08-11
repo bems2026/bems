@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, RotateCw, Pause } from 'lucide-react';
+import { X, RotateCw, Pause, Maximize2 } from 'lucide-react';
 import { OfficeScene, type PickResult } from './officeScene';
 import { FloorPlanView } from '@/components/floorplan/FloorPlanView';
 import { useDeviceStore } from '@/stores/deviceStore';
+import { navigateTo } from '@/lib/useHashRoute';
 import { Card } from '@/components/ui/Card';
 import { MetricValue } from '@/components/ui/MetricValue';
 import { Badge } from '@/components/ui/Badge';
+
+/** 7 lighting circuits x 3 fixtures/row, matching `geometry.ts`'s LIGHT_FIXTURES. */
+const FIXTURES_PER_CIRCUIT = 3;
 
 function supportsWebGL(): boolean {
   try {
@@ -51,11 +55,18 @@ export function OfficeScene3D() {
 
   const [hover, setHover] = useState<{ selection: Selection; x: number; y: number } | null>(null);
   const [selected, setSelected] = useState<Selection | null>(null);
-  const [autoRotate, setAutoRotateState] = useState(false);
   // Checked once, not reactively — a live-changing OS preference mid-session is rare
   // enough that re-rendering on a matchMedia listener isn't worth the complexity, and the
   // control simply doesn't exist for anyone with the preference on at mount.
   const [reducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  // v4's default: the scene rotates on its own unless the viewer turns it off (or has
+  // prefers-reduced-motion, which never starts it at all — see the mount effect below).
+  const [autoRotate, setAutoRotateState] = useState(!reducedMotion);
+
+  const devices = useDeviceStore((s) => s.devices);
+  const latestReadings = useDeviceStore((s) => s.latestReadings);
+  const litCount = devices.filter((d) => d.class === 'switch' && latestReadings[d.id]?.state === 'on').length * FIXTURES_PER_CIRCUIT;
+  const acuState = latestReadings['acu_main']?.state;
 
   useEffect(() => {
     if (!webgl || !canvasRef.current || !containerRef.current) return;
@@ -75,6 +86,10 @@ export function OfficeScene3D() {
     // rebuild the WebGL canvas on every tick — exactly what render-on-demand exists to avoid).
     scene.applyState(useDeviceStore.getState().latestReadings);
     const unsubscribe = useDeviceStore.subscribe((s) => scene.applyState(s.latestReadings));
+
+    // Default-on auto-rotate (v4's behaviour) — never started at all under
+    // prefers-reduced-motion, not started-then-immediately-stopped.
+    if (!reducedMotion) scene.setAutoRotate(true);
 
     // ResizeObserver is the standards-correct way to track a container that can resize
     // independently of the window (e.g. the sidebar collapsing). It does not fire in this
@@ -109,7 +124,10 @@ export function OfficeScene3D() {
       scene.dispose();
       sceneRef.current = null;
     };
-  }, [webgl]);
+    // reducedMotion is set once by a lazy useState initializer and never changes after
+    // mount (see its own comment above) — listed for exhaustive-deps, not because this
+    // effect needs to react to it changing.
+  }, [webgl, reducedMotion]);
 
   if (!webgl) return <FloorPlanView />;
 
@@ -171,18 +189,28 @@ export function OfficeScene3D() {
           setHover(null);
         }}
       />
-      {!reducedMotion && (
-        <button
-          type="button"
-          className={`scene3d-autorotate-btn${autoRotate ? ' scene3d-autorotate-btn--active' : ''}`}
-          onClick={toggleAutoRotate}
-          aria-pressed={autoRotate}
-          aria-label={autoRotate ? 'Stop auto-rotate' : 'Start auto-rotate'}
-          title={autoRotate ? 'Stop auto-rotate' : 'Start auto-rotate'}
-        >
-          {autoRotate ? <Pause size={14} aria-hidden="true" /> : <RotateCw size={14} aria-hidden="true" />}
+      <div className="scene3d-chip-row">
+        <span className="scene3d-chip">{litCount}/21 LIGHTS LIT</span>
+        <span className="scene3d-chip">ACU {acuState ? acuState.toUpperCase() : 'UNKNOWN'}</span>
+      </div>
+      <div className="scene3d-actions-row">
+        {!reducedMotion && (
+          <button
+            type="button"
+            className={`scene3d-autorotate-btn${autoRotate ? ' scene3d-autorotate-btn--active' : ''}`}
+            onClick={toggleAutoRotate}
+            aria-pressed={autoRotate}
+            aria-label={autoRotate ? 'Stop auto-rotate' : 'Start auto-rotate'}
+            title={autoRotate ? 'Stop auto-rotate' : 'Start auto-rotate'}
+          >
+            {autoRotate ? <Pause size={14} aria-hidden="true" /> : <RotateCw size={14} aria-hidden="true" />}
+          </button>
+        )}
+        <button type="button" className="scene3d-open-controls-btn" onClick={() => navigateTo('control')}>
+          <Maximize2 size={12} aria-hidden="true" />
+          Open controls
         </button>
-      )}
+      </div>
       {hover && <SceneTooltip selection={hover.selection} x={hover.x} y={hover.y} />}
       {selected && <DeviceInspector selection={selected} onClose={() => setSelected(null)} />}
     </div>

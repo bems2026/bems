@@ -45,3 +45,32 @@ export function topByPower(devices: Device[], readings: Record<string, Reading>,
   }
   return bars.sort((a, b) => b.power_w - a.power_w).slice(0, limit);
 }
+
+export interface MeteredSplit {
+  meteredW: number;
+  totalW: number | null;
+  untrackedW: number | null;
+  meteredPct: number | null;
+}
+
+/**
+ * "Metered" here means the 7 individually-metered dual-socket outlets specifically — not
+ * the 4 CHNT branch meters `total_power_w` itself is summed from (see
+ * `shared/buildLatest.mjs`). "Untracked" is what's left once those 7 are subtracted from
+ * the panel total: hardwired lighting circuits, the ACU, anything else on the other 3
+ * branch meters that isn't individually socket-metered. Missing outlet readings count as 0
+ * toward the metered sum (a device with no reading yet contributes nothing measurable,
+ * same reasoning as `topByPower` omitting it entirely) — but the total stays `null`, not a
+ * fabricated 0, when the bridge hasn't reported one.
+ */
+export function meteredVsUntracked(devices: Device[], readings: Record<string, Reading>, totalPowerW: number | null): MeteredSplit {
+  const meteredW = devices
+    .filter((d) => d.class === 'outlet_dual')
+    .reduce((sum, d) => sum + (readings[d.id]?.power_w ?? 0), 0);
+
+  if (totalPowerW === null) return { meteredW, totalW: null, untrackedW: null, meteredPct: null };
+
+  const untrackedW = Math.max(0, totalPowerW - meteredW);
+  const meteredPct = totalPowerW > 0 ? Math.min(100, (meteredW / totalPowerW) * 100) : 0;
+  return { meteredW, totalW: totalPowerW, untrackedW, meteredPct };
+}

@@ -238,26 +238,21 @@ export function buildFurniturePiece(spec: FurnitureSpec): THREE.Group {
 }
 
 /**
- * A checker floor texture drawn on a canvas, ported from TEST2.html's procedural approach
- * (a real photographic texture is an image asset neither side can generate). Tiled at
- * roughly 1 repeat per meter so the checker reads as floor tile scale, not a stretched
- * single image.
+ * Floor texture drawn on a canvas — a flat base with a grid of expansion-joint lines
+ * (Phase M re-light, matching v4's care-office-3d.js floor exactly), replacing Phase L's
+ * two-tone checker. A real photographic texture is an image asset neither side can
+ * generate; procedural canvas is the same technique either way. Tiled at roughly 1 repeat
+ * per meter so the grid reads as floor-tile scale, not a stretched single image.
  */
 export function makeFloorTexture(width: number, depth: number): THREE.CanvasTexture {
   const size = 256;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = `#${P.floorTileLight.toString(16).padStart(6, '0')}`;
+  ctx.fillStyle = `#${P.floorBase.toString(16).padStart(6, '0')}`;
   ctx.fillRect(0, 0, size, size);
-  ctx.fillStyle = `#${P.floorTileDark.toString(16).padStart(6, '0')}`;
-  for (let y = 0; y < size; y += 128) {
-    for (let x = 0; x < size; x += 128) {
-      if ((x / 128 + y / 128) % 2 === 0) ctx.fillRect(x, y, 128, 128);
-    }
-  }
-  ctx.strokeStyle = `#${P.floorGrout.toString(16).padStart(6, '0')}`;
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = `#${P.floorGrid.toString(16).padStart(6, '0')}`;
+  ctx.lineWidth = 3;
   for (let i = 0; i <= size; i += 128) {
     ctx.beginPath();
     ctx.moveTo(i, 0);
@@ -273,5 +268,15 @@ export function makeFloorTexture(width: number, depth: number): THREE.CanvasText
   return tex;
 }
 
-export const wallMaterial = () => new THREE.MeshStandardMaterial({ color: P.wall, roughness: 0.9, transparent: true, opacity: 0.95 });
+export const wallMaterial = () => new THREE.MeshStandardMaterial({ color: P.wall, roughness: 0.96, transparent: true, opacity: 0.96 });
 export const baseboardMaterial = () => new THREE.MeshStandardMaterial({ color: P.baseboard, roughness: 0.8 });
+
+/** Door/window frame — brushed-metal-ish trim around glass. */
+export const glassFrameMaterial = () => new THREE.MeshStandardMaterial({ color: P.glassFrame, roughness: 0.45, metalness: 0.25 });
+/** The sliding entrance door's glass leaves — a faint blue emissive so it reads as glass, not a void, from any lighting angle. */
+export const doorGlassMaterial = () =>
+  new THREE.MeshStandardMaterial({ color: P.glassPane, transparent: true, opacity: 0.36, roughness: 0.05, metalness: 0.25, emissive: 0x29506a, emissiveIntensity: 0.18 });
+/** Window glass — same technique, its own slightly cooler tint. */
+export const windowGlassMaterial = () =>
+  new THREE.MeshStandardMaterial({ color: P.windowGlass, transparent: true, opacity: 0.4, roughness: 0.08, metalness: 0.25, emissive: 0x3a6e8c, emissiveIntensity: 0.22 });
+export const windowFrameMaterial = () => new THREE.MeshStandardMaterial({ color: P.windowFrame, roughness: 0.6 });

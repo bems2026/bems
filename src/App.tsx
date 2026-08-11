@@ -3,9 +3,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { NAV_ITEMS } from '@/components/layout/navItems';
 import { useHashRoute } from '@/lib/useHashRoute';
 import { useLiveConnection } from '@/hooks/useLiveConnection';
-import { KpiRow } from '@/components/overview/KpiRow';
-import { OverviewHero } from '@/components/overview/OverviewHero';
-import { EnergyByDevice } from '@/components/overview/EnergyByDevice';
+import { OverviewPage } from '@/components/overview/OverviewPage';
 import { DevicesView } from '@/components/devices/DevicesView';
 import { OutletsView } from '@/components/outlets/OutletsView';
 import { TrendChart } from '@/components/trends/TrendChart';
@@ -29,31 +27,11 @@ export function App() {
 }
 
 /**
- * Phase M1 delivers the shell (tokens, top nav, routing) and reuses each existing Phase L
- * page body as-is underneath it, restyled for free by the token flip — the visual
- * composition each page uses is what M2 (Overview), M3 (Control/Devices), and M4
- * (Analytics/Automation) actually rebuild to the v4 design. Every page still needs the M1
- * shell's own `.page-header` treatment, which these wrappers add now so the nav doesn't
- * ship above four different ad-hoc headers.
+ * Overview is fully rebuilt (M2) — `OverviewPage` owns its own header and 3-column grid.
+ * Devices/Control/Analytics/Automation below are still the Phase M1 bridge: Phase L page
+ * bodies reused under the new shell, restyled for free by the token flip, standing in until
+ * M3 (Control/Devices) and M4 (Analytics/Automation) rebuild each to the v4 design.
  */
-function OverviewPage() {
-  return (
-    <>
-      <header className="page-header">
-        <div>
-          <h1 className="page-title">Overview</h1>
-          <p className="page-sub">Live building energy at a glance</p>
-        </div>
-      </header>
-      <div className="overview-stack">
-        <KpiRow />
-        <OverviewHero />
-        <EnergyByDevice />
-      </div>
-    </>
-  );
-}
-
 function DevicesPage() {
   const devices = useDeviceStore((s) => s.devices);
   return (

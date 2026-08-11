@@ -34,7 +34,16 @@
 import * as THREE from 'three';
 import { LIGHT_FIXTURES, OUTLET_FIXTURES, FURNITURE, ROOM } from './geometry';
 import { lightMaterialState, outletSocketMaterialState, type MaterialState } from './materials';
-import { buildFurniturePiece, makeFloorTexture, wallMaterial, baseboardMaterial } from './furniture';
+import {
+  buildFurniturePiece,
+  makeFloorTexture,
+  wallMaterial,
+  baseboardMaterial,
+  glassFrameMaterial,
+  doorGlassMaterial,
+  windowGlassMaterial,
+  windowFrameMaterial,
+} from './furniture';
 import { TOKENS } from './tokens';
 import type { Reading } from '@/lib/types';
 
@@ -103,7 +112,7 @@ export class OfficeScene {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.1;
+    this.renderer.toneMappingExposure = 1.06; // Phase M re-light: v4's care-office-3d.js exposure
 
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
     this.radius = Math.max(ROOM.width, ROOM.depth) * 1.6; // sane default before the first resize() fits it properly
@@ -125,17 +134,19 @@ export class OfficeScene {
   // -------------------------------------------------------------------------
 
   /**
-   * Three-point rig ported from TEST2.html: a sky/ground hemisphere for ambient fill, a
-   * warm key light (the sun through a window, effectively) casting the shadow map, and a
-   * cool fill from the opposite side so shadowed faces don't go pure black. Shadow camera
-   * frustum is sized off `boundingRadius`, not TEST2's fixed ±9 — CARE's room isn't the
-   * same size as TEST2's, and a fixed frustum would either clip the room or waste shadow
-   * map resolution on empty space.
+   * Three-point rig, re-lit for Phase M against v4's care-office-3d.js values (a softer key
+   * and fill than Phase L's TEST2-ported rig, appropriate now that the scene sits inside a
+   * light page instead of a dark one): a sky/ground hemisphere for ambient fill, a warm key
+   * light (the sun through a window, effectively) casting the shadow map, and a cool fill
+   * from the opposite side so shadowed faces don't go pure black. Shadow camera frustum is
+   * sized off `boundingRadius`, not a fixed constant — CARE's room isn't TEST2's or v4's
+   * reference room, and a fixed frustum would either clip the room or waste shadow map
+   * resolution on empty space.
    */
   private buildLights() {
-    this.scene.add(new THREE.HemisphereLight(0xe1edff, 0x111622, 0.6));
+    this.scene.add(new THREE.HemisphereLight(0xdbe8ff, 0x232a35, 0.62));
 
-    const key = new THREE.DirectionalLight(0xfff4e0, 1.4);
+    const key = new THREE.DirectionalLight(0xfff4e0, 0.95);
     key.position.set(this.boundingRadius * 0.9, this.boundingRadius * 1.8, this.boundingRadius * 0.7);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
@@ -148,12 +159,19 @@ export class OfficeScene {
     key.shadow.bias = -0.0004;
     this.scene.add(key);
 
-    const fill = new THREE.DirectionalLight(0x9ab8ff, 0.4);
+    const fill = new THREE.DirectionalLight(0x9ab8ff, 0.26);
     fill.position.set(-this.boundingRadius * 0.8, this.boundingRadius * 1.2, -this.boundingRadius * 0.6);
     this.scene.add(fill);
   }
 
-  /** Solid textured floor, solid walls with baseboards, and the half-height partition — replaces Phase H's wireframe-only shell now that the scene is lit and can shade solid faces. */
+  /**
+   * Solid textured floor, solid walls with baseboards, the half-height partition (with a
+   * real doorway gap — see below), 2 windows, and a sliding glass entrance. The window/door
+   * glasswork is ported from v4's care-office-3d.js shell, sized to CARE's actual room
+   * (6.0m x 10.6m) rather than that file's 9.0m x 6.6m reference room — same caveat as
+   * `geometry.ts`'s `FURNITURE` table: plausible placement, not a surveyed door/window
+   * position, since nothing in the live flow records where CARE's actual openings are.
+   */
   private buildShell() {
     const floorTex = makeFloorTexture(ROOM.width, ROOM.depth);
     const floor = new THREE.Mesh(new THREE.BoxGeometry(ROOM.width, 0.08, ROOM.depth), new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.7, metalness: 0.1 }));
@@ -178,19 +196,74 @@ export class OfficeScene {
       this.scene.add(base);
     };
 
+    // North wall (z = minZ) is the utility/lobby compartment's own exterior wall — the
+    // real detail circuit L7 lights (see geometry.ts's FURNITURE docblock). Its 2 windows
+    // sit here rather than on the main room, since a lobby/hallway is exactly where a
+    // window near the building's edge plausibly belongs.
     addWall(ROOM.width + T, T, 0, ROOM.minZ);
+    this.addWindow(-1.6, ROOM.minZ, H);
+    this.addWindow(1.4, ROOM.minZ, H);
+
+    // South wall (z = maxZ) is the main room's far wall, opposite the partition — a
+    // sliding glass entrance sits centered on it.
     addWall(ROOM.width + T, T, 0, ROOM.maxZ);
+    this.addSlidingDoor(ROOM.maxZ, H);
+
     addWall(T, ROOM.depth + T, ROOM.minX, 0);
     addWall(T, ROOM.depth + T, ROOM.maxX, 0);
 
-    // Half-height partition — the real detail that explains the room's two compartments
-    // (and why circuit l7 lights a smaller, separate area from l1..l6).
+    // Half-height partition — explains the room's two compartments (and why circuit l7
+    // lights a smaller, separate area from l1..l6) — split into two segments with a real
+    // gap between them, a walkway from the main room into the lobby it's paired with.
     const partitionH = H * 0.5;
-    const partition = new THREE.Mesh(new THREE.BoxGeometry(ROOM.width, partitionH, 0.06), wallMat);
-    partition.position.set(0, partitionH / 2, ROOM.partitionZ);
-    partition.receiveShadow = true;
-    partition.castShadow = true;
-    this.scene.add(partition);
+    const gap = 1.6;
+    const segW = (ROOM.width - gap) / 2;
+    const addPartitionSeg = (x: number, w: number) => {
+      const seg = new THREE.Mesh(new THREE.BoxGeometry(w, partitionH, 0.06), wallMat);
+      seg.position.set(x, partitionH / 2, ROOM.partitionZ);
+      seg.receiveShadow = true;
+      seg.castShadow = true;
+      this.scene.add(seg);
+    };
+    addPartitionSeg(-(gap / 2 + segW / 2), segW);
+    addPartitionSeg(gap / 2 + segW / 2, segW);
+  }
+
+  /** A window: glass pane + surrounding frame, set into a wall at world x, on the wall
+   * running along z = wallZ. Proportioned off the real ceiling height H, not a fixed size. */
+  private addWindow(x: number, wallZ: number, h: number) {
+    const y = h * 0.62;
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(1.6, h * 0.26, 0.05), windowGlassMaterial());
+    glass.position.set(x, y, wallZ);
+    this.scene.add(glass);
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(1.7, h * 0.3, 0.07), windowFrameMaterial());
+    frame.position.set(x, y, wallZ);
+    this.scene.add(frame);
+    glass.position.z += wallZ < 0 ? -0.01 : 0.01; // sit just proud of the frame, on the outward face
+  }
+
+  /** A 2-leaf sliding glass entrance, centered at world x=0 on the wall running along z = wallZ. */
+  private addSlidingDoor(wallZ: number, h: number) {
+    const frameMat = glassFrameMaterial();
+    const dOpen = 2.0;
+    const sign = wallZ < 0 ? -1 : 1;
+
+    const head = new THREE.Mesh(new THREE.BoxGeometry(dOpen + 0.14, 0.1, 0.14), frameMat);
+    head.position.set(0, h - 0.05, wallZ);
+    this.scene.add(head);
+    [-dOpen / 2, dOpen / 2].forEach((jx) => {
+      const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.14, h, 0.08), frameMat);
+      jamb.position.set(jx, h / 2, wallZ);
+      this.scene.add(jamb);
+    });
+
+    [-dOpen * 0.24, dOpen * 0.24].forEach((leafX) => {
+      const leafH = h * 0.82;
+      const leafW = dOpen * 0.48;
+      const glass = new THREE.Mesh(new THREE.BoxGeometry(leafW, leafH, 0.04), doorGlassMaterial());
+      glass.position.set(leafX, leafH / 2 + 0.06, wallZ + sign * 0.02);
+      this.scene.add(glass);
+    });
   }
 
   /**
