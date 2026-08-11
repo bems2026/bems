@@ -1335,6 +1335,137 @@ body::before {
 }
 
 /* ---------------------------------------------------------------------------
+ * Outlets view — Stage 2 (Phase L). The one control surface in the app; everything else
+ * stays read-only. Reuses .devices-grid's card layout and .card--flat (dense grid, no
+ * blur — see that class's comment) rather than inventing a parallel set of rules.
+ * ------------------------------------------------------------------------ */
+.outlets-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+.outlets-master-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+}
+.outlets-master-off {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  background: var(--bad-soft);
+  color: var(--bad);
+  border: 1px solid rgb(248 113 113 / 0.3);
+  border-radius: var(--r-pill);
+  padding: 8px 16px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  flex: none;
+}
+.outlets-master-off:hover {
+  background: rgb(248 113 113 / 0.2);
+  border-color: rgb(248 113 113 / 0.5);
+}
+.outlets-provenance {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+  max-width: 52ch;
+}
+.outlets-provenance strong {
+  color: var(--muted);
+  font-weight: 600;
+}
+.outlets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--sp-4);
+}
+
+.outlet-sockets {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+}
+/*
+ * A real control, not a status pill — min-width: 0 for the same reason .device-socket-pill
+ * needs it (a flex:1 item's default min-width:auto let that row overflow the whole page;
+ * see index.css's Phase L docblock). 44px min-height only under pointer:coarse, per the
+ * touch-target block at the end of this file.
+ */
+.outlet-socket-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 7px 10px;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.outlet-socket-toggle:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+.outlet-socket-toggle:disabled {
+  cursor: default;
+}
+.outlet-socket-toggle__label {
+  font-weight: 600;
+  color: var(--txt);
+  white-space: nowrap;
+}
+.outlet-socket-toggle__state {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.outlet-socket-toggle--on {
+  background: var(--good-soft);
+  border-color: rgb(74 222 128 / 0.3);
+  color: var(--good);
+}
+.outlet-socket-toggle--busy {
+  color: var(--warn);
+  border-color: rgb(251 191 36 / 0.3);
+  /* A gentle pulse — the one place OutletsView animates, and only while a command is
+     actually in flight. Respects prefers-reduced-motion via the global block above. */
+  animation: outlet-toggle-pulse 1.1s ease-in-out infinite;
+}
+@keyframes outlet-toggle-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+.outlet-socket-toggle--failed {
+  background: var(--bad-soft);
+  border-color: rgb(248 113 113 / 0.3);
+  color: var(--bad);
+}
+
+.outlet-warning {
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-xs);
+  color: var(--bad);
+  background: var(--bad-soft);
+  border-radius: var(--r-sm);
+  padding: 6px 8px;
+}
+.outlet-card-footnote {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+}
+
+/* ---------------------------------------------------------------------------
  * Floor plan (2D) — restyled in Phase J
  * ------------------------------------------------------------------------ */
 .floorplan-grid {
@@ -1378,6 +1509,18 @@ body::before {
   text-align: center;
   font-size: var(--fs-sm);
   color: var(--muted-2);
+}
+.trend-stats {
+  display: flex;
+  gap: var(--sp-5);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+}
+.trend-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 /* ---------------------------------------------------------------------------

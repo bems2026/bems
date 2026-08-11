@@ -2,6 +2,7 @@
  * Contract-identical local fake of the Node-RED bridge.
  *
  *     node mock-bridge/server.mjs [--port=1880] [--500] [--drop-ws] [--stale=co3]
+ *                                  [--cmd-latency=800] [--cmd-fail=co3] [--cmd-drop=co3]
  *
  * Why this exists: the real Node-RED runs on a Raspberry Pi on the building LAN and is
  * not reachable from a dev machine. Without this, none of the frontend work in Phases
@@ -14,16 +15,24 @@
  * Zero dependencies (a minimal WebSocket server is implemented below) so it runs before
  * `npm install`. Retired at Stage 3 alongside the Node-RED bridge.
  *
+ * Stage 2 (Phase L): `POST /api/command` — device control, MOCK ONLY. The Node-RED bridge
+ * (`node-red-bridge/`) gains nothing from this; it stays byte-unchanged and read-only. See
+ * `shared/commands.mjs`'s header and `docs/bridge-contract.md` for the full contract.
+ *
  * Failure injection, for exercising the frontend's resilience paths:
- *   --500          every HTTP request returns 500
- *   --drop-ws      accept the socket, then close it after 5 s, repeatedly
- *   --stale=<id>   that device stops updating (online:false, frozen ts)
+ *   --500              every HTTP request returns 500 (GET and POST)
+ *   --drop-ws          accept the socket, then close it after 5 s, repeatedly
+ *   --stale=<id>       that device stops updating (online:false, frozen ts)
+ *   --cmd-latency=<ms> delay a command's mutation AND its ack by this long (default 0)
+ *   --cmd-fail=<id|all> that command 502s; state is left untouched
+ *   --cmd-drop=<id|all> that command never responds at all (exercises the client's abort)
  */
 
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { DEVICE_REGISTRY, PHASE_MAP, TIMING, publicDevices } from '../shared/registry.mjs';
 import { buildLatest, iso8 } from '../shared/buildLatest.mjs';
+import { COMMAND_ROUTE, ACCEPTED_STATUS, validateCommand, buildAck } from '../shared/commands.mjs';
 
 // ---------------------------------------------------------------------------
 // args
@@ -36,6 +45,9 @@ const PORT = Number(val('port', 1880));
 const FAIL_500 = flag('500');
 const DROP_WS = flag('drop-ws');
 const STALE_ID = val('stale', '');
+const CMD_LATENCY = Number(val('cmd-latency', 0));
+const CMD_FAIL = val('cmd-fail', '');
+const CMD_DROP = val('cmd-drop', '');
 
 // ---------------------------------------------------------------------------
 // simulator — produces snapshots in the exact shape the Node-RED collectors emit
@@ -70,6 +82,23 @@ const power = (ctx, i, t, occ) => {
 };
 
 /**
+ * Commanded relay/switch state (Stage 2). `snapshot()` below *generates* a plausible
+ * baseline from the occupancy curve on every call — there's no persistent state to mutate
+ * by default. A command pins one key here, and the pin wins forever: a real relay stays
+ * where you put it, and an expiring override would make the mock silently revert a toggle
+ * a few seconds later, indistinguishable from the relay failing to hold — the single most
+ * confusing failure this simulation could invent. Keys are the same topic strings the
+ * legacy Node-RED flow used (`CO<n>_1`, `L<n>`) plus this contract's own `AC_POWER`.
+ */
+const commanded = new Map();
+const pinned = (key, simulated) => (commanded.has(key) ? commanded.get(key) : simulated);
+
+/** Read by the 1s energy-accrual loop below so kWh doesn't climb on an outlet whose
+ * relays are commanded off — written fresh by every `snapshot()` call. Up to 1s of lag
+ * versus a command landing mid-interval; irrelevant at this granularity. */
+let lastGate = {};
+
+/**
  * Energy accrues on a wall-clock timer, not inside snapshot(). snapshot() is called
  * once per HTTP request AND once per WS tick, so accumulating there would make today's
  * kWh a function of how often the dashboard was polled. Seeded to a plausible
@@ -82,7 +111,10 @@ for (const ctx of Object.keys(energyAcc)) {
 setInterval(() => {
   const t = Date.now(), occ = occupancy();
   let i = 0;
-  for (const ctx of Object.keys(energyAcc)) energyAcc[ctx] += (power(ctx, i++, t, occ) / 1000) * (1 / 3600);
+  for (const ctx of Object.keys(energyAcc)) {
+    const gate = lastGate[ctx] ?? 1; // only co1..co7 are ever gated — see lastGate's comment
+    energyAcc[ctx] += (power(ctx, i++, t, occ) * gate / 1000) * (1 / 3600);
+  }
 }, 1000).unref?.();
 
 let tick = 0;
@@ -91,9 +123,9 @@ function snapshot() {
   const occ = occupancy();
   tick++;
 
-  const mk = (ctx, i, withTime) => {
+  const mk = (ctx, i, withTime, gate = 1) => {
     const stale = ctx === STALE_ID;
-    const p = stale ? 0 : power(ctx, i, t, occ);
+    const p = stale ? 0 : power(ctx, i, t, occ) * gate;
     const v = stale ? 0 : 220 + wobble(i + 3, t, 3);
     const c = v > 0 ? p / v : 0;
     // Values mimic what a Tuya DPS actually yields after scaling: 1dp volts/watts,
@@ -113,17 +145,26 @@ function snapshot() {
   const energyMeters = {};
   ['co_yel', 'lo_red', 'arec', 'lo_yel2'].forEach((k, i) => { energyMeters[k] = mk(k, i, false); });
 
-  const outletMeters = {};
+  // Relay state first, then the meter that depends on it: an outlet with both sockets
+  // commanded off draws (simulated) zero, one socket on draws about half, both on draws
+  // full simulated load. `pinned()` makes a Stage 2 command stick; otherwise this is the
+  // same occupancy-driven baseline as before.
   const status = {};
+  const gateByOutlet = {};
   for (let i = 1; i <= 7; i++) {
-    outletMeters[`co${i}`] = mk(`co${i}`, i + 10, true);
-    // socket 1 follows occupancy; socket 2 on a slower cycle, so the UI shows both states
-    status[`CO${i}_1`] = occ > 0.3;
-    status[`CO${i}_2`] = occ > 0.3 && (i + Math.floor(tick / 30)) % 3 !== 0;
+    const s1 = pinned(`CO${i}_1`, occ > 0.3);
+    const s2 = pinned(`CO${i}_2`, occ > 0.3 && (i + Math.floor(tick / 30)) % 3 !== 0);
+    status[`CO${i}_1`] = s1;
+    status[`CO${i}_2`] = s2;
+    gateByOutlet[`co${i}`] = (s1 ? 0.5 : 0) + (s2 ? 0.5 : 0);
   }
+  lastGate = gateByOutlet;
+
+  const outletMeters = {};
+  for (let i = 1; i <= 7; i++) outletMeters[`co${i}`] = mk(`co${i}`, i + 10, true, gateByOutlet[`co${i}`]);
 
   const lights = {};
-  for (let i = 1; i <= 7; i++) lights[`L${i}`] = occ > 0.3 && i !== 7;
+  for (let i = 1; i <= 7; i++) lights[`L${i}`] = pinned(`L${i}`, occ > 0.3 && i !== 7);
 
   totals.today = Object.entries(energyAcc)
     .filter(([k]) => ['co_yel', 'lo_red', 'arec', 'lo_yel2'].includes(k))
@@ -136,7 +177,7 @@ function snapshot() {
     // 1dp, matching what a Tuya temp/humidity DPS yields after its /10 scaling.
     aircon: {
       state: {
-        power: occ > 0.3,
+        power: pinned('AC_POWER', occ > 0.3),
         setTemp: 24,
         roomTemp: (25.4 + wobble(1, t, 0.6)).toFixed(1),
         humidity: (62 + wobble(2, t, 4)).toFixed(1),
@@ -197,11 +238,120 @@ const send = (res, code, body) => {
   res.end(s);
 };
 
+// ---------------------------------------------------------------------------
+// Command (write) path — Stage 2, mock only. See shared/commands.mjs's header.
+// ---------------------------------------------------------------------------
+const MAX_BODY = 8 * 1024;
+
+/** Hand-rolled JSON body reader — this file stays dependency-free (see the header comment). */
+function readJsonBody(req, cb) {
+  let done = false;
+  const finish = (err, val) => {
+    if (done) return;
+    done = true;
+    cb(err, val);
+  };
+
+  const ct = req.headers['content-type'];
+  if (ct && !/^application\/json\b/i.test(ct)) {
+    return finish({ status: 415, code: 'unsupported_media_type', error: `expected application/json, got ${ct}` });
+  }
+
+  let size = 0;
+  const chunks = [];
+  req.on('data', (chunk) => {
+    size += chunk.length;
+    if (size > MAX_BODY) {
+      finish({ status: 413, code: 'body_too_large', error: `body exceeds ${MAX_BODY} bytes` });
+      req.destroy(); // triggers 'error' below; the `done` guard stops it double-firing
+      return;
+    }
+    chunks.push(chunk);
+  });
+  req.on('end', () => {
+    const raw = Buffer.concat(chunks).toString('utf8');
+    if (!raw.trim()) return finish({ status: 400, code: 'malformed_json', error: 'empty request body' });
+    try {
+      finish(null, JSON.parse(raw));
+    } catch (e) {
+      finish({ status: 400, code: 'malformed_json', error: e.message });
+    }
+  });
+  req.on('error', () => finish({ status: 400, code: 'malformed_json', error: 'request stream aborted' }));
+}
+
+/** command_id -> {ack}. A client retry (its own abort firing mid-latency, say) replays the
+ * same command_id and gets the original ack back rather than operating the relay twice.
+ * Bounded and pruned on insert — this process never restarts often enough to leak. */
+const replay = new Map();
+const REPLAY_CAP = 200;
+function rememberReplay(commandId, ack) {
+  if (replay.size >= REPLAY_CAP) replay.delete(replay.keys().next().value);
+  replay.set(commandId, ack);
+}
+
+function handleCommand(req, res) {
+  readJsonBody(req, (err, body) => {
+    if (err) return send(res, err.status, { error: err.error, code: err.code });
+
+    const v = validateCommand(body, DEVICE_REGISTRY);
+    if (!v.ok) return send(res, v.status, { error: v.error, code: v.code });
+
+    const cmd = { ...v.cmd, command_id: v.cmd.command_id || crypto.randomUUID() };
+
+    const prior = replay.get(cmd.command_id);
+    if (prior) return send(res, ACCEPTED_STATUS, prior);
+
+    if (CMD_FAIL === 'all' || CMD_FAIL === cmd.device_id) {
+      return send(res, 502, { error: `injected command failure (--cmd-fail=${CMD_FAIL})`, code: 'upstream_rejected' });
+    }
+    if (CMD_DROP === 'all' || CMD_DROP === cmd.device_id) return; // never respond — exercises the client's own abort
+
+    const commit = () => {
+      commanded.set(cmd.target, cmd.action === 'on');
+      const ack = buildAck(cmd, Date.now());
+      rememberReplay(cmd.command_id, ack);
+      send(res, ACCEPTED_STATUS, ack);
+    };
+
+    // Delaying the mutation, not just the response, matters: if only the response were
+    // delayed, the 2s WS push could already carry the new value before the ack lands, and
+    // the client's "pending" UI state would never actually render — the exact path
+    // --cmd-latency exists to exercise.
+    if (CMD_LATENCY > 0) setTimeout(commit, CMD_LATENCY);
+    else commit();
+  });
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
   if (FAIL_500) return send(res, 500, { error: 'injected failure (--500)' });
-  if (req.method !== 'GET') return send(res, 405, { error: 'read-only bridge: GET only' });
+
+  if (req.method === 'OPTIONS') {
+    // CORS preflight. A cross-origin POST with Content-Type: application/json triggers
+    // this; invisible in dev (Vite proxies same-origin) and would otherwise first appear
+    // as an opaque CORS failure on a real LAN build.
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'content-type',
+      'Access-Control-Max-Age': '600',
+    });
+    return res.end();
+  }
+
+  if (req.method === 'POST') {
+    if (url.pathname !== COMMAND_ROUTE) {
+      res.setHeader('Allow', 'GET');
+      return send(res, 405, { error: `no such write route: ${url.pathname}`, code: 'method_not_allowed' });
+    }
+    return handleCommand(req, res);
+  }
+
+  if (req.method !== 'GET') {
+    return send(res, 405, { error: `method not allowed: ${req.method}`, code: 'method_not_allowed' });
+  }
 
   switch (url.pathname) {
     case '/api/devices':
@@ -218,6 +368,10 @@ const server = http.createServer((req, res) => {
       const cutoff = Date.now() - RANGES[range] * 3600 * 1000;
       return send(res, 200, { device_id: id, range, points: (hist.get(id) || []).filter((p) => Date.parse(p.ts) >= cutoff) });
     }
+
+    case COMMAND_ROUTE:
+      res.setHeader('Allow', 'POST');
+      return send(res, 405, { error: 'GET /api/command is not a thing — POST a command', code: 'method_not_allowed' });
 
     default:
       return send(res, 404, { error: `no such route: ${url.pathname}` });
@@ -286,11 +440,19 @@ server.on('error', (e) => {
 });
 
 server.listen(PORT, () => {
-  const inject = [FAIL_500 && '--500', DROP_WS && '--drop-ws', STALE_ID && `--stale=${STALE_ID}`].filter(Boolean);
+  const inject = [
+    FAIL_500 && '--500',
+    DROP_WS && '--drop-ws',
+    STALE_ID && `--stale=${STALE_ID}`,
+    CMD_LATENCY > 0 && `--cmd-latency=${CMD_LATENCY}`,
+    CMD_FAIL && `--cmd-fail=${CMD_FAIL}`,
+    CMD_DROP && `--cmd-drop=${CMD_DROP}`,
+  ].filter(Boolean);
   console.log(`iBEMS mock bridge  http://localhost:${PORT}`);
   console.log(`  GET  /api/devices              ${DEVICE_REGISTRY.length} devices`);
   console.log(`  GET  /api/readings/latest      ${DEVICE_REGISTRY.length + 1} rows (incl. _totals)`);
   console.log(`  GET  /api/readings/history     ?device_id=co3&range=24h`);
+  console.log(`  POST ${COMMAND_ROUTE}                mock-only device control (Stage 2)`);
   console.log(`  WS   /ws/live                  push every ${TIMING.WS_PUSH_MS / 1000}s`);
   if (inject.length) console.log(`  failure injection: ${inject.join(' ')}`);
 });

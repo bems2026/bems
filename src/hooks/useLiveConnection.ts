@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { connectLive, getDevices } from '@/lib/bridgeClient';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useConnectionStore } from '@/stores/connectionStore';
+import { useCommandStore } from '@/stores/commandStore';
 
 /**
  * Mounts the live data pipeline once for the app's lifetime: fetches the static device
@@ -24,6 +25,9 @@ export function useLiveConnection(): void {
     const disconnect = connectLive({
       onData: (rows) => {
         useDeviceStore.getState().ingestReadings(rows);
+        // Must run after ingest — reconcile reads the just-updated readings via the row
+        // array it's given directly, but the ordering documents the dependency.
+        useCommandStore.getState().reconcile(rows);
         useConnectionStore.getState().markMessage();
       },
       onStatus: (status) => useConnectionStore.getState().setWsStatus(status),

@@ -5,6 +5,7 @@ import { KpiRow } from '@/components/overview/KpiRow';
 import { OverviewHero } from '@/components/overview/OverviewHero';
 import { EnergyByDevice } from '@/components/overview/EnergyByDevice';
 import { DevicesView } from '@/components/devices/DevicesView';
+import { OutletsView } from '@/components/outlets/OutletsView';
 import { TrendChart } from '@/components/trends/TrendChart';
 import { useDeviceStore } from '@/stores/deviceStore';
 
@@ -42,6 +43,16 @@ export function App() {
           </div>
         </div>
         <DevicesView />
+      </section>
+
+      <section id="outlets" className="app-section">
+        <div className="section-head">
+          <div>
+            <h2 className="section-title">Outlets</h2>
+            <p className="section-sub">Control the 7 dual-socket convenience outlets</p>
+          </div>
+        </div>
+        <OutletsView />
       </section>
 
       <section id="trends" className="app-section">

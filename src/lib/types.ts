@@ -81,3 +81,37 @@ export interface HistoryResponse {
   range: '1h' | '6h' | '24h';
   points: HistoryPoint[];
 }
+
+// ---------------------------------------------------------------------------
+// Command contract — Stage 2 (Phase L), mock-bridge only. Mirrors shared/commands.mjs.
+// ---------------------------------------------------------------------------
+
+export type SocketIndex = 1 | 2;
+
+/** `POST /api/command` request body. `action` is always absolute — never a toggle; see
+ * shared/commands.mjs's header for why. `socket` is required for `outlet_dual`, forbidden
+ * otherwise. */
+export interface CommandRequest {
+  device_id: string;
+  socket?: SocketIndex;
+  action: SwitchState;
+  command_id?: string;
+}
+
+/**
+ * `POST /api/command` response — always `202 Accepted`, never `200 OK`. `confirmed` is
+ * always `false`: nothing in this system reads relay state back from hardware, so this ack
+ * means "dispatched", not "verified". See `relayCorroboration.ts` for the one place this
+ * app can partially corroborate a command against a real measurement.
+ */
+export interface CommandAck {
+  command_id: string;
+  device_id: string;
+  socket?: SocketIndex;
+  action: SwitchState;
+  target: string;
+  accepted_at: string;
+  confirmed: false;
+  confirmation: 'none';
+  note: string;
+}

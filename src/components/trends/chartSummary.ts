@@ -23,3 +23,43 @@ export function summarizeTrend(deviceLabel: string, range: HistoryResponse['rang
   const current = values[values.length - 1];
   return `${deviceLabel} power over ${rangeLabel}: ${points.length} readings, ranging ${Math.round(min)} to ${Math.round(max)} watts, currently ${Math.round(current)} watts.`;
 }
+
+export interface TrendStats {
+  peak: { power_w: number; ts: string } | null;
+  average: number | null;
+}
+
+/** Peak and average power over the series — always computed from the FULL, real points
+ * array, never the downsampled one below. Downsampling is a rendering decision; these
+ * numbers are a claim about the building and must stay accurate to the actual readings. */
+export function trendStats(points: HistoryPoint[]): TrendStats {
+  if (points.length === 0) return { peak: null, average: null };
+  let peak = points[0];
+  let sum = 0;
+  for (const p of points) {
+    sum += p.power_w;
+    if (p.power_w > peak.power_w) peak = p;
+  }
+  return { peak: { power_w: peak.power_w, ts: peak.ts }, average: sum / points.length };
+}
+
+/**
+ * Bucket-averages `points` down to at most `maxPoints`, for the chart's `data` prop only —
+ * 1440 raw samples (24h at 1/min) drawn into a ~180px-tall card is what makes a trend read
+ * as noise rather than a shape. Averaging within each bucket (not simple stride-sampling)
+ * smooths that noise instead of just thinning it, and can't hide a real spike the way
+ * picking every Nth point could.
+ */
+export function downsampleTrend(points: HistoryPoint[], maxPoints: number): HistoryPoint[] {
+  if (points.length <= maxPoints || maxPoints <= 0) return points;
+  const bucketSize = points.length / maxPoints;
+  const out: HistoryPoint[] = [];
+  for (let i = 0; i < maxPoints; i++) {
+    const start = Math.floor(i * bucketSize);
+    const end = Math.max(start + 1, Math.floor((i + 1) * bucketSize));
+    const bucket = points.slice(start, end);
+    const avgPower = bucket.reduce((sum, p) => sum + p.power_w, 0) / bucket.length;
+    out.push({ ts: bucket[Math.floor(bucket.length / 2)].ts, power_w: avgPower });
+  }
+  return out;
+}

@@ -1,12 +1,18 @@
-import { useEffect, useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useEffect, useId, useState } from 'react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getHistory } from '@/lib/bridgeClient';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { TIMING } from '@/lib/timing';
 import { Card } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { summarizeTrend } from './chartSummary';
+import { MetricValue } from '@/components/ui/MetricValue';
+import { summarizeTrend, trendStats, downsampleTrend } from './chartSummary';
 import type { HistoryResponse } from '@/lib/types';
+
+/** ~1.3px/point at a typical card width — enough resolution to read as a real curve
+ * without drawing all 1440 raw samples (24h at 1/min) into a ~180px-tall card, which is
+ * what made the old line chart read as noise rather than a shape. */
+const MAX_CHART_POINTS = 140;
 
 type Range = HistoryResponse['range'];
 
@@ -61,9 +67,14 @@ export function TrendChart({ deviceId, title, range = '24h' }: TrendChartProps) 
     };
   }, [deviceId, range]);
 
-  const data = (points ?? []).map((p) => ({ t: Date.parse(p.ts), power_w: p.power_w }));
-  const loading = status === 'loading' && data.length === 0;
-  const summary = summarizeTrend(title, range, points ?? []);
+  const raw = points ?? [];
+  const loading = status === 'loading' && raw.length === 0;
+  const summary = summarizeTrend(title, range, raw);
+  // Peak/average are always computed from the FULL series, never the downsampled one —
+  // see trendStats' comment. Only the chart's own `data` prop uses the downsampled points.
+  const stats = trendStats(raw);
+  const data = downsampleTrend(raw, MAX_CHART_POINTS).map((p) => ({ t: Date.parse(p.ts), power_w: p.power_w }));
+  const gradientId = `trend-gradient-${useId()}`;
 
   return (
     <Card title={title}>
@@ -74,33 +85,59 @@ export function TrendChart({ deviceId, title, range = '24h' }: TrendChartProps) 
           {status === 'error' ? 'History unavailable right now.' : 'No history yet — the buffer fills at 1 point/min.'}
         </p>
       ) : (
-        // A Recharts SVG conveys nothing to a screen reader on its own — role="img" plus
-        // this generated aria-label is the chart's only accessible name. role="img" also
-        // means its descendants aren't individually exposed, so nothing further is needed
-        // on the LineChart itself.
-        <div role="img" aria-label={summary}>
-          <ResponsiveContainer width="100%" height={180}>
-            <LineChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
-              <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
-              <XAxis
-                dataKey="t"
-                type="number"
-                domain={['dataMin', 'dataMax']}
-                tickFormatter={formatTick}
-                stroke="var(--muted)"
-                fontSize={11}
-                tickLine={false}
-              />
-              <YAxis stroke="var(--muted)" fontSize={11} width={44} tickLine={false} />
-              <Tooltip
-                labelFormatter={(t) => new Date(t as number).toLocaleString('en-PH', { hour12: false })}
-                formatter={(v) => [`${Number(v).toFixed(1)} W`, 'Power']}
-                contentStyle={{ background: 'var(--bg-surface-2)', border: '1px solid var(--border)', borderRadius: 8 }}
-              />
-              <Line type="monotone" dataKey="power_w" stroke="var(--accent)" dot={false} strokeWidth={2} isAnimationActive={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        <>
+          {/* A Recharts SVG conveys nothing to a screen reader on its own — role="img" plus
+              this generated aria-label is the chart's only accessible name. role="img" also
+              means its descendants aren't individually exposed, so nothing further is
+              needed on the AreaChart itself. */}
+          <div role="img" aria-label={summary}>
+            <ResponsiveContainer width="100%" height={180}>
+              <AreaChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+                <defs>
+                  <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--accent-hi)" stopOpacity={0.35} />
+                    <stop offset="95%" stopColor="var(--accent-hi)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke="var(--border)" strokeOpacity={0.5} vertical={false} />
+                <XAxis
+                  dataKey="t"
+                  type="number"
+                  domain={['dataMin', 'dataMax']}
+                  tickFormatter={formatTick}
+                  stroke="var(--muted)"
+                  fontSize={11}
+                  tickLine={false}
+                />
+                <YAxis stroke="var(--muted)" fontSize={11} width={44} tickLine={false} />
+                <Tooltip
+                  labelFormatter={(t) => new Date(t as number).toLocaleString('en-PH', { hour12: false })}
+                  formatter={(v) => [`${Number(v).toFixed(1)} W`, 'Power']}
+                  contentStyle={{ background: 'var(--bg-surface-2)', border: '1px solid var(--border)', borderRadius: 8 }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="power_w"
+                  stroke="var(--accent)"
+                  strokeWidth={2}
+                  fill={`url(#${gradientId})`}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="trend-stats">
+            <div className="trend-stat">
+              <span className="metric-label">Peak</span>
+              <MetricValue value={stats.peak?.power_w} unit="W" digits={0} size="sm" />
+            </div>
+            <div className="trend-stat">
+              <span className="metric-label">Average</span>
+              <MetricValue value={stats.average} unit="W" digits={0} size="sm" />
+            </div>
+          </div>
+        </>
       )}
     </Card>
   );

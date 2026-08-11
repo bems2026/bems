@@ -174,6 +174,14 @@ export const TIMING = {
   STALE_AFTER_MS: 30000,
   FETCH_TIMEOUT_MS: 10000,
   BACKOFF_CAP_MS: 120000,
+  // Stage 2 (command path). Shorter than FETCH_TIMEOUT_MS deliberately — a toggle that
+  // spins for 10s is worse than one that fails at 5s and invites a retry, and unlike a
+  // poll, nothing else is waiting on this particular request.
+  COMMAND_TIMEOUT_MS: 5000,
+  // How long a pending command waits for the feed to echo it back before giving up and
+  // showing "failed" — 3 WS push cycles (WS_PUSH_MS=2000), not 1: a frame can already be
+  // in flight when the ack lands, so one cycle of tolerance isn't enough headroom.
+  COMMAND_CONFIRM_MS: 6000,
 };
 
 /** Devices that report voltage/current/power — i.e. everything with a `ctx` prefix. */
