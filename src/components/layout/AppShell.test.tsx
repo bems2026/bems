@@ -9,7 +9,7 @@ afterEach(() => {
 describe('AppShell skip link', () => {
   it('is the first focusable element in the DOM', () => {
     render(
-      <AppShell>
+      <AppShell activeId="overview">
         <div>content</div>
       </AppShell>,
     );
@@ -19,7 +19,7 @@ describe('AppShell skip link', () => {
 
   it('points at the #main-content landmark, which is programmatically focusable', () => {
     render(
-      <AppShell>
+      <AppShell activeId="overview">
         <div>content</div>
       </AppShell>,
     );

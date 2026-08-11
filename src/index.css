@@ -1,104 +1,147 @@
 @import 'tailwindcss';
-@import '@fontsource-variable/inter';
+@import '@fontsource-variable/manrope';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
 
 /**
- * iBEMS design system — Phase L: dark charcoal + dark gold glassmorphism.
+ * iBEMS design system — Phase M: light glassmorphism, per Claude Design project
+ * `iBEMS Care Office v4.dc.html` (superseding Phase L's dark charcoal/gold theme — the
+ * design's own spec says so explicitly: "This replaces the dark charcoal/gold theme from
+ * the earlier design prompt").
  *
- * Replaces the flat dark/amber tokens from Phase G (`#0a0b0d` base, opaque `#131519`
- * cards). Direction is `ibems-dashboard-design-prompt.md` §1 plus the reference images:
- * a warm charcoal gradient base, frosted gold-bordered glass panels, gold as the single
- * accent, green reserved for healthy/active so it never competes with the accent.
+ * Token NAMES are kept from Phase L on purpose — `--glass`, `--border`, `--txt`, `--muted`,
+ * `--accent`, `--good`/`--warn`/`--bad`, `--fs-*`, `--sp-*`, `--r-*` — only their VALUES
+ * flip from dark to light. That's what let every Phase L component (built against these
+ * semantic names, never raw hex) carry forward into this theme with zero component-level
+ * changes; only this block and a handful of literal non-token colors changed.
  *
- * Two surface systems coexist deliberately (see `.card`/`.card--flat` below): glass for
- * panels that float over something visually interesting (hero, topbar, sidebar, the 3D
- * inspector), flat opaque for dense data grids (Devices catalogue, Energy-by-Device rows)
- * where there's nothing behind the panel to blur and `backdrop-filter` would be pure GPU
- * cost on a 24/7 kiosk. `--bg-surface`/`-2`/`-inset` are the flat system's tokens; kept,
- * not removed, for that reason.
+ * Two surface systems still coexist (see `.card`/`.card--flat`): glass for panels that
+ * float over something visually interesting (nav, hero, the 3D inspector), flat opaque for
+ * dense data grids (Devices table, Energy-by-Device rows) where there's nothing behind the
+ * panel to blur and `backdrop-filter` is pure GPU cost on a 24/7 kiosk.
+ *
+ * WCAG AA was recomputed from scratch for this theme, not carried over or trusted from the
+ * source design — Phase L's own contrast fixes were solved for a *dark* backdrop and don't
+ * transfer, and the v4 design itself ships several real failures (its `#94a3b8` body text,
+ * its semantic colors used as small text on white/soft-tint pills). See the muted/semantic
+ * token comments below for the actual computed ratios.
  */
 :root {
-  /* --- base: charcoal with a warm bias, so gold never reads as dirty --- */
-  --bg-base: #121210;
-  --bg-base-2: #1a1813; /* far end of the body gradient */
+  /* --- page: light, with the design's radial warm/blue glow --- */
+  --bg-page: #eef1f6;
 
-  /* --- flat opaque system: dense grids, and the fallback for browsers without
-     backdrop-filter support --- */
-  --bg-surface: #1c1a16;
-  --bg-surface-2: #241f18;
-  --bg-inset: #16140f;
+  /* --- flat opaque system: dense grids --- */
+  --bg-surface: #ffffff;
+  --bg-surface-2: #f8fafc;
+  --bg-inset: #f1f5f9;
 
-  /* --- glass system: floating panels --- */
-  --glass: rgb(30 27 20 / 0.6);
-  --glass-2: rgb(38 34 25 / 0.72); /* nested/raised surfaces inside a glass panel */
-  --glass-border: rgb(212 175 55 / 0.2);
-  --glass-blur: 18px;
+  /* --- glass system: floating panels (nav, hero cards, floating rows) --- */
+  --glass: rgb(255 255 255 / 0.75);
+  --glass-2: rgb(255 255 255 / 0.7); /* nested/raised surfaces inside a glass panel */
+  --glass-border: rgb(255 255 255 / 0.6);
+  --glass-blur: 16px;
   /**
-   * Near-opaque variant for panels that float over the 3D scene (the tooltip, the device
-   * inspector) rather than over this app's own dark chrome. Verified by computed contrast
-   * (see the --muted-2 note below): at --glass's normal 0.6 alpha, a panel over the 3D
-   * floor's lit grey texture composites to ~2.3:1 for muted text — a real WCAG failure.
-   * 0.92 alpha makes the backdrop nearly irrelevant, which is the correct call for a
-   * surface whose backdrop is unpredictable by design (whatever the camera happens to be
-   * looking at), the same reasoning TEST2.html's own label cards use (rgba(…, 0.95)).
+   * The 3D viewport stays dark by design (v4's own spec) even on this light page, so
+   * panels floating over IT — the hover tooltip, the device inspector, the auto-rotate
+   * button — keep a dark near-opaque treatment. Everywhere else on the page is light glass.
    */
-  --glass-heavy: rgb(20 18 14 / 0.92);
+  --glass-heavy: rgb(15 23 34 / 0.85);
+
+  /* Solid hex, not translucent — `scene3d/tokens.ts` mirrors this as a Three.js
+     LineBasicMaterial color (see that file's comment on why it must stay opaque hex). */
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --border-faint: #eef2f7;
+
+  --txt: #1e293b;
+  /**
+   * Three WCAG-safe text tiers, all verified against the worst realistic backdrop this app
+   * actually composites (--bg-inset, the darkest flat surface, and the glass-over-page
+   * composite ~rgb(251,252,253)) — not against the token in isolation, which is exactly
+   * the mistake that let a token go stale before (see Phase L's own --muted-2 history).
+   *   --muted    #475569  6.9-7.6:1  primary secondary text (labels, values, nav)
+   *   --muted-2  #5f6b7d  4.9-5.4:1  lighter secondary text (footnotes, table metadata)
+   * v4's own `#94a3b8` measures 2.3-2.6:1 against these same backdrops — a real AA
+   * failure for the body/caption text it's used for throughout the source design. It
+   * survives here ONLY as --faint, restricted to non-text decoration (see that token).
+   */
+  --muted: #475569;
+  --muted-2: #5f6b7d;
+  /** Decorative use only — borders, disabled-chrome tints, chart gridlines, dot swatches.
+   * NEVER real text; measures under 3:1 against every surface in this app. */
+  --faint: #94a3b8;
+  --faintest: #cbd5e1;
+
+  /* --- accent + semantics ---
+   * Each semantic color ships two strengths: the bright one (v4's literal value) for
+   * non-text decoration — dots, chart strokes, gradient stops, borders, and button
+   * backgrounds that carry LARGE/bold white text — and a darker "-text" one for anywhere
+   * the color itself is small text or a small icon glyph on a light/soft background, where
+   * the bright value fails AA (computed: white-on-#3b82f6 is 3.68:1, white-on-#10b981 is
+   * 2.54:1, etc. — all below the 4.5:1 normal-text minimum). Buttons in this app use the
+   * -text shade as their background so their own label clears AA without a second color.
+   */
+  --accent: #f59e0b;
+  --accent-hi: #fbbf24; /* gradient stops only (chart fills) — not a text color */
+  --accent-text: #b45309; /* 4.6-5.0:1 — amber used as text/icon (day chips, captions) */
+  --accent-soft: rgb(245 158 11 / 0.1);
+
+  --blue: #2563eb; /* 4.7-5.2:1 — links, button backgrounds, small icon glyphs */
+  --blue-bright: #3b82f6; /* dots, chart lines, larger swatches only */
+  --blue-soft: rgb(59 130 246 / 0.1);
+
+  --green: #047857; /* 5.0-5.5:1 */
+  --green-bright: #10b981;
+  --green-soft: rgb(16 185 129 / 0.1);
+
+  --red: #b91c1c; /* 5.9-6.5:1 */
+  --red-bright: #ef4444;
+  --red-soft: rgb(239 68 68 / 0.1);
+
+  --purple: #7c3aed; /* 5.2-5.7:1 */
+  --purple-bright: #8b5cf6;
 
   /*
-   * Solid hex, not the translucent --glass-border below, deliberately: `scene3d/tokens.ts`
-   * mirrors this exact value as `SHELL_LINE_COLOR`, a Three.js LineBasicMaterial color —
-   * which needs a real opaque hex, not an rgb()-with-slash-alpha string (three.js's color
-   * parser doesn't reliably handle that syntax, and even where it does, Color has no alpha
-   * channel, so the alpha would silently vanish and the line would render as solid gold
-   * instead of the intended dim hairline). Used here for flat hairlines/dividers — nav
-   * rows, badge outlines, card-sub underlines — where opacity has no benefit anyway,
-   * separately from --glass-border, which panels actually use for their edge.
+   * Semantic aliases some Phase L components already reference — kept so those files don't
+   * need call-site changes for a Phase M value flip. Written as literal hex, not `var()`
+   * indirection to --green/--red/etc: `scene3d/tokens.test.ts`'s drift guard does a plain
+   * text extraction against the raw declaration, not full CSS custom-property resolution,
+   * so a `var()` value here would read back as the literal string "var(--green)" instead
+   * of a hex the Three.js side can use. Keep these three in sync with their -text sibling
+   * above by hand if either changes.
    */
-  --border: #3a3226;
-  --border-strong: #4a4030;
-
-  --txt: #ffffff;
-  /* Champagne-gray, per the design prompt. */
-  --muted: #b8b0a0;
-  /**
-   * WCAG AA, recomputed for glass (Phase L). The Phase J figure (#82858b, 4.32-5.04:1) was
-   * measured against opaque --bg-surface — void once panels are translucent, because the
-   * effective backdrop now depends on whatever sits behind the glass, not the token alone.
-   * #9b9384 measures >=4.5:1 against the worst-case composite this app actually produces:
-   * --glass over the 3D scene's lit floor (the lightest thing that can sit behind a panel)
-   * as well as over both flat surface tokens. Every use of this token is real content, not
-   * decoration: card subtitles, the muted-value "—", and .phase-balance__not-metered — the
-   * text carrying this project's most repeated correctness guarantee ("Blue stays Not
-   * metered, never a number"). Re-verify against the composite, not the token, if this
-   * ever needs re-deriving — that's the mistake that made the Phase J figure go stale.
-   */
-  --muted-2: #9b9384;
-
-  /* --- accent + semantics --- */
-  --accent: #e6a100;
-  --accent-hi: #ffb700;
-  --accent-deep: #d4af37;
-  --accent-dim: #a8752b;
-  --accent-soft: rgb(230 161 0 / 0.14);
-  --good: #4ade80;
-  --good-soft: rgb(74 222 128 / 0.12);
-  --warn: #fbbf24;
-  --warn-soft: rgb(251 191 36 / 0.12);
-  --bad: #f87171;
-  --bad-soft: rgb(248 113 113 / 0.12);
-  --info: #60a5fa;
+  --good: #047857; /* = --green */
+  --good-soft: var(--green-soft);
+  --warn: #b45309; /* = --accent-text */
+  --warn-soft: var(--accent-soft);
+  --bad: #b91c1c; /* = --red */
+  --bad-soft: var(--red-soft);
+  --info: #3b82f6; /* = --blue-bright; PhaseBalance's Blue-phase swatch — decorative dot only */
 
   /**
-   * Type scale. Replaces 10 ad-hoc hardcoded sizes. Smallest is 11px — the two former
-   * 10px uses moved up, since sub-11px labels fail legibility guidance even when their
-   * contrast passes.
+   * Type scale — widened from Phase L's 8-step scale to cover the half-pixel steps the v4
+   * design uses throughout (its density depends on them: a 9.5px caption reads differently
+   * from a rounded-up 10px one at this information density). `--fs-3xs`..`--fs-4xl` added;
+   * the original xs..3xl names kept and repointed so existing components are unaffected.
    */
+  --fs-3xs: 9px;
+  --fs-2xs: 9.5px;
+  --fs-xxs: 10px;
+  --fs-xxs-lg: 10.5px;
   --fs-xs: 11px;
+  --fs-xs-lg: 11.5px;
   --fs-sm: 12px;
-  --fs-base: 14px;
-  --fs-md: 15px;
-  --fs-lg: 18px;
+  --fs-sm-lg: 12.5px;
+  --fs-base: 13px;
+  --fs-base-lg: 13.5px;
+  --fs-md: 14px;
+  --fs-md-lg: 15px;
+  --fs-lg: 17px;
   --fs-xl: 20px;
-  --fs-2xl: 26px;
+  --fs-xl-lg: 22px;
+  --fs-2xl: 24px;
+  --fs-2xl-lg: 26px;
   --fs-3xl: 34px;
 
   /**
@@ -109,9 +152,10 @@
   --lh-tight: 1.2;
   --lh-base: 1.5;
 
-  --r-card: 14px;
-  --r-inner: 10px;
-  --r-sm: 8px;
+  --r-card: 16px;
+  --r-hero: 18px;
+  --r-inner: 11px;
+  --r-sm: 9px;
   --r-pill: 999px;
 
   --sp-1: 4px;
@@ -121,19 +165,11 @@
   --sp-5: 20px;
   --sp-6: 28px;
 
-  --sidebar-w: 232px;
-  /*
-   * Was 64px — narrower than the collapsed header's own content (28px brand mark + 26px
-   * toggle button + 2x16px padding + 8px gap = 94px), so the rail overflowed both sides of
-   * its own column and got silently clipped by .sidebar's overflow-x: hidden, reading as a
-   * ragged ~76px fragment instead of a clean icon rail. 72px plus stacking the brand mark
-   * above the toggle (see .app-shell.collapsed .sidebar-header) actually fits.
-   */
-  --sidebar-w-collapsed: 72px;
-  --topbar-h: 64px;
+  --nav-h: 64px;
 
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
-  --shadow-pop: 0 12px 32px rgb(0 0 0 / 0.55);
+  --shadow-card: 0 8px 32px rgb(30 41 59 / 0.08);
+  --shadow-pop: 0 18px 44px rgb(30 41 59 / 0.18);
+  --shadow-modal: 0 24px 60px rgb(30 41 59 / 0.3);
 }
 
 * {
@@ -141,26 +177,29 @@
 }
 
 html {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 body {
   margin: 0;
-  background: linear-gradient(160deg, var(--bg-base) 0%, var(--bg-base-2) 100%);
+  background: var(--bg-page);
   color: var(--txt);
-  font-family: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  font-size: var(--fs-base);
+  font-family: Manrope, -apple-system, 'Segoe UI', sans-serif;
+  font-size: var(--fs-md);
   line-height: var(--lh-base);
   -webkit-font-smoothing: antialiased;
   position: relative;
   min-height: 100vh;
 }
+/* Numeric readouts and caps micro-labels use the mono face throughout — set on the classes
+   that carry them (.metric-value, caption/label classes), not globally on body. */
+.mono {
+  font-family: 'IBM Plex Mono', monospace;
+}
 /*
- * One ambient gold glow, fixed to the viewport, behind everything — what the glass panels
- * refract. Deliberately a single radial gradient, not scattered glows per-panel: the
- * design prompt's motion rule ("no scattered animation") applies to static ambience too —
- * one glow reads as atmosphere, several reads as noise. `pointer-events: none` keeps it
- * out of the hit-test tree entirely.
+ * The design's radial glow stack, verbatim: warm amber top-right, cool blue bottom-left,
+ * over the flat page color. One `body::before`, not per-panel glows — same "ambient, not
+ * scattered" motion rule Phase L established, applied to static color too.
  */
 body::before {
   content: '';
@@ -168,8 +207,8 @@ body::before {
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background: radial-gradient(ellipse 900px 600px at 15% -10%, rgb(212 175 55 / 0.10), transparent 60%),
-    radial-gradient(ellipse 700px 500px at 100% 30%, rgb(230 161 0 / 0.06), transparent 65%);
+  background: radial-gradient(1200px 600px at 70% -10%, rgb(59 130 246 / 0.14), transparent 60%),
+    radial-gradient(900px 500px at 10% 110%, rgb(245 158 11 / 0.12), transparent 60%);
 }
 #root {
   position: relative;
@@ -388,233 +427,312 @@ body::before {
 }
 
 /* ---------------------------------------------------------------------------
- * App shell — CSS Grid + collapsible sidebar. Structure proven in Bems.html:72-130;
- * only the styling is new.
+ * App shell — Phase M: sticky top nav + one routed page at a time, replacing Phase L's
+ * collapsible sidebar + four-section scroll-spy. `AppShell.tsx`/`TopNav.tsx` own the
+ * markup; this owns the chrome.
  * ------------------------------------------------------------------------ */
 .app-shell {
-  display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr;
   min-height: 100vh;
-  transition: grid-template-columns 0.22s ease;
-}
-.app-shell.collapsed {
-  grid-template-columns: var(--sidebar-w-collapsed) 1fr;
+  display: flex;
+  flex-direction: column;
 }
 
-.sidebar {
+.top-nav {
   position: sticky;
   top: 0;
-  align-self: start;
-  height: 100vh;
-  overflow-y: auto;
-  overflow-x: hidden;
-  display: flex;
-  flex-direction: column;
-  z-index: 20;
-  background: var(--glass-2);
-  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-  border-right: 1px solid var(--glass-border);
-}
-
-.app-shell.collapsed .sidebar-title,
-.app-shell.collapsed .nav-label,
-.app-shell.collapsed .nav-group,
-.app-shell.collapsed .sidebar-status-text {
-  display: none;
-}
-.app-shell.collapsed .nav-item {
-  justify-content: center;
-  padding: 10px;
-}
-/*
- * Was `justify-content: center` alone, keeping the brand mark and toggle button side by
- * side — 28px + 26px + 8px gap + 2x16px padding = 94px of content trying to fit a 64px
- * (now 72px) column, overflowing both sides before .sidebar's overflow-x: hidden clipped
- * it into a ragged fragment. Stacking them removes the overflow instead of just widening
- * the column to chase it — the collapsed rail's whole point is staying narrow.
- */
-.app-shell.collapsed .sidebar-header {
-  flex-direction: column;
-  justify-content: center;
-  gap: var(--sp-2);
-  padding: var(--sp-3) var(--sp-2);
-}
-
-.sidebar-header {
+  z-index: 50;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-2);
-  padding: var(--sp-4);
-  border-bottom: 1px solid var(--border);
+  gap: var(--sp-5);
+  padding: var(--sp-3) var(--sp-6);
+  min-height: var(--nav-h);
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.92), rgb(255 255 255 / 0.55));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
-.brand {
+
+.nav-brand {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+  flex: none;
   min-width: 0;
 }
-.brand-mark {
+.nav-brand-mark {
   width: 28px;
   height: 28px;
   border-radius: var(--r-sm);
   background: var(--accent);
-  color: #17130a;
+  color: #ffffff;
   display: grid;
   place-items: center;
   font-size: var(--fs-md);
-  font-weight: 700;
   flex: none;
 }
-.sidebar-title {
-  font-weight: 600;
-  font-size: var(--fs-base);
-  letter-spacing: -0.01em;
+.nav-brand-name {
+  font-weight: 800;
+  font-size: var(--fs-md-lg);
+  letter-spacing: -0.02em;
   white-space: nowrap;
 }
-#sidebarToggle {
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--muted);
+.nav-site-chip {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: var(--fs-xxs);
+  color: var(--muted-2);
+  padding: 4px 8px;
+  background: rgb(255 255 255 / 0.75);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-sm);
-  width: 26px;
-  height: 26px;
+  white-space: nowrap;
+}
+
+/* Pill tab group — centred, scrolls horizontally rather than wrapping below the width the
+   5 tabs need, so the nav height never grows on a narrow viewport. */
+.nav-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: rgb(255 255 255 / 0.75);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-card);
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: 1;
+  min-width: 0;
+  justify-content: center;
+}
+.nav-tabs::-webkit-scrollbar {
+  display: none;
+}
+.nav-tab {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-weight: 600;
+  font-size: var(--fs-xs-lg);
+  padding: 8px 20px;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+.nav-tab:hover {
+  color: var(--txt);
+}
+.nav-tab--active {
+  background: #ffffff;
+  color: var(--txt);
+  box-shadow: 0 2px 10px rgb(30 41 59 / 0.1);
+}
+
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex: none;
+}
+.nav-live-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: var(--fs-xxs);
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: var(--r-pill);
+  background: var(--green-soft);
+  color: var(--green);
+  white-space: nowrap;
+}
+.nav-live-pill--warn {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.nav-live-pill--bad {
+  background: var(--red-soft);
+  color: var(--red);
+}
+.nav-live-dot {
+  position: relative;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+.nav-live-dot::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: ibPulse 1.8s ease-out infinite;
+}
+@keyframes ibPulse {
+  0% {
+    opacity: 0.4;
+    transform: scale(0.6);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(2.4);
+  }
+}
+
+.nav-icon-btn {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--glass-border);
+  background: rgb(255 255 255 / 0.7);
+  color: var(--muted-2);
   cursor: pointer;
   flex: none;
-  font-size: var(--fs-xs);
   transition: color 0.15s ease, border-color 0.15s ease;
 }
-#sidebarToggle:hover {
+.nav-icon-btn:hover {
   color: var(--txt);
   border-color: var(--border-strong);
 }
-
-.nav-group {
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted-2);
-  padding: var(--sp-4) var(--sp-3) var(--sp-2);
+.nav-icon-btn__badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: var(--r-pill);
+  background: var(--red);
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  line-height: 1;
 }
-.nav-list {
+
+#mobileMenuBtn {
+  display: none;
+}
+
+.alerts-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 320px;
+  max-height: 420px;
+  overflow-y: auto;
+  background: rgb(255 255 255 / 0.96);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-pop);
+  z-index: 60;
+}
+.alerts-popover__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border-faint);
+  font-weight: 700;
+  font-size: var(--fs-sm-lg);
+}
+.alerts-popover__close {
+  background: none;
+  border: none;
+  color: var(--muted-2);
+  cursor: pointer;
+  padding: 2px;
+  display: grid;
+  place-items: center;
+}
+.alerts-popover__close:hover {
+  color: var(--txt);
+}
+.alerts-popover__empty {
+  padding: var(--sp-4);
+  text-align: center;
+  font-size: var(--fs-xs-lg);
+  color: var(--muted-2);
+  margin: 0;
+}
+.alerts-popover__list {
   list-style: none;
   margin: 0;
-  padding: var(--sp-3);
+  padding: var(--sp-2);
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
-.nav-item {
+.alerts-popover__row {
   display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: 9px var(--sp-3);
-  border-radius: var(--r-inner);
-  color: var(--muted);
-  text-decoration: none;
-  font-size: var(--fs-sm);
-  font-weight: 500;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-.nav-item:hover {
-  background: var(--bg-surface-2);
-  color: var(--txt);
-}
-.nav-item--active {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.nav-icon {
-  font-size: var(--fs-md);
-  line-height: 1;
-  flex: none;
-  width: 18px;
-  text-align: center;
-}
-
-.sidebar-footer {
-  margin-top: auto;
-  display: flex;
-  align-items: center;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: var(--sp-2);
-  padding: var(--sp-4);
-  border-top: 1px solid var(--border);
+  padding: var(--sp-3);
+  border-radius: var(--r-inner);
+}
+.alerts-popover__row:hover {
+  background: var(--bg-inset);
+}
+.alerts-popover__title {
+  margin: 0;
+  font-size: var(--fs-xs-lg);
+  font-weight: 700;
+  color: var(--red);
+}
+.alerts-popover__body {
+  margin: 2px 0 0;
   font-size: var(--fs-xs);
-  color: var(--muted);
+  color: var(--muted-2);
 }
-.status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: var(--r-pill);
-  background: var(--bad);
+.alerts-popover__meta {
+  margin: 4px 0 0;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: var(--fs-3xs);
+  color: var(--faint);
+}
+.alerts-popover__ack {
   flex: none;
-}
-.status-dot--connected {
-  background: var(--good);
-}
-.status-dot--polling-fallback,
-.status-dot--reconnecting {
-  background: var(--warn);
-}
-
-/* ---------------------------------------------------------------------------
- * Off-canvas drawer at <900px — behaviour ported from Bems.html:115-130
- * ------------------------------------------------------------------------ */
-#mobileMenuBtn {
-  display: none;
-  background: none;
   border: 1px solid var(--border);
-  color: var(--txt);
+  background: #ffffff;
+  color: var(--muted);
   border-radius: var(--r-sm);
-  width: 32px;
-  height: 32px;
+  padding: 4px 10px;
+  font-size: var(--fs-3xs);
+  font-weight: 700;
   cursor: pointer;
 }
-.sidebar-scrim {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgb(0 0 0 / 0.6);
-  z-index: 15;
-  border: none;
-  padding: 0;
+.alerts-popover__ack:hover {
+  color: var(--txt);
+  border-color: var(--border-strong);
 }
 
-@media (max-width: 900px) {
-  .app-shell {
-    grid-template-columns: 1fr !important;
+/* Below ~860px the 5-tab pill group is wider than a phone screen can show without
+   scrunching every label — hide the site chip and settle for the horizontally-scrollable
+   tab strip (§nav-tabs above) rather than inventing a second nav pattern. */
+@media (max-width: 860px) {
+  .top-nav {
+    gap: var(--sp-3);
+    padding-inline: var(--sp-4);
   }
-  .sidebar {
-    position: fixed;
-    left: 0;
-    top: 0;
-    width: min(80vw, 280px);
-    height: 100vh;
-    transform: translateX(-100%);
-    transition: transform 0.22s ease;
-    box-shadow: var(--shadow-pop);
-  }
-  .app-shell.mobile-open .sidebar {
-    transform: translateX(0);
-  }
-  .app-shell.mobile-open .sidebar-title,
-  .app-shell.mobile-open .nav-label,
-  .app-shell.mobile-open .nav-group,
-  .app-shell.mobile-open .sidebar-status-text {
-    display: block;
-  }
-  .app-shell.mobile-open .sidebar-scrim {
-    display: block;
-  }
-  #mobileMenuBtn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  #sidebarToggle {
+  .nav-site-chip {
     display: none;
+  }
+  .nav-tabs {
+    justify-content: flex-start;
   }
 }
 
@@ -649,92 +767,71 @@ body::before {
 }
 @media (prefers-contrast: high) {
   :root {
-    --border: #5a6070;
-    --muted: #c0c5d0;
-    --muted-2: #99a0ad;
+    --border: #64748b;
+    --border-strong: #334155;
+    --muted: #1e293b;
+    --muted-2: #334155;
   }
 }
 
 /* ---------------------------------------------------------------------------
- * Main content area
+ * Main content area — one routed page per visit now, not four scroll sections.
  * ------------------------------------------------------------------------ */
 .app-main {
   min-width: 0;
   display: flex;
   flex-direction: column;
-}
-.app-topbar {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-6);
-  border-bottom: 1px solid var(--glass-border);
-  position: sticky;
-  top: 0;
-  /*
-   * Was rgb(10 11 13 / 0.85) + blur(8px) — 15% of whatever scrolled underneath stayed
-   * visible, and an 8px blur was too weak to destroy the resulting silhouette (a card's
-   * title text stayed legible through the bar). Under glassmorphism this bleed-through is
-   * intentional — it's what makes the bar read as glass rather than a solid header — but
-   * it needs to be controlled: heavier blur, higher opacity, and z-index above every
-   * floating overlay that can scroll underneath it (was 10, below .scene3d-tooltip's 40 —
-   * a hover tooltip inside the hero could paint over the topbar; now it can't).
-   */
-  background: var(--glass-2);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  z-index: 50;
-  min-height: var(--topbar-h);
-}
-.app-title {
-  font-weight: 600;
-  font-size: var(--fs-base);
   flex: 1;
-  letter-spacing: -0.01em;
-  margin: 0; /* it's an <h1> now — reset the browser default block margin */
 }
 .app-content {
-  padding: var(--sp-6);
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-6);
-  max-width: 1600px;
+  padding: var(--sp-2) var(--sp-6) var(--sp-6);
   width: 100%;
-  /* Was missing entirely — on any viewport wider than 1600px + the sidebar, content hugged
-     the left edge and left a dead gutter on the right instead of centering in the
-     available space. */
+  max-width: 1600px;
   margin-inline: auto;
-  /* Backstop, not the fix: the actual overflow sources (the socket-pill row, primarily)
-     are fixed at their own min-width: 0. This just guarantees a future one can't repeat
-     the page-wide scrollbar defect while it's being tracked down. */
+  /* Backstop, not the fix — the actual overflow sources get their own min-width: 0. */
   overflow-x: clip;
 }
-.app-section {
-  /* Matches --topbar-h exactly, so a nav/skip-link jump lands the section flush under the
-     sticky bar instead of 16px off (it was a bare 72px against the bar's own 56px
-     min-height, an unrelated coincidence of two numbers rather than a derived match). */
-  scroll-margin-top: var(--topbar-h);
-}
-.section-head {
+.page-header {
   display: flex;
-  align-items: baseline;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: var(--sp-3);
+  gap: var(--sp-4);
   margin-bottom: var(--sp-4);
+  flex-wrap: wrap;
 }
-.section-title {
-  font-size: var(--fs-lg);
-  font-weight: 600;
+.page-title {
   margin: 0;
+  font-size: var(--fs-2xl-lg);
+  font-weight: 800;
   letter-spacing: -0.02em;
 }
-.section-sub {
-  font-size: var(--fs-sm);
-  color: var(--muted);
-  margin: 3px 0 0;
+.page-sub {
+  margin: 4px 0 0;
+  font-size: var(--fs-sm-lg);
+  color: var(--muted-2);
+}
+.page-header-right {
+  text-align: right;
+  flex: none;
+}
+.page-clock {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: var(--fs-xl-lg);
+  font-weight: 800;
+  line-height: 1.1;
+}
+.page-date {
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+  margin-top: 2px;
+}
+.page-actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
 }
 .section-placeholder {
-  color: var(--muted);
+  color: var(--muted-2);
   font-size: var(--fs-sm);
   margin: 0;
 }
@@ -1643,11 +1740,10 @@ body::before {
   animation: metric-value-pulse 350ms ease-out;
 }
 
-/* Press feedback — a fast, small scale-down on :active, absent everywhere in the app until
-   now. Paired with each control's own :hover, both animating transform/opacity only. */
-.nav-item:active,
-#sidebarToggle:active,
-#mobileMenuBtn:active,
+/* Press feedback — a fast, small scale-down on :active. Paired with each control's own
+   :hover, both animating transform/opacity only. */
+.nav-tab:active,
+.nav-icon-btn:active,
 .hero-expand-btn:active,
 .spatial-toggle__btn:active,
 .outlet-socket-toggle:not(:disabled):active,
@@ -1672,17 +1768,13 @@ body::before {
   animation: floorplan-pin-pulse 2.4s ease-in-out infinite;
 }
 
-/* content-visibility — lets the browser skip layout/paint entirely for a section
-   currently scrolled out of view. contain-intrinsic-size keeps scrollbar geometry stable
-   (without it, an unmeasured off-screen section collapses to 0 height, which would jump
-   the scrollbar and any in-progress scroll-spy measurement the moment it's skipped).
-   Applied to every section except Overview, which is what's visible on first paint. */
-#devices.app-section,
-#outlets.app-section,
-#trends.app-section {
-  content-visibility: auto;
-  contain-intrinsic-size: 0 800px;
-}
+/*
+ * No content-visibility section here anymore — Phase L applied it to off-screen scroll
+ * sections, but Phase M routes one page at a time (`AppShell`/`useHashRoute` mount only the
+ * active page's component), so an inactive page simply isn't in the DOM. That's strictly
+ * cheaper than a mounted-but-skipped section, and it's why this block was deleted rather
+ * than repointed at the new page components.
+ */
 
 /* ---------------------------------------------------------------------------
  * Touch targets — enforced only where a coarse pointer is actually in use (the CARE
@@ -1692,27 +1784,21 @@ body::before {
  * Deliberately the LAST rule block in this file. `min-width`/`min-height` survive
  * being placed anywhere (they constrain the box regardless of which `width`/`height`
  * wins the cascade), but `padding-block` does not — a later same-specificity `padding`
- * shorthand elsewhere silently overwrites it. Confirmed by measurement: with this block
- * positioned earlier in the file, .nav-item measured 36px tall under pointer:coarse, not
- * the intended 44px, because its own `padding: 9px ...` rule appears later in the file
- * and won on source order. Keep this block last so it always wins.
+ * shorthand elsewhere silently overwrites it. See Phase L's history in git blame if this
+ * block ever needs to move: positioned earlier in the file, `.nav-item` (the sidebar-era
+ * predecessor of `.nav-tab`) measured 2px short of 44px for exactly this reason.
  * ------------------------------------------------------------------------ */
 @media (pointer: coarse) {
-  #sidebarToggle,
-  #mobileMenuBtn,
+  .nav-icon-btn,
   .hero-expand-btn,
   .scene3d-inspector-close {
     min-width: 44px;
     min-height: 44px;
   }
+  .nav-tab,
   .spatial-toggle__btn {
     min-height: 44px;
     padding-inline: var(--sp-5);
-  }
-  .nav-item {
-    /* --sp-3 (12px) measured 42px total — 2px short of 44. --sp-4 clears it with margin
-       rather than passing right at the threshold. */
-    padding-block: var(--sp-4);
   }
   .device-status-row {
     padding-block: var(--sp-3);

@@ -8,16 +8,24 @@
  * generated Node-RED flow.
  */
 export const TOKENS = {
-  // Phase L: dark charcoal + dark gold glassmorphism — see index.css's :root docblock.
-  accent: '#e6a100',
-  good: '#4ade80',
-  warn: '#fbbf24',
-  bad: '#f87171',
-  bgSurface2: '#241f18',
-  border: '#3a3226',
-  muted: '#b8b0a0',
-  muted2: '#9b9384', // WCAG AA, recomputed for glass, Phase L — see index.css's --muted-2 comment
-  txt: '#ffffff',
+  /**
+   * Phase M: mechanical value sync only — index.css's :root flipped to v4's light
+   * glassmorphism, so these mirror it exactly per this file's drift-guard job, but the
+   * scene's actual light rig/materials are untouched here. The 3D viewport stays dark by
+   * design even on this light page (see the Phase M plan §4's "3D re-light" — a separate,
+   * scoped pass that fixes fixture-color legibility against that dark backdrop). Until
+   * that lands, these values are correct as a *mirror* and not yet re-tuned for how they
+   * render against the dark canvas.
+   */
+  accent: '#f59e0b',
+  good: '#047857',
+  warn: '#b45309',
+  bad: '#b91c1c',
+  bgSurface2: '#f8fafc',
+  border: '#e2e8f0',
+  muted: '#475569',
+  muted2: '#5f6b7d',
+  txt: '#1e293b',
 } as const;
 
 /**
