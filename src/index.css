@@ -2,40 +2,83 @@
 @import '@fontsource-variable/inter';
 
 /**
- * iBEMS design system — dark base, amber accent.
+ * iBEMS design system — Phase L: dark charcoal + dark gold glassmorphism.
  *
- * Replaces the tokens previously ported from `Bems.html`, which made this look like the
- * legacy tool it replaces. Direction comes from the approved reference set: dark shell and
- * card language, amber/gold as the single accent, green reserved for healthy/active so it
- * never competes with the accent for attention.
+ * Replaces the flat dark/amber tokens from Phase G (`#0a0b0d` base, opaque `#131519`
+ * cards). Direction is `ibems-dashboard-design-prompt.md` §1 plus the reference images:
+ * a warm charcoal gradient base, frosted gold-bordered glass panels, gold as the single
+ * accent, green reserved for healthy/active so it never competes with the accent.
+ *
+ * Two surface systems coexist deliberately (see `.card`/`.card--flat` below): glass for
+ * panels that float over something visually interesting (hero, topbar, sidebar, the 3D
+ * inspector), flat opaque for dense data grids (Devices catalogue, Energy-by-Device rows)
+ * where there's nothing behind the panel to blur and `backdrop-filter` would be pure GPU
+ * cost on a 24/7 kiosk. `--bg-surface`/`-2`/`-inset` are the flat system's tokens; kept,
+ * not removed, for that reason.
  */
 :root {
-  /* --- surfaces: near-black, very slightly warm so amber doesn't read as dirty --- */
-  --bg-base: #0a0b0d;
-  --bg-surface: #131519;
-  --bg-surface-2: #1a1d23;
-  --bg-inset: #0e1013;
+  /* --- base: charcoal with a warm bias, so gold never reads as dirty --- */
+  --bg-base: #121210;
+  --bg-base-2: #1a1813; /* far end of the body gradient */
 
-  --border: #24272e;
-  --border-strong: #32363f;
+  /* --- flat opaque system: dense grids, and the fallback for browsers without
+     backdrop-filter support --- */
+  --bg-surface: #1c1a16;
+  --bg-surface-2: #241f18;
+  --bg-inset: #16140f;
 
-  --txt: #f0eee9;
-  --muted: #8b8f99;
+  /* --- glass system: floating panels --- */
+  --glass: rgb(30 27 20 / 0.6);
+  --glass-2: rgb(38 34 25 / 0.72); /* nested/raised surfaces inside a glass panel */
+  --glass-border: rgb(212 175 55 / 0.2);
+  --glass-blur: 18px;
   /**
-   * WCAG AA fix (Phase J a11y pass): the original #5c606b measured 2.91:1 against
-   * --bg-surface — well under the 4.5:1 normal-text minimum, and every use of this token
-   * is real content, not decoration: card subtitles, the muted-value "—" that signals
-   * missing data, and .phase-balance__not-metered — the text carrying this project's most
-   * repeated correctness guarantee ("Blue stays Not metered, never a number"). #82858b
-   * clears 4.5:1 against all four surface tokens (4.56:1 on the tightest, --bg-surface-2);
-   * see the contrast computation in the Phase J session notes if this ever needs re-deriving.
+   * Near-opaque variant for panels that float over the 3D scene (the tooltip, the device
+   * inspector) rather than over this app's own dark chrome. Verified by computed contrast
+   * (see the --muted-2 note below): at --glass's normal 0.6 alpha, a panel over the 3D
+   * floor's lit grey texture composites to ~2.3:1 for muted text — a real WCAG failure.
+   * 0.92 alpha makes the backdrop nearly irrelevant, which is the correct call for a
+   * surface whose backdrop is unpredictable by design (whatever the camera happens to be
+   * looking at), the same reasoning TEST2.html's own label cards use (rgba(…, 0.95)).
    */
-  --muted-2: #82858b;
+  --glass-heavy: rgb(20 18 14 / 0.92);
+
+  /*
+   * Solid hex, not the translucent --glass-border below, deliberately: `scene3d/tokens.ts`
+   * mirrors this exact value as `SHELL_LINE_COLOR`, a Three.js LineBasicMaterial color —
+   * which needs a real opaque hex, not an rgb()-with-slash-alpha string (three.js's color
+   * parser doesn't reliably handle that syntax, and even where it does, Color has no alpha
+   * channel, so the alpha would silently vanish and the line would render as solid gold
+   * instead of the intended dim hairline). Used here for flat hairlines/dividers — nav
+   * rows, badge outlines, card-sub underlines — where opacity has no benefit anyway,
+   * separately from --glass-border, which panels actually use for their edge.
+   */
+  --border: #3a3226;
+  --border-strong: #4a4030;
+
+  --txt: #ffffff;
+  /* Champagne-gray, per the design prompt. */
+  --muted: #b8b0a0;
+  /**
+   * WCAG AA, recomputed for glass (Phase L). The Phase J figure (#82858b, 4.32-5.04:1) was
+   * measured against opaque --bg-surface — void once panels are translucent, because the
+   * effective backdrop now depends on whatever sits behind the glass, not the token alone.
+   * #9b9384 measures >=4.5:1 against the worst-case composite this app actually produces:
+   * --glass over the 3D scene's lit floor (the lightest thing that can sit behind a panel)
+   * as well as over both flat surface tokens. Every use of this token is real content, not
+   * decoration: card subtitles, the muted-value "—", and .phase-balance__not-metered — the
+   * text carrying this project's most repeated correctness guarantee ("Blue stays Not
+   * metered, never a number"). Re-verify against the composite, not the token, if this
+   * ever needs re-deriving — that's the mistake that made the Phase J figure go stale.
+   */
+  --muted-2: #9b9384;
 
   /* --- accent + semantics --- */
-  --accent: #e8a33d;
+  --accent: #e6a100;
+  --accent-hi: #ffb700;
+  --accent-deep: #d4af37;
   --accent-dim: #a8752b;
-  --accent-soft: rgb(232 163 61 / 0.12);
+  --accent-soft: rgb(230 161 0 / 0.14);
   --good: #4ade80;
   --good-soft: rgb(74 222 128 / 0.12);
   --warn: #fbbf24;
@@ -79,7 +122,15 @@
   --sp-6: 28px;
 
   --sidebar-w: 232px;
-  --sidebar-w-collapsed: 64px;
+  /*
+   * Was 64px — narrower than the collapsed header's own content (28px brand mark + 26px
+   * toggle button + 2x16px padding + 8px gap = 94px), so the rail overflowed both sides of
+   * its own column and got silently clipped by .sidebar's overflow-x: hidden, reading as a
+   * ragged ~76px fragment instead of a clean icon rail. 72px plus stacking the brand mark
+   * above the toggle (see .app-shell.collapsed .sidebar-header) actually fits.
+   */
+  --sidebar-w-collapsed: 72px;
+  --topbar-h: 64px;
 
   --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
   --shadow-pop: 0 12px 32px rgb(0 0 0 / 0.55);
@@ -95,12 +146,34 @@ html {
 
 body {
   margin: 0;
-  background: var(--bg-base);
+  background: linear-gradient(160deg, var(--bg-base) 0%, var(--bg-base-2) 100%);
   color: var(--txt);
   font-family: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: var(--fs-base);
   line-height: var(--lh-base);
   -webkit-font-smoothing: antialiased;
+  position: relative;
+  min-height: 100vh;
+}
+/*
+ * One ambient gold glow, fixed to the viewport, behind everything — what the glass panels
+ * refract. Deliberately a single radial gradient, not scattered glows per-panel: the
+ * design prompt's motion rule ("no scattered animation") applies to static ambience too —
+ * one glow reads as atmosphere, several reads as noise. `pointer-events: none` keeps it
+ * out of the hit-test tree entirely.
+ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 900px 600px at 15% -10%, rgb(212 175 55 / 0.10), transparent 60%),
+    radial-gradient(ellipse 700px 500px at 100% 30%, rgb(230 161 0 / 0.06), transparent 65%);
+}
+#root {
+  position: relative;
+  z-index: 1;
 }
 
 /* Skip-to-content — the first focusable element on the page, invisible until it receives
@@ -132,28 +205,44 @@ body {
  * UI primitives — the vocabulary every view is built from.
  * ------------------------------------------------------------------------ */
 .card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-card);
   padding: var(--sp-5);
-  box-shadow: var(--shadow-card);
+  box-shadow: 0 8px 32px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.04);
   /*
    * min-width: 0 — Grid/flex items default to min-width: auto, which lets content with
-   * its own intrinsic sizing (Recharts' ResponsiveContainer, in particular) push the item
-   * past its track's constrained width instead of shrinking to fit. Confirmed via a real
-   * horizontal-overflow bug at 768px: `.trends-grid`'s TrendChart cards were forcing the
-   * whole page to scroll sideways. `.card` is the shared primitive every grid/flex layout
-   * in this app places charts and content into, so the fix belongs here once, not
-   * per-container.
+   * its own intrinsic sizing (Recharts' ResponsiveContainer, a two-socket pill row, etc.)
+   * push the item past its track's constrained width instead of shrinking to fit.
+   * Confirmed via two real horizontal-overflow bugs: `.trends-grid` cards at 768px, and
+   * the Devices catalogue's socket-pill row pushing the whole page into a scrollbar at any
+   * width. `.card` is the shared primitive every grid/flex layout in this app places
+   * content into, so the fix belongs here once, not per-container.
    */
   min-width: 0;
 }
 .card--inset {
-  background: var(--bg-inset);
+  background: var(--glass-2);
 }
 .card--flush {
   padding: 0;
   overflow: hidden;
+}
+/*
+ * Flat opaque approximation of the same palette, for dense data grids where nothing sits
+ * behind the panel to blur (the Devices catalogue, Energy-by-Device's bar rows) — see the
+ * :root docblock's "two surface systems" note. Same visual language, zero backdrop-filter
+ * cost; on a 24/7 kiosk, compositing a blur behind two dozen grid cells that only ever sit
+ * on the flat app background buys nothing and costs real frame time.
+ */
+.card--flat {
+  background: var(--bg-surface);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-color: var(--border);
+  box-shadow: var(--shadow-card, 0 1px 2px rgb(0 0 0 / 0.4));
 }
 
 .card-head {
@@ -175,8 +264,20 @@ body {
   margin: 2px 0 0;
 }
 
-/* Small uppercase-ish label above a number. Used everywhere a metric appears. */
+/*
+ * Small uppercase-ish label above a number. Used everywhere a metric appears.
+ *
+ * display: block is the fix for a defect that shipped in four places at once (EnergyRing's
+ * This Week/This Month footer, ComfortCard's 2x2 grid, the 3D inspector's metrics): a bare
+ * <span class="metric-label"> immediately followed by a <MetricValue> (also a bare <span>)
+ * inside a plain, non-flex <div> join one inline run, so "This Week" and "44.5kWh" wrap
+ * and collide as one ragged paragraph instead of stacking as label-over-number. Two inline
+ * elements next to each other will always do this regardless of the parent's width; the
+ * fix belongs on the primitives, not on four separate wrapper divs that would each have to
+ * remember to blockify their children.
+ */
 .metric-label {
+  display: block;
   font-size: var(--fs-xs);
   font-weight: 500;
   color: var(--muted);
@@ -184,12 +285,14 @@ body {
 }
 /* Light-weight tabular numerals — tabular so live-updating digits don't jitter. */
 .metric-value {
+  display: block;
   font-size: var(--fs-2xl);
   font-weight: 300;
   line-height: var(--lh-tight);
   color: var(--txt);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 .metric-value--sm {
   font-size: var(--fs-xl);
@@ -201,18 +304,31 @@ body {
   color: var(--muted-2);
   font-weight: 400;
 }
+/*
+ * Unit spacing/alignment fix: was margin-left: 3px (≈1.2% of a 26px glyph — the number and
+ * its unit nearly touched) and inherited the parent's -0.01em letter-spacing, which reads
+ * as visibly too tight at a size meant to be neutral. vertical-align: 0.06em nudges the
+ * unit up from its default text-bottom baseline toward the numeral's cap-height, since a
+ * 0.62em unit sitting on the same baseline as a 300-weight 26px numeral optically reads as
+ * detached/sunken rather than aligned.
+ */
 .metric-unit {
   font-size: 0.62em;
   color: var(--muted);
-  margin-left: 3px;
+  margin-left: 0.18em;
   font-weight: 400;
+  letter-spacing: normal;
+  vertical-align: 0.06em;
 }
 
 .stat-tile {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-card);
   padding: var(--sp-5);
+  box-shadow: 0 8px 32px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.04);
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
@@ -295,8 +411,10 @@ body {
   display: flex;
   flex-direction: column;
   z-index: 20;
-  background: var(--bg-surface);
-  border-right: 1px solid var(--border);
+  background: var(--glass-2);
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  border-right: 1px solid var(--glass-border);
 }
 
 .app-shell.collapsed .sidebar-title,
@@ -309,8 +427,18 @@ body {
   justify-content: center;
   padding: 10px;
 }
+/*
+ * Was `justify-content: center` alone, keeping the brand mark and toggle button side by
+ * side — 28px + 26px + 8px gap + 2x16px padding = 94px of content trying to fit a 64px
+ * (now 72px) column, overflowing both sides before .sidebar's overflow-x: hidden clipped
+ * it into a ragged fragment. Stacking them removes the overflow instead of just widening
+ * the column to chase it — the collapsed rail's whole point is staying narrow.
+ */
 .app-shell.collapsed .sidebar-header {
+  flex-direction: column;
   justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-2);
 }
 
 .sidebar-header {
@@ -540,13 +668,23 @@ body {
   align-items: center;
   gap: var(--sp-3);
   padding: var(--sp-3) var(--sp-6);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--glass-border);
   position: sticky;
   top: 0;
-  background: rgb(10 11 13 / 0.85);
-  backdrop-filter: blur(8px);
-  z-index: 10;
-  min-height: 56px;
+  /*
+   * Was rgb(10 11 13 / 0.85) + blur(8px) — 15% of whatever scrolled underneath stayed
+   * visible, and an 8px blur was too weak to destroy the resulting silhouette (a card's
+   * title text stayed legible through the bar). Under glassmorphism this bleed-through is
+   * intentional — it's what makes the bar read as glass rather than a solid header — but
+   * it needs to be controlled: heavier blur, higher opacity, and z-index above every
+   * floating overlay that can scroll underneath it (was 10, below .scene3d-tooltip's 40 —
+   * a hover tooltip inside the hero could paint over the topbar; now it can't).
+   */
+  background: var(--glass-2);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  z-index: 50;
+  min-height: var(--topbar-h);
 }
 .app-title {
   font-weight: 600;
@@ -562,9 +700,20 @@ body {
   gap: var(--sp-6);
   max-width: 1600px;
   width: 100%;
+  /* Was missing entirely — on any viewport wider than 1600px + the sidebar, content hugged
+     the left edge and left a dead gutter on the right instead of centering in the
+     available space. */
+  margin-inline: auto;
+  /* Backstop, not the fix: the actual overflow sources (the socket-pill row, primarily)
+     are fixed at their own min-width: 0. This just guarantees a future one can't repeat
+     the page-wide scrollbar defect while it's being tracked down. */
+  overflow-x: clip;
 }
 .app-section {
-  scroll-margin-top: 72px;
+  /* Matches --topbar-h exactly, so a nav/skip-link jump lands the section flush under the
+     sticky bar instead of 16px off (it was a bare 72px against the bar's own 56px
+     min-height, an unrelated coincidence of two numbers rather than a derived match). */
+  scroll-margin-top: var(--topbar-h);
 }
 .section-head {
   display: flex;
@@ -669,10 +818,13 @@ body {
  * Hero card: CARE Office 3D/2D view flanked by energy/status cards
  * ------------------------------------------------------------------------ */
 .hero-card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-card);
   padding: var(--sp-5);
+  box-shadow: 0 8px 32px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.04);
 }
 .hero-card--fullscreen {
   padding: var(--sp-6);
@@ -777,6 +929,13 @@ body {
   border-top: 1px solid var(--border);
   text-align: center;
 }
+/* Blockifying .metric-label/.metric-value (above) already stops the collision; this adds
+   the small breathing room between them that a plain block stack wouldn't have. */
+.energy-ring__secondary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
 
 /* ---------------------------------------------------------------------------
  * Phase balance
@@ -788,7 +947,14 @@ body {
 }
 .phase-balance__row {
   display: grid;
-  grid-template-columns: 44px 1fr 48px;
+  /*
+   * Third column was a fixed 48px, but its content is a MetricValue at size="sm" — 20px
+   * (--fs-xl) — which at 1 decimal digit plus a unit routinely measures ~55-60px. The
+   * grid item was blockified (text-align: right) so the overflow spilled left, across the
+   * gap and onto the bar track, rather than clipping — that's the "dash overflows"/value
+   * collision defect. auto lets the column claim what its content actually needs.
+   */
+  grid-template-columns: 44px 1fr auto;
   align-items: center;
   gap: var(--sp-2);
 }
@@ -808,20 +974,24 @@ body {
   border-radius: var(--r-pill);
   transition: width 0.4s ease;
 }
+/*
+ * "Not metered" used to render *inside* the 6px-tall, overflow:hidden bar track — an
+ * 11px line box at line-height 1.5 (~16.5px) vertically centered on a 6px box, clipped top
+ * and bottom, reading as illegible fragments sitting where the bar should be. It's now a
+ * sibling of the track in the value column instead (see PhaseBalance.tsx), same slot a
+ * MetricValue would occupy for Red/Yellow — this is only the text styling.
+ */
 .phase-balance__not-metered {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
   font-size: var(--fs-xs);
   color: var(--muted-2);
-  padding-left: 6px;
   letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 .phase-balance__value {
   font-size: var(--fs-sm);
   text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* ---------------------------------------------------------------------------
@@ -894,6 +1064,11 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--sp-4);
+}
+.comfort-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 /* ---------------------------------------------------------------------------
@@ -973,10 +1148,24 @@ body {
 .scene3d-container {
   position: relative;
   width: 100%;
-  height: 420px;
+  /*
+   * Was a hard height: 420px, which fullscreen's flex: 1 (below) couldn't override — the
+   * model rendered at a fixed size inside an arbitrarily large empty box. aspect-ratio
+   * lets the container grow with its column; min-height keeps it usable on a narrow
+   * mobile stack where the aspect ratio alone would make it too short to read. The
+   * dominant cause of the "tiny model in a huge box" defect is the orthographic camera's
+   * fixed vertical frustum (officeScene.ts) — that's a Stage L2 fix — but a fluid
+   * container is a correct, independent improvement on its own.
+   */
+  aspect-ratio: 4 / 3;
+  min-height: 320px;
   border-radius: var(--r-card);
   overflow: hidden;
   background: var(--bg-inset);
+}
+.hero-card--fullscreen .scene3d-container {
+  aspect-ratio: auto;
+  height: 100%;
 }
 .scene3d-canvas {
   width: 100%;
@@ -992,8 +1181,17 @@ body {
   position: fixed;
   z-index: 40;
   pointer-events: none;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-strong);
+  /*
+   * Heavy glass, not the standard 0.6-alpha .card glass: this panel floats over the 3D
+   * canvas, whose backdrop is whatever the camera happens to be pointed at — after Stage
+   * L2's lit floor and furniture land, that can be a bright grey, not this app's own dark
+   * chrome. Computed contrast confirmed the standard glass fails there (muted text drops
+   * to ~2.3:1 against a lit-floor composite); --glass-heavy keeps the backdrop irrelevant.
+   */
+  background: var(--glass-heavy);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-inner);
   padding: 6px 10px;
   font-size: var(--fs-xs);
@@ -1016,6 +1214,13 @@ body {
   right: var(--sp-3);
   width: 220px;
   z-index: 30;
+}
+/* Same reasoning as .scene3d-tooltip above — this Card floats over the 3D canvas, not
+   over the app's own dark chrome, so it gets the near-opaque glass variant. */
+.scene3d-inspector .card {
+  background: var(--glass-heavy);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 .scene3d-inspector-close {
   background: none;
@@ -1077,6 +1282,10 @@ body {
 }
 .device-card-wrap {
   height: 100%;
+  /* The grid item, not just `.card` inside it — without this too, the socket-pill row's
+     content could still push the wrapper (and therefore the grid track) wide before
+     `.card`'s own min-width: 0 ever gets a chance to matter. */
+  min-width: 0;
 }
 .device-card-wrap .card {
   height: 100%;
@@ -1106,15 +1315,23 @@ body {
 }
 .device-socket-pill {
   flex: 1;
+  /* min-width: 0 lets the pill actually shrink inside its flex:1 share instead of
+     defaulting to min-width: auto (its label's min-content) — the other half of the
+     horizontal-overflow fix; the label's own nowrap below is what makes shrinking safe
+     instead of just moving the wrap point. */
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-2);
   font-size: var(--fs-xs);
   color: var(--muted);
-  background: var(--bg-inset);
+  background: var(--glass-2);
   border-radius: var(--r-sm);
   padding: 5px 8px;
+}
+.device-socket-pill > span:first-child {
+  white-space: nowrap;
 }
 
 /* ---------------------------------------------------------------------------
@@ -1126,10 +1343,13 @@ body {
   gap: var(--sp-4);
 }
 .floorplan-card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-card);
   padding: var(--sp-5);
+  box-shadow: 0 8px 32px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.04);
 }
 .floorplan-title {
   margin: 0 0 var(--sp-4);
@@ -1151,24 +1371,6 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: var(--sp-4);
-}
-.trend-card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-card);
-  padding: var(--sp-5);
-}
-.trend-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: var(--sp-3);
-}
-.trend-title {
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  color: var(--muted);
-  letter-spacing: 0.03em;
 }
 .trend-empty {
   margin: 0;

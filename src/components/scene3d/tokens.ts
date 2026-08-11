@@ -8,13 +8,14 @@
  * generated Node-RED flow.
  */
 export const TOKENS = {
-  accent: '#e8a33d',
+  // Phase L: dark charcoal + dark gold glassmorphism — see index.css's :root docblock.
+  accent: '#e6a100',
   good: '#4ade80',
   warn: '#fbbf24',
   bad: '#f87171',
-  bgSurface2: '#1a1d23',
-  border: '#24272e',
-  muted: '#8b8f99',
-  muted2: '#82858b', // WCAG AA fix, Phase J — see index.css's --muted-2 comment
-  txt: '#f0eee9',
+  bgSurface2: '#241f18',
+  border: '#3a3226',
+  muted: '#b8b0a0',
+  muted2: '#9b9384', // WCAG AA, recomputed for glass, Phase L — see index.css's --muted-2 comment
+  txt: '#ffffff',
 } as const;

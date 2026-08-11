@@ -10,8 +10,10 @@ export function EnergyByDevice() {
   const bars = topByPower(devices, readings, LIMIT);
   const max = bars.length ? bars[0].power_w : 1;
 
+  // Flat opaque, not glass — a dense row-per-device grid with nothing behind it but the
+  // flat app background; see .card--flat's comment in index.css.
   return (
-    <div className="card energy-by-device-card">
+    <div className="card card--flat energy-by-device-card">
       <div className="card-head">
         <h3 className="card-title">Energy by Device</h3>
         <span className="card-sub">Current power draw</span>

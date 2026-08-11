@@ -32,14 +32,14 @@ export function PhaseBalance() {
             <div className="phase-balance__row" key={key}>
               <span className="phase-balance__label">{label}</span>
               <div className="phase-balance__bar-track">
+                {!isBlue && <div className="phase-balance__bar-fill" style={{ width: `${pct}%`, background: color }} />}
+              </div>
+              <span className="phase-balance__value">
                 {isBlue ? (
                   <span className="phase-balance__not-metered">Not metered</span>
                 ) : (
-                  <div className="phase-balance__bar-fill" style={{ width: `${pct}%`, background: color }} />
+                  <MetricValue value={value} unit="A" digits={1} size="sm" />
                 )}
-              </div>
-              <span className="phase-balance__value">
-                <MetricValue value={value} unit={isBlue ? undefined : 'A'} digits={1} size="sm" />
               </span>
             </div>
           );

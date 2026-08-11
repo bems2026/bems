@@ -31,7 +31,7 @@ describe('PhaseBalance', () => {
     expect(screen.getByText('Not metered')).toBeInTheDocument();
   });
 
-  it('renders real red/yellow amperage values', () => {
+  it('renders real red/yellow amperage values, and "Not metered" once for Blue — not a duplicated dash', () => {
     useDeviceStore.setState({
       totals: {
         device_id: '_totals',
@@ -45,7 +45,11 @@ describe('PhaseBalance', () => {
       },
     });
     render(<PhaseBalance />);
+    // Phase L fix: "Not metered" used to render inside the 6px bar track (clipped by its
+    // own overflow:hidden) AND the value column separately rendered "—" for Blue's null
+    // value — the same fact stated twice, one of them illegibly. Now it renders once, in
+    // the value column, in the slot a MetricValue would otherwise occupy.
     const values = [...document.querySelectorAll('.phase-balance__value')].map((el) => el.textContent);
-    expect(values).toEqual(['6.1A', '4.9A', '—']);
+    expect(values).toEqual(['6.1A', '4.9A', 'Not metered']);
   });
 });

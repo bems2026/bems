@@ -85,7 +85,10 @@ describe('DevicesView', () => {
       },
     });
     render(<DevicesView />);
-    expect(screen.getByText('Socket 1')).toBeInTheDocument();
-    expect(screen.getByText('Socket 2')).toBeInTheDocument();
+    // Shortened to S1/S2 (Phase L, matching the old dashboard's own labels) — the prior
+    // "Socket 1"/"Socket 2" text was wrapping to two lines inside the pill, since the
+    // bare label span had no white-space: nowrap and "Socket" alone was its min-content.
+    expect(screen.getByText('S1')).toBeInTheDocument();
+    expect(screen.getByText('S2')).toBeInTheDocument();
   });
 });

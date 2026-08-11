@@ -87,12 +87,17 @@ function DeviceCard({ device }: { device: Device }) {
         subtitle={device.branch_circuit ?? device.description}
         action={switchable ? <Badge tone={tone}>{reading?.state ?? 'unknown'}</Badge> : <Badge tone="neutral">metering</Badge>}
         headingLevel="h4"
+        // Flat opaque, not glass: a dense grid of ~20 cards with nothing behind them but
+        // the flat app background is exactly the case §2.3 carves out — compositing a
+        // blur behind two dozen cells buys nothing visually and costs real frame time on
+        // the kiosk target.
+        className="card--flat"
       >
         <DeviceMetrics reading={reading} />
         {device.sockets && reading?.socket_states && (
           <div className="device-card-sockets">
-            <SocketPill label="Socket 1" state={reading.socket_states[1]} />
-            <SocketPill label="Socket 2" state={reading.socket_states[2]} />
+            <SocketPill label="S1" state={reading.socket_states[1]} />
+            <SocketPill label="S2" state={reading.socket_states[2]} />
           </div>
         )}
       </Card>
