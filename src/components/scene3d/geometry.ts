@@ -140,3 +140,91 @@ export const OUTLET_FIXTURES: OutletFixture[] = OUTLET_COORDS.map(({ id, px, py 
   const mount = nearestWall(px, py);
   return { id, world: { x: mount.point.x, y: OUTLET_HEIGHT, z: mount.point.z }, mount };
 });
+
+// ---------------------------------------------------------------------------
+// Furniture — Stage L2. Same status as this whole scene's fixture placement always has
+// been (see this file's header comment): plausible, not surveyed. Nothing in the live
+// flow or the 2D floor plan records where CARE's actual desks, tables, or ACU sit — only
+// the 7 dual-socket outlets and 7 lighting circuits above are real, sourced coordinates.
+//
+// What IS real and used as the anchor for this layout:
+//   - ROOM's bounds (6.0m x 10.6m) and the partition at z = -3.5, both derived from the
+//     live SVG plan exactly as OUTLET_FIXTURES/LIGHT_FIXTURES are.
+//   - The two named zones the partition actually creates: a shallow utility compartment
+//     north of it (z in [-5.3, -3.5], the same 1.8m strip circuit l7 alone lights — see
+//     LIGHT_FIXTURES' test coverage) versus the main room south of it.
+//   - `mtr_lo_yellow`'s own registry description: "Outdoor ACU (separate unit, right side
+//     outside the room)" — shared/registry.mjs, not invented for this scene. That's why
+//     the indoor ACU sits on the east (right) wall and the outdoor unit sits just outside
+//     it, rather than on some other wall picked at random.
+//   - Workstations are placed against the two long walls, each anchored so a desk sits at
+//     the exact z-coordinate of the outlet that would plausibly feed it (co1/co4 on the
+//     west wall, co3/co7 on the east wall) — the other two desks per side fill the
+//     remaining wall run at comparable spacing.
+//
+// TEST2.html's own furniture coordinates are NOT reused here — its room is 9.0m x 6.6m
+// (wide, shallow), the opposite proportions of CARE's 6.0m x 10.6m (narrow, deep), so its
+// specific placement numbers don't transfer. Its furniture *library* (the factories in
+// `furniture.ts`) is what was ported; this table is CARE-specific.
+export type FurnitureKind =
+  | 'workstation'
+  | 'table-oval'
+  | 'table-rect'
+  | 'workbench'
+  | 'cabinet'
+  | 'water-dispenser'
+  | 'plant-rack'
+  | 'acu'
+  | 'acu-outdoor';
+
+export interface FurnitureSpec {
+  kind: FurnitureKind;
+  x: number;
+  z: number;
+  /** Y-axis rotation, radians. */
+  ry: number;
+  /** `table-rect` only: overall width/depth and seat count. */
+  w?: number;
+  d?: number;
+  n?: number;
+}
+
+export const FURNITURE: FurnitureSpec[] = [
+  // West wall workstations — desk backs 0.15m off the wall (x = ROOM.minX + 0.34), chairs
+  // facing +x into the room. z = 3.9/1.9 sit exactly on co1/co4; -0.1/-2.2 fill the run at
+  // matching ~2m spacing.
+  { kind: 'workstation', x: ROOM.minX + 0.34, z: 3.9, ry: Math.PI / 2 },
+  { kind: 'workstation', x: ROOM.minX + 0.34, z: 1.9, ry: Math.PI / 2 },
+  { kind: 'workstation', x: ROOM.minX + 0.34, z: -0.1, ry: Math.PI / 2 },
+  { kind: 'workstation', x: ROOM.minX + 0.34, z: -2.2, ry: Math.PI / 2 },
+
+  // East wall workstations — mirrored. z = 3.9/-1.7 sit on co3/co7; 1.5/-3.0 fill the run.
+  { kind: 'workstation', x: ROOM.maxX - 0.34, z: 3.9, ry: -Math.PI / 2 },
+  { kind: 'workstation', x: ROOM.maxX - 0.34, z: 1.5, ry: -Math.PI / 2 },
+  { kind: 'workstation', x: ROOM.maxX - 0.34, z: -1.7, ry: -Math.PI / 2 },
+  { kind: 'workstation', x: ROOM.maxX - 0.34, z: -3.0, ry: -Math.PI / 2 },
+
+  // Oval conference table, centered in the main room's open floor.
+  { kind: 'table-oval', x: 0, z: 0.8, ry: 0 },
+
+  // Rect meeting table, toward the south end near co2's side of the room.
+  { kind: 'table-rect', x: -0.8, z: 4.2, ry: 0, w: 1.5, d: 0.8, n: 6 },
+
+  // Utility compartment (north of the partition): workbench against the north wall,
+  // flanked by two cabinets rotated so their long side runs along the wall instead of
+  // eating the compartment's 1.8m depth.
+  { kind: 'workbench', x: 0, z: -4.9, ry: 0 },
+  { kind: 'cabinet', x: -1.8, z: -5.0, ry: Math.PI / 2 },
+  { kind: 'cabinet', x: 1.8, z: -5.0, ry: Math.PI / 2 },
+
+  // Water dispenser just south of the partition, near co5's side.
+  { kind: 'water-dispenser', x: -1.9, z: -3.2, ry: 0 },
+
+  // Plant rack along the partition wall, main-room side, clear of both wall runs.
+  { kind: 'plant-rack', x: 0.5, z: -3.15, ry: 0, w: 2.0 },
+
+  // Indoor ACU on the east wall — see this block's header comment for why east specifically.
+  { kind: 'acu', x: ROOM.maxX - 0.13, z: 0, ry: 0 },
+  // Outdoor unit just outside the same wall, on its own pad.
+  { kind: 'acu-outdoor', x: ROOM.maxX + 0.7, z: 0, ry: 0 },
+];
