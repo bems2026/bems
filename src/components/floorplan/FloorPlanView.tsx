@@ -88,6 +88,7 @@ function LightingPlan({ readings }: { readings: Record<string, Reading> }) {
                 fill={fill}
                 stroke="var(--border-strong)"
                 opacity={stale ? 0.5 : 1}
+                className={on && !stale ? 'floorplan-pin--on' : undefined}
               />
             ))}
             <text x={285} y={y + 14} fill="var(--muted)" fontSize={12} fontWeight={700}>
@@ -117,6 +118,7 @@ function OutletPlan({ readings }: { readings: Record<string, Reading> }) {
               stroke="var(--accent)"
               strokeWidth={1.5}
               opacity={stale ? 0.5 : 1}
+              className={s1 && !stale ? 'floorplan-pin--on' : undefined}
             />
             <path
               d={`M ${x} ${y - 12} A 12 12 0 0 1 ${x} ${y + 12} Z`}
@@ -124,6 +126,7 @@ function OutletPlan({ readings }: { readings: Record<string, Reading> }) {
               stroke="var(--accent)"
               strokeWidth={1.5}
               opacity={stale ? 0.5 : 1}
+              className={s2 && !stale ? 'floorplan-pin--on' : undefined}
             />
             <text
               x={x - 18}

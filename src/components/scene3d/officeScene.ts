@@ -35,6 +35,7 @@ import * as THREE from 'three';
 import { LIGHT_FIXTURES, OUTLET_FIXTURES, FURNITURE, ROOM } from './geometry';
 import { lightMaterialState, outletSocketMaterialState, type MaterialState } from './materials';
 import { buildFurniturePiece, makeFloorTexture, wallMaterial, baseboardMaterial } from './furniture';
+import { TOKENS } from './tokens';
 import type { Reading } from '@/lib/types';
 
 export type PickResult = { kind: 'light'; circuit: string } | { kind: 'outlet'; id: string; socket: 1 | 2 } | null;
@@ -73,6 +74,14 @@ export class OfficeScene {
   private lightMeshesByCircuit = new Map<string, THREE.Mesh[]>();
   private outletMeshesById = new Map<string, { s1: THREE.Mesh; s2: THREE.Mesh }>();
   private pickables: THREE.Object3D[] = [];
+
+  /** Fixtures currently "on" and their steady (non-pulsing) emissive intensity — populated
+   * by `applyState()`, read by the auto-rotate loop's pulse. Kept as a live set rather
+   * than re-deriving from `readings` each animation frame, since the loop must stay cheap
+   * enough to run at 60fps without re-walking every device. */
+  private onMeshes = new Set<THREE.Mesh>();
+  private baseIntensity = new Map<THREE.Mesh, number>();
+  private autoRotateId: number | null = null;
 
   private theta = Math.PI / 4;
   private phi = Math.PI / 3.2;
@@ -274,14 +283,34 @@ export class OfficeScene {
   applyState(readings: Record<string, Reading>) {
     for (const [circuit, meshes] of this.lightMeshesByCircuit) {
       const state = lightMaterialState(readings[circuit]);
-      for (const mesh of meshes) applyMaterialState(mesh, state);
+      for (const mesh of meshes) {
+        applyMaterialState(mesh, state);
+        this.trackOnState(mesh, state);
+      }
     }
     for (const [id, sockets] of this.outletMeshesById) {
       const reading = readings[id];
-      applyMaterialState(sockets.s1, outletSocketMaterialState(reading, 1));
-      applyMaterialState(sockets.s2, outletSocketMaterialState(reading, 2));
+      const s1 = outletSocketMaterialState(reading, 1);
+      const s2 = outletSocketMaterialState(reading, 2);
+      applyMaterialState(sockets.s1, s1);
+      applyMaterialState(sockets.s2, s2);
+      this.trackOnState(sockets.s1, s1);
+      this.trackOnState(sockets.s2, s2);
     }
     this.render();
+  }
+
+  /** `state.color === TOKENS.accent` is materials.ts's own "on" signal for both a lit
+   * circuit and a live socket — reused here rather than re-deriving "on-ness" from the
+   * reading a second time. Feeds the auto-rotate loop's device-pin pulse. */
+  private trackOnState(mesh: THREE.Mesh, state: MaterialState) {
+    if (state.color === TOKENS.accent) {
+      this.onMeshes.add(mesh);
+      this.baseIntensity.set(mesh, state.emissiveIntensity);
+    } else {
+      this.onMeshes.delete(mesh);
+      this.baseIntensity.delete(mesh);
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -312,6 +341,58 @@ export class OfficeScene {
     this.radius = clamp(this.radius / factor, this.minRadius, this.maxRadius);
     this.updateCameraPosition();
     this.render();
+  }
+
+  get isAutoRotating(): boolean {
+    return this.autoRotateId !== null;
+  }
+
+  /**
+   * The one place this scene runs a continuous `requestAnimationFrame` loop — opt-in,
+   * user-toggled, and stopped the instant it's turned off. This doesn't contradict
+   * render-on-demand's rationale (see this file's header): the point was never "never
+   * animate," it was "don't burn a 24/7 kiosk's cycles on a static scene by default." A
+   * user who explicitly asks for motion is a different case, and the loop costs nothing
+   * once they turn it back off.
+   *
+   * While running, it also pulses every currently-"on" fixture's emissive intensity — a
+   * cheap side effect of a loop that's already re-rendering every frame regardless, not a
+   * second animation system. `onMeshes`/`baseIntensity` are kept current by `applyState()`.
+   * Each mesh's own `.id` seeds a phase offset so fixtures don't all breathe in lockstep.
+   *
+   * NOT exercised by this project's verification pane, which never fires
+   * `requestAnimationFrame` (see the header comment) — `setAutoRotate(true)` schedules a
+   * frame that this pane simply never calls back. Correct behavior in a real browser;
+   * verify the on/off *state* here (`isAutoRotating`), not visible motion.
+   */
+  setAutoRotate(enabled: boolean) {
+    if (enabled === this.isAutoRotating) return;
+
+    if (!enabled) {
+      if (this.autoRotateId !== null) cancelAnimationFrame(this.autoRotateId);
+      this.autoRotateId = null;
+      // Settle every pulsing fixture back to its steady intensity rather than leaving it
+      // wherever the sine wave happened to land when the loop stopped.
+      for (const [mesh, base] of this.baseIntensity) (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = base;
+      this.render();
+      return;
+    }
+
+    const start = performance.now();
+    const loop = (now: number) => {
+      if (this.disposed) return;
+      this.theta += 0.0015;
+      this.updateCameraPosition();
+      const t = now - start;
+      for (const mesh of this.onMeshes) {
+        const base = this.baseIntensity.get(mesh) ?? 1;
+        const phase = (mesh.id % 7) * 0.9;
+        (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = base * (0.85 + 0.15 * Math.sin(t / 600 + phase));
+      }
+      this.render();
+      this.autoRotateId = requestAnimationFrame(loop);
+    };
+    this.autoRotateId = requestAnimationFrame(loop);
   }
 
   /**
@@ -384,6 +465,8 @@ export class OfficeScene {
       outletMeshCount: this.outletMeshesById.size * 2,
       radius: this.radius,
       fitted: this.fitted,
+      autoRotating: this.isAutoRotating,
+      onCount: this.onMeshes.size,
     };
   }
 
@@ -404,6 +487,8 @@ export class OfficeScene {
 
   dispose() {
     this.disposed = true;
+    if (this.autoRotateId !== null) cancelAnimationFrame(this.autoRotateId);
+    this.autoRotateId = null;
     this.scene.traverse((obj) => {
       const mesh = obj as THREE.Mesh | THREE.LineSegments;
       mesh.geometry?.dispose();

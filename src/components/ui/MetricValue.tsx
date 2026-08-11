@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from 'react';
+
 type Size = 'sm' | 'md' | 'lg';
 
 interface MetricValueProps {
@@ -20,17 +22,39 @@ const SIZE_CLASS: Record<Size, string> = {
 /**
  * A single numeric readout.
  *
- * Two rules it exists to enforce everywhere at once:
+ * Three rules it exists to enforce everywhere at once:
  *   - a missing reading renders `—`, never `0` — "no data" and "zero watts" are different
  *     facts about a building, and conflating them is how a dead sensor reads as an idle one;
  *   - numerals are tabular (see `.metric-value`), so a value updating every 2s doesn't make
- *     the surrounding layout twitch.
+ *     the surrounding layout twitch;
+ *   - a value that actually changes gets a brief pulse (Stage L4) — a live dashboard
+ *     re-rendering the same number every 2s with no visual acknowledgment reads as inert;
+ *     one that visibly updates reads as live.
  */
 export function MetricValue({ value, unit, digits = 1, size = 'md', muted }: MetricValueProps) {
   const missing = value === null || value === undefined;
   const text = missing ? '—' : typeof value === 'number' ? value.toFixed(digits) : value;
 
-  const classes = `metric-value${SIZE_CLASS[size]}${muted || missing ? ' metric-value--muted' : ''}`;
+  const [pulse, setPulse] = useState(false);
+  const prevText = useRef(text);
+  const mounted = useRef(false);
+
+  useEffect(() => {
+    // Skip the pulse on mount — there's no prior value to have "changed" from, and the
+    // card's own entrance animation already marks this as new.
+    if (!mounted.current) {
+      mounted.current = true;
+      prevText.current = text;
+      return;
+    }
+    if (prevText.current === text) return;
+    prevText.current = text;
+    setPulse(true);
+    const id = setTimeout(() => setPulse(false), 350);
+    return () => clearTimeout(id);
+  }, [text]);
+
+  const classes = `metric-value${SIZE_CLASS[size]}${muted || missing ? ' metric-value--muted' : ''}${pulse ? ' metric-value--pulse' : ''}`;
 
   return (
     <span className={classes}>

@@ -49,15 +49,29 @@ function mk(parent: THREE.Object3D, geo: THREE.BufferGeometry, mat: THREE.Materi
   return m;
 }
 
+/*
+ * Chair geometries, shared across every instance (Stage L4 perf pass). The scene places
+ * ~21 chairs (8 workstations + 6 oval + 6 rect + 1 workbench); each chair is 8 meshes, so
+ * building a fresh BoxGeometry/CylinderGeometry per chair meant ~170 distinct geometry
+ * buffers for what is visually one shape repeated. Three.js meshes sharing one geometry
+ * instance is the normal, supported pattern — only the material needs to differ when a
+ * mesh's appearance varies, and none of these do (chairs are static, unlit-by-state
+ * furniture, never id-bound to a device reading).
+ */
+const chairSeatGeo = new THREE.BoxGeometry(0.42, 0.07, 0.42);
+const chairBackGeo = new THREE.BoxGeometry(0.42, 0.45, 0.07);
+const chairPostGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.34, 10);
+const chairFootGeo = new THREE.BoxGeometry(0.2, 0.03, 0.05);
+
 /** One 5-star-base office chair, reused by every seated furniture piece. */
 function placeChair(parent: THREE.Object3D, x: number, z: number, ry: number) {
   const chair = new THREE.Group();
-  mk(chair, new THREE.BoxGeometry(0.42, 0.07, 0.42), chairFabric, 0, 0.44, 0); // seat
-  mk(chair, new THREE.BoxGeometry(0.42, 0.45, 0.07), chairFabric, 0, 0.66, 0.2); // backrest
-  mk(chair, new THREE.CylinderGeometry(0.03, 0.03, 0.34, 10), metal, 0, 0.22, 0); // gas post
+  mk(chair, chairSeatGeo, chairFabric, 0, 0.44, 0); // seat
+  mk(chair, chairBackGeo, chairFabric, 0, 0.66, 0.2); // backrest
+  mk(chair, chairPostGeo, metal, 0, 0.22, 0); // gas post
   for (let a = 0; a < 5; a++) {
     const ang = (a / 5) * Math.PI * 2;
-    const foot = mk(chair, new THREE.BoxGeometry(0.2, 0.03, 0.05), metal, Math.cos(ang) * 0.12, 0.05, Math.sin(ang) * 0.12);
+    const foot = mk(chair, chairFootGeo, metal, Math.cos(ang) * 0.12, 0.05, Math.sin(ang) * 0.12);
     foot.rotation.y = -ang;
   }
   chair.rotation.y = ry;

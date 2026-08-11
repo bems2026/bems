@@ -7,8 +7,9 @@ export function ComfortCard() {
   const acu = useDeviceStore((s) => s.latestReadings['acu_main']);
   const outside = useDeviceStore((s) => s.latestReadings['sens_outside_temp']);
 
+  // Flat, not glass — nested inside .hero-card's own glass; see EnergyRing's comment.
   return (
-    <div className="card comfort-card">
+    <div className="card card--flat comfort-card">
       <div className="card-head">
         <h3 className="card-title">Comfort</h3>
         <Badge tone={acu?.state === 'on' ? 'good' : 'neutral'}>{acu?.state ?? 'unknown'}</Badge>

@@ -18,8 +18,9 @@ export function PhaseBalance() {
   const phase = useDeviceStore((s) => s.totals?.phase_current);
   const max = Math.max(phase?.red ?? 0, phase?.yellow ?? 0, 1);
 
+  // Flat, not glass — nested inside .hero-card's own glass; see EnergyRing's comment.
   return (
-    <div className="card phase-balance-card">
+    <div className="card card--flat phase-balance-card">
       <div className="card-head">
         <h3 className="card-title">Phase Balance</h3>
       </div>

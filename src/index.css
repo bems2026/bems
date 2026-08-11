@@ -1233,6 +1233,39 @@ body::before {
 .scene3d-inspector-close:hover {
   color: var(--txt);
 }
+.scene3d-inspector-close:active {
+  transform: scale(0.9);
+}
+
+.scene3d-autorotate-btn {
+  position: absolute;
+  bottom: var(--sp-3);
+  left: var(--sp-3);
+  z-index: 25;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  background: var(--glass-heavy);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-pill);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+.scene3d-autorotate-btn:hover {
+  color: var(--txt);
+  border-color: var(--border-strong);
+}
+.scene3d-autorotate-btn:active {
+  transform: scale(0.92);
+}
+.scene3d-autorotate-btn--active {
+  color: var(--accent);
+  border-color: var(--glass-border);
+}
 .scene3d-inspector-row {
   margin-bottom: var(--sp-3);
 }
@@ -1521,6 +1554,134 @@ body::before {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Motion — Stage L4 (Phase L). Everything here already sits behind the
+ * prefers-reduced-motion block near the top of this file, which zeroes every animation/
+ * transition duration to 0.001ms — nothing below needs its own reduced-motion guard.
+ *
+ * Design-prompt rule this whole section follows: "ambient glow and a subtle transition
+ * when a reading updates. No scattered animation." Entrance is a one-time mount effect,
+ * not a repeating loop; the update pulse is a single ~350ms flash per changed value, not a
+ * continuous animation; hover/press feedback is instantaneous, not decorative.
+ * ------------------------------------------------------------------------ */
+
+/* Card/tile entrance — a grid's children fade/slide in once on mount, staggered by
+   position. animation-fill-mode: backwards holds each item at its 0% state during its own
+   delay, so nothing flashes at full opacity before its turn. Scoped by :nth-child rather
+   than a per-item inline style/JS index, so no component needs to know about this at all —
+   it's purely a property of being a child of one of these grids. Capped at the 8th child:
+   a 20-card Devices grid finishing its stagger 320ms after mount reads as "the page is
+   still loading," not entrance polish. */
+@keyframes card-entrance {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.kpi-row > *,
+.devices-grid > *,
+.outlets-grid > *,
+.trends-grid > * {
+  animation: card-entrance 200ms ease-out backwards;
+}
+.kpi-row > *:nth-child(2),
+.devices-grid > *:nth-child(2),
+.outlets-grid > *:nth-child(2),
+.trends-grid > *:nth-child(2) {
+  animation-delay: 40ms;
+}
+.kpi-row > *:nth-child(3),
+.devices-grid > *:nth-child(3),
+.outlets-grid > *:nth-child(3),
+.trends-grid > *:nth-child(3) {
+  animation-delay: 80ms;
+}
+.kpi-row > *:nth-child(4),
+.devices-grid > *:nth-child(4),
+.outlets-grid > *:nth-child(4),
+.trends-grid > *:nth-child(4) {
+  animation-delay: 120ms;
+}
+.devices-grid > *:nth-child(5),
+.outlets-grid > *:nth-child(5) {
+  animation-delay: 160ms;
+}
+.devices-grid > *:nth-child(6),
+.outlets-grid > *:nth-child(6) {
+  animation-delay: 200ms;
+}
+.devices-grid > *:nth-child(7),
+.outlets-grid > *:nth-child(7) {
+  animation-delay: 240ms;
+}
+.devices-grid > *:nth-child(n + 8) {
+  animation-delay: 280ms;
+}
+
+/* Update pulse — MetricValue.tsx toggles this class for ~350ms when a value it's
+   rendering actually changes (not on every re-render). A soft glow, not a color change:
+   this fires on essentially every visible number roughly every 2s (the WS push), so it has
+   to read as "the data is alive," not "the page is flashing." */
+@keyframes metric-value-pulse {
+  0% {
+    text-shadow: 0 0 0 rgb(230 161 0 / 0);
+  }
+  30% {
+    text-shadow: 0 0 8px rgb(230 161 0 / 0.5);
+  }
+  100% {
+    text-shadow: 0 0 0 rgb(230 161 0 / 0);
+  }
+}
+.metric-value--pulse {
+  animation: metric-value-pulse 350ms ease-out;
+}
+
+/* Press feedback — a fast, small scale-down on :active, absent everywhere in the app until
+   now. Paired with each control's own :hover, both animating transform/opacity only. */
+.nav-item:active,
+#sidebarToggle:active,
+#mobileMenuBtn:active,
+.hero-expand-btn:active,
+.spatial-toggle__btn:active,
+.outlet-socket-toggle:not(:disabled):active,
+.outlets-master-off:active,
+.device-status-view-all:active {
+  transform: scale(0.96);
+}
+
+/* Device-pin pulse (2D floor plan) — a CSS-only breathing glow on "on" pins. Pure CSS, no
+   render loop: the DOM/SVG compositor handles this for free, unlike the 3D scene's
+   equivalent (OfficeScene.setAutoRotate's pulse), which needs an active requestAnimationFrame
+   loop because WebGL has no ambient compositor animation of its own. */
+@keyframes floorplan-pin-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+.floorplan-pin--on {
+  animation: floorplan-pin-pulse 2.4s ease-in-out infinite;
+}
+
+/* content-visibility — lets the browser skip layout/paint entirely for a section
+   currently scrolled out of view. contain-intrinsic-size keeps scrollbar geometry stable
+   (without it, an unmeasured off-screen section collapses to 0 height, which would jump
+   the scrollbar and any in-progress scroll-spy measurement the moment it's skipped).
+   Applied to every section except Overview, which is what's visible on first paint. */
+#devices.app-section,
+#outlets.app-section,
+#trends.app-section {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 800px;
 }
 
 /* ---------------------------------------------------------------------------

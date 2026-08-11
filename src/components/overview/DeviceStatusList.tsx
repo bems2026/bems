@@ -24,8 +24,9 @@ export function DeviceStatusList() {
   const preview = devices.slice(0, PREVIEW_LIMIT);
   const remaining = devices.length - preview.length;
 
+  // Flat, not glass — nested inside .hero-card's own glass; see EnergyRing's comment.
   return (
-    <div className="card device-status-card">
+    <div className="card card--flat device-status-card">
       <div className="card-head">
         <h3 className="card-title">Device Status</h3>
       </div>

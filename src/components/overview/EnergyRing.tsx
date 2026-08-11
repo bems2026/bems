@@ -20,7 +20,11 @@ export function EnergyRing() {
   const dashoffset = CIRCUMFERENCE * (1 - fraction);
 
   return (
-    <div className="card energy-ring-card">
+    // Flat, not glass: this card sits nested inside the hero card's own glass background
+    // (see .hero-card), so a second backdrop-filter here would blur an already-blurred
+    // surface — double compositing cost for a barely-visible effect. See .card--flat's
+    // comment in index.css.
+    <div className="card card--flat energy-ring-card">
       <div className="card-head">
         <h3 className="card-title">Energy Today</h3>
       </div>

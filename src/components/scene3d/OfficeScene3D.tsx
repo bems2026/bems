@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { X, RotateCw, Pause } from 'lucide-react';
 import { OfficeScene, type PickResult } from './officeScene';
 import { FloorPlanView } from '@/components/floorplan/FloorPlanView';
 import { useDeviceStore } from '@/stores/deviceStore';
@@ -51,6 +51,11 @@ export function OfficeScene3D() {
 
   const [hover, setHover] = useState<{ selection: Selection; x: number; y: number } | null>(null);
   const [selected, setSelected] = useState<Selection | null>(null);
+  const [autoRotate, setAutoRotateState] = useState(false);
+  // Checked once, not reactively — a live-changing OS preference mid-session is rare
+  // enough that re-rendering on a matchMedia listener isn't worth the complexity, and the
+  // control simply doesn't exist for anyone with the preference on at mount.
+  const [reducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   useEffect(() => {
     if (!webgl || !canvasRef.current || !containerRef.current) return;
@@ -108,6 +113,12 @@ export function OfficeScene3D() {
 
   if (!webgl) return <FloorPlanView />;
 
+  const toggleAutoRotate = () => {
+    const next = !autoRotate;
+    sceneRef.current?.setAutoRotate(next);
+    setAutoRotateState(next);
+  };
+
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     draggingRef.current = true;
     movedRef.current = false;
@@ -160,6 +171,18 @@ export function OfficeScene3D() {
           setHover(null);
         }}
       />
+      {!reducedMotion && (
+        <button
+          type="button"
+          className={`scene3d-autorotate-btn${autoRotate ? ' scene3d-autorotate-btn--active' : ''}`}
+          onClick={toggleAutoRotate}
+          aria-pressed={autoRotate}
+          aria-label={autoRotate ? 'Stop auto-rotate' : 'Start auto-rotate'}
+          title={autoRotate ? 'Stop auto-rotate' : 'Start auto-rotate'}
+        >
+          {autoRotate ? <Pause size={14} aria-hidden="true" /> : <RotateCw size={14} aria-hidden="true" />}
+        </button>
+      )}
       {hover && <SceneTooltip selection={hover.selection} x={hover.x} y={hover.y} />}
       {selected && <DeviceInspector selection={selected} onClose={() => setSelected(null)} />}
     </div>
