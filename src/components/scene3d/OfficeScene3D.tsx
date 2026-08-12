@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, RotateCw, Pause, Maximize2 } from 'lucide-react';
+import { X, RotateCw, Pause } from 'lucide-react';
 import { OfficeScene, type PickResult } from './officeScene';
 import { FloorPlanView } from '@/components/floorplan/FloorPlanView';
 import { useDeviceStore } from '@/stores/deviceStore';
-import { navigateTo } from '@/lib/useHashRoute';
 import { Card } from '@/components/ui/Card';
 import { MetricValue } from '@/components/ui/MetricValue';
 import { Badge } from '@/components/ui/Badge';
@@ -206,10 +205,6 @@ export function OfficeScene3D() {
             {autoRotate ? <Pause size={14} aria-hidden="true" /> : <RotateCw size={14} aria-hidden="true" />}
           </button>
         )}
-        <button type="button" className="scene3d-open-controls-btn" onClick={() => navigateTo('control')}>
-          <Maximize2 size={12} aria-hidden="true" />
-          Open controls
-        </button>
       </div>
       {hover && <SceneTooltip selection={hover.selection} x={hover.x} y={hover.y} />}
       {selected && <DeviceInspector selection={selected} onClose={() => setSelected(null)} />}

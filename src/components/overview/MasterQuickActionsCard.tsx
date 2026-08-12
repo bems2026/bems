@@ -4,6 +4,7 @@ import { useCommandStore, targetKey } from '@/stores/commandStore';
 import { controlView } from '@/lib/socketView';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
+import { navigateTo } from '@/lib/useHashRoute';
 
 /** The two "quick toggle" light circuits shown here — L1 and L2, real commandable devices,
  * not the design's unlabelled sample rows. Any two would do; these are simply the first
@@ -15,6 +16,10 @@ const QUICK_TOGGLE_IDS = ['l1', 'l2'];
  * resolved server-side by `shared/commands.mjs`. The ACU row sends an IR command (never a
  * toggle — §0.3 of the spec: IR blasts don't cut power, so "Send ON"/"Send OFF" are two
  * distinct one-shot actions, not two states of one switch).
+ *
+ * "Open controls ↗" is the ONLY link to the Control page anywhere in the Overview bento —
+ * the 3D hero card's own "Switch a row"/"Open controls" buttons were removed so there's one
+ * place to look for it, not three saying the same thing.
  */
 export function MasterQuickActionsCard() {
   const send = useCommandStore((s) => s.send);
@@ -44,7 +49,9 @@ export function MasterQuickActionsCard() {
           <SlidersHorizontal size={14} className="title-icon" aria-hidden="true" />
           Quick Control
         </h3>
-        <span className="card-sub">Same control path as Control</span>
+        <button type="button" className="card-head-link" onClick={() => navigateTo('control')}>
+          Open controls ↗
+        </button>
       </div>
 
       <div className="quick-row">

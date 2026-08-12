@@ -1,14 +1,14 @@
 import { Box } from 'lucide-react';
-import { navigateTo } from '@/lib/useHashRoute';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { SpatialView } from './SpatialView';
 
 /**
- * v4's 3D hero card chrome (title, subtitle, "Switch a row ↗" link, legend strip) wrapping
- * the existing `SpatialView` (2D/3D toggle) unchanged. The overlay chips (lit count, ACU
- * state), the auto-rotate toggle, and "Open controls" live inside `OfficeScene3D` itself —
- * that's where the container ref and device-derived state already are, so they're layered
- * there rather than re-plumbed through this wrapper.
+ * v4's 3D hero card chrome (title, subtitle, legend strip) wrapping `SpatialView`. No link
+ * to Control from here — "Switch a row"/"Open controls" (this card's own and
+ * `OfficeScene3D`'s) were removed so Quick Control's "Open controls ↗" is the single place
+ * to navigate to Control from Overview, not three buttons saying the same thing. The overlay
+ * chips (lit count, ACU state) and the auto-rotate toggle still live inside `OfficeScene3D`
+ * itself — that's where the container ref and device-derived state already are.
  */
 export function Hero3DCard() {
   return (
@@ -24,9 +24,6 @@ export function Hero3DCard() {
             <InfoHint label="How to move around">Drag to orbit, scroll to zoom — otherwise it rotates on its own.</InfoHint>
           </p>
         </div>
-        <button type="button" className="hero-3d-link-btn" onClick={() => navigateTo('control')}>
-          Switch a row ↗
-        </button>
       </div>
       <SpatialView />
       <div className="hero-3d-legend">

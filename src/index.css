@@ -1451,22 +1451,6 @@ body::before {
   color: var(--muted-2);
   margin: 2px 0 0;
 }
-.hero-3d-link-btn {
-  border: 1px solid var(--glass-border);
-  background: rgb(255 255 255 / 0.8);
-  color: var(--muted);
-  border-radius: var(--r-sm);
-  padding: 7px 13px;
-  font: 700 var(--fs-xs) inherit;
-  cursor: pointer;
-  text-decoration: none;
-  white-space: nowrap;
-  transition: color 0.15s ease, border-color 0.15s ease;
-}
-.hero-3d-link-btn:hover {
-  color: var(--txt);
-  border-color: var(--border-strong);
-}
 .hero-3d-legend {
   display: flex;
   align-items: center;
@@ -1900,26 +1884,6 @@ body::before {
   color: var(--accent);
   border-color: var(--glass-border);
 }
-.scene3d-open-controls-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--blue);
-  color: #ffffff;
-  border: none;
-  border-radius: var(--r-sm);
-  padding: 6px 11px;
-  font: 700 var(--fs-xxs-lg) inherit;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: opacity 0.15s ease, transform 0.1s ease;
-}
-.scene3d-open-controls-btn:hover {
-  opacity: 0.9;
-}
-.scene3d-open-controls-btn:active {
-  transform: scale(0.96);
-}
 .scene3d-inspector-row {
   margin-bottom: var(--sp-3);
 }
@@ -2296,7 +2260,6 @@ body::before {
    :hover, both animating transform/opacity only. */
 .nav-tab:active,
 .nav-icon-btn:active,
-.hero-3d-link-btn:active,
 .outlet-socket-toggle:not(:disabled):active,
 .quick-btn:not(:disabled):active,
 .quick-toggle:not(:disabled):active,
@@ -3660,7 +3623,6 @@ body::before {
  * ------------------------------------------------------------------------ */
 @media (pointer: coarse) {
   .nav-icon-btn,
-  .hero-3d-link-btn,
   .scene3d-inspector-close,
   .scene3d-autorotate-btn,
   .control-master-btn,
