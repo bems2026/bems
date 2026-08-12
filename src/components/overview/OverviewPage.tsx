@@ -9,6 +9,9 @@ import { EdgeBufferCard } from './EdgeBufferCard';
 import { DeviceStatusCountsCard } from './DeviceStatusCountsCard';
 import { MeteredVsUntrackedCard } from './MeteredVsUntrackedCard';
 import { LoadShedBanner } from './LoadShedBanner';
+import { WeatherNowCard } from '@/components/weather/WeatherNowCard';
+import { WeatherDetailsCard } from '@/components/weather/WeatherDetailsCard';
+import { WeatherHourlyCard } from '@/components/weather/WeatherHourlyCard';
 
 /**
  * v4's Overview — a 3-column grid (340px / 1fr / 340px) around the 3D hero, per the Phase M
@@ -32,20 +35,25 @@ export function OverviewPage() {
       <div className="overview-grid">
         <div className="overview-col overview-col--left">
           <LiveDemandCard />
+          <WeatherNowCard />
           <MainPanelHealthCard />
           <ClimateDiagnosticsCard />
         </div>
 
         <div className="overview-col overview-col--center">
           <Hero3DCard />
-          <div className="overview-pair-grid">
+          {/* The bento's bottom row — the hourly strip sits alongside the two action cards
+              so the weather set brackets the 3D model on three sides (left, right, below). */}
+          <div className="overview-pair-grid overview-pair-grid--trio">
             <MasterQuickActionsCard />
             <NextUpCard />
+            <WeatherHourlyCard />
           </div>
         </div>
 
         <div className="overview-col overview-col--right">
           <EdgeBufferCard />
+          <WeatherDetailsCard />
           <DeviceStatusCountsCard />
           <MeteredVsUntrackedCard />
         </div>

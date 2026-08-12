@@ -1,0 +1,150 @@
+import { WEATHER_API_URL, WEATHER_LAT, WEATHER_LON, WEATHER_TZ } from '@/config/weather';
+
+/**
+ * Open-Meteo forecast fetch. Deliberately narrow: this returns exactly the fields the two
+ * Overview cards render, already normalised, so no component has to know the wire shape.
+ *
+ * Everything is non-optional in `WeatherNow` because Open-Meteo always returns the `current`
+ * block it was asked for — but the *whole response* is treated as optional by callers, since
+ * the internet is a dependency this app otherwise doesn't have. A failed fetch surfaces as
+ * an error state, never as zeroed-out weather.
+ */
+
+export interface WeatherSlot {
+  /** Epoch ms, already in the site's timezone per the API's `timezone` param. */
+  t: number;
+  tempC: number;
+  code: number;
+  isDay: boolean;
+}
+
+export interface WeatherDay {
+  t: number;
+  code: number;
+  maxC: number;
+  minC: number;
+}
+
+export interface WeatherNow {
+  tempC: number;
+  apparentC: number;
+  humidityPct: number;
+  windMs: number;
+  pressureHpa: number;
+  code: number;
+  isDay: boolean;
+  sunrise: number | null;
+  sunset: number | null;
+  hourly: WeatherSlot[];
+  daily: WeatherDay[];
+}
+
+const CURRENT_FIELDS = ['temperature_2m', 'relative_humidity_2m', 'apparent_temperature', 'is_day', 'weather_code', 'surface_pressure', 'wind_speed_10m'].join(',');
+
+interface RawResponse {
+  current?: Record<string, number>;
+  hourly?: { time?: string[]; temperature_2m?: number[]; weather_code?: number[]; is_day?: number[] };
+  daily?: { time?: string[]; weather_code?: number[]; temperature_2m_max?: number[]; temperature_2m_min?: number[]; sunrise?: string[]; sunset?: string[] };
+}
+
+/**
+ * Open-Meteo returns times in the requested timezone with no offset suffix
+ * (`2026-08-12T22:15`), and dates bare (`2026-08-12`). `Date.parse` treats the first as
+ * LOCAL but the second as UTC — a spec quirk that would shift every daily label by the
+ * browser's offset. Appending a midnight component forces both down the local path.
+ *
+ * That leaves one deliberate assumption: the display device runs in the site's own
+ * timezone. True for this kiosk (Batac City, +08) and already assumed app-wide — the bridge
+ * stamps +08:00 and every formatter here uses en-PH.
+ */
+function parseSiteTime(raw: string): number {
+  return Date.parse(raw.length === 10 ? `${raw}T00:00` : raw);
+}
+
+export async function getWeather(signal?: AbortSignal): Promise<WeatherNow> {
+  const url =
+    `${WEATHER_API_URL}?latitude=${WEATHER_LAT}&longitude=${WEATHER_LON}` +
+    `&current=${CURRENT_FIELDS}` +
+    `&hourly=temperature_2m,weather_code,is_day` +
+    `&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset` +
+    `&timezone=${encodeURIComponent(WEATHER_TZ)}&forecast_days=6&wind_speed_unit=ms`;
+
+  const res = await fetch(url, { signal });
+  if (!res.ok) throw new Error(`weather ${res.status}`);
+  const body = (await res.json()) as RawResponse;
+
+  const c = body.current;
+  if (!c || typeof c.temperature_2m !== 'number') throw new Error('weather response missing current conditions');
+
+  // Only future hours are useful on a "next hours" strip; the API returns the whole day.
+  const nowMs = Date.now();
+  const hourly: WeatherSlot[] = (body.hourly?.time ?? [])
+    .map((iso, i) => ({
+      t: parseSiteTime(iso),
+      tempC: body.hourly?.temperature_2m?.[i] ?? NaN,
+      code: body.hourly?.weather_code?.[i] ?? 0,
+      isDay: (body.hourly?.is_day?.[i] ?? 1) === 1,
+    }))
+    .filter((s) => Number.isFinite(s.tempC) && s.t >= nowMs - 3600_000)
+    .slice(0, 6);
+
+  const daily: WeatherDay[] = (body.daily?.time ?? [])
+    .map((iso, i) => ({
+      t: parseSiteTime(iso),
+      code: body.daily?.weather_code?.[i] ?? 0,
+      maxC: body.daily?.temperature_2m_max?.[i] ?? NaN,
+      minC: body.daily?.temperature_2m_min?.[i] ?? NaN,
+    }))
+    .filter((d) => Number.isFinite(d.maxC) && Number.isFinite(d.minC));
+
+  return {
+    tempC: c.temperature_2m,
+    apparentC: c.apparent_temperature ?? c.temperature_2m,
+    humidityPct: c.relative_humidity_2m ?? NaN,
+    windMs: c.wind_speed_10m ?? NaN,
+    pressureHpa: c.surface_pressure ?? NaN,
+    code: c.weather_code ?? 0,
+    isDay: (c.is_day ?? 1) === 1,
+    sunrise: body.daily?.sunrise?.[0] ? parseSiteTime(body.daily.sunrise[0]) : null,
+    sunset: body.daily?.sunset?.[0] ? parseSiteTime(body.daily.sunset[0]) : null,
+    hourly,
+    daily,
+  };
+}
+
+/**
+ * WMO weather codes → a short label. Grouped rather than exhaustive: the distinction
+ * between "slight" and "moderate" drizzle is not something a building operator acts on, and
+ * a 4-word label in a small card is worse than an accurate 2-word one.
+ */
+export function weatherLabel(code: number): string {
+  if (code === 0) return 'Clear';
+  if (code === 1) return 'Mainly clear';
+  if (code === 2) return 'Partly cloudy';
+  if (code === 3) return 'Overcast';
+  if (code === 45 || code === 48) return 'Fog';
+  if (code >= 51 && code <= 57) return 'Drizzle';
+  if (code >= 61 && code <= 65) return 'Rain';
+  if (code === 66 || code === 67) return 'Freezing rain';
+  if (code >= 71 && code <= 77) return 'Snow';
+  if (code >= 80 && code <= 82) return 'Rain showers';
+  if (code === 85 || code === 86) return 'Snow showers';
+  if (code === 95) return 'Thunderstorm';
+  if (code === 96 || code === 99) return 'Thunderstorm, hail';
+  return 'Unknown';
+}
+
+export type WeatherGlyph = 'clear' | 'partly' | 'cloud' | 'fog' | 'drizzle' | 'rain' | 'snow' | 'storm';
+
+/** The icon family a code maps to — kept separate from the label so the two can't drift. */
+export function weatherGlyph(code: number): WeatherGlyph {
+  if (code === 0 || code === 1) return 'clear';
+  if (code === 2) return 'partly';
+  if (code === 3) return 'cloud';
+  if (code === 45 || code === 48) return 'fog';
+  if (code >= 51 && code <= 57) return 'drizzle';
+  if ((code >= 61 && code <= 67) || (code >= 80 && code <= 82)) return 'rain';
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 'snow';
+  if (code >= 95) return 'storm';
+  return 'cloud';
+}
