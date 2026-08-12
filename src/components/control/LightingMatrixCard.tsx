@@ -6,7 +6,12 @@ import { controlView } from '@/lib/socketView';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { useControlLog } from './controlLog';
+import { PLAN, LIGHT_PLAN } from '@/components/scene3d/geometry';
 import type { Device } from '@/lib/types';
+
+const VB_W = 320;
+const VB_H = 550;
+const pct = (px: number, total: number) => `${((px / total) * 100).toFixed(2)}%`;
 
 /**
  * All 7 lighting circuits, in circuit order — real devices, not v4's fixed placeholder
@@ -21,17 +26,16 @@ function useLightSwitches(): Device[] {
 }
 
 /**
- * The ceiling luminaire matrix — one row per relay (L1-L7), 3 lamp swatches per row purely
- * decorative (the real wiring is one relay per row, all 3 fixtures sharing that single
- * circuit's state — see `scene3d/geometry.ts`'s `LIGHT_FIXTURES` comment). `column-reverse`
- * puts L1 at the bottom of the stack, matching the as-built numbering v4's own layout uses.
+ * The ceiling luminaire plan — same spatial layout as `OutletPlanCard`, positioning each
+ * fixture at its real `LIGHT_PLAN` coordinate instead of a row list. All 3 fixtures on a
+ * row share one relay's state (see `scene3d/geometry.ts`'s `LIGHT_FIXTURES` comment), so
+ * clicking any of the 3 squares in a row toggles that row.
  */
 export function LightingMatrixCard() {
   const lights = useLightSwitches();
+  const lightById = useMemo(() => new Map(lights.map((d) => [d.id, d])), [lights]);
   const send = useCommandStore((s) => s.send);
   const log = useControlLog((s) => s.log);
-  const pendingMap = useCommandStore((s) => s.pending);
-  const readings = useDeviceStore((s) => s.latestReadings);
   const { ask, modalProps } = useConfirm();
 
   const allOn = () => {
@@ -60,46 +64,15 @@ export function LightingMatrixCard() {
         <Lightbulb size={12} className="title-icon" aria-hidden="true" />
         CEILING LUMINAIRES · L1-L7
       </div>
-      <div className="control-light-rows">
-        {lights.map((d) => {
-          const view = controlView(readings[d.id], pendingMap[targetKey(d.id)]);
-          const busy = view.kind === 'pending';
-          const on = (view.kind === 'idle' || view.kind === 'pending') && view.value === 'on';
-          const toggle = () => {
-            if (busy) return;
-            const next = on ? 'off' : 'on';
-            send(d.id, undefined, next);
-            log('RELAY', `${d.display_name} → ${next}`);
-          };
-          return (
-            <div className={`control-light-row${on ? ' control-light-row--on' : ''}`} key={d.id}>
-              {[0, 1, 2].map((i) => (
-                <button
-                  key={i}
-                  type="button"
-                  className={`control-lamp${on ? ' control-lamp--on' : ''}`}
-                  disabled={busy}
-                  onClick={toggle}
-                  aria-hidden="true"
-                  tabIndex={-1}
-                />
-              ))}
-              <div className="control-light-row__tail">
-                <span className="control-light-row__label">{d.id.toUpperCase()}</span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={on}
-                  aria-label={d.display_name}
-                  className={`quick-toggle${on ? ' quick-toggle--on' : ''}`}
-                  disabled={busy}
-                  onClick={toggle}
-                >
-                  <span className="quick-toggle__knob" />
-                </button>
-              </div>
-            </div>
-          );
+      <div className="control-outlet-plan">
+        <div
+          className="control-outlet-plan__outline"
+          style={{ left: pct(PLAN.x0, VB_W), top: pct(PLAN.y0, VB_H), right: pct(VB_W - PLAN.x1, VB_W), bottom: pct(VB_H - PLAN.y1, VB_H) }}
+        />
+        {LIGHT_PLAN.ROWS.map((row) => {
+          const device = lightById.get(`l${row}`);
+          if (!device) return null;
+          return <LightRow key={device.id} row={row} device={device} />;
         })}
       </div>
       <div className="control-plan-panel__actions">
@@ -112,5 +85,56 @@ export function LightingMatrixCard() {
       </div>
       <ConfirmModal {...modalProps} />
     </div>
+  );
+}
+
+function LightRow({ row, device }: { row: number; device: Device }) {
+  const reading = useDeviceStore((s) => s.latestReadings[device.id]);
+  const pending = useCommandStore((s) => s.pending[targetKey(device.id)]);
+  const send = useCommandStore((s) => s.send);
+  const log = useControlLog((s) => s.log);
+
+  const view = controlView(reading, pending);
+  const busy = view.kind === 'pending';
+  const on = (view.kind === 'idle' || view.kind === 'pending') && view.value === 'on';
+
+  const toggle = () => {
+    if (busy) return;
+    const next = on ? 'off' : 'on';
+    send(device.id, undefined, next);
+    log('RELAY', `${device.display_name} → ${next}`);
+  };
+
+  const rowPy = LIGHT_PLAN.rowPy(row);
+
+  return (
+    <>
+      {LIGHT_PLAN.COLS.map((col) => {
+        const { px, py } = LIGHT_PLAN.center(row, col);
+        // Only the first fixture in the row is a real, keyboard-reachable switch — the
+        // other two are the same relay, so a second/third Tab stop for one action would
+        // just be redundant. All 3 stay independently clickable for the mouse/touch case
+        // the user asked for ("clicking any of the lights ... must turn on and off").
+        const isPrimary = col === 0;
+        return (
+          <button
+            key={col}
+            type="button"
+            role={isPrimary ? 'switch' : undefined}
+            aria-checked={isPrimary ? on : undefined}
+            aria-label={isPrimary ? device.display_name : undefined}
+            aria-hidden={isPrimary ? undefined : true}
+            tabIndex={isPrimary ? 0 : -1}
+            className={`control-lamp${on ? ' control-lamp--on' : ''}`}
+            style={{ left: pct(px, VB_W), top: pct(py, VB_H) }}
+            disabled={busy}
+            onClick={toggle}
+          />
+        );
+      })}
+      <span className="control-light-plan__label" style={{ left: pct(LIGHT_PLAN.colPx(2) + 26, VB_W), top: pct(rowPy, VB_H) }}>
+        {device.id.toUpperCase()}
+      </span>
+    </>
   );
 }

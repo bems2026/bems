@@ -158,11 +158,6 @@ function OutletPin({ device, left, top }: { device: Device; left: string; top: s
           onClick={() => toggle(2, s2On)}
         />
       </div>
-      <div className="control-outlet-pin__caption">
-        <span className={s1On ? 'control-outlet-pin__caption--on' : undefined}>DP1 {s1Unknown ? '?' : s1Busy ? '…' : s1On ? 'ON' : 'OFF'}</span>
-        <span className={s2On ? 'control-outlet-pin__caption--on' : undefined}>DP2 {s2Unknown ? '?' : s2Busy ? '…' : s2On ? 'ON' : 'OFF'}</span>
-      </div>
-      <div className="control-outlet-pin__watts">{typeof reading?.power_w === 'number' ? `${reading.power_w.toFixed(0)}W` : '—'}</div>
       {corroboration === 'contradicted' && <div className="control-outlet-pin__warn">⚠ drawing power</div>}
     </div>
   );
