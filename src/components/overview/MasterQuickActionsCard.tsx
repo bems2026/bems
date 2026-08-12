@@ -6,10 +6,12 @@ import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { navigateTo } from '@/lib/useHashRoute';
 
-/** The two "quick toggle" light circuits shown here — L1 and L2, real commandable devices,
- * not the design's unlabelled sample rows. Any two would do; these are simply the first
- * two of the seven lighting circuits. */
-const QUICK_TOGGLE_IDS = ['l1', 'l2'];
+/** The one "quick toggle" light circuit shown here — L1, a real commandable device, not
+ * the design's unlabelled sample row. Any one would do; this is simply the first of the
+ * seven lighting circuits. Was L1 + L2 — trimmed to one row so this card (and the bottom
+ * bento row it's stretched to match, per `.overview-trio` in index.css) reads shorter;
+ * the full 7-circuit list is one click away via "Open controls ↗" regardless. */
+const QUICK_TOGGLE_IDS = ['l1'];
 
 /**
  * v4's "Master Quick Actions" — same control path Control (M3) uses: `commandStore.send`,
