@@ -6,16 +6,13 @@ import { WeatherIcon } from './WeatherIcon';
 import { useWeather } from './useWeather';
 
 /**
- * The single Weather Status card the Overview bento calls for — the reference design's two
- * panels merged into one card: hero conditions on top, a compact metric list beneath.
- * Replaces the three separate weather cards, which between them mounted `useWeather` three
- * times and so ran three independent fetch loops against a public API for identical data.
- *
- * Trimmed to wind/humidity/pressure (the hourly strip and Sunset row are gone): this card
- * now occupies exactly half the right column, matched to Energy Flow, rather than the ~463px
- * both wanted when the wireframe's slot is ~370px. The wireframe's own right panel shows
- * only Wind/Humidity/Atm-pressure beneath the hero, so this isn't losing data the layout
- * asked for — Sunrise/Sunset were this app's own addition on top of it.
+ * The single Weather Status card the Overview bento calls for — hero conditions (glyph,
+ * condition, temperature) on top, a short daily forecast strip beneath. Replaces the
+ * earlier wind/humidity/pressure metric list: that list's fixed row heights were taller
+ * than this card's actual budget (it's stretched to match Energy Flow, half the right
+ * column), so the content overflowed past the card's own border at real viewport heights —
+ * a genuine bug, not a styling choice. The forecast strip is a `display: grid` row that
+ * takes exactly the height its own content needs and no more, so it can't repeat that.
  *
  * Still explicitly attributed. The office has its own outdoor probe and the ACU reports room
  * temperature (both on the Climate Diagnostic card), so forecast air temperature sitting
@@ -32,19 +29,19 @@ export function WeatherStatusCard() {
           Weather Status
           <InfoHint label="Where this weather comes from">
             Open-Meteo forecast for {WEATHER_PLACE}, refreshed every 10 minutes. Outdoor site weather, not a building sensor — the office's own outdoor probe and the ACU's room
-            temperature are separate readings on the Climate Diagnostic card. Pressure is reported in hPa and shown in mmHg (1 hPa = 0.75006 mmHg).
+            temperature are separate readings on the Climate Diagnostic card.
           </InfoHint>
         </h3>
       </div>
 
       {status === 'loading' && !weather ? (
-        <Skeleton height="300px" />
+        <Skeleton height="100%" />
       ) : !weather ? (
         <p className="section-placeholder">Weather unavailable — no connection to the forecast service.</p>
       ) : (
         <>
           <div className="weather-hero">
-            <WeatherIcon code={weather.code} isDay={weather.isDay} size={64} className="weather-hero__glyph" />
+            <WeatherIcon code={weather.code} isDay={weather.isDay} size={48} className="weather-hero__glyph" />
             <p className="weather-hero__label">{weatherLabel(weather.code)}</p>
             <p className="weather-hero__temp">
               {Math.round(weather.tempC)}
@@ -55,30 +52,25 @@ export function WeatherStatusCard() {
             </p>
           </div>
 
-          <dl className="weather-rows">
-            <Row label="Wind" value={fmt(weather.windMs, 1)} unit="m/s" />
-            <Row label="Humidity" value={fmt(weather.humidityPct, 0)} unit="%" />
-            <Row label="Atm pressure" value={fmt(weather.pressureHpa * 0.75006, 0)} unit="mmHg" />
-          </dl>
+          {weather.daily.length > 0 && (
+            <div className="weather-forecast">
+              {weather.daily.slice(0, 4).map((d) => (
+                <div className="weather-forecast__day" key={d.t}>
+                  <span className="weather-forecast__key">{dayLabel(d.t)}</span>
+                  <WeatherIcon code={d.code} isDay size={16} className="weather-forecast__glyph" />
+                  <span className="weather-forecast__hi mono">{Math.round(d.maxC)}°</span>
+                  <span className="weather-forecast__lo mono">{Math.round(d.minC)}°</span>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
     </div>
   );
 }
 
-function Row({ label, value, unit }: { label: string; value: string; unit?: string }) {
-  return (
-    <div className="weather-row">
-      <dt className="weather-row__label">{label}</dt>
-      <dd className="weather-row__value mono">
-        {value}
-        {unit && value !== '—' && <span className="weather-row__unit"> {unit}</span>}
-      </dd>
-    </div>
-  );
-}
-
-/** NaN is what a missing API field becomes after arithmetic — it must read as "no value". */
-function fmt(value: number, digits: number): string {
-  return Number.isFinite(value) ? value.toFixed(digits) : '—';
+function dayLabel(ms: number): string {
+  const d = new Date(ms);
+  return d.toDateString() === new Date().toDateString() ? 'Today' : d.toLocaleDateString('en-PH', { weekday: 'short' });
 }

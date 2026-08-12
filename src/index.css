@@ -1141,11 +1141,12 @@ body::before {
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: var(--sp-2) 0 var(--sp-3);
-  /* Grows to take the space `.weather-rows` (natural height, pinned to the card's bottom)
-     doesn't need, and centres the glyph/temperature within it — the card is now stretched
-     to half the right column's height, taller than this content alone needs. */
+  padding: var(--sp-2) 0;
+  /* Grows to take the space `.weather-forecast` (natural height, pinned to the card's
+     bottom) doesn't need, and centres the glyph/temperature within it — the card is
+     stretched to half the right column's height, taller than either piece alone needs. */
   flex: 1;
+  min-height: 0;
 }
 .weather-hero__glyph {
   color: var(--blue);
@@ -1162,15 +1163,15 @@ body::before {
   align-items: flex-start;
   margin: 2px 0 0;
   font-weight: 300;
-  font-size: 56px;
+  font-size: 44px;
   line-height: 1.05;
   letter-spacing: -0.02em;
   color: var(--txt);
 }
 .weather-hero__deg {
-  font-size: 26px;
+  font-size: 22px;
   font-weight: 300;
-  margin-top: 5px;
+  margin-top: 4px;
 }
 .weather-hero__feels {
   margin: 2px 0 0;
@@ -1178,36 +1179,44 @@ body::before {
   color: var(--muted-2);
 }
 
-.weather-rows {
-  margin: 0;
+/* Replaces the old wind/humidity/pressure `.weather-row` list, which had no cap on its own
+   height and pushed the card past its allotted half of the right column. This grid takes
+   exactly the height its own rows need — fixed icon size, two short text lines — instead of
+   accreting height per metric. */
+.weather-forecast {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-2);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border-faint);
+}
+.weather-forecast__day {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
 }
-.weather-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  padding: 7px 0;
-  border-bottom: 1px solid var(--border-faint);
-}
-.weather-row:last-child {
-  border-bottom: none;
-}
-.weather-row__label {
-  font-size: var(--fs-xs-lg);
-  color: var(--muted-2);
-}
-.weather-row__value {
-  margin: 0;
-  font-size: var(--fs-sm-lg);
-  font-weight: 700;
-  color: var(--txt);
-  white-space: nowrap;
-}
-.weather-row__unit {
+.weather-forecast__key {
   font-size: var(--fs-xs);
   font-weight: 600;
+  color: var(--muted-2);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.weather-forecast__glyph {
+  color: var(--blue);
+  opacity: 0.85;
+  margin: 1px 0;
+}
+.weather-forecast__hi {
+  font-size: var(--fs-xs-lg);
+  font-weight: 700;
+  color: var(--txt);
+}
+.weather-forecast__lo {
+  font-size: var(--fs-xs);
   color: var(--muted-2);
 }
 @media (max-width: 640px) {
