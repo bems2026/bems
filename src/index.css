@@ -2904,24 +2904,45 @@ body::before {
 .analytics-source-card__stat-value {
   font: 600 var(--fs-xs-lg) 'IBM Plex Mono', monospace;
 }
-/* A wide, short box for the sparkline — half the height of a square (`aspect-ratio: 2/1`,
-   was `1/1`, which read as too tall next to the compact stat rows above it). `Sparkline`'s
-   `fill` prop stretches its SVG to whatever this box resolves to. */
+/* A wide, short box for the chart — half the height of a square (`aspect-ratio: 2/1`, was
+   `1/1`, which read as too tall next to the compact stat rows above it). Holds a real
+   Recharts `AreaChart` now (`SourceChart` in SourceCard.tsx), same hover-reveal-axes system
+   as `.analytics-chart-card`'s "Power · 24 h" chart — see the `.chart-frame` rules above. */
 .analytics-source-card__chart {
   aspect-ratio: 2 / 1;
   margin-top: var(--sp-3);
 }
 /* Branch cards reuse `.analytics-stat-grid`/`.analytics-stat-tile` (same tiles the
    "selected source" panel above uses) but at a narrower card width, so the tiles get
-   tighter padding and a smaller value size than that wider context. */
+   tighter padding than that wider context. */
 .analytics-source-card__grid {
   gap: 6px;
 }
 .analytics-source-card__grid .analytics-stat-tile {
   padding: 8px;
 }
+/* Value + unit sit on one line ("219.5 V"), not stacked — and the value is full size
+   (`--fs-lg`, matching the wider "selected source" panel's own tiles) with the unit bumped
+   from `--faint` to `--muted-2` so it's legible at a glance instead of decorative. */
+.analytics-stat-tile__value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-top: 5px;
+}
+/* `.analytics-stat-tile__value` carries its own `margin-top: 5px` for its other usage
+   (`SelectedStatPanel`, no wrapper) — cancelled here since the row above already spaces
+   itself from the label. */
+.analytics-stat-tile__value-row .analytics-stat-tile__value {
+  margin-top: 0;
+}
 .analytics-source-card__grid .analytics-stat-tile__value {
-  font-size: var(--fs-sm-lg);
+  font-size: var(--fs-lg);
+}
+.analytics-source-card__grid .analytics-stat-tile__unit {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--muted-2);
 }
 
 .analytics-untracked-card {
