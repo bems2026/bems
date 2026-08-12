@@ -3,7 +3,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { Activity, Gauge, Plug } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { Sparkline } from '@/components/ui/Sparkline';
+import { HistoryAreaChart } from './HistoryAreaChart';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { useAnalyticsHistory } from './useAnalyticsHistory';
 import { buildChartRows } from './analyticsMath';
@@ -152,10 +152,13 @@ export function AnalyticsPage() {
           <h3 className="card-title">{selectedDevice?.display_name ?? 'No source selected'}</h3>
           {selectedDevice && <SelectedStatPanel reading={selectedReading} />}
           <div className="analytics-stat-card__spark-label">24 H</div>
-          <div className="analytics-stat-card__chart">
-            <Sparkline values={(selectedId ? (historyMap[selectedId] ?? []) : []).slice(-140).map((p) => p.power_w)} color="var(--blue-bright)" fill />
-          </div>
-          <p className="analytics-stat-card__note">{scope === 'branches' ? 'Feeder measured at the main CHNT panel CT.' : 'Socket-level meter inside the outlet module.'}</p>
+          <HistoryAreaChart
+            history={selectedId ? historyMap[selectedId] : undefined}
+            color="var(--blue-bright)"
+            name={selectedDevice?.display_name ?? 'Selected source'}
+            className="analytics-stat-card__chart"
+            maxPoints={140}
+          />
         </div>
       </div>
 
@@ -172,15 +175,17 @@ function SelectedStatPanel({ reading }: { reading: Reading | undefined }) {
     { label: 'VOLTAGE', value: reading?.voltage, digits: 1, unit: 'V' },
     { label: 'CURRENT', value: reading?.current, digits: 2, unit: 'A' },
     { label: 'POWER', value: reading?.power_w !== undefined ? reading.power_w / 1000 : undefined, digits: 3, unit: 'kW' },
-    { label: 'ENERGY', value: reading?.energy_kwh_today, digits: 2, unit: 'kWh today' },
+    { label: 'ENERGY TODAY', value: reading?.energy_kwh_today, digits: 2, unit: 'kWh' },
   ];
   return (
     <div className="analytics-stat-grid">
       {stats.map((s) => (
         <div className="analytics-stat-tile" key={s.label}>
           <div className="analytics-stat-tile__label">{s.label}</div>
-          <div className="analytics-stat-tile__value">{typeof s.value === 'number' ? s.value.toFixed(s.digits) : '—'}</div>
-          <div className="analytics-stat-tile__unit">{s.unit}</div>
+          <div className="analytics-stat-tile__value-row">
+            <span className="analytics-stat-tile__value">{typeof s.value === 'number' ? s.value.toFixed(s.digits) : '—'}</span>
+            <span className="analytics-stat-tile__unit">{s.unit}</span>
+          </div>
         </div>
       ))}
     </div>

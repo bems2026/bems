@@ -2688,7 +2688,7 @@ body::before {
 
 .analytics-main-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr) 400px;
   gap: var(--sp-4);
   /* Was `align-items: start`, which let the shorter stat card stop well above the chart
      card's own bottom edge, leaving a dead gap under it. Default `stretch` matches both
@@ -2788,24 +2788,18 @@ body::before {
   font: 700 var(--fs-lg) 'IBM Plex Mono', monospace;
   margin-top: 5px;
 }
+/* Sits beside the value on one line (`.analytics-stat-tile__value-row`), not stacked under
+   it — and at `--muted-2`/`--fs-xs` rather than the old decorative `--faint`/9.5px, so the
+   unit is actually readable next to the number it qualifies. */
 .analytics-stat-tile__unit {
-  font: 500 var(--fs-2xs) 'IBM Plex Mono', monospace;
-  color: var(--faint);
+  font: 600 var(--fs-xs) 'IBM Plex Mono', monospace;
+  color: var(--muted-2);
 }
 .analytics-stat-card__spark-label {
   margin-top: var(--sp-4);
   font: 600 var(--fs-2xs) 'IBM Plex Mono', monospace;
   color: var(--faint);
   letter-spacing: 0.08em;
-}
-.analytics-stat-card__note {
-  margin: var(--sp-3) 0 0;
-  padding: var(--sp-3);
-  border-radius: var(--r-inner);
-  background: var(--bg-surface-2);
-  font-size: var(--fs-xs-lg);
-  color: var(--muted);
-  line-height: 1.45;
 }
 
 .analytics-cards-section {
@@ -2943,28 +2937,25 @@ body::before {
 .analytics-source-card__grid .analytics-stat-tile {
   padding: 8px;
 }
-/* Value + unit sit on one line ("219.5 V"), not stacked — and the value is full size
-   (`--fs-lg`, matching the wider "selected source" panel's own tiles) with the unit bumped
-   from `--faint` to `--muted-2` so it's legible at a glance instead of decorative. */
+/* Value + unit share one line ("219.5 V") instead of stacking. Used by both the branch
+   cards and the wider selected-source panel — the unit's own size/colour lives on
+   `.analytics-stat-tile__unit` above, so both contexts stay in step. */
 .analytics-stat-tile__value-row {
   display: flex;
   align-items: baseline;
   gap: 4px;
   margin-top: 5px;
 }
-/* `.analytics-stat-tile__value` carries its own `margin-top: 5px` for its other usage
-   (`SelectedStatPanel`, no wrapper) — cancelled here since the row above already spaces
-   itself from the label. */
+/* The row above already spaces itself off the label, so the value's own margin (kept for
+   any future unwrapped usage) is cancelled inside it. */
 .analytics-stat-tile__value-row .analytics-stat-tile__value {
   margin-top: 0;
 }
-.analytics-source-card__grid .analytics-stat-tile__value {
-  font-size: var(--fs-lg);
-}
-.analytics-source-card__grid .analytics-stat-tile__unit {
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  color: var(--muted-2);
+/* The selected-source panel is the widest place these tiles appear (its grid column is
+   400px vs. a branch card's ~250px), so its value can carry a larger size than the shared
+   default without crowding the unit beside it. */
+.analytics-stat-card .analytics-stat-tile__value {
+  font-size: var(--fs-xl);
 }
 
 .analytics-untracked-card {
