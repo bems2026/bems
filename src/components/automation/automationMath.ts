@@ -36,10 +36,10 @@ export interface NextUpEntry {
 }
 
 /**
- * Overview's "Next up" card — v3's chronological sort (`localeCompare` on the zero-padded
- * `HH:MM` on-time, which sorts correctly as plain strings) applied to real, SAVED schedules
- * only. `draft` is deliberately excluded, same reasoning as `LoadShedBanner`: an unsaved
- * Automation edit hasn't reached Node-RED's context, so it isn't really "next" yet.
+ * Overview's "Active Schedules" card — v3's chronological sort (`localeCompare` on the
+ * zero-padded `HH:MM` on-time, which sorts correctly as plain strings) applied to real,
+ * SAVED schedules only. `draft` is deliberately excluded: an unsaved Automation edit hasn't
+ * reached Node-RED's context, so it isn't really "next" yet.
  */
 export function nextUpSchedules(devices: Device[], saved: ContextMap, limit = 4): NextUpEntry[] {
   const entries: NextUpEntry[] = [];

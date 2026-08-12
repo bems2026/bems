@@ -1,38 +1,67 @@
+import { useEffect, useMemo, useState } from 'react';
 import { GitFork } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
+import { getHistory } from '@/lib/bridgeClient';
+import { TIMING } from '@/lib/timing';
 import { InfoHint } from '@/components/ui/InfoHint';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { HistoryAreaChart } from '@/components/analytics/HistoryAreaChart';
+import { sumHistories } from './totalPowerSeries';
 
 /**
- * Where the building's power is flowing right now: the panel total, how it divides across
- * the four CHNT branch meters, and how much of the outlet branch is individually metered
- * versus hardwired.
+ * Facility-wide power over time — the same chart design Analytics uses (`HistoryAreaChart`:
+ * always-visible axes, gridlines revealed on hover, a tooltip reading the exact time/power
+ * pair), rather than the previous tier-diagram treatment. Per explicit direction: a graph
+ * with axes for total power and time, not a decomposition.
  *
- * The tiers are a true decomposition, not an illustration. `_totals.total_power_w` is
- * defined in `buildLatest` as the sum of the four branch meters' `power_w`, so branch shares
- * are computed against that same sum by construction. The sub-metered tier is the 7 outlets'
- * own meters against the panel total; the remainder is genuinely unmetered load (hardwired
- * lighting, the ACU, anything direct-to-panel) rather than a rounding gap.
+ * There is no single building-wide history endpoint — only per-device — so this self-fetches
+ * each branch meter's own 24h series and sums them client-side (`sumHistories`), the same
+ * derivation `_totals.total_power_w` itself uses server-side in `shared/buildLatest.mjs`.
+ * That makes the two the SAME quantity, not necessarily the same NUMBER at a given instant:
+ * this chart's latest point is the history buffer's last sample (once per
+ * `TIMING.HISTORY_SAMPLE_MS`, 60s), while Live Demand reads the live WebSocket feed
+ * (~2s) — the two can differ by up to a sample interval's worth of drift, same relationship
+ * Analytics' own "Power · 24 h" chart has to any live reading elsewhere on that page.
+ * Fetch/refetch pattern matches every other self-fetching Overview card
+ * (`useAnalyticsHistory`, the former `EdgeBufferCard`).
  */
+const MAX_POINTS = 120;
+
 export function EnergyFlowCard() {
   const devices = useDeviceStore((s) => s.devices);
-  const readings = useDeviceStore((s) => s.latestReadings);
-  const totals = useDeviceStore((s) => s.totals);
+  const historyMap = useDeviceStore((s) => s.history);
+  const meterIds = useMemo(() => devices.filter((d) => d.class === 'meter').map((d) => d.id), [devices]);
+  const meterKey = meterIds.join(',');
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
 
-  const branches = devices
-    .filter((d) => d.class === 'meter')
-    .map((d) => ({ id: d.id, name: d.display_name, w: readings[d.id]?.power_w }))
-    .filter((b): b is { id: string; name: string; w: number } => typeof b.w === 'number')
-    .sort((a, b) => b.w - a.w);
+  useEffect(() => {
+    if (meterIds.length === 0) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-  const outletW = devices
-    .filter((d) => d.class === 'outlet_dual')
-    .map((d) => readings[d.id]?.power_w)
-    .filter((w): w is number => typeof w === 'number')
-    .reduce((sum, w) => sum + w, 0);
+    const load = async () => {
+      try {
+        const results = await Promise.all(meterIds.map((id) => getHistory(id, '24h')));
+        if (cancelled) return;
+        for (let i = 0; i < meterIds.length; i++) useDeviceStore.getState().setHistory(meterIds[i], results[i].points);
+        setStatus('ready');
+      } catch {
+        if (!cancelled) setStatus('error');
+      } finally {
+        if (!cancelled) timer = setTimeout(load, TIMING.HISTORY_SAMPLE_MS);
+      }
+    };
 
-  const panelW = totals?.total_power_w ?? null;
-  const hasFlow = panelW !== null && panelW > 0 && branches.length > 0;
-  const untrackedW = panelW === null ? null : Math.max(0, panelW - outletW);
+    load();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- meterKey is the stable proxy for meterIds' contents
+  }, [meterKey]);
+
+  const total = useMemo(() => sumHistories(meterIds.map((id) => historyMap[id] ?? [])), [meterIds, historyMap]);
+  const loading = status === 'loading' && total.length === 0;
 
   return (
     <div className="card energy-flow-card">
@@ -40,57 +69,19 @@ export function EnergyFlowCard() {
         <h3 className="card-title">
           <GitFork size={14} className="title-icon" aria-hidden="true" />
           Energy Flow
-          <InfoHint label="How this flow is derived">
-            The panel total is the sum of the four CHNT branch meters, so each branch's share is exact by construction. Sub-metered is the 7 outlets' own meters; the remainder is
-            hardwired load — lighting, the ACU, and anything wired direct to the panel — not a measurement gap.
+          <InfoHint label="How this series is derived">
+            Total facility power over time, summed client-side from the 4 CHNT branch meters' own history — the same sum `_totals.total_power_w` uses. The chart's latest point can lag
+            the Live Demand card by up to a minute: history samples once a minute, Live Demand reads the live feed.
           </InfoHint>
         </h3>
       </div>
 
-      {!hasFlow ? (
-        <p className="section-placeholder">Waiting for the panel total…</p>
+      {loading ? (
+        <Skeleton className="energy-flow-chart" height="100%" />
+      ) : total.length === 0 ? (
+        <p className="section-placeholder">{status === 'error' ? 'History unavailable right now.' : 'No history yet — the buffer fills at 1 point/min.'}</p>
       ) : (
-        <div className="flow">
-          <div className="flow-node flow-node--source">
-            <span className="flow-node__label">CHNT MAIN PANEL</span>
-            <span className="flow-node__value mono">{(panelW / 1000).toFixed(2)} kW</span>
-          </div>
-
-          <div className="flow-arm" aria-hidden="true" />
-
-          <div className="flow-branches">
-            {branches.map((b) => {
-              const share = (b.w / panelW) * 100;
-              return (
-                <div className="flow-branch" key={b.id}>
-                  <div className="flow-branch__head">
-                    <span className="flow-branch__name">{b.name}</span>
-                    <span className="flow-branch__value mono">{(b.w / 1000).toFixed(2)} kW</span>
-                  </div>
-                  <div className="flow-branch__track" aria-hidden="true">
-                    <div className="flow-branch__fill" style={{ width: `${Math.min(100, share).toFixed(1)}%` }} />
-                  </div>
-                  <span className="flow-branch__pct mono">{share.toFixed(0)}% of panel</span>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="flow-arm" aria-hidden="true" />
-
-          <div className="flow-split">
-            <div className="flow-split__row">
-              <span className="flow-split__swatch flow-split__swatch--metered" aria-hidden="true" />
-              <span className="flow-split__label">Outlet-metered</span>
-              <span className="flow-split__value mono">{(outletW / 1000).toFixed(2)} kW</span>
-            </div>
-            <div className="flow-split__row">
-              <span className="flow-split__swatch flow-split__swatch--untracked" aria-hidden="true" />
-              <span className="flow-split__label">Hardwired</span>
-              <span className="flow-split__value mono">{untrackedW === null ? '—' : `${(untrackedW / 1000).toFixed(2)} kW`}</span>
-            </div>
-          </div>
-        </div>
+        <HistoryAreaChart history={total} color="var(--accent)" name="Facility" className="energy-flow-chart" maxPoints={MAX_POINTS} />
       )}
     </div>
   );

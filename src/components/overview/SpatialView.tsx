@@ -26,7 +26,7 @@ export function SpatialView() {
   }, [mode]);
 
   return (
-    <div>
+    <div className="spatial-view">
       <div className="spatial-toggle" role="group" aria-label="Floor plan view">
         <ToggleButton active={mode === '3d'} onClick={() => setMode('3d')}>
           3D

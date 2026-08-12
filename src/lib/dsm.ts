@@ -43,9 +43,13 @@ export interface DsmBreach {
 /**
  * Checks the real, current `_totals` reading against whichever thresholds are actually
  * configured. No threshold configured, or no `_totals` reading yet, both resolve to "not
- * breached" — a load-shed banner arming itself off of an unset limit or a fabricated 0
+ * breached" — a breach indicator arming itself off of an unset limit or a fabricated 0
  * would be exactly the kind of false alarm this app's "never fabricate" rule exists to
  * prevent.
+ *
+ * No current caller (Overview's banner that used this was removed in the bento-grid
+ * revision) — kept because the logic is correct and independently tested, in case a
+ * breach indicator returns in a different form.
  */
 export function checkDsmBreach(thresholds: DsmThresholds, totals: Totals | null): DsmBreach {
   const phaseNow = maxPhaseNow(totals);

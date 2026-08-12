@@ -37,9 +37,9 @@ interface ContextState {
 
 /**
  * Node-RED global-context state for Automation's schedules/triggers/DSM thresholds — and,
- * critically, the DSM keys Overview's load-shed banner reads (see `OverviewPage.tsx`).
- * Loaded once at app start (`App.tsx`), not lazily on Automation's mount, because the
- * banner needs a real breach state regardless of which page is currently active.
+ * critically, the schedule keys Overview's Active Schedules card reads (see
+ * `OverviewPage.tsx`). Loaded once at app start (`App.tsx`), not lazily on Automation's
+ * mount, because Overview needs real schedule data regardless of which page is active.
  */
 export const useContextStore = create<ContextState>((set, get) => ({
   saved: {},

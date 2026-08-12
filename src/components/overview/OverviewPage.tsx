@@ -8,30 +8,31 @@ import { DeviceStatusCountsCard } from './DeviceStatusCountsCard';
 import { MasterQuickActionsCard } from './MasterQuickActionsCard';
 import { NextUpCard } from './NextUpCard';
 import { ClimateDiagnosticsCard } from './ClimateDiagnosticsCard';
-import { LoadShedBanner } from './LoadShedBanner';
 import { WeatherStatusCard } from '@/components/weather/WeatherStatusCard';
 
 /**
- * Overview as a bento grid, laid out to the supplied wireframe:
+ * Overview as one bento grid (`.overview-bento`, `grid-template-areas` in index.css), laid
+ * out to the supplied wireframe:
  *
  *   Live Demand           |            | Weather Status
- *   Electrical Parameters |  3D MODEL  | Energy Flow
+ *   Electrical Parameters |  3D MODEL  | Energy Flow (graph)
  *   Energy Breakdown      |            |
  *   ------------------------------------------------------
  *   Device Status | Quick Control | Active Schedules | Climate Diagnostic
  *
- * The bottom row spans all three columns rather than sitting inside the centre column, which
- * is what makes the four cards line up with the outer edges of the left and right stacks.
+ * One grid, not two matched by eye: the bottom row is the SAME grid's `status`/`trio` areas,
+ * which is what makes Device Status align to the left column's exact edges — a separate
+ * 4-equal-column grid (the previous attempt) has no way to know the left column isn't 1/4 of
+ * the total width. `status` is exactly as wide as the left column; `trio` splits the
+ * centre+right span into 3, matching the wireframe's measured proportions.
  *
- * Dropped in this revision because the wireframe has no slot for them: the 24 h edge-buffer
- * chart (Analytics carries the same series at a readable size) and the metered-vs-untracked
- * card (its split now reads as a tier of Energy Flow, and Analytics' Energy section has the
- * detailed version). The three separate weather cards collapsed into one Weather Status.
- *
- * `LoadShedBanner` is kept despite not being in the wireframe: it isn't a card — it renders
- * nothing at all until Automation's DSM thresholds are both configured and genuinely
- * breached, and silently removing a safety annunciator to match a layout sketch would be the
- * wrong trade.
+ * Dropped in this revision because the wireframe has no slot for them:
+ *   - The 24 h edge-buffer chart (Analytics carries the same series at a readable size).
+ *   - The metered-vs-untracked card (Energy Flow — now a real total-power-vs-time chart,
+ *     see EnergyFlowCard.tsx — covers the same territory).
+ *   - Two of the three weather cards (Weather Status is the one that remains).
+ *   - The load-shed banner, per explicit instruction — DSM thresholds stay configurable on
+ *     Automation; a breach is no longer announced here.
  */
 export function OverviewPage() {
   return (
@@ -44,9 +45,7 @@ export function OverviewPage() {
         <Clock />
       </header>
 
-      <LoadShedBanner />
-
-      <div className="overview-grid">
+      <div className="overview-bento">
         <div className="overview-col overview-col--left">
           <LiveDemandCard />
           <MainPanelHealthCard />
@@ -61,13 +60,16 @@ export function OverviewPage() {
           <WeatherStatusCard />
           <EnergyFlowCard />
         </div>
-      </div>
 
-      <div className="overview-bottom-row">
-        <DeviceStatusCountsCard />
-        <MasterQuickActionsCard />
-        <NextUpCard />
-        <ClimateDiagnosticsCard />
+        <div className="overview-status">
+          <DeviceStatusCountsCard />
+        </div>
+
+        <div className="overview-trio">
+          <MasterQuickActionsCard />
+          <NextUpCard />
+          <ClimateDiagnosticsCard />
+        </div>
       </div>
     </>
   );

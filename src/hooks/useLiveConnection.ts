@@ -24,8 +24,8 @@ export function useLiveConnection(): void {
         // until the next mount. The live feed below still drives readings independently.
       });
 
-    // Loaded here, not lazily on Automation's mount — Overview's load-shed banner reads
-    // the DSM keys regardless of which page is currently active.
+    // Loaded here, not lazily on Automation's mount — Overview's Active Schedules card
+    // reads the schedule keys regardless of which page is currently active.
     void useContextStore.getState().load();
 
     const disconnect = connectLive({

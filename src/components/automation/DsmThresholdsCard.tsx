@@ -6,9 +6,11 @@ const MAX_PHASE_KEY = 'global.dsm.max_phase_a';
 const MAX_TOTAL_KEY = 'global.dsm.max_total_kw';
 const AUTO_SHED_KEY = 'global.dsm.auto_shed';
 
-/** Breach raises Overview's `LoadShedBanner` — but only once these values are actually
- * saved (`LoadShedBanner` reads `saved`, never `draft`). Live readout is real: the same
- * `_totals` reading Overview's Main Panel Health card shows. */
+/** These thresholds no longer drive an Overview banner (removed per the bento-grid
+ * revision — DSM breach is not in the current Overview design), but stay configurable and
+ * saved here regardless: they're a real building parameter Automation owns independent of
+ * whether anything currently displays a breach. Live readout is real: the same `_totals`
+ * reading Overview's Electrical Parameters card shows. */
 export function DsmThresholdsCard() {
   const totals = useDeviceStore((s) => s.totals);
   const saved = useContextStore((s) => s.saved);
@@ -28,7 +30,7 @@ export function DsmThresholdsCard() {
     <div className="card automation-dsm-card">
       <h3 className="card-title">DSM Thresholds</h3>
       <p className="card-sub">
-        Breach raises the Overview load-shed banner once saved. Live: {phaseNow !== null ? `${phaseNow.toFixed(1)} A` : '—'} max phase,{' '}
+        Saved thresholds for demand-side management. Live: {phaseNow !== null ? `${phaseNow.toFixed(1)} A` : '—'} max phase,{' '}
         {kwNow !== null ? `${kwNow.toFixed(2)} kW` : '—'} total.
       </p>
 

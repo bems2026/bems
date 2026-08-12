@@ -30,8 +30,8 @@ export function useHashRoute(validIds: readonly string[], fallback: string): str
 }
 
 /** Navigates to a page by setting the hash — the single write path every nav control (top
- * tabs, in-card "View details ↗" links, the load-shed banner's buttons) should use, so a
- * click and a typed/bookmarked URL both go through the same `hashchange` listener above. */
+ * tabs, in-card "View details ↗"/"Details ↗" links) should use, so a click and a
+ * typed/bookmarked URL both go through the same `hashchange` listener above. */
 export function navigateTo(id: string): void {
   window.location.hash = id;
 }

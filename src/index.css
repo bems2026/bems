@@ -966,164 +966,113 @@ body::before {
  * same reasoning Phase L's hero-grid used: the 3D room is the page's whole point, not an
  * afterthought under two columns of cards on a narrow viewport.
  * ------------------------------------------------------------------------ */
-.overview-grid {
+/*
+ * One grid, not two stacked grids matched by eye. `grid-template-areas` is what makes the
+ * bottom row's first card align to the left column's own edges BY CONSTRUCTION — the
+ * previous version was a separate 4-column grid whose card widths (374px) never matched the
+ * left column's (340px) because nothing tied them together.
+ *
+ * Ratio 1 : 3.4 : 1 reproduces the wireframe's measured column widths (≈323 : 1119 : 322).
+ * No `align-items: start`: default `stretch` is what flushes all three top-row columns to
+ * one baseline — the previous ragged-bottom look was `align-items: start` combined with
+ * `.scene3d-container`'s fixed 392px height pinning the centre column as the shortest.
+ */
+.overview-bento {
   display: grid;
-  grid-template-columns: 340px minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(280px, 1fr) minmax(0, 3.4fr) minmax(280px, 1fr);
+  grid-template-areas:
+    'left center right'
+    'status trio trio';
   gap: var(--sp-4);
-  align-items: start;
 }
 .overview-col {
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
   min-width: 0;
+  min-height: 0;
 }
-@media (max-width: 1200px) {
-  .overview-grid {
-    grid-template-columns: 1fr;
-  }
-  .overview-col--center {
-    order: -1;
-  }
+/* Stretched to the row's full height (the tallest column) and split evenly among children,
+   so 3 cards in the left column are equal thirds and 2 in the right are equal halves —
+   not stacked top-down with a void at the bottom. */
+.overview-col > * {
+  flex: 1;
+  min-height: 0;
 }
-/* The bento's bottom row — four equal cards spanning the FULL grid width, not nested in the
-   centre column, so their outer edges line up with the left and right stacks above. */
-.overview-bottom-row {
+/* `.card` is the shared primitive every page uses and stays plain block flow everywhere
+   else — scoped here, not on `.card` itself, so a card stretched to fill its column can
+   distribute its own content (e.g. centre a short empty-state) instead of clumping at the
+   top and leaving a void below. */
+.overview-col > .card,
+.overview-status > .card,
+.overview-trio > .card {
+  display: flex;
+  flex-direction: column;
+}
+.overview-col--left {
+  grid-area: left;
+}
+.overview-col--center {
+  grid-area: center;
+  min-width: 0;
+}
+.overview-col--right {
+  grid-area: right;
+}
+/* A grid item stretches to fill its area by default (no `align-items` override on
+   `.overview-bento`), but its own child — a plain block `.card` — won't stretch down to
+   fill THAT unless this is a flex column too, same as `.overview-col`. */
+.overview-status {
+  grid-area: status;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.overview-status > .card {
+  flex: 1;
+  min-height: 0;
+}
+.overview-trio {
+  grid-area: trio;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--sp-4);
-  margin-top: var(--sp-4);
-  align-items: start;
+  align-items: stretch;
 }
 @media (max-width: 1200px) {
-  .overview-bottom-row {
+  .overview-bento {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'center'
+      'left'
+      'right'
+      'status'
+      'trio';
+  }
+  .overview-trio {
     grid-template-columns: 1fr 1fr;
   }
 }
 @media (max-width: 640px) {
-  .overview-bottom-row {
+  .overview-trio {
     grid-template-columns: 1fr;
   }
 }
 
 /* ---------------------------------------------------------------------------
- * Energy Flow — panel -> branches -> metered/hardwired, as stacked tiers.
+ * Energy Flow — facility power vs. time, the same HistoryAreaChart design Analytics uses.
  * ------------------------------------------------------------------------ */
-.flow {
-  display: flex;
-  flex-direction: column;
+.energy-flow-card {
+  /* Overrides the scoped .overview-col > .card flex-column's default `stretch` cross-axis
+     sizing isn't the issue here — this just gives the chart itself somewhere to grow into,
+     since .card-head above it is content-height and everything else should go to the chart. */
+  min-height: 0;
 }
-.flow-node {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--sp-2);
-  padding: var(--sp-3);
-  border-radius: var(--r-inner);
-  background: var(--bg-inset);
-  border: 1px solid var(--border);
-}
-.flow-node--source {
-  background: var(--accent-soft);
-  border-color: rgb(245 158 11 / 0.35);
-}
-.flow-node__label {
-  font: 600 var(--fs-3xs) 'IBM Plex Mono', monospace;
-  color: var(--muted);
-  letter-spacing: 0.06em;
-}
-.flow-node__value {
-  font-size: var(--fs-md);
-  font-weight: 700;
-}
-/* The connector between tiers. Purely decorative and aria-hidden — the containment is
-   already conveyed by the "% of panel" text on each branch. */
-.flow-arm {
-  width: 2px;
-  height: 12px;
-  margin-left: 18px;
-  background: linear-gradient(var(--border-strong), var(--border));
-}
-.flow-branches {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-}
-.flow-branch {
-  padding: 7px 9px;
-  border-radius: var(--r-sm);
-  background: #ffffff;
-  border: 1px solid var(--border-faint);
-}
-.flow-branch__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--sp-2);
-}
-.flow-branch__name {
-  font-size: var(--fs-xs-lg);
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.flow-branch__value {
-  font-size: var(--fs-xs-lg);
-  font-weight: 700;
-  flex: none;
-}
-.flow-branch__track {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--bg-inset);
-  overflow: hidden;
-  margin: 5px 0 3px;
-}
-.flow-branch__fill {
-  height: 100%;
-  border-radius: 2px;
-  background: var(--blue-bright);
-}
-.flow-branch__pct {
-  font-size: var(--fs-3xs);
-  color: var(--faint);
-}
-.flow-split {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: var(--sp-3);
-  border-radius: var(--r-inner);
-  background: var(--bg-inset);
-}
-.flow-split__row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-}
-.flow-split__swatch {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  flex: none;
-}
-.flow-split__swatch--metered {
-  background: var(--blue-bright);
-}
-.flow-split__swatch--untracked {
-  background: var(--faintest);
-}
-.flow-split__label {
+.energy-flow-chart {
   flex: 1;
-  min-width: 0;
-  font-size: var(--fs-xs);
-  color: var(--muted-2);
-}
-.flow-split__value {
-  font-size: var(--fs-xs-lg);
-  font-weight: 700;
-  white-space: nowrap;
+  min-height: 160px;
+  margin-top: var(--sp-2);
 }
 
 /* ---------------------------------------------------------------------------
@@ -1190,8 +1139,13 @@ body::before {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   text-align: center;
   padding: var(--sp-2) 0 var(--sp-3);
+  /* Grows to take the space `.weather-rows` (natural height, pinned to the card's bottom)
+     doesn't need, and centres the glyph/temperature within it — the card is now stretched
+     to half the right column's height, taller than this content alone needs. */
+  flex: 1;
 }
 .weather-hero__glyph {
   color: var(--blue);
@@ -1222,45 +1176,6 @@ body::before {
   margin: 2px 0 0;
   font-size: var(--fs-xs);
   color: var(--muted-2);
-}
-
-.weather-strip {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  gap: 2px;
-  padding-top: var(--sp-3);
-  border-top: 1px solid var(--border-faint);
-}
-.weather-strip__slot {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  min-width: 0;
-}
-.weather-strip__glyph {
-  color: var(--blue);
-  opacity: 0.85;
-}
-.weather-strip__key {
-  font: 600 var(--fs-3xs) 'IBM Plex Mono', monospace;
-  color: var(--muted-2);
-  white-space: nowrap;
-}
-.weather-strip__hi {
-  font-size: var(--fs-xs);
-  font-weight: 700;
-}
-.weather-strip__lo {
-  font-size: var(--fs-3xs);
-  color: var(--faint);
-}
-/* The hourly card has no border above its strip — it *is* the card's content, not a
-   footer under a hero. */
-.weather-strip--hourly {
-  padding-top: 0;
-  border-top: none;
 }
 
 .weather-rows {
@@ -1299,57 +1214,6 @@ body::before {
   .overview-pair-grid {
     grid-template-columns: 1fr;
   }
-}
-
-/* Load-shed banner — M2 built the slot; M4's DSM thresholds (`LoadShedBanner.tsx`) arm it
-   for real. */
-.load-shed-banner {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: 13px var(--sp-4);
-  margin-bottom: var(--sp-4);
-  border-radius: 14px;
-  background: var(--red-soft);
-  border: 1px solid rgb(239 68 68 / 0.35);
-}
-.load-shed-banner__body {
-  flex: 1;
-  min-width: 0;
-}
-.load-shed-banner__title {
-  font-weight: 800;
-  font-size: var(--fs-base-lg);
-  color: var(--red);
-  margin: 0;
-}
-.load-shed-banner__detail {
-  font-size: var(--fs-xs);
-  color: #7f1d1d;
-  margin: 2px 0 0;
-}
-.load-shed-banner__actions {
-  margin-left: auto;
-  display: flex;
-  gap: var(--sp-2);
-  flex: none;
-}
-.load-shed-banner__btn {
-  border-radius: var(--r-sm);
-  padding: 8px 13px;
-  font: 700 var(--fs-xs-lg) inherit;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.load-shed-banner__btn--ghost {
-  border: 1px solid rgb(239 68 68 / 0.4);
-  background: #ffffff;
-  color: var(--red);
-}
-.load-shed-banner__btn--solid {
-  border: none;
-  background: var(--red-bright);
-  color: #ffffff;
 }
 
 /* ---------------------------------------------------------------------------
@@ -1556,6 +1420,8 @@ body::before {
  * 3D hero card
  * ------------------------------------------------------------------------ */
 .hero-3d-card {
+  display: flex;
+  flex-direction: column;
   border-radius: var(--r-hero);
   overflow: hidden;
   border: 1px solid var(--glass-border);
@@ -1563,6 +1429,7 @@ body::before {
   background: linear-gradient(160deg, #f8fbff, #e8eef7);
   padding: var(--sp-4);
   min-width: 0;
+  min-height: 0;
 }
 .hero-3d-head {
   display: flex;
@@ -1918,24 +1785,37 @@ body::before {
 /* ---------------------------------------------------------------------------
  * 3D office scene
  * ------------------------------------------------------------------------ */
+/* `.spatial-view` (SpatialView.tsx's own root) grows to fill whatever height the bento
+   grid's row-stretch gives `.hero-3d-card` — the previous fixed 392px is what pinned the
+   centre column as permanently the shortest and produced the "floating 3D model" look. */
+.spatial-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
 .scene3d-container {
   position: relative;
   width: 100%;
   /*
-   * v4's own spec: a fixed 392px viewport. Phase L used aspect-ratio instead because the
+   * Flexible, not fixed. Phase L used aspect-ratio over a flat height because the
    * *orthographic* camera's fixed vertical frustum made a fixed height genuinely dangerous
    * (the room could render as a sliver at some aspect ratios) — L2's perspective camera
    * with a fit-to-bounds pass (officeScene.ts's `fitDistance()`) fixed that at the source,
-   * so a fixed height here is safe again. Kept fluid only below 900px, where a flat 392px
-   * would otherwise be disproportionately tall on a narrow single-column stack.
+   * and that same fit makes a *variable* height safe too: `OfficeScene3D`'s own
+   * `ResizeObserver` already re-fits the camera whenever this box's size changes, so a
+   * bento row taller or shorter than the old 392px just re-frames the room, it doesn't
+   * distort it.
    */
-  height: 392px;
+  flex: 1;
+  min-height: 360px;
   border-radius: var(--r-inner);
   overflow: hidden;
   background: var(--bg-inset);
 }
 @media (max-width: 900px) {
   .scene3d-container {
+    flex: none;
     height: auto;
     aspect-ratio: 4 / 3;
     min-height: 280px;
