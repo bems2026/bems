@@ -93,18 +93,6 @@ export function OutletPlanCard() {
           className="control-outlet-plan__door"
           style={{ top: pct(PLAN.partitionY, VB_H), left: pct(midX - DOORWAY_HALF_PX, VB_W), width: pct(DOORWAY_HALF_PX * 2, VB_W) }}
         />
-        <span className="control-outlet-plan__door-label" style={{ top: pct(PLAN.partitionY, VB_H) }}>
-          SLIDING DOOR
-        </span>
-        <span className="control-outlet-plan__glass-label" style={{ top: pct(PLAN.partitionY, VB_H), left: pct(PLAN.x0 + 8, VB_W) }}>
-          GLASS PARTITION
-        </span>
-        <span className="control-outlet-plan__window-label" style={{ left: pct(PLAN.x0, VB_W), top: '50%' }}>
-          WINDOWS · WEST WALL
-        </span>
-        <span className="control-outlet-plan__acu-label" style={{ left: pct(PLAN.x1, VB_W), top: '50%' }}>
-          ACU · EAST WALL
-        </span>
 
         {OUTLET_LAYOUT.map(({ id, x, y }) => {
           const device = outletById.get(id);

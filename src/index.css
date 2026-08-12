@@ -2237,10 +2237,6 @@ body::before {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--sp-4);
-  /* The two panels don't need matching heights — default `stretch` was forcing the shorter
-     lighting panel's background to stretch down to match the taller (now aspect-ratio'd)
-     outlet plan, leaving dead space under its rows. */
-  align-items: start;
 }
 @media (max-width: 700px) {
   .control-plan-grid {
@@ -2249,6 +2245,8 @@ body::before {
 }
 .control-plan-panel {
   position: relative;
+  display: flex;
+  flex-direction: column;
   border-radius: var(--r-inner);
   background: var(--bg-surface-2);
   border: 2px solid var(--border);
@@ -2257,8 +2255,6 @@ body::before {
 }
 .control-plan-panel--outlets {
   min-height: 420px;
-  display: flex;
-  flex-direction: column;
 }
 .control-plan-panel__label {
   display: flex;
@@ -2294,7 +2290,12 @@ body::before {
 .control-light-rows {
   display: flex;
   flex-direction: column-reverse;
+  justify-content: center;
   gap: 6px;
+  /* Grows to fill whatever height the grid row gives this card (matching the taller,
+     aspect-ratio'd outlet plan next to it) and centers the 7 rows within it, instead of
+     leaving a dead gap under a fixed-height block. */
+  flex: 1;
 }
 .control-light-row {
   display: grid;
@@ -2349,7 +2350,7 @@ body::before {
 .control-outlet-plan {
   position: relative;
   width: 100%;
-  max-width: 380px;
+  max-width: 420px;
   aspect-ratio: 320 / 550;
   margin: 0 auto;
 }
@@ -2377,37 +2378,6 @@ body::before {
   border-radius: 3px;
   background: var(--blue-bright);
 }
-.control-outlet-plan__door-label,
-.control-outlet-plan__glass-label {
-  position: absolute;
-  font: 600 var(--fs-3xs) 'IBM Plex Mono', monospace;
-  color: var(--faint);
-  white-space: nowrap;
-}
-.control-outlet-plan__door-label {
-  left: 50%;
-  transform: translate(-50%, -140%);
-}
-.control-outlet-plan__glass-label {
-  transform: translate(0, 26%);
-  letter-spacing: 0.06em;
-}
-.control-outlet-plan__window-label,
-.control-outlet-plan__acu-label {
-  position: absolute;
-  font: 600 var(--fs-3xs) 'IBM Plex Mono', monospace;
-  color: var(--faint);
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-}
-.control-outlet-plan__window-label {
-  transform: translate(0, -50%);
-  padding-left: 6px;
-}
-.control-outlet-plan__acu-label {
-  transform: translate(-100%, -50%);
-  padding-right: 6px;
-}
 .control-outlet-pin {
   position: absolute;
   transform: translate(-50%, -50%);
@@ -2429,8 +2399,8 @@ body::before {
  */
 .control-outlet-pin__puck {
   display: flex;
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   margin: 0 auto;
   border-radius: 50%;
   overflow: hidden;
