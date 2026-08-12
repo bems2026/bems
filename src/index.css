@@ -2290,11 +2290,12 @@ body::before {
 .control-light-rows {
   display: flex;
   flex-direction: column-reverse;
-  justify-content: center;
+  justify-content: space-between;
   gap: 6px;
   /* Grows to fill whatever height the grid row gives this card (matching the taller,
-     aspect-ratio'd outlet plan next to it) and centers the 7 rows within it, instead of
-     leaving a dead gap under a fixed-height block. */
+     aspect-ratio'd outlet plan next to it) and spreads the 7 rows across the full height —
+     `center` clustered them in the middle with dead space top and bottom, which looked
+     worse than the gap it was meant to fix. */
   flex: 1;
 }
 .control-light-row {
@@ -2399,8 +2400,8 @@ body::before {
  */
 .control-outlet-pin__puck {
   display: flex;
-  width: 26px;
-  height: 26px;
+  width: 18px;
+  height: 18px;
   margin: 0 auto;
   border-radius: 50%;
   overflow: hidden;
