@@ -1754,34 +1754,6 @@ body::before {
 /* ---------------------------------------------------------------------------
  * 2D/3D toggle
  * ------------------------------------------------------------------------ */
-.spatial-toggle {
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  background: var(--bg-inset);
-  border: 1px solid var(--border);
-  border-radius: var(--r-pill);
-  margin-bottom: var(--sp-3);
-}
-.spatial-toggle__btn {
-  border: none;
-  background: none;
-  color: var(--muted);
-  font-size: var(--fs-sm);
-  font-weight: 500;
-  padding: 5px 14px;
-  border-radius: var(--r-pill);
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-.spatial-toggle__btn:hover {
-  color: var(--txt);
-}
-.spatial-toggle__btn--active {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
 /* ---------------------------------------------------------------------------
  * 3D office scene
  * ------------------------------------------------------------------------ */
@@ -2325,7 +2297,6 @@ body::before {
 .nav-tab:active,
 .nav-icon-btn:active,
 .hero-3d-link-btn:active,
-.spatial-toggle__btn:active,
 .outlet-socket-toggle:not(:disabled):active,
 .quick-btn:not(:disabled):active,
 .quick-toggle:not(:disabled):active,
