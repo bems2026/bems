@@ -6,13 +6,15 @@ import { WeatherIcon } from './WeatherIcon';
 import { useWeather } from './useWeather';
 
 /**
- * The single Weather Status card the Overview bento calls for — hero conditions (glyph,
- * condition, temperature) on top, a short daily forecast strip beneath. Replaces the
- * earlier wind/humidity/pressure metric list: that list's fixed row heights were taller
- * than this card's actual budget (it's stretched to match Energy Flow, half the right
- * column), so the content overflowed past the card's own border at real viewport heights —
- * a genuine bug, not a styling choice. The forecast strip is a `display: grid` row that
- * takes exactly the height its own content needs and no more, so it can't repeat that.
+ * The single Weather Status card the Overview bento calls for — hero conditions (condition
+ * label, glyph beside the temperature, feels-like) on top, a short daily forecast strip
+ * beneath. Replaces the earlier wind/humidity/pressure metric list: that list's fixed row
+ * heights were taller than this card's actual budget (it's stretched to match Energy Flow,
+ * half the right column), so the content overflowed past the card's own border at real
+ * viewport heights — a genuine bug, not a styling choice. The forecast strip is a
+ * `display: grid` row that takes exactly the height its own content needs and no more, so
+ * it can't repeat that; the glyph sits beside the temperature rather than stacked above it
+ * for the same reason — one fewer stacked line to fit into a fixed-height half-column.
  *
  * Still explicitly attributed. The office has its own outdoor probe and the ACU reports room
  * temperature (both on the Climate Diagnostic card), so forecast air temperature sitting
@@ -41,12 +43,14 @@ export function WeatherStatusCard() {
       ) : (
         <>
           <div className="weather-hero">
-            <WeatherIcon code={weather.code} isDay={weather.isDay} size={48} className="weather-hero__glyph" />
             <p className="weather-hero__label">{weatherLabel(weather.code)}</p>
-            <p className="weather-hero__temp">
-              {Math.round(weather.tempC)}
-              <span className="weather-hero__deg">°</span>
-            </p>
+            <div className="weather-hero__row">
+              <WeatherIcon code={weather.code} isDay={weather.isDay} size={40} className="weather-hero__glyph" />
+              <p className="weather-hero__temp">
+                {Math.round(weather.tempC)}
+                <span className="weather-hero__deg">°</span>
+              </p>
+            </div>
             <p className="weather-hero__feels">
               Feels like {Math.round(weather.apparentC)}° · {WEATHER_PLACE}
             </p>

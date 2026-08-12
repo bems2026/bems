@@ -1143,25 +1143,34 @@ body::before {
   text-align: center;
   padding: var(--sp-2) 0;
   /* Grows to take the space `.weather-forecast` (natural height, pinned to the card's
-     bottom) doesn't need, and centres the glyph/temperature within it — the card is
-     stretched to half the right column's height, taller than either piece alone needs. */
+     bottom) doesn't need, and centres the row within it — the card is stretched to half
+     the right column's height, taller than either piece alone needs. */
   flex: 1;
   min-height: 0;
+}
+.weather-hero__label {
+  margin: 0;
+  font-size: var(--fs-sm-lg);
+  font-weight: 600;
+  color: var(--muted);
+}
+/* Icon beside the temperature, not stacked above it — the pairing that used to take three
+   stacked lines (glyph, label, temp) now takes one, which is what keeps this half of the
+   card from needing more height than `.weather-forecast` leaves it. */
+.weather-hero__row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: 2px;
 }
 .weather-hero__glyph {
   color: var(--blue);
   opacity: 0.9;
 }
-.weather-hero__label {
-  margin: var(--sp-2) 0 0;
-  font-size: var(--fs-sm-lg);
-  font-weight: 600;
-  color: var(--muted);
-}
 .weather-hero__temp {
   display: flex;
   align-items: flex-start;
-  margin: 2px 0 0;
+  margin: 0;
   font-weight: 300;
   font-size: 44px;
   line-height: 1.05;
