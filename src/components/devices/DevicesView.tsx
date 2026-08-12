@@ -1,16 +1,15 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { Plug, Lightbulb, Gauge, Snowflake, Thermometer } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { hasSwitchableState } from '@/lib/deviceClass';
-import { Card } from '@/components/ui/Card';
-import { Badge, type BadgeTone } from '@/components/ui/Badge';
-import { MetricValue } from '@/components/ui/MetricValue';
+import { isReadingStale } from '@/lib/staleness';
+import { countOnline } from '@/components/overview/overviewMath';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { StaleDataBadge } from '@/components/common/StaleDataBadge';
-import type { Device, DeviceClass, Reading, SwitchState } from '@/lib/types';
+import type { Device, DeviceClass, Reading } from '@/lib/types';
 
 const CLASS_ORDER: DeviceClass[] = ['outlet_dual', 'switch', 'meter', 'acu_ir', 'sensor_temp_humidity'];
 
-const CLASS_LABEL: Record<DeviceClass, string> = {
+const CLASS_FILTER_LABEL: Record<DeviceClass, string> = {
   outlet_dual: 'Outlets',
   switch: 'Lighting Switches',
   meter: 'Branch Meters',
@@ -18,35 +17,63 @@ const CLASS_LABEL: Record<DeviceClass, string> = {
   sensor_temp_humidity: 'Sensors',
 };
 
+const CLASS_PILL_LABEL: Record<DeviceClass, string> = {
+  outlet_dual: 'outlet',
+  switch: 'switch',
+  meter: 'meter',
+  acu_ir: 'aircon',
+  sensor_temp_humidity: 'sensor',
+};
+
+const CLASS_ICON: Record<DeviceClass, typeof Plug> = {
+  outlet_dual: Plug,
+  switch: Lightbulb,
+  meter: Gauge,
+  acu_ir: Snowflake,
+  sensor_temp_humidity: Thermometer,
+};
+
+type CommState = 'no-data' | 'offline' | 'stale' | 'live';
+
+function commState(reading: Reading | undefined): CommState {
+  if (!reading) return 'no-data';
+  if (reading.online === false) return 'offline';
+  if (isReadingStale(reading)) return 'stale';
+  return 'live';
+}
+
+const COMM_LABEL: Record<CommState, string> = { 'no-data': 'NO DATA', offline: 'OFFLINE', stale: 'STALE', live: 'LIVE' };
+const COMM_CLASS: Record<CommState, string> = {
+  'no-data': 'devices-table__comm--muted',
+  offline: 'devices-table__comm--bad',
+  stale: 'devices-table__comm--warn',
+  live: 'devices-table__comm--good',
+};
+
 /**
- * The full device catalogue — every device, every field the bridge reports for it, grouped
- * by class. The compact `DeviceStatusList` on Overview is a summary of the same data; this
- * is the detail view it doesn't have room for.
- *
- * Every field renders conditionally on `typeof reading?.field === 'number'` — a class that
- * doesn't report a given metric (a switch has no `voltage`) simply shows nothing for that
- * row rather than a fabricated 0 or `—`. That's a different rule from `MetricValue`'s
- * "missing renders —": here, an entire row is omitted only when the *class* never reports
- * that field at all, not merely when this particular reading hasn't arrived yet — for a
- * field the class does support, the row stays and `MetricValue` shows `—` as usual.
+ * The full fleet, one row per device, v4's flat CSS-grid table restyled to real data —
+ * replacing Phase L's class-grouped card grid. `VOLT`/`CURRENT` are salvaged from v3 (v4
+ * dropped them for no stated reason; they're the two numbers an electrician actually wants
+ * beside a relay) alongside v4's own LAST SEEN/COMMUNICATION columns, which v3 didn't have.
  */
 export function DevicesView() {
   const devices = useDeviceStore((s) => s.devices);
+  const readings = useDeviceStore((s) => s.latestReadings);
+  const [filter, setFilter] = useState<DeviceClass | 'all'>('all');
 
-  const grouped = useMemo(() => {
-    const map = new Map<DeviceClass, Device[]>();
-    for (const cls of CLASS_ORDER) map.set(cls, []);
-    for (const d of devices) map.get(d.class)?.push(d);
-    return map;
-  }, [devices]);
+  const filtered = useMemo(() => {
+    const list = filter === 'all' ? devices : devices.filter((d) => d.class === filter);
+    return [...list].sort((a, b) => CLASS_ORDER.indexOf(a.class) - CLASS_ORDER.indexOf(b.class) || a.id.localeCompare(b.id, undefined, { numeric: true }));
+  }, [devices, filter]);
+
+  const { online, total } = countOnline(devices, readings);
 
   if (devices.length === 0) {
     return (
-      <div className="devices-grid" aria-busy="true" aria-label="Loading devices">
+      <div className="devices-table-card" aria-busy="true" aria-label="Loading device catalogue">
         {Array.from({ length: 6 }, (_, i) => (
-          <div className="card" key={i}>
-            <Skeleton height="14px" width="70%" className="devices-skeleton-title" />
-            <Skeleton height="12px" width="50%" className="devices-skeleton-sub" />
+          <div className="devices-table-skeleton-row" key={i}>
+            <Skeleton height="14px" width="60%" />
           </div>
         ))}
       </div>
@@ -54,88 +81,92 @@ export function DevicesView() {
   }
 
   return (
-    <div className="devices-view">
-      {CLASS_ORDER.map((cls) => {
-        const list = grouped.get(cls) ?? [];
-        if (list.length === 0) return null;
-        return (
-          <div className="devices-group" key={cls}>
-            <h3 className="devices-group__title">
-              {CLASS_LABEL[cls]} <span className="devices-group__count">{list.length}</span>
-            </h3>
-            <div className="devices-grid">
-              {list.map((d) => (
-                <DeviceCard key={d.id} device={d} />
-              ))}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function DeviceCard({ device }: { device: Device }) {
-  const reading = useDeviceStore((s) => s.latestReadings[device.id]);
-  const switchable = hasSwitchableState(device.class);
-  const tone: BadgeTone = reading?.state === 'on' ? 'good' : reading?.state === 'off' ? 'neutral' : 'warn';
-
-  return (
-    <StaleDataBadge deviceId={device.id} label={device.display_name} className="device-card-wrap">
-      <Card
-        title={device.display_name}
-        subtitle={device.branch_circuit ?? device.description}
-        action={switchable ? <Badge tone={tone}>{reading?.state ?? 'unknown'}</Badge> : <Badge tone="neutral">metering</Badge>}
-        headingLevel="h4"
-        // Flat opaque, not glass: a dense grid of ~20 cards with nothing behind them but
-        // the flat app background is exactly the case §2.3 carves out — compositing a
-        // blur behind two dozen cells buys nothing visually and costs real frame time on
-        // the kiosk target.
-        className="card--flat"
-      >
-        <DeviceMetrics reading={reading} />
-        {device.sockets && reading?.socket_states && (
-          <div className="device-card-sockets">
-            <SocketPill label="S1" state={reading.socket_states[1]} />
-            <SocketPill label="S2" state={reading.socket_states[2]} />
-          </div>
-        )}
-      </Card>
-    </StaleDataBadge>
-  );
-}
-
-function DeviceMetrics({ reading }: { reading: Reading | undefined }) {
-  const rows: { label: string; value: number | undefined; unit: string; digits: number }[] = [
-    { label: 'Voltage', value: reading?.voltage, unit: 'V', digits: 1 },
-    { label: 'Current', value: reading?.current, unit: 'A', digits: 2 },
-    { label: 'Power', value: reading?.power_w, unit: 'W', digits: 0 },
-    { label: 'Energy Today', value: reading?.energy_kwh_today, unit: 'kWh', digits: 2 },
-    { label: 'Room Temp', value: reading?.room_temp_c, unit: '°C', digits: 1 },
-    { label: 'Setpoint', value: reading?.setpoint_c, unit: '°C', digits: 0 },
-    { label: 'Temperature', value: reading?.temp_c, unit: '°C', digits: 1 },
-    { label: 'Humidity', value: reading?.humidity_pct, unit: '%', digits: 0 },
-  ].filter((r) => r.value !== undefined);
-
-  if (rows.length === 0) return null;
-
-  return (
-    <div className="device-card-metrics">
-      {rows.map((r) => (
-        <div className="device-metric-row" key={r.label}>
-          <span className="metric-label">{r.label}</span>
-          <MetricValue value={r.value} unit={r.unit} digits={r.digits} size="sm" />
+    <>
+      <header className="page-header">
+        <div>
+          <h1 className="page-title">Fleet Status</h1>
+          <p className="page-sub">{`${total} devices in the registry · ${online}/${total} reporting online right now`}</p>
         </div>
-      ))}
-    </div>
+        <div className="devices-toolbar">
+          <div className="devices-filter-group" role="group" aria-label="Filter by class">
+            <button type="button" className={`devices-filter-chip${filter === 'all' ? ' devices-filter-chip--active' : ''}`} onClick={() => setFilter('all')}>
+              All
+            </button>
+            {CLASS_ORDER.map((cls) => (
+              <button
+                key={cls}
+                type="button"
+                className={`devices-filter-chip${filter === cls ? ' devices-filter-chip--active' : ''}`}
+                onClick={() => setFilter(cls)}
+              >
+                {CLASS_FILTER_LABEL[cls]}
+              </button>
+            ))}
+          </div>
+          <button type="button" disabled title="Belongs to the onboarding wizard — not built in this version" className="devices-add-btn">
+            + Add device (coming soon)
+          </button>
+        </div>
+      </header>
+
+      <div className="devices-table-card">
+        <div className="devices-table-scroll">
+          <div className="devices-table">
+            <div className="devices-table__row devices-table__row--head">
+              <span>Device</span>
+              <span>Class</span>
+              <span>Volt</span>
+              <span>Current</span>
+              <span>Power</span>
+              <span>Last seen</span>
+              <span>Comm</span>
+              <span>State</span>
+            </div>
+            {filtered.map((d) => (
+              <DeviceRow key={d.id} device={d} reading={readings[d.id]} />
+            ))}
+          </div>
+        </div>
+      </div>
+      <p className="devices-watchdog-note">
+        Watchdog: a device is flagged stale once its reading hasn't advanced in 30 seconds, or the bridge reports it offline outright — see{' '}
+        <code>isReadingStale</code>. Room assignment is unrecorded in the live flow for every device here, not a missing field for this table alone.
+      </p>
+    </>
   );
 }
 
-function SocketPill({ label, state }: { label: string; state: SwitchState | undefined }) {
+function DeviceRow({ device, reading }: { device: Device; reading: Reading | undefined }) {
+  const switchable = hasSwitchableState(device.class);
+  const comm = commState(reading);
+  const Icon = CLASS_ICON[device.class];
+  const stateText = switchable ? (reading?.state ?? 'unknown') : device.class === 'meter' ? 'metering' : '—';
+  const stateClass = switchable
+    ? reading?.state === 'on'
+      ? 'devices-table__state--good'
+      : reading?.state === 'off'
+        ? 'devices-table__state--neutral'
+        : 'devices-table__state--warn'
+    : 'devices-table__state--neutral';
+
   return (
-    <div className="device-socket-pill">
-      <span>{label}</span>
-      <Badge tone={state === 'on' ? 'good' : 'neutral'}>{state ?? 'unknown'}</Badge>
+    <div className="devices-table__row">
+      <div className="devices-table__device">
+        <span className="devices-table__icon" aria-hidden="true">
+          <Icon size={14} />
+        </span>
+        <div>
+          <div className="devices-table__name">{device.display_name}</div>
+          <div className="devices-table__id mono">{device.id}</div>
+        </div>
+      </div>
+      <span className="devices-table__class-pill">{CLASS_PILL_LABEL[device.class]}</span>
+      <span className="devices-table__num mono">{typeof reading?.voltage === 'number' ? `${reading.voltage.toFixed(1)}V` : '—'}</span>
+      <span className="devices-table__num mono">{typeof reading?.current === 'number' ? `${reading.current.toFixed(2)}A` : '—'}</span>
+      <span className="devices-table__num mono">{typeof reading?.power_w === 'number' ? `${reading.power_w.toFixed(0)}W` : '—'}</span>
+      <span className="devices-table__lastseen mono">{reading ? new Date(reading.ts).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}</span>
+      <span className={`devices-table__comm ${COMM_CLASS[comm]}`}>{COMM_LABEL[comm]}</span>
+      <span className={`devices-table__state ${stateClass} mono`}>{stateText}</span>
     </div>
   );
 }

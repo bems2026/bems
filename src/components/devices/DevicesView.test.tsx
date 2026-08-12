@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { DevicesView } from './DevicesView';
 import { useDeviceStore } from '@/stores/deviceStore';
 import type { Device } from '@/lib/types';
@@ -23,72 +23,80 @@ describe('DevicesView', () => {
   it('shows skeletons before the catalogue loads', () => {
     render(<DevicesView />);
     expect(document.querySelectorAll('.skeleton').length).toBeGreaterThan(0);
-    expect(screen.queryByText('Outlets')).not.toBeInTheDocument();
+    expect(screen.queryByText('Fleet Status')).not.toBeInTheDocument();
   });
 
-  it('groups devices into class sections with correct labels and counts', () => {
-    useDeviceStore.setState({
-      devices: [device('co1', 'Outlet 1', 'outlet_dual'), device('co2', 'Outlet 2', 'outlet_dual'), device('l1', 'Light 1', 'switch')],
-    });
+  it('lists every device with its id and class pill', () => {
+    useDeviceStore.setState({ devices: [device('co1', 'Outlet 1', 'outlet_dual'), device('l1', 'Light Switch 1', 'switch')] });
     render(<DevicesView />);
-    expect(screen.getByText('Outlets')).toBeInTheDocument();
-    expect(screen.getByText('Lighting Switches')).toBeInTheDocument();
-    expect(screen.queryByText('Branch Meters')).not.toBeInTheDocument();
-    const outletsSection = screen.getByText('Outlets').closest('.devices-group');
-    expect(outletsSection?.querySelector('.devices-group__count')?.textContent).toBe('2');
+    expect(screen.getByText('Outlet 1')).toBeInTheDocument();
+    expect(screen.getByText('co1')).toBeInTheDocument();
+    expect(screen.getByText('Light Switch 1')).toBeInTheDocument();
   });
 
-  it('only shows metric rows the reading actually has — no fabricated 0s for unsupported fields', () => {
+  it('never fabricates a 0 for a class that reports no such field — a switch shows — for volt/current/power', () => {
     useDeviceStore.setState({
-      devices: [device('l1', 'Light 1', 'switch')],
+      devices: [device('l1', 'Light Switch 1', 'switch')],
       latestReadings: { l1: { device_id: 'l1', ts: new Date().toISOString(), online: true, state: 'on' } },
     });
     render(<DevicesView />);
-    // A switch has no voltage/current/power concept at all — none of those rows appear.
-    expect(screen.queryByText('Voltage')).not.toBeInTheDocument();
-    expect(screen.queryByText('Power')).not.toBeInTheDocument();
+    const row = screen.getByText('Light Switch 1').closest('.devices-table__row');
+    expect(row?.textContent).toContain('—');
+    expect(row?.textContent).not.toMatch(/\b0V\b|\b0A\b|\b0W\b/);
   });
 
-  it('renders real metric values for a metered device', () => {
+  it('renders real volt/current/power for a metered device', () => {
     useDeviceStore.setState({
       devices: [device('mtr_lo_red', 'L.O Red', 'meter', { branch_circuit: 'L.O Red' })],
       latestReadings: {
-        mtr_lo_red: { device_id: 'mtr_lo_red', ts: new Date().toISOString(), online: true, state: null, voltage: 220.5, current: 3.7, power_w: 815, energy_kwh_today: 4.2 },
+        mtr_lo_red: { device_id: 'mtr_lo_red', ts: new Date().toISOString(), online: true, state: null, voltage: 220.5, current: 3.7, power_w: 815 },
       },
     });
     render(<DevicesView />);
-    expect(screen.getByText('Voltage')).toBeInTheDocument();
-    expect(screen.getByText('815')).toBeInTheDocument();
+    expect(screen.getByText('220.5V')).toBeInTheDocument();
+    expect(screen.getByText('3.70A')).toBeInTheDocument();
+    expect(screen.getByText('815W')).toBeInTheDocument();
   });
 
-  it('gives meters a "metering" pill, not an "unknown" state badge', () => {
+  it('gives a meter a "metering" state, not an "unknown" badge', () => {
     useDeviceStore.setState({
       devices: [device('mtr_lo_red', 'L.O Red', 'meter')],
       latestReadings: { mtr_lo_red: { device_id: 'mtr_lo_red', ts: new Date().toISOString(), online: true, state: null, power_w: 800 } },
     });
     render(<DevicesView />);
     expect(screen.getByText('metering')).toBeInTheDocument();
-    expect(screen.queryByText('unknown')).not.toBeInTheDocument();
   });
 
-  it('gives a switchable device with no reading yet an "unknown" badge, not "metering"', () => {
+  it('gives a switchable device with no reading yet an "unknown" state', () => {
     useDeviceStore.setState({ devices: [device('l3', 'Light 3', 'switch')] });
     render(<DevicesView />);
     expect(screen.getByText('unknown')).toBeInTheDocument();
+    expect(screen.getByText('NO DATA')).toBeInTheDocument();
   });
 
-  it('renders both socket pills for a dual-socket outlet with independent states', () => {
+  it('flags a device the bridge reports offline as OFFLINE in the comm column', () => {
     useDeviceStore.setState({
-      devices: [device('co1', 'Outlet 1', 'outlet_dual', { sockets: ['CO1_1', 'CO1_2'] })],
-      latestReadings: {
-        co1: { device_id: 'co1', ts: new Date().toISOString(), online: true, state: 'on', socket_states: { 1: 'on', 2: 'off' } },
-      },
+      devices: [device('l1', 'Light Switch 1', 'switch')],
+      latestReadings: { l1: { device_id: 'l1', ts: new Date().toISOString(), online: false, state: 'off' } },
     });
     render(<DevicesView />);
-    // Shortened to S1/S2 (Phase L, matching the old dashboard's own labels) — the prior
-    // "Socket 1"/"Socket 2" text was wrapping to two lines inside the pill, since the
-    // bare label span had no white-space: nowrap and "Socket" alone was its min-content.
-    expect(screen.getByText('S1')).toBeInTheDocument();
-    expect(screen.getByText('S2')).toBeInTheDocument();
+    expect(screen.getByText('OFFLINE')).toBeInTheDocument();
+  });
+
+  it('a class filter chip narrows the table to that class only', () => {
+    useDeviceStore.setState({ devices: [device('co1', 'Outlet 1', 'outlet_dual'), device('l1', 'Light Switch 1', 'switch')] });
+    render(<DevicesView />);
+    fireEvent.click(screen.getByRole('button', { name: 'Outlets' }));
+    expect(screen.getByText('Outlet 1')).toBeInTheDocument();
+    expect(screen.queryByText('Light Switch 1')).not.toBeInTheDocument();
+  });
+
+  it('the fleet summary states a real online/total count, not a fabricated one', () => {
+    useDeviceStore.setState({
+      devices: [device('co1', 'Outlet 1', 'outlet_dual'), device('l1', 'Light Switch 1', 'switch')],
+      latestReadings: { co1: { device_id: 'co1', ts: new Date().toISOString(), online: true, state: 'on' } },
+    });
+    render(<DevicesView />);
+    expect(screen.getByText(/2 devices in the registry · 1\/2 reporting online right now/)).toBeInTheDocument();
   });
 });
