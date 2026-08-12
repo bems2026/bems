@@ -6,7 +6,8 @@ import { corroborate } from '@/lib/relayCorroboration';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { useControlLog } from './controlLog';
-import { PLAN } from '@/components/scene3d/geometry';
+import { PlanShell } from './PlanShell';
+import { VB_W, VB_H, pct } from './planGeometry';
 import type { Device, SocketIndex } from '@/lib/types';
 
 /**
@@ -27,15 +28,6 @@ const OUTLET_LAYOUT: { id: string; x: number; y: number }[] = [
   { id: 'co7', x: 285, y: 190 },
 ];
 
-const VB_W = 320;
-const VB_H = 550;
-const pct = (px: number, total: number) => `${((px / total) * 100).toFixed(2)}%`;
-
-/** The glazed partition's real doorway gap (`officeScene.ts`'s `addGlazedPartition`)
- * mirrored here in plan-space — 1.6m centered on the room's x-midpoint, converted at the
- * same 1 SVG unit = 2cm scale `geometry.ts` uses. */
-const DOORWAY_HALF_PX = 40;
-
 export function OutletPlanCard() {
   const devices = useDeviceStore((s) => s.devices);
   const send = useCommandStore((s) => s.send);
@@ -43,8 +35,6 @@ export function OutletPlanCard() {
   const { ask, modalProps } = useConfirm();
   const outlets = devices.filter((d) => d.class === 'outlet_dual');
   const outletById = new Map(outlets.map((d) => [d.id, d]));
-
-  const midX = (PLAN.x0 + PLAN.x1) / 2;
 
   const allOn = () => {
     for (const d of outlets) {
@@ -75,25 +65,7 @@ export function OutletPlanCard() {
         CONVENIENCE OUTLETS · CO1-CO7
       </div>
       <div className="control-outlet-plan">
-        <div
-          className="control-outlet-plan__outline"
-          style={{ left: pct(PLAN.x0, VB_W), top: pct(PLAN.y0, VB_H), right: pct(VB_W - PLAN.x1, VB_W), bottom: pct(VB_H - PLAN.y1, VB_H) }}
-        />
-        <div
-          className="control-outlet-plan__partition control-outlet-plan__partition--glass"
-          style={{ top: pct(PLAN.partitionY, VB_H), left: pct(PLAN.x0, VB_W), width: pct(midX - DOORWAY_HALF_PX - PLAN.x0, VB_W) }}
-        />
-        <div
-          className="control-outlet-plan__partition control-outlet-plan__partition--glass"
-          style={{ top: pct(PLAN.partitionY, VB_H), left: pct(midX + DOORWAY_HALF_PX, VB_W), width: pct(PLAN.x1 - (midX + DOORWAY_HALF_PX), VB_W) }}
-        />
-        {/* The sliding door fills the gap the two glass panels above leave — same doorway
-            gap the 3D shell's `addGlazedPartition` cuts, not the old south-wall position. */}
-        <div
-          className="control-outlet-plan__door"
-          style={{ top: pct(PLAN.partitionY, VB_H), left: pct(midX - DOORWAY_HALF_PX, VB_W), width: pct(DOORWAY_HALF_PX * 2, VB_W) }}
-        />
-
+        <PlanShell />
         {OUTLET_LAYOUT.map(({ id, x, y }) => {
           const device = outletById.get(id);
           if (!device) return null;

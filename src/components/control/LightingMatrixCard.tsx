@@ -6,12 +6,10 @@ import { controlView } from '@/lib/socketView';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { useControlLog } from './controlLog';
-import { PLAN, LIGHT_PLAN } from '@/components/scene3d/geometry';
+import { PlanShell } from './PlanShell';
+import { VB_W, VB_H, pct } from './planGeometry';
+import { LIGHT_PLAN } from '@/components/scene3d/geometry';
 import type { Device } from '@/lib/types';
-
-const VB_W = 320;
-const VB_H = 550;
-const pct = (px: number, total: number) => `${((px / total) * 100).toFixed(2)}%`;
 
 /**
  * All 7 lighting circuits, in circuit order — real devices, not v4's fixed placeholder
@@ -65,10 +63,7 @@ export function LightingMatrixCard() {
         CEILING LUMINAIRES · L1-L7
       </div>
       <div className="control-outlet-plan">
-        <div
-          className="control-outlet-plan__outline"
-          style={{ left: pct(PLAN.x0, VB_W), top: pct(PLAN.y0, VB_H), right: pct(VB_W - PLAN.x1, VB_W), bottom: pct(VB_H - PLAN.y1, VB_H) }}
-        />
+        <PlanShell />
         {LIGHT_PLAN.ROWS.map((row) => {
           const device = lightById.get(`l${row}`);
           if (!device) return null;
