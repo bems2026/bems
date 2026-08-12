@@ -2690,7 +2690,10 @@ body::before {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
   gap: var(--sp-4);
-  align-items: start;
+  /* Was `align-items: start`, which let the shorter stat card stop well above the chart
+     card's own bottom edge, leaving a dead gap under it. Default `stretch` matches both
+     cards' heights; `.analytics-stat-card`'s own flex column (below) redistributes the
+     extra height into its chart instead of just padding, so the space isn't wasted either. */
 }
 @media (max-width: 1000px) {
   .analytics-main-grid {
@@ -2754,7 +2757,17 @@ body::before {
 }
 
 .analytics-stat-card {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+}
+/* Grows to absorb whatever extra height stretching to match the chart card gives this
+   card, instead of leaving it as blank space below the note. `Sparkline`'s `fill` prop
+   (see AnalyticsPage.tsx) stretches the SVG to fill this. */
+.analytics-stat-card__chart {
+  flex: 1;
+  min-height: 90px;
+  margin-top: var(--sp-2);
 }
 .analytics-stat-grid {
   display: grid;

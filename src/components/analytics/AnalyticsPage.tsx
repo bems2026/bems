@@ -152,7 +152,9 @@ export function AnalyticsPage() {
           <h3 className="card-title">{selectedDevice?.display_name ?? 'No source selected'}</h3>
           {selectedDevice && <SelectedStatPanel reading={selectedReading} />}
           <div className="analytics-stat-card__spark-label">24 H</div>
-          <Sparkline values={(selectedId ? (historyMap[selectedId] ?? []) : []).slice(-140).map((p) => p.power_w)} height={150} color="var(--blue-bright)" />
+          <div className="analytics-stat-card__chart">
+            <Sparkline values={(selectedId ? (historyMap[selectedId] ?? []) : []).slice(-140).map((p) => p.power_w)} color="var(--blue-bright)" fill />
+          </div>
           <p className="analytics-stat-card__note">{scope === 'branches' ? 'Feeder measured at the main CHNT panel CT.' : 'Socket-level meter inside the outlet module.'}</p>
         </div>
       </div>
