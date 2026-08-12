@@ -9,6 +9,7 @@ import { useAnalyticsHistory } from './useAnalyticsHistory';
 import { buildChartRows } from './analyticsMath';
 import { CHART_PARAMS, CHART_PARAM_ORDER, formatParamValue, type ChartParam } from './chartParams';
 import { SourceCard } from './SourceCard';
+import { EnergySection } from './EnergySection';
 import { UntrackedLoadCard } from './UntrackedLoadCard';
 import type { Device, Reading } from '@/lib/types';
 
@@ -77,10 +78,13 @@ export function AnalyticsPage() {
     <>
       <header className="page-header">
         <div>
-          <h1 className="page-title">Power Analytics</h1>
+          <h1 className="page-title">Power &amp; Energy Analytics</h1>
           <p className="page-sub">
-            24h power draw
-            <InfoHint label="What this covers">The 4 CHNT branch meters and the 7 individually-metered outlets.</InfoHint>
+            24 h trends · consumption totals
+            <InfoHint label="What this page covers">
+              Power, voltage, and current over the last 24 hours for the 4 CHNT branch meters and the 7 individually-metered outlets, plus the building's energy consumed today, this
+              week, and this month.
+            </InfoHint>
           </p>
         </div>
         <div className="analytics-toggles">
@@ -183,6 +187,8 @@ export function AnalyticsPage() {
           />
         </div>
       </div>
+
+      <EnergySection branchDevices={branchDevices} />
 
       <SourceSection title="Branches" tag="CHNT CT · 4 FEEDERS" devices={branchDevices} scope="branches" activeScope={scope} param={param} selectedId={selectedByScope.branches} onSelect={(id) => { setScope('branches'); selectDevice(id); }} className="analytics-branch-grid" />
       <SourceSection title="Outlets" tag="EACH SOCKET METERED" devices={outletDevices} scope="outlets" activeScope={scope} param={param} selectedId={selectedByScope.outlets} onSelect={(id) => { setScope('outlets'); selectDevice(id); }} className="analytics-outlet-grid" />

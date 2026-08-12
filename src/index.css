@@ -2967,6 +2967,127 @@ body::before {
   font-size: var(--fs-xl);
 }
 
+/* Energy — three building-wide counters, then today's per-branch split. */
+.analytics-energy-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--sp-3);
+}
+@media (max-width: 640px) {
+  .analytics-energy-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.analytics-energy-tile {
+  padding: var(--sp-4);
+  border-radius: var(--r-card);
+  background: #ffffff;
+  border: 1.5px solid var(--border);
+  min-width: 0;
+}
+/* Today is the figure people check most, so it carries the accent border — the same
+   selected-state language the source cards use, not a second highlight vocabulary. */
+.analytics-energy-tile--accent {
+  border-color: var(--accent);
+}
+.analytics-energy-tile__label {
+  font: 600 var(--fs-3xs) 'IBM Plex Mono', monospace;
+  color: var(--faint);
+  letter-spacing: 0.08em;
+}
+.analytics-energy-tile__value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-top: 6px;
+}
+.analytics-energy-tile__value {
+  font-weight: 700;
+  font-size: var(--fs-2xl);
+  line-height: 1.1;
+}
+.analytics-energy-tile__unit {
+  font: 600 var(--fs-sm) 'IBM Plex Mono', monospace;
+  color: var(--muted-2);
+}
+/* "No data" sits at the same optical position as a real value so the tiles stay aligned,
+   and reads as muted text — never as a 0 that would claim nothing was consumed. */
+.analytics-energy-tile__empty {
+  margin-top: 6px;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--muted-2);
+  line-height: 1.1;
+}
+
+.analytics-energy-split {
+  margin-top: var(--sp-3);
+}
+.analytics-energy-split__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.analytics-energy-split__title {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--txt);
+}
+.analytics-energy-split__sum {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--muted-2);
+}
+.analytics-energy-row {
+  display: grid;
+  grid-template-columns: minmax(0, 8rem) minmax(0, 1fr) 2.5rem 3.5rem;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 5px 0;
+}
+.analytics-energy-row__name {
+  font-size: var(--fs-xs-lg);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.analytics-energy-row__track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-inset);
+  overflow: hidden;
+  min-width: 0;
+}
+.analytics-energy-row__fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+.analytics-energy-row__pct {
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+  text-align: right;
+}
+.analytics-energy-row__kwh {
+  font-size: var(--fs-xs-lg);
+  font-weight: 700;
+  text-align: right;
+}
+@media (max-width: 520px) {
+  /* The share bar is the first thing to go when the row can't hold four columns — the
+     percentage beside it already carries the same information numerically. */
+  .analytics-energy-row {
+    grid-template-columns: minmax(0, 1fr) 2.5rem 3.5rem;
+  }
+  .analytics-energy-row__track {
+    display: none;
+  }
+}
+
 .analytics-untracked-card {
   margin-top: var(--sp-4);
 }
