@@ -186,31 +186,51 @@ export const OUTLET_FIXTURES: OutletFixture[] = OUTLET_COORDS.map(({ id, px, py 
 });
 
 // ---------------------------------------------------------------------------
-// Furniture — Stage L2. Same status as this whole scene's fixture placement always has
-// been (see this file's header comment): plausible, not surveyed. Nothing in the live
-// flow or the 2D floor plan records where CARE's actual desks, tables, or ACU sit — only
-// the 7 dual-socket outlets and 7 lighting circuits above are real, sourced coordinates.
+// Furniture — Stage L2, re-laid out in Phase O against a reference office blueprint the
+// user supplied. Same status as this whole scene's fixture placement always has been (see
+// this file's header comment): plausible, not surveyed. Nothing in the live flow or the 2D
+// floor plan records where CARE's actual desks, tables, or ACU sit — only the 7 dual-socket
+// outlets and 7 lighting circuits above are real, sourced coordinates.
 //
 // What IS real and used as the anchor for this layout:
 //   - ROOM's bounds (6.0m x 10.6m) and the partition at z = -3.5, both derived from the
 //     live SVG plan exactly as OUTLET_FIXTURES/LIGHT_FIXTURES are.
 //   - The two named zones the partition actually creates: a shallow utility compartment
 //     north of it (z in [-5.3, -3.5], the same 1.8m strip circuit l7 alone lights — see
-//     LIGHT_FIXTURES' test coverage) versus the main room south of it.
-//   - `mtr_lo_yellow`'s own registry description: "Outdoor ACU (separate unit, right side
-//     outside the room)" — shared/registry.mjs, not invented for this scene. That's why
-//     the indoor ACU sits on the east (right) wall and the outdoor unit sits just outside
-//     it, rather than on some other wall picked at random.
-//   - Workstations are placed against the two long walls, anchored 0.8m off the
-//     z-coordinate of the outlet that would plausibly feed it (co1/co4 on the west wall,
-//     co3/co7 on the east wall) — offset, not exact, so the enlarged Phase N outlet block
-//     isn't hidden directly under the desktop it sits nearest to. The other two desks per
-//     side fill the remaining wall run at comparable spacing.
+//     LIGHT_FIXTURES' test coverage) versus the main room south of it. Phase O's explicit
+//     rule is that this compartment stays EMPTY — it's a lobby, not storage — so nothing
+//     below places any piece at z < -3.5.
+//
+// Blueprint -> room mapping (the blueprint is a 9.0 x 6.6m *wide* room; ours is 6.0 x 10.6m
+// *narrow*, so this is a 90-degree adaptation, not a transcription):
+//   blueprint's entrance short wall      -> our partition, z = -3.5 (both are the entrance)
+//   blueprint's window/AC short wall     -> our far short wall, z = +5.3 (farthest from the
+//                                            entrance, per the user's explicit rule)
+//   blueprint's plant-rack long wall     -> our west long wall, x = -3.0
+//   blueprint's reception/L-desk wall    -> our east long wall, x = +3.0
+//
+// Rotation convention (`rotation.y`), verified numerically against `makeWorkstation`'s own
+// local geometry (desktop/monitor at local z ~ -0.2, chair at local z = +0.5, so the
+// occupant faces local -Z): for a local point (x, z), world = (x*cos(t) + z*sin(t),
+// -x*sin(t) + z*cos(t)) where t = ry.
+//   ry = 0      -> faces world -z, footprint x [cx-0.5, cx+0.5],  z [cz-0.31, cz+0.8]
+//   ry = +PI/2  -> faces world -x, footprint x [cx-0.31, cx+0.8], z [cz-0.5,  cz+0.5]
+//   ry = -PI/2  -> faces world +x, footprint x [cx-0.8,  cx+0.31],z [cz-0.5,  cz+0.5]
+//   ry = PI     -> faces world +z, footprint x [cx-0.5,  cx+0.5], z [cz-0.8,  cz+0.31]
+// Every position below was checked against this table (and the ACU's own body/vent
+// geometry in `furniture.ts`, which is authored with its long axis on local Z and its
+// vents at local -X) with a script that computes every piece's world-space bounding box and
+// asserts zero pairwise overlap, zero excursion outside x in [-3,3] / z in [-3.5, 5.3], and
+// a clear doorway (x in [-0.8, 0.8] at z = -3.5) — not hand-eyeballed.
 //
 // TEST2.html's own furniture coordinates are NOT reused here — its room is 9.0m x 6.6m
 // (wide, shallow), the opposite proportions of CARE's 6.0m x 10.6m (narrow, deep), so its
 // specific placement numbers don't transfer. Its furniture *library* (the factories in
 // `furniture.ts`) is what was ported; this table is CARE-specific.
+//
+// `table-rect` and `workbench` are unused by this table (the blueprint has no rect meeting
+// table, and the lobby that once held `workbench` must now stay empty) — the factories stay
+// for reuse, they're simply not instantiated below.
 export type FurnitureKind =
   | 'workstation'
   | 'table-oval'
@@ -219,6 +239,9 @@ export type FurnitureKind =
   | 'cabinet'
   | 'water-dispenser'
   | 'plant-rack'
+  | 'bench'
+  | 'desk-l'
+  | 'reception-desk'
   | 'acu'
   | 'acu-outdoor';
 
@@ -241,45 +264,55 @@ export interface FurnitureSpec {
 }
 
 export const FURNITURE: FurnitureSpec[] = [
-  // West wall workstations — desk backs 0.15m off the wall (x = ROOM.minX + 0.34), chairs
-  // facing +x into the room. z = 4.7/2.7 sit 0.8m north of co1/co4 (z 3.9/1.9) — offset
-  // rather than exactly on top of them, now that the enlarged outlet blocks (Phase N) would
-  // otherwise sit directly under a 0.43m-high desktop. -0.1/-2.2 fill the run unchanged.
-  { kind: 'workstation', x: ROOM.minX + 0.34, z: 4.7, ry: Math.PI / 2 },
-  { kind: 'workstation', x: ROOM.minX + 0.34, z: 2.7, ry: Math.PI / 2 },
-  { kind: 'workstation', x: ROOM.minX + 0.34, z: -0.1, ry: Math.PI / 2 },
-  { kind: 'workstation', x: ROOM.minX + 0.34, z: -2.2, ry: Math.PI / 2 },
+  // --- West wall (blueprint's plant-rack wall): rack + 4 desks facing it ---------------
+  // Rack runs almost the full usable west wall (4.4m of the room's 8.8m south-of-lobby
+  // span). Desks sit 0.14m clear of the rack's front edge, 1.10m pitch, facing -x (west,
+  // into the rack) — ry = +PI/2 per the rotation table above.
+  { kind: 'plant-rack', x: -2.65, z: 2.8, ry: Math.PI / 2, w: 4.4 },
+  { kind: 'workstation', x: -1.9, z: 4.4, ry: Math.PI / 2 },
+  { kind: 'workstation', x: -1.9, z: 3.3, ry: Math.PI / 2 },
+  { kind: 'workstation', x: -1.9, z: 2.2, ry: Math.PI / 2 },
+  { kind: 'workstation', x: -1.9, z: 1.1, ry: Math.PI / 2 },
 
-  // East wall workstations — mirrored. z = 4.7/-0.9 sit 0.8m off co3/co7 (z 3.9/-1.7), same
-  // outlet-clearance reasoning as the west run. 1.5/-3.0 fill the run unchanged.
-  { kind: 'workstation', x: ROOM.maxX - 0.34, z: 4.7, ry: -Math.PI / 2 },
-  { kind: 'workstation', x: ROOM.maxX - 0.34, z: 1.5, ry: -Math.PI / 2 },
-  { kind: 'workstation', x: ROOM.maxX - 0.34, z: -0.9, ry: -Math.PI / 2 },
-  { kind: 'workstation', x: ROOM.maxX - 0.34, z: -3.0, ry: -Math.PI / 2 },
+  // --- Centre: oval conference table, clear of both wall runs' z-bands -----------------
+  { kind: 'table-oval', x: 0.1, z: -0.8, ry: 0 },
 
-  // Oval conference table, centered in the main room's open floor.
-  { kind: 'table-oval', x: 0, z: 0.8, ry: 0 },
+  // --- East wall (blueprint's reception/manager wall), entrance end to far end ---------
+  // 3-desk interconnected bank, facing -x (into the room) — chairs sit near the wall,
+  // desktops toward the room centre, ry = +PI/2 (same facing as the west row: everyone
+  // looks toward the room's midline, not at a screen with their back to open floor).
+  { kind: 'workstation', x: 2.15, z: -2.95, ry: Math.PI / 2 },
+  { kind: 'workstation', x: 2.15, z: -1.85, ry: Math.PI / 2 },
+  { kind: 'workstation', x: 2.15, z: -0.7, ry: Math.PI / 2 },
+  // Single desk, same wall, same facing, 0.4m clear of the bank.
+  { kind: 'workstation', x: 2.15, z: 0.55, ry: Math.PI / 2 },
+  // L-shaped manager desk, same wall/facing, 0.4m clear of the single desk.
+  { kind: 'desk-l', x: 2.15, z: 1.75, ry: Math.PI / 2 },
+  // Storage behind the manager desk, flush to the wall (one cabinet unit — its 6 shelves
+  // already read as "filing storage"; a second unit wouldn't fit this wall run without
+  // crowding the reception zone beyond it).
+  { kind: 'cabinet', x: 2.75, z: 3.85, ry: 0 },
 
-  // Rect meeting table, toward the south end near co2's side of the room.
-  { kind: 'table-rect', x: -0.8, z: 4.2, ry: 0, w: 1.5, d: 0.8, n: 6 },
+  // --- Far end (blueprint's window/AC wall, z = +5.3): reception + waiting -------------
+  // Reception counter faces into the room (-z, ry = 0) between the west desks' wall run and
+  // the east cabinet's wall run — clear of both. Benches face the counter (+z, ry = PI).
+  { kind: 'reception-desk', x: 0.3, z: 4.5, ry: 0 },
+  { kind: 'bench', x: 0.3, z: 3.75, ry: Math.PI },
+  { kind: 'bench', x: 0.3, z: 3.1, ry: Math.PI },
+  { kind: 'water-dispenser', x: 1.45, z: 4.5, ry: 0 },
 
-  // Utility compartment (north of the partition): workbench against the north wall,
-  // flanked by two cabinets rotated so their long side runs along the wall instead of
-  // eating the compartment's 1.8m depth.
-  { kind: 'workbench', x: 0, z: -4.9, ry: 0 },
-  { kind: 'cabinet', x: -1.8, z: -5.0, ry: Math.PI / 2 },
-  { kind: 'cabinet', x: 1.8, z: -5.0, ry: Math.PI / 2 },
-
-  // Water dispenser just south of the partition, near co5's side.
-  { kind: 'water-dispenser', x: -1.9, z: -3.2, ry: 0 },
-
-  // Plant rack along the partition wall, main-room side, clear of both wall runs.
-  { kind: 'plant-rack', x: 0.5, z: -3.15, ry: 0, w: 2.0 },
-
-  // Indoor ACU on the east wall — see this block's header comment for why east specifically.
+  // Indoor ACU on the far short wall (z = maxZ), between the two windows added there in
+  // `officeScene.ts` — moved off the east wall per Phase O's explicit rule (windows + ACU
+  // must sit on the short wall farthest from the glass entrance/partition). `makeACU`'s
+  // body is authored with its long axis on local Z and its vents at local -X, so ry = -PI/2
+  // turns the long axis to run along world X (along this wall) with vents facing world -z
+  // (into the room) — see this block's header comment for the verified rotation table.
   // y = ceilingHeight - 0.22 wall-mounts it high, like a real split-unit indoor head;
   // without a y it defaults to 0 and sits centred on the floor, half-buried (Phase N fix).
-  { kind: 'acu', x: ROOM.maxX - 0.13, y: ROOM.ceilingHeight - 0.22, z: 0, ry: 0 },
-  // Outdoor unit just outside the same wall, on its own pad.
-  { kind: 'acu-outdoor', x: ROOM.maxX + 0.7, z: 0, ry: 0 },
+  { kind: 'acu', x: 0, y: ROOM.ceilingHeight - 0.22, z: ROOM.maxZ - 0.13, ry: -Math.PI / 2 },
+  // Outdoor unit just outside the same wall, on its own pad (`mtr_lo_yellow`'s registry
+  // description — "Outdoor ACU (separate unit, right side outside the room)" — described
+  // the old east-wall placement; the unit itself just follows the indoor head wherever it
+  // moves, so it stays paired here rather than anchored to a compass direction).
+  { kind: 'acu-outdoor', x: 0, z: ROOM.maxZ + 0.7, ry: -Math.PI / 2 },
 ];

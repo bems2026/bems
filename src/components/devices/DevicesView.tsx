@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Plug, Lightbulb, Gauge, Snowflake, Thermometer } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { hasSwitchableState } from '@/lib/deviceClass';
 import { isReadingStale } from '@/lib/staleness';
 import { countOnline } from '@/components/overview/overviewMath';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { InfoHint } from '@/components/ui/InfoHint';
+import { CLASS_ICON } from '@/lib/deviceIcons';
 import type { Device, DeviceClass, Reading } from '@/lib/types';
 
 const CLASS_ORDER: DeviceClass[] = ['outlet_dual', 'switch', 'meter', 'acu_ir', 'sensor_temp_humidity'];
@@ -23,14 +24,6 @@ const CLASS_PILL_LABEL: Record<DeviceClass, string> = {
   meter: 'meter',
   acu_ir: 'aircon',
   sensor_temp_humidity: 'sensor',
-};
-
-const CLASS_ICON: Record<DeviceClass, typeof Plug> = {
-  outlet_dual: Plug,
-  switch: Lightbulb,
-  meter: Gauge,
-  acu_ir: Snowflake,
-  sensor_temp_humidity: Thermometer,
 };
 
 type CommState = 'no-data' | 'offline' | 'stale' | 'live';
@@ -129,8 +122,11 @@ export function DevicesView() {
         </div>
       </div>
       <p className="devices-watchdog-note">
-        Watchdog: a device is flagged stale once its reading hasn't advanced in 30 seconds, or the bridge reports it offline outright — see{' '}
-        <code>isReadingStale</code>. Room assignment is unrecorded in the live flow for every device here, not a missing field for this table alone.
+        Stale after 30s idle
+        <InfoHint label="Watchdog and room-assignment details">
+          A device is flagged stale once its reading hasn't advanced in 30 seconds, or the bridge reports it offline outright — see <code>isReadingStale</code>. Room
+          assignment is unrecorded in the live flow for every device here, not a missing field for this table alone.
+        </InfoHint>
       </p>
     </>
   );

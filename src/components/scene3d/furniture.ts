@@ -215,6 +215,62 @@ function makePlantRack(w: number): THREE.Group {
   return g;
 }
 
+/** Waiting-area bench, added in Phase O for the blueprint's reception zone. Backrest sits
+ * at local +z, so the bench "faces" local -z, the same convention as a chair/workstation —
+ * `ry` in the `FURNITURE` table can reuse the same rotation table as everything else.
+ * Footprint: x [-0.7, 0.7], z [-0.28, 0.28]. */
+function makeBench(): THREE.Group {
+  const g = new THREE.Group();
+  mk(g, new THREE.BoxGeometry(1.4, 0.05, 0.42), wood, 0, 0.45, -0.05); // seat
+  mk(g, new THREE.BoxGeometry(1.4, 0.38, 0.04), chairFabric, 0, 0.65, 0.16); // backrest
+  [-0.62, 0.62].forEach((lx) => {
+    mk(g, new THREE.BoxGeometry(0.04, 0.45, 0.04), metal, lx, 0.225, -0.18); // front leg
+    mk(g, new THREE.BoxGeometry(0.04, 0.45, 0.04), metal, lx, 0.225, 0.15); // back leg
+  });
+  return g;
+}
+
+/** L-shaped manager desk, added in Phase O for the blueprint's manager zone. Same overall
+ * footprint envelope as `makeWorkstation` (x [-0.5, 0.5], z [-0.35, 0.8], chair included) so
+ * it drops into a workstation-sized slot in the `FURNITURE` table — the L reads visually
+ * from the return wing tucked inside that same envelope, not from a larger footprint. */
+function makeDeskL(): THREE.Group {
+  const g = new THREE.Group();
+  // Main run — desktop, legs, monitor, keyboard, tower: same layout as makeWorkstation.
+  mk(g, new THREE.BoxGeometry(1.0, 0.04, 0.6), wood, 0, 0.45, -0.05);
+  mk(g, new THREE.BoxGeometry(0.035, 0.45, 0.54), metal, -0.46, 0.225, -0.05);
+  mk(g, new THREE.BoxGeometry(0.22, 0.02, 0.14), metal, -0.2, 0.48, -0.22);
+  mk(g, new THREE.BoxGeometry(0.04, 0.18, 0.04), metal, -0.2, 0.56, -0.22);
+  mk(g, new THREE.BoxGeometry(0.44, 0.28, 0.03), monitorScreen, -0.2, 0.7, -0.24);
+  mk(g, new THREE.BoxGeometry(0.3, 0.02, 0.12), keyboard, -0.2, 0.48, 0.05);
+  mk(g, new THREE.BoxGeometry(0.16, 0.36, 0.36), towerBody, 0.42, 0.2, 0.1); // tower, right of main run
+  // Return wing — a perpendicular surface tucked to the +x/+z side, still inside the main
+  // run's x-envelope, extending the footprint in +z only (the L's short arm).
+  mk(g, new THREE.BoxGeometry(0.45, 0.04, 0.4), wood, 0.22, 0.45, 0.45); // return desktop
+  mk(g, new THREE.BoxGeometry(0.04, 0.45, 0.38), metal, 0.44, 0.225, 0.45); // return outer leg
+  mk(g, new THREE.BoxGeometry(0.38, 0.36, 0.3), cabinetBody, 0.2, 0.2, 0.48); // pedestal drawers under the return
+  for (let i = 0; i < 3; i++) mk(g, new THREE.BoxGeometry(0.34, 0.02, 0.02), cabinetShelf, 0.2, 0.1 + i * 0.13, 0.62);
+  placeChair(g, -0.02, 0.5, 0);
+  return g;
+}
+
+/** Reception/waiting-room counter, added in Phase O. A stand-up transaction counter, not a
+ * seated desk — real reception counters this shallow don't have room for a pushed-back
+ * chair without doubling the footprint, so this one has none. Footprint: x [-0.8, 0.8],
+ * z [-0.35, 0.35]; faces local -z (toward visitors), same convention as everything else. */
+function makeReceptionDesk(): THREE.Group {
+  const g = new THREE.Group();
+  mk(g, new THREE.BoxGeometry(1.6, 0.75, 0.55), cabinetBody, 0, 0.375, 0.02); // counter body
+  mk(g, new THREE.BoxGeometry(1.62, 0.04, 0.6), wood, 0, 0.76, 0); // countertop, slight overhang
+  mk(g, new THREE.BoxGeometry(1.6, 0.16, 0.06), cabinetShelf, 0, 0.85, -0.27); // raised front lip/signage panel
+  mk(g, new THREE.BoxGeometry(0.22, 0.02, 0.14), metal, -0.45, 0.79, -0.08); // monitor foot, staff side
+  mk(g, new THREE.BoxGeometry(0.04, 0.16, 0.04), metal, -0.45, 0.86, -0.08);
+  mk(g, new THREE.BoxGeometry(0.36, 0.22, 0.03), monitorScreen, -0.45, 0.98, -0.1);
+  mk(g, new THREE.BoxGeometry(0.3, 0.02, 0.1), keyboard, -0.45, 0.79, 0.08);
+  for (let i = 0; i < 3; i++) mk(g, new THREE.BoxGeometry(0.5, 0.03, 0.5), cabinetShelf, 0, 0.18 + i * 0.16, 0.05); // shelving inside the counter body
+  return g;
+}
+
 function makeOutdoorPad(): THREE.Group {
   const g = new THREE.Group();
   mk(g, new THREE.BoxGeometry(1.3, 0.06, 1.1), padConcrete, 0, -0.03, 0);
@@ -232,6 +288,9 @@ const FACTORIES: Record<FurnitureKind, (spec: FurnitureSpec) => THREE.Group> = {
   cabinet: makeCabinet,
   'water-dispenser': makeWaterDispenser,
   'plant-rack': (spec) => makePlantRack(spec.w ?? 2.0),
+  bench: makeBench,
+  'desk-l': makeDeskL,
+  'reception-desk': makeReceptionDesk,
   acu: () => makeACU(false),
   'acu-outdoor': makeOutdoorPad,
 };

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { Lightbulb, Plug, Snowflake } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore } from '@/stores/commandStore';
 import { ConfirmModal, type ConfirmTone } from '@/components/ui/ConfirmModal';
+import { InfoHint } from '@/components/ui/InfoHint';
 import { LightingMatrixCard } from './LightingMatrixCard';
 import { OutletPlanCard } from './OutletPlanCard';
 import { SwitchesListCard } from './SwitchesListCard';
@@ -86,17 +88,23 @@ export function ControlPage() {
       <header className="page-header">
         <div>
           <h1 className="page-title">Spatial Plan &amp; Manual Overrides</h1>
-          <p className="page-sub">14 relay nodes on the plan. The ACU is IR-commanded from the HVAC card below — no relay cut.</p>
+          <p className="page-sub">
+            14 relay nodes
+            <InfoHint label="How the ACU is controlled">The ACU is IR-commanded from the HVAC card below — no relay cut.</InfoHint>
+          </p>
         </div>
         <div className="page-actions">
           <button type="button" className="control-master-btn control-master-btn--accent" onClick={() => setConfirming('lights-off')}>
-            💡 Lights off
+            <Lightbulb size={14} aria-hidden="true" />
+            Lights off
           </button>
           <button type="button" className="control-master-btn control-master-btn--red" onClick={() => setConfirming('outlets-off')}>
-            🔌 Outlets off
+            <Plug size={14} aria-hidden="true" />
+            Outlets off
           </button>
           <button type="button" className="control-master-btn control-master-btn--blue" onClick={() => setConfirming('ac-off')}>
-            ❄️ Send AC off
+            <Snowflake size={14} aria-hidden="true" />
+            Send AC off
           </button>
         </div>
       </header>

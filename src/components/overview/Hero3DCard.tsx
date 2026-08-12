@@ -1,4 +1,6 @@
+import { Box } from 'lucide-react';
 import { navigateTo } from '@/lib/useHashRoute';
+import { InfoHint } from '@/components/ui/InfoHint';
 import { SpatialView } from './SpatialView';
 
 /**
@@ -13,8 +15,14 @@ export function Hero3DCard() {
     <div className="hero-3d-card">
       <div className="hero-3d-head">
         <div>
-          <h3 className="hero-3d-title">NBERIC · CARE office</h3>
-          <p className="hero-3d-sub">Live 3D model · drag to orbit, scroll to zoom, otherwise it rotates on its own</p>
+          <h3 className="hero-3d-title">
+            <Box size={16} className="title-icon" aria-hidden="true" />
+            NBERIC · CARE office
+          </h3>
+          <p className="hero-3d-sub">
+            Live 3D model
+            <InfoHint label="How to move around">Drag to orbit, scroll to zoom — otherwise it rotates on its own.</InfoHint>
+          </p>
         </div>
         <button type="button" className="hero-3d-link-btn" onClick={() => navigateTo('control')}>
           Switch a row ↗

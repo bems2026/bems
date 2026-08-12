@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Lightbulb, Plug, type LucideIcon } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { isReadingStale } from '@/lib/staleness';
 import { LIGHT_PLAN } from '@/components/scene3d/geometry';
@@ -58,10 +59,13 @@ export function FloorPlanView() {
   );
 }
 
-function PlanFrame({ title, children }: { title: string; children: ReactNode }) {
+function PlanFrame({ title, icon: Icon, children }: { title: string; icon: LucideIcon; children: ReactNode }) {
   return (
     <div className="floorplan-card">
-      <h3 className="floorplan-title">{title}</h3>
+      <h3 className="floorplan-title">
+        <Icon size={14} className="title-icon" aria-hidden="true" />
+        {title}
+      </h3>
       <svg viewBox={VIEWBOX} className="floorplan-svg" role="img" aria-label={title}>
         <rect x={10} y={10} width={300} height={530} fill="none" stroke="var(--border)" strokeWidth={2} rx={5} />
         <line x1={10} y1={100} x2={310} y2={100} stroke="var(--border)" strokeWidth={2} />
@@ -74,7 +78,7 @@ function PlanFrame({ title, children }: { title: string; children: ReactNode }) 
 function LightingPlan({ readings }: { readings: Record<string, Reading> }) {
   const S = LIGHT_PLAN.MARKER;
   return (
-    <PlanFrame title="Lighting (L1–L7)">
+    <PlanFrame title="Lighting (L1–L7)" icon={Lightbulb}>
       {LIGHT_LAYOUT.map(({ id, row }) => {
         const reading = readings[id];
         const stale = isReadingStale(reading);
@@ -109,7 +113,7 @@ function LightingPlan({ readings }: { readings: Record<string, Reading> }) {
 
 function OutletPlan({ readings }: { readings: Record<string, Reading> }) {
   return (
-    <PlanFrame title="Convenience Outlets (CO1–CO7)">
+    <PlanFrame title="Convenience Outlets (CO1–CO7)" icon={Plug}>
       {OUTLET_LAYOUT.map(({ id, x, y }, i) => {
         const reading = readings[id];
         const stale = isReadingStale(reading);

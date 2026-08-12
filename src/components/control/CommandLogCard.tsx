@@ -1,4 +1,6 @@
+import { History } from 'lucide-react';
 import { useControlLog } from './controlLog';
+import { InfoHint } from '@/components/ui/InfoHint';
 
 const TAG_CLASS: Record<string, string> = {
   RELAY: 'control-log-tag--relay',
@@ -14,7 +16,10 @@ export function CommandLogCard() {
 
   return (
     <div className="card control-log-card">
-      <h3 className="control-log-card__title">Command log</h3>
+      <h3 className="control-log-card__title">
+        <History size={14} className="title-icon" aria-hidden="true" />
+        Command log
+      </h3>
       {entries.length === 0 ? (
         <p className="control-log-card__empty">No commands sent this session</p>
       ) : (
@@ -28,7 +33,10 @@ export function CommandLogCard() {
           ))}
         </ul>
       )}
-      <p className="control-log-card__footnote">Sends go through the mock bridge's POST /api/command — this log is session-only, nothing here is stored server-side.</p>
+      <p className="control-log-card__footnote">
+        Session-only
+        <InfoHint label="Where this log comes from">Sends go through the mock bridge's POST /api/command — this log is session-only, nothing here is stored server-side.</InfoHint>
+      </p>
     </div>
   );
 }

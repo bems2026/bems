@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
+import { Zap } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useConnectionStore } from '@/stores/connectionStore';
 import { isStale } from '@/lib/bridgeClient';
 import { navigateTo } from '@/lib/useHashRoute';
 import { MetricValue } from '@/components/ui/MetricValue';
+import { InfoHint } from '@/components/ui/InfoHint';
 
 /**
  * v4's "Live Demand" card, bound to real data throughout. Its own spec has TODAY render a
@@ -29,7 +31,11 @@ export function LiveDemandCard() {
   return (
     <div className="card">
       <div className="card-head">
-        <h3 className="card-title">Live Demand</h3>
+        <h3 className="card-title">
+          <Zap size={14} className="title-icon" aria-hidden="true" />
+          Live Demand
+          <InfoHint label="Where these totals come from">Today/week/month are the edge buffer's own running totals — the same figures Analytics reads.</InfoHint>
+        </h3>
         <button type="button" className="card-head-link" onClick={() => navigateTo('analytics')}>
           View details ↗
         </button>
@@ -59,7 +65,6 @@ export function LiveDemandCard() {
           </div>
         </div>
       </div>
-      <p className="live-demand-footnote">Today/week/month are the edge buffer's own running totals — the same figures Analytics reads.</p>
     </div>
   );
 }

@@ -213,12 +213,13 @@ export class OfficeScene {
   }
 
   /**
-   * Solid textured floor, solid walls with baseboards, a west-wall pair of windows, and a
-   * glazed partition carrying the room's real entrance (see `addGlazedPartition`). The
-   * window/door glasswork is ported from v4's care-office-3d.js shell, sized to CARE's
-   * actual room (6.0m x 10.6m) rather than that file's 9.0m x 6.6m reference room — same
-   * caveat as `geometry.ts`'s `FURNITURE` table: plausible placement, not a surveyed
-   * position, since nothing in the live flow records where CARE's actual openings are.
+   * Solid textured floor, solid walls with baseboards, a pair of windows on the short wall
+   * farthest from the entrance, and a glazed partition carrying the room's real entrance
+   * (see `addGlazedPartition`). The window/door glasswork is ported from v4's
+   * care-office-3d.js shell, sized to CARE's actual room (6.0m x 10.6m) rather than that
+   * file's 9.0m x 6.6m reference room — same caveat as `geometry.ts`'s `FURNITURE` table:
+   * plausible placement, not a surveyed position, since nothing in the live flow records
+   * where CARE's actual openings are.
    */
   private buildShell() {
     const floorTex = makeFloorTexture(ROOM.width, ROOM.depth);
@@ -244,20 +245,19 @@ export class OfficeScene {
       this.scene.add(base);
     };
 
-    // North/south short walls are now plain — the room's real entrance and its windows
-    // both moved onto the partition and the west wall (below), which is where the plan's
-    // own interior line and the CARE office's actual long-wall glazing belong.
+    // North short wall (the lobby's own exterior wall) is plain.
     addWall(ROOM.width + T, T, 0, ROOM.minZ);
+
+    // South short wall (z = maxZ) is the room's real entrance's OPPOSITE wall — the short
+    // wall farthest from the glazed partition/sliding door. Windows + the wall-mounted ACU
+    // (placed via FURNITURE, not here) both live here per an explicit requirement: keep
+    // them far from the entrance. along=+-1.7 flanks the ACU (1.2m wide, centred at x=0,
+    // FURNITURE's `acu` row) with 0.3m clear on each side.
     addWall(ROOM.width + T, T, 0, ROOM.maxZ);
+    this.addWindow(WALLS.south, -1.7, H);
+    this.addWindow(WALLS.south, 1.7, H);
 
-    // West long wall carries the 2 windows — east is the ACU's wall (see FURNITURE's
-    // docblock for why), so west is the only long wall left for them. z=2.6/0.4 sit both
-    // in the main room, north of the rect meeting table (z=4.2) and south of the
-    // partition, sills clear of every west-wall desktop (y 0.47) and of co1/co4 (y 0.35).
     addWall(T, ROOM.depth + T, ROOM.minX, 0);
-    this.addWindow(WALLS.west, 2.6, H);
-    this.addWindow(WALLS.west, 0.4, H);
-
     addWall(T, ROOM.depth + T, ROOM.maxX, 0);
 
     // The partition is the room's real entrance now — a full-height glazed office
@@ -425,7 +425,13 @@ export class OfficeScene {
     for (const fixture of LIGHT_FIXTURES) {
       const group = new THREE.Group();
       const housing = new THREE.Mesh(housingGeo, housingMat);
-      housing.castShadow = true;
+      // A recessed ceiling luminaire emits light; it doesn't cast its own housing as a
+      // shadow onto the floor below it. `castShadow = true` here was the cause of the
+      // dark square offset from every fixture in a top-down render — a real bug, not a
+      // stylistic choice. The room doesn't read flatter without it: the key light still
+      // shadows walls/furniture/frames, and each circuit's own PointLight + additive
+      // floor pool already carry the "this circuit is lit" read.
+      housing.castShadow = false;
       group.add(housing);
       const panel = new THREE.Mesh(panelGeo, lightPanelMaterial());
       panel.position.y = -0.02;

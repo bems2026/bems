@@ -6,6 +6,11 @@ interface SparklineProps {
   height?: number;
   color?: string;
   strokeWidth?: number;
+  /** Stretch to the parent's own box (100% x 100%) instead of a fixed pixel `height` —
+   * for the 1:1 aspect-ratio per-device cards, where the box size comes from CSS
+   * (`aspect-ratio`, tracking column width) rather than a prop. `width`/`height` still set
+   * the internal viewBox's coordinate space either way; only the rendered size changes. */
+  fill?: boolean;
 }
 
 /**
@@ -22,7 +27,7 @@ interface SparklineProps {
  * negative sample (never a real one here, but worth guarding structurally) would escape
  * the viewBox instead of flattening to the axis.
  */
-export function Sparkline({ values, width = 120, height = 34, color = 'var(--accent)', strokeWidth = 1.8 }: SparklineProps) {
+export function Sparkline({ values, width = 120, height = 34, color = 'var(--accent)', strokeWidth = 1.4, fill = false }: SparklineProps) {
   const gradientId = `sparkline-gradient-${useId()}`;
   if (values.length === 0) return null;
 
@@ -35,7 +40,7 @@ export function Sparkline({ values, width = 120, height = 34, color = 'var(--acc
   const areaPoints = `0,${height} ${points} ${width},${height}`;
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" style={{ width: '100%', height, display: 'block' }} aria-hidden="true">
+    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" style={{ width: '100%', height: fill ? '100%' : height, display: 'block' }} aria-hidden="true">
       <defs>
         <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
           <stop offset="5%" stopColor={color} stopOpacity={0.35} />

@@ -1,8 +1,10 @@
+import { Snowflake } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
 import { controlView } from '@/lib/socketView';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
+import { InfoHint } from '@/components/ui/InfoHint';
 import { useControlLog } from './controlLog';
 
 const ACU_ID = 'acu_main';
@@ -50,8 +52,11 @@ export function IrCommandCenterCard() {
 
   return (
     <div className="card control-ir-card">
-      <h3 className="control-ir-card__title">❄️ IR HVAC command center</h3>
-      <p className="control-ir-card__sub">Commands are emitted by the IR blaster. Power is never cut — the compressor stays protected.</p>
+      <h3 className="control-ir-card__title">
+        <Snowflake size={14} className="title-icon" aria-hidden="true" />
+        IR HVAC
+        <InfoHint label="How IR commands work">Commands are emitted by the IR blaster. Power is never cut — the compressor stays protected.</InfoHint>
+      </h3>
 
       <div className="control-ir-unit">
         <div className="control-ir-unit__head">

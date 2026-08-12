@@ -1,8 +1,10 @@
-import { useId, useMemo } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { SplitSquareVertical } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { sumHistories } from '@/components/overview/totalPowerSeries';
 import { downsampleTrend } from '@/components/trends/chartSummary';
+import { InfoHint } from '@/components/ui/InfoHint';
 import { alignTotalAndMetered } from './analyticsMath';
 
 const MAX_POINTS = 120;
@@ -24,11 +26,16 @@ export function UntrackedLoadCard({ branchIds, outletIds }: { branchIds: string[
   const data = downsamplePaired(paired, MAX_POINTS);
   const totalGradientId = `untracked-total-${useId()}`;
   const meteredGradientId = `untracked-metered-${useId()}`;
+  const [revealed, setRevealed] = useState(false);
+  const revealHandlers = { onMouseEnter: () => setRevealed(true), onMouseLeave: () => setRevealed(false), onTouchStart: () => setRevealed(true) };
 
   if (data.length === 0) {
     return (
       <div className="card analytics-untracked-card">
-        <h3 className="card-title">Metered vs panel total · 24 h</h3>
+        <h3 className="card-title">
+          <SplitSquareVertical size={14} className="title-icon" aria-hidden="true" />
+          Metered vs total
+        </h3>
         <p className="section-placeholder">History unavailable right now — the buffer fills at 1 point/min.</p>
       </div>
     );
@@ -41,13 +48,21 @@ export function UntrackedLoadCard({ branchIds, outletIds }: { branchIds: string[
     <div className="card analytics-untracked-card">
       <div className="card-head">
         <div>
-          <h3 className="card-title">Metered vs panel total · 24 h</h3>
-          <p className="card-sub">The 7 outlets' own meters against the CHNT panel total — the gap is hardwired lighting, the ACU, and anything else off-outlet.</p>
+          <h3 className="card-title">
+            <SplitSquareVertical size={14} className="title-icon" aria-hidden="true" />
+            Metered vs total
+            <InfoHint label="What the gap between these lines is">The 7 outlets' own meters against the CHNT panel total — the gap is hardwired lighting, the ACU, and anything else off-outlet.</InfoHint>
+          </h3>
         </div>
         <span className="analytics-untracked-gap">{gapKw.toFixed(2)} kW untracked now</span>
       </div>
-      <div role="img" aria-label={`Panel total ${last.totalKw?.toFixed(2)} kW, outlet-metered ${last.meteredKw?.toFixed(2)} kW, gap ${gapKw.toFixed(2)} kW.`}>
-        <ResponsiveContainer width="100%" height={260}>
+      <div
+        className={`chart-frame${revealed ? ' chart-frame--revealed' : ''}`}
+        role="img"
+        aria-label={`Panel total ${last.totalKw?.toFixed(2)} kW, outlet-metered ${last.meteredKw?.toFixed(2)} kW, gap ${gapKw.toFixed(2)} kW.`}
+        {...revealHandlers}
+      >
+        <ResponsiveContainer width="100%" height={360}>
           <AreaChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
             <defs>
               <linearGradient id={totalGradientId} x1="0" y1="0" x2="0" y2="1">
@@ -67,8 +82,8 @@ export function UntrackedLoadCard({ branchIds, outletIds }: { branchIds: string[
               formatter={(v, name) => [`${Number(v).toFixed(2)} kW`, name === 'totalKw' ? 'Panel total' : 'Outlet-metered']}
               contentStyle={{ background: 'var(--bg-surface-2)', border: '1px solid var(--border)', borderRadius: 8 }}
             />
-            <Area type="monotone" dataKey="totalKw" name="totalKw" stroke="var(--faint)" strokeWidth={1.5} fill={`url(#${totalGradientId})`} dot={false} isAnimationActive={false} />
-            <Area type="monotone" dataKey="meteredKw" name="meteredKw" stroke="var(--blue-bright)" strokeWidth={2} fill={`url(#${meteredGradientId})`} dot={false} isAnimationActive={false} />
+            <Area type="monotone" dataKey="totalKw" name="totalKw" stroke="var(--faint)" strokeWidth={1.6} fill={`url(#${totalGradientId})`} dot={false} isAnimationActive={false} />
+            <Area type="monotone" dataKey="meteredKw" name="meteredKw" stroke="var(--blue-bright)" strokeWidth={1.2} fill={`url(#${meteredGradientId})`} dot={false} isAnimationActive={false} />
           </AreaChart>
         </ResponsiveContainer>
       </div>

@@ -3,8 +3,10 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { useContextStore } from '@/stores/contextStore';
 import { hasSwitchableState } from '@/lib/deviceClass';
 import { pendingWrites } from '@/stores/contextStore';
+import { CalendarClock, Thermometer, ListTodo } from 'lucide-react';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
+import { InfoHint } from '@/components/ui/InfoHint';
 import { ScheduleRow } from './ScheduleRow';
 import { DsmThresholdsCard } from './DsmThresholdsCard';
 import type { DeviceClass } from '@/lib/types';
@@ -67,7 +69,10 @@ export function AutomationPage() {
       <header className="page-header">
         <div>
           <h1 className="page-title">DSM &amp; Schedule Management</h1>
-          <p className="page-sub">Values write to Node-RED global context. The existing schedule subflow acts on them — no separate rule engine.</p>
+          <p className="page-sub">
+            Node-RED context values
+            <InfoHint label="How these values are used">The existing schedule subflow acts on them directly — no separate rule engine.</InfoHint>
+          </p>
         </div>
         <button type="button" className="automation-write-btn" disabled={pendingEntries.length === 0 || saveStatus === 'saving'} onClick={askSave}>
           {saveStatus === 'saving' ? 'Writing…' : 'Write to Node-RED context'}
@@ -78,7 +83,10 @@ export function AutomationPage() {
       <div className="automation-grid">
         <div className="card automation-schedules-card">
           <div className="automation-schedules-head">
-            <span className="card-title">Device Schedules</span>
+            <span className="card-title">
+              <CalendarClock size={14} className="title-icon" aria-hidden="true" />
+              Device Schedules
+            </span>
             <span className="automation-armed-count mono">{armedCount} ARMED</span>
             <div className="automation-filter-group">
               {(['All', 'Lighting', 'Outlets', 'ACU'] as SchedFilter[]).map((f) => (
@@ -110,7 +118,10 @@ export function AutomationPage() {
             </div>
           </div>
 
-          <h3 className="automation-section-title">Ambient Trigger Setpoints</h3>
+          <h3 className="automation-section-title">
+            <Thermometer size={14} className="title-icon" aria-hidden="true" />
+            Ambient Trigger Setpoints
+          </h3>
           <p className="automation-schedules-sub">IR blaster rules driven by the paired climate sensor.</p>
           <div className="automation-trigger-card">
             <div className="automation-trigger-card__head">
@@ -139,7 +150,10 @@ export function AutomationPage() {
           <DsmThresholdsCard />
 
           <div className="card automation-pending-card">
-            <h3 className="card-title">Pending context writes</h3>
+            <h3 className="card-title">
+              <ListTodo size={14} className="title-icon" aria-hidden="true" />
+              Pending writes
+            </h3>
             {pendingEntries.length === 0 ? (
               <p className="automation-pending-empty">Nothing changed since the last write</p>
             ) : (

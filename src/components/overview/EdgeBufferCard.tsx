@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Activity } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { getHistory } from '@/lib/bridgeClient';
 import { TIMING } from '@/lib/timing';
@@ -52,21 +53,31 @@ export function EdgeBufferCard() {
   const loading = status === 'loading' && total.length === 0;
   const data = downsampleTrend(total, MAX_POINTS).map((p) => ({ t: Date.parse(p.ts), kw: p.power_w / 1000 }));
   const gradientId = `edge-buffer-gradient-${useId()}`;
+  const [revealed, setRevealed] = useState(false);
+  const revealHandlers = { onMouseEnter: () => setRevealed(true), onMouseLeave: () => setRevealed(false), onTouchStart: () => setRevealed(true) };
 
   return (
     <div className="card">
       <div className="card-head">
-        <h3 className="card-title">Edge buffer · 24 h</h3>
+        <h3 className="card-title">
+          <Activity size={14} className="title-icon" aria-hidden="true" />
+          Edge buffer
+        </h3>
         <span className="edge-buffer-head-unit">kW</span>
       </div>
       {loading ? (
-        <Skeleton height="170px" />
+        <Skeleton height="210px" />
       ) : data.length === 0 ? (
         <p className="section-placeholder">{status === 'error' ? 'History unavailable right now.' : 'No history yet — the buffer fills at 1 point/min.'}</p>
       ) : (
         <>
-          <div role="img" aria-label={`Total facility power over the last 24 hours, ${data.length} samples, currently ${data[data.length - 1].kw.toFixed(2)} kW.`}>
-            <ResponsiveContainer width="100%" height={170}>
+          <div
+            className={`chart-frame${revealed ? ' chart-frame--revealed' : ''}`}
+            role="img"
+            aria-label={`Total facility power over the last 24 hours, ${data.length} samples, currently ${data[data.length - 1].kw.toFixed(2)} kW.`}
+            {...revealHandlers}
+          >
+            <ResponsiveContainer width="100%" height={210}>
               <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
                 <defs>
                   <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -75,14 +86,14 @@ export function EdgeBufferCard() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid stroke="var(--border-faint)" vertical={false} />
-                <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} hide />
-                <YAxis hide domain={[0, 'dataMax']} />
+                <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} stroke="var(--muted)" fontSize={10} tickLine={false} />
+                <YAxis domain={[0, 'dataMax']} stroke="var(--muted)" fontSize={10} width={34} tickLine={false} />
                 <Tooltip
                   labelFormatter={(t) => new Date(t as number).toLocaleTimeString('en-PH', { hour12: false })}
                   formatter={(v) => [`${Number(v).toFixed(2)} kW`, 'Power']}
                   contentStyle={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 8, fontSize: 11 }}
                 />
-                <Area type="monotone" dataKey="kw" stroke="var(--accent)" strokeWidth={2.2} fill={`url(#${gradientId})`} dot={false} isAnimationActive={false} />
+                <Area type="monotone" dataKey="kw" stroke="var(--accent)" strokeWidth={1.6} fill={`url(#${gradientId})`} dot={false} isAnimationActive={false} />
               </AreaChart>
             </ResponsiveContainer>
           </div>

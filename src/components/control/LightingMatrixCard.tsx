@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { Lightbulb } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
 import { controlView } from '@/lib/socketView';
@@ -55,7 +56,10 @@ export function LightingMatrixCard() {
 
   return (
     <div className="control-plan-panel">
-      <div className="control-plan-panel__label">CEILING LUMINAIRES · L1-L7</div>
+      <div className="control-plan-panel__label">
+        <Lightbulb size={12} className="title-icon" aria-hidden="true" />
+        CEILING LUMINAIRES · L1-L7
+      </div>
       <div className="control-light-rows">
         {lights.map((d) => {
           const view = controlView(readings[d.id], pendingMap[targetKey(d.id)]);

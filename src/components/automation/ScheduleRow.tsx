@@ -1,14 +1,7 @@
 import { useContextStore } from '@/stores/contextStore';
+import { CLASS_ICON } from '@/lib/deviceIcons';
 import { DAY_LABELS, parseDays, scheduleKey, toggleDay } from './automationMath';
 import type { Device } from '@/lib/types';
-
-const CLASS_ICON: Record<Device['class'], string> = {
-  switch: '💡',
-  outlet_dual: '🔌',
-  acu_ir: '❄️',
-  meter: '⌁',
-  sensor_temp_humidity: '🌡',
-};
 
 /** One editable row — effective value is `draft ?? saved ?? ''` (unset, never a fabricated
  * default time). Every edit calls `setDraft`, which only stages the change; nothing reaches
@@ -27,12 +20,13 @@ export function ScheduleRow({ device }: { device: Device }) {
   const offVal = effective('off') ?? '';
   const days = parseDays(effective('days'));
   const armed = effective('armed') === 'true';
+  const Icon = CLASS_ICON[device.class];
 
   return (
     <div className="automation-sched-row">
       <div className="automation-sched-row__device">
         <span className="automation-sched-row__icon" aria-hidden="true">
-          {CLASS_ICON[device.class]}
+          <Icon size={14} />
         </span>
         <div>
           <div className="automation-sched-row__name">{device.display_name}</div>

@@ -1,6 +1,8 @@
+import { CalendarClock } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useContextStore } from '@/stores/contextStore';
 import { nextUpSchedules, armedScheduleCount } from '@/components/automation/automationMath';
+import { CLASS_ICON } from '@/lib/deviceIcons';
 
 /**
  * v4's "Active Schedules" card, retitled "Next up" per the Phase M plan — v3's
@@ -20,19 +22,25 @@ export function NextUpCard() {
   return (
     <div className="card">
       <div className="card-head">
-        <h3 className="card-title">Next up</h3>
+        <h3 className="card-title">
+          <CalendarClock size={14} className="title-icon" aria-hidden="true" />
+          Next up
+        </h3>
         <span className="card-sub">{armed > 0 ? `${armed} armed · ` : ''}Node-RED global context</span>
       </div>
       {entries.length === 0 ? (
         <p className="section-placeholder">No schedules armed — No data</p>
       ) : (
-        entries.map((e) => (
-          <div className="next-up-row" key={e.deviceId}>
-            <span aria-hidden="true">{e.icon}</span>
-            <p className="next-up-name">{e.name}</p>
-            <span className="next-up-window mono">{e.time}</span>
-          </div>
-        ))
+        entries.map((e) => {
+          const Icon = CLASS_ICON[e.deviceClass];
+          return (
+            <div className="next-up-row" key={e.deviceId}>
+              <Icon size={14} aria-hidden="true" />
+              <p className="next-up-name">{e.name}</p>
+              <span className="next-up-window mono">{e.time}</span>
+            </div>
+          );
+        })
       )}
     </div>
   );

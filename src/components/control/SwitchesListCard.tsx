@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
+import { Lightbulb } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
 import { controlView } from '@/lib/socketView';
+import { InfoHint } from '@/components/ui/InfoHint';
 import { useControlLog } from './controlLog';
 
 /**
@@ -17,7 +19,11 @@ export function SwitchesListCard() {
 
   return (
     <div className="card control-list-card">
-      <h3 className="control-list-card__title">💡 Lighting switches · 7x Tuya 16A mini</h3>
+      <h3 className="control-list-card__title">
+        <Lightbulb size={16} className="title-icon" aria-hidden="true" />
+        Lighting switches
+        <InfoHint label="Hardware">7x Tuya 16A mini relays.</InfoHint>
+      </h3>
       {lights.map((d) => (
         <SwitchRow key={d.id} deviceId={d.id} name={d.display_name} />
       ))}

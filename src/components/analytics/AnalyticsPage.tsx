@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Activity, Gauge, Plug } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Sparkline } from '@/components/ui/Sparkline';
+import { InfoHint } from '@/components/ui/InfoHint';
 import { useAnalyticsHistory } from './useAnalyticsHistory';
 import { buildChartRows } from './analyticsMath';
 import { SourceCard } from './SourceCard';
@@ -35,6 +37,14 @@ export function AnalyticsPage() {
 
   const [scope, setScope] = useState<Scope>('branches');
   const [selectedByScope, setSelectedByScope] = useState<Record<Scope, string | null>>({ branches: null, outlets: null });
+  // Phase O: axes/gridlines stay hidden (opacity 0, still occupying their reserved space —
+  // see `.chart-frame` in index.css) until the chart is hovered or touched.
+  const [chartRevealed, setChartRevealed] = useState(false);
+  const revealHandlers = {
+    onMouseEnter: () => setChartRevealed(true),
+    onMouseLeave: () => setChartRevealed(false),
+    onTouchStart: () => setChartRevealed(true),
+  };
 
   const branchDevices = useMemo(() => branchIds.map((id) => devices.find((d) => d.id === id)).filter((d): d is Device => !!d), [branchIds, devices]);
   const outletDevices = useMemo(() => outletIds.map((id) => devices.find((d) => d.id === id)).filter((d): d is Device => !!d), [outletIds, devices]);
@@ -61,7 +71,10 @@ export function AnalyticsPage() {
       <header className="page-header">
         <div>
           <h1 className="page-title">Power Analytics</h1>
-          <p className="page-sub">24-hour power draw across the 4 CHNT branch meters and the 7 individually-metered outlets.</p>
+          <p className="page-sub">
+            24h power draw
+            <InfoHint label="What this covers">The 4 CHNT branch meters and the 7 individually-metered outlets.</InfoHint>
+          </p>
         </div>
         <div className="analytics-scope-toggle" role="group" aria-label="Scope">
           <button type="button" className={`analytics-scope-btn${scope === 'branches' ? ' analytics-scope-btn--active' : ''}`} onClick={() => setScope('branches')}>
@@ -76,7 +89,10 @@ export function AnalyticsPage() {
       <div className="analytics-main-grid">
         <div className="card analytics-chart-card">
           <div className="card-head">
-            <h3 className="card-title">Power · 24 h</h3>
+            <h3 className="card-title">
+              <Activity size={14} className="title-icon" aria-hidden="true" />
+              Power · 24 h
+            </h3>
             <div className="analytics-legend">
               {scopeDevices.map((d, i) => (
                 <button
@@ -93,12 +109,17 @@ export function AnalyticsPage() {
             </div>
           </div>
           {status === 'loading' && rows.length === 0 ? (
-            <Skeleton height="320px" />
+            <Skeleton height="440px" />
           ) : rows.length === 0 ? (
             <p className="section-placeholder">{status === 'error' ? 'History unavailable right now.' : 'No history yet — the buffer fills at 1 point/min.'}</p>
           ) : (
-            <div role="img" aria-label={`Power over the last 24 hours across ${scopeDevices.length} ${scope}, ${rows.length} samples.`}>
-              <ResponsiveContainer width="100%" height={320}>
+            <div
+              className={`chart-frame${chartRevealed ? ' chart-frame--revealed' : ''}`}
+              role="img"
+              aria-label={`Power over the last 24 hours across ${scopeDevices.length} ${scope}, ${rows.length} samples.`}
+              {...revealHandlers}
+            >
+              <ResponsiveContainer width="100%" height={440}>
                 <LineChart data={rows} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
                   <CartesianGrid stroke="var(--border)" strokeOpacity={0.5} vertical={false} />
                   <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tickFormatter={formatTick} stroke="var(--muted)" fontSize={11} tickLine={false} />
@@ -115,7 +136,7 @@ export function AnalyticsPage() {
                       dataKey={d.id}
                       name={d.id}
                       stroke={PALETTE[i % PALETTE.length]}
-                      strokeWidth={d.id === selectedId ? 2.4 : 1.4}
+                      strokeWidth={d.id === selectedId ? 1.8 : 1.1}
                       strokeOpacity={d.id === selectedId ? 1 : 0.35}
                       dot={false}
                       isAnimationActive={false}
@@ -131,7 +152,7 @@ export function AnalyticsPage() {
           <h3 className="card-title">{selectedDevice?.display_name ?? 'No source selected'}</h3>
           {selectedDevice && <SelectedStatPanel reading={selectedReading} />}
           <div className="analytics-stat-card__spark-label">24 H</div>
-          <Sparkline values={(selectedId ? (historyMap[selectedId] ?? []) : []).slice(-140).map((p) => p.power_w)} height={110} color="var(--blue-bright)" />
+          <Sparkline values={(selectedId ? (historyMap[selectedId] ?? []) : []).slice(-140).map((p) => p.power_w)} height={150} color="var(--blue-bright)" />
           <p className="analytics-stat-card__note">{scope === 'branches' ? 'Feeder measured at the main CHNT panel CT.' : 'Socket-level meter inside the outlet module.'}</p>
         </div>
       </div>
@@ -184,10 +205,14 @@ function SourceSection({
   className: string;
 }) {
   if (devices.length === 0) return null;
+  const SectionIcon = scope === 'branches' ? Gauge : Plug;
   return (
     <div className="analytics-cards-section">
       <div className="analytics-cards-section__head">
-        <span className="analytics-cards-section__title">{title}</span>
+        <span className="analytics-cards-section__title">
+          <SectionIcon size={14} className="title-icon" aria-hidden="true" />
+          {title}
+        </span>
         <span className="analytics-cards-section__tag">{tag}</span>
       </div>
       <div className={className}>

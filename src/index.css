@@ -292,10 +292,21 @@ body::before {
   margin-bottom: var(--sp-4);
 }
 .card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--txt);
   margin: 0;
+}
+/* Phase O: a small contextual glyph ahead of a card/section title's own text — applied to
+   `.card-title` and the other title classes below that bypass it. Kept out of `.card-head`
+   (which is `justify-content: space-between`, so a 3rd flex child there would break the
+   title/sub-content split) by living *inside* the title element instead. */
+.title-icon {
+  flex: none;
+  color: var(--muted);
 }
 .card-sub {
   font-size: var(--fs-xs);
@@ -638,6 +649,45 @@ body::before {
 
 #mobileMenuBtn {
   display: none;
+}
+
+/* Phase O: the ⓘ popover long provenance text moves behind — see `ui/InfoHint.tsx`. Same
+   dismiss pattern/visual language as `.alerts-popover`, just smaller and non-modal. */
+.info-hint {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.info-hint__btn {
+  border: none;
+  background: none;
+  color: var(--faint);
+  cursor: pointer;
+  padding: 2px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+.info-hint__btn:hover {
+  color: var(--muted);
+  background: var(--bg-inset);
+}
+.info-hint__pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  width: 260px;
+  padding: var(--sp-3);
+  background: rgb(255 255 255 / 0.96);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-inner);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+  line-height: 1.45;
 }
 
 .alerts-popover {
@@ -1125,9 +1175,9 @@ body::before {
 }
 .phase-bar-track {
   flex: 1;
-  height: 5px;
+  height: 4px;
   background: var(--border);
-  border-radius: 3px;
+  border-radius: 2px;
   overflow: hidden;
   min-width: 0;
 }
@@ -1219,6 +1269,9 @@ body::before {
   flex-wrap: wrap;
 }
 .hero-3d-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font: 700 var(--fs-base-lg) inherit;
   margin: 0;
 }
@@ -1492,8 +1545,8 @@ body::before {
 }
 .metered-split-bar {
   display: flex;
-  height: 12px;
-  border-radius: 6px;
+  height: 8px;
+  border-radius: 4px;
   overflow: hidden;
   margin-top: 11px;
   gap: 2px;
@@ -1895,9 +1948,14 @@ body::before {
   color: var(--warn);
 }
 .devices-watchdog-note {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   margin: var(--sp-3) 0 0;
   font-size: var(--fs-xs);
-  color: var(--faint);
+  /* Phase O contrast fix: this is real body text, not decoration — `--faint` (<3:1) was
+     wrong for it per the rule index.css documents near --muted-2's own definition. */
+  color: var(--muted-2);
   line-height: 1.5;
 }
 .devices-watchdog-note code {
@@ -1989,6 +2047,9 @@ body::before {
   box-shadow: 0 8px 32px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.04);
 }
 .floorplan-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0 0 var(--sp-4);
   font-size: var(--fs-sm);
   font-weight: 600;
@@ -2118,6 +2179,9 @@ body::before {
  * header block) already provides the flex row the 3 master buttons sit in.
  * ------------------------------------------------------------------------ */
 .control-master-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border: none;
   border-radius: var(--r-inner);
   padding: 11px 16px;
@@ -2193,6 +2257,9 @@ body::before {
   flex-direction: column;
 }
 .control-plan-panel__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font: 600 var(--fs-2xs) 'IBM Plex Mono', monospace;
   color: var(--faint);
   letter-spacing: 0.08em;
@@ -2404,6 +2471,9 @@ body::before {
   }
 }
 .control-list-card__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 700;
   font-size: var(--fs-base-lg);
   padding-bottom: var(--sp-3);
@@ -2441,6 +2511,9 @@ body::before {
 }
 
 .control-ir-card__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 700;
   font-size: var(--fs-base-lg);
   margin: 0 0 4px;
@@ -2491,6 +2564,9 @@ body::before {
 }
 
 .control-log-card__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 700;
   font-size: var(--fs-base-lg);
   margin: 0 0 var(--sp-3);
@@ -2549,9 +2625,13 @@ body::before {
   flex: none;
 }
 .control-log-card__footnote {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   margin: var(--sp-3) 0 0;
   font-size: var(--fs-2xs);
-  color: var(--faint);
+  /* Phase O contrast fix: real body text, not decoration — see .devices-watchdog-note. */
+  color: var(--muted-2);
   line-height: 1.5;
 }
 
@@ -2659,6 +2739,27 @@ body::before {
 .analytics-chart-card {
   min-width: 0;
 }
+
+/* Phase O: axes/gridlines hidden until hovered or touched, with NO layout shift. Recharts'
+   own `hide` prop reclaims the axis's reserved space, which would make the plotted line
+   jump when the axis appears — worse than permanent axis furniture. Instead every chart
+   using this pattern always renders its `<XAxis>`/`<YAxis>`/`<CartesianGrid>` (so their
+   pixel space is reserved from first paint) and only `opacity` toggles, driven by a
+   `chart-frame--revealed` class the chart's own `onMouseEnter`/`onMouseLeave`/
+   `onTouchStart` handlers set on this wrapper — never by Recharts' `hide`. */
+.chart-frame .recharts-cartesian-axis-line,
+.chart-frame .recharts-cartesian-axis-tick line,
+.chart-frame .recharts-cartesian-axis-tick-value,
+.chart-frame .recharts-cartesian-grid line {
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.chart-frame--revealed .recharts-cartesian-axis-line,
+.chart-frame--revealed .recharts-cartesian-axis-tick line,
+.chart-frame--revealed .recharts-cartesian-axis-tick-value,
+.chart-frame--revealed .recharts-cartesian-grid line {
+  opacity: 0.45;
+}
 .analytics-legend {
   display: flex;
   gap: var(--sp-3);
@@ -2734,6 +2835,9 @@ body::before {
   margin-bottom: var(--sp-3);
 }
 .analytics-cards-section__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 700;
   font-size: var(--fs-base);
 }
@@ -2747,12 +2851,12 @@ body::before {
   grid-template-columns: repeat(4, 1fr);
   gap: var(--sp-4);
 }
-/* Phase N: 7 columns -> 4. At 7-across (~210px each) the 64px sparklines squashed a
-   120-unit viewBox into a card too narrow to read as a shape rather than noise — this is
-   the actual width constraint on chart legibility, more than the sparkline's own height. */
+/* Phase N: 7 columns -> 4. Phase O: 4 -> 5, now that each card's chart is a true 1:1 box
+   (`.analytics-source-card__chart`) instead of a fixed-height strip — a square chart reads
+   as a shape at 5-across the way the old 64px strip needed 4-across to avoid squashing. */
 .analytics-outlet-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: var(--sp-3);
 }
 @media (max-width: 1200px) {
@@ -2818,6 +2922,12 @@ body::before {
 }
 .analytics-source-card__stat-value {
   font: 600 var(--fs-xs-lg) 'IBM Plex Mono', monospace;
+}
+/* Phase O: a true 1:1 box for the sparkline (was a fixed 64px strip) — `Sparkline`'s
+   `fill` prop stretches its SVG to whatever this box resolves to. */
+.analytics-source-card__chart {
+  aspect-ratio: 1 / 1;
+  margin-top: var(--sp-3);
 }
 
 .analytics-untracked-card {
@@ -3042,6 +3152,9 @@ body::before {
 }
 
 .automation-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 700;
   font-size: var(--fs-md);
   margin: var(--sp-5) 0 4px;

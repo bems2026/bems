@@ -1,5 +1,5 @@
 import { hasSwitchableState } from '@/lib/deviceClass';
-import type { ContextMap, Device } from '@/lib/types';
+import type { ContextMap, Device, DeviceClass } from '@/lib/types';
 
 export const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
@@ -26,12 +26,12 @@ export function scheduleKey(deviceId: string, field: 'on' | 'off' | 'days' | 'ar
   return `global.schedule.${deviceId}.${field}`;
 }
 
-const CLASS_ICON: Partial<Record<Device['class'], string>> = { switch: '💡', outlet_dual: '🔌', acu_ir: '❄️' };
-
 export interface NextUpEntry {
   deviceId: string;
   name: string;
-  icon: string;
+  /** Resolved to an icon via the shared `CLASS_ICON` map (`lib/deviceIcons.ts`) at render
+   * time, not baked in here — this module has no JSX/lucide dependency. */
+  deviceClass: DeviceClass;
   time: string;
 }
 
@@ -48,7 +48,7 @@ export function nextUpSchedules(devices: Device[], saved: ContextMap, limit = 4)
     const armed = saved[scheduleKey(d.id, 'armed')] === 'true';
     const on = saved[scheduleKey(d.id, 'on')];
     if (!armed || !on) continue;
-    entries.push({ deviceId: d.id, name: d.display_name, icon: CLASS_ICON[d.class] ?? '•', time: on });
+    entries.push({ deviceId: d.id, name: d.display_name, deviceClass: d.class, time: on });
   }
   return entries.sort((a, b) => a.time.localeCompare(b.time)).slice(0, limit);
 }

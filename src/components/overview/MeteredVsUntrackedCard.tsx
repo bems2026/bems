@@ -1,4 +1,6 @@
+import { SplitSquareVertical } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
+import { InfoHint } from '@/components/ui/InfoHint';
 import { meteredVsUntracked } from './overviewMath';
 
 export function MeteredVsUntrackedCard() {
@@ -11,7 +13,11 @@ export function MeteredVsUntrackedCard() {
   return (
     <div className="card">
       <div className="card-head">
-        <h3 className="card-title">Metered vs untracked load</h3>
+        <h3 className="card-title">
+          <SplitSquareVertical size={14} className="title-icon" aria-hidden="true" />
+          Untracked load
+          <InfoHint label="How untracked load is derived">Untracked = CHNT panel total minus the 7 metered outlets: hardwired lighting and direct-to-panel equipment.</InfoHint>
+        </h3>
       </div>
       {split.untrackedW === null ? (
         <p className="section-placeholder">Waiting for the panel total…</p>
@@ -37,7 +43,6 @@ export function MeteredVsUntrackedCard() {
           </div>
         </>
       )}
-      <p className="metered-footnote">Untracked = CHNT panel total minus the 7 metered outlets: hardwired lighting and direct-to-panel equipment.</p>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { Plug } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
 import { controlView } from '@/lib/socketView';
@@ -69,7 +70,10 @@ export function OutletPlanCard() {
 
   return (
     <div className="control-plan-panel control-plan-panel--outlets">
-      <div className="control-plan-panel__label">CONVENIENCE OUTLETS · CO1-CO7</div>
+      <div className="control-plan-panel__label">
+        <Plug size={12} className="title-icon" aria-hidden="true" />
+        CONVENIENCE OUTLETS · CO1-CO7
+      </div>
       <div className="control-outlet-plan">
         <div
           className="control-outlet-plan__outline"

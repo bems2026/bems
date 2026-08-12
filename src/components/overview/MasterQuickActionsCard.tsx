@@ -1,3 +1,4 @@
+import { SlidersHorizontal, Snowflake, Lightbulb } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
 import { controlView } from '@/lib/socketView';
@@ -39,13 +40,16 @@ export function MasterQuickActionsCard() {
   return (
     <div className="card">
       <div className="card-head">
-        <h3 className="card-title">Master Quick Actions</h3>
+        <h3 className="card-title">
+          <SlidersHorizontal size={14} className="title-icon" aria-hidden="true" />
+          Quick Actions
+        </h3>
         <span className="card-sub">Same control path as Control</span>
       </div>
 
       <div className="quick-row">
         <span className="quick-icon-tile" aria-hidden="true">
-          ❄️
+          <Snowflake size={16} />
         </span>
         <div className="quick-row__body">
           <p className="quick-row__name">CARE ACU</p>
@@ -83,7 +87,7 @@ function QuickToggleRow({ deviceId }: { deviceId: string }) {
   return (
     <div className="quick-row">
       <span className="quick-icon-tile" aria-hidden="true">
-        💡
+        <Lightbulb size={16} />
       </span>
       <div className="quick-row__body">
         <p className="quick-row__name">{device?.display_name ?? deviceId}</p>

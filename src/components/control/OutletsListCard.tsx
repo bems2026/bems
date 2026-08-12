@@ -1,8 +1,10 @@
 import { useMemo } from 'react';
+import { Plug } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey, type PendingCommand } from '@/stores/commandStore';
 import { controlView } from '@/lib/socketView';
 import { corroborate } from '@/lib/relayCorroboration';
+import { InfoHint } from '@/components/ui/InfoHint';
 import type { Device, Reading, SocketIndex } from '@/lib/types';
 import { useControlLog, type LogTag } from './controlLog';
 
@@ -18,7 +20,11 @@ export function OutletsListCard() {
 
   return (
     <div className="card control-list-card">
-      <h3 className="control-list-card__title">🔌 Outlets · 7x Tuya 20A, S1/S2</h3>
+      <h3 className="control-list-card__title">
+        <Plug size={16} className="title-icon" aria-hidden="true" />
+        Outlets
+        <InfoHint label="Hardware">7x Tuya 20A dual-socket, S1/S2.</InfoHint>
+      </h3>
       {outlets.map((d) => (
         <OutletRow key={d.id} device={d} />
       ))}
