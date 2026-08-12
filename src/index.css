@@ -2237,6 +2237,10 @@ body::before {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--sp-4);
+  /* The two panels don't need matching heights — default `stretch` was forcing the shorter
+     lighting panel's background to stretch down to match the taller (now aspect-ratio'd)
+     outlet plan, leaving dead space under its rows. */
+  align-items: start;
 }
 @media (max-width: 700px) {
   .control-plan-grid {
@@ -2335,10 +2339,19 @@ body::before {
 /* Outlet plan — a scaled reproduction of the same 320x550 plan `FloorPlanView` draws from,
    salvaged from v3 (room outline, sliding-door bar, per-pin wattage — v4 dropped all three)
    and updated with the M2 shell's real doorway gap. */
+/* The room is a tall, narrow shape (6.0m x 10.6m, viewBox 320x550) — the old fixed
+   `min-height: 360px` against a much wider flex-stretched width silently squashed it into
+   something closer to landscape, non-uniformly stretching every percentage-positioned pin
+   and crowding the closely-spaced outlets together until their id/caption/watts text
+   overlapped. `aspect-ratio` keeps the true 320:550 proportions at any width; `max-width`
+   caps how tall that makes the card (matching the plan's own natural aspect keeps it
+   readable without the card growing to ~900px). */
 .control-outlet-plan {
   position: relative;
-  flex: 1;
-  min-height: 360px;
+  width: 100%;
+  max-width: 380px;
+  aspect-ratio: 320 / 550;
+  margin: 0 auto;
 }
 .control-outlet-plan__outline {
   position: absolute;
@@ -2401,20 +2414,23 @@ body::before {
   text-align: center;
 }
 .control-outlet-pin__id {
-  font: 700 var(--fs-xxs) 'IBM Plex Mono', monospace;
+  font: 700 var(--fs-3xs) 'IBM Plex Mono', monospace;
   color: var(--muted);
-  margin-bottom: 3px;
+  margin-bottom: 1px;
+  line-height: 1.1;
 }
 /*
- * The puck itself is now the control — a 48px circle split into two independently
- * clickable halves (DP1 left, DP2 right). `overflow: hidden` on the circular container
- * clips each flex child's rectangle to its own half automatically, rather than hand-rolling
- * two clip-path semicircles.
+ * The puck itself is now the control — a circle split into two independently clickable
+ * halves (DP1 left, DP2 right). `overflow: hidden` on the circular container clips each
+ * flex child's rectangle to its own half automatically, rather than hand-rolling two
+ * clip-path semicircles. Sized down from an earlier 48px, which — combined with the
+ * `.control-outlet-plan` aspect-ratio fix above — was dominating the plan and crowding
+ * outlets that sit close together in the real room (co1/co2 are 0.9m apart).
  */
 .control-outlet-pin__puck {
   display: flex;
-  width: 48px;
-  height: 48px;
+  width: 22px;
+  height: 22px;
   margin: 0 auto;
   border-radius: 50%;
   overflow: hidden;
@@ -2441,23 +2457,47 @@ body::before {
 .control-outlet-pin__caption {
   display: flex;
   justify-content: center;
-  gap: 6px;
-  margin-top: 3px;
-  font: 700 var(--fs-3xs) 'IBM Plex Mono', monospace;
+  gap: 4px;
+  margin-top: 1px;
+  font: 700 8px 'IBM Plex Mono', monospace;
+  line-height: 1.1;
   color: var(--faint);
+  white-space: nowrap;
 }
 .control-outlet-pin__caption--on {
   color: var(--good);
 }
 .control-outlet-pin__watts {
-  margin-top: 3px;
-  font: 500 var(--fs-3xs) 'IBM Plex Mono', monospace;
+  margin-top: 0;
+  font: 500 8px 'IBM Plex Mono', monospace;
+  line-height: 1.1;
   color: var(--faint);
 }
 .control-outlet-pin__warn {
-  margin-top: 2px;
-  font: 700 var(--fs-3xs) 'IBM Plex Mono', monospace;
+  margin-top: 1px;
+  font: 700 8px 'IBM Plex Mono', monospace;
   color: var(--bad);
+  white-space: nowrap;
+}
+/* co1/co2 are only 0.9m apart in the real room — at a phone-width plan (~250px), even the
+   trimmed pin footprint above doesn't clear that pair. The watts figure is the least
+   essential line here (it's not unique to this view — Devices and Analytics both show
+   outlet wattage), so it's the one dropped to buy back the vertical room this specific
+   viewport needs. */
+@media (max-width: 480px) {
+  .control-outlet-pin__watts {
+    display: none;
+  }
+  .control-outlet-pin__puck {
+    width: 15px;
+    height: 15px;
+  }
+  .control-outlet-pin__id {
+    margin-bottom: 0;
+  }
+  .control-outlet-pin__caption {
+    margin-top: 0;
+  }
 }
 
 .control-list-grid {
