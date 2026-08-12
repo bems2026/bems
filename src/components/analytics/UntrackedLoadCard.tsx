@@ -57,7 +57,7 @@ export function UntrackedLoadCard({ branchIds, outletIds }: { branchIds: string[
         <span className="analytics-untracked-gap">{gapKw.toFixed(2)} kW untracked now</span>
       </div>
       <div
-        className={`chart-frame${revealed ? ' chart-frame--revealed' : ''}`}
+        className={`chart-frame chart-frame--axes-visible${revealed ? ' chart-frame--revealed' : ''}`}
         role="img"
         aria-label={`Panel total ${last.totalKw?.toFixed(2)} kW, outlet-metered ${last.meteredKw?.toFixed(2)} kW, gap ${gapKw.toFixed(2)} kW.`}
         {...revealHandlers}

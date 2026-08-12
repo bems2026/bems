@@ -63,7 +63,7 @@ function SourceChart({ history, color, name }: { history: { ts: string; power_w:
 
   return (
     <div
-      className={`analytics-source-card__chart chart-frame${revealed ? ' chart-frame--revealed' : ''}`}
+      className={`analytics-source-card__chart chart-frame chart-frame--axes-visible${revealed ? ' chart-frame--revealed' : ''}`}
       role="img"
       aria-label={`${name} power over recent history, ${data.length} samples, currently ${data[data.length - 1].w.toFixed(0)} W.`}
       {...revealHandlers}

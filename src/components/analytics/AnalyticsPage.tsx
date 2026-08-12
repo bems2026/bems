@@ -114,7 +114,7 @@ export function AnalyticsPage() {
             <p className="section-placeholder">{status === 'error' ? 'History unavailable right now.' : 'No history yet — the buffer fills at 1 point/min.'}</p>
           ) : (
             <div
-              className={`chart-frame${chartRevealed ? ' chart-frame--revealed' : ''}`}
+              className={`chart-frame chart-frame--axes-visible${chartRevealed ? ' chart-frame--revealed' : ''}`}
               role="img"
               aria-label={`Power over the last 24 hours across ${scopeDevices.length} ${scope}, ${rows.length} samples.`}
               {...revealHandlers}

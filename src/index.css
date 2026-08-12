@@ -2721,6 +2721,15 @@ body::before {
 .chart-frame--revealed .recharts-cartesian-grid line {
   opacity: 0.45;
 }
+/* Analytics' own charts (main "Power · 24 h", the branch/outlet source cards, "Metered vs
+   total") keep the gridline hover-reveal above but drop it for the axes themselves — the
+   axis line, tick marks, and tick labels stay always-visible instead of needing a hover to
+   read the scale. Overview's Edge Buffer chart is untouched (still `.chart-frame` alone). */
+.chart-frame.chart-frame--axes-visible .recharts-cartesian-axis-line,
+.chart-frame.chart-frame--axes-visible .recharts-cartesian-axis-tick line,
+.chart-frame.chart-frame--axes-visible .recharts-cartesian-axis-tick-value {
+  opacity: 1;
+}
 .analytics-legend {
   display: flex;
   gap: var(--sp-3);
