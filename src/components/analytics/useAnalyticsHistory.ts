@@ -5,9 +5,9 @@ import { TIMING } from '@/lib/timing';
 
 /**
  * Self-fetches 24h history for every branch meter AND every outlet — Overview's
- * `EdgeBufferCard` only needs the 4 meters, but Analytics' scope toggle needs both sets
+ * Overview's cards only need the 4 meters, but Analytics' scope toggle needs both sets
  * available regardless of which scope is currently selected, so switching scope never
- * shows a loading flicker. Same fetch/refetch pattern as `EdgeBufferCard`/`TrendChart`.
+ * shows a loading flicker. Same fetch/refetch pattern as `TrendChart`.
  */
 export function useAnalyticsHistory() {
   const devices = useDeviceStore((s) => s.devices);

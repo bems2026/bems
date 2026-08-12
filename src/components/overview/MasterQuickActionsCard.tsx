@@ -42,7 +42,7 @@ export function MasterQuickActionsCard() {
       <div className="card-head">
         <h3 className="card-title">
           <SlidersHorizontal size={14} className="title-icon" aria-hidden="true" />
-          Quick Actions
+          Quick Control
         </h3>
         <span className="card-sub">Same control path as Control</span>
       </div>

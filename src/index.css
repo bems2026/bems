@@ -986,20 +986,195 @@ body::before {
     order: -1;
   }
 }
-.overview-pair-grid {
+/* The bento's bottom row — four equal cards spanning the FULL grid width, not nested in the
+   centre column, so their outer edges line up with the left and right stacks above. */
+.overview-bottom-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--sp-4);
+  margin-top: var(--sp-4);
+  align-items: start;
 }
-/* Bottom row of the bento — three cards where the pair grid has two. Collapses to two, then
-   one, so the hourly strip never squeezes the two action cards below usable width. */
-.overview-pair-grid--trio {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-@media (max-width: 1000px) {
-  .overview-pair-grid--trio {
+@media (max-width: 1200px) {
+  .overview-bottom-row {
     grid-template-columns: 1fr 1fr;
   }
+}
+@media (max-width: 640px) {
+  .overview-bottom-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Energy Flow — panel -> branches -> metered/hardwired, as stacked tiers.
+ * ------------------------------------------------------------------------ */
+.flow {
+  display: flex;
+  flex-direction: column;
+}
+.flow-node {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-radius: var(--r-inner);
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+}
+.flow-node--source {
+  background: var(--accent-soft);
+  border-color: rgb(245 158 11 / 0.35);
+}
+.flow-node__label {
+  font: 600 var(--fs-3xs) 'IBM Plex Mono', monospace;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+}
+.flow-node__value {
+  font-size: var(--fs-md);
+  font-weight: 700;
+}
+/* The connector between tiers. Purely decorative and aria-hidden — the containment is
+   already conveyed by the "% of panel" text on each branch. */
+.flow-arm {
+  width: 2px;
+  height: 12px;
+  margin-left: 18px;
+  background: linear-gradient(var(--border-strong), var(--border));
+}
+.flow-branches {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.flow-branch {
+  padding: 7px 9px;
+  border-radius: var(--r-sm);
+  background: #ffffff;
+  border: 1px solid var(--border-faint);
+}
+.flow-branch__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.flow-branch__name {
+  font-size: var(--fs-xs-lg);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.flow-branch__value {
+  font-size: var(--fs-xs-lg);
+  font-weight: 700;
+  flex: none;
+}
+.flow-branch__track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-inset);
+  overflow: hidden;
+  margin: 5px 0 3px;
+}
+.flow-branch__fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--blue-bright);
+}
+.flow-branch__pct {
+  font-size: var(--fs-3xs);
+  color: var(--faint);
+}
+.flow-split {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--sp-3);
+  border-radius: var(--r-inner);
+  background: var(--bg-inset);
+}
+.flow-split__row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.flow-split__swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: none;
+}
+.flow-split__swatch--metered {
+  background: var(--blue-bright);
+}
+.flow-split__swatch--untracked {
+  background: var(--faintest);
+}
+.flow-split__label {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+}
+.flow-split__value {
+  font-size: var(--fs-xs-lg);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------------
+ * Energy Breakdown — today's kWh per branch.
+ * ------------------------------------------------------------------------ */
+.breakdown-total {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-bottom: var(--sp-3);
+}
+.breakdown-total__value {
+  font-size: var(--fs-2xl);
+  font-weight: 700;
+  line-height: 1.1;
+}
+.breakdown-total__unit {
+  font: 600 var(--fs-xs) 'IBM Plex Mono', monospace;
+  color: var(--muted-2);
+}
+.breakdown-row {
+  display: grid;
+  grid-template-columns: minmax(0, 5.5rem) minmax(0, 1fr) 2.6rem;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 4px 0;
+}
+.breakdown-row__name {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.breakdown-row__track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-inset);
+  overflow: hidden;
+  min-width: 0;
+}
+.breakdown-row__fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+.breakdown-row__kwh {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-align: right;
 }
 
 /* ---------------------------------------------------------------------------

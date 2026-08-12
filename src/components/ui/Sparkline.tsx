@@ -20,7 +20,7 @@ interface SparklineProps {
  * `aria-hidden` — the accessible value is the numeric stat rendered next to it, same
  * division of labour `MetricValue` + a chart share everywhere else in this app. The
  * gradient area fill under the line is decoration on top of that, matching the two
- * Recharts `AreaChart`s elsewhere (`EdgeBufferCard`, `UntrackedLoadCard`) so every chart in
+ * Recharts `AreaChart`s elsewhere (`HistoryAreaChart`, `UntrackedLoadCard`) so every chart in
  * the app reads as one visual system rather than "the small ones are just lines."
  *
  * Restores v3's zero clamp (`Math.max(0, …)`) in the point mapper — v4 dropped it, so a

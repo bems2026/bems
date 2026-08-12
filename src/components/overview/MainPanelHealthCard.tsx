@@ -1,4 +1,5 @@
 import { useDeviceStore } from '@/stores/deviceStore';
+import { Activity } from 'lucide-react';
 import { MetricValue } from '@/components/ui/MetricValue';
 import { phaseBalance } from './mainPanelHealth';
 
@@ -17,7 +18,10 @@ export function MainPanelHealthCard() {
   return (
     <div className="card">
       <div className="card-head">
-        <h3 className="card-title">Main Panel Health</h3>
+        <h3 className="card-title">
+          <Activity size={14} className="title-icon" aria-hidden="true" />
+          Electrical Parameters
+        </h3>
         {health.spread !== null && (
           <span className={`panel-health-pill panel-health-pill--${health.balanced ? 'balanced' : 'imbalance'}`}>
             {health.balanced ? 'BALANCED' : 'IMBALANCE'}

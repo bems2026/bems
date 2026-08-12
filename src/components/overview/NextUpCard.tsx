@@ -24,7 +24,7 @@ export function NextUpCard() {
       <div className="card-head">
         <h3 className="card-title">
           <CalendarClock size={14} className="title-icon" aria-hidden="true" />
-          Next up
+          Active Schedules
         </h3>
         <span className="card-sub">{armed > 0 ? `${armed} armed · ` : ''}Node-RED global context</span>
       </div>

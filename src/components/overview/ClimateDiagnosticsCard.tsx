@@ -1,4 +1,5 @@
 import { useDeviceStore } from '@/stores/deviceStore';
+import { Thermometer } from 'lucide-react';
 import { MetricValue } from '@/components/ui/MetricValue';
 
 /**
@@ -15,7 +16,10 @@ export function ClimateDiagnosticsCard() {
   return (
     <div className="card">
       <div className="card-head">
-        <h3 className="card-title">Climate Diagnostics</h3>
+        <h3 className="card-title">
+          <Thermometer size={14} className="title-icon" aria-hidden="true" />
+          Climate Diagnostic
+        </h3>
         <span className="climate-caps-label">2 SENSORS</span>
       </div>
       <div className="climate-grid">
