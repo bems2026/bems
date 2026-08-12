@@ -3,11 +3,13 @@ import { connectLive, getDevices } from '@/lib/bridgeClient';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useConnectionStore } from '@/stores/connectionStore';
 import { useCommandStore } from '@/stores/commandStore';
+import { useContextStore } from '@/stores/contextStore';
 
 /**
  * Mounts the live data pipeline once for the app's lifetime: fetches the static device
- * catalogue, opens `/ws/live` (falling back to HTTP polling per `bridgeClient`), and
- * wires both into the Zustand stores. Call this exactly once, at the app root.
+ * catalogue, opens `/ws/live` (falling back to HTTP polling per `bridgeClient`), loads the
+ * Node-RED context store, and wires all of it into the Zustand stores. Call this exactly
+ * once, at the app root.
  */
 export function useLiveConnection(): void {
   useEffect(() => {
@@ -21,6 +23,10 @@ export function useLiveConnection(): void {
         // The device catalogue is static; a transient failure here just leaves it empty
         // until the next mount. The live feed below still drives readings independently.
       });
+
+    // Loaded here, not lazily on Automation's mount — Overview's load-shed banner reads
+    // the DSM keys regardless of which page is currently active.
+    void useContextStore.getState().load();
 
     const disconnect = connectLive({
       onData: (rows) => {

@@ -12,7 +12,7 @@
 
 import { BRIDGE_HTTP_URL, BRIDGE_WS_URL } from '@/config/bridge';
 import { TIMING } from './timing';
-import type { CommandAck, CommandRequest, Device, HistoryResponse, ReadingsLatestRow } from './types';
+import type { CommandAck, CommandRequest, ContextAck, ContextMap, Device, HistoryResponse, ReadingsLatestRow } from './types';
 
 export class BridgeFetchError extends Error {
   readonly status?: number;
@@ -85,6 +85,15 @@ export const getHistory = (deviceId: string, range: '1h' | '6h' | '24h' = '24h')
  */
 export const sendCommand = (cmd: CommandRequest): Promise<CommandAck> =>
   fetchJson<CommandAck>('/command', { method: 'POST', body: cmd, timeoutMs: TIMING.COMMAND_TIMEOUT_MS });
+
+/** `GET /api/context` — mock-bridge only (Stage 2, Phase M4). Empty on a fresh mock; no
+ * fabricated default schedules or thresholds ever come back from this. */
+export const getContext = (): Promise<ContextMap> => fetchJson('/context');
+
+/** `POST /api/context` — mock-bridge only. Same short timeout as `sendCommand` and for the
+ * same reason: nothing else on the page is waiting on this particular request. */
+export const saveContext = (writes: ContextMap): Promise<ContextAck> =>
+  fetchJson<ContextAck>('/context', { method: 'POST', body: { writes }, timeoutMs: TIMING.COMMAND_TIMEOUT_MS });
 
 // ---------------------------------------------------------------------------
 // Pure resilience math — the part `test/…` in the Stage 1 plan §6 calls out to unit

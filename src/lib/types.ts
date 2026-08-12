@@ -115,3 +115,30 @@ export interface CommandAck {
   confirmation: 'none';
   note: string;
 }
+
+// ---------------------------------------------------------------------------
+// Context (write) contract — Stage 2 (Phase M4), mock-bridge only. Mirrors
+// shared/context.mjs. Every value is a string — the same wire convention `days` uses below
+// (a 7-char '1'/'0' string, not a boolean array) so the whole store round-trips through
+// plain JSON without a second serialization scheme.
+// ---------------------------------------------------------------------------
+
+/** The full Node-RED global-context map as `GET /api/context` returns it — flat key to
+ * string value, exactly what was last written. Empty on a freshly started mock: there are
+ * no fabricated default schedules or thresholds. */
+export type ContextMap = Record<string, string>;
+
+/** `POST /api/context` request body — always a bulk write, never one key at a time; see
+ * shared/context.mjs's header for why. */
+export interface ContextWriteRequest {
+  writes: ContextMap;
+}
+
+/** `POST /api/context` response — 202 and `confirmed: false` always: unlike a command,
+ * there is nothing to poll back and confirm, ever. */
+export interface ContextAck {
+  keys: string[];
+  accepted_at: string;
+  confirmed: false;
+  note: string;
+}

@@ -23,6 +23,7 @@ import { dirname, join } from 'node:path';
 import { DEVICE_REGISTRY, PHASE_MAP, publicDevices } from '../shared/registry.mjs';
 import { buildLatest } from '../shared/buildLatest.mjs';
 import { COMMAND_ROUTE, ACCEPTED_STATUS, validateCommand, buildAck } from '../shared/commands.mjs';
+import { CONTEXT_ROUTE, CONTEXT_ACCEPTED_STATUS, validateContextWrite, buildContextAck } from '../shared/context.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const flow = JSON.parse(readFileSync(join(ROOT, 'node-red-bridge', 'bridge-flow.json'), 'utf8'));
@@ -154,6 +155,17 @@ test('the Node-RED (Pi) flow is still read-only — the Stage 2 write path is mo
 test('the command route is defined once, in shared/, so the mock and any future bridge cannot silently diverge', () => {
   assert.equal(COMMAND_ROUTE, '/api/command');
   assert.equal(ACCEPTED_STATUS, 202); // accepted, NOT completed — see the honesty test below
+});
+
+test('the context route is defined once too, and shares the command route\'s 202-not-200 posture', () => {
+  assert.equal(CONTEXT_ROUTE, '/api/context');
+  assert.equal(CONTEXT_ACCEPTED_STATUS, 202);
+});
+
+test('build-flow.mjs imports neither write-path module — the Pi flow stays generated from read-only sources', () => {
+  const src = readFileSync(join(ROOT, 'node-red-bridge', 'build-flow.mjs'), 'utf8');
+  assert.equal(/from ['"].*shared\/commands\.mjs['"]/.test(src), false, 'build-flow.mjs imports shared/commands.mjs');
+  assert.equal(/from ['"].*shared\/context\.mjs['"]/.test(src), false, 'build-flow.mjs imports shared/context.mjs');
 });
 
 test('the Node-RED (Pi) flow still contains no device-command or outbound-request nodes', () => {
@@ -343,4 +355,77 @@ test('commanded targets are exactly the keys buildLatest reads back — the roun
   assert.equal(V({ device_id: 'co1', socket: 2, action: 'on' }).cmd.target, co1.sockets[1]);
   const l1 = DEVICE_REGISTRY.find((d) => d.id === 'l1');
   assert.equal(V({ device_id: 'l1', action: 'on' }).cmd.target, l1.state_key);
+});
+
+// ---------------------------------------------------------------------------
+// Context contract (Stage 2, mock-bridge only) — shared/context.mjs
+// ---------------------------------------------------------------------------
+
+test('a context write is never reported as confirmed, same honesty posture as a command', () => {
+  const ack = buildContextAck({ 'global.trigger.care_acu_on': '28' }, 1786000000000);
+  assert.equal(ack.confirmed, false);
+  assert.deepEqual(ack.keys, ['global.trigger.care_acu_on']);
+});
+
+const VC = (body) => validateContextWrite(body, DEVICE_REGISTRY);
+
+test('a schedule key for a real switchable device is accepted', () => {
+  const r = VC({ writes: { 'global.schedule.l1.on': '07:30', 'global.schedule.co1.armed': 'true' } });
+  assert.equal(r.ok, true);
+});
+
+test('a schedule key for a meter or sensor is rejected — neither has schedulable state', () => {
+  for (const id of ['mtr_lo_red', 'sens_outside_temp']) {
+    const r = VC({ writes: { [`global.schedule.${id}.armed`]: 'true' } });
+    assert.equal(r.ok, false, `${id} should reject a schedule key`);
+    assert.equal(r.code, 'invalid_key');
+  }
+});
+
+test('a schedule key for an unknown device is rejected', () => {
+  const r = VC({ writes: { 'global.schedule.co9.on': '07:00' } });
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'invalid_key');
+});
+
+test('an unknown schedule field is rejected — only on/off/days/armed exist', () => {
+  const r = VC({ writes: { 'global.schedule.l1.setpoint': '24' } });
+  assert.equal(r.ok, false);
+});
+
+test('the one real trigger key is accepted; any other is rejected', () => {
+  assert.equal(VC({ writes: { 'global.trigger.care_acu_on': '28' } }).ok, true);
+  assert.equal(VC({ writes: { 'global.trigger.arec_acu_on': '28' } }).ok, false);
+});
+
+test('the three real DSM keys are accepted; anything else is rejected', () => {
+  for (const key of ['max_phase_a', 'max_total_kw', 'auto_shed']) {
+    assert.equal(VC({ writes: { [`global.dsm.${key}`]: '1' } }).ok, true, `${key} should be accepted`);
+  }
+  assert.equal(VC({ writes: { 'global.dsm.max_voltage': '240' } }).ok, false);
+});
+
+test('a key outside global.schedule/trigger/dsm is rejected', () => {
+  for (const key of ['schedule.l1.on', 'global.command.l1', 'global.readings.co1']) {
+    const r = VC({ writes: { [key]: 'x' } });
+    assert.equal(r.ok, false, `accepted unrecognized key: ${key}`);
+  }
+});
+
+test('a non-object writes value is rejected before any key is read', () => {
+  for (const writes of [null, undefined, [], 'x', 42]) {
+    const r = VC({ writes });
+    assert.equal(r.ok, false, `accepted writes=${JSON.stringify(writes)}`);
+  }
+});
+
+test('an empty writes object is rejected — a save with nothing pending is a caller bug, not a valid request', () => {
+  const r = VC({ writes: {} });
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'empty_writes');
+});
+
+test('one invalid key fails the whole batch — validated before any write is applied', () => {
+  const r = VC({ writes: { 'global.trigger.care_acu_on': '28', 'global.trigger.bogus': '1' } });
+  assert.equal(r.ok, false);
 });

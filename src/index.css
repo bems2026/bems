@@ -255,10 +255,10 @@ body::before {
    * min-width: 0 — Grid/flex items default to min-width: auto, which lets content with
    * its own intrinsic sizing (Recharts' ResponsiveContainer, a two-socket pill row, etc.)
    * push the item past its track's constrained width instead of shrinking to fit.
-   * Confirmed via two real horizontal-overflow bugs: `.trends-grid` cards at 768px, and
-   * the Devices catalogue's socket-pill row pushing the whole page into a scrollbar at any
-   * width. `.card` is the shared primitive every grid/flex layout in this app places
-   * content into, so the fix belongs here once, not per-container.
+   * Confirmed via two real horizontal-overflow bugs (Phase J): a trend-chart card grid at
+   * 768px, and the Devices catalogue's socket-pill row pushing the whole page into a
+   * scrollbar at any width. `.card` is the shared primitive every grid/flex layout in this
+   * app places content into, so the fix belongs here once, not per-container.
    */
   min-width: 0;
 }
@@ -947,8 +947,8 @@ body::before {
   }
 }
 
-/* Load-shed banner — the slot exists from M2; DSM thresholds (and therefore a real
-   `shedArmed` condition) don't land until M4, so nothing renders it yet. */
+/* Load-shed banner — M2 built the slot; M4's DSM thresholds (`LoadShedBanner.tsx`) arm it
+   for real. */
 .load-shed-banner {
   display: flex;
   align-items: center;
@@ -958,6 +958,10 @@ body::before {
   border-radius: 14px;
   background: var(--red-soft);
   border: 1px solid rgb(239 68 68 / 0.35);
+}
+.load-shed-banner__body {
+  flex: 1;
+  min-width: 0;
 }
 .load-shed-banner__title {
   font-weight: 800;
@@ -1998,34 +2002,6 @@ body::before {
 }
 
 /* ---------------------------------------------------------------------------
- * Trend charts — restyled in Phase J
- * ------------------------------------------------------------------------ */
-.trends-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: var(--sp-4);
-}
-.trend-empty {
-  margin: 0;
-  padding: var(--sp-6) 0;
-  text-align: center;
-  font-size: var(--fs-sm);
-  color: var(--muted-2);
-}
-.trend-stats {
-  display: flex;
-  gap: var(--sp-5);
-  margin-top: var(--sp-3);
-  padding-top: var(--sp-3);
-  border-top: 1px solid var(--border);
-}
-.trend-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-/* ---------------------------------------------------------------------------
  * Motion — Stage L4 (Phase L). Everything here already sits behind the
  * prefers-reduced-motion block near the top of this file, which zeroes every animation/
  * transition duration to 0.001ms — nothing below needs its own reduced-motion guard.
@@ -2040,9 +2016,10 @@ body::before {
    position. animation-fill-mode: backwards holds each item at its 0% state during its own
    delay, so nothing flashes at full opacity before its turn. Scoped by :nth-child rather
    than a per-item inline style/JS index, so no component needs to know about this at all —
-   it's purely a property of being a child of one of these grids. Capped at the 8th child:
-   a 20-card Devices grid finishing its stagger 320ms after mount reads as "the page is
-   still loading," not entrance polish. */
+   it's purely a property of being a child of one of these grids.
+   Re-targeted in M4 at Analytics' branch/outlet card grids — the Phase L/M2/M3 grids this
+   originally covered (`.kpi-row`, `.devices-grid`, `.outlets-grid`, `.trends-grid`) were
+   all superseded by non-grid layouts (Devices' table, Control's list rows) and are gone. */
 @keyframes card-entrance {
   from {
     opacity: 0;
@@ -2053,44 +2030,30 @@ body::before {
     transform: translateY(0);
   }
 }
-.kpi-row > *,
-.devices-grid > *,
-.outlets-grid > *,
-.trends-grid > * {
+.analytics-branch-grid > *,
+.analytics-outlet-grid > * {
   animation: card-entrance 200ms ease-out backwards;
 }
-.kpi-row > *:nth-child(2),
-.devices-grid > *:nth-child(2),
-.outlets-grid > *:nth-child(2),
-.trends-grid > *:nth-child(2) {
+.analytics-branch-grid > *:nth-child(2),
+.analytics-outlet-grid > *:nth-child(2) {
   animation-delay: 40ms;
 }
-.kpi-row > *:nth-child(3),
-.devices-grid > *:nth-child(3),
-.outlets-grid > *:nth-child(3),
-.trends-grid > *:nth-child(3) {
+.analytics-branch-grid > *:nth-child(3),
+.analytics-outlet-grid > *:nth-child(3) {
   animation-delay: 80ms;
 }
-.kpi-row > *:nth-child(4),
-.devices-grid > *:nth-child(4),
-.outlets-grid > *:nth-child(4),
-.trends-grid > *:nth-child(4) {
+.analytics-branch-grid > *:nth-child(4),
+.analytics-outlet-grid > *:nth-child(4) {
   animation-delay: 120ms;
 }
-.devices-grid > *:nth-child(5),
-.outlets-grid > *:nth-child(5) {
+.analytics-outlet-grid > *:nth-child(5) {
   animation-delay: 160ms;
 }
-.devices-grid > *:nth-child(6),
-.outlets-grid > *:nth-child(6) {
+.analytics-outlet-grid > *:nth-child(6) {
   animation-delay: 200ms;
 }
-.devices-grid > *:nth-child(7),
-.outlets-grid > *:nth-child(7) {
+.analytics-outlet-grid > *:nth-child(7) {
   animation-delay: 240ms;
-}
-.devices-grid > *:nth-child(n + 8) {
-  animation-delay: 280ms;
 }
 
 /* Update pulse — MetricValue.tsx toggles this class for ~350ms when a value it's
@@ -2124,7 +2087,12 @@ body::before {
 .control-master-btn:active,
 .control-plan-btn:active,
 .control-lamp:not(:disabled):active,
-.devices-filter-chip:active {
+.devices-filter-chip:active,
+.analytics-scope-btn:active,
+.automation-write-btn:not(:disabled):active,
+.automation-filter-chip:active,
+.automation-arm-all-btn:active,
+.automation-day-chip:active {
   transform: scale(0.96);
 }
 
@@ -2627,6 +2595,563 @@ body::before {
   background: var(--blue-bright);
 }
 
+/* ---------------------------------------------------------------------------
+ * Analytics — Phase M4. Re-themed into the M1 glass tokens (v4's own Analytics tab ships
+ * as un-restyled v3 markup — see AnalyticsPage.tsx's header).
+ * ------------------------------------------------------------------------ */
+.analytics-scope-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-inner);
+  flex: none;
+}
+.analytics-scope-btn {
+  border: none;
+  cursor: pointer;
+  padding: 7px 16px;
+  border-radius: var(--r-sm);
+  font: 600 var(--fs-xs-lg) inherit;
+  background: transparent;
+  color: var(--muted-2);
+}
+.analytics-scope-btn--active {
+  background: var(--txt);
+  color: #ffffff;
+}
+
+.analytics-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: var(--sp-4);
+  align-items: start;
+}
+@media (max-width: 1000px) {
+  .analytics-main-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.analytics-chart-card {
+  min-width: 0;
+}
+.analytics-legend {
+  display: flex;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.analytics-legend__item {
+  border: none;
+  background: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font: 600 var(--fs-xxs) 'IBM Plex Mono', monospace;
+  padding: 0;
+  white-space: nowrap;
+}
+.analytics-legend__swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.analytics-stat-card {
+  min-width: 0;
+}
+.analytics-stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-2);
+}
+.analytics-stat-tile {
+  padding: var(--sp-3);
+  border-radius: var(--r-inner);
+  background: var(--bg-surface-2);
+}
+.analytics-stat-tile__label {
+  font: 600 var(--fs-3xs) 'IBM Plex Mono', monospace;
+  color: var(--faint);
+  letter-spacing: 0.06em;
+}
+.analytics-stat-tile__value {
+  font: 700 var(--fs-lg) 'IBM Plex Mono', monospace;
+  margin-top: 5px;
+}
+.analytics-stat-tile__unit {
+  font: 500 var(--fs-2xs) 'IBM Plex Mono', monospace;
+  color: var(--faint);
+}
+.analytics-stat-card__spark-label {
+  margin-top: var(--sp-4);
+  font: 600 var(--fs-2xs) 'IBM Plex Mono', monospace;
+  color: var(--faint);
+  letter-spacing: 0.08em;
+}
+.analytics-stat-card__note {
+  margin: var(--sp-3) 0 0;
+  padding: var(--sp-3);
+  border-radius: var(--r-inner);
+  background: var(--bg-surface-2);
+  font-size: var(--fs-xs-lg);
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.analytics-cards-section {
+  margin-top: var(--sp-4);
+}
+.analytics-cards-section__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.analytics-cards-section__title {
+  font-weight: 700;
+  font-size: var(--fs-base);
+}
+.analytics-cards-section__tag {
+  font: 600 var(--fs-2xs) 'IBM Plex Mono', monospace;
+  color: var(--faint);
+  white-space: nowrap;
+}
+.analytics-branch-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-4);
+}
+.analytics-outlet-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--sp-3);
+}
+@media (max-width: 1200px) {
+  .analytics-branch-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .analytics-outlet-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .analytics-branch-grid,
+  .analytics-outlet-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.analytics-source-card {
+  cursor: pointer;
+  text-align: left;
+  background: #ffffff;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-inner);
+  padding: var(--sp-3);
+  min-width: 0;
+  transition: border-color 0.15s ease;
+}
+.analytics-source-card--selected {
+  border-width: 1.5px;
+}
+.analytics-source-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.analytics-source-card__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex: none;
+}
+.analytics-source-card__name {
+  font-weight: 700;
+  font-size: var(--fs-xs-lg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.analytics-source-card__stats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: var(--sp-2);
+}
+.analytics-source-card__stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.analytics-source-card__stat-label {
+  font: 600 var(--fs-3xs) 'IBM Plex Mono', monospace;
+  color: var(--faint);
+}
+.analytics-source-card__stat-value {
+  font: 600 var(--fs-xs-lg) 'IBM Plex Mono', monospace;
+}
+
+.analytics-untracked-card {
+  margin-top: var(--sp-4);
+}
+.analytics-untracked-gap {
+  font: 700 var(--fs-xs-lg) 'IBM Plex Mono', monospace;
+  color: var(--blue);
+  white-space: nowrap;
+  flex: none;
+}
+.analytics-untracked-legend {
+  display: flex;
+  gap: var(--sp-4);
+  margin-top: var(--sp-3);
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+}
+.analytics-untracked-legend__swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+.analytics-untracked-legend__swatch--total {
+  background: var(--faint);
+}
+.analytics-untracked-legend__swatch--metered {
+  background: var(--blue-bright);
+}
+
+/* ---------------------------------------------------------------------------
+ * Automation — Phase M4. DSM thresholds, ambient trigger, and per-device schedules —
+ * every value writes to the mock's Node-RED context store via useContextStore.
+ * ------------------------------------------------------------------------ */
+.automation-write-btn {
+  border: none;
+  background: var(--blue-bright);
+  color: #ffffff;
+  border-radius: var(--r-inner);
+  padding: 11px 18px;
+  font: 700 var(--fs-sm) 'Manrope', sans-serif;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgb(59 130 246 / 0.25);
+  white-space: nowrap;
+}
+.automation-write-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+  box-shadow: none;
+}
+.automation-save-error {
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-3);
+  border-radius: var(--r-inner);
+  background: var(--bad-soft);
+  color: var(--bad);
+  font-size: var(--fs-sm);
+}
+
+.automation-grid {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr;
+  gap: var(--sp-4);
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .automation-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.automation-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+.automation-schedules-card {
+  min-width: 0;
+}
+.automation-schedules-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+.automation-armed-count {
+  font-size: var(--fs-2xs);
+  color: var(--faint);
+  white-space: nowrap;
+}
+.automation-filter-group {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  background: var(--glass-2);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+}
+.automation-filter-chip {
+  border: none;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 7px;
+  font: 600 var(--fs-xs) inherit;
+  background: transparent;
+  color: var(--muted-2);
+  white-space: nowrap;
+}
+.automation-filter-chip--active {
+  background: #ffffff;
+  color: var(--txt);
+}
+.automation-arm-all-btn {
+  border: 1px solid var(--border);
+  background: #ffffff;
+  border-radius: var(--r-sm);
+  padding: 7px 12px;
+  font: 700 var(--fs-xs) inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.automation-schedules-sub {
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+  margin: 0 0 var(--sp-4);
+}
+.automation-schedules-sub code {
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+/* Horizontal scroll container — 5 columns including two fixed-width time inputs and 7
+   fixed-width day chips (172px alone) don't fit a phone viewport no matter how the
+   flexible column shrinks; same reasoning and pattern as `.devices-table-scroll`. Without
+   this, the row's own fixed-width children get visually clipped by `.app-content`'s
+   `overflow-x: clip` backstop — invisible, not scrollable. */
+.automation-sched-scroll {
+  overflow-x: auto;
+}
+.automation-sched-table {
+  min-width: 640px;
+}
+.automation-sched-row {
+  display: grid;
+  grid-template-columns: 1.5fr 86px 86px 1fr 56px;
+  gap: var(--sp-2);
+  align-items: center;
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border-faint);
+}
+.automation-sched-row--head {
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--border);
+  font: 600 var(--fs-2xs) 'IBM Plex Mono', monospace;
+  color: var(--faint);
+  letter-spacing: 0.06em;
+}
+.automation-sched-row__arm-label {
+  text-align: right;
+}
+.automation-sched-row__device {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.automation-sched-row__icon {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-sm);
+  background: var(--glass-2);
+  display: grid;
+  place-items: center;
+  font-size: var(--fs-xs-lg);
+  flex: none;
+}
+.automation-sched-row__name {
+  font-weight: 700;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.automation-sched-row__id {
+  font-size: var(--fs-2xs);
+  color: var(--faint);
+}
+.automation-sched-row__arm {
+  display: flex;
+  justify-content: flex-end;
+}
+.automation-time-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs);
+  background: rgb(255 255 255 / 0.9);
+  color: var(--txt);
+}
+.automation-day-chips {
+  display: flex;
+  gap: 3px;
+}
+.automation-day-chip {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font: 600 var(--fs-3xs) 'IBM Plex Mono', monospace;
+  background: var(--border-faint);
+  color: var(--faint);
+}
+.automation-day-chip--on {
+  background: var(--txt);
+  color: #ffffff;
+}
+
+.automation-section-title {
+  font-weight: 700;
+  font-size: var(--fs-md);
+  margin: var(--sp-5) 0 4px;
+}
+.automation-trigger-card {
+  padding: 13px 14px;
+  background: var(--glass-2);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-inner);
+}
+.automation-trigger-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-weight: 700;
+  font-size: var(--fs-sm-lg);
+}
+.automation-trigger-card__value {
+  font-size: var(--fs-md);
+  color: var(--blue);
+}
+.automation-trigger-card__slider {
+  width: 100%;
+  margin-top: var(--sp-3);
+  accent-color: var(--blue-bright);
+}
+.automation-trigger-card__scale {
+  display: flex;
+  justify-content: space-between;
+  font: 500 var(--fs-2xs) 'IBM Plex Mono', monospace;
+  color: var(--faint);
+}
+
+.automation-dsm-card .card-sub {
+  margin-bottom: var(--sp-4);
+}
+.automation-dsm-field {
+  margin-bottom: var(--sp-3);
+}
+.automation-dsm-field__head {
+  display: flex;
+  justify-content: space-between;
+  font: 600 var(--fs-xxs-lg) 'IBM Plex Mono', monospace;
+  color: var(--muted-2);
+  margin-bottom: 6px;
+}
+.automation-dsm-field__breach {
+  color: var(--bad);
+}
+.automation-dsm-field__ok {
+  color: var(--good);
+}
+.automation-number-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-inner);
+  font: 600 var(--fs-base) 'IBM Plex Mono', monospace;
+  background: rgb(255 255 255 / 0.9);
+  color: var(--txt);
+}
+.automation-shed-mode {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-top: var(--sp-4);
+  padding: var(--sp-3);
+  border-radius: var(--r-inner);
+  background: var(--accent-soft);
+  border: 1px solid rgb(245 158 11 / 0.3);
+}
+.automation-shed-mode__body {
+  flex: 1;
+  min-width: 0;
+}
+.automation-shed-mode__title {
+  font-weight: 700;
+  font-size: var(--fs-sm);
+  margin: 0;
+}
+.automation-shed-mode__sub {
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+  margin: 2px 0 0;
+  line-height: 1.4;
+}
+.automation-shed-mode__switch {
+  border: 1px solid rgb(245 158 11 / 0.45);
+  background: #ffffff;
+  color: var(--warn);
+  border-radius: var(--r-sm);
+  padding: 8px 12px;
+  font: 700 var(--fs-xs) inherit;
+  cursor: pointer;
+  flex: none;
+}
+
+.automation-pending-empty {
+  padding: var(--sp-4);
+  text-align: center;
+  font-size: var(--fs-sm);
+  color: var(--faint);
+  margin: 0;
+}
+.automation-pending-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.automation-pending-row {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+  padding: 9px 10px;
+  background: var(--glass-2);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+}
+.automation-pending-row__key {
+  font-size: var(--fs-2xs);
+  color: var(--muted-2);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.automation-pending-row__value {
+  font-size: var(--fs-xs);
+  color: var(--txt);
+  flex: none;
+}
+
 /*
  * No content-visibility section here anymore — Phase L applied it to off-screen scroll
  * sections, but Phase M routes one page at a time (`AppShell`/`useHashRoute` mount only the
@@ -2655,7 +3180,11 @@ body::before {
   .control-master-btn,
   .confirm-modal__cancel,
   .confirm-modal__confirm,
-  .devices-filter-chip {
+  .devices-filter-chip,
+  .analytics-scope-btn,
+  .automation-write-btn,
+  .automation-shed-mode__switch,
+  .automation-arm-all-btn {
     min-width: 44px;
     min-height: 44px;
   }

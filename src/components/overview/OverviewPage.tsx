@@ -8,12 +8,13 @@ import { NextUpCard } from './NextUpCard';
 import { EdgeBufferCard } from './EdgeBufferCard';
 import { DeviceStatusCountsCard } from './DeviceStatusCountsCard';
 import { MeteredVsUntrackedCard } from './MeteredVsUntrackedCard';
+import { LoadShedBanner } from './LoadShedBanner';
 
 /**
  * v4's Overview — a 3-column grid (340px / 1fr / 340px) around the 3D hero, per the Phase M
- * plan §4. The load-shed banner slot exists in the plan but isn't rendered here: it needs a
- * real breach condition, which needs DSM thresholds, which is M4's `POST /api/context`
- * work — there is nothing to arm it with yet, so no placeholder banner ships early.
+ * plan §4. The load-shed banner (M2's slot, M4's real breach logic) renders nothing until
+ * Automation's DSM thresholds are both configured and genuinely exceeded — see
+ * `LoadShedBanner.tsx`.
  */
 export function OverviewPage() {
   return (
@@ -25,6 +26,8 @@ export function OverviewPage() {
         </div>
         <Clock />
       </header>
+
+      <LoadShedBanner />
 
       <div className="overview-grid">
         <div className="overview-col overview-col--left">

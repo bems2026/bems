@@ -33,6 +33,7 @@ import crypto from 'node:crypto';
 import { DEVICE_REGISTRY, PHASE_MAP, TIMING, publicDevices } from '../shared/registry.mjs';
 import { buildLatest, iso8 } from '../shared/buildLatest.mjs';
 import { COMMAND_ROUTE, ACCEPTED_STATUS, validateCommand, buildAck } from '../shared/commands.mjs';
+import { CONTEXT_ROUTE, CONTEXT_ACCEPTED_STATUS, validateContextWrite, buildContextAck } from '../shared/context.mjs';
 
 // ---------------------------------------------------------------------------
 // args
@@ -323,6 +324,27 @@ function handleCommand(req, res) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Context (write) path — Stage 2, mock only. See shared/context.mjs's header. Unlike
+// commands, this is genuinely a plain key/value store: GET reads back exactly what POST
+// wrote, so Automation's "Write to Node-RED context" round-trips within a session — the
+// real bridge doesn't serve this route at all, matching the honest failure v4's own copy
+// describes for a genuinely absent Stage 1 endpoint.
+// ---------------------------------------------------------------------------
+const contextStore = new Map();
+
+function handleContextWrite(req, res) {
+  readJsonBody(req, (err, body) => {
+    if (err) return send(res, err.status, { error: err.error, code: err.code });
+
+    const v = validateContextWrite(body, DEVICE_REGISTRY);
+    if (!v.ok) return send(res, v.status, { error: v.error, code: v.code });
+
+    for (const [key, value] of Object.entries(v.writes)) contextStore.set(key, value);
+    send(res, CONTEXT_ACCEPTED_STATUS, buildContextAck(v.writes, Date.now()));
+  });
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
@@ -342,11 +364,10 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.method === 'POST') {
-    if (url.pathname !== COMMAND_ROUTE) {
-      res.setHeader('Allow', 'GET');
-      return send(res, 405, { error: `no such write route: ${url.pathname}`, code: 'method_not_allowed' });
-    }
-    return handleCommand(req, res);
+    if (url.pathname === COMMAND_ROUTE) return handleCommand(req, res);
+    if (url.pathname === CONTEXT_ROUTE) return handleContextWrite(req, res);
+    res.setHeader('Allow', 'GET');
+    return send(res, 405, { error: `no such write route: ${url.pathname}`, code: 'method_not_allowed' });
   }
 
   if (req.method !== 'GET') {
@@ -368,6 +389,9 @@ const server = http.createServer((req, res) => {
       const cutoff = Date.now() - RANGES[range] * 3600 * 1000;
       return send(res, 200, { device_id: id, range, points: (hist.get(id) || []).filter((p) => Date.parse(p.ts) >= cutoff) });
     }
+
+    case CONTEXT_ROUTE:
+      return send(res, 200, Object.fromEntries(contextStore));
 
     case COMMAND_ROUTE:
       res.setHeader('Allow', 'POST');
@@ -453,6 +477,8 @@ server.listen(PORT, () => {
   console.log(`  GET  /api/readings/latest      ${DEVICE_REGISTRY.length + 1} rows (incl. _totals)`);
   console.log(`  GET  /api/readings/history     ?device_id=co3&range=24h`);
   console.log(`  POST ${COMMAND_ROUTE}                mock-only device control (Stage 2)`);
+  console.log(`  GET  ${CONTEXT_ROUTE}                mock-only Node-RED context store (Stage 2)`);
+  console.log(`  POST ${CONTEXT_ROUTE}                write schedule/trigger/DSM keys (Stage 2)`);
   console.log(`  WS   /ws/live                  push every ${TIMING.WS_PUSH_MS / 1000}s`);
   if (inject.length) console.log(`  failure injection: ${inject.join(' ')}`);
 });
