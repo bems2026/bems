@@ -36,6 +36,17 @@ export interface Reading {
   current?: number;
   power_w?: number;
   energy_kwh_today?: number;
+  /**
+   * Accumulated by the bridge from this device's daily counter as it rolls over, since no
+   * meter reports anything longer than a day. Absent until the bridge has folded in at
+   * least one completed day — and absent entirely on a bridge whose context storage was
+   * wiped — which is why these are optional and must never be shown as 0.
+   *
+   * Not comparable to `Totals`' building-wide week/month: those come from the building's
+   * own legacy flow, whose period boundaries are not knowable from here.
+   */
+  energy_kwh_week?: number;
+  energy_kwh_month?: number;
   online: boolean;
   state: SwitchState | null;
   /** `outlet_dual` only. */

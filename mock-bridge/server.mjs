@@ -56,7 +56,10 @@ const CMD_DROP = val('cmd-drop', '');
 const started = Date.now();
 const energyAcc = {}; // ctx -> kWh, monotonic
 for (const d of DEVICE_REGISTRY) if (d.ctx) energyAcc[d.ctx] = 0;
-let totals = { today: 0, week: 41.2, month: 183.6 };
+// Building baselines are derived from the per-device ones further down (see
+// `seedBuildingBaselines`), not hardcoded: a mock whose building week total didn't roughly
+// equal the sum of its own branches would look like an app bug rather than a fixture.
+let totals = { today: 0, week: 0, month: 0 };
 
 /** Deterministic per-device jitter so values look alive but reproducible. */
 const wobble = (seed, t, amp) => Math.sin(t / 9000 + seed * 1.7) * amp;
@@ -81,6 +84,42 @@ const power = (ctx, i, t, occ) => {
   const [idle, peak] = BAND[ctx] || [5, 100];
   return Math.max(0, idle + (peak - idle) * occ + wobble(i, t, peak * 0.06));
 };
+
+/**
+ * Per-device week/month baselines — the completed days a real bridge would already have
+ * folded into its accumulators (`ACCUMULATE_ENERGY` in build-flow.mjs). The mock ships
+ * them pre-seeded so the UI has something to show immediately; the real bridge starts at
+ * zero and accrues a day at a time, which is the honest difference between a dev fixture
+ * and a building that has only just been instrumented.
+ *
+ * Derived from each device's own power band rather than hardcoded, so a device's week and
+ * month stay proportionate to the daily figure it actually generates.
+ */
+const energyBaseline = {};
+for (const d of DEVICE_REGISTRY) {
+  if (!d.ctx) continue;
+  const [idle, peak] = BAND[d.ctx] || [5, 100];
+  const typicalDay = (((idle + peak) / 2) * 24) / 1000; // kWh, rough mid-band day
+  energyBaseline[d.id] = {
+    weekBase: Math.round(typicalDay * 4 * 1000) / 1000, // ~4 completed days this week
+    monthBase: Math.round(typicalDay * 19 * 1000) / 1000, // ~19 completed days this month
+  };
+}
+
+/* The building's own week/month baselines are the sum of its four branch meters' — the
+ * same set `totals.today` is summed from below. On the real Pi these two figures come from
+ * different sources and can legitimately drift apart; in the mock they're kept consistent
+ * so a discrepancy on screen means a real bug, not a fixture artefact. */
+(function seedBuildingBaselines() {
+  const BRANCH_CTX = ['co_yel', 'lo_red', 'arec', 'lo_yel2'];
+  for (const d of DEVICE_REGISTRY) {
+    if (!d.ctx || !BRANCH_CTX.includes(d.ctx)) continue;
+    totals.week += energyBaseline[d.id].weekBase;
+    totals.month += energyBaseline[d.id].monthBase;
+  }
+  totals.week = Math.round(totals.week * 100) / 100;
+  totals.month = Math.round(totals.month * 100) / 100;
+})();
 
 /**
  * Commanded relay/switch state (Stage 2). `snapshot()` below *generates* a plausible
@@ -173,6 +212,9 @@ function snapshot() {
 
   return {
     energy: { meters: energyMeters, totals: { today: totals.today, week: totals.week + totals.today, month: totals.month + totals.today } },
+    // What the Node-RED `Accumulate energy` node maintains on the real bridge — completed
+    // days only; buildLatest adds each device's live daily counter on top.
+    energyAcc: energyBaseline,
     outlet: { meters: outletMeters, state: { status } },
     switch: { state: lights },
     // 1dp, matching what a Tuya temp/humidity DPS yields after its /10 scaling.

@@ -3025,10 +3025,44 @@ body::before {
 }
 .analytics-energy-split__head {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
   gap: var(--sp-3);
   margin-bottom: var(--sp-3);
+}
+/* Period pills use the same small-toggle language as the page's scope/parameter groups,
+   at a smaller scale since they sit inside a card rather than the page header. */
+.analytics-energy-periods {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-inset);
+  border-radius: var(--r-sm);
+  margin-right: auto;
+}
+.analytics-energy-period {
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 3px 10px;
+  border-radius: calc(var(--r-sm) - 2px);
+  font: 600 var(--fs-xs) 'Manrope', sans-serif;
+  color: var(--muted-2);
+}
+.analytics-energy-period:hover {
+  color: var(--txt);
+}
+.analytics-energy-period--active {
+  background: #ffffff;
+  color: var(--txt);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+.analytics-energy-empty {
+  margin: 0;
+  padding: var(--sp-3) 0;
+  font-size: var(--fs-xs-lg);
+  color: var(--muted-2);
+  line-height: 1.5;
 }
 .analytics-energy-split__title {
   font-size: var(--fs-sm);

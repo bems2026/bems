@@ -36,6 +36,10 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { DEVICE_REGISTRY, PHASE_MAP, TIMING, publicDevices } from '../shared/registry.mjs';
 
+/** Devices that report an energy counter — the only ones the accumulator has anything to
+ * accumulate for. Derived from the registry, never hand-listed. */
+const METERED_IDS = DEVICE_REGISTRY.filter((d) => d.ctx).map((d) => d.id);
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = join(HERE, 'bridge-flow.json');
 
@@ -206,6 +210,74 @@ for (const r of rows) {
 }
 return null;`;
 
+/**
+ * Per-device weekly/monthly energy. Every meter reports only a DAILY counter that resets
+ * at local midnight, and the building's own `bems_energy_week`/`_month` keys are
+ * building-wide with no per-branch split — so anything longer than a day has to be
+ * accumulated here, on OUR tab, from the daily counters as they roll over.
+ *
+ * Boundaries are explicit and local (+08:00): the week starts Monday, the month on the 1st.
+ * These are almost certainly NOT the same boundaries the building's legacy flow uses for
+ * its own week/month totals, so the per-branch figures are not expected to sum to those —
+ * the UI states that rather than implying agreement.
+ *
+ * NOTE: like the history ring, this is worthless unless settings.js enables
+ * contextStorage.localfilesystem — otherwise a restart wipes every accumulator and the
+ * week/month figures silently restart from the current day.
+ */
+const ACCUMULATE_ENERGY = `
+const rows = Array.isArray(msg.payload) ? msg.payload : [];
+// Local +08:00 wall-clock, matching iso8()'s offset — a UTC day boundary would fold the
+// previous day in at 08:00 local, attributing 8 hours to the wrong day.
+const now = new Date(Date.now() + 8 * 3600 * 1000);
+const y = now.getUTCFullYear();
+const dayKey = y + '-' + (now.getUTCMonth() + 1) + '-' + now.getUTCDate();
+const monthKey = y + '-' + (now.getUTCMonth() + 1);
+// ISO-ish week key: Monday-start, identified by the Monday's own date.
+const dow = (now.getUTCDay() + 6) % 7; // 0 = Monday
+const monday = new Date(now.getTime() - dow * 86400000);
+const weekKey = monday.getUTCFullYear() + '-' + (monday.getUTCMonth() + 1) + '-' + monday.getUTCDate();
+
+for (const r of rows) {
+  if (r.device_id === '_totals') continue;
+  if (typeof r.energy_kwh_today !== 'number') continue;
+  const key = 'enacc_' + r.device_id;
+  const a = flow.get(key) || { lastToday: 0, weekBase: 0, monthBase: 0, weekKey: weekKey, monthKey: monthKey, dayKey: dayKey };
+
+  if (a.weekKey !== weekKey) { a.weekBase = 0; a.weekKey = weekKey; }
+  if (a.monthKey !== monthKey) { a.monthBase = 0; a.monthKey = monthKey; }
+
+  if (a.dayKey !== dayKey) {
+    // The day we were tracking has ended: its final counter value is a completed day.
+    a.weekBase += a.lastToday;
+    a.monthBase += a.lastToday;
+    a.dayKey = dayKey;
+    a.lastToday = 0;
+  } else if (r.energy_kwh_today < a.lastToday) {
+    // Counter went backwards inside the same day — a device reboot or a Tuya-side reset.
+    // Whatever it had reached is still real consumption, so bank it rather than lose it.
+    a.weekBase += a.lastToday;
+    a.monthBase += a.lastToday;
+  }
+
+  a.lastToday = r.energy_kwh_today;
+  flow.set(key, a);
+}
+return null;`;
+
+/** Reads OUR OWN tab's accumulators into the snapshot. Unlike the building-tab collectors
+ * this is plain flow.get on the bridge tab, so no link-call indirection is needed. */
+const COLLECT_ENERGY_ACC = (ids) => `
+const ids = ${JSON.stringify(ids)};
+const acc = {};
+for (const id of ids) {
+  const a = flow.get('enacc_' + id);
+  if (a) acc[id] = { weekBase: a.weekBase, monthBase: a.monthBase };
+}
+msg.snapshot = msg.snapshot || {};
+msg.snapshot.energyAcc = acc;
+return msg;`;
+
 const WS_SERIALIZE = `
 msg.payload = JSON.stringify(msg.payload);
 return msg;`;
@@ -275,12 +347,15 @@ for (const [key, tab] of Object.entries(SOURCE_TABS)) {
 // --- the single read path ---------------------------------------------------
 const readOut = linkOutReturn(BRIDGE_TAB, 1180, 200);
 const buildFn = fn(BRIDGE_TAB, 'Build latest readings', BUILD_LATEST.trim(), 990, 200, [[readOut.id]]);
-const cAir = linkCall(BRIDGE_TAB, 'collect aircon', collectorLinkIds.aircon, 820, 200, [[buildFn.id]]);
+// Reads this tab's own energy accumulators into the snapshot, immediately before the build
+// step consumes it. Not a link call: the keys live on THIS tab, not a building tab.
+const cAcc = fn(BRIDGE_TAB, 'collect energy accumulators', COLLECT_ENERGY_ACC(METERED_IDS).trim(), 900, 260, [[buildFn.id]]);
+const cAir = linkCall(BRIDGE_TAB, 'collect aircon', collectorLinkIds.aircon, 820, 200, [[cAcc.id]]);
 const cSw = linkCall(BRIDGE_TAB, 'collect switch', collectorLinkIds.switch, 660, 200, [[cAir.id]]);
 const cOut = linkCall(BRIDGE_TAB, 'collect outlet', collectorLinkIds.outlet, 500, 200, [[cSw.id]]);
 const cEn = linkCall(BRIDGE_TAB, 'collect energy', collectorLinkIds.energy, 340, 200, [[cOut.id]]);
 const readIn = linkIn(BRIDGE_TAB, 'bridge/read-latest', 180, 200, [[cEn.id]]);
-nodes.push(readIn, cEn, cOut, cSw, cAir, buildFn, readOut);
+nodes.push(readIn, cEn, cOut, cSw, cAir, cAcc, buildFn, readOut);
 
 // --- GET /api/devices -------------------------------------------------------
 const devRes = httpRes(BRIDGE_TAB, 640, 320);
@@ -308,11 +383,15 @@ nodes.push(
 );
 
 // --- history ring buffer ----------------------------------------------------
+// One tick drives both the ring buffer and the energy accumulator: they consume the same
+// snapshot, and sampling energy on a different cadence than power would make the two
+// disagree about when a day ended.
 const ringFn = fn(BRIDGE_TAB, 'Append to history ring', APPEND_HISTORY.trim(), 640, 600, [[]]);
-const ringCall = linkCall(BRIDGE_TAB, '', readIn.id, 460, 600, [[ringFn.id]]);
+const accFn = fn(BRIDGE_TAB, 'Accumulate energy', ACCUMULATE_ENERGY.trim(), 640, 660, [[]]);
+const ringCall = linkCall(BRIDGE_TAB, '', readIn.id, 460, 600, [[ringFn.id, accFn.id]]);
 nodes.push(
   inject(BRIDGE_TAB, `sample ${TIMING.HISTORY_SAMPLE_MS / 1000}s`, TIMING.HISTORY_SAMPLE_MS / 1000, 240, 600, [[ringCall.id]]),
-  ringCall, ringFn,
+  ringCall, ringFn, accFn,
 );
 
 writeFileSync(OUT, JSON.stringify(nodes, null, 2) + '\n');

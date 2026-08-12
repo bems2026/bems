@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup, within } from '@testing-library/react';
+import { render, screen, cleanup, within, fireEvent } from '@testing-library/react';
 import { EnergySection } from './EnergySection';
 import { useDeviceStore } from '@/stores/deviceStore';
 import type { Device, Reading, Totals } from '@/lib/types';
@@ -13,12 +13,13 @@ const meter = (id: string, name: string): Device => ({
   status: 'active',
 });
 
-const reading = (id: string, energy: number | undefined): Reading => ({
+const reading = (id: string, energy: number | undefined, over: Partial<Reading> = {}): Reading => ({
   device_id: id,
   ts: new Date().toISOString(),
   online: true,
   state: null,
   ...(energy === undefined ? {} : { energy_kwh_today: energy }),
+  ...over,
 });
 
 const totals = (over: Partial<Totals> = {}): Totals => ({
@@ -80,6 +81,43 @@ describe('EnergySection', () => {
     expect(within(rows[0] as HTMLElement).getByText('75%')).toBeInTheDocument();
     expect(within(rows[1] as HTMLElement).getByText('25%')).toBeInTheDocument();
     expect(screen.getByText('100.00 kWh')).toBeInTheDocument();
+  });
+
+  it('switches the split to the accumulated week and month figures', () => {
+    useDeviceStore.setState({
+      totals: totals(),
+      latestReadings: {
+        mtr_a: reading('mtr_a', 10, { energy_kwh_week: 70, energy_kwh_month: 300 }),
+        mtr_b: reading('mtr_b', 30, { energy_kwh_week: 210, energy_kwh_month: 900 }),
+      },
+    });
+    render(<EnergySection branchDevices={BRANCHES} />);
+    expect(screen.getByText('40.00 kWh')).toBeInTheDocument(); // today's branch sum
+
+    fireEvent.click(screen.getByRole('button', { name: 'Week' }));
+    expect(screen.getByText('280.00 kWh')).toBeInTheDocument();
+    expect(screen.getByText('70.00')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Month' }));
+    expect(screen.getByText('1200.00 kWh')).toBeInTheDocument();
+    expect(screen.getByText('900.00')).toBeInTheDocument();
+  });
+
+  /*
+   * A bridge that hasn't yet seen a full day roll over has no week/month accumulator, so
+   * those readings are absent. That must read as "not counted yet" — inferring a week from
+   * a single day, or showing 0, would both be inventions.
+   */
+  it('says week/month are not counted yet when the accumulator has no data', () => {
+    useDeviceStore.setState({
+      totals: totals(),
+      latestReadings: { mtr_a: reading('mtr_a', 10), mtr_b: reading('mtr_b', 30) },
+    });
+    render(<EnergySection branchDevices={BRANCHES} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Week' }));
+    expect(screen.getByText(/Not counted yet/)).toBeInTheDocument();
+    expect(screen.queryByText('0.00 kWh')).not.toBeInTheDocument();
+    expect(document.querySelectorAll('.analytics-energy-row')).toHaveLength(0);
   });
 
   it('omits a branch with no energy reading rather than charting it as 0', () => {

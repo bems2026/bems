@@ -56,6 +56,17 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs) {
       if (c !== undefined) r.current = c;
       if (p !== undefined) r.power_w = p;
       if (e !== undefined) r.energy_kwh_today = e;
+      // Per-device week/month = the completed days this bridge has folded into its own
+      // accumulator (`snap.energyAcc`, maintained by the Accumulate-energy step) plus the
+      // live daily counter. Each meter only ever reports a DAILY figure, so anything
+      // longer has to be accumulated here; a device the accumulator hasn't seen a full day
+      // for is omitted rather than reported as its daily value.
+      const acc = (snap.energyAcc || {})[d.id];
+      if (acc && e !== undefined) {
+        const wb = num(acc.weekBase), mb = num(acc.monthBase);
+        if (wb !== undefined) r.energy_kwh_week = Math.round((wb + e) * 1000) / 1000;
+        if (mb !== undefined) r.energy_kwh_month = Math.round((mb + e) * 1000) / 1000;
+      }
       r.online = bool(src.h);
       const t = num(src.t);
       if (t !== undefined && t > 0) r.ts = iso8(t);

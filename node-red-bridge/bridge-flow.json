@@ -188,7 +188,7 @@
     "wires": []
   },
   {
-    "id": "b41dc00000000019",
+    "id": "b41dc00000000020",
     "type": "link in",
     "z": "b41d9e0000000001",
     "name": "bridge/read-latest",
@@ -197,12 +197,12 @@
     "y": 200,
     "wires": [
       [
-        "b41dc00000000018"
+        "b41dc00000000019"
       ]
     ]
   },
   {
-    "id": "b41dc00000000018",
+    "id": "b41dc00000000019",
     "type": "link call",
     "z": "b41d9e0000000001",
     "name": "collect energy",
@@ -215,12 +215,12 @@
     "y": 200,
     "wires": [
       [
-        "b41dc00000000017"
+        "b41dc00000000018"
       ]
     ]
   },
   {
-    "id": "b41dc00000000017",
+    "id": "b41dc00000000018",
     "type": "link call",
     "z": "b41d9e0000000001",
     "name": "collect outlet",
@@ -233,12 +233,12 @@
     "y": 200,
     "wires": [
       [
-        "b41dc00000000016"
+        "b41dc00000000017"
       ]
     ]
   },
   {
-    "id": "b41dc00000000016",
+    "id": "b41dc00000000017",
     "type": "link call",
     "z": "b41d9e0000000001",
     "name": "collect switch",
@@ -251,12 +251,12 @@
     "y": 200,
     "wires": [
       [
-        "b41dc00000000015"
+        "b41dc00000000016"
       ]
     ]
   },
   {
-    "id": "b41dc00000000015",
+    "id": "b41dc00000000016",
     "type": "link call",
     "z": "b41d9e0000000001",
     "name": "collect aircon",
@@ -269,6 +269,26 @@
     "y": 200,
     "wires": [
       [
+        "b41dc00000000015"
+      ]
+    ]
+  },
+  {
+    "id": "b41dc00000000015",
+    "type": "function",
+    "z": "b41d9e0000000001",
+    "name": "collect energy accumulators",
+    "func": "const ids = [\"co1\",\"co2\",\"co3\",\"co4\",\"co5\",\"co6\",\"co7\",\"mtr_co_yellow\",\"mtr_lo_red\",\"mtr_arec_acu\",\"mtr_lo_yellow\"];\nconst acc = {};\nfor (const id of ids) {\n  const a = flow.get('enacc_' + id);\n  if (a) acc[id] = { weekBase: a.weekBase, monthBase: a.monthBase };\n}\nmsg.snapshot = msg.snapshot || {};\nmsg.snapshot.energyAcc = acc;\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 900,
+    "y": 260,
+    "wires": [
+      [
         "b41dc00000000014"
       ]
     ]
@@ -278,7 +298,7 @@
     "type": "function",
     "z": "b41d9e0000000001",
     "name": "Build latest readings",
-    "func": "/**\n * Builds the `/api/readings/latest` payload from a raw context snapshot.\n *\n * This file is the SINGLE implementation of that transform. It is:\n *   - imported directly by `mock-bridge/server.mjs`\n *   - inlined verbatim into the Node-RED function node by `node-red-bridge/build-flow.mjs`\n *     (which strips the `export` keywords — nothing else)\n *\n * That is what makes the mock and the real bridge byte-identical in shape. A drift\n * between them would produce the worst kind of bug: frontend works locally, breaks on\n * the Pi. So keep this pure — no Node-RED APIs, no imports, no Node built-ins.\n */\n\n/** ISO 8601 at +08:00 regardless of the host's timezone setting. */\nfunction iso8(ms) {\n  const d = new Date(Number(ms) + 8 * 3600 * 1000);\n  const p = (n) => String(n).padStart(2, '0');\n  return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate()) +\n    'T' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) + ':' + p(d.getUTCSeconds()) + '+08:00';\n}\n\nfunction num(v) {\n  const n = parseFloat(v);\n  return Number.isFinite(n) ? n : undefined;\n}\n\nfunction bool(v) {\n  return v === true || v === 'true' || v === 1 || v === '1';\n}\n\n/**\n * @param {object} snap  { energy:{meters,totals}, outlet:{meters,state}, switch:{state}, aircon:{state} }\n * @param {Array}  REG   device registry\n * @param {object} PHASE_MAP\n * @param {number} nowMs\n * @returns {Array} one entry per device, plus a trailing `_totals` entry\n */\nfunction buildLatest(snap, REG, PHASE_MAP, nowMs) {\n  const energy = snap.energy || { meters: {}, totals: {} };\n  const outlet = snap.outlet || { meters: {}, state: {} };\n  const lights = (snap.switch || {}).state || {};\n  const ac = (snap.aircon || {}).state || {};\n  const outletStatus = outlet.state.status || {};\n  const out = [];\n\n  for (const d of REG) {\n    const r = { device_id: d.id, ts: iso8(nowMs) };\n\n    // --- metered devices ----------------------------------------------------\n    if (d.ctx) {\n      const src = (d.class === 'outlet_dual' ? outlet.meters : energy.meters)[d.ctx] || {};\n      const v = num(src.v), c = num(src.c), p = num(src.p), e = num(src.e);\n      // Absent readings are omitted, never coerced to 0 — \"no data\" and \"zero watts\"\n      // are different facts and the UI renders them differently.\n      if (v !== undefined) r.voltage = v;\n      if (c !== undefined) r.current = c;\n      if (p !== undefined) r.power_w = p;\n      if (e !== undefined) r.energy_kwh_today = e;\n      r.online = bool(src.h);\n      const t = num(src.t);\n      if (t !== undefined && t > 0) r.ts = iso8(t);\n    } else {\n      r.online = true;\n    }\n\n    // --- switchable state ---------------------------------------------------\n    if (d.class === 'switch') {\n      r.state = bool(lights[d.state_key]) ? 'on' : 'off';\n    } else if (d.class === 'outlet_dual') {\n      const s1 = bool(outletStatus[d.sockets[0]]);\n      const s2 = bool(outletStatus[d.sockets[1]]);\n      r.socket_states = { 1: s1 ? 'on' : 'off', 2: s2 ? 'on' : 'off' };\n      r.state = (s1 || s2) ? 'on' : 'off';\n    } else if (d.class === 'acu_ir') {\n      r.state = bool(ac.power) ? 'on' : 'off';\n      if (num(ac.setTemp) !== undefined) r.setpoint_c = num(ac.setTemp);\n      if (num(ac.roomTemp) !== undefined) r.room_temp_c = num(ac.roomTemp);\n      if (num(ac.humidity) !== undefined) r.humidity_pct = num(ac.humidity);\n    } else if (d.class === 'sensor_temp_humidity') {\n      r.state = null;\n      if (num(ac.outTemp) !== undefined) r.temp_c = num(ac.outTemp);\n      if (num(ac.humidity) !== undefined) r.humidity_pct = num(ac.humidity);\n    } else {\n      r.state = null;\n    }\n\n    out.push(r);\n  }\n\n  // --- building totals ------------------------------------------------------\n  const byId = {};\n  for (const r of out) byId[r.device_id] = r;\n\n  function phaseCurrent(ids) {\n    let sum = 0, seen = false;\n    for (const id of ids) {\n      const c = byId[id] && byId[id].current;\n      if (typeof c === 'number') { sum += c; seen = true; }\n    }\n    return seen ? Math.round(sum * 1000) / 1000 : null;\n  }\n\n  let totalP = 0, pSeen = false, vSum = 0, vCount = 0;\n  for (const d of REG) {\n    if (d.class !== 'meter') continue;\n    const r = byId[d.id] || {};\n    if (typeof r.power_w === 'number') { totalP += r.power_w; pSeen = true; }\n    if (typeof r.voltage === 'number' && r.voltage > 0) { vSum += r.voltage; vCount++; }\n  }\n\n  const t = energy.totals || {};\n  const today = num(t.today), week = num(t.week), month = num(t.month);\n\n  out.push({\n    device_id: '_totals',\n    ts: iso8(nowMs),\n    energy_kwh_today: today === undefined ? null : today,\n    energy_kwh_week: week === undefined ? null : week,\n    energy_kwh_month: month === undefined ? null : month,\n    total_power_w: pSeen ? Math.round(totalP * 10) / 10 : null,\n    avg_voltage: vCount ? Math.round((vSum / vCount) * 10) / 10 : null,\n    // blue is null, not 0. No Blue-phase meter is installed; `Calculate 3-Phase Totals`\n    // hardcodes currentBlue = 0. The UI must render this as \"not metered\".\n    phase_current: {\n      red: phaseCurrent(PHASE_MAP.red),\n      yellow: phaseCurrent(PHASE_MAP.yellow),\n      blue: null,\n    },\n  });\n\n  return out;\n}\n\n\nconst REG = [{\"id\":\"co1\",\"display_name\":\"Outlet 1\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"ctx\":\"co1\",\"sockets\":[\"CO1_1\",\"CO1_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co2\",\"display_name\":\"Outlet 2\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"ctx\":\"co2\",\"sockets\":[\"CO2_1\",\"CO2_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co3\",\"display_name\":\"Outlet 3\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"ctx\":\"co3\",\"sockets\":[\"CO3_1\",\"CO3_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co4\",\"display_name\":\"Outlet 4\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"ctx\":\"co4\",\"sockets\":[\"CO4_1\",\"CO4_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co5\",\"display_name\":\"Outlet 5\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"ctx\":\"co5\",\"sockets\":[\"CO5_1\",\"CO5_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co6\",\"display_name\":\"Outlet 6\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"ctx\":\"co6\",\"sockets\":[\"CO6_1\",\"CO6_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co7\",\"display_name\":\"Outlet 7\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"ctx\":\"co7\",\"sockets\":[\"CO7_1\",\"CO7_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"l1\",\"display_name\":\"Light Switch 1\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"ctx\":null,\"state_key\":\"L1\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l2\",\"display_name\":\"Light Switch 2\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"ctx\":null,\"state_key\":\"L2\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l3\",\"display_name\":\"Light Switch 3\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"ctx\":null,\"state_key\":\"L3\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l4\",\"display_name\":\"Light Switch 4\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"ctx\":null,\"state_key\":\"L4\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l5\",\"display_name\":\"Light Switch 5\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"ctx\":null,\"state_key\":\"L5\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l6\",\"display_name\":\"Light Switch 6\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"ctx\":null,\"state_key\":\"L6\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l7\",\"display_name\":\"Light Switch 7\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"ctx\":null,\"state_key\":\"L7\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"mtr_co_yellow\",\"display_name\":\"C.O Yellow\",\"class\":\"meter\",\"room\":null,\"dps_map\":\"type_a\",\"ctx\":\"co_yel\",\"branch_circuit\":\"C.O Yellow\",\"description\":\"Convenience outlets branch\",\"phase\":\"yellow\",\"status\":\"active\"},{\"id\":\"mtr_lo_red\",\"display_name\":\"L.O Red\",\"class\":\"meter\",\"room\":null,\"dps_map\":\"type_a\",\"ctx\":\"lo_red\",\"branch_circuit\":\"L.O Red\",\"description\":\"The room's lighting circuits\",\"phase\":\"red\",\"status\":\"active\"},{\"id\":\"mtr_arec_acu\",\"display_name\":\"AREC ACU\",\"class\":\"meter\",\"room\":null,\"dps_map\":\"type_a\",\"ctx\":\"arec\",\"branch_circuit\":\"ACU\",\"description\":\"Indoor ACU\",\"phase\":\"red\",\"status\":\"active\"},{\"id\":\"mtr_lo_yellow\",\"display_name\":\"L.O Yellow\",\"class\":\"meter\",\"room\":null,\"dps_map\":\"type_c\",\"ctx\":\"lo_yel2\",\"branch_circuit\":\"L.O Yellow\",\"description\":\"Outdoor ACU (separate unit, right side outside the room)\",\"phase\":\"yellow\",\"status\":\"active\"},{\"id\":\"acu_main\",\"display_name\":\"Aircon\",\"class\":\"acu_ir\",\"room\":null,\"dps_map\":null,\"ctx\":null,\"state_ctx\":\"ac_dash_state\",\"status\":\"active\"},{\"id\":\"sens_outside_temp\",\"display_name\":\"Outside Temp\",\"class\":\"sensor_temp_humidity\",\"room\":null,\"dps_map\":null,\"ctx\":null,\"state_ctx\":\"ac_dash_state\",\"state_field\":\"outTemp\",\"status\":\"active\"}];\nconst PHASE_MAP = {\"red\":[\"mtr_lo_red\",\"mtr_arec_acu\"],\"yellow\":[\"mtr_co_yellow\",\"mtr_lo_yellow\"],\"blue\":[]};\n\nmsg.payload = buildLatest(msg.snapshot || {}, REG, PHASE_MAP, Date.now());\nmsg.headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };\nreturn msg;",
+    "func": "/**\n * Builds the `/api/readings/latest` payload from a raw context snapshot.\n *\n * This file is the SINGLE implementation of that transform. It is:\n *   - imported directly by `mock-bridge/server.mjs`\n *   - inlined verbatim into the Node-RED function node by `node-red-bridge/build-flow.mjs`\n *     (which strips the `export` keywords — nothing else)\n *\n * That is what makes the mock and the real bridge byte-identical in shape. A drift\n * between them would produce the worst kind of bug: frontend works locally, breaks on\n * the Pi. So keep this pure — no Node-RED APIs, no imports, no Node built-ins.\n */\n\n/** ISO 8601 at +08:00 regardless of the host's timezone setting. */\nfunction iso8(ms) {\n  const d = new Date(Number(ms) + 8 * 3600 * 1000);\n  const p = (n) => String(n).padStart(2, '0');\n  return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate()) +\n    'T' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) + ':' + p(d.getUTCSeconds()) + '+08:00';\n}\n\nfunction num(v) {\n  const n = parseFloat(v);\n  return Number.isFinite(n) ? n : undefined;\n}\n\nfunction bool(v) {\n  return v === true || v === 'true' || v === 1 || v === '1';\n}\n\n/**\n * @param {object} snap  { energy:{meters,totals}, outlet:{meters,state}, switch:{state}, aircon:{state} }\n * @param {Array}  REG   device registry\n * @param {object} PHASE_MAP\n * @param {number} nowMs\n * @returns {Array} one entry per device, plus a trailing `_totals` entry\n */\nfunction buildLatest(snap, REG, PHASE_MAP, nowMs) {\n  const energy = snap.energy || { meters: {}, totals: {} };\n  const outlet = snap.outlet || { meters: {}, state: {} };\n  const lights = (snap.switch || {}).state || {};\n  const ac = (snap.aircon || {}).state || {};\n  const outletStatus = outlet.state.status || {};\n  const out = [];\n\n  for (const d of REG) {\n    const r = { device_id: d.id, ts: iso8(nowMs) };\n\n    // --- metered devices ----------------------------------------------------\n    if (d.ctx) {\n      const src = (d.class === 'outlet_dual' ? outlet.meters : energy.meters)[d.ctx] || {};\n      const v = num(src.v), c = num(src.c), p = num(src.p), e = num(src.e);\n      // Absent readings are omitted, never coerced to 0 — \"no data\" and \"zero watts\"\n      // are different facts and the UI renders them differently.\n      if (v !== undefined) r.voltage = v;\n      if (c !== undefined) r.current = c;\n      if (p !== undefined) r.power_w = p;\n      if (e !== undefined) r.energy_kwh_today = e;\n      // Per-device week/month = the completed days this bridge has folded into its own\n      // accumulator (`snap.energyAcc`, maintained by the Accumulate-energy step) plus the\n      // live daily counter. Each meter only ever reports a DAILY figure, so anything\n      // longer has to be accumulated here; a device the accumulator hasn't seen a full day\n      // for is omitted rather than reported as its daily value.\n      const acc = (snap.energyAcc || {})[d.id];\n      if (acc && e !== undefined) {\n        const wb = num(acc.weekBase), mb = num(acc.monthBase);\n        if (wb !== undefined) r.energy_kwh_week = Math.round((wb + e) * 1000) / 1000;\n        if (mb !== undefined) r.energy_kwh_month = Math.round((mb + e) * 1000) / 1000;\n      }\n      r.online = bool(src.h);\n      const t = num(src.t);\n      if (t !== undefined && t > 0) r.ts = iso8(t);\n    } else {\n      r.online = true;\n    }\n\n    // --- switchable state ---------------------------------------------------\n    if (d.class === 'switch') {\n      r.state = bool(lights[d.state_key]) ? 'on' : 'off';\n    } else if (d.class === 'outlet_dual') {\n      const s1 = bool(outletStatus[d.sockets[0]]);\n      const s2 = bool(outletStatus[d.sockets[1]]);\n      r.socket_states = { 1: s1 ? 'on' : 'off', 2: s2 ? 'on' : 'off' };\n      r.state = (s1 || s2) ? 'on' : 'off';\n    } else if (d.class === 'acu_ir') {\n      r.state = bool(ac.power) ? 'on' : 'off';\n      if (num(ac.setTemp) !== undefined) r.setpoint_c = num(ac.setTemp);\n      if (num(ac.roomTemp) !== undefined) r.room_temp_c = num(ac.roomTemp);\n      if (num(ac.humidity) !== undefined) r.humidity_pct = num(ac.humidity);\n    } else if (d.class === 'sensor_temp_humidity') {\n      r.state = null;\n      if (num(ac.outTemp) !== undefined) r.temp_c = num(ac.outTemp);\n      if (num(ac.humidity) !== undefined) r.humidity_pct = num(ac.humidity);\n    } else {\n      r.state = null;\n    }\n\n    out.push(r);\n  }\n\n  // --- building totals ------------------------------------------------------\n  const byId = {};\n  for (const r of out) byId[r.device_id] = r;\n\n  function phaseCurrent(ids) {\n    let sum = 0, seen = false;\n    for (const id of ids) {\n      const c = byId[id] && byId[id].current;\n      if (typeof c === 'number') { sum += c; seen = true; }\n    }\n    return seen ? Math.round(sum * 1000) / 1000 : null;\n  }\n\n  let totalP = 0, pSeen = false, vSum = 0, vCount = 0;\n  for (const d of REG) {\n    if (d.class !== 'meter') continue;\n    const r = byId[d.id] || {};\n    if (typeof r.power_w === 'number') { totalP += r.power_w; pSeen = true; }\n    if (typeof r.voltage === 'number' && r.voltage > 0) { vSum += r.voltage; vCount++; }\n  }\n\n  const t = energy.totals || {};\n  const today = num(t.today), week = num(t.week), month = num(t.month);\n\n  out.push({\n    device_id: '_totals',\n    ts: iso8(nowMs),\n    energy_kwh_today: today === undefined ? null : today,\n    energy_kwh_week: week === undefined ? null : week,\n    energy_kwh_month: month === undefined ? null : month,\n    total_power_w: pSeen ? Math.round(totalP * 10) / 10 : null,\n    avg_voltage: vCount ? Math.round((vSum / vCount) * 10) / 10 : null,\n    // blue is null, not 0. No Blue-phase meter is installed; `Calculate 3-Phase Totals`\n    // hardcodes currentBlue = 0. The UI must render this as \"not metered\".\n    phase_current: {\n      red: phaseCurrent(PHASE_MAP.red),\n      yellow: phaseCurrent(PHASE_MAP.yellow),\n      blue: null,\n    },\n  });\n\n  return out;\n}\n\n\nconst REG = [{\"id\":\"co1\",\"display_name\":\"Outlet 1\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"ctx\":\"co1\",\"sockets\":[\"CO1_1\",\"CO1_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co2\",\"display_name\":\"Outlet 2\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"ctx\":\"co2\",\"sockets\":[\"CO2_1\",\"CO2_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co3\",\"display_name\":\"Outlet 3\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"ctx\":\"co3\",\"sockets\":[\"CO3_1\",\"CO3_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co4\",\"display_name\":\"Outlet 4\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"ctx\":\"co4\",\"sockets\":[\"CO4_1\",\"CO4_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co5\",\"display_name\":\"Outlet 5\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"ctx\":\"co5\",\"sockets\":[\"CO5_1\",\"CO5_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co6\",\"display_name\":\"Outlet 6\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"ctx\":\"co6\",\"sockets\":[\"CO6_1\",\"CO6_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co7\",\"display_name\":\"Outlet 7\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"ctx\":\"co7\",\"sockets\":[\"CO7_1\",\"CO7_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"l1\",\"display_name\":\"Light Switch 1\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"ctx\":null,\"state_key\":\"L1\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l2\",\"display_name\":\"Light Switch 2\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"ctx\":null,\"state_key\":\"L2\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l3\",\"display_name\":\"Light Switch 3\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"ctx\":null,\"state_key\":\"L3\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l4\",\"display_name\":\"Light Switch 4\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"ctx\":null,\"state_key\":\"L4\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l5\",\"display_name\":\"Light Switch 5\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"ctx\":null,\"state_key\":\"L5\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l6\",\"display_name\":\"Light Switch 6\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"ctx\":null,\"state_key\":\"L6\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l7\",\"display_name\":\"Light Switch 7\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"ctx\":null,\"state_key\":\"L7\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"mtr_co_yellow\",\"display_name\":\"C.O Yellow\",\"class\":\"meter\",\"room\":null,\"dps_map\":\"type_a\",\"ctx\":\"co_yel\",\"branch_circuit\":\"C.O Yellow\",\"description\":\"Convenience outlets branch\",\"phase\":\"yellow\",\"status\":\"active\"},{\"id\":\"mtr_lo_red\",\"display_name\":\"L.O Red\",\"class\":\"meter\",\"room\":null,\"dps_map\":\"type_a\",\"ctx\":\"lo_red\",\"branch_circuit\":\"L.O Red\",\"description\":\"The room's lighting circuits\",\"phase\":\"red\",\"status\":\"active\"},{\"id\":\"mtr_arec_acu\",\"display_name\":\"AREC ACU\",\"class\":\"meter\",\"room\":null,\"dps_map\":\"type_a\",\"ctx\":\"arec\",\"branch_circuit\":\"ACU\",\"description\":\"Indoor ACU\",\"phase\":\"red\",\"status\":\"active\"},{\"id\":\"mtr_lo_yellow\",\"display_name\":\"L.O Yellow\",\"class\":\"meter\",\"room\":null,\"dps_map\":\"type_c\",\"ctx\":\"lo_yel2\",\"branch_circuit\":\"L.O Yellow\",\"description\":\"Outdoor ACU (separate unit, right side outside the room)\",\"phase\":\"yellow\",\"status\":\"active\"},{\"id\":\"acu_main\",\"display_name\":\"Aircon\",\"class\":\"acu_ir\",\"room\":null,\"dps_map\":null,\"ctx\":null,\"state_ctx\":\"ac_dash_state\",\"status\":\"active\"},{\"id\":\"sens_outside_temp\",\"display_name\":\"Outside Temp\",\"class\":\"sensor_temp_humidity\",\"room\":null,\"dps_map\":null,\"ctx\":null,\"state_ctx\":\"ac_dash_state\",\"state_field\":\"outTemp\",\"status\":\"active\"}];\nconst PHASE_MAP = {\"red\":[\"mtr_lo_red\",\"mtr_arec_acu\"],\"yellow\":[\"mtr_co_yellow\",\"mtr_lo_yellow\"],\"blue\":[]};\n\nmsg.payload = buildLatest(msg.snapshot || {}, REG, PHASE_MAP, Date.now());\nmsg.headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };\nreturn msg;",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -305,7 +325,7 @@
     "wires": []
   },
   {
-    "id": "b41dc00000000022",
+    "id": "b41dc00000000023",
     "type": "http in",
     "z": "b41d9e0000000001",
     "name": "GET /api/devices",
@@ -317,12 +337,12 @@
     "y": 320,
     "wires": [
       [
-        "b41dc00000000021"
+        "b41dc00000000022"
       ]
     ]
   },
   {
-    "id": "b41dc00000000021",
+    "id": "b41dc00000000022",
     "type": "function",
     "z": "b41d9e0000000001",
     "name": "Serve devices",
@@ -337,12 +357,12 @@
     "y": 320,
     "wires": [
       [
-        "b41dc00000000020"
+        "b41dc00000000021"
       ]
     ]
   },
   {
-    "id": "b41dc00000000020",
+    "id": "b41dc00000000021",
     "type": "http response",
     "z": "b41d9e0000000001",
     "name": "",
@@ -353,7 +373,7 @@
     "wires": []
   },
   {
-    "id": "b41dc00000000025",
+    "id": "b41dc00000000026",
     "type": "http in",
     "z": "b41d9e0000000001",
     "name": "GET /api/readings/latest",
@@ -365,17 +385,17 @@
     "y": 380,
     "wires": [
       [
-        "b41dc00000000024"
+        "b41dc00000000025"
       ]
     ]
   },
   {
-    "id": "b41dc00000000024",
+    "id": "b41dc00000000025",
     "type": "link call",
     "z": "b41d9e0000000001",
     "name": "",
     "links": [
-      "b41dc00000000019"
+      "b41dc00000000020"
     ],
     "linkType": "static",
     "timeout": "30",
@@ -383,12 +403,12 @@
     "y": 380,
     "wires": [
       [
-        "b41dc00000000023"
+        "b41dc00000000024"
       ]
     ]
   },
   {
-    "id": "b41dc00000000023",
+    "id": "b41dc00000000024",
     "type": "http response",
     "z": "b41d9e0000000001",
     "name": "",
@@ -399,7 +419,7 @@
     "wires": []
   },
   {
-    "id": "b41dc00000000028",
+    "id": "b41dc00000000029",
     "type": "http in",
     "z": "b41d9e0000000001",
     "name": "GET /api/readings/history",
@@ -411,12 +431,12 @@
     "y": 440,
     "wires": [
       [
-        "b41dc00000000027"
+        "b41dc00000000028"
       ]
     ]
   },
   {
-    "id": "b41dc00000000027",
+    "id": "b41dc00000000028",
     "type": "function",
     "z": "b41d9e0000000001",
     "name": "Serve history",
@@ -431,12 +451,12 @@
     "y": 440,
     "wires": [
       [
-        "b41dc00000000026"
+        "b41dc00000000027"
       ]
     ]
   },
   {
-    "id": "b41dc00000000026",
+    "id": "b41dc00000000027",
     "type": "http response",
     "z": "b41d9e0000000001",
     "name": "",
@@ -447,7 +467,7 @@
     "wires": []
   },
   {
-    "id": "b41dc00000000032",
+    "id": "b41dc00000000033",
     "type": "inject",
     "z": "b41d9e0000000001",
     "name": "push 2s",
@@ -467,17 +487,17 @@
     "y": 520,
     "wires": [
       [
-        "b41dc00000000031"
+        "b41dc00000000032"
       ]
     ]
   },
   {
-    "id": "b41dc00000000031",
+    "id": "b41dc00000000032",
     "type": "link call",
     "z": "b41d9e0000000001",
     "name": "",
     "links": [
-      "b41dc00000000019"
+      "b41dc00000000020"
     ],
     "linkType": "static",
     "timeout": "30",
@@ -485,12 +505,12 @@
     "y": 520,
     "wires": [
       [
-        "b41dc00000000030"
+        "b41dc00000000031"
       ]
     ]
   },
   {
-    "id": "b41dc00000000030",
+    "id": "b41dc00000000031",
     "type": "function",
     "z": "b41d9e0000000001",
     "name": "Serialize for WS",
@@ -505,12 +525,12 @@
     "y": 520,
     "wires": [
       [
-        "b41dc00000000029"
+        "b41dc00000000030"
       ]
     ]
   },
   {
-    "id": "b41dc00000000029",
+    "id": "b41dc00000000030",
     "type": "websocket out",
     "z": "b41d9e0000000001",
     "name": "",
@@ -527,7 +547,7 @@
     "wholemsg": "false"
   },
   {
-    "id": "b41dc00000000035",
+    "id": "b41dc00000000037",
     "type": "inject",
     "z": "b41d9e0000000001",
     "name": "sample 60s",
@@ -547,17 +567,17 @@
     "y": 600,
     "wires": [
       [
-        "b41dc00000000034"
+        "b41dc00000000036"
       ]
     ]
   },
   {
-    "id": "b41dc00000000034",
+    "id": "b41dc00000000036",
     "type": "link call",
     "z": "b41d9e0000000001",
     "name": "",
     "links": [
-      "b41dc00000000019"
+      "b41dc00000000020"
     ],
     "linkType": "static",
     "timeout": "30",
@@ -565,12 +585,13 @@
     "y": 600,
     "wires": [
       [
-        "b41dc00000000033"
+        "b41dc00000000034",
+        "b41dc00000000035"
       ]
     ]
   },
   {
-    "id": "b41dc00000000033",
+    "id": "b41dc00000000034",
     "type": "function",
     "z": "b41d9e0000000001",
     "name": "Append to history ring",
@@ -583,6 +604,24 @@
     "libs": [],
     "x": 640,
     "y": 600,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "b41dc00000000035",
+    "type": "function",
+    "z": "b41d9e0000000001",
+    "name": "Accumulate energy",
+    "func": "const rows = Array.isArray(msg.payload) ? msg.payload : [];\n// Local +08:00 wall-clock, matching iso8()'s offset — a UTC day boundary would fold the\n// previous day in at 08:00 local, attributing 8 hours to the wrong day.\nconst now = new Date(Date.now() + 8 * 3600 * 1000);\nconst y = now.getUTCFullYear();\nconst dayKey = y + '-' + (now.getUTCMonth() + 1) + '-' + now.getUTCDate();\nconst monthKey = y + '-' + (now.getUTCMonth() + 1);\n// ISO-ish week key: Monday-start, identified by the Monday's own date.\nconst dow = (now.getUTCDay() + 6) % 7; // 0 = Monday\nconst monday = new Date(now.getTime() - dow * 86400000);\nconst weekKey = monday.getUTCFullYear() + '-' + (monday.getUTCMonth() + 1) + '-' + monday.getUTCDate();\n\nfor (const r of rows) {\n  if (r.device_id === '_totals') continue;\n  if (typeof r.energy_kwh_today !== 'number') continue;\n  const key = 'enacc_' + r.device_id;\n  const a = flow.get(key) || { lastToday: 0, weekBase: 0, monthBase: 0, weekKey: weekKey, monthKey: monthKey, dayKey: dayKey };\n\n  if (a.weekKey !== weekKey) { a.weekBase = 0; a.weekKey = weekKey; }\n  if (a.monthKey !== monthKey) { a.monthBase = 0; a.monthKey = monthKey; }\n\n  if (a.dayKey !== dayKey) {\n    // The day we were tracking has ended: its final counter value is a completed day.\n    a.weekBase += a.lastToday;\n    a.monthBase += a.lastToday;\n    a.dayKey = dayKey;\n    a.lastToday = 0;\n  } else if (r.energy_kwh_today < a.lastToday) {\n    // Counter went backwards inside the same day — a device reboot or a Tuya-side reset.\n    // Whatever it had reached is still real consumption, so bank it rather than lose it.\n    a.weekBase += a.lastToday;\n    a.monthBase += a.lastToday;\n  }\n\n  a.lastToday = r.energy_kwh_today;\n  flow.set(key, a);\n}\nreturn null;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 640,
+    "y": 660,
     "wires": [
       []
     ]
