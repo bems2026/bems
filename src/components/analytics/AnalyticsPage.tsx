@@ -217,7 +217,7 @@ function SourceSection({
       </div>
       <div className={className}>
         {devices.map((d, i) => (
-          <SourceCard key={d.id} device={d} color={PALETTE[i % PALETTE.length]} selected={activeScope === scope && selectedId === d.id} onSelect={() => onSelect(d.id)} />
+          <SourceCard key={d.id} device={d} color={PALETTE[i % PALETTE.length]} scope={scope} selected={activeScope === scope && selectedId === d.id} onSelect={() => onSelect(d.id)} />
         ))}
       </div>
     </div>

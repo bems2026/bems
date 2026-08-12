@@ -2851,7 +2851,7 @@ body::before {
 .analytics-source-card__head {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
+  gap: 6px;
 }
 .analytics-source-card__dot {
   width: 9px;
@@ -2860,11 +2860,31 @@ body::before {
   flex: none;
 }
 .analytics-source-card__name {
+  flex: 1;
+  min-width: 0;
   font-weight: 700;
   font-size: var(--fs-xs-lg);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.analytics-source-card__id {
+  flex: none;
+  font-size: var(--fs-3xs);
+  color: var(--faint);
+}
+/* Real communication status (`isReadingStale`) — green when the device's own reading is
+   fresh, muted when it isn't. Not a fabricated indicator: same rule DevicesView's comm
+   column and StaleDataBadge already use. */
+.analytics-source-card__status {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--good);
+}
+.analytics-source-card__status--stale {
+  background: var(--faintest);
 }
 .analytics-source-card__stats {
   display: flex;
@@ -2884,11 +2904,24 @@ body::before {
 .analytics-source-card__stat-value {
   font: 600 var(--fs-xs-lg) 'IBM Plex Mono', monospace;
 }
-/* Phase O: a true 1:1 box for the sparkline (was a fixed 64px strip) — `Sparkline`'s
+/* A wide, short box for the sparkline — half the height of a square (`aspect-ratio: 2/1`,
+   was `1/1`, which read as too tall next to the compact stat rows above it). `Sparkline`'s
    `fill` prop stretches its SVG to whatever this box resolves to. */
 .analytics-source-card__chart {
-  aspect-ratio: 1 / 1;
+  aspect-ratio: 2 / 1;
   margin-top: var(--sp-3);
+}
+/* Branch cards reuse `.analytics-stat-grid`/`.analytics-stat-tile` (same tiles the
+   "selected source" panel above uses) but at a narrower card width, so the tiles get
+   tighter padding and a smaller value size than that wider context. */
+.analytics-source-card__grid {
+  gap: 6px;
+}
+.analytics-source-card__grid .analytics-stat-tile {
+  padding: 8px;
+}
+.analytics-source-card__grid .analytics-stat-tile__value {
+  font-size: var(--fs-sm-lg);
 }
 
 .analytics-untracked-card {
