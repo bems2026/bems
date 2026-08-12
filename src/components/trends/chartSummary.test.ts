@@ -77,4 +77,32 @@ describe('downsampleTrend', () => {
     // itself, but the last bucket must be visibly higher than the flat 50 baseline.
     expect(out[out.length - 1].power_w).toBeGreaterThan(50);
   });
+
+  it('averages voltage/current over only the samples that carried them', () => {
+    // Bucket 1 has one point with V/A and one without: the average must be the real
+    // reading (230), NOT 115 — averaging a missing sample in as 0 would invent a
+    // brownout that never happened.
+    const points = [
+      { ts: 'a', power_w: 10, voltage: 230, current: 0.04 },
+      { ts: 'b', power_w: 10 },
+      { ts: 'c', power_w: 10, voltage: 220, current: 0.05 },
+      { ts: 'd', power_w: 10, voltage: 240, current: 0.03 },
+    ];
+    const out = downsampleTrend(points, 2);
+    expect(out[0].voltage).toBe(230);
+    expect(out[1].voltage).toBe(230); // (220 + 240) / 2
+  });
+
+  it('omits voltage/current entirely for a bucket where no sample carried them', () => {
+    const points = [
+      { ts: 'a', power_w: 10 },
+      { ts: 'b', power_w: 20 },
+      { ts: 'c', power_w: 30, voltage: 230 },
+      { ts: 'd', power_w: 40, voltage: 230 },
+    ];
+    const out = downsampleTrend(points, 2);
+    expect(out[0].voltage).toBeUndefined();
+    expect('voltage' in out[0]).toBe(false);
+    expect(out[1].voltage).toBe(230);
+  });
 });

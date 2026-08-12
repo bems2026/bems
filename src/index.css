@@ -2663,6 +2663,15 @@ body::before {
  * Analytics — Phase M4. Re-themed into the M1 glass tokens (v4's own Analytics tab ships
  * as un-restyled v3 markup — see AnalyticsPage.tsx's header).
  * ------------------------------------------------------------------------ */
+/* Holds the two pill groups (parameter, then scope) side by side, wrapping to a second
+   line rather than overflowing once the header runs out of room. */
+.analytics-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  min-width: 0;
+}
 .analytics-scope-toggle {
   display: flex;
   gap: 2px;

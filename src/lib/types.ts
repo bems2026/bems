@@ -70,10 +70,17 @@ export function isTotals(row: ReadingsLatestRow): row is Totals {
   return row.device_id === '_totals';
 }
 
-/** `GET /api/readings/history` point. */
+/**
+ * `GET /api/readings/history` point. `voltage`/`current` are optional for the same reason
+ * `Reading`'s are: the bridge records them only when the poll actually carried them. Points
+ * buffered before the bridge started recording V/A — and any meter that doesn't report them
+ * — have `power_w` alone, and the UI must render that as a gap, never as 0.
+ */
 export interface HistoryPoint {
   ts: string;
   power_w: number;
+  voltage?: number;
+  current?: number;
 }
 
 export interface HistoryResponse {

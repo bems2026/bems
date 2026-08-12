@@ -1,6 +1,7 @@
 import { useDeviceStore } from '@/stores/deviceStore';
 import { isReadingStale } from '@/lib/staleness';
 import { HistoryAreaChart } from './HistoryAreaChart';
+import type { ChartParam } from './chartParams';
 import type { Device } from '@/lib/types';
 
 /**
@@ -9,7 +10,7 @@ import type { Device } from '@/lib/types';
  * per card, so the bigger tiles read fine. Outlets stay a compact single-column list (7
  * cards, no room to spare) — same underlying numbers, denser layout.
  */
-export function SourceCard({ device, color, scope, selected, onSelect }: { device: Device; color: string; scope: 'branches' | 'outlets'; selected: boolean; onSelect: () => void }) {
+export function SourceCard({ device, color, scope, param, selected, onSelect }: { device: Device; color: string; scope: 'branches' | 'outlets'; param: ChartParam; selected: boolean; onSelect: () => void }) {
   const reading = useDeviceStore((s) => s.latestReadings[device.id]);
   const history = useDeviceStore((s) => s.history[device.id]);
   const stale = isReadingStale(reading);
@@ -37,7 +38,7 @@ export function SourceCard({ device, color, scope, selected, onSelect }: { devic
           <Stat label="kWh" value={reading?.energy_kwh_today} digits={2} />
         </div>
       )}
-      <HistoryAreaChart history={history} color={color} name={device.display_name} className="analytics-source-card__chart" />
+      <HistoryAreaChart history={history} color={color} name={device.display_name} className="analytics-source-card__chart" param={param} />
     </button>
   );
 }

@@ -1,5 +1,6 @@
 import { useId, useMemo, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { CHART_PARAMS, formatParamValue, pointValue, type ChartParam } from './chartParams';
 import type { HistoryPoint } from '@/lib/types';
 
 /**
@@ -18,25 +19,34 @@ export function HistoryAreaChart({
   name,
   className,
   maxPoints = 60,
+  param = 'power',
 }: {
   history: HistoryPoint[] | undefined;
   color: string;
   name: string;
   className: string;
   maxPoints?: number;
+  param?: ChartParam;
 }) {
-  const data = useMemo(() => (history ?? []).slice(-maxPoints).map((p) => ({ t: Date.parse(p.ts), w: p.power_w })), [history, maxPoints]);
+  // `v` is undefined for any point that never carried this parameter — kept undefined
+  // rather than dropped, so the gap stays at its real position on the time axis.
+  const data = useMemo(
+    () => (history ?? []).slice(-maxPoints).map((p) => ({ t: Date.parse(p.ts), v: pointValue(p, param) })),
+    [history, maxPoints, param],
+  );
   const gradientId = `history-area-${useId()}`;
   const [revealed, setRevealed] = useState(false);
   const revealHandlers = { onMouseEnter: () => setRevealed(true), onMouseLeave: () => setRevealed(false), onTouchStart: () => setRevealed(true) };
 
-  if (data.length === 0) return <div className={className} />;
+  const withValue = data.filter((d) => d.v !== undefined);
+  if (withValue.length === 0) return <div className={className} />;
+  const latest = withValue[withValue.length - 1].v!;
 
   return (
     <div
       className={`${className} chart-frame chart-frame--axes-visible${revealed ? ' chart-frame--revealed' : ''}`}
       role="img"
-      aria-label={`${name} power over recent history, ${data.length} samples, currently ${data[data.length - 1].w.toFixed(0)} W.`}
+      aria-label={`${name} ${CHART_PARAMS[param].label.toLowerCase()} over recent history, ${withValue.length} samples, currently ${formatParamValue(latest, param)}.`}
       {...revealHandlers}
     >
       <ResponsiveContainer width="100%" height="100%">
@@ -49,13 +59,13 @@ export function HistoryAreaChart({
           </defs>
           <CartesianGrid stroke="var(--border)" strokeOpacity={0.5} vertical={false} />
           <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tickFormatter={formatTick} stroke="var(--muted)" fontSize={9} tickLine={false} />
-          <YAxis stroke="var(--muted)" fontSize={9} width={30} tickLine={false} />
+          <YAxis stroke="var(--muted)" fontSize={9} width={34} tickLine={false} domain={param === 'voltage' ? ['auto', 'auto'] : undefined} />
           <Tooltip
             labelFormatter={(t) => new Date(t as number).toLocaleTimeString('en-PH', { hour12: false })}
-            formatter={(v) => [`${Number(v).toFixed(0)} W`, 'Power']}
+            formatter={(v) => [formatParamValue(Number(v), param), CHART_PARAMS[param].label]}
             contentStyle={{ background: 'var(--bg-surface-2)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 11 }}
           />
-          <Area type="monotone" dataKey="w" stroke={color} strokeWidth={1.3} fill={`url(#${gradientId})`} dot={false} isAnimationActive={false} />
+          <Area type="monotone" dataKey="v" stroke={color} strokeWidth={1.3} fill={`url(#${gradientId})`} dot={false} isAnimationActive={false} connectNulls={false} />
         </AreaChart>
       </ResponsiveContainer>
     </div>

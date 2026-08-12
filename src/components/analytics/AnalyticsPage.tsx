@@ -7,6 +7,7 @@ import { HistoryAreaChart } from './HistoryAreaChart';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { useAnalyticsHistory } from './useAnalyticsHistory';
 import { buildChartRows } from './analyticsMath';
+import { CHART_PARAMS, CHART_PARAM_ORDER, formatParamValue, type ChartParam } from './chartParams';
 import { SourceCard } from './SourceCard';
 import { UntrackedLoadCard } from './UntrackedLoadCard';
 import type { Device, Reading } from '@/lib/types';
@@ -22,12 +23,17 @@ type Scope = 'branches' | 'outlets';
  * v4's Analytics tab, re-themed into the M1 glass tokens (the source design ships this
  * page as un-restyled v3 markup — see the Phase M plan §6.2) and rebuilt against real data.
  *
- * v4's own param toggle (Voltage | Current | Power | Energy) is dropped: the bridge's
- * history ring buffer stores power_w only (see `TrendChart.tsx`'s docblock) — there is no
- * real time series for the other three params, and a toggle that visibly did nothing to
- * the chart would be its own kind of dishonesty. The main chart stays Power-only; the
- * stat rail and every branch/outlet card still show real, instantaneous V/A/W/kWh — those
- * ARE real point values, just not real histories.
+ * The Power | Voltage | Current toggle is real: the ring buffer now records voltage and
+ * current alongside power on every poll (`build-flow.mjs`'s APPEND_HISTORY and the mock's
+ * `sampleHistory`), so each is an actual measured series. It was previously dropped
+ * precisely because that data wasn't stored — a toggle that changed nothing would have
+ * been its own kind of dishonesty.
+ *
+ * Two consequences worth keeping in mind: V/A only accrue from the moment a bridge starts
+ * recording them, so a long-running bridge shows a gap over the older part of the window
+ * (`HistoryPoint`'s optional fields carry that honestly, never a 0), and v4's fourth param
+ * — Energy — is still absent, because `energy_kwh_today` is a cumulative counter that
+ * resets at midnight, not an instantaneous signal to plot beside the other three.
  */
 export function AnalyticsPage() {
   const devices = useDeviceStore((s) => s.devices);
@@ -36,6 +42,7 @@ export function AnalyticsPage() {
   const { branchIds, outletIds, status } = useAnalyticsHistory();
 
   const [scope, setScope] = useState<Scope>('branches');
+  const [param, setParam] = useState<ChartParam>('power');
   const [selectedByScope, setSelectedByScope] = useState<Record<Scope, string | null>>({ branches: null, outlets: null });
   // Phase O: axes/gridlines stay hidden (opacity 0, still occupying their reserved space —
   // see `.chart-frame` in index.css) until the chart is hovered or touched.
@@ -54,7 +61,7 @@ export function AnalyticsPage() {
   const selectedId = selectedByScope[scope] && scopeIds.includes(selectedByScope[scope]!) ? selectedByScope[scope]! : (scopeIds[0] ?? null);
   const selectDevice = (id: string) => setSelectedByScope((s) => ({ ...s, [scope]: id }));
 
-  const rows = useMemo(() => buildChartRows(scopeIds, historyMap, MAX_CHART_POINTS), [scopeIds, historyMap]);
+  const rows = useMemo(() => buildChartRows(scopeIds, historyMap, MAX_CHART_POINTS, param), [scopeIds, historyMap, param]);
   const selectedDevice = scopeDevices.find((d) => d.id === selectedId);
   const selectedReading = selectedId ? readings[selectedId] : undefined;
 
@@ -76,13 +83,22 @@ export function AnalyticsPage() {
             <InfoHint label="What this covers">The 4 CHNT branch meters and the 7 individually-metered outlets.</InfoHint>
           </p>
         </div>
-        <div className="analytics-scope-toggle" role="group" aria-label="Scope">
-          <button type="button" className={`analytics-scope-btn${scope === 'branches' ? ' analytics-scope-btn--active' : ''}`} onClick={() => setScope('branches')}>
-            Branches
-          </button>
-          <button type="button" className={`analytics-scope-btn${scope === 'outlets' ? ' analytics-scope-btn--active' : ''}`} onClick={() => setScope('outlets')}>
-            Outlets
-          </button>
+        <div className="analytics-toggles">
+          <div className="analytics-scope-toggle" role="group" aria-label="Parameter">
+            {CHART_PARAM_ORDER.map((p) => (
+              <button key={p} type="button" className={`analytics-scope-btn${param === p ? ' analytics-scope-btn--active' : ''}`} aria-pressed={param === p} onClick={() => setParam(p)}>
+                {CHART_PARAMS[p].label}
+              </button>
+            ))}
+          </div>
+          <div className="analytics-scope-toggle" role="group" aria-label="Scope">
+            <button type="button" className={`analytics-scope-btn${scope === 'branches' ? ' analytics-scope-btn--active' : ''}`} onClick={() => setScope('branches')}>
+              Branches
+            </button>
+            <button type="button" className={`analytics-scope-btn${scope === 'outlets' ? ' analytics-scope-btn--active' : ''}`} onClick={() => setScope('outlets')}>
+              Outlets
+            </button>
+          </div>
         </div>
       </header>
 
@@ -91,7 +107,7 @@ export function AnalyticsPage() {
           <div className="card-head">
             <h3 className="card-title">
               <Activity size={14} className="title-icon" aria-hidden="true" />
-              Power · 24 h
+              {CHART_PARAMS[param].label} · 24 h
             </h3>
             <div className="analytics-legend">
               {scopeDevices.map((d, i) => (
@@ -116,17 +132,21 @@ export function AnalyticsPage() {
             <div
               className={`chart-frame chart-frame--axes-visible${chartRevealed ? ' chart-frame--revealed' : ''}`}
               role="img"
-              aria-label={`Power over the last 24 hours across ${scopeDevices.length} ${scope}, ${rows.length} samples.`}
+              aria-label={`${CHART_PARAMS[param].label} over the last 24 hours across ${scopeDevices.length} ${scope}, ${rows.length} samples.`}
               {...revealHandlers}
             >
               <ResponsiveContainer width="100%" height={440}>
                 <LineChart data={rows} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
                   <CartesianGrid stroke="var(--border)" strokeOpacity={0.5} vertical={false} />
                   <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tickFormatter={formatTick} stroke="var(--muted)" fontSize={11} tickLine={false} />
-                  <YAxis stroke="var(--muted)" fontSize={11} width={44} tickLine={false} />
+                  {/* Voltage sits in a narrow band well above zero (~220-230 V), so a
+                      0-based axis would flatten every real variation into one straight
+                      line — it gets an auto domain; power/current keep the 0-based default
+                      where zero is a meaningful floor. */}
+                  <YAxis stroke="var(--muted)" fontSize={11} width={44} tickLine={false} domain={param === 'voltage' ? ['auto', 'auto'] : undefined} />
                   <Tooltip
                     labelFormatter={(t) => new Date(t as number).toLocaleString('en-PH', { hour12: false })}
-                    formatter={(v, name) => [`${Number(v).toFixed(0)} W`, scopeDevices.find((d) => d.id === name)?.display_name ?? String(name)]}
+                    formatter={(v, name) => [formatParamValue(Number(v), param), scopeDevices.find((d) => d.id === name)?.display_name ?? String(name)]}
                     contentStyle={{ background: 'var(--bg-surface-2)', border: '1px solid var(--border)', borderRadius: 8 }}
                   />
                   {scopeDevices.map((d, i) => (
@@ -140,6 +160,7 @@ export function AnalyticsPage() {
                       strokeOpacity={d.id === selectedId ? 1 : 0.35}
                       dot={false}
                       isAnimationActive={false}
+                      connectNulls={false}
                     />
                   ))}
                 </LineChart>
@@ -151,19 +172,20 @@ export function AnalyticsPage() {
         <div className="card analytics-stat-card">
           <h3 className="card-title">{selectedDevice?.display_name ?? 'No source selected'}</h3>
           {selectedDevice && <SelectedStatPanel reading={selectedReading} />}
-          <div className="analytics-stat-card__spark-label">24 H</div>
+          <div className="analytics-stat-card__spark-label">{CHART_PARAMS[param].label.toUpperCase()} · 24 H</div>
           <HistoryAreaChart
             history={selectedId ? historyMap[selectedId] : undefined}
             color="var(--blue-bright)"
             name={selectedDevice?.display_name ?? 'Selected source'}
             className="analytics-stat-card__chart"
             maxPoints={140}
+            param={param}
           />
         </div>
       </div>
 
-      <SourceSection title="Branches" tag="CHNT CT · 4 FEEDERS" devices={branchDevices} scope="branches" activeScope={scope} selectedId={selectedByScope.branches} onSelect={(id) => { setScope('branches'); selectDevice(id); }} className="analytics-branch-grid" />
-      <SourceSection title="Outlets" tag="EACH SOCKET METERED" devices={outletDevices} scope="outlets" activeScope={scope} selectedId={selectedByScope.outlets} onSelect={(id) => { setScope('outlets'); selectDevice(id); }} className="analytics-outlet-grid" />
+      <SourceSection title="Branches" tag="CHNT CT · 4 FEEDERS" devices={branchDevices} scope="branches" activeScope={scope} param={param} selectedId={selectedByScope.branches} onSelect={(id) => { setScope('branches'); selectDevice(id); }} className="analytics-branch-grid" />
+      <SourceSection title="Outlets" tag="EACH SOCKET METERED" devices={outletDevices} scope="outlets" activeScope={scope} param={param} selectedId={selectedByScope.outlets} onSelect={(id) => { setScope('outlets'); selectDevice(id); }} className="analytics-outlet-grid" />
 
       <UntrackedLoadCard branchIds={branchIds} outletIds={outletIds} />
     </>
@@ -198,6 +220,7 @@ function SourceSection({
   devices,
   scope,
   activeScope,
+  param,
   selectedId,
   onSelect,
   className,
@@ -207,6 +230,7 @@ function SourceSection({
   devices: Device[];
   scope: Scope;
   activeScope: Scope;
+  param: ChartParam;
   selectedId: string | null;
   onSelect: (id: string) => void;
   className: string;
@@ -224,7 +248,7 @@ function SourceSection({
       </div>
       <div className={className}>
         {devices.map((d, i) => (
-          <SourceCard key={d.id} device={d} color={PALETTE[i % PALETTE.length]} scope={scope} selected={activeScope === scope && selectedId === d.id} onSelect={() => onSelect(d.id)} />
+          <SourceCard key={d.id} device={d} color={PALETTE[i % PALETTE.length]} scope={scope} param={param} selected={activeScope === scope && selectedId === d.id} onSelect={() => onSelect(d.id)} />
         ))}
       </div>
     </div>

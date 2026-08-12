@@ -198,7 +198,12 @@ function sampleHistory() {
   for (const r of latest()) {
     if (r.device_id === '_totals' || typeof r.power_w !== 'number') continue;
     const buf = hist.get(r.device_id) || [];
-    buf.push({ ts: r.ts, power_w: r.power_w });
+    // Mirrors the Node-RED buffer (build-flow.mjs's APPEND_HISTORY): V/A are stored only
+    // when the reading actually carried them, so a missing value stays a gap, not a 0.
+    const p = { ts: r.ts, power_w: r.power_w };
+    if (typeof r.voltage === 'number') p.voltage = r.voltage;
+    if (typeof r.current === 'number') p.current = r.current;
+    buf.push(p);
     if (buf.length > TIMING.HISTORY_MAX_POINTS) buf.splice(0, buf.length - TIMING.HISTORY_MAX_POINTS);
     hist.set(r.device_id, buf);
   }
@@ -215,7 +220,13 @@ function sampleHistory() {
       const ms = now - i * TIMING.HISTORY_SAMPLE_MS;
       const h = new Date(ms).getHours();
       const occ = h < 7 || h > 19 ? 0.08 : h < 9 ? 0.45 : 0.9;
-      buf.push({ ts: iso8(ms), power_w: Math.round((idle + (peak - idle) * occ + wobble(i % 17, ms, peak * 0.08)) * 10) / 10 });
+      const power_w = Math.round((idle + (peak - idle) * occ + wobble(i % 17, ms, peak * 0.08)) * 10) / 10;
+      // V/A are derived from the same synthetic power curve rather than rolled
+      // independently, so seeded history stays internally consistent (P ≈ V × A at pf≈1)
+      // — a chart of A must look like a scaled chart of W, or the mock would be teaching
+      // the UI a relationship the real meters don't have.
+      const voltage = Math.round((224 + wobble(i % 23, ms, 3)) * 10) / 10;
+      buf.push({ ts: iso8(ms), power_w, voltage, current: Math.round((power_w / voltage) * 1000) / 1000 });
     }
     hist.set(d.id, buf);
   }

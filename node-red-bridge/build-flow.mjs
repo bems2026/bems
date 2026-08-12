@@ -192,7 +192,15 @@ for (const r of rows) {
   if (typeof r.power_w !== 'number') continue;
   const key = 'hist_' + r.device_id;
   const buf = flow.get(key) || [];
-  buf.push({ ts: r.ts, power_w: r.power_w });
+  // voltage/current are recorded alongside power so Analytics can chart them over time,
+  // not just as instantaneous values. Each is written ONLY when the poll actually carried
+  // it — same "omitted, never zeroed" rule buildLatest follows, so a point predating this
+  // change (or a meter that didn't report V/A) stays a gap in the chart rather than a
+  // fabricated 0. Points already in the buffer keep power only; V/A accrues going forward.
+  const p = { ts: r.ts, power_w: r.power_w };
+  if (typeof r.voltage === 'number') p.voltage = r.voltage;
+  if (typeof r.current === 'number') p.current = r.current;
+  buf.push(p);
   if (buf.length > CAP) buf.splice(0, buf.length - CAP);
   flow.set(key, buf);
 }

@@ -17,9 +17,30 @@ describe('buildChartRows', () => {
     expect(rows[5].b).toBe(10);
   });
 
-  it('a device with no history at all contributes 0, not undefined, at every row', () => {
+  /*
+   * Reversed deliberately: this used to assert `=== 0`, matching an old `?? 0` fallback.
+   * That fallback drew a device with no history as a flat 0 W line across the whole window
+   * — a claim the building was measured at zero, when in fact nothing was measured at all.
+   * `types.ts` states the rule this violates: "no data" and "zero watts" are different
+   * facts. Undefined makes Recharts (with `connectNulls={false}`) draw nothing, while the
+   * legend still lists the device, so "we have no readings" reads as exactly that.
+   */
+  it('a device with no history contributes undefined, not a fabricated 0, at every row', () => {
     const rows = buildChartRows(['a', 'missing'], { a: series(5, (i) => i + 1) }, 5);
-    expect(rows.every((r) => r.missing === 0)).toBe(true);
+    expect(rows.every((r) => r.missing === undefined)).toBe(true);
+    expect(rows.every((r) => r.a !== undefined)).toBe(true);
+  });
+
+  it('charts the selected parameter, and gaps a point that never carried it', () => {
+    const withVA: HistoryPoint[] = [
+      { ts: new Date(0).toISOString(), power_w: 100, voltage: 230, current: 0.43 },
+      { ts: new Date(60000).toISOString(), power_w: 110 }, // pre-dates V/A recording
+    ];
+    const volts = buildChartRows(['a'], { a: withVA }, 5, 'voltage');
+    expect(volts[0].a).toBe(230);
+    expect(volts[1].a).toBeUndefined();
+    expect(buildChartRows(['a'], { a: withVA }, 5, 'current')[0].a).toBe(0.43);
+    expect(buildChartRows(['a'], { a: withVA }, 5, 'power')[1].a).toBe(110);
   });
 
   it('downsamples down to maxPoints when the raw series is longer', () => {

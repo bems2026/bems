@@ -1,9 +1,12 @@
 import type { HistoryPoint } from '@/lib/types';
 import { downsampleTrend } from '@/components/trends/chartSummary';
+import { pointValue, type ChartParam } from './chartParams';
 
 /** One row of the multi-series chart's Recharts data — `t` is the point's timestamp in ms,
- * every other key is a device id mapped to that device's power_w at this point. */
-export type ChartRow = Record<string, number>;
+ * every other key is a device id mapped to that device's value for the selected parameter.
+ * A device's key is `undefined` when it has no reading for that parameter at that point,
+ * which Recharts renders as a break in the line. */
+export type ChartRow = Record<string, number | undefined>;
 
 /**
  * Builds one Recharts-ready row array from several devices' own history, each independently
@@ -12,7 +15,7 @@ export type ChartRow = Record<string, number>;
  * index-alignment is: every metered device's history is seeded/sampled on the same tick in
  * both the mock and the real bridge, so same-index points share a timestamp.
  */
-export function buildChartRows(deviceIds: string[], historyByDevice: Record<string, HistoryPoint[]>, maxPoints: number): ChartRow[] {
+export function buildChartRows(deviceIds: string[], historyByDevice: Record<string, HistoryPoint[]>, maxPoints: number, param: ChartParam = 'power'): ChartRow[] {
   const downsampled: Record<string, HistoryPoint[]> = {};
   for (const id of deviceIds) downsampled[id] = downsampleTrend(historyByDevice[id] ?? [], maxPoints);
 
@@ -24,7 +27,10 @@ export function buildChartRows(deviceIds: string[], historyByDevice: Record<stri
   const rows: ChartRow[] = [];
   for (let i = 0; i < length; i++) {
     const row: ChartRow = { t: Date.parse(downsampled[tsSourceId][i].ts) };
-    for (const id of deviceIds) row[id] = downsampled[id][i]?.power_w ?? 0;
+    // `pointValue` returns undefined (not 0) for a point that never carried this parameter
+    // — voltage/current are only recorded from the poll onward, so an older buffer has
+    // power-only points that must read as a gap in the line, not a 0 V reading.
+    for (const id of deviceIds) row[id] = pointValue(downsampled[id][i], param);
     rows.push(row);
   }
   return rows;

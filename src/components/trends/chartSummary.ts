@@ -59,7 +59,29 @@ export function downsampleTrend(points: HistoryPoint[], maxPoints: number): Hist
     const end = Math.max(start + 1, Math.floor((i + 1) * bucketSize));
     const bucket = points.slice(start, end);
     const avgPower = bucket.reduce((sum, p) => sum + p.power_w, 0) / bucket.length;
-    out.push({ ts: bucket[Math.floor(bucket.length / 2)].ts, power_w: avgPower });
+    const point: HistoryPoint = { ts: bucket[Math.floor(bucket.length / 2)].ts, power_w: avgPower };
+    // voltage/current are optional per point (see `HistoryPoint`), so each is averaged over
+    // only the samples that actually carried it and omitted entirely when none did — a
+    // bucket spanning the moment the bridge started recording V/A must not average the
+    // missing half in as 0.
+    const v = avgDefined(bucket, 'voltage');
+    if (v !== undefined) point.voltage = v;
+    const c = avgDefined(bucket, 'current');
+    if (c !== undefined) point.current = c;
+    out.push(point);
   }
   return out;
+}
+
+function avgDefined(bucket: HistoryPoint[], field: 'voltage' | 'current'): number | undefined {
+  let sum = 0;
+  let count = 0;
+  for (const p of bucket) {
+    const value = p[field];
+    if (typeof value === 'number') {
+      sum += value;
+      count++;
+    }
+  }
+  return count === 0 ? undefined : sum / count;
 }
