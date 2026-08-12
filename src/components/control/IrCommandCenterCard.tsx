@@ -1,6 +1,8 @@
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
 import { controlView } from '@/lib/socketView';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { useConfirm } from '@/components/ui/useConfirm';
 import { useControlLog } from './controlLog';
 
 const ACU_ID = 'acu_main';
@@ -19,6 +21,7 @@ export function IrCommandCenterCard() {
   const send = useCommandStore((s) => s.send);
   const log = useControlLog((s) => s.log);
   const lastIr = useControlLog((s) => s.entries.find((e) => e.tag === 'IR'));
+  const { ask, modalProps } = useConfirm();
 
   const view = controlView(reading, pending);
   const busy = view.kind === 'pending';
@@ -29,6 +32,21 @@ export function IrCommandCenterCard() {
     send(ACU_ID, undefined, action);
     log('IR', `${device?.display_name ?? 'CARE ACU'} → ${action}`);
   };
+
+  // Gated despite being a single device: an IR blast is the one command in this app with
+  // no readback path at all (nothing confirms the blaster was received), driving a
+  // compressor — the same risk profile a 7-device fan-out gets, just concentrated on one
+  // unverifiable send.
+  const askDispatch = (action: 'on' | 'off') =>
+    ask(
+      {
+        title: `Send AC ${action === 'on' ? 'ON' : 'OFF'}?`,
+        body: `This sends a single IR ${action} command to the CARE ACU. Nothing reads the blaster back, so there is no way to confirm it was received — only that this app sent it.`,
+        confirmLabel: `Yes, send ${action.toUpperCase()}`,
+        tone: action === 'on' ? 'blue' : 'accent',
+      },
+      () => dispatch(action),
+    );
 
   return (
     <div className="card control-ir-card">
@@ -56,15 +74,16 @@ export function IrCommandCenterCard() {
         </div>
 
         <div className="control-ir-unit__actions">
-          <button type="button" className="quick-btn quick-btn--primary" disabled={busy} onClick={() => dispatch('on')}>
+          <button type="button" className="quick-btn quick-btn--primary" disabled={busy} onClick={() => askDispatch('on')}>
             Send ON command
           </button>
-          <button type="button" className="quick-btn" disabled={busy} onClick={() => dispatch('off')}>
+          <button type="button" className="quick-btn" disabled={busy} onClick={() => askDispatch('off')}>
             Send OFF command
           </button>
         </div>
         <p className="control-ir-unit__last">{lastIr ? `${lastIr.text} · ${lastIr.time}` : 'No commands sent this session'}</p>
       </div>
+      <ConfirmModal {...modalProps} />
     </div>
   );
 }

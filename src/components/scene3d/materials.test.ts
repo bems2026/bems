@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { lightMaterialState, outletSocketMaterialState } from './materials';
+import { lightMaterialState, outletSocketMaterialState, isOn } from './materials';
 import { TOKENS } from './tokens';
 import type { Reading } from '@/lib/types';
 
@@ -57,5 +57,18 @@ describe('outletSocketMaterialState', () => {
 
   it('is muted with no reading at all', () => {
     expect(outletSocketMaterialState(undefined, 1).color).toBe(TOKENS.muted2);
+  });
+});
+
+describe('isOn', () => {
+  it('true only for a fresh, commanded-on state — the same rule pools/lamps/ACU glow key off', () => {
+    const r: Reading = { device_id: 'l3', ts: fresh, online: true, state: 'on' };
+    expect(isOn(lightMaterialState(r))).toBe(true);
+  });
+
+  it('false for stale, off, and no-reading-at-all', () => {
+    expect(isOn(lightMaterialState({ device_id: 'l3', ts: old, online: true, state: 'on' }))).toBe(false);
+    expect(isOn(lightMaterialState({ device_id: 'l3', ts: fresh, online: true, state: 'off' }))).toBe(false);
+    expect(isOn(lightMaterialState(undefined))).toBe(false);
   });
 });

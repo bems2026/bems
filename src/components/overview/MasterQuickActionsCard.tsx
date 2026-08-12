@@ -1,6 +1,8 @@
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
 import { controlView } from '@/lib/socketView';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { useConfirm } from '@/components/ui/useConfirm';
 
 /** The two "quick toggle" light circuits shown here — L1 and L2, real commandable devices,
  * not the design's unlabelled sample rows. Any two would do; these are simply the first
@@ -19,6 +21,20 @@ export function MasterQuickActionsCard() {
   const acuPending = useCommandStore((s) => s.pending[targetKey('acu_main')]);
   const acuView = controlView(acuReading, acuPending);
   const acuBusy = acuView.kind === 'pending';
+  const { ask, modalProps } = useConfirm();
+
+  // Gated like Control's own IR sends (`IrCommandCenterCard`) — this is the same command,
+  // same unverifiable-blaster risk, just reachable from a second surface.
+  const askSend = (action: 'on' | 'off') =>
+    ask(
+      {
+        title: `Send AC ${action === 'on' ? 'ON' : 'OFF'}?`,
+        body: `This sends a single IR ${action} command to the CARE ACU. Nothing reads the blaster back, so there is no way to confirm it was received — only that this app sent it.`,
+        confirmLabel: `Yes, send ${action.toUpperCase()}`,
+        tone: action === 'on' ? 'blue' : 'accent',
+      },
+      () => send('acu_main', undefined, action),
+    );
 
   return (
     <div className="card">
@@ -36,10 +52,10 @@ export function MasterQuickActionsCard() {
           <p className="quick-row__sub">IR · {acuView.kind === 'unknown' ? 'no reading yet' : `commanded ${acuView.value === 'on' ? 'on' : 'off'}`}</p>
         </div>
         <div className="quick-row__actions">
-          <button type="button" className="quick-btn quick-btn--primary" disabled={acuBusy} onClick={() => send('acu_main', undefined, 'on')}>
+          <button type="button" className="quick-btn quick-btn--primary" disabled={acuBusy} onClick={() => askSend('on')}>
             Send ON
           </button>
-          <button type="button" className="quick-btn" disabled={acuBusy} onClick={() => send('acu_main', undefined, 'off')}>
+          <button type="button" className="quick-btn" disabled={acuBusy} onClick={() => askSend('off')}>
             Send OFF
           </button>
         </div>
@@ -48,6 +64,7 @@ export function MasterQuickActionsCard() {
       {QUICK_TOGGLE_IDS.map((id) => (
         <QuickToggleRow key={id} deviceId={id} />
       ))}
+      <ConfirmModal {...modalProps} />
     </div>
   );
 }

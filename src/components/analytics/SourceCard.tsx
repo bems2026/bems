@@ -19,7 +19,7 @@ export function SourceCard({ device, color, selected, onSelect }: { device: Devi
         <Stat label="W" value={reading?.power_w} digits={0} />
         <Stat label="kWh" value={reading?.energy_kwh_today} digits={2} />
       </div>
-      <Sparkline values={sparkValues} height={34} color={color} />
+      <Sparkline values={sparkValues} height={64} color={color} />
     </button>
   );
 }

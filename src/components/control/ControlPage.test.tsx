@@ -84,11 +84,13 @@ describe('ControlPage', () => {
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 
-  it('the IR command center sends a one-shot command, never a toggle, for the real ACU device', () => {
+  it('the IR command center sends a one-shot command, never a toggle, for the real ACU device — gated behind a confirmation', () => {
     vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack({ device_id: 'acu_main', target: 'AC_POWER' }));
     useDeviceStore.setState({ devices: [acu()] });
     render(<ControlPage />);
     fireEvent.click(screen.getByRole('button', { name: 'Send ON command' }));
+    expect(bridgeClient.sendCommand).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, send ON' }));
     expect(bridgeClient.sendCommand).toHaveBeenCalledWith(expect.objectContaining({ device_id: 'acu_main', action: 'on' }));
   });
 
@@ -110,6 +112,29 @@ describe('ControlPage', () => {
     render(<ControlPage />);
     expect(screen.getAllByText('No commands sent this session').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: 'Send OFF command' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, send OFF' }));
     await waitFor(() => expect(screen.getByText('IR')).toBeInTheDocument());
+  });
+
+  it('the outlet plan\'s DP1/DP2 puck toggles a single socket directly — ungated, like every other single-device control', () => {
+    vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack({ device_id: 'co1', socket: 1, action: 'on' }));
+    useDeviceStore.setState({
+      devices: [outlet(1)],
+      latestReadings: { co1: { device_id: 'co1', ts: new Date().toISOString(), online: true, state: 'off', socket_states: { 1: 'off', 2: 'off' } } },
+    });
+    render(<ControlPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Outlet 1 DP1' }));
+    expect(bridgeClient.sendCommand).toHaveBeenCalledWith(expect.objectContaining({ device_id: 'co1', socket: 1, action: 'on' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  it('"All outlets off" in the plan panel is gated and fans out to both sockets on every outlet', async () => {
+    vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack());
+    useDeviceStore.setState({ devices: [outlet(1), outlet(2)] });
+    render(<ControlPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'All outlets off' }));
+    expect(bridgeClient.sendCommand).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Turn outlets off' }));
+    await waitFor(() => expect(bridgeClient.sendCommand).toHaveBeenCalledTimes(4)); // 2 outlets x 2 sockets
   });
 });

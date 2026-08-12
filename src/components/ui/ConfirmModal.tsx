@@ -13,23 +13,56 @@ interface ConfirmModalProps {
 }
 
 /**
- * The one gate every hazardous, fleet-wide action passes through — Control's three master
- * buttons (Lights off / Outlets off / Send AC off), each of which fans out a real command
- * to every device of a class at once. A single accidental click here is a genuinely
- * different mistake from a single accidental click on one socket's toggle, so it gets a
- * confirmation step the per-device controls don't need.
+ * The gate every hazardous action passes through — Control's three fleet-wide masters,
+ * "All rows/outlets on/off", every ACU IR send, and Automation's "Write to Node-RED
+ * context" (Phase N §4). Not fleet-wide-only, despite this docblock once saying so: an IR
+ * send touches one device, but it's the one command with no readback path at all and it
+ * drives a compressor — that risk earns the same gate a 7-device fan-out gets.
+ *
+ * Real modal hygiene, not just show/hide: focus moves to the confirm button on open, Tab
+ * cycles inside the dialog rather than escaping to the page behind it, the page scroll
+ * locks while open, and focus returns to whatever triggered the modal once it closes —
+ * this component gates 6x the traffic it used to (see `useConfirm.ts`), so gaps here are
+ * no longer a single-button edge case.
  */
 export function ConfirmModal({ open, title, body, confirmLabel, tone = 'accent', onConfirm, onCancel }: ConfirmModalProps) {
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
+    restoreFocusRef.current = document.activeElement as HTMLElement | null;
     confirmRef.current?.focus();
+
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel();
+      if (e.key === 'Escape') {
+        onCancel();
+        return;
+      }
+      if (e.key !== 'Tab' || !dialogRef.current) return;
+      const focusable = dialogRef.current.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+      restoreFocusRef.current?.focus();
+    };
   }, [open, onCancel]);
 
   if (!open) return null;
@@ -37,6 +70,7 @@ export function ConfirmModal({ open, title, body, confirmLabel, tone = 'accent',
   return (
     <div className="confirm-modal-backdrop" onMouseDown={onCancel}>
       <div
+        ref={dialogRef}
         className="confirm-modal"
         role="alertdialog"
         aria-modal="true"

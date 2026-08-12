@@ -3,6 +3,8 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { useContextStore } from '@/stores/contextStore';
 import { hasSwitchableState } from '@/lib/deviceClass';
 import { pendingWrites } from '@/stores/contextStore';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { useConfirm } from '@/components/ui/useConfirm';
 import { ScheduleRow } from './ScheduleRow';
 import { DsmThresholdsCard } from './DsmThresholdsCard';
 import type { DeviceClass } from '@/lib/types';
@@ -34,6 +36,21 @@ export function AutomationPage() {
 
   const pending = pendingWrites(draft, saved);
   const pendingEntries = Object.entries(pending);
+  const { ask, modalProps } = useConfirm();
+
+  // Gated: this flushes every staged edit at once, including anything "Arm all" just
+  // staged across every schedulable device — one click here can be a lot more than the
+  // single field the user was last looking at.
+  const askSave = () =>
+    ask(
+      {
+        title: 'Write to Node-RED context?',
+        body: `This writes ${pendingEntries.length} pending key${pendingEntries.length === 1 ? '' : 's'} to the mock's Node-RED global context store — schedules, trigger setpoints, and DSM thresholds the schedule subflow will act on.`,
+        confirmLabel: 'Write context',
+        tone: 'blue',
+      },
+      () => void save(),
+    );
 
   const triggerValue = Number(draft[TRIGGER_KEY] ?? saved[TRIGGER_KEY] ?? 24);
 
@@ -52,7 +69,7 @@ export function AutomationPage() {
           <h1 className="page-title">DSM &amp; Schedule Management</h1>
           <p className="page-sub">Values write to Node-RED global context. The existing schedule subflow acts on them — no separate rule engine.</p>
         </div>
-        <button type="button" className="automation-write-btn" disabled={pendingEntries.length === 0 || saveStatus === 'saving'} onClick={() => void save()}>
+        <button type="button" className="automation-write-btn" disabled={pendingEntries.length === 0 || saveStatus === 'saving'} onClick={askSave}>
           {saveStatus === 'saving' ? 'Writing…' : 'Write to Node-RED context'}
         </button>
       </header>
@@ -138,6 +155,7 @@ export function AutomationPage() {
           </div>
         </div>
       </div>
+      <ConfirmModal {...modalProps} />
     </>
   );
 }

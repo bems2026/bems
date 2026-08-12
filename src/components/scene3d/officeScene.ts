@@ -12,11 +12,10 @@
  *      with no margin. A loop-based scene would be unverifiable in this environment;
  *      render-on-demand calls `render()` synchronously and is fully testable here.
  *
- * State binding is id-keyed throughout: `lightMeshesByCircuit`/`outletMeshesById` are Maps
- * keyed by device id, and `applyState()` looks up each mesh group by the id in the reading
- * — never by iterating meshes in build order. That's what makes it safe for
- * `/api/devices`'s order to change without a light silently taking on the wrong circuit's
- * state.
+ * State binding is id-keyed throughout: `circuitRigs`/`outletMeshesById` are Maps keyed by
+ * device id, and `applyState()` looks up each mesh group by the id in the reading — never
+ * by iterating meshes in build order. That's what makes it safe for `/api/devices`'s order
+ * to change without a light silently taking on the wrong circuit's state.
  *
  * Stage L2 rewrite — lit, not unlit. Phase H shipped an unlit scene (every material
  * `color:#000` + `emissive`, no light rig, `LineBasicMaterial` wireframe shell) because it
@@ -32,24 +31,32 @@
  */
 
 import * as THREE from 'three';
-import { LIGHT_FIXTURES, OUTLET_FIXTURES, FURNITURE, ROOM } from './geometry';
-import { lightMaterialState, outletSocketMaterialState, type MaterialState } from './materials';
+import { LIGHT_FIXTURES, LIGHT_ROWS, OUTLET_FIXTURES, FURNITURE, ROOM, type WallId } from './geometry';
+import { lightMaterialState, outletSocketMaterialState, isOn, type MaterialState } from './materials';
 import {
   buildFurniturePiece,
   makeFloorTexture,
+  makePoolTexture,
   wallMaterial,
   baseboardMaterial,
   glassFrameMaterial,
   doorGlassMaterial,
   windowGlassMaterial,
   windowFrameMaterial,
+  partitionGlassMaterial,
 } from './furniture';
-import { TOKENS } from './tokens';
+import { SCENE_PALETTE } from './tokens';
 import type { Reading } from '@/lib/types';
 
 export type PickResult = { kind: 'light'; circuit: string } | { kind: 'outlet'; id: string; socket: 1 | 2 } | null;
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+
+/** Candela, not the pre-r155 unitless scale — see `buildLightFixtures`'s comment. Tuned
+ * against the existing hemisphere(0.62)/key(0.95) rig, not derived from first principles. */
+const LAMP_ON = 10;
+const POOL_ON = 0.55;
+const ACU_GLOW_ON = 0.22;
 
 function applyMaterialState(mesh: THREE.Mesh, state: MaterialState) {
   const mat = mesh.material as THREE.MeshStandardMaterial;
@@ -66,12 +73,43 @@ function lightPanelMaterial(): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color: 0xf5f0e0, roughness: 0.5, emissive: 0x000000, emissiveIntensity: 0, transparent: true });
 }
 
-/** A small dark LED body — realistic for the indicator itself; the faceplate around it (a
- * separate, larger, static mesh) is what makes the outlet plausible as a fixture and gives
- * pointer/raycast a target bigger than a 12mm cylinder. */
-function ledMaterial(): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({ color: 0x1b2129, roughness: 0.4, emissive: 0x000000, emissiveIntensity: 0, transparent: true });
+/** A dark-plastic socket body — realistic for the indicator itself; the faceplate around it
+ * (a separate, larger, static mesh) is what makes the outlet plausible as a fixture and
+ * gives pointer/raycast a target bigger than the socket block alone. Renamed from the old
+ * `ledMaterial()` (Phase N: the indicator grew from a 12mm LED disc to a 0.16m emissive
+ * block, v4's own outlet size) — "socket", not "LED", is what it now reads as. */
+function socketMaterial(): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({ color: SCENE_PALETTE.outletSocketBase, roughness: 0.4, emissive: 0x000000, emissiveIntensity: 0, transparent: true });
 }
+
+/**
+ * A wall the shell can set an opening into. `axis` is the axis the wall RUNS ALONG; `at` is
+ * its fixed coordinate on the other axis; `inward` is +1/-1 on that other axis, pointing
+ * into the room the opening should face. `inward` is explicit rather than derived from
+ * `sign(at)` because the partition is interior — both of its faces are "inside", and only
+ * the caller knows which room a given opening actually serves.
+ */
+interface WallPlane {
+  axis: 'x' | 'z';
+  at: number;
+  inward: 1 | -1;
+}
+
+const WALLS = {
+  north: { axis: 'x', at: ROOM.minZ, inward: 1 },
+  south: { axis: 'x', at: ROOM.maxZ, inward: -1 },
+  west: { axis: 'z', at: ROOM.minX, inward: 1 },
+  east: { axis: 'z', at: ROOM.maxX, inward: -1 },
+  /** Faces the main room (south of the partition) — the side the door/windows serve. */
+  partition: { axis: 'x', at: ROOM.partitionZ, inward: 1 },
+} as const satisfies Record<string, WallPlane>;
+
+/** Half-thickness of the surface an outlet is mounted on — outer walls are 0.12m boxes
+ * centred on their coordinate (half 0.06), the partition's knee wall is a thinner 0.06m
+ * box (half 0.03). Without this, an outlet built at a flat `normal * 0.02` offset sits
+ * INSIDE the wall solid rather than proud of its face — half of why outlets read as
+ * invisible before Phase N, not just a size problem. */
+const OUTLET_WALL_HALF: Record<WallId, number> = { left: 0.06, right: 0.06, top: 0.06, bottom: 0.06, partition: 0.03 };
 
 export class OfficeScene {
   private scene = new THREE.Scene();
@@ -80,9 +118,19 @@ export class OfficeScene {
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2();
 
-  private lightMeshesByCircuit = new Map<string, THREE.Mesh[]>();
+  /**
+   * Everything one lighting circuit owns. Replaces the pre-Phase-N `Map<string, Mesh[]>` of
+   * panels alone: "circuit on" now also has to reach a floor light-pool and a room-filling
+   * point light, and three parallel Maps keyed by the same circuit id is exactly the drift
+   * the id-keyed design (see this file's header) exists to prevent.
+   */
+  private circuitRigs = new Map<string, { panels: THREE.Mesh[]; poolMat: THREE.MeshBasicMaterial; lamp: THREE.PointLight }>();
   private outletMeshesById = new Map<string, { s1: THREE.Mesh; s2: THREE.Mesh }>();
   private pickables: THREE.Object3D[] = [];
+  /** Captured from the FURNITURE-built ACU group (see `buildFurniture`) — `applyState`
+   * drives its opacity from the real `acu_main` reading. `null` until `buildFurniture` runs. */
+  private acuGlowMat: THREE.MeshBasicMaterial | null = null;
+  private poolTex: THREE.CanvasTexture | null = null;
 
   /** Fixtures currently "on" and their steady (non-pulsing) emissive intensity — populated
    * by `applyState()`, read by the auto-rotate loop's pulse. Kept as a live set rather
@@ -165,11 +213,11 @@ export class OfficeScene {
   }
 
   /**
-   * Solid textured floor, solid walls with baseboards, the half-height partition (with a
-   * real doorway gap — see below), 2 windows, and a sliding glass entrance. The window/door
-   * glasswork is ported from v4's care-office-3d.js shell, sized to CARE's actual room
-   * (6.0m x 10.6m) rather than that file's 9.0m x 6.6m reference room — same caveat as
-   * `geometry.ts`'s `FURNITURE` table: plausible placement, not a surveyed door/window
+   * Solid textured floor, solid walls with baseboards, a west-wall pair of windows, and a
+   * glazed partition carrying the room's real entrance (see `addGlazedPartition`). The
+   * window/door glasswork is ported from v4's care-office-3d.js shell, sized to CARE's
+   * actual room (6.0m x 10.6m) rather than that file's 9.0m x 6.6m reference room — same
+   * caveat as `geometry.ts`'s `FURNITURE` table: plausible placement, not a surveyed
    * position, since nothing in the live flow records where CARE's actual openings are.
    */
   private buildShell() {
@@ -196,89 +244,183 @@ export class OfficeScene {
       this.scene.add(base);
     };
 
-    // North wall (z = minZ) is the utility/lobby compartment's own exterior wall — the
-    // real detail circuit L7 lights (see geometry.ts's FURNITURE docblock). Its 2 windows
-    // sit here rather than on the main room, since a lobby/hallway is exactly where a
-    // window near the building's edge plausibly belongs.
+    // North/south short walls are now plain — the room's real entrance and its windows
+    // both moved onto the partition and the west wall (below), which is where the plan's
+    // own interior line and the CARE office's actual long-wall glazing belong.
     addWall(ROOM.width + T, T, 0, ROOM.minZ);
-    this.addWindow(-1.6, ROOM.minZ, H);
-    this.addWindow(1.4, ROOM.minZ, H);
-
-    // South wall (z = maxZ) is the main room's far wall, opposite the partition — a
-    // sliding glass entrance sits centered on it.
     addWall(ROOM.width + T, T, 0, ROOM.maxZ);
-    this.addSlidingDoor(ROOM.maxZ, H);
 
+    // West long wall carries the 2 windows — east is the ACU's wall (see FURNITURE's
+    // docblock for why), so west is the only long wall left for them. z=2.6/0.4 sit both
+    // in the main room, north of the rect meeting table (z=4.2) and south of the
+    // partition, sills clear of every west-wall desktop (y 0.47) and of co1/co4 (y 0.35).
     addWall(T, ROOM.depth + T, ROOM.minX, 0);
+    this.addWindow(WALLS.west, 2.6, H);
+    this.addWindow(WALLS.west, 0.4, H);
+
     addWall(T, ROOM.depth + T, ROOM.maxX, 0);
 
-    // Half-height partition — explains the room's two compartments (and why circuit l7
-    // lights a smaller, separate area from l1..l6) — split into two segments with a real
-    // gap between them, a walkway from the main room into the lobby it's paired with.
-    const partitionH = H * 0.5;
-    const gap = 1.6;
-    const segW = (ROOM.width - gap) / 2;
-    const addPartitionSeg = (x: number, w: number) => {
-      const seg = new THREE.Mesh(new THREE.BoxGeometry(w, partitionH, 0.06), wallMat);
-      seg.position.set(x, partitionH / 2, ROOM.partitionZ);
-      seg.receiveShadow = true;
-      seg.castShadow = true;
-      this.scene.add(seg);
-    };
-    addPartitionSeg(-(gap / 2 + segW / 2), segW);
-    addPartitionSeg(gap / 2 + segW / 2, segW);
+    // The partition is the room's real entrance now — a full-height glazed office
+    // partition with a 2-leaf sliding glass door filling its 1.6m centre gap. See
+    // `addGlazedPartition`'s own docblock for why (co5/co6, and keeping l7 visible).
+    this.addGlazedPartition(H, wallMat);
   }
 
-  /** A window: glass pane + surrounding frame, set into a wall at world x, on the wall
-   * running along z = wallZ. Proportioned off the real ceiling height H, not a fixed size. */
-  private addWindow(x: number, wallZ: number, h: number) {
+  /**
+   * A wall-local placement frame: an empty `Group` at `along` metres along `plane`, whose
+   * local +X runs along the wall, +Y is up, and +Z points into the room `plane.inward`
+   * names. Every opening below is authored in that local frame, so the same geometry code
+   * serves a wall running along x (north/south/partition) and one running along z
+   * (east/west) without a `sign(wallZ)`-style special case — which couldn't express the
+   * partition anyway, since both of its faces are "inside".
+   */
+  private wallGroup(plane: WallPlane, along: number): THREE.Group {
+    const g = new THREE.Group();
+    if (plane.axis === 'x') {
+      g.position.set(along, 0, plane.at);
+      g.rotation.y = plane.inward > 0 ? 0 : Math.PI;
+    } else {
+      g.position.set(plane.at, 0, along);
+      g.rotation.y = plane.inward > 0 ? Math.PI / 2 : -Math.PI / 2;
+    }
+    this.scene.add(g);
+    return g;
+  }
+
+  /** A window: glass pane + surrounding frame, set into `plane` at `along` metres along it.
+   * Frame depth 0.16 is deliberately deeper than the wall's own 0.12 thickness — at the
+   * old flat 0.07 the entire frame sat inside the wall solid and was invisible from both
+   * faces, a real defect fixed here, not a sizing choice. */
+  private addWindow(plane: WallPlane, along: number, h: number, w = 1.6) {
+    const g = this.wallGroup(plane, along);
     const y = h * 0.62;
-    const glass = new THREE.Mesh(new THREE.BoxGeometry(1.6, h * 0.26, 0.05), windowGlassMaterial());
-    glass.position.set(x, y, wallZ);
-    this.scene.add(glass);
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(1.7, h * 0.3, 0.07), windowFrameMaterial());
-    frame.position.set(x, y, wallZ);
-    this.scene.add(frame);
-    glass.position.z += wallZ < 0 ? -0.01 : 0.01; // sit just proud of the frame, on the outward face
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(w + 0.1, h * 0.3, 0.16), windowFrameMaterial());
+    frame.position.set(0, y, 0);
+    frame.castShadow = true;
+    g.add(frame);
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(w, h * 0.26, 0.1), windowGlassMaterial());
+    glass.position.set(0, y, 0);
+    g.add(glass);
   }
 
-  /** A 2-leaf sliding glass entrance, centered at world x=0 on the wall running along z = wallZ. */
-  private addSlidingDoor(wallZ: number, h: number) {
+  /** A 2-leaf sliding glass door centred on `plane` at `along`, filling an opening `w`
+   * wide and running the full wall height. `w` is a parameter (was a hardcoded 2.0)
+   * because the door now fills the glazed partition's own gap exactly — the jambs must
+   * land on the panel edges, not float inside them. */
+  private addSlidingDoor(plane: WallPlane, along: number, h: number, w: number) {
+    const g = this.wallGroup(plane, along);
     const frameMat = glassFrameMaterial();
-    const dOpen = 2.0;
-    const sign = wallZ < 0 ? -1 : 1;
 
-    const head = new THREE.Mesh(new THREE.BoxGeometry(dOpen + 0.14, 0.1, 0.14), frameMat);
-    head.position.set(0, h - 0.05, wallZ);
-    this.scene.add(head);
-    [-dOpen / 2, dOpen / 2].forEach((jx) => {
-      const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.14, h, 0.08), frameMat);
-      jamb.position.set(jx, h / 2, wallZ);
-      this.scene.add(jamb);
-    });
+    const head = new THREE.Mesh(new THREE.BoxGeometry(w + 0.14, 0.1, 0.14), frameMat);
+    head.position.set(0, h - 0.05, 0);
+    g.add(head);
+    for (const jx of [-w / 2, w / 2]) {
+      const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.14, h, 0.14), frameMat);
+      jamb.position.set(jx, h / 2, 0);
+      jamb.castShadow = true;
+      g.add(jamb);
+    }
 
-    [-dOpen * 0.24, dOpen * 0.24].forEach((leafX) => {
-      const leafH = h * 0.82;
-      const leafW = dOpen * 0.48;
-      const glass = new THREE.Mesh(new THREE.BoxGeometry(leafW, leafH, 0.04), doorGlassMaterial());
-      glass.position.set(leafX, leafH / 2 + 0.06, wallZ + sign * 0.02);
+    const leafH = h - 0.16;
+    const leafW = w * 0.48;
+    for (const lx of [-w * 0.24, w * 0.24]) {
+      const leaf = new THREE.Mesh(new THREE.BoxGeometry(leafW, leafH, 0.04), doorGlassMaterial());
+      leaf.position.set(lx, 0.06 + leafH / 2, 0.02);
+      g.add(leaf);
+    }
+  }
+
+  /**
+   * The partition is now the room's real entrance: a full-height glazed office partition —
+   * a solid knee wall to 0.9m, glass from there to the ceiling — in two panels flanking a
+   * 1.6m centre gap that a 2-leaf sliding glass door fills. The knee-wall height is NOT
+   * cosmetic: `co5` (x=-1.9) and `co6` (x=+1.5) are mounted ON this partition at y=0.35, so
+   * the bottom 0.9m has to stay solid material for them to sit on — both x's verified
+   * inside the panels ([-3.0,-0.8] and [0.8,3.0], `geometry.test.ts`'s door-gap-clearance
+   * test) and clear of the door gap. No mid-mullions and glass at opacity 0.18 (see
+   * `partitionGlassMaterial`'s own docblock) — the partition is full height now, so this
+   * pane is the ONLY sightline left into the compartment circuit l7 alone lights.
+   */
+  private addGlazedPartition(h: number, wallMat: THREE.Material) {
+    const GAP = 1.6;
+    const BASE_H = 0.9;
+    const T = 0.06;
+    const segW = (ROOM.width - GAP) / 2; // 2.2
+    const z = ROOM.partitionZ;
+    const glassMat = partitionGlassMaterial();
+    const frameMat = glassFrameMaterial();
+    const glassH = h - BASE_H - 0.08;
+
+    for (const cx of [-(GAP / 2 + segW / 2), GAP / 2 + segW / 2]) {
+      // -1.9 / +1.9
+      const knee = new THREE.Mesh(new THREE.BoxGeometry(segW, BASE_H, T), wallMat);
+      knee.position.set(cx, BASE_H / 2, z);
+      knee.receiveShadow = true;
+      knee.castShadow = true;
+      this.scene.add(knee);
+
+      const glass = new THREE.Mesh(new THREE.BoxGeometry(segW - 0.06, glassH, 0.02), glassMat);
+      glass.position.set(cx, BASE_H + 0.04 + glassH / 2, z);
       this.scene.add(glass);
-    });
+
+      // Transom rail capping the knee wall + head rail at the ceiling.
+      for (const ry of [BASE_H + 0.02, h - 0.03]) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(segW, 0.06, 0.09), frameMat);
+        rail.position.set(cx, ry, z);
+        this.scene.add(rail);
+      }
+    }
+    this.addSlidingDoor(WALLS.partition, 0, h, GAP);
   }
 
   /**
    * Placement here is plausible, not surveyed — see `geometry.ts`'s `FURNITURE` docblock
    * for what's real (the outlet-anchored positions, the ACU wall, the partition zoning)
-   * versus filled in. Furniture is static: nothing here is id-keyed to a device reading.
+   * versus filled in. Furniture is static and NOT id-keyed to a device reading — except the
+   * indoor ACU's glow volume, whose material this loop captures by name so `applyState` can
+   * drive its opacity from the real `acu_main` reading (see `furniture.ts`'s `makeACU`).
    */
   private buildFurniture() {
-    for (const spec of FURNITURE) this.scene.add(buildFurniturePiece(spec));
+    for (const spec of FURNITURE) {
+      const group = buildFurniturePiece(spec);
+      if (spec.kind === 'acu') {
+        const glow = group.getObjectByName('acuGlow') as THREE.Mesh | undefined;
+        if (glow) this.acuGlowMat = glow.material as THREE.MeshBasicMaterial;
+      }
+      this.scene.add(group);
+    }
   }
 
+  /**
+   * Builds the 21 ceiling fixtures, 7 floor light-pools (one shared material per circuit —
+   * the 3 fixtures on one circuit are always in lockstep, so fading them is a single
+   * property write, not 3), and 7 per-row point lights. This is what makes a lit circuit
+   * actually light the room: before Phase N, `applyState` only ever changed a panel's own
+   * emissive glow, so the scene rendered identically whether 0 or 21 circuits were on.
+   */
   private buildLightFixtures() {
     const housingGeo = new THREE.BoxGeometry(0.32, 0.06, 0.32);
     const panelGeo = new THREE.BoxGeometry(0.26, 0.02, 0.26);
     const housingMat = new THREE.MeshStandardMaterial({ color: 0xd8dce2, roughness: 0.6 });
+    const poolGeo = new THREE.PlaneGeometry(2.4, 2.4);
+    this.poolTex = makePoolTexture();
+
+    for (const row of LIGHT_ROWS) {
+      const poolMat = new THREE.MeshBasicMaterial({
+        map: this.poolTex,
+        color: SCENE_PALETTE.lightPool,
+        transparent: true,
+        opacity: 0, // "unknown" starts dark — same rule every fixture follows
+        depthWrite: false, // coplanar pools must not fight each other
+        blending: THREE.AdditiveBlending, // a light pool adds light, it doesn't paint over the floor
+        toneMapped: false,
+      });
+      const lamp = new THREE.PointLight(SCENE_PALETTE.lampWhite, 0, 9, 2);
+      lamp.position.set(row.world.x, row.world.y, row.world.z);
+      lamp.castShadow = false; // 7 shadow-casting point lights = 42 cube-face passes/frame — this kiosk scene can't afford it and doesn't need it
+      this.scene.add(lamp);
+      this.circuitRigs.set(row.circuit, { panels: [], poolMat, lamp });
+    }
 
     for (const fixture of LIGHT_FIXTURES) {
       const group = new THREE.Group();
@@ -295,48 +437,63 @@ export class OfficeScene {
       this.scene.add(group);
       this.pickables.push(housing, panel);
 
-      const list = this.lightMeshesByCircuit.get(fixture.circuit) ?? [];
-      list.push(panel);
-      this.lightMeshesByCircuit.set(fixture.circuit, list);
+      const rig = this.circuitRigs.get(fixture.circuit)!;
+      rig.panels.push(panel);
+
+      const pool = new THREE.Mesh(poolGeo, rig.poolMat);
+      pool.rotation.x = -Math.PI / 2;
+      pool.position.set(fixture.world.x, 0.02, fixture.world.z); // floor top is y=0
+      this.scene.add(pool);
+      // NOT pushed to `pickables` — a 2.4m invisible plane over the floor would swallow
+      // every click meant for the furniture under it.
     }
   }
 
   /**
-   * Each socket is its own small faceplate + LED, positioned exactly where Phase H's bare
-   * indicator boxes were (unchanged tangent-offset math) — only the geometry each position
-   * holds is upgraded, so the id-keyed Map and pick positions don't change shape.
+   * Each socket is its own faceplate + emissive block, at the same tangent-offset anchor
+   * Phase H's bare indicator boxes used — only the geometry, size, and wall standoff are
+   * upgraded (Phase N), so the id-keyed Map and pick positions don't change shape.
+   *
+   * The standoff is the real fix, not just the size: the old flat `normal * 0.02` offset
+   * built the whole assembly INSIDE the wall's 0.12m-thick box (only visible at all
+   * because the wall material is 96% opaque). `OUTLET_WALL_HALF[wall] + DEPTH/2` instead
+   * clears the actual surface each mount type sits on — 0.06 for an outer wall, 0.03 for
+   * the partition's thinner knee wall (co5/co6).
    */
   private buildOutletFixtures() {
-    const faceplateGeo = new THREE.BoxGeometry(0.1, 0.14, 0.02);
-    const faceplateMat = new THREE.MeshStandardMaterial({ color: 0xdee3eb, roughness: 0.4 });
-    const ledGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.012, 10);
-    const OFFSET = 0.06;
+    const PLATE = 0.2;
+    const BLOCK = 0.16;
+    const DEPTH = 0.06;
+    const OFFSET = 0.11; // socket spread — two 0.16-wide blocks at the old 0.06 would overlap
+    const plateGeo = new THREE.BoxGeometry(PLATE, PLATE, 0.02);
+    const blockGeo = new THREE.BoxGeometry(BLOCK, BLOCK, DEPTH);
+    const plateMat = new THREE.MeshStandardMaterial({ color: SCENE_PALETTE.outletFaceplate, roughness: 0.4 });
 
     for (const fixture of OUTLET_FIXTURES) {
-      const { tangent, normal } = fixture.mount;
+      const { tangent, normal, wall } = fixture.mount;
       const faceAngle = Math.atan2(normal.x, normal.z);
+      const standoff = OUTLET_WALL_HALF[wall] + DEPTH / 2;
 
       const build = (socket: 1 | 2, sign: 1 | -1): THREE.Mesh => {
         const group = new THREE.Group();
-        const faceplate = new THREE.Mesh(faceplateGeo, faceplateMat);
-        faceplate.castShadow = true;
-        group.add(faceplate);
-        const led = new THREE.Mesh(ledGeo, ledMaterial());
-        led.rotation.x = Math.PI / 2;
-        led.position.z = 0.014;
-        group.add(led);
+        const plate = new THREE.Mesh(plateGeo, plateMat);
+        plate.position.z = -0.02;
+        plate.castShadow = true;
+        group.add(plate);
+        const block = new THREE.Mesh(blockGeo, socketMaterial());
+        group.add(block);
         group.rotation.y = faceAngle;
         group.position.set(
-          fixture.world.x + tangent.x * OFFSET * sign + normal.x * 0.02,
+          fixture.world.x + tangent.x * OFFSET * sign + normal.x * standoff,
           fixture.world.y,
-          fixture.world.z + tangent.z * OFFSET * sign + normal.z * 0.02,
+          fixture.world.z + tangent.z * OFFSET * sign + normal.z * standoff,
         );
         const data = { kind: 'outlet' as const, id: fixture.id, socket };
-        faceplate.userData = data;
-        led.userData = data;
+        plate.userData = data;
+        block.userData = data;
         this.scene.add(group);
-        this.pickables.push(faceplate, led);
-        return led;
+        this.pickables.push(plate, block);
+        return block; // s1/s2 are the emissive block, not the static plate
       };
 
       this.outletMeshesById.set(fixture.id, { s1: build(1, -1), s2: build(2, 1) });
@@ -354,12 +511,23 @@ export class OfficeScene {
    * `lightMaterialState(undefined)` path a genuinely offline device takes.
    */
   applyState(readings: Record<string, Reading>) {
-    for (const [circuit, meshes] of this.lightMeshesByCircuit) {
+    for (const [circuit, rig] of this.circuitRigs) {
       const state = lightMaterialState(readings[circuit]);
-      for (const mesh of meshes) {
-        applyMaterialState(mesh, state);
-        this.trackOnState(mesh, state);
+      const on = isOn(state);
+      for (const panel of rig.panels) {
+        applyMaterialState(panel, state);
+        this.trackOnState(panel, state);
       }
+      // The room's actual response to the circuit. Driven by the same `state`, but
+      // deliberately NOT registered with `trackOnState()`: that set feeds the auto-rotate
+      // pulse, which writes `emissiveIntensity` — a property a MeshBasicMaterial pool
+      // doesn't have and a PointLight isn't. Only the panels breathe; a pulsing room light
+      // would read as a fault, not ambience.
+      rig.poolMat.opacity = on ? POOL_ON : 0;
+      // NB: never `lamp.visible = on` — changing a scene's light COUNT invalidates every
+      // MeshStandardMaterial's shader program, so a 2s reading tick would recompile the
+      // whole scene. Intensity 0 is free.
+      rig.lamp.intensity = on ? LAMP_ON : 0;
     }
     for (const [id, sockets] of this.outletMeshesById) {
       const reading = readings[id];
@@ -370,14 +538,19 @@ export class OfficeScene {
       this.trackOnState(sockets.s1, s1);
       this.trackOnState(sockets.s2, s2);
     }
+    // The ACU has no emissive channel of its own — its only state expression is the
+    // cold-air glow volume. `lightMaterialState` is reused rather than a fourth on/stale/off
+    // mapping: "fresh and commanded on" is exactly the same rule, applied to a different
+    // device class.
+    if (this.acuGlowMat) this.acuGlowMat.opacity = isOn(lightMaterialState(readings['acu_main'])) ? ACU_GLOW_ON : 0;
     this.render();
   }
 
-  /** `state.color === TOKENS.accent` is materials.ts's own "on" signal for both a lit
-   * circuit and a live socket — reused here rather than re-deriving "on-ness" from the
-   * reading a second time. Feeds the auto-rotate loop's device-pin pulse. */
+  /** `isOn(state)` is materials.ts's own "on" signal for a lit circuit or a live socket —
+   * reused here rather than re-deriving "on-ness" from the reading a second time. Feeds the
+   * auto-rotate loop's device-pin pulse. */
   private trackOnState(mesh: THREE.Mesh, state: MaterialState) {
-    if (state.color === TOKENS.accent) {
+    if (isOn(state)) {
       this.onMeshes.add(mesh);
       this.baseIntensity.set(mesh, state.emissiveIntensity);
     } else {
@@ -532,20 +705,26 @@ export class OfficeScene {
 
   get debugInfo() {
     return {
-      lightCircuits: [...this.lightMeshesByCircuit.keys()],
-      lightMeshCount: [...this.lightMeshesByCircuit.values()].reduce((n, arr) => n + arr.length, 0),
+      lightCircuits: [...this.circuitRigs.keys()],
+      lightMeshCount: [...this.circuitRigs.values()].reduce((n, rig) => n + rig.panels.length, 0),
       outletIds: [...this.outletMeshesById.keys()],
       outletMeshCount: this.outletMeshesById.size * 2,
       radius: this.radius,
       fitted: this.fitted,
       autoRotating: this.isAutoRotating,
       onCount: this.onMeshes.size,
+      /** One per circuit (7), not one per fixture (21) — see `buildLightFixtures`. */
+      pointLightCount: this.circuitRigs.size,
+      /** How many circuits are actually lighting the room right now — the only way to
+       * assert §1.3's "lit circuits change the room" from a headless browser pane without
+       * pixels (see this file's header on why there's no requestAnimationFrame here). */
+      lampsOn: [...this.circuitRigs.values()].filter((rig) => rig.lamp.intensity > 0).length,
     };
   }
 
   /** Reads back a light circuit's current emissive color as a hex string. */
   lightColorHex(circuit: string): string | null {
-    const mesh = this.lightMeshesByCircuit.get(circuit)?.[0];
+    const mesh = this.circuitRigs.get(circuit)?.panels[0];
     if (!mesh) return null;
     return '#' + (mesh.material as THREE.MeshStandardMaterial).emissive.getHexString();
   }
@@ -562,6 +741,7 @@ export class OfficeScene {
     this.disposed = true;
     if (this.autoRotateId !== null) cancelAnimationFrame(this.autoRotateId);
     this.autoRotateId = null;
+    this.poolTex?.dispose(); // Material.dispose() does not dispose its own .map
     this.scene.traverse((obj) => {
       const mesh = obj as THREE.Mesh | THREE.LineSegments;
       mesh.geometry?.dispose();

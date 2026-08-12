@@ -2,6 +2,8 @@ import { useMemo } from 'react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
 import { controlView } from '@/lib/socketView';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { useConfirm } from '@/components/ui/useConfirm';
 import { useControlLog } from './controlLog';
 import type { Device } from '@/lib/types';
 
@@ -29,6 +31,7 @@ export function LightingMatrixCard() {
   const log = useControlLog((s) => s.log);
   const pendingMap = useCommandStore((s) => s.pending);
   const readings = useDeviceStore((s) => s.latestReadings);
+  const { ask, modalProps } = useConfirm();
 
   const allOn = () => {
     for (const d of lights) {
@@ -42,6 +45,13 @@ export function LightingMatrixCard() {
       log('RELAY', `${d.display_name} → off`);
     }
   };
+  const askAllOn = () =>
+    ask({ title: 'Turn all lighting on?', body: `This sends an on command to all ${lights.length} lighting circuits (L1-L7) at once.`, confirmLabel: 'Turn lights on', tone: 'accent' }, allOn);
+  const askAllOff = () =>
+    ask(
+      { title: 'Turn all lighting off?', body: `This sends an off command to all ${lights.length} lighting circuits (L1-L7) at once. Anyone working under them right now loses light immediately.`, confirmLabel: 'Turn lights off', tone: 'accent' },
+      allOff,
+    );
 
   return (
     <div className="control-plan-panel">
@@ -89,13 +99,14 @@ export function LightingMatrixCard() {
         })}
       </div>
       <div className="control-plan-panel__actions">
-        <button type="button" className="control-plan-btn" onClick={allOn}>
+        <button type="button" className="control-plan-btn" onClick={askAllOn}>
           All rows on
         </button>
-        <button type="button" className="control-plan-btn control-plan-btn--accent" onClick={allOff}>
+        <button type="button" className="control-plan-btn control-plan-btn--accent" onClick={askAllOff}>
           All rows off
         </button>
       </div>
+      <ConfirmModal {...modalProps} />
     </div>
   );
 }

@@ -1,16 +1,21 @@
 import type { ReactNode } from 'react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { isReadingStale } from '@/lib/staleness';
+import { LIGHT_PLAN } from '@/components/scene3d/geometry';
 import type { Reading } from '@/lib/types';
 
 /**
  * Read-only 2D floor plan. Geometry ported from the live Node-RED dashboard's two
  * `ui_template` nodes — `Lighting Floor Plan` (id `8a84d5fec547c73f`) and `Outlet Floor
- * Plan (Status Only)` (id `a8e6460facb3860c`) — same 320×550 viewBox, same fixed
- * coordinates, rewritten from AngularJS `ng-repeat` + `sessionStorage` caching to React
- * reading `deviceStore` directly. Retiring that per-tab `sessionStorage` cache (every
- * browser tab drifting out of sync until the next full broadcast) is a named goal of the
- * architecture doc — this component is that fix, not a cosmetic port.
+ * Plan (Status Only)` (id `a8e6460facb3860c`) — same 320×550 viewBox, rewritten from
+ * AngularJS `ng-repeat` + `sessionStorage` caching to React reading `deviceStore` directly.
+ * Retiring that per-tab `sessionStorage` cache (every browser tab drifting out of sync
+ * until the next full broadcast) is a named goal of the architecture doc — this component
+ * is that fix, not a cosmetic port.
+ *
+ * The lighting grid's row/col math lives in `scene3d/geometry.ts`'s `LIGHT_PLAN` — shared
+ * with the 3D scene's `LIGHT_FIXTURES` so the two views can't drift apart the way they did
+ * when each carried its own copy of the formula.
  *
  * `LIGHT_LAYOUT`/`OUTLET_LAYOUT` are keyed by device id (`l1..l7`, `co1..co7`), and every
  * lookup below reads `readings[id]` — never `readings[index]` or an array position. The
@@ -67,6 +72,7 @@ function PlanFrame({ title, children }: { title: string; children: ReactNode }) 
 }
 
 function LightingPlan({ readings }: { readings: Record<string, Reading> }) {
+  const S = LIGHT_PLAN.MARKER;
   return (
     <PlanFrame title="Lighting (L1–L7)">
       {LIGHT_LAYOUT.map(({ id, row }) => {
@@ -74,16 +80,16 @@ function LightingPlan({ readings }: { readings: Record<string, Reading> }) {
         const stale = isReadingStale(reading);
         const on = reading?.state === 'on';
         const fill = stale ? 'var(--muted-2)' : on ? 'var(--accent)' : 'var(--bg-surface-2)';
-        const y = 480 - (row - 1) * 65;
+        const rectY = LIGHT_PLAN.rowPy(row) - S / 2;
         return (
           <g key={id}>
-            {[0, 1, 2].map((col) => (
+            {LIGHT_PLAN.COLS.map((col) => (
               <rect
                 key={col}
-                x={50 + col * 100}
-                y={y}
-                width={18}
-                height={18}
+                x={LIGHT_PLAN.colPx(col) - S / 2}
+                y={rectY}
+                width={S}
+                height={S}
                 rx={2}
                 fill={fill}
                 stroke="var(--border-strong)"
@@ -91,7 +97,7 @@ function LightingPlan({ readings }: { readings: Record<string, Reading> }) {
                 className={on && !stale ? 'floorplan-pin--on' : undefined}
               />
             ))}
-            <text x={285} y={y + 14} fill="var(--muted)" fontSize={12} fontWeight={700}>
+            <text x={285} y={rectY + S - 4} fill="var(--muted)" fontSize={12} fontWeight={700}>
               L{row}
             </text>
           </g>

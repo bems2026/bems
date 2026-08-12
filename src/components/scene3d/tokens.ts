@@ -73,6 +73,18 @@ export const SCENE_PALETTE = {
   plantStem: 0x2f6b3a,
   outletFaceplate: 0xdee3eb,
   outletSocketFace: 0xcbd2db,
+  /** Base color of an "off" outlet socket block — dark plastic, not a hole. Lifted from the
+   * old LED disc's 0x1b2129 (near-black) as part of Phase N's enlarged, standoff-corrected
+   * outlets — see officeScene.ts's `socketMaterial()`. */
+  outletSocketBase: 0x2a323d,
   ledOn: 0x27c79a,
   padConcrete: 0x9aa0a8,
+  // Phase N — lit-room realism and the glazed partition (officeScene.ts §1.2/§1.3).
+  /** Warm floor light-pool under a lit luminaire — unlit MeshBasicMaterial, additive. */
+  lightPool: 0xffe3b0,
+  /** The per-row PointLight's own color. */
+  lampWhite: 0xfff1d6,
+  /** Office-partition glazing — clearer than the window/door glass, since the partition is
+   * now full height and this pane is the only remaining sightline into the compartment. */
+  partitionGlass: 0xcfe6f2,
 } as const;

@@ -28,7 +28,6 @@ const workbenchBack = new THREE.MeshStandardMaterial({ color: P.workbenchBack, r
 const acuBody = new THREE.MeshStandardMaterial({ color: P.acuBody, roughness: 0.4 });
 const acuLouver = new THREE.MeshStandardMaterial({ color: P.acuLouver, roughness: 0.5 });
 const acuDisplay = new THREE.MeshStandardMaterial({ color: 0x101a2c, emissive: P.acuDisplay, emissiveIntensity: 0.6 });
-const acuGlow = new THREE.MeshBasicMaterial({ color: P.acuGlow, transparent: true, opacity: 0.16 });
 const dispenserBody = new THREE.MeshStandardMaterial({ color: P.dispenserBody, roughness: 0.5 });
 const dispenserTray = new THREE.MeshStandardMaterial({ color: P.dispenserTray, roughness: 0.6 });
 const dispenserBottle = new THREE.MeshStandardMaterial({ color: 0x5fb6e6, transparent: true, opacity: 0.6, roughness: 0.1 });
@@ -151,6 +150,14 @@ function makeCabinet(): THREE.Group {
   return g;
 }
 
+/** The indoor ACU's cold-air glow volume. A factory, not a shared module-scope material
+ * (as it was before Phase N), because `officeScene.ts`'s `applyState` now drives its
+ * opacity from the real `acu_main` reading — mutating a module-scope singleton would
+ * couple every future ACU instance to one device's state. Starts at `opacity: 0`
+ * (was a static 0.16): the glow must be off until a fresh "on" reading arrives, same
+ * "unknown ≠ on" rule the rest of the scene follows. */
+export const acuGlowMaterial = () => new THREE.MeshBasicMaterial({ color: P.acuGlow, transparent: true, opacity: 0 });
+
 /**
  * The room's own east wall being ACU-adjacent is a real detail — `shared/registry.mjs`
  * describes `mtr_lo_yellow` as "Outdoor ACU (separate unit, right side outside the room)".
@@ -163,7 +170,8 @@ function makeACU(outdoor = false): THREE.Group {
   mk(g, new THREE.BoxGeometry(0.06, 0.05, 1.04), acuLouver, -0.12, -0.15, 0);
   if (!outdoor) {
     mk(g, new THREE.BoxGeometry(0.04, 0.1, 0.24), acuDisplay, -0.13, 0.08, 0.38);
-    const glow = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.6, 1.0), acuGlow);
+    const glow = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.6, 1.0), acuGlowMaterial());
+    glow.name = 'acuGlow'; // officeScene.ts's buildFurniture() finds this to capture the material
     glow.position.set(-0.42, -0.3, 0);
     g.add(glow);
   }
@@ -228,11 +236,12 @@ const FACTORIES: Record<FurnitureKind, (spec: FurnitureSpec) => THREE.Group> = {
   'acu-outdoor': makeOutdoorPad,
 };
 
-/** Builds and positions one furniture piece from a `FURNITURE` table entry. */
+/** Builds and positions one furniture piece from a `FURNITURE` table entry. `spec.y`
+ * defaults to 0 (floor-standing) — only the wall-mounted indoor ACU sets it. */
 export function buildFurniturePiece(spec: FurnitureSpec): THREE.Group {
   const group = FACTORIES[spec.kind](spec);
   group.rotation.y = spec.ry;
-  group.position.set(spec.x, 0, spec.z);
+  group.position.set(spec.x, spec.y ?? 0, spec.z);
   group.userData = { kind: 'furniture', furnitureKind: spec.kind };
   return group;
 }
@@ -280,3 +289,46 @@ export const doorGlassMaterial = () =>
 export const windowGlassMaterial = () =>
   new THREE.MeshStandardMaterial({ color: P.windowGlass, transparent: true, opacity: 0.4, roughness: 0.08, metalness: 0.25, emissive: 0x3a6e8c, emissiveIntensity: 0.22 });
 export const windowFrameMaterial = () => new THREE.MeshStandardMaterial({ color: P.windowFrame, roughness: 0.6 });
+
+/**
+ * Full-height office-partition glazing (Phase N). Deliberately much clearer (opacity 0.18)
+ * than the window/door glass above: the partition is now full height, so this pane is the
+ * ONLY way the compartment behind it — the workbench, the cabinets, and circuit l7's own
+ * luminaires — stays visible from the main room. Murky or heavily gridded glass here would
+ * make the whole point of re-centring row 7 (see geometry.ts's `LIGHT_PLAN`) unobservable.
+ */
+export const partitionGlassMaterial = () =>
+  new THREE.MeshStandardMaterial({
+    color: P.partitionGlass,
+    transparent: true,
+    opacity: 0.18,
+    roughness: 0.04,
+    metalness: 0.2,
+    emissive: 0x24485e,
+    emissiveIntensity: 0.1,
+    depthWrite: false,
+  });
+
+/**
+ * Radial white->transparent alpha ramp for the floor light pools under a lit luminaire
+ * (Phase N — `officeScene.ts`'s per-circuit `poolMat`). Canvas-drawn for the same reason
+ * `makeFloorTexture` is: a soft-edged glow is an image asset, and procedural canvas is the
+ * technique already in use here. The soft edge matters beyond looks — a pool that overhangs
+ * a nearby wall fades out before it gets there instead of showing a hard-clipped disc
+ * through the wall's own 0.96-opacity glass.
+ */
+export function makePoolTexture(): THREE.CanvasTexture {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.45, 'rgba(255,255,255,0.55)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}

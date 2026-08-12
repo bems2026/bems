@@ -60,13 +60,13 @@ export function EdgeBufferCard() {
         <span className="edge-buffer-head-unit">kW</span>
       </div>
       {loading ? (
-        <Skeleton height="120px" />
+        <Skeleton height="170px" />
       ) : data.length === 0 ? (
         <p className="section-placeholder">{status === 'error' ? 'History unavailable right now.' : 'No history yet — the buffer fills at 1 point/min.'}</p>
       ) : (
         <>
           <div role="img" aria-label={`Total facility power over the last 24 hours, ${data.length} samples, currently ${data[data.length - 1].kw.toFixed(2)} kW.`}>
-            <ResponsiveContainer width="100%" height={120}>
+            <ResponsiveContainer width="100%" height={170}>
               <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
                 <defs>
                   <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">

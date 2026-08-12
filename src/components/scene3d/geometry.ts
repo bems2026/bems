@@ -54,7 +54,52 @@ export const ROOM = {
 // All 3 fixtures in a row share one circuit's state — that's the real wiring, not a
 // simplification: the 2D plan's Angular original bound all three to the same
 // `localState['L'+row]`.
+//
+// `LIGHT_PLAN` is the SINGLE definition of this row/col math — both the 3D scene
+// (`LIGHT_FIXTURES` below, via `toWorld`) and the 2D `FloorPlanView.tsx` derive from it,
+// so the two views cannot drift the way they did when each carried its own copy of the
+// formula (that drift is exactly how row 7 ended up at py=90, 10px from the partition at
+// py=100, instead of centered in the small compartment it's the only circuit for).
 // ---------------------------------------------------------------------------
+
+export const LIGHT_PLAN = {
+  ROWS: [1, 2, 3, 4, 5, 6, 7] as const,
+  COLS: [0, 1, 2] as const,
+  /** Side of the 2D plan's square marker, plan units (20px = 0.40m at SCALE). */
+  MARKER: 20,
+
+  /**
+   * Rows 1-6 keep the live template's `480 - (row-1)*65` ladder verbatim. Row 7 is a
+   * deliberate exception: that ladder lands it at py=90 (world z=-3.7) — jammed against
+   * the partition at py=100/z=-3.5, the wall of the very compartment it's the only
+   * circuit for. `(PLAN.y0 + PLAN.partitionY) / 2` = 55 is that compartment's own
+   * midpoint (compartment spans y0..partitionY), world z = -4.4.
+   */
+  rowPy(row: number): number {
+    return row === 7 ? (PLAN.y0 + PLAN.partitionY) / 2 : 480 - (row - 1) * 65;
+  },
+
+  /** `+ MARKER/2` = the marker's centre, so 60/160/260 -> world x of exactly -2.0/0.0/+2.0
+   * while the 2D rect's left edge (`colPx - MARKER/2`) stays at 50/150/250 — unchanged
+   * from the old `50 + col*100` corner. */
+  colPx(col: number): number {
+    return 50 + col * 100 + this.MARKER / 2;
+  },
+
+  center(row: number, col: number): { px: number; py: number } {
+    return { px: this.colPx(col), py: this.rowPy(row) };
+  },
+} as const;
+
+/** One anchor per circuit, at the row's own centre (x=0, since col 1 is the room's
+ * midline) — where `officeScene.ts`'s single per-circuit PointLight hangs. A dedicated
+ * export rather than averaging `LIGHT_FIXTURES` by circuit, so a future column change
+ * can't silently move the lamp out from under the fixtures it's meant to light. */
+export const LIGHT_ROWS: { circuit: string; row: number; world: { x: number; y: number; z: number } }[] = LIGHT_PLAN.ROWS.map((row) => ({
+  circuit: `l${row}`,
+  row,
+  world: { x: 0, y: CEIL_H - 0.35, z: toWorld(0, LIGHT_PLAN.rowPy(row)).z },
+}));
 
 export interface LightFixture {
   /** Unique per mesh: `l{row}-{col}`. */
@@ -68,10 +113,9 @@ export interface LightFixture {
 
 export const LIGHT_FIXTURES: LightFixture[] = (() => {
   const fixtures: LightFixture[] = [];
-  for (let row = 1; row <= 7; row++) {
-    for (let col = 0; col < 3; col++) {
-      const px = 50 + col * 100 + 9; // +9 = half the original 18px rect, i.e. its center
-      const py = 480 - (row - 1) * 65;
+  for (const row of LIGHT_PLAN.ROWS) {
+    for (const col of LIGHT_PLAN.COLS) {
+      const { px, py } = LIGHT_PLAN.center(row, col);
       const { x, z } = toWorld(px, py);
       fixtures.push({ id: `l${row}-${col}`, circuit: `l${row}`, row, col, world: { x, y: CEIL_H - 0.05, z } });
     }
@@ -157,10 +201,11 @@ export const OUTLET_FIXTURES: OutletFixture[] = OUTLET_COORDS.map(({ id, px, py 
 //     outside the room)" — shared/registry.mjs, not invented for this scene. That's why
 //     the indoor ACU sits on the east (right) wall and the outdoor unit sits just outside
 //     it, rather than on some other wall picked at random.
-//   - Workstations are placed against the two long walls, each anchored so a desk sits at
-//     the exact z-coordinate of the outlet that would plausibly feed it (co1/co4 on the
-//     west wall, co3/co7 on the east wall) — the other two desks per side fill the
-//     remaining wall run at comparable spacing.
+//   - Workstations are placed against the two long walls, anchored 0.8m off the
+//     z-coordinate of the outlet that would plausibly feed it (co1/co4 on the west wall,
+//     co3/co7 on the east wall) — offset, not exact, so the enlarged Phase N outlet block
+//     isn't hidden directly under the desktop it sits nearest to. The other two desks per
+//     side fill the remaining wall run at comparable spacing.
 //
 // TEST2.html's own furniture coordinates are NOT reused here — its room is 9.0m x 6.6m
 // (wide, shallow), the opposite proportions of CARE's 6.0m x 10.6m (narrow, deep), so its
@@ -180,6 +225,12 @@ export type FurnitureKind =
 export interface FurnitureSpec {
   kind: FurnitureKind;
   x: number;
+  /** Group origin height. Defaults to 0 (floor-standing) — see `buildFurniturePiece` in
+   * `furniture.ts`. Only the wall-mounted indoor ACU sets it: `makeACU()` builds its body
+   * centred on the group origin, so a wall unit is positioned by lifting the whole group,
+   * not by re-centring the factory (which would silently break the outdoor variant's own
+   * `acu.position.y = 0.4`). */
+  y?: number;
   z: number;
   /** Y-axis rotation, radians. */
   ry: number;
@@ -191,17 +242,19 @@ export interface FurnitureSpec {
 
 export const FURNITURE: FurnitureSpec[] = [
   // West wall workstations — desk backs 0.15m off the wall (x = ROOM.minX + 0.34), chairs
-  // facing +x into the room. z = 3.9/1.9 sit exactly on co1/co4; -0.1/-2.2 fill the run at
-  // matching ~2m spacing.
-  { kind: 'workstation', x: ROOM.minX + 0.34, z: 3.9, ry: Math.PI / 2 },
-  { kind: 'workstation', x: ROOM.minX + 0.34, z: 1.9, ry: Math.PI / 2 },
+  // facing +x into the room. z = 4.7/2.7 sit 0.8m north of co1/co4 (z 3.9/1.9) — offset
+  // rather than exactly on top of them, now that the enlarged outlet blocks (Phase N) would
+  // otherwise sit directly under a 0.43m-high desktop. -0.1/-2.2 fill the run unchanged.
+  { kind: 'workstation', x: ROOM.minX + 0.34, z: 4.7, ry: Math.PI / 2 },
+  { kind: 'workstation', x: ROOM.minX + 0.34, z: 2.7, ry: Math.PI / 2 },
   { kind: 'workstation', x: ROOM.minX + 0.34, z: -0.1, ry: Math.PI / 2 },
   { kind: 'workstation', x: ROOM.minX + 0.34, z: -2.2, ry: Math.PI / 2 },
 
-  // East wall workstations — mirrored. z = 3.9/-1.7 sit on co3/co7; 1.5/-3.0 fill the run.
-  { kind: 'workstation', x: ROOM.maxX - 0.34, z: 3.9, ry: -Math.PI / 2 },
+  // East wall workstations — mirrored. z = 4.7/-0.9 sit 0.8m off co3/co7 (z 3.9/-1.7), same
+  // outlet-clearance reasoning as the west run. 1.5/-3.0 fill the run unchanged.
+  { kind: 'workstation', x: ROOM.maxX - 0.34, z: 4.7, ry: -Math.PI / 2 },
   { kind: 'workstation', x: ROOM.maxX - 0.34, z: 1.5, ry: -Math.PI / 2 },
-  { kind: 'workstation', x: ROOM.maxX - 0.34, z: -1.7, ry: -Math.PI / 2 },
+  { kind: 'workstation', x: ROOM.maxX - 0.34, z: -0.9, ry: -Math.PI / 2 },
   { kind: 'workstation', x: ROOM.maxX - 0.34, z: -3.0, ry: -Math.PI / 2 },
 
   // Oval conference table, centered in the main room's open floor.
@@ -224,7 +277,9 @@ export const FURNITURE: FurnitureSpec[] = [
   { kind: 'plant-rack', x: 0.5, z: -3.15, ry: 0, w: 2.0 },
 
   // Indoor ACU on the east wall — see this block's header comment for why east specifically.
-  { kind: 'acu', x: ROOM.maxX - 0.13, z: 0, ry: 0 },
+  // y = ceilingHeight - 0.22 wall-mounts it high, like a real split-unit indoor head;
+  // without a y it defaults to 0 and sits centred on the floor, half-buried (Phase N fix).
+  { kind: 'acu', x: ROOM.maxX - 0.13, y: ROOM.ceilingHeight - 0.22, z: 0, ry: 0 },
   // Outdoor unit just outside the same wall, on its own pad.
   { kind: 'acu-outdoor', x: ROOM.maxX + 0.7, z: 0, ry: 0 },
 ];

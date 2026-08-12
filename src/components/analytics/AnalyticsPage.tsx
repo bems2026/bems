@@ -51,7 +51,7 @@ export function AnalyticsPage() {
   if (devices.length === 0) {
     return (
       <div className="analytics-page" aria-busy="true" aria-label="Loading analytics">
-        <Skeleton height="320px" />
+        <Skeleton height="400px" />
       </div>
     );
   }
@@ -93,12 +93,12 @@ export function AnalyticsPage() {
             </div>
           </div>
           {status === 'loading' && rows.length === 0 ? (
-            <Skeleton height="240px" />
+            <Skeleton height="320px" />
           ) : rows.length === 0 ? (
             <p className="section-placeholder">{status === 'error' ? 'History unavailable right now.' : 'No history yet — the buffer fills at 1 point/min.'}</p>
           ) : (
             <div role="img" aria-label={`Power over the last 24 hours across ${scopeDevices.length} ${scope}, ${rows.length} samples.`}>
-              <ResponsiveContainer width="100%" height={240}>
+              <ResponsiveContainer width="100%" height={320}>
                 <LineChart data={rows} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
                   <CartesianGrid stroke="var(--border)" strokeOpacity={0.5} vertical={false} />
                   <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tickFormatter={formatTick} stroke="var(--muted)" fontSize={11} tickLine={false} />
@@ -131,7 +131,7 @@ export function AnalyticsPage() {
           <h3 className="card-title">{selectedDevice?.display_name ?? 'No source selected'}</h3>
           {selectedDevice && <SelectedStatPanel reading={selectedReading} />}
           <div className="analytics-stat-card__spark-label">24 H</div>
-          <Sparkline values={(selectedId ? (historyMap[selectedId] ?? []) : []).slice(-140).map((p) => p.power_w)} height={74} color="var(--blue-bright)" />
+          <Sparkline values={(selectedId ? (historyMap[selectedId] ?? []) : []).slice(-140).map((p) => p.power_w)} height={110} color="var(--blue-bright)" />
           <p className="analytics-stat-card__note">{scope === 'branches' ? 'Feeder measured at the main CHNT panel CT.' : 'Socket-level meter inside the outlet module.'}</p>
         </div>
       </div>

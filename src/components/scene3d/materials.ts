@@ -32,6 +32,15 @@ export function outletSocketMaterialState(reading: Reading | undefined, socket: 
   return on ? { color: TOKENS.accent, emissiveIntensity: 0.9, opacity: 1 } : { color: TOKENS.bgSurface2, emissiveIntensity: 0.02, opacity: 1 };
 }
 
+/**
+ * The scene's single definition of "commanded on and fresh". `officeScene.ts`'s
+ * `trackOnState` already computed this inline (string-comparing a mesh's emissive color to
+ * `TOKENS.accent`) to drive the auto-rotate pulse; `applyState` now needs the same check in
+ * three more places (floor pools, per-row point lights, the ACU glow) — one exported
+ * predicate beats four copies of a color-string comparison silently drifting apart.
+ */
+export const isOn = (state: MaterialState): boolean => state.color === TOKENS.accent;
+
 /** Wall/partition/floor shell — same wireframe emissive line everywhere, no state dependency. */
 export const SHELL_LINE_COLOR = TOKENS.border;
 export const SHELL_GLOW_COLOR = TOKENS.accent;

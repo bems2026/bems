@@ -2087,6 +2087,7 @@ body::before {
 .control-master-btn:active,
 .control-plan-btn:active,
 .control-lamp:not(:disabled):active,
+.control-outlet-pin__half:not(:disabled):active,
 .devices-filter-chip:active,
 .analytics-scope-btn:active,
 .automation-write-btn:not(:disabled):active,
@@ -2282,23 +2283,34 @@ body::before {
   height: 2px;
   background: var(--border-strong);
 }
+/* Phase N: the partition is the room's real glazed entrance now (officeScene.ts's
+   addGlazedPartition) — a translucent blue-tinted line reads as glass, not a plain wall. */
+.control-outlet-plan__partition--glass {
+  height: 3px;
+  background: var(--blue-bright);
+  opacity: 0.4;
+}
 .control-outlet-plan__door {
   position: absolute;
-  left: 33%;
-  right: 33%;
-  bottom: 4%;
+  transform: translateY(-50%);
   height: 5px;
   border-radius: 3px;
   background: var(--blue-bright);
 }
-.control-outlet-plan__door-label {
+.control-outlet-plan__door-label,
+.control-outlet-plan__glass-label {
   position: absolute;
-  left: 50%;
-  bottom: 0.5%;
-  transform: translateX(-50%);
   font: 600 var(--fs-3xs) 'IBM Plex Mono', monospace;
   color: var(--faint);
   white-space: nowrap;
+}
+.control-outlet-plan__door-label {
+  left: 50%;
+  transform: translate(-50%, -140%);
+}
+.control-outlet-plan__glass-label {
+  transform: translate(0, 26%);
+  letter-spacing: 0.06em;
 }
 .control-outlet-plan__window-label,
 .control-outlet-plan__acu-label {
@@ -2309,8 +2321,8 @@ body::before {
   white-space: nowrap;
 }
 .control-outlet-plan__window-label {
-  left: 50%;
-  transform: translate(-50%, -140%);
+  transform: translate(0, -50%);
+  padding-left: 6px;
 }
 .control-outlet-plan__acu-label {
   transform: translate(-100%, -50%);
@@ -2326,38 +2338,49 @@ body::before {
   color: var(--muted);
   margin-bottom: 3px;
 }
-.control-outlet-pin__row {
+/*
+ * The puck itself is now the control — a 48px circle split into two independently
+ * clickable halves (DP1 left, DP2 right). `overflow: hidden` on the circular container
+ * clips each flex child's rectangle to its own half automatically, rather than hand-rolling
+ * two clip-path semicircles.
+ */
+.control-outlet-pin__puck {
   display: flex;
-  align-items: center;
-  gap: 5px;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
 }
-.control-outlet-pin__s {
+.control-outlet-pin__half {
+  flex: 1;
   border: none;
-  background: none;
   cursor: pointer;
+  padding: 0;
+  background: var(--bg-inset);
+  transition: background 0.15s ease;
+}
+.control-outlet-pin__half--left {
+  border-right: 1px solid var(--border-strong);
+}
+.control-outlet-pin__half--on {
+  background: var(--accent);
+}
+.control-outlet-pin__half:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.control-outlet-pin__caption {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 3px;
   font: 700 var(--fs-3xs) 'IBM Plex Mono', monospace;
   color: var(--faint);
-  padding: 4px;
 }
-.control-outlet-pin__s--on {
+.control-outlet-pin__caption--on {
   color: var(--good);
-}
-.control-outlet-pin__puck {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  border: 1px solid var(--border-strong);
-  background: var(--bg-inset);
-  flex: none;
-}
-.control-outlet-pin__puck--s1-on {
-  background: linear-gradient(90deg, var(--accent) 0 50%, var(--bg-inset) 50% 100%);
-}
-.control-outlet-pin__puck--s2-on {
-  background: linear-gradient(90deg, var(--bg-inset) 0 50%, var(--accent) 50% 100%);
-}
-.control-outlet-pin__puck--s1-on.control-outlet-pin__puck--s2-on {
-  background: var(--accent);
 }
 .control-outlet-pin__watts {
   margin-top: 3px;
@@ -2724,9 +2747,12 @@ body::before {
   grid-template-columns: repeat(4, 1fr);
   gap: var(--sp-4);
 }
+/* Phase N: 7 columns -> 4. At 7-across (~210px each) the 64px sparklines squashed a
+   120-unit viewBox into a card too narrow to read as a shape rather than noise — this is
+   the actual width constraint on chart legibility, more than the sparkline's own height. */
 .analytics-outlet-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: var(--sp-3);
 }
 @media (max-width: 1200px) {
@@ -2734,7 +2760,7 @@ body::before {
     grid-template-columns: repeat(2, 1fr);
   }
   .analytics-outlet-grid {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
   }
 }
 @media (max-width: 640px) {

@@ -2,6 +2,8 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
 import { controlView } from '@/lib/socketView';
 import { corroborate } from '@/lib/relayCorroboration';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { useConfirm } from '@/components/ui/useConfirm';
 import { useControlLog } from './controlLog';
 import { PLAN } from '@/components/scene3d/geometry';
 import type { Device, SocketIndex } from '@/lib/types';
@@ -28,17 +30,42 @@ const VB_W = 320;
 const VB_H = 550;
 const pct = (px: number, total: number) => `${((px / total) * 100).toFixed(2)}%`;
 
-/** The partition's real doorway gap (M2's 3D shell) mirrored here in plan-space — ~1.6m
- * centered on the room's x-midpoint, converted at the same 1 SVG unit = 2cm scale
- * `geometry.ts` uses. */
+/** The glazed partition's real doorway gap (`officeScene.ts`'s `addGlazedPartition`)
+ * mirrored here in plan-space — 1.6m centered on the room's x-midpoint, converted at the
+ * same 1 SVG unit = 2cm scale `geometry.ts` uses. */
 const DOORWAY_HALF_PX = 40;
 
 export function OutletPlanCard() {
   const devices = useDeviceStore((s) => s.devices);
+  const send = useCommandStore((s) => s.send);
+  const log = useControlLog((s) => s.log);
+  const { ask, modalProps } = useConfirm();
   const outlets = devices.filter((d) => d.class === 'outlet_dual');
   const outletById = new Map(outlets.map((d) => [d.id, d]));
 
   const midX = (PLAN.x0 + PLAN.x1) / 2;
+
+  const allOn = () => {
+    for (const d of outlets) {
+      send(d.id, 1, 'on');
+      send(d.id, 2, 'on');
+      log('RELAY', `${d.display_name} → on`);
+    }
+  };
+  const allOff = () => {
+    for (const d of outlets) {
+      send(d.id, 1, 'off');
+      send(d.id, 2, 'off');
+      log('RELAY', `${d.display_name} → off`);
+    }
+  };
+  const askAllOn = () =>
+    ask({ title: 'Turn all outlets on?', body: `This sends an on command to both sockets on all ${outlets.length} outlets (CO1-CO7) at once.`, confirmLabel: 'Turn outlets on', tone: 'red' }, allOn);
+  const askAllOff = () =>
+    ask(
+      { title: 'Turn all outlets off?', body: `This sends an off command to both sockets on all ${outlets.length} outlets (CO1-CO7) at once. Anything plugged in — chargers, equipment, the water dispenser — loses power immediately.`, confirmLabel: 'Turn outlets off', tone: 'red' },
+      allOff,
+    );
 
   return (
     <div className="control-plan-panel control-plan-panel--outlets">
@@ -48,15 +75,28 @@ export function OutletPlanCard() {
           className="control-outlet-plan__outline"
           style={{ left: pct(PLAN.x0, VB_W), top: pct(PLAN.y0, VB_H), right: pct(VB_W - PLAN.x1, VB_W), bottom: pct(VB_H - PLAN.y1, VB_H) }}
         />
-        <div className="control-outlet-plan__partition" style={{ top: pct(PLAN.partitionY, VB_H), left: pct(PLAN.x0, VB_W), width: pct(midX - DOORWAY_HALF_PX - PLAN.x0, VB_W) }} />
         <div
-          className="control-outlet-plan__partition"
+          className="control-outlet-plan__partition control-outlet-plan__partition--glass"
+          style={{ top: pct(PLAN.partitionY, VB_H), left: pct(PLAN.x0, VB_W), width: pct(midX - DOORWAY_HALF_PX - PLAN.x0, VB_W) }}
+        />
+        <div
+          className="control-outlet-plan__partition control-outlet-plan__partition--glass"
           style={{ top: pct(PLAN.partitionY, VB_H), left: pct(midX + DOORWAY_HALF_PX, VB_W), width: pct(PLAN.x1 - (midX + DOORWAY_HALF_PX), VB_W) }}
         />
-        <div className="control-outlet-plan__door" />
-        <span className="control-outlet-plan__door-label">SLIDING GLASS ENTRANCE</span>
-        <span className="control-outlet-plan__window-label" style={{ top: pct(PLAN.y0, VB_H) }}>
-          WINDOWS · NORTH WALL
+        {/* The sliding door fills the gap the two glass panels above leave — same doorway
+            gap the 3D shell's `addGlazedPartition` cuts, not the old south-wall position. */}
+        <div
+          className="control-outlet-plan__door"
+          style={{ top: pct(PLAN.partitionY, VB_H), left: pct(midX - DOORWAY_HALF_PX, VB_W), width: pct(DOORWAY_HALF_PX * 2, VB_W) }}
+        />
+        <span className="control-outlet-plan__door-label" style={{ top: pct(PLAN.partitionY, VB_H) }}>
+          SLIDING DOOR
+        </span>
+        <span className="control-outlet-plan__glass-label" style={{ top: pct(PLAN.partitionY, VB_H), left: pct(PLAN.x0 + 8, VB_W) }}>
+          GLASS PARTITION
+        </span>
+        <span className="control-outlet-plan__window-label" style={{ left: pct(PLAN.x0, VB_W), top: '50%' }}>
+          WINDOWS · WEST WALL
         </span>
         <span className="control-outlet-plan__acu-label" style={{ left: pct(PLAN.x1, VB_W), top: '50%' }}>
           ACU · EAST WALL
@@ -68,6 +108,15 @@ export function OutletPlanCard() {
           return <OutletPin key={id} device={device} left={pct(x, VB_W)} top={pct(y, VB_H)} />;
         })}
       </div>
+      <div className="control-plan-panel__actions">
+        <button type="button" className="control-plan-btn" onClick={askAllOn}>
+          All outlets on
+        </button>
+        <button type="button" className="control-plan-btn control-plan-btn--accent" onClick={askAllOff}>
+          All outlets off
+        </button>
+      </div>
+      <ConfirmModal {...modalProps} />
     </div>
   );
 }
@@ -83,24 +132,43 @@ function OutletPin({ device, left, top }: { device: Device; left: string; top: s
   const s2View = controlView(reading, pendingMap[targetKey(device.id, 2)], 2);
   const s1On = (s1View.kind === 'idle' || s1View.kind === 'pending') && s1View.value === 'on';
   const s2On = (s2View.kind === 'idle' || s2View.kind === 'pending') && s2View.value === 'on';
+  const s1Busy = s1View.kind === 'pending';
+  const s2Busy = s2View.kind === 'pending';
+  const s1Unknown = s1View.kind === 'unknown';
+  const s2Unknown = s2View.kind === 'unknown';
 
   const toggle = (socket: SocketIndex, on: boolean) => {
     const next = on ? 'off' : 'on';
     send(device.id, socket, next);
-    log('RELAY', `${device.display_name} S${socket} → ${next}`);
+    log('RELAY', `${device.display_name} DP${socket} → ${next}`);
   };
 
   return (
     <div className="control-outlet-pin" style={{ left, top }}>
       <div className="control-outlet-pin__id">{device.id.toUpperCase()}</div>
-      <div className="control-outlet-pin__row">
-        <button type="button" className={`control-outlet-pin__s control-outlet-pin__s--1${s1On ? ' control-outlet-pin__s--on' : ''}`} onClick={() => toggle(1, s1On)}>
-          S1
-        </button>
-        <span className={`control-outlet-pin__puck${s1On ? ' control-outlet-pin__puck--s1-on' : ''}${s2On ? ' control-outlet-pin__puck--s2-on' : ''}`} aria-hidden="true" />
-        <button type="button" className={`control-outlet-pin__s control-outlet-pin__s--2${s2On ? ' control-outlet-pin__s--on' : ''}`} onClick={() => toggle(2, s2On)}>
-          S2
-        </button>
+      <div className="control-outlet-pin__puck" role="group" aria-label={`${device.display_name} sockets`}>
+        <button
+          type="button"
+          className={`control-outlet-pin__half control-outlet-pin__half--left${s1On ? ' control-outlet-pin__half--on' : ''}`}
+          disabled={s1Busy || s1Unknown}
+          aria-pressed={s1On}
+          aria-label={`${device.display_name} DP1`}
+          title={`DP1: ${s1Unknown ? 'unknown' : s1Busy ? 'switching…' : s1On ? 'on' : 'off'}`}
+          onClick={() => toggle(1, s1On)}
+        />
+        <button
+          type="button"
+          className={`control-outlet-pin__half control-outlet-pin__half--right${s2On ? ' control-outlet-pin__half--on' : ''}`}
+          disabled={s2Busy || s2Unknown}
+          aria-pressed={s2On}
+          aria-label={`${device.display_name} DP2`}
+          title={`DP2: ${s2Unknown ? 'unknown' : s2Busy ? 'switching…' : s2On ? 'on' : 'off'}`}
+          onClick={() => toggle(2, s2On)}
+        />
+      </div>
+      <div className="control-outlet-pin__caption">
+        <span className={s1On ? 'control-outlet-pin__caption--on' : undefined}>DP1 {s1Unknown ? '?' : s1Busy ? '…' : s1On ? 'ON' : 'OFF'}</span>
+        <span className={s2On ? 'control-outlet-pin__caption--on' : undefined}>DP2 {s2Unknown ? '?' : s2Busy ? '…' : s2On ? 'ON' : 'OFF'}</span>
       </div>
       <div className="control-outlet-pin__watts">{typeof reading?.power_w === 'number' ? `${reading.power_w.toFixed(0)}W` : '—'}</div>
       {corroboration === 'contradicted' && <div className="control-outlet-pin__warn">⚠ drawing power</div>}

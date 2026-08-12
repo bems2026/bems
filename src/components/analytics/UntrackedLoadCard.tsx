@@ -47,7 +47,7 @@ export function UntrackedLoadCard({ branchIds, outletIds }: { branchIds: string[
         <span className="analytics-untracked-gap">{gapKw.toFixed(2)} kW untracked now</span>
       </div>
       <div role="img" aria-label={`Panel total ${last.totalKw?.toFixed(2)} kW, outlet-metered ${last.meteredKw?.toFixed(2)} kW, gap ${gapKw.toFixed(2)} kW.`}>
-        <ResponsiveContainer width="100%" height={180}>
+        <ResponsiveContainer width="100%" height={260}>
           <AreaChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
             <defs>
               <linearGradient id={totalGradientId} x1="0" y1="0" x2="0" y2="1">
