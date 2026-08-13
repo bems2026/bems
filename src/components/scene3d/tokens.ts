@@ -87,4 +87,11 @@ export const SCENE_PALETTE = {
   /** Office-partition glazing — clearer than the window/door glass, since the partition is
    * now full height and this pane is the only remaining sightline into the compartment. */
   partitionGlass: 0xcfe6f2,
+  /** Selection ring under a picked "Edit layout" desk/table (`officeScene.ts`'s
+   * `buildEditablePiece`) — the app's own `--blue-bright` (`index.css`), not a scene-interior
+   * material color: this ring is UI feedback for an editing tool, not part of the room, so it
+   * borrows the app's own accent-for-selection vocabulary (the same blue Analytics' selected
+   * source card rings with — see `.analytics-source-card--selected`) rather than inventing a
+   * new one. */
+  editSelection: 0x3b82f6,
 } as const;

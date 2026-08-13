@@ -39,8 +39,8 @@ export function OverviewPage() {
     <>
       <header className="page-header">
         <div>
-          <h1 className="page-title">NBERIC Digital Twin</h1>
-          <p className="page-sub">MMSU CARE Office · 20-node Tuya network with CHNT main-panel metering</p>
+          <h1 className="page-title">Intelligent BEMS</h1>
+          <p className="page-sub">Building Energy Management System - MMSU Care Office</p>
         </div>
         <Clock />
       </header>

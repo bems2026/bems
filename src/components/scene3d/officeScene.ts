@@ -31,7 +31,7 @@
  */
 
 import * as THREE from 'three';
-import { LIGHT_FIXTURES, LIGHT_ROWS, OUTLET_FIXTURES, FURNITURE, ROOM, type WallId } from './geometry';
+import { LIGHT_FIXTURES, LIGHT_ROWS, OUTLET_FIXTURES, FURNITURE, ROOM, type FurnitureKind, type WallId } from './geometry';
 import { lightMaterialState, outletSocketMaterialState, isOn, type MaterialState } from './materials';
 import {
   buildFurniturePiece,
@@ -46,11 +46,39 @@ import {
   partitionGlassMaterial,
 } from './furniture';
 import { SCENE_PALETTE } from './tokens';
+import type { EditableItem, EditableKind } from './editableLayout';
 import type { Reading } from '@/lib/types';
 
 export type PickResult = { kind: 'light'; circuit: string } | { kind: 'outlet'; id: string; socket: 1 | 2 } | null;
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+
+/** The camera's starting orientation — named so `resetView()` can restore exactly this
+ * without duplicating the numbers the field initializers below already use. */
+const INITIAL_THETA = Math.PI / 4;
+const INITIAL_PHI = Math.PI / 3.2;
+/** Nearest-to-vertical the orbit clamp allows (see `orbit()`) — reused as the fixed angle
+ * `setTopDownView()` snaps to, rather than a second, potentially-drifting constant for the
+ * same "as close to straight down as this camera rig supports" idea. Not exactly 0: a
+ * perspective camera looking exactly along its up vector is a degenerate case for
+ * `lookAt()` (undefined roll), and the existing orbit clamp already established this as the
+ * safe floor. */
+const MIN_PHI = 0.06;
+
+/** "Desk"/"table"/"dispenser"/"shelf"/"bench" are the vocabulary the Edit Layout toolbar
+ * shows an operator — plain nouns for what they can add. `furniture.ts`'s factories are
+ * keyed by the broader `FurnitureKind` union (of which only these five are ever
+ * user-placed), so this is the one place that translation happens. "Shelf" maps to
+ * `cabinet` (six shelves, no plants) rather than `plant-rack` — the rack's decorative
+ * potted plants read as a specific piece of decor, not the generic "shelving" the toolbar
+ * label promises. */
+const EDITABLE_FACTORY_KIND: Record<EditableKind, FurnitureKind> = {
+  desk: 'workstation',
+  table: 'table-oval',
+  dispenser: 'water-dispenser',
+  shelf: 'cabinet',
+  bench: 'bench',
+};
 
 /** Candela, not the pre-r155 unitless scale — see `buildLightFixtures`'s comment. Tuned
  * against the existing hemisphere(0.62)/key(0.95) rig, not derived from first principles. */
@@ -127,6 +155,13 @@ export class OfficeScene {
   private circuitRigs = new Map<string, { panels: THREE.Mesh[]; poolMat: THREE.MeshBasicMaterial; lamp: THREE.PointLight }>();
   private outletMeshesById = new Map<string, { s1: THREE.Mesh; s2: THREE.Mesh }>();
   private pickables: THREE.Object3D[] = [];
+  /** User-placed desks/tables from the "Edit layout" tool — kept in their own map, entirely
+   * separate from `pickables` (the real light/outlet fixtures a click identifies a device
+   * from). Editable pieces are never pickable via `pick()`; `pickEditable()` is the
+   * dedicated entry point `OfficeScene3D.tsx` uses instead while its own edit mode is on,
+   * so the two interaction modes can never cross-fire on the same click. */
+  private editableGroups = new Map<string, { group: THREE.Group; ring: THREE.Mesh }>();
+  private readonly floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   /** Captured from the FURNITURE-built ACU group (see `buildFurniture`) — `applyState`
    * drives its opacity from the real `acu_main` reading. `null` until `buildFurniture` runs. */
   private acuGlowMat: THREE.MeshBasicMaterial | null = null;
@@ -140,8 +175,8 @@ export class OfficeScene {
   private baseIntensity = new Map<THREE.Mesh, number>();
   private autoRotateId: number | null = null;
 
-  private theta = Math.PI / 4;
-  private phi = Math.PI / 3.2;
+  private theta = INITIAL_THETA;
+  private phi = INITIAL_PHI;
   private readonly target = new THREE.Vector3(0, ROOM.ceilingHeight * 0.35, 0);
 
   /** Room's own half-diagonal — the basis for the zoom clamp and the fit-to-bounds distance. */
@@ -595,6 +630,40 @@ export class OfficeScene {
     this.render();
   }
 
+  /**
+   * Straight down (as close as this perspective rig allows — see `MIN_PHI`), theta reset
+   * to the scene's own north-up default rather than wherever the user last orbited to, so
+   * "top-down" always reads the same floor-plan-like shape regardless of camera history.
+   * Radius is re-fit rather than kept at the current zoom: a top-down view taken mid-close-up
+   * would show a tight crop of the ceiling grid instead of the room the button promises.
+   */
+  setTopDownView() {
+    this.theta = INITIAL_THETA;
+    this.phi = MIN_PHI;
+    this.radius = clamp(this.fitDistance(this.camera.aspect), this.minRadius, this.maxRadius);
+    this.updateCameraPosition();
+    this.render();
+  }
+
+  /** True once `setTopDownView()` has been applied and nothing has orbited away from it
+   * since — drives the toolbar button's pressed state. A tolerance, not an exact `===`,
+   * since `orbit()`'s own clamp can land phi a hair above `MIN_PHI` depending on drag
+   * rounding. */
+  get isTopDown(): boolean {
+    return this.phi <= MIN_PHI + 1e-6;
+  }
+
+  /** Restores the camera to exactly its as-mounted framing — same defaults the constructor
+   * itself starts from, recomputed against the CURRENT container size (not a cached
+   * distance from mount time, which could be stale after a resize). */
+  resetView() {
+    this.theta = INITIAL_THETA;
+    this.phi = INITIAL_PHI;
+    this.radius = clamp(this.fitDistance(this.camera.aspect), this.minRadius, this.maxRadius);
+    this.updateCameraPosition();
+    this.render();
+  }
+
   get isAutoRotating(): boolean {
     return this.autoRotateId !== null;
   }
@@ -698,6 +767,125 @@ export class OfficeScene {
     if (!hit) return null;
     const data = hit.object.userData;
     return data.kind === 'light' ? { kind: 'light', circuit: data.circuit } : { kind: 'outlet', id: data.id, socket: data.socket };
+  }
+
+  // -------------------------------------------------------------------------
+  // Edit layout — user-placed desks/tables. Separate from the fixed FURNITURE table built
+  // once in the constructor: these come and go for the length of an editing session (or
+  // longer, if saved — see `editableLayout.ts`), so they need their own build/teardown path
+  // rather than living in the constructor-only `buildFurniture()`.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Reconciles the scene against `items` — adds any id not yet built, removes any built id
+   * no longer present, and updates the facing of any id already built whose `ry` changed
+   * (the "Rotate" button's whole effect). The single entry point `OfficeScene3D.tsx` calls
+   * whenever its own `layout` state changes (place/paste/delete/rotate/import/reset all
+   * funnel through this one diff), rather than the component calling several different
+   * mutation methods that would each need to independently stay in sync with React state.
+   *
+   * Position and kind ARE still immutable once placed (no drag-to-move, no
+   * change-this-desk-into-a-table) — rotation is the one property this tool can update in
+   * place, so it's the one case the diff handles beyond plain set membership. Re-applying
+   * the same `ry` to an unchanged item is a harmless no-op write, not worth a dirty-check
+   * for what's already a cheap property set.
+   */
+  syncEditableFurniture(items: EditableItem[]) {
+    const nextIds = new Set(items.map((i) => i.id));
+    for (const [id, entry] of this.editableGroups) {
+      if (nextIds.has(id)) continue;
+      this.scene.remove(entry.group);
+      this.disposeSubtree(entry.group);
+      this.editableGroups.delete(id);
+    }
+    for (const item of items) {
+      const existing = this.editableGroups.get(item.id);
+      if (existing) {
+        existing.group.rotation.y = item.ry;
+        continue;
+      }
+      this.editableGroups.set(item.id, this.buildEditablePiece(item));
+    }
+    this.render();
+  }
+
+  private buildEditablePiece(item: EditableItem): { group: THREE.Group; ring: THREE.Mesh } {
+    const group = buildFurniturePiece({ kind: EDITABLE_FACTORY_KIND[item.kind], x: item.x, z: item.z, ry: item.ry });
+    // A flat ring on the floor under the piece, its own visibility toggled by
+    // `setEditableSelection()` — cheaper and simpler than re-tinting every child mesh of an
+    // arbitrarily complex furniture group (a workstation alone is 9 meshes across 5
+    // materials) just to show "this one is selected."
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.55, 0.64, 28),
+      new THREE.MeshBasicMaterial({ color: SCENE_PALETTE.editSelection, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false, toneMapped: false }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    // Local, not world, position: the ring is a child of `group`, which `buildFurniturePiece`
+    // already placed at (item.x, item.y, item.z) — a local (0, y, 0) is what puts the ring at
+    // the piece's own base regardless of where the piece sits in the room.
+    ring.position.set(0, 0.015, 0);
+    ring.visible = false;
+    group.add(ring);
+    this.scene.add(group);
+    return { group, ring };
+  }
+
+  /** Shows the selection ring under `id` and hides every other one. `null` clears the
+   * selection entirely (deselect, or nothing selected). */
+  setEditableSelection(id: string | null) {
+    for (const [entryId, entry] of this.editableGroups) entry.ring.visible = entryId === id;
+    this.render();
+  }
+
+  /** Raycasts only against user-placed pieces — deliberately a separate method from
+   * `pick()` rather than a shared one with a mode flag, so the fixed-fixture pick path
+   * (used constantly, including every hover) never pays for a check it doesn't need. */
+  pickEditable(canvasX: number, canvasY: number, canvasWidth: number, canvasHeight: number): string | null {
+    this.pointer.set((canvasX / canvasWidth) * 2 - 1, -(canvasY / canvasHeight) * 2 + 1);
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    let bestId: string | null = null;
+    let bestDist = Infinity;
+    for (const [id, entry] of this.editableGroups) {
+      const hit = this.raycaster.intersectObject(entry.group, true)[0];
+      if (hit && hit.distance < bestDist) {
+        bestDist = hit.distance;
+        bestId = id;
+      }
+    }
+    return bestId;
+  }
+
+  /** Where a click on the floor lands in world x/z — the placement point for "+ Desk"/"+
+   * Table". Intersects the actual ground plane (y = 0) rather than the raycaster's
+   * `pickables` list, since an empty patch of floor has no mesh in that list to hit at all. */
+  pickFloorPoint(canvasX: number, canvasY: number, canvasWidth: number, canvasHeight: number): { x: number; z: number } | null {
+    this.pointer.set((canvasX / canvasWidth) * 2 - 1, -(canvasY / canvasHeight) * 2 + 1);
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const hit = new THREE.Vector3();
+    if (!this.raycaster.ray.intersectPlane(this.floorPlane, hit)) return null;
+    return { x: hit.x, z: hit.z };
+  }
+
+  /**
+   * Disposes one removed piece's own geometry/material — safe to call even though several
+   * of `furniture.ts`'s materials and chair geometries are module-scope singletons shared
+   * across every instance (see that file's header): `dispose()` only frees the GPU-side
+   * buffer/program, not the CPU-side data the shared object still holds, so Three.js
+   * transparently re-uploads it the next time any OTHER mesh still using that object is
+   * rendered. This is the same reasoning this class's own full-scene `dispose()` already
+   * relies on for teardown; this is that same pass scoped to a single removed subtree
+   * instead of the whole scene, so repeated add/remove over a long kiosk session doesn't
+   * accumulate orphaned per-instance geometries (most of `furniture.ts`'s box geometries
+   * are built fresh per factory call, not shared).
+   */
+  private disposeSubtree(root: THREE.Object3D) {
+    root.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      mesh.geometry?.dispose();
+      const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+      else mat?.dispose();
+    });
   }
 
   render() {

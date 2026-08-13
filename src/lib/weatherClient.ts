@@ -61,6 +61,17 @@ function parseSiteTime(raw: string): number {
   return Date.parse(raw.length === 10 ? `${raw}T00:00` : raw);
 }
 
+/**
+ * No response within this window counts as a failure, same as a non-2xx status. Without it,
+ * a request that neither succeeds nor errors — a captive portal, a firewall that silently
+ * drops the packet instead of refusing the connection, a DNS lookup that hangs — leaves
+ * `useWeather` parked in `status: 'loading'` indefinitely, since nothing ever calls its
+ * `catch`. That's the Weather Status card's skeleton with no way out short of a reload.
+ * 10s comfortably covers a slow real response (Open-Meteo is typically sub-second) while
+ * still resolving well inside one polling interval.
+ */
+const FETCH_TIMEOUT_MS = 10_000;
+
 export async function getWeather(signal?: AbortSignal): Promise<WeatherNow> {
   const url =
     `${WEATHER_API_URL}?latitude=${WEATHER_LAT}&longitude=${WEATHER_LON}` +
@@ -69,7 +80,23 @@ export async function getWeather(signal?: AbortSignal): Promise<WeatherNow> {
     `&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset` +
     `&timezone=${encodeURIComponent(WEATHER_TZ)}&forecast_days=6&wind_speed_unit=ms`;
 
-  const res = await fetch(url, { signal });
+  // AbortSignal.any (not yet available in every runtime this targets) would replace this,
+  // but a manual timer + combined listener works everywhere `useWeather`'s own
+  // AbortController does. Whichever aborts first wins; the timer is always cleared, so it
+  // can't outlive this call and fire on some later, unrelated fetch.
+  const timeoutController = new AbortController();
+  const timer = setTimeout(() => timeoutController.abort(), FETCH_TIMEOUT_MS);
+  signal?.addEventListener('abort', () => timeoutController.abort(), { once: true });
+
+  let res: Response;
+  try {
+    res = await fetch(url, { signal: timeoutController.signal });
+  } catch (err) {
+    if (timeoutController.signal.aborted && !signal?.aborted) throw new Error('weather request timed out', { cause: err });
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) throw new Error(`weather ${res.status}`);
   const body = (await res.json()) as RawResponse;
 

@@ -82,7 +82,7 @@ export function DevicesView() {
         </div>
         <div className="devices-toolbar">
           <div className="devices-filter-group" role="group" aria-label="Filter by class">
-            <button type="button" className={`devices-filter-chip${filter === 'all' ? ' devices-filter-chip--active' : ''}`} onClick={() => setFilter('all')}>
+            <button type="button" className={`devices-filter-chip${filter === 'all' ? ' devices-filter-chip--active' : ''}`} aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>
               All
             </button>
             {CLASS_ORDER.map((cls) => (
@@ -90,6 +90,7 @@ export function DevicesView() {
                 key={cls}
                 type="button"
                 className={`devices-filter-chip${filter === cls ? ' devices-filter-chip--active' : ''}`}
+                aria-pressed={filter === cls}
                 onClick={() => setFilter(cls)}
               >
                 {CLASS_FILTER_LABEL[cls]}
@@ -103,17 +104,28 @@ export function DevicesView() {
       </header>
 
       <div className="devices-table-card">
-        <div className="devices-table-scroll">
-          <div className="devices-table">
-            <div className="devices-table__row devices-table__row--head">
-              <span>Device</span>
-              <span>Class</span>
-              <span>Volt</span>
-              <span>Current</span>
-              <span>Power</span>
-              <span>Last seen</span>
-              <span>Comm</span>
-              <span>State</span>
+        {/* A scroll container needs to be keyboard-scrollable, which means focusable — and a
+            focusable region needs an accessible name. Same reasoning as the `role="table"`
+            below: the CSS grid layout stays exactly as it is, the semantics catch up to it. */}
+        <div className="devices-table-scroll" tabIndex={0} role="region" aria-label="Device table, scrolls horizontally">
+          {/*
+            This is a CSS grid of <div>s, not a <table> — deliberately, because
+            `.devices-table__row`'s `grid-template-columns` is what aligns the eight columns
+            and real table layout would fight it. But without ARIA roles, assistive tech saw
+            eight orphaned values per device with no idea which column any of them belonged
+            to: "219.5V" with no "Volt" attached to it. These roles restore the row/column
+            relationships at zero visual cost.
+          */}
+          <div className="devices-table" role="table" aria-label="Device fleet" aria-rowcount={filtered.length + 1}>
+            <div className="devices-table__row devices-table__row--head" role="row">
+              <span role="columnheader">Device</span>
+              <span role="columnheader">Class</span>
+              <span role="columnheader">Volt</span>
+              <span role="columnheader">Current</span>
+              <span role="columnheader">Power</span>
+              <span role="columnheader">Last seen</span>
+              <span role="columnheader">Comm</span>
+              <span role="columnheader">State</span>
             </div>
             {filtered.map((d) => (
               <DeviceRow key={d.id} device={d} reading={readings[d.id]} />
@@ -146,8 +158,8 @@ function DeviceRow({ device, reading }: { device: Device; reading: Reading | und
     : 'devices-table__state--neutral';
 
   return (
-    <div className="devices-table__row">
-      <div className="devices-table__device">
+    <div className="devices-table__row" role="row">
+      <div className="devices-table__device" role="cell">
         <span className="devices-table__icon" aria-hidden="true">
           <Icon size={14} />
         </span>
@@ -156,13 +168,27 @@ function DeviceRow({ device, reading }: { device: Device; reading: Reading | und
           <div className="devices-table__id mono">{device.id}</div>
         </div>
       </div>
-      <span className="devices-table__class-pill">{CLASS_PILL_LABEL[device.class]}</span>
-      <span className="devices-table__num mono">{typeof reading?.voltage === 'number' ? `${reading.voltage.toFixed(1)}V` : '—'}</span>
-      <span className="devices-table__num mono">{typeof reading?.current === 'number' ? `${reading.current.toFixed(2)}A` : '—'}</span>
-      <span className="devices-table__num mono">{typeof reading?.power_w === 'number' ? `${reading.power_w.toFixed(0)}W` : '—'}</span>
-      <span className="devices-table__lastseen mono">{reading ? new Date(reading.ts).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}</span>
-      <span className={`devices-table__comm ${COMM_CLASS[comm]}`}>{COMM_LABEL[comm]}</span>
-      <span className={`devices-table__state ${stateClass} mono`}>{stateText}</span>
+      <span className="devices-table__class-pill" role="cell">
+        {CLASS_PILL_LABEL[device.class]}
+      </span>
+      <span className="devices-table__num mono" role="cell">
+        {typeof reading?.voltage === 'number' ? `${reading.voltage.toFixed(1)}V` : '—'}
+      </span>
+      <span className="devices-table__num mono" role="cell">
+        {typeof reading?.current === 'number' ? `${reading.current.toFixed(2)}A` : '—'}
+      </span>
+      <span className="devices-table__num mono" role="cell">
+        {typeof reading?.power_w === 'number' ? `${reading.power_w.toFixed(0)}W` : '—'}
+      </span>
+      <span className="devices-table__lastseen mono" role="cell">
+        {reading ? new Date(reading.ts).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
+      </span>
+      <span className={`devices-table__comm ${COMM_CLASS[comm]}`} role="cell">
+        {COMM_LABEL[comm]}
+      </span>
+      <span className={`devices-table__state ${stateClass} mono`} role="cell">
+        {stateText}
+      </span>
     </div>
   );
 }

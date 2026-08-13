@@ -12,15 +12,29 @@ import { useEffect, useState } from 'react';
  * `location.hash`, which is exactly what this hook listens for.
  */
 export function useHashRoute(validIds: readonly string[], fallback: string): string {
+  /** The hash as a route id, or null if it doesn't name a page. */
   const read = () => {
     const id = window.location.hash.slice(1);
-    return validIds.includes(id) ? id : fallback;
+    return validIds.includes(id) ? id : null;
   };
 
-  const [route, setRoute] = useState(read);
+  const [route, setRoute] = useState(() => read() ?? fallback);
 
   useEffect(() => {
-    const onHashChange = () => setRoute(read());
+    /*
+     * A hash that isn't a route id leaves the current page alone — it does NOT fall back to
+     * `fallback`. The hash is also the app's in-page anchor mechanism: `AppShell`'s skip
+     * link is `<a href="#main-content">`, so treating "not a route" as "go home" meant
+     * pressing the skip link on Devices silently threw you back to Overview — the one
+     * control whose entire job is to help a keyboard user get *into* the current page's
+     * content. Same trap for any future in-page anchor.
+     *
+     * `fallback` still applies on first read, where there's no current page to keep.
+     */
+    const onHashChange = () => {
+      const next = read();
+      if (next !== null) setRoute(next);
+    };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- validIds/fallback are static config, not reactive inputs

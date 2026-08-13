@@ -46,6 +46,23 @@ describe('useHashRoute', () => {
     expect(result.current).toBe('devices');
   });
 
+  it('keeps the current page when the hash changes to a non-route anchor', () => {
+    // AppShell's skip link is `<a href="#main-content">`, so activating it fires a
+    // hashchange with a hash that names no page. Treating that as "fall back to Overview"
+    // meant the skip link threw a keyboard user off whatever page they were on — the exact
+    // opposite of its job.
+    const { result } = renderHook(() => useHashRoute(IDS, 'overview'));
+    act(() => {
+      setHash('#devices');
+    });
+    expect(result.current).toBe('devices');
+
+    act(() => {
+      setHash('#main-content');
+    });
+    expect(result.current).toBe('devices');
+  });
+
   it('navigateTo sets the hash, which the hook then picks up', () => {
     const { result } = renderHook(() => useHashRoute(IDS, 'overview'));
     act(() => {

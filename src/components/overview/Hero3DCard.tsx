@@ -3,12 +3,17 @@ import { InfoHint } from '@/components/ui/InfoHint';
 import { SpatialView } from './SpatialView';
 
 /**
- * v4's 3D hero card chrome (title, subtitle, legend strip) wrapping `SpatialView`. No link
- * to Control from here — "Switch a row"/"Open controls" (this card's own and
- * `OfficeScene3D`'s) were removed so Quick Control's "Open controls ↗" is the single place
- * to navigate to Control from Overview, not three buttons saying the same thing. The overlay
- * chips (lit count, ACU state) and the auto-rotate toggle still live inside `OfficeScene3D`
- * itself — that's where the container ref and device-derived state already are.
+ * v4's 3D hero card chrome (title, subtitle) wrapping `SpatialView`. No link to Control from
+ * here — "Switch a row"/"Open controls" (this card's own and `OfficeScene3D`'s) were removed
+ * so Quick Control's "Open controls ↗" is the single place to navigate to Control from
+ * Overview, not three buttons saying the same thing. The overlay chips (lit count, ACU
+ * state), the auto-rotate/top-down/reset-view controls, and the Edit Layout toolbar all live
+ * inside `OfficeScene3D` itself — that's where the container ref and device-derived state
+ * already are.
+ *
+ * The legend strip that used to sit below `SpatialView` ("CEILING PANEL LIT"/"PANEL
+ * OFF"/luminaire count) is gone per explicit instruction — `SpatialView`'s `flex: 1` means
+ * the model itself grows to fill the height that freed, not a blank gap.
  */
 export function Hero3DCard() {
   return (
@@ -26,17 +31,6 @@ export function Hero3DCard() {
         </div>
       </div>
       <SpatialView />
-      <div className="hero-3d-legend">
-        <span>
-          <span className="hero-3d-legend__swatch" style={{ background: 'var(--accent)' }} aria-hidden="true" />
-          CEILING PANEL LIT
-        </span>
-        <span>
-          <span className="hero-3d-legend__swatch" style={{ background: 'var(--faint)' }} aria-hidden="true" />
-          PANEL OFF
-        </span>
-        <span className="hero-3d-legend__spacer">21 luminaires · 3 per row · 7 row switches</span>
-      </div>
     </div>
   );
 }

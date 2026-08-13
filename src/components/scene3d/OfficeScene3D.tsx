@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, RotateCw, Pause } from 'lucide-react';
+import { X, RotateCw, Pause, Home, LayoutPanelTop, Pencil, Armchair, Table2, GlassWater, ShelvingUnit, Sofa, Redo2, Copy, ClipboardPaste, Trash2, Save, RotateCcw, Upload, Download } from 'lucide-react';
 import { OfficeScene, type PickResult } from './officeScene';
 import { FloorPlanView } from '@/components/floorplan/FloorPlanView';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { Card } from '@/components/ui/Card';
 import { MetricValue } from '@/components/ui/MetricValue';
 import { Badge } from '@/components/ui/Badge';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { useConfirm } from '@/components/ui/useConfirm';
+import { loadLayout, saveLayout, clearSavedLayout, parseLayoutJson, clampToRoom, pastePosition, nextRotation, exportLayoutFilename, newItemId, type EditableItem, type EditableKind } from './editableLayout';
 
 /** 7 lighting circuits x 3 fixtures/row, matching `geometry.ts`'s LIGHT_FIXTURES. */
 const FIXTURES_PER_CIRCUIT = 3;
@@ -29,6 +32,18 @@ function pickToSelection(pick: PickResult): Selection | null {
   return pick.kind === 'light' ? { deviceId: pick.circuit } : { deviceId: pick.id, socket: pick.socket };
 }
 
+const EDITABLE_LABEL: Record<EditableKind, string> = { desk: 'desk', table: 'table', dispenser: 'dispenser', shelf: 'shelf', bench: 'bench' };
+
+/** One "+ Kind" toolbar button per placeable piece — icon + accessible label together, so
+ * adding a sixth kind later is one entry here rather than a new hand-written button. */
+const PLACE_TOOLS: { kind: EditableKind; label: string; Icon: typeof Armchair }[] = [
+  { kind: 'desk', label: 'Add desk', Icon: Armchair },
+  { kind: 'table', label: 'Add table', Icon: Table2 },
+  { kind: 'dispenser', label: 'Add dispenser', Icon: GlassWater },
+  { kind: 'shelf', label: 'Add shelf', Icon: ShelvingUnit },
+  { kind: 'bench', label: 'Add bench', Icon: Sofa },
+];
+
 /**
  * The 3D CARE office. Self-contained on WebGL support: if the browser can't create a
  * context, this renders `FloorPlanView` itself rather than pushing that decision onto
@@ -39,9 +54,13 @@ function pickToSelection(pick: PickResult): Selection | null {
  * idle camera drift to disable under `prefers-reduced-motion`; the scene is already inert
  * except in direct response to a data update or a drag/wheel/click the user just made.
  *
- * View-only: hover shows a tooltip, click opens a read-only inspector card. Neither calls
- * anything that writes — the hit-testing here is what Stage 2 will eventually wire a
- * toggle onto, not something this component does itself.
+ * Two interaction modes, never both at once:
+ *  - Default: hover shows a device tooltip, click opens the read-only device inspector.
+ *    Neither calls anything that writes — unchanged from before Edit Layout existed.
+ *  - Edit Layout (toggled via the pencil button, alongside auto-rotate/top-down/reset-view):
+ *    click places or selects a user-added desk/table instead of a device. The two modes are
+ *    kept from cross-firing by branching once, at the top of the pointer-up handler — see
+ *    that handler's own comment.
  */
 export function OfficeScene3D() {
   const [webgl] = useState(supportsWebGL);
@@ -61,6 +80,25 @@ export function OfficeScene3D() {
   // v4's default: the scene rotates on its own unless the viewer turns it off (or has
   // prefers-reduced-motion, which never starts it at all — see the mount effect below).
   const [autoRotate, setAutoRotateState] = useState(!reducedMotion);
+
+  // --- Edit Layout: user-placed desks/tables, staged in this component's own state and
+  // synced to the scene imperatively (see the `layout`/`selectedEditId` effects below) —
+  // same "React owns the data, the imperative scene owns the WebGL side of it" split
+  // `applyState`'s store subscription already uses for live device readings.
+  const [editMode, setEditMode] = useState(false);
+  const [layout, setLayout] = useState<EditableItem[]>(() => loadLayout());
+  const [selectedEditId, setSelectedEditId] = useState<string | null>(null);
+  const [placeKind, setPlaceKind] = useState<EditableKind | null>(null);
+  const [saveStatus, setSaveStatus] = useState<{ at: number; count: number } | null>(null);
+  const [layoutError, setLayoutError] = useState<string | null>(null);
+  /** What Copy last captured — kind/rotation only; Paste always computes a fresh offset
+   * position via `pastePosition()` rather than storing a stale one here. Real state, not a
+   * ref: the Paste button's own `disabled` prop reads this every render, and a ref mutation
+   * doesn't trigger one — Copy would leave Paste looking permanently disabled until some
+   * unrelated re-render happened to catch up (caught by eslint's react-hooks/refs rule). */
+  const [clipboard, setClipboard] = useState<{ kind: EditableKind; ry: number } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { ask, modalProps } = useConfirm();
 
   const devices = useDeviceStore((s) => s.devices);
   const latestReadings = useDeviceStore((s) => s.latestReadings);
@@ -128,12 +166,168 @@ export function OfficeScene3D() {
     // effect needs to react to it changing.
   }, [webgl, reducedMotion]);
 
+  // Keeps the scene's user-placed desks/tables in sync with `layout` — the single place
+  // every mutation (place, paste, delete, import, reset) funnels through, since they all
+  // go through `setLayout`. Runs on mount too (picking up whatever `loadLayout()` found in
+  // storage), and again on every subsequent change.
+  useEffect(() => {
+    sceneRef.current?.syncEditableFurniture(layout);
+  }, [layout]);
+
+  // Selection is visual-only (a ring under the picked piece) and lives on the scene, not
+  // the layout data — kept as its own effect so selecting doesn't have to round-trip
+  // through a full `syncEditableFurniture` diff.
+  useEffect(() => {
+    sceneRef.current?.setEditableSelection(selectedEditId);
+  }, [selectedEditId]);
+
+  // Escape cancels an armed "+ Desk"/"+ Table" placement without needing a second click on
+  // the toolbar button.
+  useEffect(() => {
+    if (!placeKind) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPlaceKind(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [placeKind]);
+
   if (!webgl) return <FloorPlanView />;
 
   const toggleAutoRotate = () => {
     const next = !autoRotate;
     sceneRef.current?.setAutoRotate(next);
     setAutoRotateState(next);
+  };
+
+  const toggleEditMode = () => {
+    const next = !editMode;
+    setEditMode(next);
+    // Each mode owns its own selection — leaving either one clears both so re-entering
+    // starts clean rather than reopening a stale inspector/ring from before the switch.
+    setSelectedEditId(null);
+    setPlaceKind(null);
+    setHover(null);
+    setSelected(null);
+  };
+
+  const selectedItem = layout.find((i) => i.id === selectedEditId) ?? null;
+
+  /** Click again to disarm — same toggle behaviour `toggleAutoRotate`'s button has, so a
+   * misclick on "+ Desk" doesn't require reaching for Escape to undo. */
+  const armPlace = (kind: EditableKind) => {
+    setPlaceKind((cur) => (cur === kind ? null : kind));
+    setSelectedEditId(null);
+  };
+
+  const copySelected = () => {
+    if (!selectedItem) return;
+    setClipboard({ kind: selectedItem.kind, ry: selectedItem.ry });
+  };
+
+  const pasteClipboard = () => {
+    if (!clipboard) return;
+    // Offsets from whatever's currently selected; falls back to the last item in the
+    // layout (or the room's own centre) so Paste still does something sensible right after
+    // Copy, before anything is (re-)selected.
+    const from = selectedItem ?? layout[layout.length - 1] ?? { x: 0, z: 0 };
+    const { x, z } = pastePosition(from);
+    const item: EditableItem = { id: newItemId(), kind: clipboard.kind, x, z, ry: clipboard.ry };
+    setLayout((items) => [...items, item]);
+    setSelectedEditId(item.id);
+  };
+
+  const deleteSelected = () => {
+    if (!selectedEditId) return;
+    setLayout((items) => items.filter((i) => i.id !== selectedEditId));
+    setSelectedEditId(null);
+  };
+
+  /** 45° per click (`nextRotation`) — how "pick where the furniture faces" is exposed:
+   * click until it's turned the right way, rather than a drag handle or a numeric input.
+   * Updates in place (same id, new `ry`) — `syncEditableFurniture` applies the new facing
+   * to the already-built piece instead of removing and rebuilding it. */
+  const rotateSelected = () => {
+    if (!selectedItem) return;
+    const id = selectedItem.id;
+    setLayout((items) => items.map((i) => (i.id === id ? { ...i, ry: nextRotation(i.ry) } : i)));
+  };
+
+  const doSaveLayout = () => {
+    const ok = saveLayout(layout);
+    if (ok) {
+      setSaveStatus({ at: Date.now(), count: layout.length });
+      setLayoutError(null);
+    } else {
+      setSaveStatus(null);
+      setLayoutError('Could not save — this browser may be blocking local storage.');
+    }
+  };
+
+  const doResetLayout = () => {
+    setLayout([]);
+    setSelectedEditId(null);
+    setPlaceKind(null);
+    clearSavedLayout();
+    setSaveStatus(null);
+    setLayoutError(null);
+  };
+
+  /** Gated the same way Control's fleet-wide masters and Automation's context write are —
+   * this wipes every placed item in one action with no undo. Skips the modal when there's
+   * nothing to lose, same as `AutomationPage.tsx`'s own save button disabling itself when
+   * `pendingEntries.length === 0` rather than confirming a no-op. */
+  const askResetLayout = () => {
+    if (layout.length === 0) {
+      doResetLayout();
+      return;
+    }
+    ask(
+      {
+        title: 'Reset layout?',
+        body: `This removes all ${layout.length} placed item${layout.length === 1 ? '' : 's'} from this session and clears the saved layout. This can't be undone.`,
+        confirmLabel: 'Reset layout',
+        tone: 'red',
+      },
+      doResetLayout,
+    );
+  };
+
+  const doExportLayout = () => {
+    const blob = new Blob([JSON.stringify(layout, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = exportLayoutFilename();
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const triggerImportLayout = () => fileInputRef.current?.click();
+
+  /** Gated only when it would discard something — an empty floor has nothing to lose, so
+   * importing into it applies immediately. */
+  const applyImportedLayout = (items: EditableItem[]) => {
+    setLayout(items);
+    setSelectedEditId(null);
+    setPlaceKind(null);
+    setSaveStatus(null);
+    setLayoutError(null);
+  };
+  const askImportLayout = (items: EditableItem[]) => {
+    if (layout.length === 0) {
+      applyImportedLayout(items);
+      return;
+    }
+    ask(
+      {
+        title: 'Import layout?',
+        body: `This replaces the ${layout.length} item${layout.length === 1 ? '' : 's'} currently placed with ${items.length} from the file. Anything not saved is lost.`,
+        confirmLabel: 'Import layout',
+        tone: 'blue',
+      },
+      () => applyImportedLayout(items),
+    );
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -157,23 +351,70 @@ export function OfficeScene3D() {
       return;
     }
 
+    // No device tooltips while editing — hovering a desk isn't identifying a device, and
+    // the constant raycast this would otherwise run on every mouse move is wasted work
+    // while the editable-furniture pick path is what matters instead.
+    if (editMode) {
+      setHover(null);
+      return;
+    }
+
     const rect = e.currentTarget.getBoundingClientRect();
     const pick = scene.pick(e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height);
     const selection = pickToSelection(pick);
     setHover(selection ? { selection, x: e.clientX, y: e.clientY } : null);
   };
 
+  /**
+   * Branches once, at the top, into the two interaction modes this component ever has —
+   * everything below the `editMode` check is the original, unmodified device-inspection
+   * path. Edit Layout further branches on whether a placement is armed: a click either
+   * drops a new desk/table at the raycasted floor point (then disarms — one placement per
+   * button press, not a rubber-stamp mode) or selects/deselects an existing one.
+   */
   const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
     draggingRef.current = false;
-    if (!movedRef.current) {
-      const scene = sceneRef.current;
-      if (scene) {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const pick = scene.pick(e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height);
-        setSelected(pickToSelection(pick));
+    if (movedRef.current) return;
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+
+    if (editMode) {
+      if (placeKind) {
+        const point = scene.pickFloorPoint(px, py, rect.width, rect.height);
+        if (point) {
+          const { x, z } = clampToRoom(point.x, point.z);
+          const item: EditableItem = { id: newItemId(), kind: placeKind, x, z, ry: 0 };
+          setLayout((items) => [...items, item]);
+          setSelectedEditId(item.id);
+        }
+        setPlaceKind(null);
+        return;
       }
+      setSelectedEditId(scene.pickEditable(px, py, rect.width, rect.height));
+      return;
     }
+
+    const pick = scene.pick(px, py, rect.width, rect.height);
+    setSelected(pickToSelection(pick));
   };
+
+  const onImportFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // lets the same filename be picked again later
+    if (!file) return;
+    const parsed = parseLayoutJson(await file.text());
+    if (!parsed) {
+      setLayoutError('That file is not a valid iBEMS layout export.');
+      return;
+    }
+    setLayoutError(null);
+    askImportLayout(parsed);
+  };
+
+  const layoutStatus = layoutError ?? (saveStatus ? `Saved ${saveStatus.count} item${saveStatus.count === 1 ? '' : 's'} at ${new Date(saveStatus.at).toLocaleTimeString('en-PH', { hour12: false })}` : '');
 
   return (
     <div ref={containerRef} className="scene3d-container">
@@ -191,23 +432,94 @@ export function OfficeScene3D() {
       <div className="scene3d-chip-row">
         <span className="scene3d-chip">{litCount}/21 LIGHTS LIT</span>
         <span className="scene3d-chip">ACU {acuState ? acuState.toUpperCase() : 'UNKNOWN'}</span>
-      </div>
-      <div className="scene3d-actions-row">
-        {!reducedMotion && (
-          <button
-            type="button"
-            className={`scene3d-autorotate-btn${autoRotate ? ' scene3d-autorotate-btn--active' : ''}`}
-            onClick={toggleAutoRotate}
-            aria-pressed={autoRotate}
-            aria-label={autoRotate ? 'Stop auto-rotate' : 'Start auto-rotate'}
-            title={autoRotate ? 'Stop auto-rotate' : 'Start auto-rotate'}
-          >
-            {autoRotate ? <Pause size={14} aria-hidden="true" /> : <RotateCw size={14} aria-hidden="true" />}
-          </button>
+        {placeKind && (
+          <span className="scene3d-chip scene3d-chip--hint" role="status">
+            Click the floor to place a {EDITABLE_LABEL[placeKind]} · Esc to cancel
+          </span>
         )}
       </div>
+
+      <div className="scene3d-controls">
+        {editMode && (
+          <div className="scene3d-edit-toolbar" role="toolbar" aria-label="Edit layout">
+            {PLACE_TOOLS.map(({ kind, label, Icon }) => (
+              <button key={kind} type="button" className="scene3d-edit-btn" aria-pressed={placeKind === kind} onClick={() => armPlace(kind)} aria-label={label} title={label}>
+                <Icon size={14} aria-hidden="true" />
+              </button>
+            ))}
+            <span className="scene3d-edit-toolbar__divider" aria-hidden="true" />
+            <button type="button" className="scene3d-edit-btn" disabled={!selectedItem} onClick={copySelected} aria-label="Copy selected item" title="Copy">
+              <Copy size={14} aria-hidden="true" />
+            </button>
+            <button type="button" className="scene3d-edit-btn" disabled={!clipboard} onClick={pasteClipboard} aria-label="Paste" title="Paste">
+              <ClipboardPaste size={14} aria-hidden="true" />
+            </button>
+            <button type="button" className="scene3d-edit-btn" disabled={!selectedItem} onClick={rotateSelected} aria-label="Rotate selected item" title="Rotate">
+              <Redo2 size={14} aria-hidden="true" />
+            </button>
+            <button type="button" className="scene3d-edit-btn" disabled={!selectedEditId} onClick={deleteSelected} aria-label="Delete selected item" title="Delete">
+              <Trash2 size={14} aria-hidden="true" />
+            </button>
+            <span className="scene3d-edit-toolbar__divider" aria-hidden="true" />
+            <button type="button" className="scene3d-edit-btn" disabled={layout.length === 0} onClick={doSaveLayout} aria-label="Save layout" title="Save">
+              <Save size={14} aria-hidden="true" />
+            </button>
+            <button type="button" className="scene3d-edit-btn" disabled={layout.length === 0} onClick={askResetLayout} aria-label="Reset layout" title="Reset layout">
+              <RotateCcw size={14} aria-hidden="true" />
+            </button>
+            <button type="button" className="scene3d-edit-btn" onClick={triggerImportLayout} aria-label="Import layout" title="Import">
+              <Upload size={14} aria-hidden="true" />
+            </button>
+            <button type="button" className="scene3d-edit-btn" disabled={layout.length === 0} onClick={doExportLayout} aria-label="Export layout" title="Export">
+              <Download size={14} aria-hidden="true" />
+            </button>
+            {/* Hidden file input — Import's real trigger. `aria-hidden` + `tabIndex={-1}`
+                since the visible "Import" button above is the actual control; this exists
+                only because a browser's file picker can't be opened except by clicking
+                (a real or simulated click on) an <input type="file"> itself. */}
+            <input ref={fileInputRef} type="file" accept="application/json" className="sr-only" tabIndex={-1} aria-hidden="true" onChange={(e) => void onImportFileChange(e)} />
+          </div>
+        )}
+        {editMode && layoutStatus && (
+          <p className={`scene3d-edit-status${layoutError ? ' scene3d-edit-status--error' : ''}`} role={layoutError ? 'alert' : 'status'}>
+            {layoutStatus}
+          </p>
+        )}
+        <div className="scene3d-actions-row">
+          <button type="button" className="scene3d-autorotate-btn" onClick={() => sceneRef.current?.resetView()} aria-label="Reset view" title="Reset view">
+            <Home size={14} aria-hidden="true" />
+          </button>
+          <button type="button" className="scene3d-autorotate-btn" onClick={() => sceneRef.current?.setTopDownView()} aria-label="Top-down view" title="Top-down view">
+            <LayoutPanelTop size={14} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className={`scene3d-autorotate-btn${editMode ? ' scene3d-autorotate-btn--active' : ''}`}
+            onClick={toggleEditMode}
+            aria-pressed={editMode}
+            aria-label={editMode ? 'Exit edit layout' : 'Edit layout'}
+            title={editMode ? 'Exit edit layout' : 'Edit layout'}
+          >
+            <Pencil size={14} aria-hidden="true" />
+          </button>
+          {!reducedMotion && (
+            <button
+              type="button"
+              className={`scene3d-autorotate-btn${autoRotate ? ' scene3d-autorotate-btn--active' : ''}`}
+              onClick={toggleAutoRotate}
+              aria-pressed={autoRotate}
+              aria-label={autoRotate ? 'Stop auto-rotate' : 'Start auto-rotate'}
+              title={autoRotate ? 'Stop auto-rotate' : 'Start auto-rotate'}
+            >
+              {autoRotate ? <Pause size={14} aria-hidden="true" /> : <RotateCw size={14} aria-hidden="true" />}
+            </button>
+          )}
+        </div>
+      </div>
+
       {hover && <SceneTooltip selection={hover.selection} x={hover.x} y={hover.y} />}
       {selected && <DeviceInspector selection={selected} onClose={() => setSelected(null)} />}
+      <ConfirmModal {...modalProps} />
     </div>
   );
 }

@@ -69,7 +69,16 @@
   --muted: #475569;
   --muted-2: #5f6b7d;
   /** Decorative use only — borders, disabled-chrome tints, chart gridlines, dot swatches.
-   * NEVER real text; measures under 3:1 against every surface in this app. */
+   * NEVER real text; measures under 3:1 against every surface in this app.
+   *
+   * This rule went unenforced for a long time: 30 rules had it set as `color:` on real text,
+   * mostly 9-10px mono caps labels — the app's smallest type at its lowest contrast. Those
+   * are all on --muted-2 now (4.8-5.4:1 against the surfaces they actually sit on: --bg-inset,
+   * --border-faint, and the glass-over-page composite). The single remaining `color:` use is
+   * `.devices-add-btn`, a genuinely disabled control, which WCAG 1.4.3 exempts.
+   *
+   * If you are about to add another `color: var(--faint)`, the answer is almost certainly
+   * --muted-2. */
   --faint: #94a3b8;
   --faintest: #cbd5e1;
 
@@ -101,6 +110,21 @@
 
   --purple: #7c3aed; /* 5.2-5.7:1 */
   --purple-bright: #8b5cf6;
+
+  /**
+   * Focus indicator. Deliberately NOT --accent, which is what this was: amber #f59e0b
+   * measures 2.15:1 against white and ~1.75:1 against --bg-page, and WCAG 2.2 SC 1.4.11
+   * requires 3:1 for a focus indicator against adjacent colour. The one affordance whose
+   * entire job is to be seen was the one failing.
+   *
+   * --blue (#2563eb, 5.19:1 on white) rather than a new colour: it's already the app's
+   * link/interactive blue, so focus reads as "this is actionable" in the vocabulary the
+   * rest of the UI already uses. Declared as its own token, not a raw var(--blue)
+   * reference at the use site, so chrome floating over the dark 3D viewport can override
+   * it locally (see the .scene3d-* block) — blue on --glass-heavy is the mirror-image
+   * failure of amber on white.
+   */
+  --focus-ring: #2563eb;
 
   /*
    * Semantic aliases some Phase L components already reference — kept so those files don't
@@ -189,7 +213,10 @@ body {
   line-height: var(--lh-base);
   -webkit-font-smoothing: antialiased;
   position: relative;
-  min-height: 100vh;
+  /* dvh, not vh: on mobile browsers 100vh is the viewport with the URL bar *hidden*, so a
+     100vh page is taller than what's actually visible and the layout shifts as the bar
+     retracts. dvh tracks the real viewport. */
+  min-height: 100dvh;
 }
 /* Numeric readouts and caps micro-labels use the mono face throughout — set on the classes
    that carry them (.metric-value, caption/label classes), not globally on body. */
@@ -235,22 +262,118 @@ body::before {
   top: var(--sp-4);
 }
 
+/* Text for assistive tech only — visually gone, still in the accessibility tree. Used where a
+   state is conveyed to sighted users purely by colour or shape (Analytics' per-source
+   reporting/stale dot). `clip-path` + 1px box rather than `display: none` or `visibility:
+   hidden`, both of which remove the node from the accessibility tree entirely, which would
+   defeat the point. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+/* Panels that float over the 3D viewport composite against --glass-heavy (near-opaque
+   #0f1722), not the light page — the same reason .scene3d-tooltip needs its own surface
+   token. A blue ring there measures under 3:1; white clears it comfortably. */
+.scene3d-inspector,
+.scene3d-controls,
+.scene3d-chip-row {
+  --focus-ring: #ffffff;
+}
+
+/*
+ * The tooltip and the click-to-open inspector are the only two places in the app that put
+ * generic light-theme components — `Card`, `MetricValue`, `Badge` — on the dark
+ * `--glass-heavy` surface instead of the page's own light background. Those components
+ * don't hardcode colour; they reference the semantic text tokens (`--txt`, `--muted`,
+ * `--muted-2`, badge tones), which is exactly why they need to be redefined here rather
+ * than patched component-by-component: every current and future thing rendered inside one
+ * of these two panels inherits readable colour for free, the same way `Card.tsx`'s
+ * docblock wants elevation to be "one edit."
+ *
+ * Before this block, `.scene3d-inspector .card` set only the background to near-black and
+ * left every descendant on its light-theme colour — `--txt: #1e293b` (near-black) on a
+ * near-black backdrop. That's the dark, unreadable device-detail popup this fixes.
+ *
+ * Values picked to read clearly against the composite backdrop this panel actually sits on
+ * (--glass-heavy blended with whatever's behind it — the dark scene chrome, or, worst case,
+ * a brightly-lit floor/wall through the 15% see-through gap): light neutrals for text,
+ * translucent white for hairlines, and each semantic status colour swapped for its
+ * "-bright" sibling — the darker "-text" shades exist specifically for small text on a
+ * *light* background (see :root's own comment on that pair), which is the opposite of this
+ * surface.
+ */
+/*
+ * `.scene3d-controls` (added alongside the Edit Layout feature) wraps the reset-view/
+ * top-down/edit/auto-rotate cluster and the edit toolbar it can reveal — every one of those
+ * buttons sets `color: var(--muted)` at rest (`.scene3d-autorotate-btn`, below), which was
+ * ALREADY a dark-slate-on-near-black pairing before Edit Layout existed, just easy to miss
+ * on a single icon-only auto-rotate button with no visible label to judge it against. Adding
+ * more buttons that share the exact same class made it obvious enough to fix here rather
+ * than carry forward — same root cause as `.scene3d-inspector`/`.scene3d-tooltip` above, so
+ * it gets the same fix.
+ */
+.scene3d-inspector,
+.scene3d-tooltip,
+.scene3d-controls {
+  --txt: #f1f5f9;
+  --muted: #cbd5e1;
+  --muted-2: #94a3b8;
+  --faint: #64748b;
+  --border: rgb(255 255 255 / 0.16);
+  --border-strong: rgb(255 255 255 / 0.3);
+  --border-faint: rgb(255 255 255 / 0.1);
+  --bg-surface-2: rgb(255 255 255 / 0.08);
+  --bg-inset: rgb(255 255 255 / 0.06);
+  --good: var(--green-bright);
+  --good-soft: rgb(16 185 129 / 0.22);
+  --warn: var(--accent);
+  --warn-soft: rgb(245 158 11 / 0.22);
+  --bad: var(--red-bright);
+  --bad-soft: rgb(239 68 68 / 0.22);
 }
 
 /* ---------------------------------------------------------------------------
  * UI primitives — the vocabulary every view is built from.
  * ------------------------------------------------------------------------ */
-.card {
+/*
+ * The glass surface recipe, declared ONCE for every panel that wears it. `.stat-tile`,
+ * `.floorplan-card`, and `.devices-table-card` each used to re-declare all seven of these
+ * properties by hand, which is exactly how three of them ended up still carrying the Phase L
+ * dark-theme shadow after the theme flipped to light (see the box-shadow note below).
+ * `Card.tsx`'s docblock already promised "a change to elevation or radius is one edit" —
+ * this is what makes that true. Per-class differences (padding, flex, overflow) stay on the
+ * individual rules below.
+ */
+.card,
+.stat-tile,
+.floorplan-card,
+.devices-table-card {
   background: var(--glass);
   backdrop-filter: blur(var(--glass-blur)) saturate(140%);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
   border: 1px solid var(--glass-border);
   border-radius: var(--r-card);
-  padding: var(--sp-5);
-  box-shadow: 0 8px 32px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.04);
+  /*
+   * Was `0 8px 32px rgb(0 0 0 / 0.4)` — a Phase L *dark theme* value, left behind when the
+   * theme flipped to light. Pure black at 5x the alpha --shadow-card documents, which is
+   * what made every card read as muddy rather than floating. The paired highlight was
+   * `inset 0 1px 0 rgb(255 255 255 / 0.04)`: white at 4% over a white glass surface is
+   * literally invisible here — it was doing real work only against the old dark backdrop.
+   * At 0.6 it produces the thin lit top edge the glass treatment actually wants.
+   */
+  box-shadow: var(--shadow-card), inset 0 1px 0 rgb(255 255 255 / 0.6);
   /*
    * min-width: 0 — Grid/flex items default to min-width: auto, which lets content with
    * its own intrinsic sizing (Recharts' ResponsiveContainer, a two-socket pill row, etc.)
@@ -261,6 +384,9 @@ body::before {
    * app places content into, so the fix belongs here once, not per-container.
    */
   min-width: 0;
+}
+.card {
+  padding: var(--sp-5);
 }
 .card--inset {
   background: var(--glass-2);
@@ -281,7 +407,11 @@ body::before {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   border-color: var(--border);
-  box-shadow: var(--shadow-card, 0 1px 2px rgb(0 0 0 / 0.4));
+  /* No inset highlight: that's a glass affordance, and this surface is deliberately not
+     glass. The `var(--shadow-card, ...)` fallback that used to be here was dead code — the
+     token is defined unconditionally in :root — and its fallback value was another stray
+     dark-theme 0.4-alpha black. */
+  box-shadow: var(--shadow-card);
 }
 
 .card-head {
@@ -386,18 +516,13 @@ body::before {
   vertical-align: 0.06em;
 }
 
+/* Surface properties come from the shared glass recipe above; only what makes a stat tile a
+   stat tile lives here. */
 .stat-tile {
-  background: var(--glass);
-  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--r-card);
   padding: var(--sp-5);
-  box-shadow: 0 8px 32px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.04);
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
-  min-width: 0;
 }
 .stat-tile__head {
   display: flex;
@@ -458,7 +583,7 @@ body::before {
  * markup; this owns the chrome.
  * ------------------------------------------------------------------------ */
 .app-shell {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -531,6 +656,9 @@ body::before {
 .nav-tabs::-webkit-scrollbar {
   display: none;
 }
+/* An <a> since Phase P (see TopNav.tsx on why these stopped being role="tab" buttons) —
+   hence `text-decoration: none` and the explicit `color`, which a <button> inherited for
+   free. Everything else is unchanged; the pill treatment is identical. */
 .nav-tab {
   flex: none;
   display: inline-flex;
@@ -539,6 +667,7 @@ body::before {
   border: none;
   background: transparent;
   color: var(--muted);
+  text-decoration: none;
   font-family: inherit;
   font-weight: 600;
   font-size: var(--fs-xs-lg);
@@ -661,7 +790,7 @@ body::before {
 .info-hint__btn {
   border: none;
   background: none;
-  color: var(--faint);
+  color: var(--muted-2);
   cursor: pointer;
   padding: 2px;
   display: grid;
@@ -767,7 +896,7 @@ body::before {
   margin: 4px 0 0;
   font-family: 'IBM Plex Mono', monospace;
   font-size: var(--fs-3xs);
-  color: var(--faint);
+  color: var(--muted-2);
 }
 .alerts-popover__ack {
   flex: none;
@@ -785,19 +914,52 @@ body::before {
   border-color: var(--border-strong);
 }
 
-/* Below ~860px the 5-tab pill group is wider than a phone screen can show without
-   scrunching every label — hide the site chip and settle for the horizontally-scrollable
-   tab strip (§nav-tabs above) rather than inventing a second nav pattern. */
+/*
+ * Below ~860px the 5-tab pill group is wider than a phone screen can show without
+ * scrunching every label — hide the site chip, and instead of squeezing the scrollable tab
+ * strip (§nav-tabs above) into whatever sliver is left between the brand and the live-status
+ * cluster, give it its OWN full-width row below both.
+ *
+ * That squeeze was a real defect, not just a discoverability gap: on a 375px phone, `.nav-tabs`
+ * measured out to a 91px visible window for content that needed 451px — under one full tab's
+ * width, with the other four existing only as an undiscoverable, extremely fiddly horizontal
+ * swipe. `overflow-x: auto` was technically already there; there was barely anything to grab.
+ *
+ * `order` (not DOM reshuffling) puts `.nav-right` right after `.nav-brand` on row 1 —
+ * `margin-left: auto` pushes it to that row's far edge, same visual split the 3-column flex
+ * row already had — while `.nav-tabs`'s `flex-basis: 100%` is what forces it onto its own
+ * row 2, now with the full viewport width (minus padding) instead of a fixed-width leftover.
+ * Route logic (`useHashRoute`) and every link's own markup are untouched — this is layout only.
+ */
 @media (max-width: 860px) {
   .top-nav {
-    gap: var(--sp-3);
+    flex-wrap: wrap;
+    row-gap: var(--sp-2);
+    column-gap: var(--sp-3);
     padding-inline: var(--sp-4);
   }
   .nav-site-chip {
     display: none;
   }
+  .nav-right {
+    order: 1;
+    margin-left: auto;
+  }
   .nav-tabs {
+    order: 2;
+    flex: none;
+    flex-basis: 100%;
     justify-content: flex-start;
+    /*
+     * Edge fade — a zero-JS hint that there's more to scroll, on both edges regardless of
+     * scroll position (a position-aware one-sided fade would need a scroll listener; this
+     * static version costs nothing and is never actively wrong, just occasionally fades an
+     * edge that happens to have nothing past it — a mild imprecision worth not shipping a
+     * listener for). 16px is about the width of one pill's own end-padding, so the fade
+     * reads as "this pill is trailing off," not as content being clipped away.
+     */
+    mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
   }
 }
 
@@ -1053,6 +1215,24 @@ body::before {
   .overview-trio {
     grid-template-columns: 1fr 1fr;
   }
+  /*
+   * `.overview-col > *`'s `flex: 1` (equal-thirds/equal-halves, see that rule's own
+   * comment) is a desktop-only idea: it only makes sense when the column has a real height
+   * to split, borrowed from the 3D card's tall row in the 3-column grid. Once the layout
+   * stacks to one column above, each bento area becomes its own `auto`-sized grid row, and
+   * `flex: 1 1 0%` on a card inside an auto-height flex column doesn't distribute real
+   * space anymore — it forces every card in a column to the SAME height regardless of what
+   * either one actually contains, which is what was silently capping Energy Flow's card
+   * short of its own chart (a fixed 220px below, see `.energy-flow-chart`) and letting the
+   * chart spill out past the card's own bottom edge into whatever sat below it.
+   *
+   * `flex: none` here lets each card go back to sizing off its own content, which is what
+   * stacked cards should do — nothing forces them to match a neighbour's height once
+   * they're no longer sharing a row.
+   */
+  .overview-col > * {
+    flex: none;
+  }
 }
 @media (max-width: 640px) {
   .overview-trio {
@@ -1073,6 +1253,31 @@ body::before {
   flex: 1;
   min-height: 160px;
   margin-top: var(--sp-2);
+}
+/*
+ * Below 1200px, `.overview-bento` collapses to one column and each bento area becomes its
+ * own grid ROW, sized to `auto` (no `grid-template-rows` pins it) — so `.energy-flow-chart`'s
+ * `flex: 1` above has nothing bounded to grow against. On desktop that same `flex: 1` works
+ * because the grid's row-stretch gives `.overview-col--right` a real height, borrowed from
+ * the 3D card's own tall row; once the layout stacks to one column, that borrowed height is
+ * gone and the flex chain becomes `auto` all the way up. Recharts' `ResponsiveContainer`
+ * (inside `HistoryAreaChart`) still needs a *definite* pixel height from its parent to
+ * measure against, so with nothing definite to find it rendered past the card's own bottom
+ * edge into whatever sat below it, instead of the height the card visually promised.
+ *
+ * A fixed height breaks that ambiguity the same way the desktop grid row incidentally did —
+ * close to what the chart already renders at inside its desktop-stretched card, so nothing
+ * about its actual shape changes here, only that it now has a real number to fill instead of
+ * an unresolved one. Placed here, after the base rule, rather than inside `.overview-bento`'s
+ * own `@media` block earlier in the file: media queries add no specificity, so at equal
+ * specificity the LATER rule in source order wins regardless of which one is conditional —
+ * a copy of this override placed before the base rule above would have lost to it outright.
+ */
+@media (max-width: 1200px) {
+  .energy-flow-chart {
+    flex: none;
+    height: 220px;
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -1275,7 +1480,7 @@ body::before {
 .live-demand-stat-label {
   display: block;
   font: 600 var(--fs-2xs) 'IBM Plex Mono', monospace;
-  color: var(--faint);
+  color: var(--muted-2);
   letter-spacing: 0.06em;
 }
 .live-demand-stat-value {
@@ -1382,7 +1587,7 @@ body::before {
 .phase-bar-notmetered {
   flex: 1;
   font-size: var(--fs-xxs-lg);
-  color: var(--faint);
+  color: var(--muted-2);
 }
 .panel-health-note {
   margin: var(--sp-3) 0 0;
@@ -1395,7 +1600,7 @@ body::before {
  * ------------------------------------------------------------------------ */
 .climate-caps-label {
   font: 600 var(--fs-2xs) 'IBM Plex Mono', monospace;
-  color: var(--faint);
+  color: var(--muted-2);
 }
 .climate-grid {
   display: grid;
@@ -1468,27 +1673,6 @@ body::before {
   font-size: var(--fs-xs);
   color: var(--muted-2);
   margin: 2px 0 0;
-}
-.hero-3d-legend {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-  margin-top: var(--sp-3);
-  font: 600 var(--fs-xxs-lg) 'IBM Plex Mono', monospace;
-  color: var(--muted-2);
-  flex-wrap: wrap;
-}
-.hero-3d-legend__swatch {
-  display: inline-block;
-  width: 9px;
-  height: 9px;
-  border-radius: 2px;
-  margin-right: 5px;
-  vertical-align: -1px;
-}
-.hero-3d-legend__spacer {
-  margin-left: auto;
-  color: var(--faint);
 }
 .scene3d-chip-row {
   position: absolute;
@@ -1657,14 +1841,14 @@ body::before {
  * ------------------------------------------------------------------------ */
 .edge-buffer-head-unit {
   font: 600 var(--fs-2xs) 'IBM Plex Mono', monospace;
-  color: var(--faint);
+  color: var(--muted-2);
 }
 .edge-buffer-axis {
   display: flex;
   justify-content: space-between;
   margin-top: 4px;
   font: 500 var(--fs-3xs) 'IBM Plex Mono', monospace;
-  color: var(--faint);
+  color: var(--muted-2);
 }
 .edge-buffer-footnote {
   margin: var(--sp-2) 0 0;
@@ -1823,6 +2007,20 @@ body::before {
   border-radius: var(--r-inner);
   padding: 6px 10px;
   font-size: var(--fs-xs);
+  /*
+   * The bug this fixes: `color` is inherited, but only from an already-RESOLVED value, not
+   * a live `var()` reference — so without this line, `<strong>` (below, no `color` of its
+   * own) inherited `body`'s computed color, which was resolved using `body`'s own light-mode
+   * --txt (#1e293b) LONG before it ever reached this element's locally-overridden --txt. The
+   * device-name line rendered near-invisible dark-on-near-black as a result — `.scene3d-tooltip
+   * span`'s explicit `color: var(--muted)` happened to look fine only because it references
+   * the token directly, at this scope, instead of relying on inheritance to carry a live
+   * value down. Declaring color here, at the scope root, is what makes the override actually
+   * apply everywhere inside — the same fix `.scene3d-inspector .card` gets implicitly, since
+   * `Card`'s own title/label markup already sets `color: var(--txt)` explicitly at every
+   * text node rather than depending on inheritance.
+   */
+  color: var(--txt);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1866,12 +2064,23 @@ body::before {
 }
 
 /* Bottom-right action cluster over the 3D viewport — v4's autorotate toggle + "Open
-   controls", replacing the autorotate button's old standalone bottom-left position. */
-.scene3d-actions-row {
+   controls", replacing the autorotate button's old standalone bottom-left position.
+   Phase Q added Reset View/Top-down/Edit Layout beside it, plus the toolbar Edit Layout can
+   reveal — `.scene3d-controls` is the positioned wrapper both rows now share, stacked with
+   the edit toolbar (when open) above the always-visible primary row, so the feature set
+   grows without either row needing to know about the other's own height. */
+.scene3d-controls {
   position: absolute;
   bottom: var(--sp-3);
   right: var(--sp-3);
   z-index: 25;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  max-width: calc(100% - 2 * var(--sp-3));
+}
+.scene3d-actions-row {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
@@ -1902,6 +2111,91 @@ body::before {
   color: var(--accent);
   border-color: var(--glass-border);
 }
+
+/* Edit Layout's own toolbar — same dark-glass pill language as `.scene3d-autorotate-btn`,
+   as one strip rather than a row of separately-floating circles: 9 controls at that size
+   would read as scattered, not as one tool. Wraps to a second line rather than overflowing
+   the card on a narrow viewport (`.overview-col` can be as narrow as 280px) — a scroll
+   affordance over a 3D canvas would be worse than an extra row here. */
+.scene3d-edit-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  background: var(--glass-heavy);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-inner);
+  box-shadow: var(--shadow-pop);
+}
+.scene3d-edit-toolbar__divider {
+  align-self: stretch;
+  width: 1px;
+  margin: 2px 1px;
+  background: var(--border);
+}
+.scene3d-edit-btn {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  cursor: pointer;
+  flex: none;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+.scene3d-edit-btn:hover:not(:disabled) {
+  color: var(--txt);
+  background: var(--bg-surface-2);
+}
+.scene3d-edit-btn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+/* "+ Desk"/"+ Table" while armed — the same accent-on-glass language
+   `.scene3d-autorotate-btn--active` already uses for auto-rotate's running state, keyed off
+   the attribute the JSX already sets rather than a second class the two would have to stay
+   in sync with by hand. */
+.scene3d-edit-btn[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: rgb(245 158 11 / 0.35);
+}
+.scene3d-edit-btn:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+/* Confirmation/error line under the toolbar — `role="status"`/`role="alert"` in the JSX
+   carries the actual announcement; this is only the visual treatment. Same pill-on-glass
+   read as `.scene3d-chip`, coloured for the outcome rather than the chip's neutral grey. */
+.scene3d-edit-status {
+  margin: 0;
+  padding: 4px 10px;
+  font: 600 var(--fs-2xs) 'IBM Plex Mono', monospace;
+  color: var(--good);
+  background: rgb(15 23 34 / 0.7);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+}
+.scene3d-edit-status--error {
+  color: var(--bad);
+}
+
+/* The "click the floor to place a desk" hint chip — reuses `.scene3d-chip`'s own look with
+   an accent border, so it visually reads as instructional/actionable rather than the
+   neutral status the other two chips in this row report. */
+.scene3d-chip--hint {
+  border-color: rgb(245 158 11 / 0.5);
+  color: var(--accent);
+}
+
 .scene3d-inspector-row {
   margin-bottom: var(--sp-3);
 }
@@ -1944,6 +2238,9 @@ body::before {
   background: var(--txt);
   color: #ffffff;
 }
+/* The one place --faint survives as a text colour, and deliberately: this button is
+   genuinely `disabled` (see DevicesView.tsx), and WCAG 1.4.3 exempts inactive controls from
+   the contrast minimum. Reading as unavailable is the whole point of the treatment. */
 .devices-add-btn {
   border: 1px dashed var(--faintest);
   background: var(--bg-inset);
@@ -1955,13 +2252,8 @@ body::before {
   white-space: nowrap;
 }
 
+/* No padding — the table's own rows carry it and bleed to the card's edges. */
 .devices-table-card {
-  background: var(--glass);
-  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--r-card);
-  box-shadow: var(--shadow-card);
   overflow: hidden;
 }
 .devices-table-skeleton-row {
@@ -2024,7 +2316,7 @@ body::before {
 }
 .devices-table__id {
   font-size: var(--fs-xxs);
-  color: var(--faint);
+  color: var(--muted-2);
 }
 .devices-table__class-pill {
   font-size: var(--fs-xs);
@@ -2069,7 +2361,7 @@ body::before {
 }
 .devices-table__comm--muted {
   background: var(--bg-inset);
-  color: var(--faint);
+  color: var(--muted-2);
 }
 .devices-table__state {
   font-size: var(--fs-xs-lg);
@@ -2176,13 +2468,7 @@ body::before {
   gap: var(--sp-4);
 }
 .floorplan-card {
-  background: var(--glass);
-  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--r-card);
   padding: var(--sp-5);
-  box-shadow: 0 8px 32px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.04);
 }
 .floorplan-title {
   display: flex;
@@ -2314,31 +2600,48 @@ body::before {
  * Control — Phase M3: spatial plan + manual overrides. `.page-actions` (index.css, page
  * header block) already provides the flex row the 3 master buttons sit in.
  * ------------------------------------------------------------------------ */
+/*
+ * Three fleet-wide masters, side by side in the page header. They used to be three *filled*
+ * buttons — solid amber, solid red, solid blue, each with its own coloured drop shadow —
+ * which is three maximum-emphasis calls to action competing in one row. Nothing told you
+ * which to reach for, and "highest visual weight on the page" is a strange thing to award to
+ * three commands that all cut power to something.
+ *
+ * They are peers, so they're now styled as peers: an outlined button carrying its semantic
+ * colour on the icon, label, and border. Each is still instantly identifiable by colour, the
+ * destructive one still reads as the most serious (red on white is the highest-contrast pair
+ * of the three), and the page's actual emphasis goes back to the plan and the live data —
+ * where the operator's attention should start. Every one of them is gated by ConfirmModal
+ * regardless, so nothing here makes a mis-click cheaper.
+ */
 .control-master-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: none;
+  border: 1.5px solid currentColor;
+  background: var(--bg-surface);
   border-radius: var(--r-inner);
   padding: 11px 16px;
   font: 700 var(--fs-sm) 'Manrope', sans-serif;
   cursor: pointer;
   white-space: nowrap;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
 }
+.control-master-btn:hover {
+  /* 8% of the button's own semantic colour — the tint follows whichever modifier is on. */
+  background: color-mix(in srgb, currentColor 8%, var(--bg-surface));
+}
+/* The -text/darker shade of each semantic pair, not the -bright one: these are small bold
+   labels and icon glyphs on a white surface, which is exactly the case index.css's semantic
+   docblock says the bright values fail AA for. */
 .control-master-btn--accent {
-  background: var(--accent);
-  color: #1e293b;
-  box-shadow: 0 4px 14px rgb(245 158 11 / 0.25);
+  color: var(--accent-text);
 }
 .control-master-btn--red {
-  background: var(--red-bright);
-  color: #ffffff;
-  box-shadow: 0 4px 14px rgb(239 68 68 / 0.25);
+  color: var(--red);
 }
 .control-master-btn--blue {
-  background: var(--blue-bright);
-  color: #ffffff;
-  box-shadow: 0 4px 14px rgb(59 130 246 / 0.25);
+  color: var(--blue);
 }
 
 .control-grid {
@@ -2365,7 +2668,7 @@ body::before {
 }
 .control-plan-card__tag {
   font: 600 var(--fs-xxs) 'IBM Plex Mono', monospace;
-  color: var(--faint);
+  color: var(--muted-2);
   white-space: nowrap;
   flex: none;
 }
@@ -2397,7 +2700,7 @@ body::before {
   align-items: center;
   gap: 6px;
   font: 600 var(--fs-2xs) 'IBM Plex Mono', monospace;
-  color: var(--faint);
+  color: var(--muted-2);
   letter-spacing: 0.08em;
   margin-bottom: var(--sp-3);
 }
@@ -2507,11 +2810,17 @@ body::before {
   line-height: 1.1;
 }
 /*
- * The puck itself is now the control — a circle split into two independently clickable
- * halves (DP1 left, DP2 right). `overflow: hidden` on the circular container clips each
- * flex child's rectangle to its own half automatically, rather than hand-rolling two
- * clip-path semicircles. Matches `.control-lamp`'s 26px so the two plans read as one
+ * The puck itself is the control — a circle split into two independently clickable halves
+ * (DP1 left, DP2 right). Matches `.control-lamp`'s 26px so the two plans read as one
  * consistent symbol size.
+ *
+ * The semicircles used to come from `overflow: hidden` on this container clipping each flex
+ * child's rectangle, which was the cheaper trick. It had to go: `overflow: hidden` also
+ * clips a *descendant's* pseudo-element, and the coarse-pointer hit expanders at the end of
+ * this file are exactly that — the halves are 13x26px, less than a third of the 44pt
+ * minimum, on the Control page's primary interaction. Each half now draws its own two
+ * rounded corners instead. Radius is 12px, not 13px: the 1px border means the halves live in
+ * a 24px content box, and matching that keeps the circle true.
  */
 .control-outlet-pin__puck {
   display: flex;
@@ -2519,7 +2828,6 @@ body::before {
   height: 26px;
   margin: 0 auto;
   border-radius: 50%;
-  overflow: hidden;
   border: 1px solid var(--border-strong);
 }
 .control-outlet-pin__half {
@@ -2529,9 +2837,15 @@ body::before {
   padding: 0;
   background: var(--bg-inset);
   transition: background 0.15s ease;
+  /* Anchor for the coarse-pointer hit expander (end of file). */
+  position: relative;
 }
 .control-outlet-pin__half--left {
   border-right: 1px solid var(--border-strong);
+  border-radius: 12px 0 0 12px;
+}
+.control-outlet-pin__half--right {
+  border-radius: 0 12px 12px 0;
 }
 .control-outlet-pin__half--on {
   background: var(--accent);
@@ -2598,7 +2912,7 @@ body::before {
 }
 .control-list-row__meta {
   font: 500 var(--fs-xxs) 'IBM Plex Mono', monospace;
-  color: var(--faint);
+  color: var(--muted-2);
   margin: 1px 0 0;
 }
 .control-list-row__sockets {
@@ -2637,7 +2951,7 @@ body::before {
 }
 .control-ir-unit__meta {
   font: 500 var(--fs-xxs) 'IBM Plex Mono', monospace;
-  color: var(--faint);
+  color: var(--muted-2);
 }
 .control-ir-unit__readouts {
   display: grid;
@@ -2657,7 +2971,7 @@ body::before {
 .control-ir-unit__last {
   margin: var(--sp-2) 0 0;
   font: 500 var(--fs-xxs) 'IBM Plex Mono', monospace;
-  color: var(--faint);
+  color: var(--muted-2);
 }
 
 .control-log-card__title {
@@ -2672,7 +2986,7 @@ body::before {
   padding: var(--sp-4) 0;
   text-align: center;
   font-size: var(--fs-sm);
-  color: var(--faint);
+  color: var(--muted-2);
   margin: 0;
 }
 .control-log-list {
@@ -2718,7 +3032,7 @@ body::before {
 }
 .control-log-row__time {
   font: 500 var(--fs-2xs) 'IBM Plex Mono', monospace;
-  color: var(--faint);
+  color: var(--muted-2);
   flex: none;
 }
 .control-log-card__footnote {
@@ -2926,7 +3240,7 @@ body::before {
 }
 .analytics-stat-tile__label {
   font: 600 var(--fs-3xs) 'IBM Plex Mono', monospace;
-  color: var(--faint);
+  color: var(--muted-2);
   letter-spacing: 0.06em;
 }
 .analytics-stat-tile__value {
@@ -2943,7 +3257,7 @@ body::before {
 .analytics-stat-card__spark-label {
   margin-top: var(--sp-4);
   font: 600 var(--fs-2xs) 'IBM Plex Mono', monospace;
-  color: var(--faint);
+  color: var(--muted-2);
   letter-spacing: 0.08em;
 }
 
@@ -2965,7 +3279,7 @@ body::before {
 }
 .analytics-cards-section__tag {
   font: 600 var(--fs-2xs) 'IBM Plex Mono', monospace;
-  color: var(--faint);
+  color: var(--muted-2);
   white-space: nowrap;
 }
 .analytics-branch-grid {
@@ -3006,8 +3320,19 @@ body::before {
   min-width: 0;
   transition: border-color 0.15s ease;
 }
+/*
+ * This rule used to set `border-width: 1.5px` — identical to the base rule above, so it was
+ * a no-op, and selection was carried entirely by the inline per-source `borderColor`. That's
+ * a colour-only state: indistinguishable in greyscale, and invisible to anyone who can't
+ * separate the source palette's amber/green/blue from the default grey border.
+ *
+ * The halo colour comes from `--source-color`, which SourceCard sets inline alongside the
+ * border — not from `currentColor`, which on this element resolves to the inherited text
+ * colour, not the border.
+ */
 .analytics-source-card--selected {
-  border-width: 1.5px;
+  border-width: 2px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--source-color, var(--border-strong)) 14%, transparent);
 }
 .analytics-source-card__head {
   display: flex;
@@ -3032,7 +3357,7 @@ body::before {
 .analytics-source-card__id {
   flex: none;
   font-size: var(--fs-3xs);
-  color: var(--faint);
+  color: var(--muted-2);
 }
 /* Real communication status (`isReadingStale`) — green when the device's own reading is
    fresh, muted when it isn't. Not a fabricated indicator: same rule DevicesView's comm
@@ -3060,7 +3385,7 @@ body::before {
 }
 .analytics-source-card__stat-label {
   font: 600 var(--fs-3xs) 'IBM Plex Mono', monospace;
-  color: var(--faint);
+  color: var(--muted-2);
 }
 .analytics-source-card__stat-value {
   font: 600 var(--fs-xs-lg) 'IBM Plex Mono', monospace;
@@ -3128,7 +3453,7 @@ body::before {
 }
 .analytics-energy-tile__label {
   font: 600 var(--fs-3xs) 'IBM Plex Mono', monospace;
-  color: var(--faint);
+  color: var(--muted-2);
   letter-spacing: 0.08em;
 }
 .analytics-energy-tile__value-row {
@@ -3309,6 +3634,26 @@ body::before {
   cursor: default;
   box-shadow: none;
 }
+/* Button + its confirmation line, stacked so the line appears under the button without
+   shifting the header's layout. `min-height` reserves the line's own space permanently: the
+   confirmation is a `role="status"` region that's empty until a write lands, and letting it
+   appear from nothing would push the whole header down at the exact moment the user is
+   looking at it. */
+.automation-write-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex: none;
+}
+.automation-write-confirm {
+  margin: 0;
+  min-height: 1.2em;
+  font: 500 var(--fs-xs) 'IBM Plex Mono', monospace;
+  color: var(--good);
+  white-space: nowrap;
+}
+
 .automation-save-error {
   margin: 0 0 var(--sp-3);
   padding: var(--sp-3);
@@ -3347,7 +3692,7 @@ body::before {
 }
 .automation-armed-count {
   font-size: var(--fs-2xs);
-  color: var(--faint);
+  color: var(--muted-2);
   white-space: nowrap;
 }
 .automation-filter-group {
@@ -3414,7 +3759,7 @@ body::before {
   padding-bottom: 9px;
   border-bottom: 1px solid var(--border);
   font: 600 var(--fs-2xs) 'IBM Plex Mono', monospace;
-  color: var(--faint);
+  color: var(--muted-2);
   letter-spacing: 0.06em;
 }
 .automation-sched-row__arm-label {
@@ -3445,7 +3790,7 @@ body::before {
 }
 .automation-sched-row__id {
   font-size: var(--fs-2xs);
-  color: var(--faint);
+  color: var(--muted-2);
 }
 .automation-sched-row__arm {
   display: flex;
@@ -3472,7 +3817,7 @@ body::before {
   cursor: pointer;
   font: 600 var(--fs-3xs) 'IBM Plex Mono', monospace;
   background: var(--border-faint);
-  color: var(--faint);
+  color: var(--muted-2);
 }
 .automation-day-chip--on {
   background: var(--txt);
@@ -3513,7 +3858,7 @@ body::before {
   display: flex;
   justify-content: space-between;
   font: 500 var(--fs-2xs) 'IBM Plex Mono', monospace;
-  color: var(--faint);
+  color: var(--muted-2);
 }
 
 .automation-dsm-card .card-sub {
@@ -3584,7 +3929,7 @@ body::before {
   padding: var(--sp-4);
   text-align: center;
   font-size: var(--fs-sm);
-  color: var(--faint);
+  color: var(--muted-2);
   margin: 0;
 }
 .automation-pending-list {
@@ -3643,6 +3988,7 @@ body::before {
   .nav-icon-btn,
   .scene3d-inspector-close,
   .scene3d-autorotate-btn,
+  .scene3d-edit-btn,
   .control-master-btn,
   .confirm-modal__cancel,
   .confirm-modal__confirm,
@@ -3658,5 +4004,94 @@ body::before {
   .spatial-toggle__btn {
     min-height: 44px;
     padding-inline: var(--sp-5);
+  }
+
+  /* --- in-flow controls: just grow them ---------------------------------------------
+   * These sit in normal flow inside a card, so a taller box costs nothing but a slightly
+   * roomier row — which is what a touch surface wants anyway. Same treatment as the group
+   * above; they were simply never added to it.
+   */
+  .quick-btn,
+  .control-plan-btn,
+  .outlet-socket-toggle,
+  .alerts-popover__ack,
+  .analytics-energy-period,
+  .automation-filter-chip {
+    min-height: 44px;
+  }
+
+  /* --- tightly-packed / positioned controls: expand the hit area, not the symbol -----
+   * Everything below is either absolutely positioned on a scaled floor plan, sized to a
+   * spec (a 44x24 switch), or inline in a text run — growing the visible box would break
+   * the layout or the plan's spatial accuracy. A transparent, centred pseudo-element gives
+   * the finger a 44pt target while the drawn control stays exactly as designed.
+   *
+   * Sizes below 44px wide are deliberate, not oversights: where controls sit closer than
+   * 44px apart, a full-width expander would overlap its neighbour and steal that
+   * neighbour's taps — strictly worse than a target that is merely small. Each one is the
+   * largest area available without cross-talk.
+   */
+  .control-lamp::before,
+  .control-outlet-pin__half::before,
+  .automation-day-chip::before,
+  .quick-toggle::before,
+  .card-head-link::before,
+  .info-hint__btn::before,
+  .alerts-popover__close::before,
+  .analytics-legend__item::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 44px;
+    height: 44px;
+  }
+  /*
+   * The two halves of one puck are ~9-13px wide and share a centre line, so a centred
+   * expander on each would sit almost entirely on top of the other — and the right half,
+   * being later in the DOM, would win every tap meant for the left one. (Measured: the left
+   * half's effective target was 1x1px. Worse than doing nothing.)
+   *
+   * So each half's expander is anchored to the shared inner edge and grows *outward*: they
+   * tile rather than overlap. 22px each gives the pair a 44px span with no cross-talk.
+   *
+   * Height is capped at 34px for the same reason in the other axis. The closest pair of pins
+   * on this plan sits 36px apart vertically at the 375px viewport (co1/co2 are 0.9 m apart
+   * in the real room — see .control-outlet-plan's sizing note), so a full 44px-tall expander
+   * overhung its neighbour by 8px and, being later in the DOM, stole taps aimed at the pin
+   * above it. On controls that switch mains outlets, a target that quietly actuates the
+   * wrong device is worse than one that is merely small.
+   *
+   * Net effect per half: 9x18px -> 22x34px, about 4.5x the area. Short of the 44pt ideal,
+   * and it is the most this plan's real spacing allows without cross-talk. Reaching the full
+   * 44 would mean spreading the pins apart, which would make the floor plan lie about where
+   * the outlets are.
+   */
+  .control-outlet-pin__half::before {
+    width: 22px;
+    height: 34px;
+    left: auto;
+    right: auto;
+    transform: translateY(-50%);
+  }
+  .control-outlet-pin__half--left::before {
+    right: 0;
+  }
+  .control-outlet-pin__half--right::before {
+    left: 0;
+  }
+  /* Seven chips at a 25px pitch. A 44px-wide expander would overlap three neighbours; the
+     chip's own pitch is the honest maximum, and the height is where the real gain is. */
+  .automation-day-chip::before {
+    width: 25px;
+  }
+
+  .card-head-link,
+  .info-hint__btn,
+  .alerts-popover__close,
+  .analytics-legend__item,
+  .automation-day-chip {
+    position: relative;
   }
 }

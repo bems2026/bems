@@ -30,6 +30,14 @@ interface ContextState {
   status: 'idle' | 'loading' | 'ready' | 'error';
   saveStatus: 'idle' | 'saving' | 'error';
   saveError: string | null;
+  /**
+   * The last successful write, for confirmation UI. A failed write announced itself but a
+   * successful one said nothing at all — the Pending-writes list just quietly emptied, which
+   * is indistinguishable from the list having been cleared some other way. On a page whose
+   * whole job is staging changes for a building's relays, "did that go through?" needs an
+   * answer that isn't inference.
+   */
+  lastSave: { at: number; count: number } | null;
   load: () => Promise<void>;
   setDraft: (key: string, value: string) => void;
   save: () => Promise<void>;
@@ -47,6 +55,7 @@ export const useContextStore = create<ContextState>((set, get) => ({
   status: 'idle',
   saveStatus: 'idle',
   saveError: null,
+  lastSave: null,
 
   load: async () => {
     set({ status: 'loading' });
@@ -72,6 +81,7 @@ export const useContextStore = create<ContextState>((set, get) => ({
         saved: { ...s.saved, ...pending },
         draft: withoutKeys(s.draft, Object.keys(pending)),
         saveStatus: 'idle',
+        lastSave: { at: Date.now(), count: Object.keys(pending).length },
       }));
     } catch (err) {
       set({ saveStatus: 'error', saveError: err instanceof Error ? err.message : 'The context write failed.' });

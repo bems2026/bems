@@ -34,43 +34,96 @@ export function DsmThresholdsCard() {
         {kwNow !== null ? `${kwNow.toFixed(2)} kW` : '—'} total.
       </p>
 
-      <div className="automation-dsm-field">
-        <div className="automation-dsm-field__head">
-          <span>MAX PHASE CURRENT (A)</span>
-          <span className={phaseBreached ? 'automation-dsm-field__breach' : 'automation-dsm-field__ok'}>{phaseBreached ? 'BREACHED' : 'OK'}</span>
-        </div>
-        <input
-          type="number"
-          className="automation-number-input"
-          value={effective(MAX_PHASE_KEY)}
-          placeholder="not set"
-          onChange={(e) => setDraft(MAX_PHASE_KEY, e.target.value)}
-        />
-      </div>
-
-      <div className="automation-dsm-field">
-        <div className="automation-dsm-field__head">
-          <span>MAX TOTAL DRAW (kW)</span>
-          <span className={powerBreached ? 'automation-dsm-field__breach' : 'automation-dsm-field__ok'}>{powerBreached ? 'BREACHED' : 'OK'}</span>
-        </div>
-        <input
-          type="number"
-          className="automation-number-input"
-          value={effective(MAX_TOTAL_KEY)}
-          placeholder="not set"
-          onChange={(e) => setDraft(MAX_TOTAL_KEY, e.target.value)}
-        />
-      </div>
+      <ThresholdField
+        id="dsm-max-phase"
+        label="MAX PHASE CURRENT (A)"
+        breached={phaseBreached}
+        value={effective(MAX_PHASE_KEY)}
+        step={0.1}
+        onChange={(v) => setDraft(MAX_PHASE_KEY, v)}
+      />
+      <ThresholdField
+        id="dsm-max-total"
+        label="MAX TOTAL DRAW (kW)"
+        breached={powerBreached}
+        value={effective(MAX_TOTAL_KEY)}
+        step={0.01}
+        onChange={(v) => setDraft(MAX_TOTAL_KEY, v)}
+      />
 
       <div className="automation-shed-mode">
         <div className="automation-shed-mode__body">
-          <p className="automation-shed-mode__title">On breach: {autoShedDraftValue ? 'arm automatic shed' : 'warn and wait for manual override'}</p>
+          <p className="automation-shed-mode__title" id="dsm-auto-shed-label">
+            On breach: {autoShedDraftValue ? 'arm automatic shed' : 'warn and wait for manual override'}
+          </p>
           <p className="automation-shed-mode__sub">Auto-shed is a decision point — confirm before anything cuts power unattended.</p>
         </div>
-        <button type="button" className="automation-shed-mode__switch" onClick={() => setDraft(AUTO_SHED_KEY, String(!autoShedDraftValue))}>
-          Switch
+        {/*
+          Was a plain button labelled "Switch" — a verb with no object, which told you neither
+          what it would change nor what the current state was, and announced nothing about
+          being a toggle. It's the same on/off state `ScheduleRow`'s arm control carries, so
+          it gets the same primitive and the same `role="switch"` + `aria-checked`.
+        */}
+        <button
+          type="button"
+          role="switch"
+          aria-checked={autoShedDraftValue}
+          aria-labelledby="dsm-auto-shed-label"
+          className={`quick-toggle${autoShedDraftValue ? ' quick-toggle--on' : ''}`}
+          onClick={() => setDraft(AUTO_SHED_KEY, String(!autoShedDraftValue))}
+        >
+          <span className="quick-toggle__knob" />
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * One threshold input with its label properly associated.
+ *
+ * The visible caption used to be a bare `<span>` in a flex row, so neither input had a label,
+ * an `aria-label`, or any other accessible name — a screen reader announced two unlabelled
+ * number fields on a card that writes real load-shedding limits. `ScheduleRow` already gets
+ * this right via `aria-label`; a real `<label for>` is better still here because the caption
+ * is on screen anyway, and it makes the caption click-to-focus.
+ *
+ * `inputMode="decimal"` brings up the numeric keypad on the kiosk touchscreen instead of the
+ * full QWERTY, and `min={0}` states what was always true — neither a current limit nor a
+ * power cap can be negative.
+ */
+function ThresholdField({
+  id,
+  label,
+  breached,
+  value,
+  step,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  breached: boolean;
+  value: string;
+  step: number;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="automation-dsm-field">
+      <div className="automation-dsm-field__head">
+        <label htmlFor={id}>{label}</label>
+        <span className={breached ? 'automation-dsm-field__breach' : 'automation-dsm-field__ok'}>{breached ? 'BREACHED' : 'OK'}</span>
+      </div>
+      <input
+        id={id}
+        type="number"
+        inputMode="decimal"
+        min={0}
+        step={step}
+        className="automation-number-input"
+        value={value}
+        placeholder="not set"
+        onChange={(e) => onChange(e.target.value)}
+      />
     </div>
   );
 }

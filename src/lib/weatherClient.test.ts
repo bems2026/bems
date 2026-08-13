@@ -77,6 +77,29 @@ describe('getWeather', () => {
     await expect(getWeather()).rejects.toThrow(/weather 503/);
   });
 
+  it('rejects instead of hanging forever when the request never settles', async () => {
+    // A dropped connection (captive portal, silent firewall) neither resolves nor rejects on
+    // its own — `fetch` here mimics that by returning a promise nothing ever settles, and
+    // only the internal timeout can end it. Without the timeout in `getWeather`, this test
+    // would hang until vitest's own test timeout fails it, rather than getWeather's promise
+    // rejecting on a schedule `useWeather` can rely on.
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, opts?: { signal?: AbortSignal }) => {
+        return new Promise((_resolve, reject) => {
+          opts?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+        });
+      }),
+    );
+
+    const pending = getWeather();
+    const assertion = expect(pending).rejects.toThrow(/timed out/);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await assertion;
+    vi.useRealTimers();
+  });
+
   it('leaves an absent optional field as NaN so the UI can show a dash', async () => {
     vi.setSystemTime(new Date('2026-08-12T22:10:00'));
     mockFetch({ ...RESPONSE, current: { temperature_2m: 25.6 } });

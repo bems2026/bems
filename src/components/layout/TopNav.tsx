@@ -1,7 +1,6 @@
 import { Zap } from 'lucide-react';
 import { NAV_ITEMS } from './navItems';
 import { AlertsPopover } from './AlertsPopover';
-import { navigateTo } from '@/lib/useHashRoute';
 import { useConnectionStore } from '@/stores/connectionStore';
 import { isStale } from '@/lib/bridgeClient';
 import type { ConnStatus } from '@/lib/bridgeClient';
@@ -54,18 +53,25 @@ export function TopNav({ activeId }: { activeId: string }) {
         <span className="nav-site-chip">MMSU CARE Office · NBERIC</span>
       </a>
 
-      <div className="nav-tabs" role="tablist" aria-label="Pages">
+      {/*
+        Links, not `role="tab"` buttons. The previous markup declared the full ARIA tab
+        contract — `role="tablist"`, `role="tab"`, `aria-selected` — while implementing none
+        of what that contract obliges: there is no `tabpanel`, no `aria-controls`, and no
+        arrow-key roving focus, so a screen reader user was promised a widget that doesn't
+        behave like one. These are five URLs, and `aria-current="page"` is the pattern that
+        actually describes them. Bonus: middle-click, ⌘-click, and "copy link address" now
+        work on the app's primary navigation, which they never did on a <button>.
+      */}
+      <div className="nav-tabs">
         {NAV_ITEMS.map((item) => (
-          <button
+          <a
             key={item.id}
-            type="button"
-            role="tab"
-            aria-selected={item.id === activeId}
+            href={`#${item.id}`}
+            aria-current={item.id === activeId ? 'page' : undefined}
             className={`nav-tab${item.id === activeId ? ' nav-tab--active' : ''}`}
-            onClick={() => navigateTo(item.id)}
           >
             {item.label}
-          </button>
+          </a>
         ))}
       </div>
 

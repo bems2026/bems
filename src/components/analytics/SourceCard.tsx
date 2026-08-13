@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { isReadingStale } from '@/lib/staleness';
 import { HistoryAreaChart } from './HistoryAreaChart';
@@ -16,12 +17,25 @@ export function SourceCard({ device, color, scope, param, selected, onSelect }: 
   const stale = isReadingStale(reading);
 
   return (
-    <button type="button" className={`analytics-source-card${selected ? ' analytics-source-card--selected' : ''}`} style={{ borderColor: selected ? color : undefined }} onClick={onSelect}>
+    <button
+      type="button"
+      className={`analytics-source-card${selected ? ' analytics-source-card--selected' : ''}`}
+      // The ring colour is per-source, so it has to be inline; the *thickness* and halo that
+      // make selection survive greyscale live in `.analytics-source-card--selected`, which
+      // reads the colour back out of `--source-color`.
+      style={{ '--source-color': color, borderColor: selected ? color : undefined } as CSSProperties}
+      aria-pressed={selected}
+      onClick={onSelect}
+    >
       <div className="analytics-source-card__head">
         <span className="analytics-source-card__dot" style={{ background: color }} aria-hidden="true" />
         <span className="analytics-source-card__name">{device.display_name}</span>
         <span className="analytics-source-card__id mono">{device.id}</span>
-        <span className={`analytics-source-card__status${stale ? ' analytics-source-card__status--stale' : ''}`} aria-hidden="true" title={stale ? 'No recent reading' : 'Reporting'} />
+        {/* Was aria-hidden with a `title`, which put the live/stale distinction behind both a
+            colour-only cue and an attribute screen readers don't reliably announce on a
+            span. The dot stays decorative; the state is now real text for assistive tech. */}
+        <span className={`analytics-source-card__status${stale ? ' analytics-source-card__status--stale' : ''}`} aria-hidden="true" />
+        <span className="sr-only">{stale ? 'No recent reading' : 'Reporting'}</span>
       </div>
       {scope === 'branches' ? (
         <div className="analytics-stat-grid analytics-source-card__grid">

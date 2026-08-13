@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useContextStore } from '@/stores/contextStore';
 import { hasSwitchableState } from '@/lib/deviceClass';
@@ -24,6 +24,7 @@ export function AutomationPage() {
   const save = useContextStore((s) => s.save);
   const saveStatus = useContextStore((s) => s.saveStatus);
   const saveError = useContextStore((s) => s.saveError);
+  const lastSave = useContextStore((s) => s.lastSave);
 
   const [schedFilter, setSchedFilter] = useState<SchedFilter>('All');
 
@@ -39,6 +40,7 @@ export function AutomationPage() {
   const pending = pendingWrites(draft, saved);
   const pendingEntries = Object.entries(pending);
   const { ask, modalProps } = useConfirm();
+  useUnsavedDraftGuard(pendingEntries.length);
 
   // Gated: this flushes every staged edit at once, including anything "Arm all" just
   // staged across every schedulable device — one click here can be a lot more than the
@@ -74,11 +76,26 @@ export function AutomationPage() {
             <InfoHint label="How these values are used">The existing schedule subflow acts on them directly — no separate rule engine.</InfoHint>
           </p>
         </div>
-        <button type="button" className="automation-write-btn" disabled={pendingEntries.length === 0 || saveStatus === 'saving'} onClick={askSave}>
-          {saveStatus === 'saving' ? 'Writing…' : 'Write to Node-RED context'}
-        </button>
+        <div className="automation-write-group">
+          <button type="button" className="automation-write-btn" disabled={pendingEntries.length === 0 || saveStatus === 'saving'} onClick={askSave}>
+            {saveStatus === 'saving' ? 'Writing…' : 'Write to Node-RED context'}
+          </button>
+          {/* Confirmation that the write landed. `role="status"` (polite) rather than an
+              alert: it's good news, so it should wait its turn rather than interrupt. */}
+          <p className="automation-write-confirm" role="status">
+            {saveStatus === 'idle' && lastSave
+              ? `Wrote ${lastSave.count} key${lastSave.count === 1 ? '' : 's'} at ${new Date(lastSave.at).toLocaleTimeString('en-PH', { hour12: false })}`
+              : ''}
+          </p>
+        </div>
       </header>
-      {saveStatus === 'error' && <p className="automation-save-error">{saveError}</p>}
+      {/* role="alert" so a failed write is announced. Without it a screen reader user got no
+          signal at all — the button simply re-enabled and the pending list stayed put. */}
+      {saveStatus === 'error' && (
+        <p className="automation-save-error" role="alert">
+          {saveError}
+        </p>
+      )}
 
       <div className="automation-grid">
         <div className="card automation-schedules-card">
@@ -90,7 +107,7 @@ export function AutomationPage() {
             <span className="automation-armed-count mono">{armedCount} ARMED</span>
             <div className="automation-filter-group">
               {(['All', 'Lighting', 'Outlets', 'ACU'] as SchedFilter[]).map((f) => (
-                <button key={f} type="button" className={`automation-filter-chip${schedFilter === f ? ' automation-filter-chip--active' : ''}`} onClick={() => setSchedFilter(f)}>
+                <button key={f} type="button" className={`automation-filter-chip${schedFilter === f ? ' automation-filter-chip--active' : ''}`} aria-pressed={schedFilter === f} onClick={() => setSchedFilter(f)}>
                   {f}
                 </button>
               ))}
@@ -103,7 +120,9 @@ export function AutomationPage() {
             Every relay and the IR unit. Writes <code className="mono">global.schedule.&lt;device&gt;</code>.
           </p>
 
-          <div className="automation-sched-scroll">
+          {/* Focusable so the horizontal scroll is reachable from the keyboard, named so that
+              focus stop means something. Same treatment as Devices' table scroller. */}
+          <div className="automation-sched-scroll" tabIndex={0} role="region" aria-label="Device schedules, scrolls horizontally">
             <div className="automation-sched-table">
               <div className="automation-sched-row automation-sched-row--head">
                 <span>DEVICE</span>
@@ -172,4 +191,33 @@ export function AutomationPage() {
       <ConfirmModal {...modalProps} />
     </>
   );
+}
+
+/**
+ * Staged edits live in `contextStore.draft` and reach Node-RED only via "Write to Node-RED
+ * context". A reload or a closed tab drops all of them, and "Arm all" can stage a dozen keys
+ * in a single click, so the amount silently lost is not small. `beforeunload` is the only
+ * mechanism browsers offer for that exit; the prompt shown is the browser's own generic one,
+ * as its text hasn't been author-controllable for years — hence no message here.
+ *
+ * Scoped to reload/close on purpose, and NOT extended to in-app navigation, for two reasons
+ * found while testing this:
+ *
+ *  1. There is nothing to guard. `contextStore` is a module-level zustand store, not
+ *     component state, so leaving Automation and coming back preserves every pending write
+ *     intact — verified. A confirm() on nav would be a false alarm, and false alarms teach
+ *     people to dismiss the real one.
+ *  2. It could not have worked anyway. `hashchange` fires after the URL has already changed,
+ *     and `App.tsx`'s own listener — registered first, since App mounts first — flushes the
+ *     route change synchronously, unmounting this page and removing any listener it had
+ *     added *before that listener is ever invoked*. Measured: the handler ran zero times on
+ *     the real navigation path.
+ */
+function useUnsavedDraftGuard(pendingCount: number) {
+  useEffect(() => {
+    if (pendingCount === 0) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [pendingCount]);
 }

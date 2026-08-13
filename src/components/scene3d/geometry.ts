@@ -186,28 +186,39 @@ export const OUTLET_FIXTURES: OutletFixture[] = OUTLET_COORDS.map(({ id, px, py 
 });
 
 // ---------------------------------------------------------------------------
-// Furniture — Stage L2, re-laid out in Phase O against a reference office blueprint the
-// user supplied. Same status as this whole scene's fixture placement always has been (see
-// this file's header comment): plausible, not surveyed. Nothing in the live flow or the 2D
-// floor plan records where CARE's actual desks, tables, or ACU sit — only the 7 dual-socket
-// outlets and 7 lighting circuits above are real, sourced coordinates.
+// Furniture — Stage L2, re-laid out in Phase O against a reference office blueprint, then
+// pared back in Phase Q to real building equipment only. Same status as this whole scene's
+// fixture placement always has been (see this file's header comment): plausible, not
+// surveyed. Nothing in the live flow or the 2D floor plan records where CARE's actual desks,
+// tables, or ACU sit — only the 7 dual-socket outlets and 7 lighting circuits above are
+// real, sourced coordinates.
+//
+// Phase Q removed every decorative desk/chair/table/cabinet/bench piece the Phase O
+// blueprint pass had placed here — none of it corresponds to a real device or a surveyed
+// position, and a room full of invented furniture was reading as clutter around the model's
+// actual job (showing the fixtures and outlets that are real). Phase Q also placed a fixed
+// `water-dispenser` here, near the glazed entrance and `co4`'s wall run — that entry is gone
+// too now (Phase R): it lived in this FIXED table, so unlike everything the "Edit layout"
+// tool places, it had no delete control at all — a user-visible dead end, not a design
+// choice worth keeping. Anyone who wants a dispenser back places one with the toolbar's own
+// "Add dispenser", where it's a normal editable piece like any other.
+//
+// What stays is only what's load-bearing:
+//   - `acu` (indoor): `officeScene.ts`'s `buildFurniture()` captures this piece's `acuGlow`
+//     child by name and `applyState()` drives its opacity from the real `acu_main` reading
+//     every tick — removing this entry would silently kill that glow effect, not just tidy
+//     the room.
+//   - `acu-outdoor`: the real paired unit `mtr_lo_yellow`'s registry description names
+//     ("Outdoor ACU (separate unit, right side outside the room)") — actual building
+//     equipment, not office decor.
 //
 // What IS real and used as the anchor for this layout:
 //   - ROOM's bounds (6.0m x 10.6m) and the partition at z = -3.5, both derived from the
 //     live SVG plan exactly as OUTLET_FIXTURES/LIGHT_FIXTURES are.
 //   - The two named zones the partition actually creates: a shallow utility compartment
 //     north of it (z in [-5.3, -3.5], the same 1.8m strip circuit l7 alone lights — see
-//     LIGHT_FIXTURES' test coverage) versus the main room south of it. Phase O's explicit
-//     rule is that this compartment stays EMPTY — it's a lobby, not storage — so nothing
-//     below places any piece at z < -3.5.
-//
-// Blueprint -> room mapping (the blueprint is a 9.0 x 6.6m *wide* room; ours is 6.0 x 10.6m
-// *narrow*, so this is a 90-degree adaptation, not a transcription):
-//   blueprint's entrance short wall      -> our partition, z = -3.5 (both are the entrance)
-//   blueprint's window/AC short wall     -> our far short wall, z = +5.3 (farthest from the
-//                                            entrance, per the user's explicit rule)
-//   blueprint's plant-rack long wall     -> our west long wall, x = -3.0
-//   blueprint's reception/L-desk wall    -> our east long wall, x = +3.0
+//     LIGHT_FIXTURES' test coverage) versus the main room south of it. That compartment
+//     stays EMPTY — it's a lobby, not storage.
 //
 // Rotation convention (`rotation.y`), verified numerically against `makeWorkstation`'s own
 // local geometry (desktop/monitor at local z ~ -0.2, chair at local z = +0.5, so the
@@ -217,20 +228,18 @@ export const OUTLET_FIXTURES: OutletFixture[] = OUTLET_COORDS.map(({ id, px, py 
 //   ry = +PI/2  -> faces world -x, footprint x [cx-0.31, cx+0.8], z [cz-0.5,  cz+0.5]
 //   ry = -PI/2  -> faces world +x, footprint x [cx-0.8,  cx+0.31],z [cz-0.5,  cz+0.5]
 //   ry = PI     -> faces world +z, footprint x [cx-0.5,  cx+0.5], z [cz-0.8,  cz+0.31]
-// Every position below was checked against this table (and the ACU's own body/vent
-// geometry in `furniture.ts`, which is authored with its long axis on local Z and its
-// vents at local -X) with a script that computes every piece's world-space bounding box and
-// asserts zero pairwise overlap, zero excursion outside x in [-3,3] / z in [-3.5, 5.3], and
-// a clear doorway (x in [-0.8, 0.8] at z = -3.5) — not hand-eyeballed.
 //
 // TEST2.html's own furniture coordinates are NOT reused here — its room is 9.0m x 6.6m
 // (wide, shallow), the opposite proportions of CARE's 6.0m x 10.6m (narrow, deep), so its
 // specific placement numbers don't transfer. Its furniture *library* (the factories in
-// `furniture.ts`) is what was ported; this table is CARE-specific.
+// `furniture.ts`) is what was ported.
 //
-// `table-rect` and `workbench` are unused by this table (the blueprint has no rect meeting
-// table, and the lobby that once held `workbench` must now stay empty) — the factories stay
-// for reuse, they're simply not instantiated below.
+// Every non-ACU kind below (`table-rect`, `workbench`, `workstation`, `table-oval`,
+// `cabinet`, `plant-rack`, `water-dispenser`, `bench`, `desk-l`, `reception-desk`) is
+// unused by this FIXED table — the factories stay in `furniture.ts` because
+// `OfficeScene3D.tsx`'s "Edit layout" toolbar instantiates several of them (desk, table,
+// dispenser, shelf, bench) itself, per-session, via `officeScene.ts`'s
+// `EDITABLE_FACTORY_KIND` — not because anything here still uses them.
 export type FurnitureKind =
   | 'workstation'
   | 'table-oval'
@@ -264,43 +273,6 @@ export interface FurnitureSpec {
 }
 
 export const FURNITURE: FurnitureSpec[] = [
-  // --- West wall (blueprint's plant-rack wall): rack + 4 desks facing it ---------------
-  // Rack runs almost the full usable west wall (4.4m of the room's 8.8m south-of-lobby
-  // span). Desks sit 0.14m clear of the rack's front edge, 1.10m pitch, facing -x (west,
-  // into the rack) — ry = +PI/2 per the rotation table above.
-  { kind: 'plant-rack', x: -2.65, z: 2.8, ry: Math.PI / 2, w: 4.4 },
-  { kind: 'workstation', x: -1.9, z: 4.4, ry: Math.PI / 2 },
-  { kind: 'workstation', x: -1.9, z: 3.3, ry: Math.PI / 2 },
-  { kind: 'workstation', x: -1.9, z: 2.2, ry: Math.PI / 2 },
-  { kind: 'workstation', x: -1.9, z: 1.1, ry: Math.PI / 2 },
-
-  // --- Centre: oval conference table, clear of both wall runs' z-bands -----------------
-  { kind: 'table-oval', x: 0.1, z: -0.8, ry: 0 },
-
-  // --- East wall (blueprint's reception/manager wall), entrance end to far end ---------
-  // 3-desk interconnected bank, facing -x (into the room) — chairs sit near the wall,
-  // desktops toward the room centre, ry = +PI/2 (same facing as the west row: everyone
-  // looks toward the room's midline, not at a screen with their back to open floor).
-  { kind: 'workstation', x: 2.15, z: -2.95, ry: Math.PI / 2 },
-  { kind: 'workstation', x: 2.15, z: -1.85, ry: Math.PI / 2 },
-  { kind: 'workstation', x: 2.15, z: -0.7, ry: Math.PI / 2 },
-  // Single desk, same wall, same facing, 0.4m clear of the bank.
-  { kind: 'workstation', x: 2.15, z: 0.55, ry: Math.PI / 2 },
-  // L-shaped manager desk, same wall/facing, 0.4m clear of the single desk.
-  { kind: 'desk-l', x: 2.15, z: 1.75, ry: Math.PI / 2 },
-  // Storage behind the manager desk, flush to the wall (one cabinet unit — its 6 shelves
-  // already read as "filing storage"; a second unit wouldn't fit this wall run without
-  // crowding the reception zone beyond it).
-  { kind: 'cabinet', x: 2.75, z: 3.85, ry: 0 },
-
-  // --- Far end (blueprint's window/AC wall, z = +5.3): reception + waiting -------------
-  // Reception counter faces into the room (-z, ry = 0) between the west desks' wall run and
-  // the east cabinet's wall run — clear of both. Benches face the counter (+z, ry = PI).
-  { kind: 'reception-desk', x: 0.3, z: 4.5, ry: 0 },
-  { kind: 'bench', x: 0.3, z: 3.75, ry: Math.PI },
-  { kind: 'bench', x: 0.3, z: 3.1, ry: Math.PI },
-  { kind: 'water-dispenser', x: 1.45, z: 4.5, ry: 0 },
-
   // Indoor ACU on the far short wall (z = maxZ), between the two windows added there in
   // `officeScene.ts` — moved off the east wall per Phase O's explicit rule (windows + ACU
   // must sit on the short wall farthest from the glass entrance/partition). `makeACU`'s

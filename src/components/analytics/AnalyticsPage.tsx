@@ -96,10 +96,10 @@ export function AnalyticsPage() {
             ))}
           </div>
           <div className="analytics-scope-toggle" role="group" aria-label="Scope">
-            <button type="button" className={`analytics-scope-btn${scope === 'branches' ? ' analytics-scope-btn--active' : ''}`} onClick={() => setScope('branches')}>
+            <button type="button" className={`analytics-scope-btn${scope === 'branches' ? ' analytics-scope-btn--active' : ''}`} aria-pressed={scope === 'branches'} onClick={() => setScope('branches')}>
               Branches
             </button>
-            <button type="button" className={`analytics-scope-btn${scope === 'outlets' ? ' analytics-scope-btn--active' : ''}`} onClick={() => setScope('outlets')}>
+            <button type="button" className={`analytics-scope-btn${scope === 'outlets' ? ' analytics-scope-btn--active' : ''}`} aria-pressed={scope === 'outlets'} onClick={() => setScope('outlets')}>
               Outlets
             </button>
           </div>
@@ -119,7 +119,11 @@ export function AnalyticsPage() {
                   key={d.id}
                   type="button"
                   className="analytics-legend__item"
-                  style={{ color: d.id === selectedId ? 'var(--txt)' : 'var(--faint)' }}
+                  // --muted-2, not --faint: this is a 10px interactive label, and --faint is
+                  // documented in index.css as decoration-only (under 3:1 on every surface
+                  // here). Same retarget the stylesheet's own 29 sites got.
+                  style={{ color: d.id === selectedId ? 'var(--txt)' : 'var(--muted-2)' }}
+                  aria-pressed={d.id === selectedId}
                   onClick={() => selectDevice(d.id)}
                 >
                   <span className="analytics-legend__swatch" style={{ background: PALETTE[i % PALETTE.length] }} />
