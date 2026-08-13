@@ -4,6 +4,18 @@
  *     node node-red-bridge/deploy.mjs --host=<pi-ip> [--port=1880]          # dry run
  *     node node-red-bridge/deploy.mjs --host=<pi-ip> [--port=1880] --apply  # actually deploy
  *
+ * If the target instance has `adminAuth` configured (Node-RED's editor/Admin-API login —
+ * a separate setting from `httpNodeCors`/`httpNodeAuth`, which gate the deployed HTTP-IN
+ * endpoints this bridge itself serves, not this script's own access to `/flows`), set:
+ *
+ *     NODE_RED_ADMIN_USER=...
+ *     NODE_RED_ADMIN_PASS=...
+ *
+ * in `.env` (gitignored — never commit real credentials) or the environment before running
+ * this script. It logs in once via Node-RED's own `/auth/token` (the same flow the editor's
+ * login page uses) and attaches the resulting bearer token to every Admin API call. Without
+ * adminAuth on the target, leave these unset — every call proceeds exactly as before.
+ *
  * Dry-run by default — never writes anything without `--apply`. Even with `--apply`,
  * it refuses to touch anything unless every safety check below passes:
  *
@@ -29,12 +41,35 @@
  * running it with --apply against real hardware.
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Minimal `.env` loader — no dependency, because nothing else in this Node-side tooling
+ * (mock-bridge, the other bridge scripts) pulls one in either. Only `KEY=value` lines,
+ * `#` comments, and blank lines; no quoting/escaping/multiline support, which is all
+ * `NODE_RED_ADMIN_USER`/`NODE_RED_ADMIN_PASS` need. Real environment variables always win
+ * over the file (standard dotenv precedence) — an operator exporting the var in their own
+ * shell should never be silently overridden by a stale `.env`.
+ */
+function loadDotEnv() {
+  const path = join(HERE, '..', '.env');
+  if (!existsSync(path)) return;
+  for (const line of readFileSync(path, 'utf8').split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    if (process.env[key] !== undefined) continue;
+    process.env[key] = trimmed.slice(eq + 1).trim();
+  }
+}
+loadDotEnv();
 
 const args = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -57,12 +92,27 @@ if (!HOST) {
 const BASE = `http://${HOST}:${PORT}`;
 const BRIDGE_TAB_ID = 'b41d9e0000000001';
 
-/** Must match SOURCE_TABS in build-flow.mjs exactly — this is the cross-check. */
+/**
+ * Must match SOURCE_TABS in build-flow.mjs exactly — this is the cross-check that catches
+ * a stale copy of flows.json before it corrupts a real deploy. NOT imported from
+ * build-flow.mjs directly: that script has no exports and runs its whole generator (writes
+ * bridge-flow.json, logs to stdout) as a top-level side effect on load, so importing it here
+ * would silently regenerate the flow file as a side effect of a dry run. Duplicated instead,
+ * same tradeoff `tokens.ts` makes on the frontend side (see that file's own header) — a
+ * drift-guard comment instead of a shared import.
+ *
+ * Corrected 2026-08-13 against a real deploy target (192.168.1.190): the previous values
+ * here were themselves already stale — different ids than BOTH build-flow.mjs's own
+ * (correct, SSH-verified 2026-08-10) SOURCE_TABS and the actual Pi. Two independent
+ * hardcoded copies of the same fact drifted from each other, which is exactly the failure
+ * mode importing would have prevented — if these two ever need to change again, update
+ * `SOURCE_TABS` in build-flow.mjs FIRST and copy its values here, not the reverse.
+ */
 const EXPECTED_SOURCE_TABS = {
-  '12a0ea5e7b516a4c': 'Energy Monitoring - Set time',
-  ac87d748b5788895: 'Outlet',
-  '8550151b1adeabd1': 'Switch',
-  '1715dabc6d837b3b': 'Aircon',
+  b91949ed325c0ab6: 'Energy Monitoring - Set time',
+  f034cec8ea750f69: 'Outlet',
+  '5ba0bb77c042d889': 'Switch',
+  '5ae2a6bf87435d7a': 'Aircon',
 };
 
 async function fetchWithTimeout(path, opts = {}) {
@@ -73,6 +123,38 @@ async function fetchWithTimeout(path, opts = {}) {
   } finally {
     clearTimeout(t);
   }
+}
+
+/**
+ * Logs into Node-RED's Admin API the same way its own editor login page does — the
+ * Resource Owner Password Credentials grant Node-RED's `adminAuth` implements at
+ * `/auth/token` (`client_id=node-red-admin`, per Node-RED's own auth docs).
+ *
+ * Returns `null` — not a thrown error — when no credentials are configured, so the caller
+ * can fall through to the original unauthenticated behaviour for instances that never had
+ * adminAuth turned on. A configured-but-wrong credential pair DOES throw, since that's a
+ * real misconfiguration worth stopping for rather than silently retrying unauthenticated
+ * (which would just re-produce the same confusing 401 further down).
+ */
+async function login() {
+  const username = process.env.NODE_RED_ADMIN_USER;
+  const password = process.env.NODE_RED_ADMIN_PASS;
+  if (!username || !password) return null;
+
+  const res = await fetchWithTimeout('/auth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: 'node-red-admin', grant_type: 'password', scope: '*', username, password }),
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Node-RED admin login failed (HTTP ${res.status}) for user "${username}" — check NODE_RED_ADMIN_USER/NODE_RED_ADMIN_PASS. ` +
+        (res.status === 401 ? 'Wrong username or password.' : `Unexpected response: ${await res.text().catch(() => '')}`),
+    );
+  }
+  const { access_token: token, token_type: tokenType } = await res.json();
+  if (!token) throw new Error('Node-RED admin login succeeded but returned no access_token — unexpected response shape.');
+  return `${tokenType ?? 'Bearer'} ${token}`;
 }
 
 function loadBridgeNodes() {
@@ -89,16 +171,47 @@ async function main() {
 
   const bridgeNodes = loadBridgeNodes();
 
+  let authHeader;
+  try {
+    authHeader = await login();
+    if (authHeader) console.log(`Logged in as ${process.env.NODE_RED_ADMIN_USER} (adminAuth).\n`);
+  } catch (e) {
+    console.error(e.message);
+    process.exit(1);
+  }
+  /**
+   * Every call this wraps is a `/flows` Admin API request, so both concerns belong
+   * together here: the auth header (when adminAuth is on) AND `Node-RED-API-Version: v2`.
+   * The version header isn't optional/nice-to-have — without it, this Pi's Node-RED
+   * returns `/flows`'s legacy v1 shape (a bare array, no `rev`), which crashed the
+   * `{ flows, rev } = await flowsRes.json()` destructure below with no `rev` to send back
+   * on the POST, and no revision-conflict detection (a v2-only feature) at all. v1 vs v2
+   * is a per-instance/version default, not something this script can assume either way,
+   * so it's requested explicitly on every Admin API call rather than relying on whatever
+   * a given Node-RED version defaults to.
+   */
+  const authed = (opts = {}) => ({
+    ...opts,
+    headers: { ...opts.headers, 'Node-RED-API-Version': 'v2', ...(authHeader ? { Authorization: authHeader } : {}) },
+  });
+
   let flowsRes;
   try {
-    flowsRes = await fetchWithTimeout('/flows', { headers: { Accept: 'application/json' } });
+    flowsRes = await fetchWithTimeout('/flows', authed({ headers: { Accept: 'application/json' } }));
   } catch (e) {
     console.error(`Could not reach ${BASE}/flows: ${e.message}`);
     console.error('Is the Pi on this network, and is Node-RED running on that port?');
     process.exit(1);
   }
   if (!flowsRes.ok) {
-    console.error(`GET /flows returned HTTP ${flowsRes.status} — is the Admin API reachable at ${BASE}?`);
+    if (flowsRes.status === 401 && !authHeader) {
+      console.error(
+        `GET /flows returned HTTP 401 — this instance has adminAuth enabled. Set NODE_RED_ADMIN_USER and ` +
+          `NODE_RED_ADMIN_PASS (in .env or the environment) to the same login you'd use for the Node-RED editor, then re-run.`,
+      );
+    } else {
+      console.error(`GET /flows returned HTTP ${flowsRes.status} — is the Admin API reachable at ${BASE}?`);
+    }
     process.exit(1);
   }
   const { flows: liveFlows, rev } = await flowsRes.json();
@@ -171,11 +284,14 @@ async function main() {
     return;
   }
 
-  const deployRes = await fetchWithTimeout('/flows', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Node-RED-Deployment-Type': 'nodes' },
-    body: JSON.stringify({ flows: merged, rev }),
-  });
+  const deployRes = await fetchWithTimeout(
+    '/flows',
+    authed({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Node-RED-Deployment-Type': 'nodes' },
+      body: JSON.stringify({ flows: merged, rev }),
+    }),
+  );
 
   if (deployRes.status === 409) {
     console.error('\nABORT: HTTP 409 — the flow was edited (in the Node-RED editor, presumably) between the GET and this POST.');
