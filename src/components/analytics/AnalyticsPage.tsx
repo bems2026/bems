@@ -5,7 +5,8 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { HistoryAreaChart } from './HistoryAreaChart';
 import { InfoHint } from '@/components/ui/InfoHint';
-import { useAnalyticsHistory } from './useAnalyticsHistory';
+import { useAnalyticsHistory, type AnalyticsRange } from './useAnalyticsHistory';
+import { supabase } from '@/config/supabase';
 import { buildChartRows } from './analyticsMath';
 import { CHART_PARAMS, CHART_PARAM_ORDER, formatParamValue, type ChartParam } from './chartParams';
 import { SourceCard } from './SourceCard';
@@ -19,6 +20,9 @@ const MAX_CHART_POINTS = 140;
 const PALETTE = ['var(--accent)', 'var(--blue-bright)', 'var(--green-bright)', 'var(--purple-bright)', 'var(--red-bright)', '#0ea5e9', '#db2777'];
 
 type Scope = 'branches' | 'outlets';
+
+const RANGE_LABEL: Record<AnalyticsRange, string> = { '24h': '24 h', '7d': '7 d', '30d': '30 d' };
+const RANGE_WORDS: Record<AnalyticsRange, string> = { '24h': '24 hours', '7d': '7 days', '30d': '30 days' };
 
 /**
  * v4's Analytics tab, re-themed into the M1 glass tokens (the source design ships this
@@ -40,7 +44,11 @@ export function AnalyticsPage() {
   const devices = useDeviceStore((s) => s.devices);
   const readings = useDeviceStore((s) => s.latestReadings);
   const historyMap = useDeviceStore((s) => s.history);
-  const { branchIds, outletIds, status } = useAnalyticsHistory();
+  const [range, setRange] = useState<AnalyticsRange>('24h');
+  const { branchIds, outletIds, status } = useAnalyticsHistory(range);
+  // Long-range (7d/30d) history is Supabase-backed (Phase 4) — only offer those options
+  // when it's actually configured, rather than showing buttons that would just error.
+  const longRangeAvailable = supabase !== null;
 
   const [scope, setScope] = useState<Scope>('branches');
   const [param, setParam] = useState<ChartParam>('power');
@@ -80,14 +88,26 @@ export function AnalyticsPage() {
         <div>
           <h1 className="page-title">Power &amp; Energy Analytics</h1>
           <p className="page-sub">
-            24 h trends · consumption totals
+            {RANGE_LABEL[range]} trends · consumption totals
             <InfoHint label="What this page covers">
-              Power, voltage, and current over the last 24 hours for the 4 CHNT branch meters and the 7 individually-metered outlets, plus the building's energy consumed today, this
-              week, and this month.
+              Power, voltage, and current over the last {RANGE_WORDS[range]} for the 4 CHNT branch meters and the 7 individually-metered outlets, plus the building's energy consumed
+              today, this week, and this month.{' '}
+              {longRangeAvailable
+                ? '7d/30d views read from Supabase — the bridge itself only keeps a 24h buffer.'
+                : ''}
             </InfoHint>
           </p>
         </div>
         <div className="analytics-toggles">
+          {longRangeAvailable && (
+            <div className="analytics-scope-toggle" role="group" aria-label="Time range">
+              {(['24h', '7d', '30d'] as const).map((r) => (
+                <button key={r} type="button" className={`analytics-scope-btn${range === r ? ' analytics-scope-btn--active' : ''}`} aria-pressed={range === r} onClick={() => setRange(r)}>
+                  {RANGE_LABEL[r]}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="analytics-scope-toggle" role="group" aria-label="Parameter">
             {CHART_PARAM_ORDER.map((p) => (
               <button key={p} type="button" className={`analytics-scope-btn${param === p ? ' analytics-scope-btn--active' : ''}`} aria-pressed={param === p} onClick={() => setParam(p)}>
@@ -111,7 +131,7 @@ export function AnalyticsPage() {
           <div className="card-head">
             <h3 className="card-title">
               <Activity size={14} className="title-icon" aria-hidden="true" />
-              {CHART_PARAMS[param].label} · 24 h
+              {CHART_PARAMS[param].label} · {RANGE_LABEL[range]}
             </h3>
             <div className="analytics-legend">
               {scopeDevices.map((d, i) => (
@@ -135,18 +155,24 @@ export function AnalyticsPage() {
           {status === 'loading' && rows.length === 0 ? (
             <Skeleton height="440px" />
           ) : rows.length === 0 ? (
-            <p className="section-placeholder">{status === 'error' ? 'History unavailable right now.' : 'No history yet — the buffer fills at 1 point/min.'}</p>
+            <p className="section-placeholder">
+              {status === 'error'
+                ? 'History unavailable right now.'
+                : range === '24h'
+                  ? 'No history yet — the buffer fills at 1 point/min.'
+                  : `No ${RANGE_LABEL[range]} history yet — data accumulates going forward from when ingestion started.`}
+            </p>
           ) : (
             <div
               className={`chart-frame chart-frame--axes-visible${chartRevealed ? ' chart-frame--revealed' : ''}`}
               role="img"
-              aria-label={`${CHART_PARAMS[param].label} over the last 24 hours across ${scopeDevices.length} ${scope}, ${rows.length} samples.`}
+              aria-label={`${CHART_PARAMS[param].label} over the last ${RANGE_WORDS[range]} across ${scopeDevices.length} ${scope}, ${rows.length} samples.`}
               {...revealHandlers}
             >
               <ResponsiveContainer width="100%" height={440}>
                 <LineChart data={rows} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
                   <CartesianGrid stroke="var(--border)" strokeOpacity={0.5} vertical={false} />
-                  <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tickFormatter={formatTick} stroke="var(--muted)" fontSize={11} tickLine={false} />
+                  <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tickFormatter={(t) => formatTick(t, range)} stroke="var(--muted)" fontSize={11} tickLine={false} />
                   {/* Voltage sits in a narrow band well above zero (~220-230 V), so a
                       0-based axis would flatten every real variation into one straight
                       line — it gets an auto domain; power/current keep the 0-based default
@@ -265,6 +291,11 @@ function SourceSection({
   );
 }
 
-function formatTick(t: number): string {
-  return new Date(t).toLocaleTimeString('en-PH', { hour12: false, hour: '2-digit', minute: '2-digit' });
+/** Time-only ticks read fine across 24h, but the same format across 7d/30d would show
+ * indistinguishable repeating times with no way to tell which day a point falls on — those
+ * ranges get a date instead. */
+function formatTick(t: number, range: AnalyticsRange): string {
+  return range === '24h'
+    ? new Date(t).toLocaleTimeString('en-PH', { hour12: false, hour: '2-digit', minute: '2-digit' })
+    : new Date(t).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
 }
