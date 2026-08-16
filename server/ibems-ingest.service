@@ -1,0 +1,32 @@
+# systemd unit template for server/ingest.mjs — Phase 3 of the architecture plan.
+#
+# NOT installed automatically (no live Supabase project exists yet for this daemon to
+# write to). To activate once you have a Supabase project:
+#
+#     cp server/.env.example server/.env   # then fill in SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY
+#     sudo cp server/ibems-ingest.service /etc/systemd/system/ibems-ingest.service
+#     sudo systemctl daemon-reload
+#     sudo systemctl enable --now ibems-ingest.service
+#     systemctl status ibems-ingest.service
+#
+# Modeled directly on the existing /etc/systemd/system/ibems-dashboard.service and
+# nodered.service units already running on this Pi — same user, same restart policy shape.
+
+[Unit]
+Description=iBEMS Ingestion Daemon (Node-RED bridge -> Supabase)
+Wants=network-online.target nodered.service
+After=network-online.target nodered.service
+
+[Service]
+Type=simple
+User=bems
+Group=bems
+WorkingDirectory=/home/bems/bems
+EnvironmentFile=/home/bems/bems/server/.env
+ExecStart=/usr/bin/node server/ingest.mjs
+Restart=on-failure
+RestartSec=10
+SyslogIdentifier=ibems-ingest
+
+[Install]
+WantedBy=multi-user.target

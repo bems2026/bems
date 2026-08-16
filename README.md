@@ -18,6 +18,10 @@ mock-bridge/                local fake bridge, same contract, no hardware needed
 test/                      bridge/mock contract tests (Node's test runner)
 src/                       React + Vite + TS frontend — Overview, Floor Plan, and Trends
                             are all live against the bridge (Phases C–E complete)
+server/                    ibems-server — the Supabase ingestion daemon (architecture plan
+                            Phase 3). `npm run ingest`, tests via `npm run test:server`.
+                            See docs/storage-contract.md.
+supabase/schema.sql        the Supabase schema — apply once against a new project
 ```
 
 ## Quickstart
