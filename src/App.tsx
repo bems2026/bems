@@ -8,12 +8,35 @@ import { DevicesView } from '@/components/devices/DevicesView';
 import { ControlPage } from '@/components/control/ControlPage';
 import { AnalyticsPage } from '@/components/analytics/AnalyticsPage';
 import { AutomationPage } from '@/components/automation/AutomationPage';
+import { LoginPage } from '@/components/auth/LoginPage';
+import { useAuthStore } from '@/stores/authStore';
+import { supabase } from '@/config/supabase';
 
 const ROUTE_IDS = NAV_ITEMS.map((n) => n.id);
 
+/**
+ * Auth gate — Phase 5 of the architecture plan. Only active when Supabase is configured
+ * (`supabase !== null`); with no Supabase project set up, this renders `AuthenticatedApp`
+ * unconditionally, so every phase before Phase 5 keeps working exactly as it did. See
+ * `authStore.ts`'s `init()` for the matching fallback.
+ */
+export function App() {
+  const authRequired = supabase !== null;
+  const status = useAuthStore((s) => s.status);
+
+  useEffect(() => {
+    if (authRequired) useAuthStore.getState().init();
+  }, [authRequired]);
+
+  if (!authRequired) return <AuthenticatedApp />;
+  if (status === 'checking') return null; // brief — avoids a login-page flash while a persisted session is checked
+  if (status !== 'authenticated') return <LoginPage />;
+  return <AuthenticatedApp />;
+}
+
 /** Every page is now fully rebuilt to the v4 design and owns its own header — Overview
  * (M2), Control + Devices (M3), Analytics + Automation (M4). */
-export function App() {
+function AuthenticatedApp() {
   useLiveConnection();
   const activeId = useHashRoute(ROUTE_IDS, 'overview');
   useRouteAnnouncement(activeId);

@@ -1,0 +1,30 @@
+# systemd unit template for server/proxy.mjs — Phase 5 of the architecture plan.
+#
+# Activate once server/.env has SUPABASE_URL, VITE_SUPABASE_ANON_KEY, and (optionally)
+# BREAK_GLASS_PASSWORD_HASH set:
+#
+#     sudo cp server/ibems-proxy.service /etc/systemd/system/ibems-proxy.service
+#     sudo systemctl daemon-reload
+#     sudo systemctl enable --now ibems-proxy.service
+#     systemctl status ibems-proxy.service
+#
+# Modeled on the existing ibems-dashboard.service / ibems-ingest.service units on this Pi.
+
+[Unit]
+Description=iBEMS Authenticated Proxy (auth gate in front of the Node-RED bridge)
+Wants=network-online.target nodered.service
+After=network-online.target nodered.service
+
+[Service]
+Type=simple
+User=bems
+Group=bems
+WorkingDirectory=/home/bems/bems
+EnvironmentFile=/home/bems/bems/server/.env
+ExecStart=/usr/bin/node server/proxy.mjs
+Restart=on-failure
+RestartSec=10
+SyslogIdentifier=ibems-proxy
+
+[Install]
+WantedBy=multi-user.target

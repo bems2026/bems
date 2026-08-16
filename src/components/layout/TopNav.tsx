@@ -1,7 +1,9 @@
-import { Zap } from 'lucide-react';
+import { Zap, LogOut, WifiOff } from 'lucide-react';
 import { NAV_ITEMS } from './navItems';
 import { AlertsPopover } from './AlertsPopover';
 import { useConnectionStore } from '@/stores/connectionStore';
+import { useAuthStore } from '@/stores/authStore';
+import { supabase } from '@/config/supabase';
 import { isStale } from '@/lib/bridgeClient';
 import type { ConnStatus } from '@/lib/bridgeClient';
 import { useEffect, useState } from 'react';
@@ -81,7 +83,38 @@ export function TopNav({ activeId }: { activeId: string }) {
           {LIVE_LABEL[wsStatus]}
         </span>
         <AlertsPopover />
+        <SessionBadge />
       </div>
     </nav>
+  );
+}
+
+/**
+ * Phase 5: shown only when Supabase is actually configured — with no Supabase project,
+ * there's no session concept at all (unchanged from every phase before this one). A local
+ * (break-glass) session gets its own distinct, warning-toned badge — never rendered as if
+ * it were an equivalent, ordinary login. See authStore.ts's header comment.
+ */
+function SessionBadge() {
+  const mode = useAuthStore((s) => s.mode);
+  const email = useAuthStore((s) => s.email);
+  const signOut = useAuthStore((s) => s.signOut);
+
+  if (supabase === null || mode === null) return null;
+
+  return (
+    <span className={`nav-session${mode === 'local' ? ' nav-session--local' : ''}`}>
+      {mode === 'local' ? (
+        <span className="nav-session__label" title="Local session — LAN only, remote access unavailable">
+          <WifiOff size={12} aria-hidden="true" />
+          LOCAL
+        </span>
+      ) : (
+        <span className="nav-session__label">{email}</span>
+      )}
+      <button type="button" className="nav-session__signout" onClick={() => signOut()} aria-label="Sign out">
+        <LogOut size={13} aria-hidden="true" />
+      </button>
+    </span>
   );
 }

@@ -4095,3 +4095,155 @@ body::before {
     position: relative;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Login page — Phase 5 (architecture plan). Gates the app when Supabase is
+ * configured; unstyled beyond reusing .card and the existing design tokens.
+ * ------------------------------------------------------------------------- */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-5);
+  background: var(--bg-page);
+}
+.login-page__card {
+  width: 100%;
+  max-width: 360px;
+  text-align: center;
+}
+.login-page__icon {
+  width: 40px;
+  height: 40px;
+  margin: 0 auto var(--sp-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.login-page__title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--txt);
+  margin: 0 0 var(--sp-1);
+}
+.login-page__sub {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0 0 var(--sp-4);
+}
+.login-page__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  text-align: left;
+}
+.login-page__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--muted-2);
+}
+.login-page__field input {
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--txt);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm, 6px);
+  padding: 8px 10px;
+}
+.login-page__field input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.login-page__error {
+  font-size: 0.82rem;
+  color: var(--bad);
+  margin: 0;
+}
+.login-page__submit {
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--r-sm, 6px);
+  padding: 10px 14px;
+  cursor: pointer;
+}
+.login-page__submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.login-page__submit:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+.login-page__local-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--sp-3);
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--muted-2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.login-page__local-toggle:hover {
+  color: var(--txt);
+}
+
+/* ---------------------------------------------------------------------------
+ * Session badge (TopNav) — Phase 5. Local (break-glass) sessions get a
+ * distinct warning tone; never rendered as an equivalent to a normal login.
+ * ------------------------------------------------------------------------- */
+.nav-session {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.nav-session__label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: var(--fs-xxs);
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: var(--r-pill);
+  background: var(--bg-inset);
+  color: var(--muted-2);
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nav-session--local .nav-session__label {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.nav-session__signout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-pill);
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.nav-session__signout:hover {
+  background: var(--bg-inset);
+  color: var(--txt);
+}

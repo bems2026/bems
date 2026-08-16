@@ -1,6 +1,9 @@
 import { create } from 'zustand';
-import { getContext, saveContext } from '@/lib/bridgeClient';
+import { getContext, saveContext, nextPollDelayMs } from '@/lib/bridgeClient';
 import type { ContextMap } from '@/lib/types';
+
+let loadAttempt = 0;
+let loadRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Keys in `draft` not yet reflected in `saved` — what a "Write to Node-RED context" click
  * would actually send. Pure so Automation's "Pending context writes" list can render the
@@ -57,14 +60,28 @@ export const useContextStore = create<ContextState>((set, get) => ({
   saveError: null,
   lastSave: null,
 
+  // Retries with backoff, same reasoning as useLiveConnection.ts's device-catalogue fetch:
+  // a transient failure over a real network hop (Tailscale, a remote device) used to leave
+  // this permanently in 'error' with nothing ever trying again. A generous timeout too —
+  // the default TIMING.FETCH_TIMEOUT_MS (10s) is tuned for a same-LAN call, not this one's
+  // real-world path through the Phase 5 proxy.
   load: async () => {
     set({ status: 'loading' });
-    try {
-      const saved = await getContext();
-      set({ saved, status: 'ready' });
-    } catch {
-      set({ status: 'error' });
+    if (loadRetryTimer) {
+      clearTimeout(loadRetryTimer);
+      loadRetryTimer = null;
     }
+    const attempt = async (): Promise<void> => {
+      try {
+        const saved = await getContext({ timeoutMs: 30000 });
+        loadAttempt = 0;
+        set({ saved, status: 'ready' });
+      } catch {
+        loadAttempt++;
+        loadRetryTimer = setTimeout(attempt, nextPollDelayMs(loadAttempt));
+      }
+    };
+    await attempt();
   },
 
   setDraft: (key, value) => set((s) => ({ draft: { ...s.draft, [key]: value } })),

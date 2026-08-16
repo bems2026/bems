@@ -11,6 +11,7 @@
  */
 
 import { BRIDGE_HTTP_URL, BRIDGE_WS_URL } from '@/config/bridge';
+import { getAuthToken } from './authToken';
 import { TIMING } from './timing';
 import type { CommandAck, CommandRequest, ContextAck, ContextMap, Device, HistoryResponse, ReadingsLatestRow } from './types';
 
@@ -55,11 +56,19 @@ export async function fetchJson<T>(path: string, opts: RequestOptions = {}): Pro
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    // Present against the mock/real bridge either way — both ignore an Authorization
+    // header they don't check. Only server/proxy.mjs (Phase 5) actually validates it.
+    const token = getAuthToken();
+    const headers: Record<string, string> = {};
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
     const res = await fetch(`${BRIDGE_HTTP_URL}${path}`, {
       method,
       cache: 'no-store',
       signal: controller.signal,
-      ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+      ...(Object.keys(headers).length > 0 ? { headers } : {}),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     if (!res.ok) throw await bridgeError(res);
     return (await res.json()) as T;
@@ -73,7 +82,7 @@ export async function fetchJson<T>(path: string, opts: RequestOptions = {}): Pro
   }
 }
 
-export const getDevices = (): Promise<Device[]> => fetchJson('/devices');
+export const getDevices = (opts: { timeoutMs?: number } = {}): Promise<Device[]> => fetchJson('/devices', opts);
 export const getLatestReadings = (): Promise<ReadingsLatestRow[]> => fetchJson('/readings/latest');
 export const getHistory = (deviceId: string, range: '1h' | '6h' | '24h' = '24h'): Promise<HistoryResponse> =>
   fetchJson(`/readings/history?device_id=${encodeURIComponent(deviceId)}&range=${range}`);
@@ -88,7 +97,7 @@ export const sendCommand = (cmd: CommandRequest): Promise<CommandAck> =>
 
 /** `GET /api/context` — mock-bridge only (Stage 2, Phase M4). Empty on a fresh mock; no
  * fabricated default schedules or thresholds ever come back from this. */
-export const getContext = (): Promise<ContextMap> => fetchJson('/context');
+export const getContext = (opts: { timeoutMs?: number } = {}): Promise<ContextMap> => fetchJson('/context', opts);
 
 /** `POST /api/context` — mock-bridge only. Same short timeout as `sendCommand` and for the
  * same reason: nothing else on the page is waiting on this particular request. */
@@ -189,7 +198,14 @@ export function connectLive({ onData, onStatus }: LiveHandlers): () => void {
     if (closed) return;
     let socket: WebSocket;
     try {
-      socket = new WebSocket(BRIDGE_WS_URL);
+      // Read fresh on every (re)connect attempt, not once at module load — a token can be
+      // refreshed or a break-glass session started after the first connection was opened.
+      // Browsers don't allow custom headers on a WS handshake, so this is a query param;
+      // server/proxy.mjs strips it before forwarding to the real bridge (see its header
+      // comment) — Node-RED never sees it either way.
+      const token = getAuthToken();
+      const wsUrl = token ? `${BRIDGE_WS_URL}${BRIDGE_WS_URL.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : BRIDGE_WS_URL;
+      socket = new WebSocket(wsUrl);
     } catch {
       scheduleReconnect();
       return;
