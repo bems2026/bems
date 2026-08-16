@@ -22,7 +22,9 @@
  * Failure injection, for exercising the frontend's resilience paths:
  *   --500              every HTTP request returns 500 (GET and POST)
  *   --drop-ws          accept the socket, then close it after 5 s, repeatedly
- *   --stale=<id>       that device stops updating (online:false, frozen ts)
+ *   --stale=<id>       that device stops updating (online:false, frozen ts). Also accepts
+ *                      a switch id (e.g. --stale=l3) — simulates that light's
+ *                      global.lightStatus entry going DISCONNECTED, same as the real bridge.
  *   --cmd-latency=<ms> delay a command's mutation AND its ack by this long (default 0)
  *   --cmd-fail=<id|all> that command 502s; state is left untouched
  *   --cmd-drop=<id|all> that command never responds at all (exercises the client's abort)
@@ -204,7 +206,14 @@ function snapshot() {
   for (let i = 1; i <= 7; i++) outletMeters[`co${i}`] = mk(`co${i}`, i + 10, true, gateByOutlet[`co${i}`]);
 
   const lights = {};
-  for (let i = 1; i <= 7; i++) lights[`L${i}`] = pinned(`L${i}`, occ > 0.3 && i !== 7);
+  const lightHealth = {};
+  for (let i = 1; i <= 7; i++) {
+    lights[`L${i}`] = pinned(`L${i}`, occ > 0.3 && i !== 7);
+    // Mirrors global.lightStatus's real shape (id/conn/on/lastSeen) closely enough for
+    // buildLatest.mjs's purposes — only `conn` is actually read. `--stale=lN` simulates
+    // that light's connection dropping, same lever `--stale=coN` gives metered devices.
+    lightHealth[i] = { id: i, conn: `l${i}` === STALE_ID ? 'DISCONNECTED' : 'CONNECTED', on: lights[`L${i}`], lastSeen: new Date(t).toISOString() };
+  }
 
   totals.today = Object.entries(energyAcc)
     .filter(([k]) => ['co_yel', 'lo_red', 'arec', 'lo_yel2'].includes(k))
@@ -216,7 +225,7 @@ function snapshot() {
     // days only; buildLatest adds each device's live daily counter on top.
     energyAcc: energyBaseline,
     outlet: { meters: outletMeters, state: { status } },
-    switch: { state: lights },
+    switch: { state: lights, health: lightHealth },
     // 1dp, matching what a Tuya temp/humidity DPS yields after its /10 scaling.
     aircon: {
       state: {

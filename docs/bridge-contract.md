@@ -102,9 +102,17 @@ zero are different facts and the UI renders them differently.
 | `current` | number \| absent | `<ctx>_last_c` |
 | `power_w` | number \| absent | `<ctx>_last_p` |
 | `energy_kwh_today` | number \| absent | `<ctx>_energy` |
-| `online` | boolean | `<ctx>_health` |
+| `online` | boolean | `<ctx>_health` for metered devices; `switch` class — see below; `acu_ir`/`sensor_temp_humidity` — hardcoded `true` (no health signal exists for these) |
 | `state` | `"on" \| "off" \| null` | see below |
 | `socket_states` | object \| absent | `outlet_dual` only |
+
+**`switch` online derivation:** `global.lightStatus[n].conn === 'CONNECTED'`, where `n` is
+`state_key` with its `L` prefix stripped (`L3` → `3`). `lightStatus` is populated by the
+Lighting Logic Hub — a real per-switch connection signal that previously existed but wasn't
+read; switches used to report `online: true` unconditionally regardless of actual Tuya
+connectivity. Falls back to `true` if no `lightStatus` entry exists for that switch (older
+flow, or a bridge/mock snapshot that doesn't carry `health` at all) — an absent signal is
+never turned into a false negative.
 
 **`state` derivation by class:**
 

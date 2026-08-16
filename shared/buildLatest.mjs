@@ -70,6 +70,16 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs) {
       r.online = bool(src.h);
       const t = num(src.t);
       if (t !== undefined && t > 0) r.ts = iso8(t);
+    } else if (d.class === 'switch') {
+      // Switches have no `ctx` (no metering DPS), but a real per-switch connection signal
+      // DOES exist — `global.lightStatus`, populated by the Lighting Logic Hub — it was
+      // just never read here before. `state_key` is `L1`..`L7`; `lightStatus`'s keys are
+      // the bare numbers `1`..`7`.
+      const health = (snap.switch || {}).health || {};
+      const entry = health[d.state_key.slice(1)];
+      // No health entry at all (older flow, or a mock that doesn't simulate it) — fall
+      // back to the previous always-online assumption rather than invent a false negative.
+      r.online = entry ? entry.conn === 'CONNECTED' : true;
     } else {
       r.online = true;
     }

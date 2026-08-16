@@ -44,7 +44,7 @@ const snapshot = () => ({
     meters: { co1: { v: '220.1', c: '0.500', p: '110.0', e: '1.2000', h: true, t: 1786000000000 } },
     state: { status: { CO1_1: true, CO1_2: false, CO2_1: false, CO2_2: false } },
   },
-  switch: { state: { L1: true, L2: false } },
+  switch: { state: { L1: true, L2: false }, health: { 1: { conn: 'CONNECTED' }, 2: { conn: 'CONNECTED' } } },
   aircon: { state: { power: true, setTemp: 24, roomTemp: '25.4', humidity: '62.0', outTemp: '31.8' } },
 });
 
@@ -66,6 +66,30 @@ test('absent readings are omitted, never coerced to zero', () => {
   assert.equal('voltage' in r, false);
   assert.equal('power_w' in r, false);
   assert.equal(r.online, false);
+});
+
+test('switch online reflects global.lightStatus.conn, not a hardcoded true', () => {
+  const snap = snapshot();
+  snap.switch.health = { 1: { conn: 'DISCONNECTED' }, 2: { conn: 'CONNECTED' } };
+  const built = buildLatest(snap, DEVICE_REGISTRY, PHASE_MAP, 1786000000000);
+  const l1 = built.find((r) => r.device_id === 'l1');
+  const l2 = built.find((r) => r.device_id === 'l2');
+  assert.equal(l1.online, false);
+  assert.equal(l2.online, true);
+});
+
+test('switch online falls back to true when no health entry exists (older flow, or a mock that omits it) — never a false negative from an absent signal', () => {
+  const snap = snapshot();
+  snap.switch.health = {}; // no entries at all for l1/l2
+  const built = buildLatest(snap, DEVICE_REGISTRY, PHASE_MAP, 1786000000000);
+  assert.equal(built.find((r) => r.device_id === 'l1').online, true);
+});
+
+test('switch online falls back to true when the whole snapshot.switch.health key is absent — pre-fix collector shape, no regression', () => {
+  const snap = snapshot();
+  delete snap.switch.health;
+  const built = buildLatest(snap, DEVICE_REGISTRY, PHASE_MAP, 1786000000000);
+  assert.equal(built.find((r) => r.device_id === 'l1').online, true);
 });
 
 test('string readings from Tuya parsers are coerced to numbers', () => {

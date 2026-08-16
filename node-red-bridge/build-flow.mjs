@@ -120,9 +120,12 @@ msg.snapshot.outlet = { meters, state: flow.get('bems_outlets_state') || {} };
 return msg;`,
 
   switch: `
-// READ-ONLY. Reads this tab's flow context; writes nothing.
+// READ-ONLY. Reads this tab's flow context and global context; writes nothing.
+// 'health' is global.lightStatus (set by the Lighting Logic Hub) — the real per-switch
+// connection state, keyed '1'..'7'. buildLatest.mjs uses it to derive each switch's
+// 'online' field instead of assuming always-online.
 msg.snapshot = msg.snapshot || {};
-msg.snapshot.switch = { state: flow.get('bems_lights_state') || {} };
+msg.snapshot.switch = { state: flow.get('bems_lights_state') || {}, health: global.get('lightStatus') || {} };
 return msg;`,
 
   aircon: `
