@@ -121,12 +121,20 @@ export async function writeScheduleContext(pending: ContextMap, merged: ContextM
     // partial index (WHERE socket IS NULL, this app's first attempt) can't be targeted by
     // upsert()'s generated `ON CONFLICT (device_id) DO UPDATE`; Postgres only matches that
     // against an unconditional unique constraint. Confirmed the hard way, live.
-    const { error } = await client.from('schedules').upsert(rows, { onConflict: 'device_id' });
+    //
+    // .select() and a row-count check are load-bearing, not decoration: PostgREST reports
+    // an RLS policy silently matching zero rows as a plain 200 with an EMPTY array, not an
+    // error — `{error}` alone stays null even when nothing was actually written. Confirmed
+    // live: a save reported "Wrote 8 keys" while both tables stayed completely untouched.
+    const { data, error } = await client.from('schedules').upsert(rows, { onConflict: 'device_id' }).select('device_id');
     if (error) throw new Error(`Supabase schedules write failed: ${error.message}`);
+    if ((data?.length ?? 0) !== rows.length) {
+      throw new Error(`Supabase schedules write affected ${data?.length ?? 0} of ${rows.length} row(s) — check that you're signed in with a real Supabase session, not a break-glass one.`);
+    }
   }
 
   if (dsmChanged) {
-    const { error } = await client
+    const { data, error } = await client
       .from('dsm_thresholds')
       .update({
         max_phase_current: num(merged[MAX_PHASE_KEY]),
@@ -134,7 +142,11 @@ export async function writeScheduleContext(pending: ContextMap, merged: ContextM
         auto_shed: merged[AUTO_SHED_KEY] === 'true',
         care_acu_trigger_c: num(merged[TRIGGER_KEY]),
       })
-      .eq('id', 1);
+      .eq('id', 1)
+      .select('id');
     if (error) throw new Error(`Supabase dsm_thresholds write failed: ${error.message}`);
+    if ((data?.length ?? 0) !== 1) {
+      throw new Error('Supabase dsm_thresholds write matched no row — check that you\'re signed in with a real Supabase session, not a break-glass one.');
+    }
   }
 }

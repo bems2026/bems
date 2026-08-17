@@ -1,4 +1,4 @@
-import { Zap, LogOut, WifiOff } from 'lucide-react';
+import { Zap, LogOut, WifiOff, CircleUserRound } from 'lucide-react';
 import { NAV_ITEMS } from './navItems';
 import { AlertsPopover } from './AlertsPopover';
 import { useConnectionStore } from '@/stores/connectionStore';
@@ -110,7 +110,13 @@ function SessionBadge() {
           LOCAL
         </span>
       ) : (
-        <span className="nav-session__label">{email}</span>
+        // An icon, not the visible email — this nav is on-screen in a shared office, and
+        // spelling out who's logged in to anyone walking past isn't the point of this
+        // badge. The email is still there for anyone who needs it (a screen reader, a
+        // hover), just not printed as on-screen text.
+        <span className="nav-session__label" title={email ?? undefined} aria-label={email ? `Signed in as ${email}` : 'Signed in'}>
+          <CircleUserRound size={14} aria-hidden="true" />
+        </span>
       )}
       <button type="button" className="nav-session__signout" onClick={() => signOut()} aria-label="Sign out">
         <LogOut size={13} aria-hidden="true" />
