@@ -223,19 +223,24 @@
  * colors) WAS run through a real WCAG relative-luminance calculation against both
  * --bg-page (#121212) and --bg-surface (#1e1e1e) — all clear 4.4:1+, most well above.
  *
- * One known, deliberately-scoped gap: this app has ~15 places that hardcode
- * `color: #ffffff`/a dark hex directly (not a token) on a small solid-color badge/pill —
- * skip-link, notification counts, the alert-count badge, the connecting-device spinner
- * ring, .nav-tab--active, and similar — rather than referencing --txt/--accent-text the
- * way the rest of the app does. Those weren't touched: the semantic color values above
- * were tuned for their DOMINANT use (text/icons directly on the page/surface backgrounds,
- * which is most of the app), and a color dark enough for white overlay text to pass AA
- * is NOT the same color that reads well as text against near-black — the light theme
- * solves exactly this with a separate -text tier per color; doing the equivalent for
- * every one of those ~15 hardcoded sites individually is real, additional, separately
- * verifiable work, not something to guess at inside this pass. Until that's done, expect
- * those ~15 specific badges/pills to render in dark mode with contrast between their new
- * background and their still-hardcoded white/dark text, not verified against AA.
+ * The ~15 places that hardcode `color`/`background` directly instead of a token (badges,
+ * pills, buttons carrying white or dark text on a solid semantic-color fill — skip-link,
+ * notification counts, .nav-tab--active, quick-action buttons, confirm-modal buttons, and
+ * similar) are handled individually, next to each rule, not centrally here:
+ *   - A hardcoded `background: #ffffff` used as a plain surface fill (icon tiles, buttons,
+ *     the active-tab pill) was replaced with `var(--bg-surface)` directly at the site —
+ *     identical in light mode, correctly dark in dark mode, no override needed.
+ *   - A hardcoded `color: #ffffff` paired with a semantic-color background (--accent/
+ *     --red/--blue-bright) gets a `:root[data-theme='dark'] <selector> { color: ... }`
+ *     override right after its base rule, swapping to a dark, WCAG-verified text color —
+ *     the same -text-tier pairing --accent/--warn already use elsewhere in this file. Every
+ *     one of those dark replacement colors was run through the same contrast calculation as
+ *     the tokens above (4.2:1+ against every background it's actually paired with).
+ *   - `background: var(--txt); color: #ffffff` (three active-state chips) became
+ *     `color: var(--bg-page)` instead of a dark-mode override — --bg-page inverts the same
+ *     direction --txt does between themes, so one token swap self-adapts for both.
+ *   - `.quick-toggle__knob`'s white fill is a deliberate exception, not a gap — see its
+ *     own comment.
  */
 :root[data-theme='dark'] {
   --bg-page: #121212;
@@ -750,6 +755,13 @@ body::before {
   font-size: var(--fs-md);
   flex: none;
 }
+/* White reads fine against the light theme's --accent, but the dark theme's --accent was
+   tuned for text-ON-page use (WCAG-verified there), not as a background under white — dark
+   text is what actually clears AA against it, the same pairing .stale-flag/
+   .control-plan-btn--accent already use for --accent/--warn elsewhere in this file. */
+:root[data-theme='dark'] .nav-brand-mark {
+  color: #1a1206;
+}
 .nav-brand-name {
   font-weight: 800;
   font-size: var(--fs-md-lg);
@@ -811,7 +823,7 @@ body::before {
   color: var(--txt);
 }
 .nav-tab--active {
-  background: #ffffff;
+  background: var(--bg-surface);
   color: var(--txt);
   box-shadow: 0 2px 10px rgb(30 41 59 / 0.1);
 }
@@ -904,6 +916,12 @@ body::before {
   display: grid;
   place-items: center;
   line-height: 1;
+}
+/* White-on-red fails AA against the dark theme's --red (tuned for text-on-page use, same
+   as --accent above) — dark text at this 9px size needs the same swap .nav-brand-mark
+   uses. */
+:root[data-theme='dark'] .nav-icon-btn__badge {
+  color: #1a0605;
 }
 
 #mobileMenuBtn {
@@ -1031,7 +1049,7 @@ body::before {
 .alerts-popover__ack {
   flex: none;
   border: 1px solid var(--border);
-  background: #ffffff;
+  background: var(--bg-surface);
   color: var(--muted);
   border-radius: var(--r-sm);
   padding: 4px 10px;
@@ -1657,7 +1675,7 @@ body::before {
   height: 62px;
   border-radius: 50%;
   border: 4px solid var(--blue-bright);
-  background: #ffffff;
+  background: var(--bg-surface);
   flex: none;
   display: flex;
   flex-direction: column;
@@ -1784,6 +1802,11 @@ body::before {
   min-width: 0;
   min-height: 0;
 }
+/* Same two-stop gradient concept, dark equivalents — a two-color gradient can't be
+   expressed as a single token swap the way a flat fill can. */
+:root[data-theme='dark'] .hero-3d-card {
+  background: linear-gradient(160deg, #202020, #171717);
+}
 .hero-3d-head {
   display: flex;
   align-items: flex-start;
@@ -1842,7 +1865,7 @@ body::before {
   width: 30px;
   height: 30px;
   border-radius: var(--r-sm);
-  background: #ffffff;
+  background: var(--bg-surface);
   display: grid;
   place-items: center;
   font-size: var(--fs-md);
@@ -1873,7 +1896,7 @@ body::before {
   font: 700 var(--fs-xxs-lg) inherit;
   cursor: pointer;
   border: 1px solid var(--border);
-  background: #ffffff;
+  background: var(--bg-surface);
   color: var(--muted-2);
   white-space: nowrap;
   transition: color 0.15s ease, border-color 0.15s ease;
@@ -1891,6 +1914,12 @@ body::before {
   color: #ffffff;
   border-color: var(--blue);
   opacity: 0.9;
+}
+/* White-on-blue fails AA against the dark theme's --blue (tuned for text-on-page use) —
+   same swap as .nav-brand-mark/.nav-icon-btn__badge above. */
+:root[data-theme='dark'] .quick-btn--primary,
+:root[data-theme='dark'] .quick-btn--primary:hover:not(:disabled) {
+  color: #0d1526;
 }
 .quick-btn:disabled {
   opacity: 0.5;
@@ -1919,6 +1948,10 @@ body::before {
   width: 18px;
   height: 18px;
   border-radius: 50%;
+  /* Deliberately staying hardcoded white in both themes, not a surface token — this is
+     the physical slider knob (the iOS/Material toggle-switch convention), not a page
+     surface. It sits on --border-strong (off) or --green-bright (on), neither of which
+     changes enough between themes to threaten its contrast either way. */
   background: #ffffff;
   box-shadow: 0 2px 4px rgb(30 41 59 / 0.28);
   transition: left 0.2s ease;
@@ -2366,7 +2399,11 @@ body::before {
 }
 .devices-filter-chip--active {
   background: var(--txt);
-  color: #ffffff;
+  /* var(--bg-page), not a hardcoded white: --txt inverts between themes (dark in light
+     mode, light in dark mode), so the text color paired with it needs to invert the same
+     way to stay legible — --bg-page does that for free (near-white in light mode, near-
+     black in dark mode) without a separate dark-mode override. */
+  color: var(--bg-page);
 }
 /* The one place --faint survives as a text colour, and deliberately: this button is
    genuinely `disabled` (see DevicesView.tsx), and WCAG 1.4.3 exempts inactive controls from
@@ -2431,7 +2468,7 @@ body::before {
   width: 26px;
   height: 26px;
   border-radius: var(--r-sm);
-  background: #ffffff;
+  background: var(--bg-surface);
   display: grid;
   place-items: center;
   color: var(--muted);
@@ -2842,7 +2879,7 @@ body::before {
 .control-plan-btn {
   flex: 1;
   border: 1px solid var(--border);
-  background: #ffffff;
+  background: var(--bg-surface);
   border-radius: var(--r-sm);
   padding: 8px;
   font: 700 var(--fs-xs) 'Manrope', sans-serif;
@@ -3213,7 +3250,7 @@ body::before {
 }
 .confirm-modal__cancel {
   border: 1px solid var(--border);
-  background: #ffffff;
+  background: var(--bg-surface);
   color: var(--muted);
   border-radius: var(--r-sm);
   padding: 9px 15px;
@@ -3237,6 +3274,12 @@ body::before {
 }
 .confirm-modal__confirm--blue {
   background: var(--blue-bright);
+}
+/* Covers --red/--blue (still white-on-bright here) — --accent already sets its own dark
+   text above and is excluded so this can't win over that already-correct pairing on
+   specificity alone. */
+:root[data-theme='dark'] .confirm-modal__confirm:not(.confirm-modal__confirm--accent) {
+  color: #0d1526;
 }
 
 /* ---------------------------------------------------------------------------
@@ -3272,7 +3315,7 @@ body::before {
 }
 .analytics-scope-btn--active {
   background: var(--txt);
-  color: #ffffff;
+  color: var(--bg-page); /* see .devices-filter-chip--active's comment on why not #ffffff */
 }
 
 .analytics-main-grid {
@@ -3443,7 +3486,7 @@ body::before {
 .analytics-source-card {
   cursor: pointer;
   text-align: left;
-  background: #ffffff;
+  background: var(--bg-surface);
   border: 1.5px solid var(--border);
   border-radius: var(--r-inner);
   padding: var(--sp-3);
@@ -3572,7 +3615,7 @@ body::before {
 .analytics-energy-tile {
   padding: var(--sp-4);
   border-radius: var(--r-card);
-  background: #ffffff;
+  background: var(--bg-surface);
   border: 1.5px solid var(--border);
   min-width: 0;
 }
@@ -3644,7 +3687,7 @@ body::before {
   color: var(--txt);
 }
 .analytics-energy-period--active {
-  background: #ffffff;
+  background: var(--bg-surface);
   color: var(--txt);
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
 }
@@ -3759,6 +3802,11 @@ body::before {
   box-shadow: 0 4px 14px rgb(59 130 246 / 0.25);
   white-space: nowrap;
 }
+/* White-on-blue-bright fails AA against the dark theme's value — same swap as
+   .quick-btn--primary above (both use --blue-bright/--blue). */
+:root[data-theme='dark'] .automation-write-btn {
+  color: #0d1526;
+}
 .automation-write-btn:disabled {
   opacity: 0.5;
   cursor: default;
@@ -3857,12 +3905,12 @@ body::before {
   white-space: nowrap;
 }
 .automation-filter-chip--active {
-  background: #ffffff;
+  background: var(--bg-surface);
   color: var(--txt);
 }
 .automation-arm-all-btn {
   border: 1px solid var(--border);
-  background: #ffffff;
+  background: var(--bg-surface);
   border-radius: var(--r-sm);
   padding: 7px 12px;
   font: 700 var(--fs-xs) inherit;
@@ -3963,7 +4011,7 @@ body::before {
 }
 .automation-day-chip--on {
   background: var(--txt);
-  color: #ffffff;
+  color: var(--bg-page); /* see .devices-filter-chip--active's comment on why not #ffffff */
 }
 
 .automation-section-title {
@@ -4058,7 +4106,7 @@ body::before {
 }
 .automation-shed-mode__switch {
   border: 1px solid rgb(245 158 11 / 0.45);
-  background: #ffffff;
+  background: var(--bg-surface);
   color: var(--warn);
   border-radius: var(--r-sm);
   padding: 8px 12px;
@@ -4318,6 +4366,11 @@ body::before {
   border-radius: var(--r-sm, 6px);
   padding: 10px 14px;
   cursor: pointer;
+}
+/* White-on-accent fails AA against the dark theme's --accent — same swap as
+   .nav-brand-mark above. */
+:root[data-theme='dark'] .login-page__submit {
+  color: #1a1206;
 }
 .login-page__submit:disabled {
   opacity: 0.6;
