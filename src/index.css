@@ -3663,6 +3663,18 @@ body::before {
   font-size: var(--fs-sm);
 }
 
+/* Phase 6: honest about "commanded and audit-logged" vs "actually dispatched to
+   hardware" — the same distinction relayCorroboration.ts already draws for measurement,
+   applied to control. Warn-toned, not bad/red: nothing is wrong, dispatch is just closed. */
+.control-dispatch-banner {
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-3);
+  border-radius: var(--r-inner);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: var(--fs-sm);
+}
+
 .automation-grid {
   display: grid;
   grid-template-columns: 1.25fr 1fr;

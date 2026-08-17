@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * ibems-server authenticated proxy — architecture plan Phase 5, job 2 of 3 (job 1 is
- * `ingest.mjs`; job 3, the command gate, arrives closed-by-default in Phase 6).
+ * ibems-server authenticated proxy — architecture plan Phase 5 (auth + proxy) and Phase 6
+ * (the command gate, job 3 of 3 — job 1 is `ingest.mjs`).
  *
  * The only process besides Node-RED itself allowed to reach the bridge. Validates a
  * session before forwarding anything to `127.0.0.1:1880` — this is what actually enforces
@@ -24,7 +24,18 @@
  *      Supabase Auth itself is unreachable. Issues an opaque, server-only session token —
  *      NOT a Supabase JWT, and not accepted by anything Supabase-side. The frontend must
  *      render this distinctly ("local session — LAN only, remote access unavailable"),
- *      never as an equivalent to a normal login — see src/stores/authStore.ts.
+ *      never as an equivalent to a normal login — see src/stores/authStore.ts. It also
+ *      cannot issue device commands (see `handleCommand` below) — there is no
+ *      `auth.users` row to attribute a command to, and command audit rows require one.
+ *
+ * `POST /api/command` (Phase 6): validates via `shared/commands.mjs` (the same pure
+ * contract the mock bridge uses), writes an audit row to Supabase's `commands` table using
+ * the CALLER's own verified token — not this process's anon key alone, and never the
+ * service-role key `ingest.mjs` holds — so RLS's `authenticated` policy is what actually
+ * grants the insert, and `requested_by` is the real signed-in user. Dispatch itself stays
+ * gated behind `HARDWARE_DISPATCH_ENABLED` (default unset/false): the ack is always
+ * honest about what happened (`status: 'dry_run'` while closed), and there is nothing to
+ * forward to yet regardless — the real bridge gets a write route only in Phase 7.
  */
 
 import http from 'node:http';
@@ -32,6 +43,8 @@ import net from 'node:net';
 import crypto from 'node:crypto';
 import { URL } from 'node:url';
 import { verifyBreakGlassPassword } from './breakGlass.mjs';
+import { validateCommand, buildAck, ACCEPTED_STATUS } from '../shared/commands.mjs';
+import { DEVICE_REGISTRY } from '../shared/registry.mjs';
 
 const PROXY_PORT = Number(process.env.PROXY_PORT) || 8080;
 const BRIDGE_HOST = process.env.BRIDGE_HOST || '127.0.0.1';
@@ -43,6 +56,9 @@ const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPA
 const BREAK_GLASS_PASSWORD_HASH = process.env.BREAK_GLASS_PASSWORD_HASH;
 const SUPABASE_VERIFY_CACHE_MS = 60_000;
 const LOCAL_SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12h
+// Closed by default, mirroring node-red-bridge/deploy.mjs's --apply-only-with-explicit-
+// intent pattern. Phase 7 is the only phase allowed to flip this in a real deployment.
+const HARDWARE_DISPATCH_ENABLED = process.env.HARDWARE_DISPATCH_ENABLED === 'true';
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error('[ibems-proxy] SUPABASE_URL and VITE_SUPABASE_ANON_KEY are required — see server/.env.example');
@@ -76,33 +92,39 @@ setInterval(() => {
 }, 60_000).unref();
 
 // --- Supabase token verification, cached briefly to avoid a round trip per request ------
-const supabaseVerifyCache = new Map(); // token -> { validUntil, ok }
+const supabaseVerifyCache = new Map(); // token -> { validUntil, ok, userId }
 
-async function verifySupabaseToken(token) {
+/** Returns `{ok, userId}` — `userId` is `auth.users.id`, needed by `handleCommand` to
+ * attribute a command's audit row to a real user. Kept in the same cache entry as `ok`
+ * rather than a second lookup, so a cached miss and a cached user id can never disagree. */
+async function verifySupabaseSession(token) {
   const cached = supabaseVerifyCache.get(token);
-  if (cached && Date.now() < cached.validUntil) return cached.ok;
-  let ok;
+  if (cached && Date.now() < cached.validUntil) return cached;
+  let result = { ok: false, userId: null };
   try {
     const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
       headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY },
       signal: AbortSignal.timeout(5000),
     });
-    ok = res.ok;
+    if (res.ok) {
+      const body = await res.json();
+      result = { ok: true, userId: typeof body?.id === 'string' ? body.id : null };
+    }
   } catch {
     // Supabase unreachable — NOT the same fact as "invalid token". This proxy still
     // denies the request either way (fail closed), but it's exactly the condition under
     // which the frontend should offer the break-glass local-login path instead of just
     // retrying the same request.
-    ok = false;
+    result = { ok: false, userId: null };
   }
-  supabaseVerifyCache.set(token, { validUntil: Date.now() + SUPABASE_VERIFY_CACHE_MS, ok });
-  return ok;
+  supabaseVerifyCache.set(token, { ...result, validUntil: Date.now() + SUPABASE_VERIFY_CACHE_MS });
+  return result;
 }
 
 async function isAuthorized(token) {
   if (!token) return false;
   if (isValidLocalSession(token)) return true;
-  return verifySupabaseToken(token);
+  return (await verifySupabaseSession(token)).ok;
 }
 
 function tokenFromRequest(req, url) {
@@ -176,6 +198,78 @@ function proxyHttp(req, res, url) {
   req.pipe(proxyReq);
 }
 
+/**
+ * `POST /api/command` — architecture plan Phase 6. `token` has already passed the generic
+ * `isAuthorized` gate (so it's either a valid break-glass session or a valid Supabase
+ * token) by the time this is called; this function applies the STRICTER rule commands
+ * need on top of that.
+ */
+async function handleCommand(req, res, token) {
+  const session = await verifySupabaseSession(token);
+  if (!session.ok || !session.userId) {
+    // isAuthorized() already accepted this token, so if it's not a real Supabase session
+    // it must be a valid break-glass one — reject with a reason the frontend can render
+    // distinctly from "not logged in at all" (401).
+    return sendJson(res, 403, {
+      error: 'break_glass_cannot_command',
+      detail: 'Local/break-glass sessions are view-only — device commands require a real Supabase-authenticated session.',
+    });
+  }
+
+  const body = await readJsonBody(req);
+  const validated = validateCommand(body, DEVICE_REGISTRY);
+  if (!validated.ok) {
+    return sendJson(res, validated.status, { error: validated.error, code: validated.code });
+  }
+
+  const { cmd } = validated;
+  const acceptedAtMs = Date.now();
+  const ack = buildAck(cmd, acceptedAtMs);
+  const status = HARDWARE_DISPATCH_ENABLED ? 'dispatched' : 'dry_run';
+
+  // The audit row is written with the CALLER's own token, not SUPABASE_ANON_KEY alone —
+  // RLS's `auth.role() = 'authenticated'` check needs the request to actually carry a
+  // signed-in user's session for PostgREST to grant the insert. Audit completeness is
+  // part of Phase 6's DoD, so a failure here is NOT swallowed: no row, no command, even
+  // though the command was otherwise valid — see the file header for why.
+  try {
+    const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/commands`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        command_id: cmd.command_id ?? null,
+        device_id: cmd.device_id,
+        socket: cmd.socket ?? null,
+        action: cmd.action,
+        target: cmd.target,
+        requested_by: session.userId,
+        accepted_at: new Date(acceptedAtMs).toISOString(),
+        confirmed: false,
+        confirmation: 'none',
+        note: ack.note,
+        status,
+        source: 'ibems-app',
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!insertRes.ok) {
+      const detail = await insertRes.text();
+      console.error(`[ibems-proxy] command audit insert failed: ${insertRes.status} ${detail}`);
+      return sendJson(res, 502, { error: 'audit_log_unreachable', detail: 'Could not record this command — refusing to proceed without an audit trail.' });
+    }
+  } catch (err) {
+    console.error('[ibems-proxy] command audit insert error:', err);
+    return sendJson(res, 502, { error: 'audit_log_unreachable', detail: String(err) });
+  }
+
+  // Phase 7 adds the real forward-to-bridge step here, once the bridge actually has a
+  // write route (it doesn't yet — see shared/commands.mjs's header). The ack below always
+  // describes what was accepted and logged, gated or not — never a claim about a relay
+  // this process has no route to reach.
+  res.writeHead(ACCEPTED_STATUS, { 'Content-Type': 'application/json', ...CORS_HEADERS });
+  res.end(JSON.stringify(ack));
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const origin = req.headers['origin'] || '-';
@@ -194,6 +288,13 @@ const server = http.createServer(async (req, res) => {
   const authorized = await isAuthorized(token);
   console.log(`[ibems-proxy] ${req.method} ${url.pathname} origin=${origin} token=${token ? token.slice(0, 12) + '…' : 'none'} -> ${authorized ? 'OK' : '401'}`);
   if (!authorized) return sendJson(res, 401, { error: 'unauthorized' });
+
+  if (req.method === 'GET' && url.pathname === '/api/capabilities') {
+    return sendJson(res, 200, { hardware_dispatch_enabled: HARDWARE_DISPATCH_ENABLED });
+  }
+  if (req.method === 'POST' && url.pathname === '/api/command') {
+    return handleCommand(req, res, token);
+  }
 
   proxyHttp(req, res, url);
 });

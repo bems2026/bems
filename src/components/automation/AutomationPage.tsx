@@ -48,9 +48,9 @@ export function AutomationPage() {
   const askSave = () =>
     ask(
       {
-        title: 'Write to Node-RED context?',
-        body: `This writes ${pendingEntries.length} pending key${pendingEntries.length === 1 ? '' : 's'} to the mock's Node-RED global context store — schedules, trigger setpoints, and DSM thresholds the schedule subflow will act on.`,
-        confirmLabel: 'Write context',
+        title: 'Write to Supabase?',
+        body: `This writes ${pendingEntries.length} pending key${pendingEntries.length === 1 ? '' : 's'} to Supabase — schedules, the trigger setpoint, and DSM thresholds. Nothing on the real bridge reads these yet; hardware dispatch is still gated closed.`,
+        confirmLabel: 'Write',
         tone: 'blue',
       },
       () => void save(),
@@ -72,13 +72,15 @@ export function AutomationPage() {
         <div>
           <h1 className="page-title">DSM &amp; Schedule Management</h1>
           <p className="page-sub">
-            Node-RED context values
-            <InfoHint label="How these values are used">The existing schedule subflow acts on them directly — no separate rule engine.</InfoHint>
+            Staged, not yet dispatchable
+            <InfoHint label="What this means">
+              Saved here to Supabase and logged for audit, but nothing on the real bridge reads or acts on these yet — that arrives once hardware dispatch opens.
+            </InfoHint>
           </p>
         </div>
         <div className="automation-write-group">
           <button type="button" className="automation-write-btn" disabled={pendingEntries.length === 0 || saveStatus === 'saving'} onClick={askSave}>
-            {saveStatus === 'saving' ? 'Writing…' : 'Write to Node-RED context'}
+            {saveStatus === 'saving' ? 'Writing…' : 'Write to Supabase'}
           </button>
           {/* Confirmation that the write landed. `role="status"` (polite) rather than an
               alert: it's good news, so it should wait its turn rather than interrupt. */}
@@ -116,9 +118,7 @@ export function AutomationPage() {
               Arm all
             </button>
           </div>
-          <p className="automation-schedules-sub">
-            Every relay and the IR unit. Writes <code className="mono">global.schedule.&lt;device&gt;</code>.
-          </p>
+          <p className="automation-schedules-sub">Every relay and the IR unit, staged to Supabase's schedules table.</p>
 
           {/* Focusable so the horizontal scroll is reachable from the keyboard, named so that
               focus stop means something. Same treatment as Devices' table scroller. */}

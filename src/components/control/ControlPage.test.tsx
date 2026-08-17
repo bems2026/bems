@@ -3,6 +3,7 @@ import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-li
 import { ControlPage } from './ControlPage';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore } from '@/stores/commandStore';
+import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
 import { useControlLog } from './controlLog';
 import * as bridgeClient from '@/lib/bridgeClient';
 import type { CommandAck, Device } from '@/lib/types';
@@ -46,10 +47,31 @@ afterEach(() => {
   vi.clearAllMocks();
   useDeviceStore.setState({ devices: [], latestReadings: {}, totals: null, history: {} });
   useCommandStore.setState({ pending: {} });
+  useCapabilitiesStore.setState({ hardwareDispatchEnabled: null });
   useControlLog.setState({ entries: [] });
 });
 
 describe('ControlPage', () => {
+  it('shows the dispatch-closed banner while capabilities are unknown, not just while explicitly false', () => {
+    useDeviceStore.setState({ devices: [light(1)] });
+    render(<ControlPage />);
+    expect(screen.getByText(/Hardware dispatch is closed/)).toBeInTheDocument();
+  });
+
+  it('keeps showing the banner when the gate is confirmed closed', () => {
+    useCapabilitiesStore.setState({ hardwareDispatchEnabled: false });
+    useDeviceStore.setState({ devices: [light(1)] });
+    render(<ControlPage />);
+    expect(screen.getByText(/Hardware dispatch is closed/)).toBeInTheDocument();
+  });
+
+  it('hides the banner only once the gate is confirmed open', () => {
+    useCapabilitiesStore.setState({ hardwareDispatchEnabled: true });
+    useDeviceStore.setState({ devices: [light(1)] });
+    render(<ControlPage />);
+    expect(screen.queryByText(/Hardware dispatch is closed/)).not.toBeInTheDocument();
+  });
+
   it('renders the real registry devices across the switches and outlets lists', () => {
     useDeviceStore.setState({ devices: [outlet(1), light(1), acu()] });
     render(<ControlPage />);

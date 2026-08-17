@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { useContextStore, pendingWrites } from './contextStore';
-import * as bridgeClient from '@/lib/bridgeClient';
+import * as supabaseConfig from '@/lib/supabaseConfig';
 
-vi.mock('@/lib/bridgeClient', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/bridgeClient')>();
-  return { ...actual, saveContext: vi.fn() };
+vi.mock('@/config/supabase', () => ({ supabase: {} }));
+vi.mock('@/lib/supabaseConfig', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/supabaseConfig')>();
+  return { ...actual, writeScheduleContext: vi.fn() };
 });
 
 afterEach(() => {
@@ -14,7 +15,7 @@ afterEach(() => {
 
 describe('useContextStore.save — write confirmation', () => {
   it('records what was written so the UI can confirm it, rather than only emptying the pending list', async () => {
-    vi.mocked(bridgeClient.saveContext).mockResolvedValue(undefined as never);
+    vi.mocked(supabaseConfig.writeScheduleContext).mockResolvedValue(undefined);
     useContextStore.setState({
       saved: { 'global.dsm.max_total_kw': '5' },
       draft: { 'global.dsm.max_total_kw': '7', 'global.schedule.l1.armed': 'true' },
@@ -34,7 +35,7 @@ describe('useContextStore.save — write confirmation', () => {
   });
 
   it('leaves lastSave untouched when the write fails, so a stale success is never shown', async () => {
-    vi.mocked(bridgeClient.saveContext).mockRejectedValue(new Error('bridge unreachable'));
+    vi.mocked(supabaseConfig.writeScheduleContext).mockRejectedValue(new Error('Supabase unreachable'));
     useContextStore.setState({ saved: {}, draft: { 'global.dsm.max_phase_a': '30' } });
 
     await useContextStore.getState().save();
@@ -42,7 +43,7 @@ describe('useContextStore.save — write confirmation', () => {
 
     expect(lastSave).toBeNull();
     expect(saveStatus).toBe('error');
-    expect(saveError).toBe('bridge unreachable');
+    expect(saveError).toBe('Supabase unreachable');
     // The edit stays pending so the user can retry it.
     expect(pendingWrites(draft, saved)).toEqual({ 'global.dsm.max_phase_a': '30' });
   });

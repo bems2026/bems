@@ -13,7 +13,7 @@
 import { BRIDGE_HTTP_URL, BRIDGE_WS_URL } from '@/config/bridge';
 import { getAuthToken } from './authToken';
 import { TIMING } from './timing';
-import type { CommandAck, CommandRequest, ContextAck, ContextMap, Device, HistoryResponse, ReadingsLatestRow } from './types';
+import type { CommandAck, CommandRequest, Capabilities, Device, HistoryResponse, ReadingsLatestRow } from './types';
 
 export class BridgeFetchError extends Error {
   readonly status?: number;
@@ -88,21 +88,19 @@ export const getHistory = (deviceId: string, range: '1h' | '6h' | '24h' = '24h')
   fetchJson(`/readings/history?device_id=${encodeURIComponent(deviceId)}&range=${range}`);
 
 /**
- * `POST /api/command` — mock-bridge only (Stage 2, Phase L). Shorter timeout than a read:
- * a toggle that spins for 10s is worse than one that fails at 5s and invites a retry, and
- * unlike a poll, nothing else is waiting on this particular request.
+ * `POST /api/command` — against the mock, a straight write; against the real (Phase 5)
+ * proxy, validated/audit-logged/gated per `server/proxy.mjs`'s `handleCommand` — see
+ * `useCapabilitiesStore` for whether the gate is actually open. Shorter timeout than a
+ * read either way: a toggle that spins for 10s is worse than one that fails at 5s and
+ * invites a retry, and unlike a poll, nothing else is waiting on this particular request.
  */
 export const sendCommand = (cmd: CommandRequest): Promise<CommandAck> =>
   fetchJson<CommandAck>('/command', { method: 'POST', body: cmd, timeoutMs: TIMING.COMMAND_TIMEOUT_MS });
 
-/** `GET /api/context` — mock-bridge only (Stage 2, Phase M4). Empty on a fresh mock; no
- * fabricated default schedules or thresholds ever come back from this. */
-export const getContext = (opts: { timeoutMs?: number } = {}): Promise<ContextMap> => fetchJson('/context', opts);
-
-/** `POST /api/context` — mock-bridge only. Same short timeout as `sendCommand` and for the
- * same reason: nothing else on the page is waiting on this particular request. */
-export const saveContext = (writes: ContextMap): Promise<ContextAck> =>
-  fetchJson<ContextAck>('/context', { method: 'POST', body: { writes }, timeoutMs: TIMING.COMMAND_TIMEOUT_MS });
+/** `GET /api/capabilities` (Phase 6) — whether the hardware-dispatch gate is currently
+ * open. Both the mock and a freshly-deployed real proxy report `false`; only an explicit
+ * `HARDWARE_DISPATCH_ENABLED=true` on the Pi (Phase 7) ever makes this `true`. */
+export const getCapabilities = (): Promise<Capabilities> => fetchJson('/capabilities');
 
 // ---------------------------------------------------------------------------
 // Pure resilience math — the part `test/…` in the Stage 1 plan §6 calls out to unit

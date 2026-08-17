@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Lightbulb, Plug, Snowflake } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore } from '@/stores/commandStore';
+import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
 import { ConfirmModal, type ConfirmTone } from '@/components/ui/ConfirmModal';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { LightingMatrixCard } from './LightingMatrixCard';
@@ -61,6 +62,7 @@ export function ControlPage() {
   const devices = useDeviceStore((s) => s.devices);
   const send = useCommandStore((s) => s.send);
   const log = useControlLog((s) => s.log);
+  const hardwareDispatchEnabled = useCapabilitiesStore((s) => s.hardwareDispatchEnabled);
   const [confirming, setConfirming] = useState<MasterAction | null>(null);
   useFaultLogging();
 
@@ -108,6 +110,14 @@ export function ControlPage() {
           </button>
         </div>
       </header>
+
+      {/* null (not yet loaded) is treated the same as false — never claim dispatch is
+          open before a real /api/capabilities response confirms it. */}
+      {hardwareDispatchEnabled !== true && (
+        <p className="control-dispatch-banner" role="status">
+          Hardware dispatch is closed — every command here is validated and audit-logged, but nothing on this page currently changes a real relay.
+        </p>
+      )}
 
       <div className="control-grid">
         <div className="control-grid__main">

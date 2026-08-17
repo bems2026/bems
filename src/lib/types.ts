@@ -160,3 +160,14 @@ export interface ContextAck {
   confirmed: false;
   note: string;
 }
+
+// ---------------------------------------------------------------------------
+// Capabilities — Stage 2 (Phase 6). Lets the UI honestly distinguish "commanded and
+// audit-logged" from "actually dispatched to hardware" instead of assuming the latter.
+// ---------------------------------------------------------------------------
+
+/** `GET /api/capabilities`. The mock always reports `false` — it has no gated dispatch
+ * path to enable, so there is nothing it could honestly report as `true`. */
+export interface Capabilities {
+  hardware_dispatch_enabled: boolean;
+}

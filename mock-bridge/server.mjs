@@ -440,6 +440,13 @@ const server = http.createServer((req, res) => {
     case '/api/devices':
       return send(res, 200, publicDevices());
 
+    // Contract parity with server/proxy.mjs's real (Phase 6) endpoint — always false here.
+    // The mock has no Supabase-backed command audit log to gate, so there is nothing this
+    // flag could honestly report as enabled; a frontend dev pointed at the mock should see
+    // the same "commanded, not yet dispatchable" UI it would see against the real gated proxy.
+    case '/api/capabilities':
+      return send(res, 200, { hardware_dispatch_enabled: false });
+
     case '/api/readings/latest':
       return send(res, 200, latest());
 

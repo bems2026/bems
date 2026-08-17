@@ -25,21 +25,44 @@ const VALID_TOKEN = 'valid-supabase-token';
 const BREAK_GLASS_PASSWORD = 'test-break-glass-password';
 const BREAK_GLASS_HASH = hashBreakGlassPassword(BREAK_GLASS_PASSWORD);
 
-/** A minimal stand-in for Supabase's /auth/v1/user — accepts exactly VALID_TOKEN. */
+/**
+ * A minimal stand-in for Supabase — `/auth/v1/user` (accepts exactly VALID_TOKEN) plus
+ * `POST /rest/v1/commands`, the audit-log insert `handleCommand` writes to. Every inserted
+ * row is recorded on `.insertedCommands` so tests can assert on what was actually logged,
+ * not just the HTTP response. `rejectCommandInserts` flips the REST endpoint to always
+ * 500, for testing the "audit log unreachable" path.
+ */
 function startFakeSupabaseAuth() {
   return new Promise((resolve) => {
     const port = nextPort++;
-    const server = http.createServer((req, res) => {
-      const auth = req.headers['authorization'];
-      if (auth === `Bearer ${VALID_TOKEN}`) {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ id: 'user-1', email: 'test@example.com' }));
-      } else {
-        res.writeHead(401, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'invalid token' }));
+    const state = { insertedCommands: [], rejectCommandInserts: false };
+    const server = http.createServer(async (req, res) => {
+      if (req.method === 'GET' && req.url === '/auth/v1/user') {
+        const auth = req.headers['authorization'];
+        if (auth === `Bearer ${VALID_TOKEN}`) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ id: 'user-1', email: 'test@example.com' }));
+        } else {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'invalid token' }));
+        }
+        return;
       }
+      if (req.method === 'POST' && req.url === '/rest/v1/commands') {
+        if (state.rejectCommandInserts) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'simulated outage' }));
+        }
+        let raw = '';
+        for await (const chunk of req) raw += chunk;
+        state.insertedCommands.push(JSON.parse(raw));
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        return res.end('[]');
+      }
+      res.writeHead(404);
+      res.end();
     });
-    server.listen(port, () => resolve({ server, port, url: `http://localhost:${port}` }));
+    server.listen(port, () => resolve({ server, port, url: `http://localhost:${port}`, state }));
   });
 }
 
@@ -62,8 +85,10 @@ function spawnChild(script, env) {
   });
 }
 
-/** Spins up: fake Supabase auth + a real mock-bridge + the proxy pointed at both. */
-async function setup() {
+/** Spins up: fake Supabase auth + a real mock-bridge + the proxy pointed at both.
+ * `proxyEnv` merges in extra env for the proxy child — used to toggle
+ * `HARDWARE_DISPATCH_ENABLED` per test. */
+async function setup(proxyEnv = {}) {
   const fakeAuth = await startFakeSupabaseAuth();
   const bridgePort = nextPort++;
   // mock-bridge takes its port via CLI flag, not env.
@@ -89,10 +114,12 @@ async function setup() {
     SUPABASE_URL: fakeAuth.url,
     VITE_SUPABASE_ANON_KEY: 'dummy-anon-key',
     BREAK_GLASS_PASSWORD_HASH: BREAK_GLASS_HASH,
+    ...proxyEnv,
   });
 
   return {
     proxyUrl: `http://localhost:${proxyPort}`,
+    supabaseState: fakeAuth.state,
     cleanup: () => {
       fakeAuth.server.close();
       bridgeChild.kill();
@@ -220,6 +247,143 @@ test('CORS preflight is answered without requiring auth', async () => {
     const res = await fetch(`${proxyUrl}/api/devices`, { method: 'OPTIONS' });
     assert.equal(res.status, 204);
     assert.equal(res.headers.get('access-control-allow-origin'), '*');
+  } finally {
+    cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Phase 6 — POST /api/command and GET /api/capabilities
+// ---------------------------------------------------------------------------
+
+test('GET /api/capabilities reflects HARDWARE_DISPATCH_ENABLED — false by default', async () => {
+  const { proxyUrl, cleanup } = await setup();
+  try {
+    const res = await fetch(`${proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: false });
+  } finally {
+    cleanup();
+  }
+});
+
+test('GET /api/capabilities reports true once the gate is explicitly opened', async () => {
+  const { proxyUrl, cleanup } = await setup({ HARDWARE_DISPATCH_ENABLED: 'true' });
+  try {
+    const res = await fetch(`${proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
+    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: true });
+  } finally {
+    cleanup();
+  }
+});
+
+test('a command with the gate closed is accepted, dry_run, and audit-logged with the real user id', async () => {
+  const { proxyUrl, supabaseState, cleanup } = await setup();
+  try {
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l1', action: 'on', command_id: 'cmd-1' }),
+    });
+    assert.equal(res.status, 202);
+    const ack = await res.json();
+    assert.equal(ack.confirmed, false);
+    assert.equal(ack.target, 'L1');
+
+    assert.equal(supabaseState.insertedCommands.length, 1);
+    const row = supabaseState.insertedCommands[0];
+    assert.equal(row.status, 'dry_run');
+    assert.equal(row.device_id, 'l1');
+    assert.equal(row.action, 'on');
+    assert.equal(row.requested_by, 'user-1'); // the fake auth server's id for VALID_TOKEN
+    assert.equal(row.source, 'ibems-app');
+  } finally {
+    cleanup();
+  }
+});
+
+test('a command with the gate open is logged as dispatched, not dry_run', async () => {
+  const { proxyUrl, supabaseState, cleanup } = await setup({ HARDWARE_DISPATCH_ENABLED: 'true' });
+  try {
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l1', action: 'off' }),
+    });
+    assert.equal(res.status, 202);
+    assert.equal(supabaseState.insertedCommands[0].status, 'dispatched');
+  } finally {
+    cleanup();
+  }
+});
+
+test('an invalid command is rejected with the same validation error shared/commands.mjs produces, and nothing is audit-logged', async () => {
+  const { proxyUrl, supabaseState, cleanup } = await setup();
+  try {
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l1', action: 'toggle' }), // not "on"/"off"
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.code, 'invalid_action');
+    assert.equal(supabaseState.insertedCommands.length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test('a break-glass session cannot send a command — it has no real user id to attribute the audit row to', async () => {
+  const { proxyUrl, supabaseState, cleanup } = await setup();
+  try {
+    const loginRes = await fetch(`${proxyUrl}/api/local-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: BREAK_GLASS_PASSWORD }),
+    });
+    const { token } = await loginRes.json();
+
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l1', action: 'on' }),
+    });
+    assert.equal(res.status, 403);
+    const body = await res.json();
+    assert.equal(body.error, 'break_glass_cannot_command');
+    assert.equal(supabaseState.insertedCommands.length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test('a command with no token at all is rejected with 401, same as every other route', async () => {
+  const { proxyUrl, cleanup } = await setup();
+  try {
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l1', action: 'on' }),
+    });
+    assert.equal(res.status, 401);
+  } finally {
+    cleanup();
+  }
+});
+
+test('a command is refused, not silently un-logged, when the audit insert itself fails', async () => {
+  const { proxyUrl, supabaseState, cleanup } = await setup();
+  try {
+    supabaseState.rejectCommandInserts = true;
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l1', action: 'on' }),
+    });
+    assert.equal(res.status, 502);
+    const body = await res.json();
+    assert.equal(body.error, 'audit_log_unreachable');
   } finally {
     cleanup();
   }

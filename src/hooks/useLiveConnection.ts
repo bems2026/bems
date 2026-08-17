@@ -4,6 +4,7 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { useConnectionStore } from '@/stores/connectionStore';
 import { useCommandStore } from '@/stores/commandStore';
 import { useContextStore } from '@/stores/contextStore';
+import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
 
 /**
  * Mounts the live data pipeline once for the app's lifetime: fetches the static device
@@ -46,6 +47,10 @@ export function useLiveConnection(): void {
     // Loaded here, not lazily on Automation's mount — Overview's Active Schedules card
     // reads the schedule keys regardless of which page is currently active.
     void useContextStore.getState().load();
+
+    // Loaded here, not lazily on Control's mount, so the dispatch banner's very first
+    // render is already accurate instead of defaulting open for one frame.
+    void useCapabilitiesStore.getState().load();
 
     const disconnect = connectLive({
       onData: (rows) => {
