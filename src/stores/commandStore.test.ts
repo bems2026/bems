@@ -126,6 +126,21 @@ describe('useCommandStore.reconcile', () => {
     expect(useCommandStore.getState().pending['co3:1']).toBeUndefined();
   });
 
+  it('does not resolve as confirmed success when the matching reading is stale (device offline) — a frozen coincidental match is not real confirmation', () => {
+    // Caught live alongside the Node-RED health-signal fix: a command sent to a device
+    // that's already offline could resolve as "confirmed" purely because the bridge kept
+    // echoing a frozen last-known state that happened to already match what was
+    // commanded — the device never actually received anything.
+    useCommandStore.setState({
+      pending: { 'co3:1': { command_id: 'x', device_id: 'co3', socket: 1, desired: 'on', observedBefore: 'off', phase: 'confirming', issuedAt: 1000, ackedAt: 1100, error: null } },
+    });
+    const staleMatchingReading: Reading = { device_id: 'co3', ts: new Date().toISOString(), online: false, state: 'on', socket_states: { 1: 'on', 2: 'off' } };
+    useCommandStore.getState().reconcile([staleMatchingReading], 2000);
+    // Falls through to the existing ackedAt/COMMAND_CONFIRM_MS logic instead of the
+    // success shortcut — well within the confirm window here, so it just keeps waiting.
+    expect(useCommandStore.getState().pending['co3:1'].phase).toBe('confirming');
+  });
+
   it('leaves a pending entry alone when its device is absent from this frame', () => {
     useCommandStore.setState({
       pending: { 'co3:1': { command_id: 'x', device_id: 'co3', socket: 1, desired: 'on', observedBefore: 'off', phase: 'confirming', issuedAt: 1000, ackedAt: 1100, error: null } },

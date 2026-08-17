@@ -3,6 +3,7 @@ import { Lightbulb } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
 import { controlView } from '@/lib/socketView';
+import { isReadingStale } from '@/lib/staleness';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { useControlLog } from './controlLog';
@@ -91,10 +92,14 @@ function LightRow({ row, device }: { row: number; device: Device }) {
 
   const view = controlView(reading, pending);
   const busy = view.kind === 'pending';
+  // Absolutely positioned within a shared plan container (see `pct(px, VB_W)` below), so
+  // it can't be wrapped in StaleDataBadge's own div without breaking that positioning —
+  // dimming comes for free from the existing `.control-lamp:disabled` rule instead.
+  const stale = isReadingStale(reading);
   const on = (view.kind === 'idle' || view.kind === 'pending') && view.value === 'on';
 
   const toggle = () => {
-    if (busy) return;
+    if (busy || stale) return;
     const next = on ? 'off' : 'on';
     send(device.id, undefined, next);
     log('RELAY', `${device.display_name} → ${next}`);
@@ -122,7 +127,8 @@ function LightRow({ row, device }: { row: number; device: Device }) {
             tabIndex={isPrimary ? 0 : -1}
             className={`control-lamp${on ? ' control-lamp--on' : ''}`}
             style={{ left: pct(px, VB_W), top: pct(py, VB_H) }}
-            disabled={busy}
+            disabled={busy || stale}
+            title={isPrimary && stale ? `${device.display_name}: stale — no reading in the last 30 seconds` : undefined}
             onClick={toggle}
           />
         );

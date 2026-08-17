@@ -2,6 +2,7 @@ import { Snowflake } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
 import { controlView } from '@/lib/socketView';
+import { isReadingStale } from '@/lib/staleness';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { InfoHint } from '@/components/ui/InfoHint';
@@ -28,6 +29,11 @@ export function IrCommandCenterCard() {
   const view = controlView(reading, pending);
   const busy = view.kind === 'pending';
   const unknown = view.kind === 'unknown';
+  // Doesn't gate the send buttons below, unlike the relay controls — an IR blast has no
+  // confirmation path either way (see this card's own header), so staleness here means
+  // "the last-known mode/room-temp readout may be out of date," not "sending would
+  // silently fail," the way it does for a relay whose feed just went quiet.
+  const stale = isReadingStale(reading);
   const on = !unknown && view.value === 'on';
 
   const dispatch = (action: 'on' | 'off') => {
@@ -64,10 +70,10 @@ export function IrCommandCenterCard() {
             <b className="control-ir-unit__name">CARE ACU</b>
             <div className="control-ir-unit__meta">{device?.id ?? ACU_ID}</div>
           </div>
-          <span className={`badge${on ? ' badge--good' : ''}`}>{unknown ? 'no reading yet' : busy ? 'switching…' : on ? 'on' : 'off'}</span>
+          <span className={`badge${on ? ' badge--good' : ''}`}>{unknown ? 'no reading yet' : stale ? 'stale' : busy ? 'switching…' : on ? 'on' : 'off'}</span>
         </div>
 
-        <div className="control-ir-unit__readouts">
+        <div className="control-ir-unit__readouts" style={stale ? { opacity: 0.6 } : undefined}>
           <div>
             <div className="metric-label">ROOM NOW</div>
             <div className="control-ir-unit__temp">{typeof reading?.room_temp_c === 'number' ? `${reading.room_temp_c.toFixed(1)}°C` : '—'}</div>

@@ -40,20 +40,28 @@ export function useAnalyticsHistory(range: AnalyticsRange = '24h') {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const refetchMs = range === '24h' ? TIMING.HISTORY_SAMPLE_MS : LONG_HISTORY_REFRESH_MS;
 
+    // Promise.allSettled, not Promise.all: one device's fetch failing (a timeout, a
+    // transient network blip) used to reject the whole batch and blank every OTHER
+    // device's already-successful chart data too. Partial data beats no data — every
+    // existing chart-rendering path in this codebase already treats a missing series as a
+    // gap, not an error, so a device that failed this tick just keeps whatever it last
+    // had (or stays empty) while everything else updates normally.
     const load = async () => {
-      try {
-        const results =
-          range === '24h'
-            ? await Promise.all(allIds.map((id) => getHistory(id, '24h').then((r) => r.points)))
-            : await Promise.all(allIds.map((id) => getLongHistory(id, range)));
-        if (cancelled) return;
-        for (let i = 0; i < allIds.length; i++) useDeviceStore.getState().setHistory(allIds[i], results[i]);
-        setStatus('ready');
-      } catch {
-        if (!cancelled) setStatus('error');
-      } finally {
-        if (!cancelled) timer = setTimeout(load, refetchMs);
+      const results =
+        range === '24h'
+          ? await Promise.allSettled(allIds.map((id) => getHistory(id, '24h').then((r) => r.points)))
+          : await Promise.allSettled(allIds.map((id) => getLongHistory(id, range)));
+      if (cancelled) return;
+      let anySucceeded = false;
+      for (let i = 0; i < allIds.length; i++) {
+        const result = results[i];
+        if (result.status === 'fulfilled') {
+          anySucceeded = true;
+          useDeviceStore.getState().setHistory(allIds[i], result.value);
+        }
       }
+      setStatus(anySucceeded ? 'ready' : 'error');
+      if (!cancelled) timer = setTimeout(load, refetchMs);
     };
 
     load();

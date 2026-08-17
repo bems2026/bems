@@ -128,6 +128,34 @@ describe('ControlPage', () => {
     expect(bridgeClient.sendCommand).toHaveBeenCalledWith(expect.objectContaining({ device_id: 'l1', action: 'on' }));
   });
 
+  it('a stale (offline) switch cannot be toggled and is visibly flagged, instead of looking identical to a live one', () => {
+    vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack({ device_id: 'l1', target: 'L1', action: 'on' }));
+    useDeviceStore.setState({
+      devices: [light(1)],
+      latestReadings: { l1: { device_id: 'l1', ts: new Date().toISOString(), online: false, state: 'off' } },
+    });
+    render(<ControlPage />);
+    const row = screen.getByText('Light Switch 1').closest('.control-list-row') as HTMLElement;
+    expect(within(row).getByRole('switch')).toBeDisabled();
+    expect(within(row).getByText('stale')).toBeInTheDocument();
+    fireEvent.click(within(row).getByRole('switch'));
+    expect(bridgeClient.sendCommand).not.toHaveBeenCalled();
+  });
+
+  it('a stale (offline) outlet socket cannot be toggled from the sockets list', () => {
+    vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack());
+    useDeviceStore.setState({
+      devices: [outlet(1)],
+      latestReadings: { co1: { device_id: 'co1', ts: new Date().toISOString(), online: false, state: 'off', socket_states: { 1: 'off', 2: 'off' } } },
+    });
+    render(<ControlPage />);
+    const row = screen.getByText('Outlet 1').closest('.control-list-row') as HTMLElement;
+    const s1 = within(row).getAllByRole('button')[0];
+    expect(s1).toBeDisabled();
+    fireEvent.click(s1);
+    expect(bridgeClient.sendCommand).not.toHaveBeenCalled();
+  });
+
   it('every dispatched command is recorded in the command log', async () => {
     vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack({ device_id: 'acu_main', target: 'AC_POWER' }));
     useDeviceStore.setState({ devices: [acu()] });

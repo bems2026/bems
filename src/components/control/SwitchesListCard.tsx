@@ -3,6 +3,8 @@ import { Lightbulb } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
 import { controlView } from '@/lib/socketView';
+import { isReadingStale } from '@/lib/staleness';
+import { StaleDataBadge } from '@/components/common/StaleDataBadge';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { useControlLog } from './controlLog';
 
@@ -40,17 +42,18 @@ function SwitchRow({ deviceId, name }: { deviceId: string; name: string }) {
 
   const busy = view.kind === 'pending';
   const unknown = view.kind === 'unknown';
+  const stale = isReadingStale(reading);
   const on = !unknown && view.value === 'on';
 
   const toggle = () => {
-    if (busy || unknown) return;
+    if (busy || unknown || stale) return;
     const next = on ? 'off' : 'on';
     send(deviceId, undefined, next);
     log('RELAY', `${name} → ${next}`);
   };
 
   return (
-    <div className="control-list-row">
+    <StaleDataBadge deviceId={deviceId} label={name} className="control-list-row">
       <div className="control-list-row__body">
         <p className="control-list-row__name">{name}</p>
         <p className="control-list-row__meta">{unknown ? 'no reading yet' : busy ? 'switching…' : on ? 'on' : 'off'}</p>
@@ -61,11 +64,11 @@ function SwitchRow({ deviceId, name }: { deviceId: string; name: string }) {
         aria-checked={on}
         aria-label={name}
         className={`quick-toggle${on ? ' quick-toggle--on' : ''}`}
-        disabled={busy || unknown}
+        disabled={busy || unknown || stale}
         onClick={toggle}
       >
         <span className="quick-toggle__knob" />
       </button>
-    </div>
+    </StaleDataBadge>
   );
 }

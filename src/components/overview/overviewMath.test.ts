@@ -83,6 +83,15 @@ describe('topByPower', () => {
     };
     expect(topByPower(devices, readings, 2)).toHaveLength(2);
   });
+
+  it('omits an offline device even though it still has a cached power_w — a frozen last reading is not a live one', () => {
+    const devices = [device('a'), device('b')];
+    const readings = {
+      a: reading({ device_id: 'a', power_w: 100 }),
+      b: reading({ device_id: 'b', power_w: 500, online: false }),
+    };
+    expect(topByPower(devices, readings, 5)).toEqual([{ id: 'a', label: 'a', power_w: 100 }]);
+  });
 });
 
 describe('meteredVsUntracked', () => {
@@ -131,5 +140,14 @@ describe('meteredVsUntracked', () => {
   it('meteredPct is 0, not NaN, when total is 0', () => {
     const devices: Device[] = [];
     expect(meteredVsUntracked(devices, {}, 0).meteredPct).toBe(0);
+  });
+
+  it('an offline outlet contributes 0 to the metered sum, same as one with no reading at all — its cached power_w is a frozen last value, not live', () => {
+    const devices = [outlet('co1'), outlet('co2')];
+    const readings = {
+      co1: reading({ device_id: 'co1', power_w: 100 }),
+      co2: reading({ device_id: 'co2', power_w: 400, online: false }),
+    };
+    expect(meteredVsUntracked(devices, readings, 1000).meteredW).toBe(100);
   });
 });

@@ -3,6 +3,8 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
 import { controlView } from '@/lib/socketView';
 import { corroborate } from '@/lib/relayCorroboration';
+import { isReadingStale } from '@/lib/staleness';
+import { StaleDataBadge } from '@/components/common/StaleDataBadge';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { useControlLog } from './controlLog';
@@ -91,6 +93,7 @@ function OutletPin({ device, left, top }: { device: Device; left: string; top: s
   const send = useCommandStore((s) => s.send);
   const log = useControlLog((s) => s.log);
   const corroboration = corroborate(device, reading);
+  const stale = isReadingStale(reading);
 
   const s1View = controlView(reading, pendingMap[targetKey(device.id, 1)], 1);
   const s2View = controlView(reading, pendingMap[targetKey(device.id, 2)], 2);
@@ -109,28 +112,30 @@ function OutletPin({ device, left, top }: { device: Device; left: string; top: s
 
   return (
     <div className="control-outlet-pin" style={{ left, top }}>
-      <div className="control-outlet-pin__id">{device.id.toUpperCase()}</div>
-      <div className="control-outlet-pin__puck" role="group" aria-label={`${device.display_name} sockets`}>
-        <button
-          type="button"
-          className={`control-outlet-pin__half control-outlet-pin__half--left${s1On ? ' control-outlet-pin__half--on' : ''}`}
-          disabled={s1Busy || s1Unknown}
-          aria-pressed={s1On}
-          aria-label={`${device.display_name} DP1`}
-          title={`DP1: ${s1Unknown ? 'unknown' : s1Busy ? 'switching…' : s1On ? 'on' : 'off'}`}
-          onClick={() => toggle(1, s1On)}
-        />
-        <button
-          type="button"
-          className={`control-outlet-pin__half control-outlet-pin__half--right${s2On ? ' control-outlet-pin__half--on' : ''}`}
-          disabled={s2Busy || s2Unknown}
-          aria-pressed={s2On}
-          aria-label={`${device.display_name} DP2`}
-          title={`DP2: ${s2Unknown ? 'unknown' : s2Busy ? 'switching…' : s2On ? 'on' : 'off'}`}
-          onClick={() => toggle(2, s2On)}
-        />
-      </div>
-      {corroboration === 'contradicted' && <div className="control-outlet-pin__warn">⚠ drawing power</div>}
+      <StaleDataBadge deviceId={device.id} label={device.display_name}>
+        <div className="control-outlet-pin__id">{device.id.toUpperCase()}</div>
+        <div className="control-outlet-pin__puck" role="group" aria-label={`${device.display_name} sockets`}>
+          <button
+            type="button"
+            className={`control-outlet-pin__half control-outlet-pin__half--left${s1On ? ' control-outlet-pin__half--on' : ''}`}
+            disabled={s1Busy || s1Unknown || stale}
+            aria-pressed={s1On}
+            aria-label={`${device.display_name} DP1`}
+            title={`DP1: ${s1Unknown ? 'unknown' : stale ? 'stale' : s1Busy ? 'switching…' : s1On ? 'on' : 'off'}`}
+            onClick={() => toggle(1, s1On)}
+          />
+          <button
+            type="button"
+            className={`control-outlet-pin__half control-outlet-pin__half--right${s2On ? ' control-outlet-pin__half--on' : ''}`}
+            disabled={s2Busy || s2Unknown || stale}
+            aria-pressed={s2On}
+            aria-label={`${device.display_name} DP2`}
+            title={`DP2: ${s2Unknown ? 'unknown' : stale ? 'stale' : s2Busy ? 'switching…' : s2On ? 'on' : 'off'}`}
+            onClick={() => toggle(2, s2On)}
+          />
+        </div>
+        {corroboration === 'contradicted' && <div className="control-outlet-pin__warn">⚠ drawing power</div>}
+      </StaleDataBadge>
     </div>
   );
 }

@@ -49,4 +49,12 @@ describe('corroborate', () => {
   it('is indeterminate when power_w is missing even though socket_states exist', () => {
     expect(corroborate(outlet, reading(undefined, 'off', 'off'))).toBe('indeterminate');
   });
+
+  it('is indeterminate, never contradicted, for an offline outlet — a frozen last reading is not real evidence of a stuck relay', () => {
+    // Same shape as the false-positive caught live: both sockets commanded off, but the
+    // meter's last cached power reading (from before it went offline) still shows real
+    // draw. Without the online check this reads as `contradicted`, a warning about
+    // nothing — the device just stopped reporting, nothing is actually stuck on.
+    expect(corroborate(outlet, { ...reading(120, 'off', 'off'), online: false })).toBe('indeterminate');
+  });
 });

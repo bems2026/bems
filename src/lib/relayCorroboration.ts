@@ -27,6 +27,13 @@ const LOAD_EPSILON_W = 3;
 export function corroborate(device: Device, reading: Reading | undefined): Corroboration {
   if (device.class !== 'outlet_dual') return 'unmeasured';
 
+  // A disconnected outlet's meter reading is frozen, not real — without this, a stale
+  // "both sockets off, meter shows real power" snapshot reads as `contradicted` (a
+  // warning) purely because the bridge stopped hearing from the device, not because
+  // anything is actually wrong. Caught live: this is the exact false-positive mechanism
+  // behind "device states are not accurate."
+  if (reading?.online === false) return 'indeterminate';
+
   const power = reading?.power_w;
   const states = reading?.socket_states;
   if (typeof power !== 'number' || !states) return 'indeterminate';

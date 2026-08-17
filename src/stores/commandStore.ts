@@ -3,6 +3,7 @@ import { sendCommand, BridgeFetchError } from '@/lib/bridgeClient';
 import { TIMING } from '@/lib/timing';
 import { useDeviceStore } from './deviceStore';
 import { isTotals } from '@/lib/types';
+import { isReadingStale } from '@/lib/staleness';
 import type { ReadingsLatestRow, SocketIndex, SwitchState } from '@/lib/types';
 
 export type PendingPhase = 'sending' | 'confirming' | 'failed';
@@ -118,10 +119,14 @@ export const useCommandStore = create<CommandState>((set, get) => ({
           continue;
         }
 
-        if (observed === p.desired) {
-          // The feed agrees. This is the success path, and it needs no separate
+        if (observed === p.desired && !isReadingStale(row, nowMs)) {
+          // The feed agrees, AND it's a live reading, not a frozen one from before this
+          // device went offline. This is the success path, and it needs no separate
           // "confirmed" state — dropping the pending entry lets the real reading show
-          // through as-is.
+          // through as-is. Without the staleness check, a command sent to an already-
+          // disconnected device could resolve as "confirmed" purely by coincidence — the
+          // bridge keeps echoing whatever stale state happened to already match what was
+          // commanded, never having actually reached the device.
           delete next[key];
           changed = true;
           continue;

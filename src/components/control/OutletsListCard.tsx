@@ -4,6 +4,8 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey, type PendingCommand } from '@/stores/commandStore';
 import { controlView } from '@/lib/socketView';
 import { corroborate } from '@/lib/relayCorroboration';
+import { isReadingStale } from '@/lib/staleness';
+import { StaleDataBadge } from '@/components/common/StaleDataBadge';
 import { InfoHint } from '@/components/ui/InfoHint';
 import type { Device, Reading, SocketIndex } from '@/lib/types';
 import { useControlLog, type LogTag } from './controlLog';
@@ -38,9 +40,10 @@ function OutletRow({ device }: { device: Device }) {
   const send = useCommandStore((s) => s.send);
   const log = useControlLog((s) => s.log);
   const corroboration = corroborate(device, reading);
+  const stale = isReadingStale(reading);
 
   return (
-    <div className="control-list-row">
+    <StaleDataBadge deviceId={device.id} label={device.display_name} className="control-list-row">
       <div className="control-list-row__body">
         <p className="control-list-row__name">{device.display_name}</p>
         <p className="control-list-row__meta">
@@ -49,10 +52,10 @@ function OutletRow({ device }: { device: Device }) {
         </p>
       </div>
       <div className="control-list-row__sockets">
-        <SocketMiniToggle deviceId={device.id} socket={1} pendingMap={pendingMap} reading={reading} send={send} log={log} name={device.display_name} />
-        <SocketMiniToggle deviceId={device.id} socket={2} pendingMap={pendingMap} reading={reading} send={send} log={log} name={device.display_name} />
+        <SocketMiniToggle deviceId={device.id} socket={1} pendingMap={pendingMap} reading={reading} send={send} log={log} name={device.display_name} stale={stale} />
+        <SocketMiniToggle deviceId={device.id} socket={2} pendingMap={pendingMap} reading={reading} send={send} log={log} name={device.display_name} stale={stale} />
       </div>
-    </div>
+    </StaleDataBadge>
   );
 }
 
@@ -64,6 +67,7 @@ function SocketMiniToggle({
   send,
   log,
   name,
+  stale,
 }: {
   deviceId: string;
   socket: SocketIndex;
@@ -72,6 +76,7 @@ function SocketMiniToggle({
   send: (deviceId: string, socket: SocketIndex | undefined, desired: 'on' | 'off') => Promise<void>;
   log: (tag: LogTag, text: string) => void;
   name: string;
+  stale: boolean;
 }) {
   const view = controlView(reading, pendingMap[targetKey(deviceId, socket)], socket);
   const busy = view.kind === 'pending';
@@ -84,7 +89,7 @@ function SocketMiniToggle({
       className={`outlet-socket-toggle outlet-socket-toggle--compact${on ? ' outlet-socket-toggle--on' : ''}${busy ? ' outlet-socket-toggle--busy' : ''}`}
       aria-pressed={on}
       aria-busy={busy}
-      disabled={busy || unknown}
+      disabled={busy || unknown || stale}
       onClick={() => {
         const next = on ? 'off' : 'on';
         send(deviceId, socket, next);
@@ -92,7 +97,7 @@ function SocketMiniToggle({
       }}
     >
       <span className="outlet-socket-toggle__label">S{socket}</span>
-      <span className="outlet-socket-toggle__state">{unknown ? 'unknown' : busy ? '…' : on ? 'on' : 'off'}</span>
+      <span className="outlet-socket-toggle__state">{unknown ? 'unknown' : stale ? 'stale' : busy ? '…' : on ? 'on' : 'off'}</span>
     </button>
   );
 }
