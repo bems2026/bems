@@ -110,6 +110,35 @@ test('phase totals follow Calculate 3-Phase Totals: red = lo_red + arec', () => 
   assert.equal(row('_totals').phase_current.red, 6.1); // 2.000 + 4.100
 });
 
+test('an offline meter is excluded from total_power_w/avg_voltage/phase_current, even while it still reports a stale v/c/p', () => {
+  // Caught live: a meter's context keeps its last-known v/c/p after a real disconnect —
+  // that's the whole point of "last known reading" — but a building-wide total is a claim
+  // about right now, not a museum of frozen values. Health going false must zero out this
+  // meter's contribution to every aggregate, not just its own row's online flag.
+  const snap = snapshot();
+  snap.energy.meters.lo_red.h = false; // still reports v/c/p, just no longer connected
+  const built = buildLatest(snap, DEVICE_REGISTRY, PHASE_MAP, 1786000000000);
+  const totals = built.find((r) => r.device_id === '_totals');
+
+  // Without lo_red (v220.0 c2.000 p440.0): total_power_w = 402.1(co_yel) + 900.0(arec) = 1302.1
+  assert.equal(totals.total_power_w, 1302.1);
+  // avg_voltage over co_yel(221.4) + arec(219.5) only, not lo_red's 220.0
+  assert.equal(totals.avg_voltage, 220.5);
+  // phase red = lo_red.current + arec.current normally (6.1); with lo_red offline, only arec's 4.100 counts
+  assert.equal(totals.phase_current.red, 4.1);
+});
+
+test('every meter offline leaves total_power_w/avg_voltage/phase_current null, never a fabricated 0', () => {
+  const snap = snapshot();
+  for (const m of Object.values(snap.energy.meters)) m.h = false;
+  const built = buildLatest(snap, DEVICE_REGISTRY, PHASE_MAP, 1786000000000);
+  const totals = built.find((r) => r.device_id === '_totals');
+  assert.equal(totals.total_power_w, null);
+  assert.equal(totals.avg_voltage, null);
+  assert.equal(totals.phase_current.red, null);
+  assert.equal(totals.phase_current.yellow, null);
+});
+
 test('a dual outlet is on when either socket is on', () => {
   const r = row('co1');
   assert.deepEqual(r.socket_states, { 1: 'on', 2: 'off' });

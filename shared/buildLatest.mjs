@@ -112,11 +112,18 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs) {
   const byId = {};
   for (const r of out) byId[r.device_id] = r;
 
+  // A meter that's gone offline still has its last cached v/c/p sitting in `byId` (that's
+  // the whole point of "last known reading" — see the per-device loop above), but a
+  // building-wide total is a claim about what's happening RIGHT NOW, not a museum of last
+  // known values. Every aggregate below skips `online === false` explicitly, matching the
+  // per-device `online` derivation two branches up — a disconnected meter contributes
+  // nothing here, the same way a disconnected switch's health entry now actually means
+  // something instead of being silently ignored.
   function phaseCurrent(ids) {
     let sum = 0, seen = false;
     for (const id of ids) {
-      const c = byId[id] && byId[id].current;
-      if (typeof c === 'number') { sum += c; seen = true; }
+      const r = byId[id];
+      if (r && r.online !== false && typeof r.current === 'number') { sum += r.current; seen = true; }
     }
     return seen ? Math.round(sum * 1000) / 1000 : null;
   }
@@ -125,6 +132,7 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs) {
   for (const d of REG) {
     if (d.class !== 'meter') continue;
     const r = byId[d.id] || {};
+    if (r.online === false) continue;
     if (typeof r.power_w === 'number') { totalP += r.power_w; pSeen = true; }
     if (typeof r.voltage === 'number' && r.voltage > 0) { vSum += r.voltage; vCount++; }
   }
