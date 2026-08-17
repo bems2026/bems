@@ -1,11 +1,11 @@
 -- Architecture plan Phase 6: schema tweaks for the schedules/DSM Supabase migration.
 --
--- 1. `schedules` needs a unique target for upsert("device_id,socket") to match against.
---    Every schedule this app writes today is whole-device (no per-socket schedules exist
---    in the UI), so `socket` is always NULL — and a plain UNIQUE(device_id, socket) would
---    NOT catch duplicates, since NULL is never equal to NULL in a uniqueness check. A
---    partial index scoped to `socket is null` is what actually enforces "one row per
---    device" for this app's real write pattern.
+-- 1. `schedules` needs a unique target for upsert("device_id") to match against.
+--    SUPERSEDED by supabase/phase6_schedules_unique_fix.sql — the partial index below
+--    (kept here for history) cannot be targeted by PostgREST/supabase-js's upsert(), which
+--    always generates a plain `ON CONFLICT (device_id) DO UPDATE`; Postgres only matches
+--    that against an unconditional unique constraint, never a partial index. Confirmed
+--    live against the real app. The fix file replaces this with a plain UNIQUE(device_id).
 create unique index if not exists schedules_device_id_no_socket_uidx
   on schedules (device_id)
   where socket is null;

@@ -117,8 +117,10 @@ export async function writeScheduleContext(pending: ContextMap, merged: ContextM
       },
       enabled: merged[scheduleKey(deviceId, 'armed')] === 'true',
     }));
-    // Matches supabase/phase6_schedules_config.sql's partial unique index — every row here
-    // always has socket: null, which is exactly what that index is scoped to.
+    // Matches supabase/phase6_schedules_unique_fix.sql's plain UNIQUE(device_id) — a
+    // partial index (WHERE socket IS NULL, this app's first attempt) can't be targeted by
+    // upsert()'s generated `ON CONFLICT (device_id) DO UPDATE`; Postgres only matches that
+    // against an unconditional unique constraint. Confirmed the hard way, live.
     const { error } = await client.from('schedules').upsert(rows, { onConflict: 'device_id' });
     if (error) throw new Error(`Supabase schedules write failed: ${error.message}`);
   }
