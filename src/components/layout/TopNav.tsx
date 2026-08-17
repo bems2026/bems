@@ -1,8 +1,9 @@
-import { Zap, LogOut, WifiOff, CircleUserRound } from 'lucide-react';
+import { Zap, LogOut, WifiOff, CircleUserRound, Moon, Sun } from 'lucide-react';
 import { NAV_ITEMS } from './navItems';
 import { AlertsPopover } from './AlertsPopover';
 import { useConnectionStore } from '@/stores/connectionStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useThemeStore } from '@/stores/themeStore';
 import { supabase } from '@/config/supabase';
 import { isStale } from '@/lib/bridgeClient';
 import type { ConnStatus } from '@/lib/bridgeClient';
@@ -82,10 +83,25 @@ export function TopNav({ activeId }: { activeId: string }) {
           <span className="nav-live-dot" aria-hidden="true" />
           {LIVE_LABEL[wsStatus]}
         </span>
+        <ThemeToggle />
         <AlertsPopover />
         <SessionBadge />
       </div>
     </nav>
+  );
+}
+
+/** Manual light/dark toggle — see themeStore.ts's header for why this is manual rather
+ * than following the OS's prefers-color-scheme (a 24/7 kiosk, not a personal device). */
+function ThemeToggle() {
+  const theme = useThemeStore((s) => s.theme);
+  const toggle = useThemeStore((s) => s.toggle);
+  const dark = theme === 'dark';
+
+  return (
+    <button type="button" className="nav-theme-toggle" aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'} aria-pressed={dark} onClick={toggle}>
+      {dark ? <Sun size={15} aria-hidden="true" /> : <Moon size={15} aria-hidden="true" />}
+    </button>
   );
 }
 

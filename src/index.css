@@ -196,6 +196,114 @@
   --shadow-modal: 0 24px 60px rgb(30 41 59 / 0.3);
 }
 
+/**
+ * Dark theme — a manual toggle (`useThemeStore`, TopNav), not `prefers-color-scheme`: this
+ * runs as a 24/7 kiosk display, not a personal device with its own meaningful OS-level
+ * preference to defer to. `data-theme="dark"` on <html> is what activates this block;
+ * absent the attribute (or `data-theme="light"`), the :root values above stand.
+ *
+ * Same discipline the light theme's own header describes for its Phase L -> Phase M
+ * flip: only VALUES change here, never token NAMES — every component already styles
+ * itself purely from these custom properties (verified: zero hardcoded colors in any
+ * component file), so this block alone re-themes the entire app with no component edits.
+ *
+ * Elevation here comes from progressively LIGHTER surface fills as content stacks
+ * (page -> surface -> surface-2), not from shadows — shadows barely read against a dark
+ * backdrop, so --shadow-* below is kept only as a secondary reinforcement, not the
+ * primary depth cue the light theme relies on it for.
+ *
+ * `--border`/`-strong`/`-faint` stay solid hex, not translucent, matching the light
+ * theme's own constraint (see that block's comment — `scene3d/tokens.ts` mirrors --border
+ * as a literal Three.js material color and needs an opaque value). The 3D scene itself is
+ * intentionally NOT reachable from here: `tokens.ts` hardcodes its own frozen copy rather
+ * than reading these variables live (see that file's header), so the office render stays
+ * visually consistent regardless of which UI theme is active — correct, not an oversight.
+ *
+ * Contrast: every text-role value below (--txt, --muted, --muted-2, --faint, the semantic
+ * colors) WAS run through a real WCAG relative-luminance calculation against both
+ * --bg-page (#121212) and --bg-surface (#1e1e1e) — all clear 4.4:1+, most well above.
+ *
+ * One known, deliberately-scoped gap: this app has ~15 places that hardcode
+ * `color: #ffffff`/a dark hex directly (not a token) on a small solid-color badge/pill —
+ * skip-link, notification counts, the alert-count badge, the connecting-device spinner
+ * ring, .nav-tab--active, and similar — rather than referencing --txt/--accent-text the
+ * way the rest of the app does. Those weren't touched: the semantic color values above
+ * were tuned for their DOMINANT use (text/icons directly on the page/surface backgrounds,
+ * which is most of the app), and a color dark enough for white overlay text to pass AA
+ * is NOT the same color that reads well as text against near-black — the light theme
+ * solves exactly this with a separate -text tier per color; doing the equivalent for
+ * every one of those ~15 hardcoded sites individually is real, additional, separately
+ * verifiable work, not something to guess at inside this pass. Until that's done, expect
+ * those ~15 specific badges/pills to render in dark mode with contrast between their new
+ * background and their still-hardcoded white/dark text, not verified against AA.
+ */
+:root[data-theme='dark'] {
+  --bg-page: #121212;
+
+  --bg-surface: #1e1e1e;
+  --bg-surface-2: #262626;
+  --bg-inset: #171717;
+
+  --glass: rgb(30 30 30 / 0.75);
+  --glass-2: rgb(38 38 38 / 0.7);
+  --glass-border: rgb(255 255 255 / 0.08);
+  /* --glass-heavy unchanged — it was already a dark, near-opaque treatment for panels
+     floating over the (always-dark) 3D viewport; both themes want the same value. */
+
+  --border: #2c2c2c;
+  --border-strong: #3d3d3d;
+  --border-faint: #232323;
+
+  --txt: #e8e8e8; /* a soft tint, not pure white — 15.3:1 on --bg-page */
+  --muted: #b4bcc7; /* 9.8:1 */
+  --muted-2: #8b93a0; /* 6.1:1 */
+  --faint: #7b8494; /* decorative only, same non-text rule as light's --faint — 4.4:1 anyway */
+  --faintest: #4b5563;
+
+  --accent: #c2790e; /* 5.4:1 — desaturated from light's #f59e0b, which measures 2.15:1 here */
+  --accent-hi: #dba33f; /* 8.3:1 — gradient stops only, not a text color */
+  --accent-text: #e0a94a; /* 8.9:1 — text role inverts: light-on-dark, not dark-on-light */
+  --accent-soft: rgb(194 121 14 / 0.16);
+
+  --blue: #5f8be5; /* 5.0:1 */
+  --blue-bright: #6690e8; /* 6.0:1 */
+  --blue-soft: rgb(95 139 229 / 0.16);
+
+  --green: #25a878; /* 6.2:1 */
+  --green-bright: #3dbb8a; /* 7.7:1 */
+  --green-soft: rgb(37 168 120 / 0.16);
+
+  --red: #e06155; /* 4.8:1 */
+  --red-bright: #e56f63; /* 6.1:1 */
+  --red-soft: rgb(224 97 85 / 0.16);
+
+  --purple: #a78bfa; /* 6.9:1 */
+  --purple-bright: #c4b5fd; /* 10.2:1 */
+
+  --focus-ring: #6690e8; /* = --blue-bright — 6.0:1, and 3:1+ against every surface it sits on */
+
+  --good: #25a878; /* = --green */
+  --good-soft: rgb(37 168 120 / 0.16);
+  --warn: #e0a94a; /* = --accent-text */
+  --warn-soft: rgb(194 121 14 / 0.16);
+  --bad: #e06155; /* = --red */
+  --bad-soft: rgb(224 97 85 / 0.16);
+  --info: #6690e8; /* = --blue-bright */
+
+  --shadow-card: 0 8px 32px rgb(0 0 0 / 0.4);
+  --shadow-pop: 0 18px 44px rgb(0 0 0 / 0.5);
+  --shadow-modal: 0 24px 60px rgb(0 0 0 / 0.6);
+}
+/* Native form-control chrome (scrollbars, the DSM threshold number inputs' spin buttons,
+   checkboxes) follows `color-scheme`, not app CSS — without this, dark mode would still
+   show light-themed native widgets. `light dark` (not a bare `dark`) tells the browser
+   both are supported and to pick per the current theme, matching color-scheme's own spec
+   intent; JS sets the concrete value per-toggle (see useThemeStore) since color-scheme
+   itself can't read a data-attribute the way a custom property can. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -217,6 +325,16 @@ body {
      100vh page is taller than what's actually visible and the layout shifts as the bar
      retracts. dvh tracks the real viewport. */
   min-height: 100dvh;
+  /* Smooths the theme toggle's dominant surface — the page background and default text
+     color. Individual cards/panels have their own separate `background` declarations
+     (`.card`, `.card--flat`, nav, etc.) that snap instantly rather than cross-fading; see
+     the `.card`/`.card--flat` rule below for the one additional surface worth covering. */
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  body {
+    transition: none;
+  }
 }
 /* Numeric readouts and caps micro-labels use the mono face throughout — set on the classes
    that carry them (.metric-value, caption/label classes), not globally on body. */
@@ -236,6 +354,13 @@ body::before {
   pointer-events: none;
   background: radial-gradient(1200px 600px at 70% -10%, rgb(59 130 246 / 0.14), transparent 60%),
     radial-gradient(900px 500px at 10% 110%, rgb(245 158 11 / 0.12), transparent 60%);
+}
+/* Same two glows, lower alpha — at the light theme's strength they read as too vivid
+   against the dark page, fighting the "desaturated accents" goal this theme otherwise
+   follows everywhere else. */
+:root[data-theme='dark'] body::before {
+  background: radial-gradient(1200px 600px at 70% -10%, rgb(59 130 246 / 0.07), transparent 60%),
+    radial-gradient(900px 500px at 10% 110%, rgb(245 158 11 / 0.06), transparent 60%);
 }
 #root {
   position: relative;
@@ -365,6 +490,11 @@ body::before {
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
   border: 1px solid var(--glass-border);
   border-radius: var(--r-card);
+  /* Declared once here for the same reason the surface recipe itself is — every panel
+     wearing this class gets the dark-mode toggle's cross-fade for free, one edit instead
+     of per-class repetition. box-shadow isn't included: it's a static value per surface
+     (--shadow-card), not something that visibly benefits from animating alongside color. */
+  transition: background-color 0.25s ease, border-color 0.25s ease;
   /*
    * Was `0 8px 32px rgb(0 0 0 / 0.4)` — a Phase L *dark theme* value, left behind when the
    * theme flipped to light. Pure black at 5x the alpha --shadow-card documents, which is
@@ -4211,6 +4341,28 @@ body::before {
   text-underline-offset: 2px;
 }
 .login-page__local-toggle:hover {
+  color: var(--txt);
+}
+
+/* ---------------------------------------------------------------------------
+ * Theme toggle (TopNav) — same icon-button footprint as .nav-session__signout
+ * below, so the two read as one family of nav-right controls.
+ * ------------------------------------------------------------------------- */
+.nav-theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-pill);
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.nav-theme-toggle:hover {
+  background: var(--bg-inset);
   color: var(--txt);
 }
 
