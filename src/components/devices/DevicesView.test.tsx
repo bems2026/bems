@@ -1,7 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { DevicesView } from './DevicesView';
 import { useDeviceStore } from '@/stores/deviceStore';
+import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
+import { emptyDeviceConfig } from '@/lib/deviceConfig';
 import type { Device } from '@/lib/types';
 
 const device = (id: string, display_name: string, deviceClass: Device['class'], extra: Partial<Device> = {}): Device => ({
@@ -17,6 +19,7 @@ const device = (id: string, display_name: string, deviceClass: Device['class'], 
 afterEach(() => {
   cleanup();
   useDeviceStore.setState({ devices: [], latestReadings: {}, totals: null, history: {} });
+  useDeviceConfigStore.setState({ saved: {}, draft: {}, status: 'idle', saveStatus: 'idle', saveError: null, lastSave: null });
 });
 
 describe('DevicesView', () => {
@@ -98,5 +101,52 @@ describe('DevicesView', () => {
     });
     render(<DevicesView />);
     expect(screen.getByText(/2 devices in the registry · 1\/2 reporting online right now/)).toBeInTheDocument();
+  });
+
+  it('every row has exactly one cell per column header, so the two can never silently drift', () => {
+    useDeviceStore.setState({ devices: [device('co1', 'Outlet 1', 'outlet_dual')] });
+    render(<DevicesView />);
+    const headerCount = screen.getAllByRole('columnheader').length;
+    const row = screen.getByText('Outlet 1').closest('[role="row"]') as HTMLElement;
+    expect(within(row).getAllByRole('cell').length).toBe(headerCount);
+  });
+
+  it('opens the metadata editor for the row whose Edit button was clicked', () => {
+    useDeviceStore.setState({ devices: [device('co1', 'Outlet 1', 'outlet_dual'), device('l1', 'Light Switch 1', 'switch')] });
+    render(<DevicesView />);
+    const row = screen.getByText('Light Switch 1').closest('[role="row"]') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'Edit' }));
+    expect(screen.getByRole('heading', { name: /Light Switch 1/ })).toBeInTheDocument();
+  });
+
+  it('closes the editor when its own Close button is clicked', () => {
+    useDeviceStore.setState({ devices: [device('co1', 'Outlet 1', 'outlet_dual')] });
+    render(<DevicesView />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(screen.getByRole('heading', { name: /Outlet 1/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('heading', { name: /Outlet 1/ })).not.toBeInTheDocument();
+  });
+
+  it('shows a recorded room/category as a meta line under the device name', () => {
+    useDeviceStore.setState({ devices: [device('co1', 'Outlet 1', 'outlet_dual')] });
+    useDeviceConfigStore.setState({ saved: { co1: { ...emptyDeviceConfig('co1'), room: 'CARE Office', category: 'office_equipment' } } });
+    render(<DevicesView />);
+    expect(screen.getByText('CARE Office · Office Equipment')).toBeInTheDocument();
+  });
+
+  it('shows no meta line at all for a device with nothing recorded, not a row of placeholders', () => {
+    useDeviceStore.setState({ devices: [device('co1', 'Outlet 1', 'outlet_dual')] });
+    render(<DevicesView />);
+    const row = screen.getByText('Outlet 1').closest('[role="row"]') as HTMLElement;
+    expect(row.querySelector('.devices-table__meta')).not.toBeInTheDocument();
+  });
+
+  it('the add-device control names the real blocker instead of promising a feature that is not coming in this dashboard', () => {
+    useDeviceStore.setState({ devices: [device('co1', 'Outlet 1', 'outlet_dual')] });
+    render(<DevicesView />);
+    const addBtn = screen.getByRole('button', { name: /Add device/ });
+    expect(addBtn).toBeDisabled();
+    expect(addBtn).toHaveAttribute('title', expect.stringMatching(/Pi/));
   });
 });

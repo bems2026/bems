@@ -1,11 +1,14 @@
 import { useMemo, useState } from 'react';
 import { useDeviceStore } from '@/stores/deviceStore';
+import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
 import { hasSwitchableState } from '@/lib/deviceClass';
 import { isReadingStale } from '@/lib/staleness';
 import { countOnline } from '@/components/overview/overviewMath';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { CLASS_ICON } from '@/lib/deviceIcons';
+import { metaSummary, type DeviceConfig } from '@/lib/deviceConfig';
+import { DeviceMetaEditor } from './DeviceMetaEditor';
 import type { Device, DeviceClass, Reading } from '@/lib/types';
 
 const CLASS_ORDER: DeviceClass[] = ['outlet_dual', 'switch', 'meter', 'acu_ir', 'sensor_temp_humidity'];
@@ -52,7 +55,10 @@ const COMM_CLASS: Record<CommState, string> = {
 export function DevicesView() {
   const devices = useDeviceStore((s) => s.devices);
   const readings = useDeviceStore((s) => s.latestReadings);
+  const configs = useDeviceConfigStore((s) => s.saved);
   const [filter, setFilter] = useState<DeviceClass | 'all'>('all');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editingDevice = editingId ? (devices.find((d) => d.id === editingId) ?? null) : null;
 
   const filtered = useMemo(() => {
     const list = filter === 'all' ? devices : devices.filter((d) => d.class === filter);
@@ -97,11 +103,18 @@ export function DevicesView() {
               </button>
             ))}
           </div>
-          <button type="button" disabled title="Belongs to the onboarding wizard — not built in this version" className="devices-add-btn">
-            + Add device (coming soon)
+          <button
+            type="button"
+            disabled
+            title="Enrolling a genuinely new device means regenerating and redeploying the Node-RED flow on the physical Pi — not something this dashboard can do. Editing an existing device's room, category, load-shed group, and notes is available now via each row's Edit button."
+            className="devices-add-btn"
+          >
+            + Add device (needs a Pi redeploy)
           </button>
         </div>
       </header>
+
+      {editingDevice && <DeviceMetaEditor device={editingDevice} onClose={() => setEditingId(null)} />}
 
       <div className="devices-table-card">
         {/* A scroll container needs to be keyboard-scrollable, which means focusable — and a
@@ -110,11 +123,15 @@ export function DevicesView() {
         <div className="devices-table-scroll" tabIndex={0} role="region" aria-label="Device table, scrolls horizontally">
           {/*
             This is a CSS grid of <div>s, not a <table> — deliberately, because
-            `.devices-table__row`'s `grid-template-columns` is what aligns the eight columns
+            `.devices-table__row`'s `grid-template-columns` is what aligns the nine columns
             and real table layout would fight it. But without ARIA roles, assistive tech saw
-            eight orphaned values per device with no idea which column any of them belonged
+            nine orphaned values per device with no idea which column any of them belonged
             to: "219.5V" with no "Volt" attached to it. These roles restore the row/column
             relationships at zero visual cost.
+
+            The columnheader count here and DeviceRow's role="cell" count below must stay in
+            sync with `.devices-table__row`'s grid-template-columns in index.css — a test
+            (DevicesView.test.tsx) asserts the two match so this can't silently drift again.
           */}
           <div className="devices-table" role="table" aria-label="Device fleet" aria-rowcount={filtered.length + 1}>
             <div className="devices-table__row devices-table__row--head" role="row">
@@ -126,25 +143,27 @@ export function DevicesView() {
               <span role="columnheader">Last seen</span>
               <span role="columnheader">Comm</span>
               <span role="columnheader">State</span>
+              <span role="columnheader">Edit</span>
             </div>
             {filtered.map((d) => (
-              <DeviceRow key={d.id} device={d} reading={readings[d.id]} />
+              <DeviceRow key={d.id} device={d} reading={readings[d.id]} config={configs[d.id]} onEdit={() => setEditingId(d.id)} />
             ))}
           </div>
         </div>
       </div>
       <p className="devices-watchdog-note">
         Stale after 30s idle
-        <InfoHint label="Watchdog and room-assignment details">
-          A device is flagged stale once its reading hasn't advanced in 30 seconds, or the bridge reports it offline outright — see <code>isReadingStale</code>. Room
-          assignment is unrecorded in the live flow for every device here, not a missing field for this table alone.
+        <InfoHint label="Watchdog and metadata details">
+          A device is flagged stale once its reading hasn't advanced in 30 seconds, or the bridge reports it offline outright — see <code>isReadingStale</code>. Room,
+          category, load-shed group, and notes are recorded per device via each row's Edit button, not read from the live flow — the bridge itself still reports every
+          device's <code>room</code> as unset.
         </InfoHint>
       </p>
     </>
   );
 }
 
-function DeviceRow({ device, reading }: { device: Device; reading: Reading | undefined }) {
+function DeviceRow({ device, reading, config, onEdit }: { device: Device; reading: Reading | undefined; config: DeviceConfig | undefined; onEdit: () => void }) {
   const switchable = hasSwitchableState(device.class);
   const comm = commState(reading);
   const Icon = CLASS_ICON[device.class];
@@ -166,6 +185,7 @@ function DeviceRow({ device, reading }: { device: Device; reading: Reading | und
         <div>
           <div className="devices-table__name">{device.display_name}</div>
           <div className="devices-table__id mono">{device.id}</div>
+          {metaSummary(config) && <div className="devices-table__meta">{metaSummary(config)}</div>}
         </div>
       </div>
       <span className="devices-table__class-pill" role="cell">
@@ -188,6 +208,11 @@ function DeviceRow({ device, reading }: { device: Device; reading: Reading | und
       </span>
       <span className={`devices-table__state ${stateClass} mono`} role="cell">
         {stateText}
+      </span>
+      <span className="devices-table__edit-cell" role="cell">
+        <button type="button" className="devices-table__edit-btn" onClick={onEdit}>
+          Edit
+        </button>
       </span>
     </div>
   );

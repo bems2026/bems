@@ -2438,11 +2438,11 @@ body::before {
   overflow-x: auto;
 }
 .devices-table {
-  min-width: 760px;
+  min-width: 860px;
 }
 .devices-table__row {
   display: grid;
-  grid-template-columns: 2.1fr 0.9fr 0.8fr 0.8fr 0.8fr 1fr 0.9fr 0.9fr;
+  grid-template-columns: 2.1fr 0.9fr 0.8fr 0.8fr 0.8fr 1fr 0.9fr 0.9fr 0.6fr;
   gap: var(--sp-3);
   align-items: center;
   padding: var(--sp-3) var(--sp-4);
@@ -2484,6 +2484,16 @@ body::before {
 .devices-table__id {
   font-size: var(--fs-xxs);
   color: var(--muted-2);
+}
+/* Phase 7: "Room · Category · Shed group" from device_config — empty and unrendered until
+   the operator records something via the row's own Edit button, per metaSummary's own
+   "nothing recorded, nothing shown" rule. */
+.devices-table__meta {
+  font-size: var(--fs-xxs);
+  color: var(--muted-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .devices-table__class-pill {
   font-size: var(--fs-xs);
@@ -2557,6 +2567,24 @@ body::before {
 }
 .devices-watchdog-note code {
   font-family: 'IBM Plex Mono', monospace;
+}
+.devices-table__edit-cell {
+  display: flex;
+  justify-content: flex-end;
+}
+.devices-table__edit-btn {
+  border: 1px solid var(--border);
+  background: var(--bg-surface-2);
+  color: var(--muted-2);
+  border-radius: var(--r-sm);
+  padding: 5px 11px;
+  font: 600 var(--fs-xxs) inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.devices-table__edit-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--txt);
 }
 
 /*
