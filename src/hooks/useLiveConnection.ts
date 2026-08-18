@@ -5,6 +5,7 @@ import { useConnectionStore } from '@/stores/connectionStore';
 import { useCommandStore } from '@/stores/commandStore';
 import { useContextStore } from '@/stores/contextStore';
 import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
+import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
 
 /**
  * Mounts the live data pipeline once for the app's lifetime: fetches the static device
@@ -51,6 +52,11 @@ export function useLiveConnection(): void {
     // Loaded here, not lazily on Control's mount, so the dispatch banner's very first
     // render is already accurate instead of defaulting open for one frame.
     void useCapabilitiesStore.getState().load();
+
+    // Loaded here rather than on Devices' mount so display-name overrides are available to
+    // any page that adopts them later without a second load path — same reasoning as
+    // useContextStore above, whose schedule keys Overview reads regardless of the active page.
+    void useDeviceConfigStore.getState().load();
 
     const disconnect = connectLive({
       onData: (rows) => {
