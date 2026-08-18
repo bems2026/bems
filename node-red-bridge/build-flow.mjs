@@ -49,6 +49,12 @@ const OUT = join(HERE, 'bridge-flow.json');
  * implementation. Stripping `export ` is the only edit made to it.
  */
 const BUILD_LATEST_SRC = readFileSync(join(HERE, '..', 'shared', 'buildLatest.mjs'), 'utf8')
+  // Normalize CRLF -> LF before anything else: on a Windows checkout with core.autocrlf=true,
+  // this file is CRLF on disk. Embedding that raw would bake real CR bytes into a Node-RED
+  // function body meant to run on the Linux Pi, and would make this output depend on which
+  // OS/git config generated it — the opposite of the "stable diff regardless of who runs
+  // this" goal the deterministic node-id counter below already commits to.
+  .replace(/\r\n/g, '\n')
   .replace(/^export /gm, '');
 
 /**

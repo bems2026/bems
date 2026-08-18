@@ -172,7 +172,11 @@ test('/api/devices exposes no internal wiring fields', () => {
 // ---------------------------------------------------------------------------
 
 test('the Node-RED flow inlines shared/buildLatest.mjs verbatim (no drift)', () => {
-  const shared = readFileSync(join(ROOT, 'shared', 'buildLatest.mjs'), 'utf8').replace(/^export /gm, '');
+  // \r\n -> \n first: on a Windows checkout with core.autocrlf=true this file is CRLF on
+  // disk, but build-flow.mjs normalizes to LF before embedding (see its own header comment)
+  // — comparing raw CRLF against that would report every generation as "stale" for a reason
+  // that has nothing to do with an actual content drift.
+  const shared = readFileSync(join(ROOT, 'shared', 'buildLatest.mjs'), 'utf8').replace(/\r\n/g, '\n').replace(/^export /gm, '');
   const fn = flow.find((n) => n.name === 'Build latest readings');
   assert.ok(fn, 'Build latest readings node missing');
   assert.ok(
