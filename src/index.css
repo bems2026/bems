@@ -2627,6 +2627,122 @@ body::before {
 }
 
 /* ---------------------------------------------------------------------------
+ * Device metadata editor — Phase 7. Room/category/load-shed group/display-name
+ * override/notes, the operator-editable half of the deferred onboarding wizard. Field
+ * recipe copied from `.login-page__field input` (var(--bg-surface-2), themes for free) —
+ * deliberately NOT `.automation-number-input`/`.automation-time-input`, which hardcode a
+ * light background with no dark-mode override.
+ * ------------------------------------------------------------------------ */
+.device-meta-editor {
+  margin-bottom: var(--sp-4);
+}
+.device-meta-editor__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+.device-meta-editor__heading {
+  margin: 0;
+}
+.device-meta-editor__heading:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+.device-meta-editor__id {
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+  font-weight: 500;
+}
+.device-meta-editor__close {
+  border: 1px solid var(--border);
+  background: var(--bg-surface-2);
+  color: var(--muted-2);
+  border-radius: var(--r-sm);
+  padding: 6px 12px;
+  font: 600 var(--fs-xs-lg) inherit;
+  cursor: pointer;
+  flex: none;
+}
+.device-meta-editor__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--sp-4);
+}
+.device-meta-editor__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--muted-2);
+  min-width: 0;
+}
+.device-meta-editor__field--wide {
+  grid-column: 1 / -1;
+}
+.device-meta-editor__field input,
+.device-meta-editor__field select,
+.device-meta-editor__field textarea {
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--txt);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm, 6px);
+  padding: 8px 10px;
+}
+.device-meta-editor__field textarea {
+  resize: vertical;
+  min-height: 4.5em;
+}
+.device-meta-editor__field input:focus-visible,
+.device-meta-editor__field select:focus-visible,
+.device-meta-editor__field textarea:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.device-meta-editor__hint {
+  font-size: var(--fs-3xs);
+  color: var(--muted-2);
+}
+.device-meta-editor__error {
+  margin: var(--sp-4) 0 0;
+  padding: var(--sp-3);
+  border-radius: var(--r-inner);
+  background: var(--bad-soft);
+  color: var(--bad);
+  font-size: var(--fs-sm);
+}
+.device-meta-editor__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--sp-4);
+}
+.device-meta-editor__save {
+  border: none;
+  background: var(--blue-bright);
+  color: #ffffff;
+  border-radius: var(--r-inner);
+  padding: 11px 18px;
+  font: 700 var(--fs-sm) 'Manrope', sans-serif;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgb(59 130 246 / 0.25);
+  white-space: nowrap;
+}
+/* White-on-blue-bright fails AA against the dark theme's value — same swap
+   .automation-write-btn already makes for the same color pair. */
+:root[data-theme='dark'] .device-meta-editor__save {
+  color: #0d1526;
+}
+.device-meta-editor__save:disabled {
+  opacity: 0.5;
+  cursor: default;
+  box-shadow: none;
+}
+
+/* ---------------------------------------------------------------------------
  * Floor plan (2D) — restyled in Phase J
  * ------------------------------------------------------------------------ */
 .floorplan-grid {
