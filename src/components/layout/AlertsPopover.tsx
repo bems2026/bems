@@ -1,13 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bell, X } from 'lucide-react';
+import { Bell, AlertTriangle, X } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
+import { useAnomaliesStore } from '@/stores/anomaliesStore';
 import { isReadingStale } from '@/lib/staleness';
+import { latestAnomalyPerDevice, isAnomalyCurrent } from '@/lib/anomalies';
+
+/** One row in the bell — either source (staleness watchdog, anomaly detection) is shaped
+ * into this before rendering, so the render/ack logic below only ever deals with one shape
+ * regardless of how many alert sources feed it. */
+interface AlertItem {
+  deviceId: string;
+  title: string;
+  body: string;
+  meta: string;
+  kind: 'watchdog' | 'anomaly';
+}
 
 /**
- * The nav's alerts bell — fed by real device staleness, not v4's sample
- * `"Switch 07 in COMM FAULT"` copy. Every device whose reading is stale (per
- * `isReadingStale`, the same 30s rule `StaleDataBadge`/`DevicesView` use) is a real alert;
- * there is nothing else in this app's data model to alert on yet.
+ * The nav's alerts bell — fed by real device staleness (per `isReadingStale`, the same 30s
+ * rule `StaleDataBadge`/`DevicesView` use) and, as of architecture plan Phase 8, real
+ * rolling-window power anomalies (`useAnomaliesStore`, server-computed in
+ * `server/ingest.mjs`). Both sources reduce to the same `AlertItem` shape and the same
+ * per-device-id ack Set below — no new branching in render or the ack handler.
  *
  * "Ack" is a local, per-device dismiss for this session — it hides that device from the
  * list without touching the underlying reading. Deliberately NOT auto-cleared when a
@@ -20,6 +34,7 @@ import { isReadingStale } from '@/lib/staleness';
 export function AlertsPopover() {
   const devices = useDeviceStore((s) => s.devices);
   const latestReadings = useDeviceStore((s) => s.latestReadings);
+  const anomalyRows = useAnomaliesStore((s) => s.rows);
   const [open, setOpen] = useState(false);
   const [acked, setAcked] = useState<Set<string>>(new Set());
   const ref = useRef<HTMLDivElement>(null);
@@ -48,12 +63,43 @@ export function AlertsPopover() {
     };
   }, [open]);
 
-  const staleDevices = useMemo(
-    () => devices.filter((d) => isReadingStale(latestReadings[d.id])),
+  const staleItems: AlertItem[] = useMemo(
+    () =>
+      devices
+        .filter((d) => isReadingStale(latestReadings[d.id]))
+        .map((d) => ({
+          deviceId: d.id,
+          title: `${d.display_name} in COMM FAULT`,
+          body: 'No reading in the last 30 seconds.',
+          meta: `${d.id} · watchdog`,
+          kind: 'watchdog' as const,
+        })),
     [devices, latestReadings],
   );
 
-  const visible = staleDevices.filter((d) => !acked.has(d.id));
+  // A device can't realistically be both stale and anomalous at once — a stale reading has
+  // no fresh value to evaluate for anomaly in the first place — but this guard is cheap
+  // insurance against exactly that overlap rather than relying purely on that reasoning.
+  const anomalyItems: AlertItem[] = useMemo(() => {
+    const staleIds = new Set(staleItems.map((i) => i.deviceId));
+    const latest = latestAnomalyPerDevice(anomalyRows);
+    const items: AlertItem[] = [];
+    for (const row of Object.values(latest)) {
+      if (staleIds.has(row.device_id) || !isAnomalyCurrent(row)) continue;
+      const device = devices.find((d) => d.id === row.device_id);
+      items.push({
+        deviceId: row.device_id,
+        title: `${device?.display_name ?? row.device_id} reading abnormal power`,
+        body: `${row.value.toFixed(0)}W vs. its usual ~${row.baseline_mean.toFixed(0)}W recently.`,
+        meta: `${row.device_id} · anomaly · z=${row.z_score.toFixed(1)}`,
+        kind: 'anomaly' as const,
+      });
+    }
+    return items;
+  }, [anomalyRows, devices, staleItems]);
+
+  const allItems = useMemo(() => [...staleItems, ...anomalyItems], [staleItems, anomalyItems]);
+  const visible = allItems.filter((item) => !acked.has(item.deviceId));
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
@@ -83,14 +129,17 @@ export function AlertsPopover() {
             <p className="alerts-popover__empty">Nothing outstanding</p>
           ) : (
             <ul className="alerts-popover__list">
-              {visible.map((d) => (
-                <li className="alerts-popover__row" key={d.id}>
+              {visible.map((item) => (
+                <li className="alerts-popover__row" key={item.deviceId}>
                   <div>
-                    <p className="alerts-popover__title">{d.display_name} in COMM FAULT</p>
-                    <p className="alerts-popover__body">No reading in the last 30 seconds.</p>
-                    <p className="alerts-popover__meta">{d.id} · watchdog</p>
+                    <p className="alerts-popover__title">
+                      {item.kind === 'anomaly' ? <AlertTriangle size={12} aria-hidden="true" /> : <Bell size={12} aria-hidden="true" />}
+                      {item.title}
+                    </p>
+                    <p className="alerts-popover__body">{item.body}</p>
+                    <p className="alerts-popover__meta">{item.meta}</p>
                   </div>
-                  <button type="button" className="alerts-popover__ack" onClick={() => setAcked((s) => new Set(s).add(d.id))}>
+                  <button type="button" className="alerts-popover__ack" onClick={() => setAcked((s) => new Set(s).add(item.deviceId))}>
                     Ack
                   </button>
                 </li>

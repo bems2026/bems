@@ -1034,6 +1034,9 @@ body::before {
   font-size: var(--fs-xs-lg);
   font-weight: 700;
   color: var(--red);
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 .alerts-popover__body {
   margin: 2px 0 0;
