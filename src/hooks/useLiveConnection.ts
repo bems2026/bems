@@ -6,6 +6,7 @@ import { useCommandStore } from '@/stores/commandStore';
 import { useContextStore } from '@/stores/contextStore';
 import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
 import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
+import { useAnomaliesStore } from '@/stores/anomaliesStore';
 
 /**
  * Mounts the live data pipeline once for the app's lifetime: fetches the static device
@@ -57,6 +58,11 @@ export function useLiveConnection(): void {
     // any page that adopts them later without a second load path — same reasoning as
     // useContextStore above, whose schedule keys Overview reads regardless of the active page.
     void useDeviceConfigStore.getState().load();
+
+    // Loaded here so AlertsPopover's bell reflects real anomalies from first render rather
+    // than lazily on the popover's first open — same "load once at the root" reasoning as
+    // every other store above. Keeps polling itself afterward (see anomaliesStore.ts).
+    void useAnomaliesStore.getState().load();
 
     const disconnect = connectLive({
       onData: (rows) => {
