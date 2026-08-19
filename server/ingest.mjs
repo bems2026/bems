@@ -19,10 +19,11 @@
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TIMING } from '../shared/registry.mjs';
-import { splitLatestPayload, shapeDeviceRows } from './shapeRows.mjs';
+import { TIMING, METERED } from '../shared/registry.mjs';
+import { splitLatestPayload, shapeDeviceRows, shapeAnomalyRows } from './shapeRows.mjs';
 import { makeSupabaseClient } from './supabaseRest.mjs';
 import { appendToBuffer, readBuffer, writeBuffer, bufferCount } from './ingestBuffer.mjs';
+import { selectAnomalyCandidates, detectAnomaly, pushSample } from './anomalyStats.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -46,6 +47,34 @@ const supabase = makeSupabaseClient({
 
 let stopping = false;
 let lastError = null;
+
+// The 11 devices with real power_w metering — outlet_dual (co1..co7) + meter
+// (mtr_co_yellow/mtr_lo_red/mtr_arec_acu/mtr_lo_yellow). Reused from the registry, not
+// hand-listed, so it can never drift from shared/registry.mjs.
+const ANOMALY_METERED_IDS = new Set(METERED.map((d) => d.id));
+
+// The daemon's only in-memory history — device_id -> its most recent power_w samples
+// (anomalyStats.mjs's ANOMALY_WINDOW_SIZE, capped). Warm-up-from-empty on every process
+// start: this daemon has never read from Supabase (see docs/storage-contract.md), and
+// seeding this from a startup query would make ticking depend on Supabase being reachable
+// at boot — exactly what the outage-buffer design exists to avoid. The cost is a bounded
+// ANOMALY_MIN_SAMPLES-tick blind spot after every restart, not indefinite silence.
+const anomalyWindows = new Map();
+
+/** Runs anomaly detection for this tick's readings, updating anomalyWindows in place, and
+ * returns only the flagged rows, shaped for the `anomalies` table. */
+function detectAnomalies(readings) {
+  const entries = [];
+  for (const r of selectAnomalyCandidates(readings, ANOMALY_METERED_IDS)) {
+    const window = anomalyWindows.get(r.device_id) ?? [];
+    const detection = detectAnomaly(window, r.power_w);
+    if (detection?.isAnomaly) {
+      entries.push({ deviceId: r.device_id, ts: r.ts, value: r.power_w, detection });
+    }
+    anomalyWindows.set(r.device_id, pushSample(window, r.power_w));
+  }
+  return shapeAnomalyRows(entries);
+}
 
 async function fetchJson(url, timeoutMs) {
   const controller = new AbortController();
@@ -135,11 +164,21 @@ async function tick() {
     }
   }
 
+  const anomalyRows = detectAnomalies(readings);
+  if (anomalyRows.length > 0) {
+    try {
+      await writeOrBuffer('anomalies', anomalyRows, 'device_id,ts,metric');
+    } catch (err) {
+      ok = false;
+      lastError = String(err);
+    }
+  }
+
   await updateHealth(ok);
 
   const stamp = new Date().toISOString();
   if (ok) {
-    console.log(`[ibems-ingest] ${stamp} wrote ${readings.length} readings${totals ? ' + totals' : ''}`);
+    console.log(`[ibems-ingest] ${stamp} wrote ${readings.length} readings${totals ? ' + totals' : ''}${anomalyRows.length ? ` + ${anomalyRows.length} anomalies` : ''}`);
   } else {
     console.error(`[ibems-ingest] ${stamp} Supabase unreachable, buffered (${bufferCount(BUFFER_PATH)} pending): ${lastError}`);
   }
