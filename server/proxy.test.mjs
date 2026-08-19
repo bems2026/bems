@@ -66,6 +66,41 @@ function startFakeSupabaseAuth() {
   });
 }
 
+/**
+ * Stand-in for the live Node-RED flow's `POST /light/:id` (Phase 7) — `.requests` records
+ * everything received so tests can assert on the real outbound call (method, path, headers,
+ * body), not just the proxy's own response. `failNext`/`statusCode` inject a downstream
+ * failure to exercise the "audit row says failed, not dispatched" path.
+ */
+function startFakeLightEndpoint() {
+  return new Promise((resolve) => {
+    const port = nextPort++;
+    const state = { requests: [], failNext: false, statusCode: null };
+    const server = http.createServer(async (req, res) => {
+      let raw = '';
+      for await (const chunk of req) raw += chunk;
+      state.requests.push({
+        method: req.method,
+        url: req.url,
+        headers: { 'x-auth-token': req.headers['x-auth-token'] },
+        body: raw ? JSON.parse(raw) : null,
+      });
+      if (state.failNext) {
+        res.writeHead(state.statusCode || 500, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ ok: false, error: 'injected failure' }));
+      }
+      // Mirrors the real flow's actual response shape (verified live): statusCode is
+      // unset on the success path, so Node-RED defaults to 200, and the body is the full
+      // lights-state object, not any {ok:true}-style envelope. dispatchLightCommand keys
+      // success purely on res.ok, never on this body, so the exact shape here is
+      // deliberately NOT the real one — proving the implementation doesn't secretly depend on it.
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ L1: true, L2: false }));
+    });
+    server.listen(port, () => resolve({ server, port, url: `http://localhost:${port}`, state }));
+  });
+}
+
 function spawnChild(script, env) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [script], { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -123,6 +158,40 @@ async function setup(proxyEnv = {}) {
     cleanup: () => {
       fakeAuth.server.close();
       bridgeChild.kill();
+      proxyChild.kill();
+    },
+  };
+}
+
+/**
+ * Spins up: fake Supabase auth + a fake light endpoint (standing in for the real Node-RED
+ * flow's POST /light/:id) + the proxy pointed at the light endpoint as its "bridge". No real
+ * mock-bridge is spawned — dispatch tests only ever hit POST /api/command, never a bridge
+ * GET route, so pointing BRIDGE_HOST/BRIDGE_PORT at the fake light endpoint directly is
+ * sufficient and avoids a third child process per test.
+ */
+async function setupDispatch(proxyEnv = {}) {
+  const fakeAuth = await startFakeSupabaseAuth();
+  const fakeLight = await startFakeLightEndpoint();
+  const proxyPort = nextPort++;
+  const proxyChild = await spawnChild(PROXY, {
+    PROXY_PORT: String(proxyPort),
+    BRIDGE_HOST: '127.0.0.1',
+    BRIDGE_PORT: String(fakeLight.port),
+    SUPABASE_URL: fakeAuth.url,
+    VITE_SUPABASE_ANON_KEY: 'dummy-anon-key',
+    BREAK_GLASS_PASSWORD_HASH: BREAK_GLASS_HASH,
+    HARDWARE_DISPATCH_ENABLED: 'true',
+    LIGHT_API_TOKEN: 'test-light-token',
+    ...proxyEnv,
+  });
+  return {
+    proxyUrl: `http://localhost:${proxyPort}`,
+    supabaseState: fakeAuth.state,
+    lightState: fakeLight.state,
+    cleanup: () => {
+      fakeAuth.server.close();
+      fakeLight.server.close();
       proxyChild.kill();
     },
   };
@@ -268,7 +337,7 @@ test('GET /api/capabilities reflects HARDWARE_DISPATCH_ENABLED — false by defa
 });
 
 test('GET /api/capabilities reports true once the gate is explicitly opened', async () => {
-  const { proxyUrl, cleanup } = await setup({ HARDWARE_DISPATCH_ENABLED: 'true' });
+  const { proxyUrl, cleanup } = await setup({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-light-token' });
   try {
     const res = await fetch(`${proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
     assert.deepEqual(await res.json(), { hardware_dispatch_enabled: true });
@@ -302,16 +371,21 @@ test('a command with the gate closed is accepted, dry_run, and audit-logged with
   }
 });
 
-test('a command with the gate open is logged as dispatched, not dry_run', async () => {
-  const { proxyUrl, supabaseState, cleanup } = await setup({ HARDWARE_DISPATCH_ENABLED: 'true' });
+test('a command with the gate open, for a device class with no real dispatch path, stays dry_run', async () => {
+  // Was 'l1' (a light) asserting 'dispatched' — with Phase 7's real light dispatch now
+  // wired, that would be a genuine dispatch attempt against a plain mock-bridge with no
+  // light endpoint listening, which is a different test (see the dispatch describe block
+  // below). This test's actual job — proving the flag alone never silently claims success —
+  // is better proven on a device class that has NO real path at all, which is co1 here.
+  const { proxyUrl, supabaseState, cleanup } = await setup({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-light-token' });
   try {
     const res = await fetch(`${proxyUrl}/api/command`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ device_id: 'l1', action: 'off' }),
+      body: JSON.stringify({ device_id: 'co1', socket: 1, action: 'off' }),
     });
     assert.equal(res.status, 202);
-    assert.equal(supabaseState.insertedCommands[0].status, 'dispatched');
+    assert.equal(supabaseState.insertedCommands[0].status, 'dry_run');
   } finally {
     cleanup();
   }
@@ -386,5 +460,125 @@ test('a command is refused, not silently un-logged, when the audit insert itself
     assert.equal(body.error, 'audit_log_unreachable');
   } finally {
     cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Phase 7 — real dispatch for lights (switch-class), via the live flow's POST /light/:id
+// ---------------------------------------------------------------------------
+
+test('dispatch open + switch command: a real POST is made to /light/:id with correct headers/body, audit row says dispatched', async () => {
+  const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch();
+  try {
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l3', action: 'on' }),
+    });
+    assert.equal(res.status, 202);
+    assert.equal(lightState.requests.length, 1);
+    assert.equal(lightState.requests[0].method, 'POST');
+    assert.equal(lightState.requests[0].url, '/light/3');
+    assert.equal(lightState.requests[0].headers['x-auth-token'], 'test-light-token');
+    assert.deepEqual(lightState.requests[0].body, { state: true });
+    assert.equal(supabaseState.insertedCommands[0].status, 'dispatched');
+  } finally {
+    cleanup();
+  }
+});
+
+test('dispatch open + switch + downstream failure: 502 hardware_dispatch_failed, audit row says failed not dispatched', async () => {
+  const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch();
+  try {
+    lightState.failNext = true;
+    lightState.statusCode = 401; // simulates a token mismatch — the most realistic real failure
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l3', action: 'off' }),
+    });
+    assert.equal(res.status, 502);
+    const body = await res.json();
+    assert.equal(body.error, 'hardware_dispatch_failed');
+    assert.equal(supabaseState.insertedCommands.length, 1);
+    assert.equal(supabaseState.insertedCommands[0].status, 'failed');
+  } finally {
+    cleanup();
+  }
+});
+
+test('dispatch open + outlet command: still dry_run, zero requests reach the light endpoint', async () => {
+  const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch();
+  try {
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'co3', socket: 1, action: 'on' }),
+    });
+    assert.equal(res.status, 202);
+    assert.equal(lightState.requests.length, 0);
+    assert.equal(supabaseState.insertedCommands[0].status, 'dry_run');
+  } finally {
+    cleanup();
+  }
+});
+
+test('dispatch open + ACU command: still dry_run, zero requests reach the light endpoint', async () => {
+  const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch();
+  try {
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'acu_main', action: 'on' }),
+    });
+    assert.equal(res.status, 202);
+    assert.equal(lightState.requests.length, 0);
+    assert.equal(supabaseState.insertedCommands[0].status, 'dry_run');
+  } finally {
+    cleanup();
+  }
+});
+
+test('dispatch closed: a switch command never reaches the light endpoint', async () => {
+  const { proxyUrl, lightState, cleanup } = await setupDispatch({ HARDWARE_DISPATCH_ENABLED: 'false' });
+  try {
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l3', action: 'on' }),
+    });
+    assert.equal(res.status, 202);
+    assert.equal(lightState.requests.length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test('the proxy refuses to start with HARDWARE_DISPATCH_ENABLED=true and no LIGHT_API_TOKEN', async () => {
+  const fakeAuth = await startFakeSupabaseAuth();
+  // Tracked separately from spawnChild's own promise: if the fail-fast check is ever
+  // missing or broken, spawnChild RESOLVES with a live, listening child instead of
+  // rejecting — assert.rejects then throws its own assertion error, but an untracked
+  // child would be orphaned, keep its stdio pipes open, and hang the entire test file's
+  // exit indefinitely (confirmed the hard way: this is exactly what happened before this
+  // child-tracking was added). Capturing it here means a regression fails loudly and fast
+  // instead of hanging the whole suite.
+  let leakedChild = null;
+  try {
+    await assert.rejects(
+      spawnChild(PROXY, {
+        PROXY_PORT: String(nextPort++),
+        SUPABASE_URL: fakeAuth.url,
+        VITE_SUPABASE_ANON_KEY: 'dummy-anon-key',
+        HARDWARE_DISPATCH_ENABLED: 'true',
+        LIGHT_API_TOKEN: '',
+      }).then((child) => {
+        leakedChild = child;
+        return child;
+      }),
+    );
+  } finally {
+    if (leakedChild) leakedChild.kill();
+    fakeAuth.server.close();
   }
 });

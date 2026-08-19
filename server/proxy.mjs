@@ -34,8 +34,13 @@
  * service-role key `ingest.mjs` holds — so RLS's `authenticated` policy is what actually
  * grants the insert, and `requested_by` is the real signed-in user. Dispatch itself stays
  * gated behind `HARDWARE_DISPATCH_ENABLED` (default unset/false): the ack is always
- * honest about what happened (`status: 'dry_run'` while closed), and there is nothing to
- * forward to yet regardless — the real bridge gets a write route only in Phase 7.
+ * honest about what happened (`status: 'dry_run'` while closed).
+ *
+ * Phase 7 (lights only): with the gate open, a `switch`-class command is forwarded for
+ * real to the live Node-RED flow's `POST /light/:id` (see `dispatchLightCommand`) — the
+ * same entry point the physical node-red-dashboard UI already uses. Outlets and the ACU
+ * have no equivalent endpoint and stay `dry_run` even with the gate open; building those
+ * is separate, later work.
  */
 
 import http from 'node:http';
@@ -44,7 +49,7 @@ import crypto from 'node:crypto';
 import { URL } from 'node:url';
 import { verifyBreakGlassPassword } from './breakGlass.mjs';
 import { validateCommand, buildAck, ACCEPTED_STATUS } from '../shared/commands.mjs';
-import { DEVICE_REGISTRY } from '../shared/registry.mjs';
+import { DEVICE_REGISTRY, TIMING } from '../shared/registry.mjs';
 
 const PROXY_PORT = Number(process.env.PROXY_PORT) || 8080;
 const BRIDGE_HOST = process.env.BRIDGE_HOST || '127.0.0.1';
@@ -59,6 +64,14 @@ const LOCAL_SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12h
 // Closed by default, mirroring node-red-bridge/deploy.mjs's --apply-only-with-explicit-
 // intent pattern. Phase 7 is the only phase allowed to flip this in a real deployment.
 const HARDWARE_DISPATCH_ENABLED = process.env.HARDWARE_DISPATCH_ENABLED === 'true';
+// Shared secret with the live Node-RED flow's "Auth + validate" function (POST
+// /light/:id) — see dispatchLightCommand below. Only ever needed when the gate above is
+// open; local/mock-bridge dev never sets HARDWARE_DISPATCH_ENABLED, so this stays unset there.
+const LIGHT_API_TOKEN = process.env.LIGHT_API_TOKEN || null;
+// Reuses the exact constant this repo already defines for "how long a command gets
+// before it's called failed" (shared/registry.mjs's TIMING, Stage 2/command-path
+// comment) — not a new number invented for this one call.
+const LIGHT_DISPATCH_TIMEOUT_MS = TIMING.COMMAND_TIMEOUT_MS;
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error('[ibems-proxy] SUPABASE_URL and VITE_SUPABASE_ANON_KEY are required — see server/.env.example');
@@ -66,6 +79,17 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 }
 if (!BREAK_GLASS_PASSWORD_HASH) {
   console.warn('[ibems-proxy] BREAK_GLASS_PASSWORD_HASH not set — /api/local-login will 501 until it is (see server/hashBreakGlassPassword.mjs)');
+}
+// Hard fail-fast, not a warn-and-degrade like BREAK_GLASS_PASSWORD_HASH above: a proxy
+// that believes it can dispatch to real hardware but has no way to authenticate to the
+// light endpoint is a dangerous half-configuration, not a safe degraded mode.
+if (HARDWARE_DISPATCH_ENABLED && !LIGHT_API_TOKEN) {
+  console.error(
+    '[ibems-proxy] HARDWARE_DISPATCH_ENABLED=true but LIGHT_API_TOKEN is unset — refusing to start. ' +
+      'A hardware-dispatch-capable proxy with no way to authenticate to the light endpoint is a dangerous ' +
+      'half-configuration, not a safe degraded mode. Set LIGHT_API_TOKEN in server/.env, or leave HARDWARE_DISPATCH_ENABLED unset/false.',
+  );
+  process.exit(1);
 }
 
 // --- local (break-glass) sessions: opaque token -> expiry, in-memory only. Restarting
@@ -199,6 +223,41 @@ function proxyHttp(req, res, url) {
 }
 
 /**
+ * POSTs a real light command to the live Node-RED flow's `POST /light/:id` — the SAME
+ * entry point the physical node-red-dashboard UI already uses (confirmed against the live
+ * flow's own "Auth + validate" function node comment). Only ever called for
+ * `device.class === 'switch'` commands while HARDWARE_DISPATCH_ENABLED is true — see
+ * handleCommand's guard below. Outlets/ACU have no equivalent endpoint yet.
+ *
+ * Success/failure is decided purely on `res.ok` (HTTP 2xx), never on response body shape —
+ * verified live that the flow's success response has no fixed envelope (its `response`
+ * node's statusCode is unset, defaulting to 200, body is the full lights-state object) —
+ * parsing that would couple this to an implementation detail with no contract behind it.
+ * The body is only read, best-effort, for the failure-path `detail` string.
+ *
+ * Returns `{ok:true}` or `{ok:false, detail}` — never throws.
+ */
+async function dispatchLightCommand(device, cmd) {
+  const lightId = parseInt(device.state_key.slice(1), 10); // 'L3' -> 3
+  let res;
+  try {
+    res = await fetch(`http://${BRIDGE_HOST}:${BRIDGE_PORT}/light/${lightId}`, {
+      method: 'POST',
+      headers: { 'x-auth-token': LIGHT_API_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ state: cmd.action === 'on' }),
+      signal: AbortSignal.timeout(LIGHT_DISPATCH_TIMEOUT_MS),
+    });
+  } catch (err) {
+    return { ok: false, detail: `light endpoint unreachable: ${String(err)}` };
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    return { ok: false, detail: `light endpoint returned HTTP ${res.status}: ${body}` };
+  }
+  return { ok: true };
+}
+
+/**
  * `POST /api/command` — architecture plan Phase 6. `token` has already passed the generic
  * `isAuthorized` gate (so it's either a valid break-glass session or a valid Supabase
  * token) by the time this is called; this function applies the STRICTER rule commands
@@ -223,9 +282,27 @@ async function handleCommand(req, res, token) {
   }
 
   const { cmd } = validated;
+  const device = DEVICE_REGISTRY.find((d) => d.id === cmd.device_id); // already validated to exist
   const acceptedAtMs = Date.now();
   const ack = buildAck(cmd, acceptedAtMs);
-  const status = HARDWARE_DISPATCH_ENABLED ? 'dispatched' : 'dry_run';
+
+  // Real dispatch is only attempted for `switch` (lights) — the only class with a real,
+  // working endpoint on the live flow today (see dispatchLightCommand's header). Outlets
+  // and the ACU stay 'dry_run' even with the gate open, on purpose: there is no equivalent
+  // endpoint for them yet, and this is the ONE place that fact is encoded, so a future
+  // outlet/ACU dispatch path is a one-line change here, not a rewrite of this function.
+  let status = 'dry_run';
+  let dispatchFailureDetail = null;
+  if (HARDWARE_DISPATCH_ENABLED && device.class === 'switch') {
+    const result = await dispatchLightCommand(device, cmd);
+    if (result.ok) {
+      status = 'dispatched';
+    } else {
+      status = 'failed';
+      dispatchFailureDetail = result.detail;
+      console.error(`[ibems-proxy] hardware dispatch failed for ${cmd.device_id}: ${result.detail}`);
+    }
+  }
 
   // The audit row is written with the CALLER's own token, not SUPABASE_ANON_KEY alone —
   // RLS's `auth.role() = 'authenticated'` check needs the request to actually carry a
@@ -262,10 +339,17 @@ async function handleCommand(req, res, token) {
     return sendJson(res, 502, { error: 'audit_log_unreachable', detail: String(err) });
   }
 
-  // Phase 7 adds the real forward-to-bridge step here, once the bridge actually has a
-  // write route (it doesn't yet — see shared/commands.mjs's header). The ack below always
-  // describes what was accepted and logged, gated or not — never a claim about a relay
-  // this process has no route to reach.
+  // The command is validated and logged above (status:'failed', not silently omitted — an
+  // attempted-and-failed command is exactly what a safety-critical audit trail exists to
+  // capture) before this refusal, so the record of the attempt survives even though the
+  // caller gets an error rather than the ack.
+  if (dispatchFailureDetail) {
+    return sendJson(res, 502, {
+      error: 'hardware_dispatch_failed',
+      detail: 'The command was validated and logged, but the light did not actually respond — refusing to report it as accepted.',
+    });
+  }
+
   res.writeHead(ACCEPTED_STATUS, { 'Content-Type': 'application/json', ...CORS_HEADERS });
   res.end(JSON.stringify(ack));
 }
