@@ -7,7 +7,7 @@ import { useThemeStore } from '@/stores/themeStore';
 import { supabase } from '@/config/supabase';
 import { isStale } from '@/lib/bridgeClient';
 import type { ConnStatus } from '@/lib/bridgeClient';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const LIVE_LABEL: Record<ConnStatus, string> = {
   connected: 'LIVE',
@@ -27,6 +27,33 @@ function livePillTone(status: ConnStatus): '' | '--warn' | '--bad' {
 }
 
 /**
+ * Publishes the nav's real rendered height onto `--nav-h-live` (a NEW custom property,
+ * deliberately not `--nav-h` — that token already feeds `.top-nav`'s own `min-height`, so
+ * writing the measured height back into it would create a feedback loop). CSS reads this
+ * to keep the sticky nav from covering whatever it's sitting on top of (route-change
+ * scroll targets, the skip link) — see index.css's `scroll-padding-top`/`scroll-margin-top`.
+ *
+ * A live measurement, not the static --nav-h constant, because the nav is NOT one height:
+ * below the 860px breakpoint it wraps to a second row and roughly doubles (measured ~64px
+ * desktop vs ~127px at 375px — see index.css's `@media (max-width: 860px)` block). A fixed
+ * offset sized for desktop would under-clear the wrapped mobile nav.
+ */
+function useNavHeight(ref: React.RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // getBoundingClientRect(), not ResizeObserver's own contentRect — contentRect excludes
+    // border, and the nav has a 1px border-bottom (see index.css's .top-nav), so the
+    // border-box measurement is the one that actually matches what covers the page below it.
+    const publish = () => document.documentElement.style.setProperty('--nav-h-live', `${el.getBoundingClientRect().height}px`);
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref]);
+}
+
+/**
  * Sticky glass top nav — replaces Phase L's collapsible sidebar. Three zones: brand (left,
  * fixed width), pill tabs (centre, flexes and scrolls horizontally rather than wrapping),
  * live status + alerts (right, fixed width).
@@ -43,11 +70,14 @@ export function TopNav({ activeId }: { activeId: string }) {
     return () => clearInterval(id);
   }, []);
 
+  const navRef = useRef<HTMLElement>(null);
+  useNavHeight(navRef);
+
   const stale = isStale(lastMessageAt ? Date.parse(lastMessageAt) : null);
   const tone = stale && wsStatus === 'connected' ? '--warn' : livePillTone(wsStatus);
 
   return (
-    <nav className="top-nav" aria-label="Main">
+    <nav ref={navRef} className="top-nav" aria-label="Main">
       <a className="nav-brand" href="#overview">
         <span className="nav-brand-mark" aria-hidden="true">
           <Zap size={15} strokeWidth={2.5} />

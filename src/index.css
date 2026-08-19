@@ -48,6 +48,20 @@
    */
   --glass-heavy: rgb(15 23 34 / 0.85);
 
+  /**
+   * Phase Q: surfaces that were hardcoded to a light-mode value directly at their use
+   * site (the top nav, chip pills, popovers, form fields, the card top-edge highlight) —
+   * the one place this file's "only values change, never token names" rule had lapsed.
+   * Named for what they ARE, not which theme they belong to, same as every other token
+   * here; only their VALUES flip in the dark block below.
+   */
+  --nav-bg-top: rgb(255 255 255 / 0.92);
+  --nav-bg-bottom: rgb(255 255 255 / 0.55);
+  --chip-bg: rgb(255 255 255 / 0.75);
+  --pop-bg: rgb(255 255 255 / 0.96);
+  --field-bg: rgb(255 255 255 / 0.9);
+  --card-lip: rgb(255 255 255 / 0.6);
+
   /* Solid hex, not translucent — `scene3d/tokens.ts` mirrors this as a Three.js
      LineBasicMaterial color (see that file's comment on why it must stay opaque hex). */
   --border: #e2e8f0;
@@ -255,6 +269,14 @@
   /* --glass-heavy unchanged — it was already a dark, near-opaque treatment for panels
      floating over the (always-dark) 3D viewport; both themes want the same value. */
 
+  /* Phase Q siblings — see the light :root's own comment on these six tokens. */
+  --nav-bg-top: rgb(30 30 30 / 0.92);
+  --nav-bg-bottom: rgb(24 24 24 / 0.62);
+  --chip-bg: rgb(255 255 255 / 0.06);
+  --pop-bg: rgb(32 32 32 / 0.97);
+  --field-bg: rgb(255 255 255 / 0.05);
+  --card-lip: rgb(255 255 255 / 0.06);
+
   --border: #2c2c2c;
   --border-strong: #3d3d3d;
   --border-faint: #232323;
@@ -315,6 +337,14 @@
 
 html {
   color-scheme: light;
+  /* Keeps any in-page anchor jump (the skip link's `#main-content`, a future `#id` link)
+     clear of the sticky nav — without this, the browser's native "scroll target to the
+     viewport top" behavior lands the target exactly under the nav that covers it.
+     `--nav-h-live` (published by TopNav's ResizeObserver — see useNavHeight) tracks the
+     nav's REAL height, which roughly doubles below the 860px breakpoint where it wraps to
+     two rows; `--nav-h` is only the fallback for the instant before that first measurement
+     lands. */
+  scroll-padding-top: calc(var(--nav-h-live, var(--nav-h)) + var(--sp-3));
 }
 
 body {
@@ -508,7 +538,7 @@ body::before {
    * literally invisible here — it was doing real work only against the old dark backdrop.
    * At 0.6 it produces the thin lit top edge the glass treatment actually wants.
    */
-  box-shadow: var(--shadow-card), inset 0 1px 0 rgb(255 255 255 / 0.6);
+  box-shadow: var(--shadow-card), inset 0 1px 0 var(--card-lip);
   /*
    * min-width: 0 — Grid/flex items default to min-width: auto, which lets content with
    * its own intrinsic sizing (Recharts' ResponsiveContainer, a two-socket pill row, etc.)
@@ -732,9 +762,12 @@ body::before {
   gap: var(--sp-5);
   padding: var(--sp-3) var(--sp-6);
   min-height: var(--nav-h);
-  background: linear-gradient(180deg, rgb(255 255 255 / 0.92), rgb(255 255 255 / 0.55));
+  background: linear-gradient(180deg, var(--nav-bg-top), var(--nav-bg-bottom));
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
+  /* A translucent panel with no edge reads as a rendering glitch, not a surface — most
+     visible against the dark page, where nothing else marks where the nav ends. */
+  border-bottom: 1px solid var(--glass-border);
 }
 
 .nav-brand {
@@ -773,7 +806,7 @@ body::before {
   font-size: var(--fs-xxs);
   color: var(--muted-2);
   padding: 4px 8px;
-  background: rgb(255 255 255 / 0.75);
+  background: var(--chip-bg);
   border: 1px solid var(--glass-border);
   border-radius: var(--r-sm);
   white-space: nowrap;
@@ -785,7 +818,7 @@ body::before {
   display: flex;
   gap: 2px;
   padding: 3px;
-  background: rgb(255 255 255 / 0.75);
+  background: var(--chip-bg);
   border: 1px solid var(--glass-border);
   border-radius: var(--r-pill);
   box-shadow: var(--shadow-card);
@@ -826,6 +859,12 @@ body::before {
   background: var(--bg-surface);
   color: var(--txt);
   box-shadow: 0 2px 10px rgb(30 41 59 / 0.1);
+}
+/* Light-tuned shadow (dark-on-light) barely reads against a dark pill — same
+   "shadows don't work the same way on a dark surface" note the :root[data-theme='dark']
+   docblock makes about --shadow-card generally. */
+:root[data-theme='dark'] .nav-tab--active {
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.5);
 }
 
 .nav-right {
@@ -891,11 +930,22 @@ body::before {
   place-items: center;
   border-radius: var(--r-sm);
   border: 1px solid var(--glass-border);
-  background: rgb(255 255 255 / 0.7);
+  background: var(--chip-bg);
   color: var(--muted-2);
   cursor: pointer;
   flex: none;
   transition: color 0.15s ease, border-color 0.15s ease;
+}
+/* 32px visual box reads correctly at this nav's density; the tap TARGET still needs to
+   clear 44x44 (WCAG 2.5.5 / Apple HIG), so the hit area is extended via ::after rather
+   than growing the box itself and reflowing the whole right-hand cluster. Shared with
+   .nav-theme-toggle/.nav-session__signout below — same fix, same reasoning, once. */
+.nav-icon-btn::after,
+.nav-theme-toggle::after,
+.nav-session__signout::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
 }
 .nav-icon-btn:hover {
   color: var(--txt);
@@ -956,7 +1006,7 @@ body::before {
   z-index: 60;
   width: 260px;
   padding: var(--sp-3);
-  background: rgb(255 255 255 / 0.96);
+  background: var(--pop-bg);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--glass-border);
@@ -974,7 +1024,7 @@ body::before {
   width: 320px;
   max-height: 420px;
   overflow-y: auto;
-  background: rgb(255 255 255 / 0.96);
+  background: var(--pop-bg);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--glass-border);
@@ -1162,20 +1212,45 @@ body::before {
   flex: 1;
 }
 .app-content {
-  padding: var(--sp-2) var(--sp-6) var(--sp-6);
+  /* was --sp-2 (8px) — right under a translucent 64px bar, 8px of clearance read as
+     crowded even once the title was no longer actually hidden by it. */
+  padding: var(--sp-4) var(--sp-6) var(--sp-6);
   width: 100%;
   max-width: 1600px;
   margin-inline: auto;
   /* Backstop, not the fix — the actual overflow sources get their own min-width: 0. */
   overflow-x: clip;
 }
+/* `scroll-padding-top` above only governs the BROWSER's own anchor-jump behavior (the
+   skip link). App.tsx's own route-change `window.scrollTo({ top: 0 })` doesn't need it —
+   it explicitly targets 0, not this element — but `scroll-margin-top` still matters for
+   any future `element.scrollIntoView()` call or in-page `<a href="#main-content">`, and
+   costs nothing to have in place now rather than rediscovering the same nav-overlap bug
+   the next time something scrolls to this landmark. */
+#main-content {
+  scroll-margin-top: calc(var(--nav-h-live, var(--nav-h)) + var(--sp-3));
+}
+/*
+ * Phase Q: `PageHeader.tsx` — one shared shell for all five pages' `<h1>` + sub-line +
+ * actions row, replacing five hand-rolled copies that had drifted to five different
+ * vertical alignments. The defect was `align-items: flex-end`: bottom-aligning blocks of
+ * different heights (Overview's clock: 42.7px, Control's 3 buttons: 38.7px, Automation's
+ * button-plus-confirmation-line: 53.2px) put each page's actions row at a different
+ * distance from the header's top (measured 9.6-24.1px) even though every page's title sits
+ * at the same y-position. `align-items: center` plus one `min-height` band fixes it for
+ * every page at once, structurally, rather than one page at a time.
+ */
 .page-header {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: var(--sp-4);
-  margin-bottom: var(--sp-4);
+  min-height: 64px;
+  margin-bottom: var(--sp-5);
   flex-wrap: wrap;
+}
+.page-header__lead {
+  min-width: 0;
 }
 .page-title {
   margin: 0;
@@ -1187,6 +1262,18 @@ body::before {
   margin: 4px 0 0;
   font-size: var(--fs-sm-lg);
   color: var(--muted-2);
+}
+/* Holds whatever a page passes as `actions` — Overview's clock, Analytics'/Control's
+   button rows, Devices' filter toolbar, Automation's write-group. Alignment lives here
+   once; each page's own class (.page-actions, .devices-toolbar, etc.) keeps only its
+   content-specific layout (gap, wrapping) same as before. */
+.page-header__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  flex: none;
 }
 .page-header-right {
   text-align: right;
@@ -1490,6 +1577,11 @@ body::before {
 .weather-card {
   background: linear-gradient(160deg, rgb(255 255 255 / 0.72), rgb(233 240 250 / 0.55));
   border-color: var(--glass-border);
+}
+/* Same two-stop gradient concept as .hero-3d-card's own dark override above — a
+   two-color gradient can't be expressed as a single token swap the way a flat fill can. */
+:root[data-theme='dark'] .weather-card {
+  background: linear-gradient(160deg, rgb(38 38 38 / 0.72), rgb(28 33 41 / 0.6));
 }
 .weather-hero {
   display: flex;
@@ -3959,21 +4051,21 @@ body::before {
   cursor: default;
   box-shadow: none;
 }
-/* Button + its confirmation line, stacked so the line appears under the button without
-   shifting the header's layout. `min-height` reserves the line's own space permanently: the
-   confirmation is a `role="status"` region that's empty until a write lands, and letting it
-   appear from nothing would push the whole header down at the exact moment the user is
-   looking at it. */
+/* Confirmation line + button, side by side — was stacked (line under button), which made
+   this the one page-header actions block taller than the other four's single-line row and
+   the direct cause of Automation's header misalignment (see .page-header's own comment).
+   The confirmation is a `role="status"` region that's empty until a write lands; row layout
+   means it appearing/disappearing changes this block's WIDTH, not its height, so it can
+   never misalign the header band the way the old stacked layout did. */
 .automation-write-group {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--sp-3);
   flex: none;
 }
 .automation-write-confirm {
   margin: 0;
-  min-height: 1.2em;
   font: 500 var(--fs-xs) 'IBM Plex Mono', monospace;
   color: var(--good);
   white-space: nowrap;
@@ -4139,7 +4231,7 @@ body::before {
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   font-size: var(--fs-xs);
-  background: rgb(255 255 255 / 0.9);
+  background: var(--field-bg);
   color: var(--txt);
 }
 .automation-day-chips {
@@ -4223,7 +4315,7 @@ body::before {
   border: 1px solid var(--border);
   border-radius: var(--r-inner);
   font: 600 var(--fs-base) 'IBM Plex Mono', monospace;
-  background: rgb(255 255 255 / 0.9);
+  background: var(--field-bg);
   color: var(--txt);
 }
 .automation-shed-mode {
@@ -4549,6 +4641,7 @@ body::before {
  * below, so the two read as one family of nav-right controls.
  * ------------------------------------------------------------------------- */
 .nav-theme-toggle {
+  position: relative; /* anchors the shared ::after hit-area rule above */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4596,6 +4689,7 @@ body::before {
   color: var(--accent-text);
 }
 .nav-session__signout {
+  position: relative; /* anchors its own wider hit-area override below (26px box) */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4606,6 +4700,11 @@ body::before {
   background: transparent;
   color: var(--muted);
   cursor: pointer;
+}
+/* 26px box needs a wider extension than the shared -6px rule (32 -> 44) gives it —
+   26 + 18 = 44. */
+.nav-session__signout::after {
+  inset: -9px;
 }
 .nav-session__signout:hover {
   background: var(--bg-inset);

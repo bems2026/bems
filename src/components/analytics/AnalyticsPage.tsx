@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Activity, Gauge, Plug } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
@@ -84,10 +85,10 @@ export function AnalyticsPage() {
 
   return (
     <>
-      <header className="page-header">
-        <div>
-          <h1 className="page-title">Power &amp; Energy Analytics</h1>
-          <p className="page-sub">
+      <PageHeader
+        title="Power & Energy Analytics"
+        sub={
+          <>
             {RANGE_LABEL[range]} trends · consumption totals
             <InfoHint label="What this page covers">
               Power, voltage, and current over the last {RANGE_WORDS[range]} for the 4 CHNT branch meters and the 7 individually-metered outlets, plus the building's energy consumed
@@ -96,35 +97,37 @@ export function AnalyticsPage() {
                 ? '7d/30d views read from Supabase — the bridge itself only keeps a 24h buffer.'
                 : ''}
             </InfoHint>
-          </p>
-        </div>
-        <div className="analytics-toggles">
-          {longRangeAvailable && (
-            <div className="analytics-scope-toggle" role="group" aria-label="Time range">
-              {(['24h', '7d', '30d'] as const).map((r) => (
-                <button key={r} type="button" className={`analytics-scope-btn${range === r ? ' analytics-scope-btn--active' : ''}`} aria-pressed={range === r} onClick={() => setRange(r)}>
-                  {RANGE_LABEL[r]}
+          </>
+        }
+        actions={
+          <div className="analytics-toggles">
+            {longRangeAvailable && (
+              <div className="analytics-scope-toggle" role="group" aria-label="Time range">
+                {(['24h', '7d', '30d'] as const).map((r) => (
+                  <button key={r} type="button" className={`analytics-scope-btn${range === r ? ' analytics-scope-btn--active' : ''}`} aria-pressed={range === r} onClick={() => setRange(r)}>
+                    {RANGE_LABEL[r]}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="analytics-scope-toggle" role="group" aria-label="Parameter">
+              {CHART_PARAM_ORDER.map((p) => (
+                <button key={p} type="button" className={`analytics-scope-btn${param === p ? ' analytics-scope-btn--active' : ''}`} aria-pressed={param === p} onClick={() => setParam(p)}>
+                  {CHART_PARAMS[p].label}
                 </button>
               ))}
             </div>
-          )}
-          <div className="analytics-scope-toggle" role="group" aria-label="Parameter">
-            {CHART_PARAM_ORDER.map((p) => (
-              <button key={p} type="button" className={`analytics-scope-btn${param === p ? ' analytics-scope-btn--active' : ''}`} aria-pressed={param === p} onClick={() => setParam(p)}>
-                {CHART_PARAMS[p].label}
+            <div className="analytics-scope-toggle" role="group" aria-label="Scope">
+              <button type="button" className={`analytics-scope-btn${scope === 'branches' ? ' analytics-scope-btn--active' : ''}`} aria-pressed={scope === 'branches'} onClick={() => setScope('branches')}>
+                Branches
               </button>
-            ))}
+              <button type="button" className={`analytics-scope-btn${scope === 'outlets' ? ' analytics-scope-btn--active' : ''}`} aria-pressed={scope === 'outlets'} onClick={() => setScope('outlets')}>
+                Outlets
+              </button>
+            </div>
           </div>
-          <div className="analytics-scope-toggle" role="group" aria-label="Scope">
-            <button type="button" className={`analytics-scope-btn${scope === 'branches' ? ' analytics-scope-btn--active' : ''}`} aria-pressed={scope === 'branches'} onClick={() => setScope('branches')}>
-              Branches
-            </button>
-            <button type="button" className={`analytics-scope-btn${scope === 'outlets' ? ' analytics-scope-btn--active' : ''}`} aria-pressed={scope === 'outlets'} onClick={() => setScope('outlets')}>
-              Outlets
-            </button>
-          </div>
-        </div>
-      </header>
+        }
+      />
 
       <div className="analytics-main-grid">
         <div className="card analytics-chart-card">

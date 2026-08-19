@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useContextStore } from '@/stores/contextStore';
 import { hasSwitchableState } from '@/lib/deviceClass';
@@ -68,29 +69,34 @@ export function AutomationPage() {
 
   return (
     <>
-      <header className="page-header">
-        <div>
-          <h1 className="page-title">DSM &amp; Schedule Management</h1>
-          <p className="page-sub">
+      <PageHeader
+        title="DSM & Schedule Management"
+        sub={
+          <>
             Staged, not yet dispatchable
             <InfoHint label="What this means">
               Saved here to Supabase and logged for audit, but nothing on the real bridge reads or acts on these yet — that arrives once hardware dispatch opens.
             </InfoHint>
-          </p>
-        </div>
-        <div className="automation-write-group">
-          <button type="button" className="automation-write-btn" disabled={pendingEntries.length === 0 || saveStatus === 'saving'} onClick={askSave}>
-            {saveStatus === 'saving' ? 'Writing…' : 'Write to Supabase'}
-          </button>
-          {/* Confirmation that the write landed. `role="status"` (polite) rather than an
-              alert: it's good news, so it should wait its turn rather than interrupt. */}
-          <p className="automation-write-confirm" role="status">
-            {saveStatus === 'idle' && lastSave
-              ? `Wrote ${lastSave.count} key${lastSave.count === 1 ? '' : 's'} at ${new Date(lastSave.at).toLocaleTimeString('en-PH', { hour12: false })}`
-              : ''}
-          </p>
-        </div>
-      </header>
+          </>
+        }
+        actions={
+          <div className="automation-write-group">
+            {/* Confirmation that the write landed, to the LEFT of the button — was stacked
+                below it, which is what inflated this block to 53.2px tall and made it the
+                one page whose actions row didn't line up with the other four (see
+                index.css's `.page-header` comment). `role="status"` (polite) rather than an
+                alert: it's good news, so it should wait its turn rather than interrupt. */}
+            <p className="automation-write-confirm" role="status">
+              {saveStatus === 'idle' && lastSave
+                ? `Wrote ${lastSave.count} key${lastSave.count === 1 ? '' : 's'} at ${new Date(lastSave.at).toLocaleTimeString('en-PH', { hour12: false })}`
+                : ''}
+            </p>
+            <button type="button" className="automation-write-btn" disabled={pendingEntries.length === 0 || saveStatus === 'saving'} onClick={askSave}>
+              {saveStatus === 'saving' ? 'Writing…' : 'Write to Supabase'}
+            </button>
+          </div>
+        }
+      />
       {/* role="alert" so a failed write is announced. Without it a screen reader user got no
           signal at all — the button simply re-enabled and the pending list stayed put. */}
       {saveStatus === 'error' && (

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { LiveDemandCard } from './LiveDemandCard';
 import { MainPanelHealthCard } from './MainPanelHealthCard';
 import { EnergyBreakdownCard } from './EnergyBreakdownCard';
@@ -37,13 +38,7 @@ import { WeatherStatusCard } from '@/components/weather/WeatherStatusCard';
 export function OverviewPage() {
   return (
     <>
-      <header className="page-header">
-        <div>
-          <h1 className="page-title">Intelligent BEMS</h1>
-          <p className="page-sub">Building Energy Management System - MMSU Care Office</p>
-        </div>
-        <Clock />
-      </header>
+      <PageHeader title="Intelligent BEMS" sub="Building Energy Management System - MMSU Care Office" actions={<Clock />} />
 
       <div className="overview-bento">
         <div className="overview-col overview-col--left">

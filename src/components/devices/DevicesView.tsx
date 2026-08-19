@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
 import { hasSwitchableState } from '@/lib/deviceClass';
@@ -81,38 +82,38 @@ export function DevicesView() {
 
   return (
     <>
-      <header className="page-header">
-        <div>
-          <h1 className="page-title">Fleet Status</h1>
-          <p className="page-sub">{`${total} devices in the registry · ${online}/${total} reporting online right now`}</p>
-        </div>
-        <div className="devices-toolbar">
-          <div className="devices-filter-group" role="group" aria-label="Filter by class">
-            <button type="button" className={`devices-filter-chip${filter === 'all' ? ' devices-filter-chip--active' : ''}`} aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>
-              All
-            </button>
-            {CLASS_ORDER.map((cls) => (
-              <button
-                key={cls}
-                type="button"
-                className={`devices-filter-chip${filter === cls ? ' devices-filter-chip--active' : ''}`}
-                aria-pressed={filter === cls}
-                onClick={() => setFilter(cls)}
-              >
-                {CLASS_FILTER_LABEL[cls]}
+      <PageHeader
+        title="Fleet Status"
+        sub={`${total} devices in the registry · ${online}/${total} reporting online right now`}
+        actions={
+          <div className="devices-toolbar">
+            <div className="devices-filter-group" role="group" aria-label="Filter by class">
+              <button type="button" className={`devices-filter-chip${filter === 'all' ? ' devices-filter-chip--active' : ''}`} aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>
+                All
               </button>
-            ))}
+              {CLASS_ORDER.map((cls) => (
+                <button
+                  key={cls}
+                  type="button"
+                  className={`devices-filter-chip${filter === cls ? ' devices-filter-chip--active' : ''}`}
+                  aria-pressed={filter === cls}
+                  onClick={() => setFilter(cls)}
+                >
+                  {CLASS_FILTER_LABEL[cls]}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              disabled
+              title="Enrolling a genuinely new device means regenerating and redeploying the Node-RED flow on the physical Pi — not something this dashboard can do. Editing an existing device's room, category, load-shed group, and notes is available now via each row's Edit button."
+              className="devices-add-btn"
+            >
+              + Add device (needs a Pi redeploy)
+            </button>
           </div>
-          <button
-            type="button"
-            disabled
-            title="Enrolling a genuinely new device means regenerating and redeploying the Node-RED flow on the physical Pi — not something this dashboard can do. Editing an existing device's room, category, load-shed group, and notes is available now via each row's Edit button."
-            className="devices-add-btn"
-          >
-            + Add device (needs a Pi redeploy)
-          </button>
-        </div>
-      </header>
+        }
+      />
 
       {editingDevice && <DeviceMetaEditor device={editingDevice} onClose={() => setEditingId(null)} />}
 
