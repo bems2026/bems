@@ -63,3 +63,24 @@ export function shapeDeviceRows(devices) {
     status: d.status ?? null,
   }));
 }
+
+/**
+ * `detectAnomaly()` results for one tick -> `anomalies` table rows. Only called with
+ * entries the caller has already filtered to `detection.isAnomaly === true` — this
+ * function only shapes, it doesn't decide.
+ */
+export function shapeAnomalyRows(entries) {
+  return entries.map(({ deviceId, ts, value, detection }) => ({
+    device_id: deviceId,
+    ts,
+    metric: 'power_w',
+    value,
+    baseline_mean: detection.baselineMean,
+    baseline_stddev: detection.baselineStddev,
+    z_score: detection.zScore,
+    iqr_lower: detection.iqrLower,
+    iqr_upper: detection.iqrUpper,
+    method: detection.method,
+    sample_count: detection.sampleCount,
+  }));
+}

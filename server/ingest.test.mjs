@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { splitLatestPayload, shapeDeviceRows } from './shapeRows.mjs';
+import { splitLatestPayload, shapeDeviceRows, shapeAnomalyRows } from './shapeRows.mjs';
 import { appendToBuffer, readBuffer, writeBuffer, bufferCount } from './ingestBuffer.mjs';
 
 test('splitLatestPayload separates per-device readings from the _totals row', () => {
@@ -73,6 +73,30 @@ test('shapeDeviceRows maps registry fields, defaulting absent optionals to null'
     id: 'co3', display_name: 'Outlet 3', class: 'outlet_dual', room: null,
     dps_map: 'type_b', sockets: ['CO3_1', 'CO3_2'], branch_circuit: 'C.O Yellow', status: 'active',
   });
+});
+
+test('shapeAnomalyRows maps a flagged detection into an anomalies table row', () => {
+  const rows = shapeAnomalyRows([
+    {
+      deviceId: 'mtr_arec_acu',
+      ts: '2026-08-16T09:00:00+08:00',
+      value: 350.5,
+      detection: {
+        isAnomaly: true, method: 'zscore', zScore: 4.1,
+        baselineMean: 120, baselineStddev: 40,
+        iqrLower: 20, iqrUpper: 220, sampleCount: 20,
+      },
+    },
+  ]);
+  assert.deepEqual(rows[0], {
+    device_id: 'mtr_arec_acu', ts: '2026-08-16T09:00:00+08:00', metric: 'power_w', value: 350.5,
+    baseline_mean: 120, baseline_stddev: 40, z_score: 4.1,
+    iqr_lower: 20, iqr_upper: 220, method: 'zscore', sample_count: 20,
+  });
+});
+
+test('shapeAnomalyRows returns an empty array for no entries', () => {
+  assert.deepEqual(shapeAnomalyRows([]), []);
 });
 
 test('ingestBuffer: append then read round-trips entries in order', () => {
