@@ -11,7 +11,7 @@
  */
 
 import { BRIDGE_HTTP_URL, BRIDGE_WS_URL } from '@/config/bridge';
-import { getAuthToken } from './authToken';
+import { getAuthToken, notifyAuthFailure } from './authToken';
 import { TIMING } from './timing';
 import type { CommandAck, CommandRequest, Capabilities, Device, HistoryResponse, ReadingsLatestRow } from './types';
 
@@ -70,6 +70,12 @@ export async function fetchJson<T>(path: string, opts: RequestOptions = {}): Pro
       ...(Object.keys(headers).length > 0 ? { headers } : {}),
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
+    // A 401 is the one status that says something about the SESSION rather than the
+    // request: the token we hold is no longer accepted. Tell whoever is listening (see
+    // authToken.ts) before throwing, so the session can be refreshed or torn down — the
+    // caller's own error handling below is deliberately unchanged, since retry policy
+    // still belongs to the caller.
+    if (res.status === 401) notifyAuthFailure();
     if (!res.ok) throw await bridgeError(res);
     return (await res.json()) as T;
   } catch (err) {
