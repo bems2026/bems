@@ -1,0 +1,30 @@
+# systemd unit for server/scheduler.mjs — fires the Automation page's schedules.
+#
+# Activate once server/.env already works for ibems-proxy (it reuses the same file):
+#
+#     sudo cp server/ibems-scheduler.service /etc/systemd/system/ibems-scheduler.service
+#     sudo systemctl daemon-reload
+#     sudo systemctl enable --now ibems-scheduler.service
+#     systemctl status ibems-scheduler.service
+#
+# Reads the same HARDWARE_DISPATCH_ENABLED gate the proxy does, so a schedule cannot reach a
+# relay while the gate is closed. It needs the bridge for dispatch, hence the ordering.
+
+[Unit]
+Description=iBEMS Scheduler (fires Automation's schedules through the gated command path)
+Wants=network-online.target nodered.service
+After=network-online.target nodered.service
+
+[Service]
+Type=simple
+User=bems
+Group=bems
+WorkingDirectory=/home/bems/bems
+EnvironmentFile=/home/bems/bems/server/.env
+ExecStart=/usr/bin/node server/scheduler.mjs
+Restart=on-failure
+RestartSec=10
+SyslogIdentifier=ibems-scheduler
+
+[Install]
+WantedBy=multi-user.target

@@ -37,7 +37,7 @@
  * honest about what happened (`status: 'dry_run'` while closed).
  *
  * Phase 7 (lights only): with the gate open, a `switch`-class command is forwarded for
- * real to the live Node-RED flow's `POST /light/:id` (see `dispatchLightCommand`) — the
+ * real to the live Node-RED flow's `POST /light/:id` (see `dispatchLight.mjs`) — the
  * same entry point the physical node-red-dashboard UI already uses. Outlets and the ACU
  * have no equivalent endpoint and stay `dry_run` even with the gate open; building those
  * is separate, later work. `GET /api/capabilities` reports that asymmetry as
@@ -51,7 +51,8 @@ import crypto from 'node:crypto';
 import { URL } from 'node:url';
 import { verifyBreakGlassPassword } from './breakGlass.mjs';
 import { validateCommand, buildAck, ACCEPTED_STATUS } from '../shared/commands.mjs';
-import { DEVICE_REGISTRY, TIMING } from '../shared/registry.mjs';
+import { DEVICE_REGISTRY } from '../shared/registry.mjs';
+import { dispatchLightCommand } from './dispatchLight.mjs';
 
 const PROXY_PORT = Number(process.env.PROXY_PORT) || 8080;
 const BRIDGE_HOST = process.env.BRIDGE_HOST || '127.0.0.1';
@@ -70,10 +71,7 @@ const HARDWARE_DISPATCH_ENABLED = process.env.HARDWARE_DISPATCH_ENABLED === 'tru
 // /light/:id) — see dispatchLightCommand below. Only ever needed when the gate above is
 // open; local/mock-bridge dev never sets HARDWARE_DISPATCH_ENABLED, so this stays unset there.
 const LIGHT_API_TOKEN = process.env.LIGHT_API_TOKEN || null;
-// Reuses the exact constant this repo already defines for "how long a command gets
-// before it's called failed" (shared/registry.mjs's TIMING, Stage 2/command-path
-// comment) — not a new number invented for this one call.
-const LIGHT_DISPATCH_TIMEOUT_MS = TIMING.COMMAND_TIMEOUT_MS;
+
 // The device classes a command actually reaches hardware for. Lights are the only class with
 // a real endpoint on the live flow (see dispatchLightCommand); outlets and the ACU have none
 // and stay dry_run even with the gate open. Declared ONCE here and consumed by both
@@ -232,41 +230,6 @@ function proxyHttp(req, res, url) {
 }
 
 /**
- * POSTs a real light command to the live Node-RED flow's `POST /light/:id` — the SAME
- * entry point the physical node-red-dashboard UI already uses (confirmed against the live
- * flow's own "Auth + validate" function node comment). Only ever called for
- * `device.class === 'switch'` commands while HARDWARE_DISPATCH_ENABLED is true — see
- * handleCommand's guard below. Outlets/ACU have no equivalent endpoint yet.
- *
- * Success/failure is decided purely on `res.ok` (HTTP 2xx), never on response body shape —
- * verified live that the flow's success response has no fixed envelope (its `response`
- * node's statusCode is unset, defaulting to 200, body is the full lights-state object) —
- * parsing that would couple this to an implementation detail with no contract behind it.
- * The body is only read, best-effort, for the failure-path `detail` string.
- *
- * Returns `{ok:true}` or `{ok:false, detail}` — never throws.
- */
-async function dispatchLightCommand(device, cmd) {
-  const lightId = parseInt(device.state_key.slice(1), 10); // 'L3' -> 3
-  let res;
-  try {
-    res = await fetch(`http://${BRIDGE_HOST}:${BRIDGE_PORT}/light/${lightId}`, {
-      method: 'POST',
-      headers: { 'x-auth-token': LIGHT_API_TOKEN, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ state: cmd.action === 'on' }),
-      signal: AbortSignal.timeout(LIGHT_DISPATCH_TIMEOUT_MS),
-    });
-  } catch (err) {
-    return { ok: false, detail: `light endpoint unreachable: ${String(err)}` };
-  }
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    return { ok: false, detail: `light endpoint returned HTTP ${res.status}: ${body}` };
-  }
-  return { ok: true };
-}
-
-/**
  * `POST /api/command` — architecture plan Phase 6. `token` has already passed the generic
  * `isAuthorized` gate (so it's either a valid break-glass session or a valid Supabase
  * token) by the time this is called; this function applies the STRICTER rule commands
@@ -303,7 +266,7 @@ async function handleCommand(req, res, token) {
   let status = 'dry_run';
   let dispatchFailureDetail = null;
   if (HARDWARE_DISPATCH_ENABLED && DISPATCH_CLASSES.includes(device.class)) {
-    const result = await dispatchLightCommand(device, cmd);
+    const result = await dispatchLightCommand(device, cmd, { bridgeHost: BRIDGE_HOST, bridgePort: BRIDGE_PORT, lightApiToken: LIGHT_API_TOKEN });
     if (result.ok) {
       status = 'dispatched';
     } else {
