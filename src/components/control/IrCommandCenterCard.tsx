@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Snowflake } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
@@ -10,6 +11,13 @@ import { SimulatedBadge } from './SimulatedBadge';
 import { useControlLog } from './controlLog';
 
 const ACU_ID = 'acu_main';
+
+/** Exactly the whole degrees the live flow's IR library holds codes for — anything outside
+ * this resolves to no code at all, so offering it would be offering a no-op. Mirrors
+ * ACU_MIN_C/ACU_MAX_C in shared/commands.mjs, which rejects the same values server-side. */
+const SETPOINTS = Array.from({ length: 15 }, (_, i) => 16 + i);
+/** What the retired dashboard switch sent, so an untouched selector behaves as before. */
+const DEFAULT_SETPOINT_C = 25;
 
 /**
  * The one real air conditioner in the registry — v4's mockup shows two (CARE + AREC), but
@@ -26,6 +34,13 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
   const log = useControlLog((s) => s.log);
   const lastIr = useControlLog((s) => s.entries.find((e) => e.tag === 'IR'));
   const { ask, modalProps } = useConfirm();
+  // Seeded from the ACU's last known setpoint when there is one, so the control opens showing
+  // where the room actually is rather than a fixed guess.
+  const [setpointC, setSetpointC] = useState<number>(() =>
+    typeof reading?.setpoint_c === 'number' && SETPOINTS.includes(Math.round(reading.setpoint_c))
+      ? Math.round(reading.setpoint_c)
+      : DEFAULT_SETPOINT_C,
+  );
 
   const view = controlView(reading, pending);
   const busy = view.kind === 'pending';
@@ -38,21 +53,20 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
   const on = !unknown && view.value === 'on';
 
   const dispatch = (action: 'on' | 'off') => {
-    send(ACU_ID, undefined, action);
-    log('IR', `${device?.display_name ?? 'CARE ACU'} → ${action}`);
+    send(ACU_ID, undefined, action, action === 'on' ? setpointC : undefined);
+    log('IR', `CARE ACU → ${action === 'on' ? `on ${setpointC}°C` : 'off'}`);
   };
 
-  // Gated despite being a single device: an IR blast is the one command in this app with
-  // no readback path at all (nothing confirms the blaster was received), driving a
-  // compressor — the same risk profile a 7-device fan-out gets, just concentrated on one
-  // unverifiable send.
   const askDispatch = (action: 'on' | 'off') =>
     ask(
       {
-        title: `Send AC ${action === 'on' ? 'ON' : 'OFF'}?`,
-        body: `This sends a single IR ${action} command to the CARE ACU. Nothing reads the blaster back, so there is no way to confirm it was received — only that this app sent it.`,
-        confirmLabel: `Yes, send ${action.toUpperCase()}`,
-        tone: action === 'on' ? 'blue' : 'accent',
+        title: action === 'on' ? `Send AC on at ${setpointC}°C?` : 'Send AC off?',
+        body:
+          action === 'on'
+            ? `This emits a single IR command setting the CARE ACU to ${setpointC}°C. It does not cut power to the unit.`
+            : 'This emits a single IR off command to the CARE ACU. It does not cut power to the unit.',
+        confirmLabel: action === 'on' ? `Yes, send ${setpointC}°C` : 'Yes, send OFF',
+        tone: 'blue',
       },
       () => dispatch(action),
     );
@@ -61,7 +75,7 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
     <div className="card control-ir-card">
       <h3 className="control-ir-card__title">
         <Snowflake size={14} className="title-icon" aria-hidden="true" />
-        IR HVAC
+        IR AIRCON
         <InfoHint label="How IR commands work">Commands are emitted by the IR blaster. Power is never cut — the compressor stays protected.</InfoHint>
         {simulated && <SimulatedBadge />}
       </h3>
@@ -86,12 +100,34 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
           </div>
         </div>
 
+        <div className="control-ir-setpoint">
+          <label className="metric-label" htmlFor="acu-setpoint">
+            SETPOINT
+          </label>
+          <div className="control-ir-setpoint__row">
+            <select
+              id="acu-setpoint"
+              className="control-ir-setpoint__select"
+              value={setpointC}
+              disabled={busy}
+              onChange={(e) => setSetpointC(Number(e.target.value))}
+            >
+              {SETPOINTS.map((c) => (
+                <option key={c} value={c}>
+                  {c}°C
+                </option>
+              ))}
+            </select>
+            <span className="control-ir-setpoint__hint">applies to the next ON command</span>
+          </div>
+        </div>
+
         <div className="control-ir-unit__actions">
           <button type="button" className="quick-btn quick-btn--primary" disabled={busy} onClick={() => askDispatch('on')}>
-            Send ON command
+            Send ON at {setpointC}°C
           </button>
           <button type="button" className="quick-btn" disabled={busy} onClick={() => askDispatch('off')}>
-            Send OFF command
+            Send OFF
           </button>
         </div>
         <p className="control-ir-unit__last">{lastIr ? `${lastIr.text} · ${lastIr.time}` : 'No commands sent this session'}</p>

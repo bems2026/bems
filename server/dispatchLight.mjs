@@ -1,15 +1,25 @@
 /**
- * The one implementation of "send a light command to the bridge".
+ * The one implementation of "send a device command to the bridge".
  *
- * Shared by server/proxy.mjs (a person clicking in the app) and server/scheduler.mjs (a
- * schedule coming due). Extracted rather than copied deliberately: two copies of a function
- * that switches real relays would be two places for the timeout, the auth header, or the
- * success condition to drift apart, and the second copy is exactly the one nobody updates.
+ * Shared by server/proxy.mjs (a person clicking in the app), server/scheduler.mjs (a schedule
+ * coming due) and automatic load shedding. Extracted rather than copied deliberately: copies
+ * of a function that switches real relays are places for the timeout, the auth header, or the
+ * success condition to drift apart, and the copy nobody updates is the one still running.
+ *
+ * One route per device class, because the flow genuinely has three entry points — lights by
+ * numeric id, outlets by wire target, the aircon by IR code. They share a token: only the
+ * proxy is meant to reach any of them, so it is one trust boundary, not three.
  */
 
 import { TIMING } from '../shared/registry.mjs';
+import { resolveTarget } from '../shared/commands.mjs';
 
 export const LIGHT_DISPATCH_TIMEOUT_MS = TIMING.COMMAND_TIMEOUT_MS;
+
+/** The device classes that genuinely reach hardware. Declared here, beside the routing that
+ * implements it, so `GET /api/capabilities` can never advertise a class this file cannot
+ * actually deliver. */
+export const DISPATCH_CLASSES = ['switch', 'outlet_dual', 'acu_ir'];
 
 /**
  * POSTs a real light command to the live Node-RED flow's `POST /light/:id` — the SAME
@@ -26,23 +36,63 @@ export const LIGHT_DISPATCH_TIMEOUT_MS = TIMING.COMMAND_TIMEOUT_MS;
  *
  * Returns `{ok:true}` or `{ok:false, detail}` — never throws.
  */
-export async function dispatchLightCommand(device, cmd, { bridgeHost, bridgePort, lightApiToken }) {
-  const lightId = parseInt(device.state_key.slice(1), 10); // 'L3' -> 3
+/** `on`/`off` plus an optional setpoint -> the IR code AC Master Logic looks up. `target_c` is
+ * validated upstream by shared/commands.mjs; 25 is the fallback the retired dashboard switch
+ * used, so a command with no setpoint behaves exactly as that did. */
+export function acuMode(cmd) {
+  if (cmd.action === 'off') return 'OFF';
+  return String(cmd.target_c ?? 25);
+}
+
+/** The bridge path and body for one command. Exported for the tests that pin the wire shape. */
+export function routeFor(device, cmd) {
+  if (device.class === 'switch') {
+    return { path: `/light/${parseInt(device.state_key.slice(1), 10)}`, body: { state: cmd.action === 'on' } };
+  }
+  if (device.class === 'outlet_dual') {
+    // Resolved here rather than read off `cmd.target`. The proxy populates that field via
+    // validateCommand, but the scheduler builds commands directly and does not — which
+    // produced a literal POST to /outlet/undefined until a test caught it. Calling the one
+    // shared resolver means every caller gets the same wire key whether it set the field or
+    // not, instead of each being trusted to remember.
+    const target = resolveTarget(device, cmd.socket);
+    return { path: `/outlet/${target}`, body: { state: cmd.action === 'on' } };
+  }
+  if (device.class === 'acu_ir') {
+    return { path: '/acu', body: { mode: acuMode(cmd) } };
+  }
+  return null;
+}
+
+/**
+ * POSTs a command to the live flow. Success is decided purely on `res.ok` (HTTP 2xx), never on
+ * response body shape — the flow's success responses have no shared envelope, and parsing them
+ * would couple this to an implementation detail with no contract behind it. The body is read,
+ * best-effort, only for the failure-path `detail` string.
+ *
+ * Returns `{ok:true}` or `{ok:false, detail}` — never throws.
+ */
+export async function dispatchCommand(device, cmd, { bridgeHost, bridgePort, lightApiToken }) {
+  const route = routeFor(device, cmd);
+  if (!route) return { ok: false, detail: `no dispatch route for device class ${device.class}` };
+
   let res;
   try {
-    res = await fetch(`http://${bridgeHost}:${bridgePort}/light/${lightId}`, {
+    res = await fetch(`http://${bridgeHost}:${bridgePort}${route.path}`, {
       method: 'POST',
       headers: { 'x-auth-token': lightApiToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ state: cmd.action === 'on' }),
+      body: JSON.stringify(route.body),
       signal: AbortSignal.timeout(LIGHT_DISPATCH_TIMEOUT_MS),
     });
   } catch (err) {
-    return { ok: false, detail: `light endpoint unreachable: ${String(err)}` };
+    return { ok: false, detail: `bridge endpoint unreachable: ${String(err)}` };
   }
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    return { ok: false, detail: `light endpoint returned HTTP ${res.status}: ${body}` };
+    return { ok: false, detail: `bridge endpoint returned HTTP ${res.status}: ${body}` };
   }
   return { ok: true };
 }
 
+/** @deprecated Kept as the old name so nothing silently breaks; use dispatchCommand. */
+export const dispatchLightCommand = dispatchCommand;

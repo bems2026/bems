@@ -52,7 +52,7 @@ import { URL } from 'node:url';
 import { verifyBreakGlassPassword } from './breakGlass.mjs';
 import { validateCommand, buildAck, ACCEPTED_STATUS } from '../shared/commands.mjs';
 import { DEVICE_REGISTRY } from '../shared/registry.mjs';
-import { dispatchLightCommand } from './dispatchLight.mjs';
+import { dispatchCommand, DISPATCH_CLASSES } from './dispatchLight.mjs';
 
 const PROXY_PORT = Number(process.env.PROXY_PORT) || 8080;
 const BRIDGE_HOST = process.env.BRIDGE_HOST || '127.0.0.1';
@@ -72,13 +72,7 @@ const HARDWARE_DISPATCH_ENABLED = process.env.HARDWARE_DISPATCH_ENABLED === 'tru
 // open; local/mock-bridge dev never sets HARDWARE_DISPATCH_ENABLED, so this stays unset there.
 const LIGHT_API_TOKEN = process.env.LIGHT_API_TOKEN || null;
 
-// The device classes a command actually reaches hardware for. Lights are the only class with
-// a real endpoint on the live flow (see dispatchLightCommand); outlets and the ACU have none
-// and stay dry_run even with the gate open. Declared ONCE here and consumed by both
-// handleCommand and GET /api/capabilities, so what the frontend is told and what the server
-// will really do cannot drift apart — adding outlet dispatch later means adding its class
-// here and its branch below, not hunting for a second hardcoded list.
-const DISPATCH_CLASSES = ['switch'];
+
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error('[ibems-proxy] SUPABASE_URL and VITE_SUPABASE_ANON_KEY are required — see server/.env.example');
@@ -258,15 +252,13 @@ async function handleCommand(req, res, token) {
   const acceptedAtMs = Date.now();
   const ack = buildAck(cmd, acceptedAtMs);
 
-  // Real dispatch is only attempted for `switch` (lights) — the only class with a real,
-  // working endpoint on the live flow today (see dispatchLightCommand's header). Outlets
-  // and the ACU stay 'dry_run' even with the gate open, on purpose: there is no equivalent
-  // endpoint for them yet, and this is the ONE place that fact is encoded, so a future
-  // outlet/ACU dispatch path is a one-line change here, not a rewrite of this function.
+  // Which classes really reach hardware is declared once, in dispatchLight.mjs, next to the
+  // routing that implements it — so what /api/capabilities advertises and what this function
+  // will actually do cannot drift apart.
   let status = 'dry_run';
   let dispatchFailureDetail = null;
   if (HARDWARE_DISPATCH_ENABLED && DISPATCH_CLASSES.includes(device.class)) {
-    const result = await dispatchLightCommand(device, cmd, { bridgeHost: BRIDGE_HOST, bridgePort: BRIDGE_PORT, lightApiToken: LIGHT_API_TOKEN });
+    const result = await dispatchCommand(device, cmd, { bridgeHost: BRIDGE_HOST, bridgePort: BRIDGE_PORT, lightApiToken: LIGHT_API_TOKEN });
     if (result.ok) {
       status = 'dispatched';
     } else {

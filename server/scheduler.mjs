@@ -12,10 +12,9 @@
  * writes a `commands` row. That is the whole reason this lives here rather than inside the
  * flow: Node-RED's own cron schedules bypass both, and always have.
  *
- * SCOPE — lights only, deliberately. `dispatchLightCommand` is the only real dispatch path
- * that exists; outlets and the ACU are still switched by Node-RED's own schedules. Emitting
- * commands for them would write `dry_run` audit rows for switching that really happened,
- * which is worse than not recording it. They move over when their dispatch path is built.
+ * SCOPE — every class with a real dispatch path, which is now lights, outlets and the aircon.
+ * Derived from `DISPATCH_CLASSES` rather than listed again here, so this can never claim to
+ * cover a class the dispatcher cannot actually reach.
  *
  * It also runs automatic load shedding, for the same reason and through the same path:
  * when the building goes over a configured limit and auto-shed is on, it switches off the
@@ -28,7 +27,7 @@
 import { DEVICE_REGISTRY } from '../shared/registry.mjs';
 import { dueCommands } from './schedulePlan.mjs';
 import { planShed } from './shedPlan.mjs';
-import { dispatchLightCommand } from './dispatchLight.mjs';
+import { dispatchCommand, DISPATCH_CLASSES } from './dispatchLight.mjs';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -49,8 +48,10 @@ if (HARDWARE_DISPATCH_ENABLED && !LIGHT_API_TOKEN) {
   process.exit(1);
 }
 
-/** Only devices with a real dispatch path — see the SCOPE note in this file's header. */
-const DISPATCHABLE_DEVICE_IDS = DEVICE_REGISTRY.filter((d) => d.class === 'switch').map((d) => d.id);
+/** Devices with a real dispatch path, derived from the same list the proxy advertises rather
+ * than a second hardcoded copy — so schedules and shedding automatically cover a class the
+ * moment its endpoint exists, and never claim to cover one that does not. */
+const DISPATCHABLE_DEVICE_IDS = DEVICE_REGISTRY.filter((d) => DISPATCH_CLASSES.includes(d.class)).map((d) => d.id);
 
 const sb = (path, init = {}) =>
   fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -132,7 +133,7 @@ async function fire(cmd, reasonNote) {
   let status = 'dry_run';
   let note = `${why}; hardware dispatch closed`;
   if (HARDWARE_DISPATCH_ENABLED) {
-    const result = await dispatchLightCommand(device, cmd, { bridgeHost: BRIDGE_HOST, bridgePort: BRIDGE_PORT, lightApiToken: LIGHT_API_TOKEN });
+    const result = await dispatchCommand(device, cmd, { bridgeHost: BRIDGE_HOST, bridgePort: BRIDGE_PORT, lightApiToken: LIGHT_API_TOKEN });
     status = result.ok ? 'dispatched' : 'failed';
     note = result.ok ? why : `${why}; dispatch failed: ${result.detail}`;
     if (!result.ok) console.error(`[ibems-scheduler] dispatch failed for ${cmd.device_id}: ${result.detail}`);

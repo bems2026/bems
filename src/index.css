@@ -3445,6 +3445,34 @@ body::before {
   font: 700 var(--fs-lg) 'IBM Plex Mono', monospace;
   margin-top: 2px;
 }
+/* Setpoint picker. A native <select> rather than a custom widget: it is keyboard- and
+   screen-reader-correct for free, and on a phone it opens the platform's own wheel, which is
+   far easier to hit than fifteen small buttons would be. */
+.control-ir-setpoint {
+  margin-top: var(--sp-3);
+}
+.control-ir-setpoint__row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+.control-ir-setpoint__select {
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--txt);
+  font: 700 var(--fs-sm) 'IBM Plex Mono', monospace;
+  cursor: pointer;
+}
+.control-ir-setpoint__hint {
+  font-size: var(--fs-xxs);
+  color: var(--muted-2);
+}
+
 .control-ir-unit__actions {
   display: flex;
   flex-wrap: wrap;

@@ -131,10 +131,15 @@ test('a disarmed schedule fires nothing', async () => {
   assert.equal(r.commands.length, 0);
 });
 
-test('an outlet schedule is left alone — Node-RED still owns those, and a dry_run row would misreport a switch that really happened', async () => {
-  const r = await run({}, dueNowRow({ device_id: 'co1' }));
-  assert.equal(r.commands.length, 0);
-  assert.equal(r.lightRequests.length, 0);
+test('an outlet schedule now fires too, routed to its wire target rather than a light id', async () => {
+  // This previously asserted the opposite: outlets were skipped because they had no dispatch
+  // path, and a dry_run row would have misreported a switch Node-RED really performed. The
+  // flow has a /outlet/<target> endpoint now, so they are genuinely covered.
+  const r = await run({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-token' }, dueNowRow({ device_id: 'co1', socket: 1 }));
+  assert.equal(r.commands.length, 1);
+  assert.equal(r.commands[0].device_id, 'co1');
+  assert.equal(r.commands[0].status, 'dispatched');
+  assert.equal(r.lightRequests[0].url, '/outlet/CO1_1');
 });
 
 test('refuses to start with the gate open and no light token', async () => {

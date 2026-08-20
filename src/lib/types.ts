@@ -114,6 +114,10 @@ export interface CommandRequest {
   socket?: SocketIndex;
   action: SwitchState;
   command_id?: string;
+  /** ACU only: the setpoint in whole degrees, 16-30. The aircon is IR-commanded and its logic
+   * takes a code rather than a relay state, so "on" alone cannot say what to turn on to. See
+   * shared/commands.mjs, which validates the same bounds server-side. */
+  target_c?: number;
 }
 
 /**

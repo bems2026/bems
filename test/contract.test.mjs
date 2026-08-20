@@ -486,3 +486,47 @@ test('one invalid key fails the whole batch — validated before any write is ap
   const r = VC({ writes: { 'global.trigger.care_acu_on': '28', 'global.trigger.bogus': '1' } });
   assert.equal(r.ok, false);
 });
+
+// ---------------------------------------------------------------------------
+// ACU setpoint.
+//
+// The aircon is IR-commanded and its logic takes a code, not a relay state: "OFF" or a
+// temperature "16".."30". An on/off-only command could therefore only ever mean "on at
+// whatever temperature the last person picked", which is not something a UI can honestly
+// show. `target_c` carries the setpoint for exactly the one class that has one.
+// ---------------------------------------------------------------------------
+
+test('an ACU command may carry a setpoint', () => {
+  const r = validateCommand({ device_id: 'acu_main', action: 'on', target_c: 24 }, DEVICE_REGISTRY);
+  assert.equal(r.ok, true);
+  assert.equal(r.cmd.target_c, 24);
+});
+
+test('an ACU command without a setpoint is still valid — off needs none', () => {
+  const r = validateCommand({ device_id: 'acu_main', action: 'off' }, DEVICE_REGISTRY);
+  assert.equal(r.ok, true);
+  assert.equal(r.cmd.target_c, undefined);
+});
+
+test('the setpoint is bounded by what the IR library can actually emit', () => {
+  for (const bad of [15, 31, 0, -5]) {
+    const r = validateCommand({ device_id: 'acu_main', action: 'on', target_c: bad }, DEVICE_REGISTRY);
+    assert.equal(r.ok, false, `${bad} must be rejected`);
+    assert.equal(r.code, 'invalid_target_c');
+  }
+  for (const good of [16, 24, 30]) {
+    assert.equal(validateCommand({ device_id: 'acu_main', action: 'on', target_c: good }, DEVICE_REGISTRY).ok, true);
+  }
+});
+
+test('the setpoint must be a whole degree — the IR library has no half steps', () => {
+  const r = validateCommand({ device_id: 'acu_main', action: 'on', target_c: 23.5 }, DEVICE_REGISTRY);
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'invalid_target_c');
+});
+
+test('a setpoint on anything other than the ACU is rejected rather than ignored', () => {
+  const r = validateCommand({ device_id: 'l1', action: 'on', target_c: 24 }, DEVICE_REGISTRY);
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'target_c_not_applicable');
+});

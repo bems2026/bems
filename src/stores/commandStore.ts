@@ -49,7 +49,7 @@ function describeFailure(err: unknown): string {
 
 interface CommandState {
   pending: Record<string, PendingCommand>;
-  send: (deviceId: string, socket: SocketIndex | undefined, desired: SwitchState) => Promise<void>;
+  send: (deviceId: string, socket: SocketIndex | undefined, desired: SwitchState, targetC?: number) => Promise<void>;
   /** Runs after `ingestReadings` on every live frame — reconciles pending commands against
    * what the feed actually reports. */
   reconcile: (rows: ReadingsLatestRow[], nowMs?: number) => void;
@@ -67,7 +67,7 @@ interface CommandState {
 export const useCommandStore = create<CommandState>((set, get) => ({
   pending: {},
 
-  send: async (deviceId, socket, desired) => {
+  send: async (deviceId, socket, desired, targetC) => {
     const key = targetKey(deviceId, socket);
     const command_id = newCommandId();
     const reading = useDeviceStore.getState().latestReadings[deviceId];
@@ -81,7 +81,7 @@ export const useCommandStore = create<CommandState>((set, get) => ({
     }));
 
     try {
-      await sendCommand({ device_id: deviceId, socket, action: desired, command_id });
+      await sendCommand({ device_id: deviceId, socket, action: desired, command_id, ...(targetC === undefined ? {} : { target_c: targetC }) });
       // A newer command for this same target superseded us while this one was in flight —
       // let that one own the pending entry instead of clobbering it with a stale ack.
       if (get().pending[key]?.command_id !== command_id) return;

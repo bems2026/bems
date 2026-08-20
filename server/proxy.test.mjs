@@ -340,22 +340,21 @@ test('GET /api/capabilities reports true once the gate is explicitly opened', as
   const { proxyUrl, cleanup } = await setup({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-light-token' });
   try {
     const res = await fetch(`${proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
-    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: true, dispatch_classes: ['switch'] });
+    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: true, dispatch_classes: ['switch', 'outlet_dual', 'acu_ir'] });
   } finally {
     cleanup();
   }
 });
 
-// The whole point of reporting classes rather than a boolean: the frontend must be able to
-// say "lights are live, outlets are not" instead of going silent the moment the gate opens.
-// This asserts the reported list is not just plausible but exactly matches what handleCommand
-// will really do, so the two can never drift apart.
+// The list must match what handleCommand will really do, not merely look plausible. It began
+// as lights-only; outlets and the aircon joined once the flow gained their endpoints, and this
+// is what stops the advertisement drifting from the behaviour again.
 test('the classes /api/capabilities advertises are exactly the ones that actually dispatch', async () => {
   const { proxyUrl, lightState, cleanup } = await setupDispatch();
   try {
     const res = await fetch(`${proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
     const { dispatch_classes } = await res.json();
-    assert.deepEqual(dispatch_classes, ['switch']);
+    assert.deepEqual(dispatch_classes, ['switch', 'outlet_dual', 'acu_ir']);
 
     // A class it advertises really does reach the hardware endpoint...
     const lightRes = await fetch(`${proxyUrl}/api/command`, {
@@ -373,7 +372,8 @@ test('the classes /api/capabilities advertises are exactly the ones that actuall
       body: JSON.stringify({ device_id: 'co1', socket: 1, action: 'on' }),
     });
     assert.equal(outletRes.status, 202);
-    assert.equal(lightState.requests.length, 1, 'an unadvertised class must not reach the light endpoint');
+    assert.equal(lightState.requests.length, 2, 'an advertised class must reach the bridge too');
+    assert.equal(lightState.requests[1].url, '/outlet/CO1_1', 'outlets route by wire target, not by numeric id');
   } finally {
     cleanup();
   }
@@ -404,12 +404,10 @@ test('a command with the gate closed is accepted, dry_run, and audit-logged with
   }
 });
 
-test('a command with the gate open, for a device class with no real dispatch path, stays dry_run', async () => {
-  // Was 'l1' (a light) asserting 'dispatched' — with Phase 7's real light dispatch now
-  // wired, that would be a genuine dispatch attempt against a plain mock-bridge with no
-  // light endpoint listening, which is a different test (see the dispatch describe block
-  // below). This test's actual job — proving the flag alone never silently claims success —
-  // is better proven on a device class that has NO real path at all, which is co1 here.
+test('the gate alone never claims success — a dispatch that fails is recorded as failed, not dispatched', async () => {
+  // This used to be proven with an outlet, on the grounds that outlets had no dispatch path at
+  // all. They do now, so the same guarantee is shown the only way still available: a real
+  // attempt against a bridge with nothing listening must not be reported as success.
   const { proxyUrl, supabaseState, cleanup } = await setup({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-light-token' });
   try {
     const res = await fetch(`${proxyUrl}/api/command`, {
@@ -417,8 +415,8 @@ test('a command with the gate open, for a device class with no real dispatch pat
       headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ device_id: 'co1', socket: 1, action: 'off' }),
     });
-    assert.equal(res.status, 202);
-    assert.equal(supabaseState.insertedCommands[0].status, 'dry_run');
+    assert.equal(res.status, 502, 'the caller must not be told it worked');
+    assert.equal(supabaseState.insertedCommands[0].status, 'failed');
   } finally {
     cleanup();
   }
@@ -540,33 +538,64 @@ test('dispatch open + switch + downstream failure: 502 hardware_dispatch_failed,
   }
 });
 
-test('dispatch open + outlet command: still dry_run, zero requests reach the light endpoint', async () => {
+test('dispatch open + outlet command: routed to /outlet/<target> and audited as dispatched', async () => {
   const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch();
   try {
     const res = await fetch(`${proxyUrl}/api/command`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ device_id: 'co3', socket: 1, action: 'on' }),
+      body: JSON.stringify({ device_id: 'co3', socket: 2, action: 'on' }),
     });
     assert.equal(res.status, 202);
-    assert.equal(lightState.requests.length, 0);
-    assert.equal(supabaseState.insertedCommands[0].status, 'dry_run');
+    assert.equal(lightState.requests.length, 1);
+    assert.equal(lightState.requests[0].url, '/outlet/CO3_2');
+    assert.deepEqual(lightState.requests[0].body, { state: true });
+    assert.equal(supabaseState.insertedCommands[0].status, 'dispatched');
   } finally {
     cleanup();
   }
 });
 
-test('dispatch open + ACU command: still dry_run, zero requests reach the light endpoint', async () => {
+test('dispatch open + ACU command: routed to /acu as an IR code, not a relay state', async () => {
   const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch();
   try {
     const res = await fetch(`${proxyUrl}/api/command`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ device_id: 'acu_main', action: 'on' }),
+      body: JSON.stringify({ device_id: 'acu_main', action: 'on', target_c: 22 }),
     });
     assert.equal(res.status, 202);
-    assert.equal(lightState.requests.length, 0);
-    assert.equal(supabaseState.insertedCommands[0].status, 'dry_run');
+    assert.equal(lightState.requests[0].url, '/acu');
+    assert.deepEqual(lightState.requests[0].body, { mode: '22' }, 'the setpoint becomes the IR library key');
+    assert.equal(supabaseState.insertedCommands[0].status, 'dispatched');
+  } finally {
+    cleanup();
+  }
+});
+
+test('an ACU command with no setpoint falls back to 25, exactly what the retired dashboard switch sent', async () => {
+  const { proxyUrl, lightState, cleanup } = await setupDispatch();
+  try {
+    await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'acu_main', action: 'on' }),
+    });
+    assert.deepEqual(lightState.requests[0].body, { mode: '25' });
+  } finally {
+    cleanup();
+  }
+});
+
+test('an ACU off command sends the OFF code rather than a temperature', async () => {
+  const { proxyUrl, lightState, cleanup } = await setupDispatch();
+  try {
+    await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'acu_main', action: 'off' }),
+    });
+    assert.deepEqual(lightState.requests[0].body, { mode: 'OFF' });
   } finally {
     cleanup();
   }

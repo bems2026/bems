@@ -91,7 +91,7 @@ describe('ControlPage', () => {
     render(<ControlPage />);
     const outletsCard = screen.getByText('Outlets').closest('.control-list-card') as HTMLElement;
     expect(within(outletsCard).getByText(/not dispatched/i)).toBeInTheDocument();
-    const irCard = screen.getByText('IR HVAC').closest('.control-ir-card') as HTMLElement;
+    const irCard = screen.getByText('IR AIRCON').closest('.control-ir-card') as HTMLElement;
     expect(within(irCard).getByText(/not dispatched/i)).toBeInTheDocument();
   });
 
@@ -140,9 +140,9 @@ describe('ControlPage', () => {
     vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack({ device_id: 'acu_main', target: 'AC_POWER' }));
     useDeviceStore.setState({ devices: [acu()] });
     render(<ControlPage />);
-    fireEvent.click(screen.getByRole('button', { name: 'Send ON command' }));
+    fireEvent.click(screen.getByRole('button', { name: /Send ON at/ }));
     expect(bridgeClient.sendCommand).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Yes, send ON' }));
+    fireEvent.click(screen.getByRole('button', { name: /Yes, send/ }));
     expect(bridgeClient.sendCommand).toHaveBeenCalledWith(expect.objectContaining({ device_id: 'acu_main', action: 'on' }));
   });
 
@@ -191,7 +191,7 @@ describe('ControlPage', () => {
     useDeviceStore.setState({ devices: [acu()] });
     render(<ControlPage />);
     expect(screen.getAllByText('No commands sent this session').length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole('button', { name: 'Send OFF command' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send OFF' }));
     fireEvent.click(screen.getByRole('button', { name: 'Yes, send OFF' }));
     await waitFor(() => expect(screen.getByText('IR')).toBeInTheDocument());
   });
@@ -216,5 +216,63 @@ describe('ControlPage', () => {
     expect(bridgeClient.sendCommand).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Turn outlets off' }));
     await waitFor(() => expect(bridgeClient.sendCommand).toHaveBeenCalledTimes(4)); // 2 outlets x 2 sockets
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ACU setpoint.
+//
+// The aircon takes an IR code, not a relay state, so "on" alone cannot say what to turn it on
+// to. Before this the card could only ever send whatever temperature the retired dashboard
+// switch happened to use.
+// ---------------------------------------------------------------------------
+
+describe('ACU setpoint', () => {
+  it('offers exactly the degrees the IR library has codes for, and nothing outside them', () => {
+    useDeviceStore.setState({ devices: [acu()] });
+    render(<ControlPage />);
+    const select = screen.getByLabelText('SETPOINT') as HTMLSelectElement;
+    const values = [...select.options].map((o) => Number(o.value));
+    expect(values[0]).toBe(16);
+    expect(values[values.length - 1]).toBe(30);
+    expect(values).toHaveLength(15);
+  });
+
+  it('sends the chosen setpoint with the command', () => {
+    vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack({ device_id: 'acu_main', target: 'AC_POWER' }));
+    useDeviceStore.setState({ devices: [acu()] });
+    render(<ControlPage />);
+    fireEvent.change(screen.getByLabelText('SETPOINT'), { target: { value: '19' } });
+    fireEvent.click(screen.getByRole('button', { name: /Send ON at 19/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Yes, send 19/ }));
+    expect(bridgeClient.sendCommand).toHaveBeenCalledWith(expect.objectContaining({ device_id: 'acu_main', action: 'on', target_c: 19 }));
+  });
+
+  it('sends no setpoint with an off command — off is a code of its own, not a temperature', () => {
+    vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack({ device_id: 'acu_main', target: 'AC_POWER' }));
+    useDeviceStore.setState({ devices: [acu()] });
+    render(<ControlPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Send OFF' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, send OFF' }));
+    const sent = vi.mocked(bridgeClient.sendCommand).mock.calls[0][0];
+    expect(sent.action).toBe('off');
+    expect(sent.target_c).toBeUndefined();
+  });
+
+  it('names the temperature in the confirmation, so nobody confirms a setpoint they cannot see', () => {
+    useDeviceStore.setState({ devices: [acu()] });
+    render(<ControlPage />);
+    fireEvent.change(screen.getByLabelText('SETPOINT'), { target: { value: '28' } });
+    fireEvent.click(screen.getByRole('button', { name: /Send ON at 28/ }));
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(/28°C/);
+  });
+
+  it('opens at the ACU\'s last known setpoint rather than a fixed guess', () => {
+    useDeviceStore.setState({
+      devices: [acu()],
+      latestReadings: { acu_main: { device_id: 'acu_main', ts: new Date().toISOString(), online: true, state: 'on', setpoint_c: 21 } },
+    });
+    render(<ControlPage />);
+    expect((screen.getByLabelText('SETPOINT') as HTMLSelectElement).value).toBe('21');
   });
 });

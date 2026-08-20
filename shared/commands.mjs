@@ -13,6 +13,12 @@
  *     from a last-known state that's never confirmed by hardware (see the note on
  *     `confirmed` below); a double-fire on a client retry would flip a relay back to where
  *     it started. Absolute set makes every command naturally idempotent.
+ *   - `target_c` is the ACU's setpoint, and exists only for `acu_ir`. The aircon is
+ *     IR-commanded and its logic takes a code rather than a relay state — "OFF", or a whole
+ *     degree "16".."30" — so an on/off-only command could only ever mean "on at whatever
+ *     temperature someone last picked", which no UI can honestly display. The bounds here are
+ *     not a policy choice: they are exactly the keys the live flow's IR library holds, and a
+ *     value outside them would resolve to no code at all.
  *   - An `outlet_dual` command MUST name a socket. There is no whole-outlet relay — `state`
  *     on an outlet reading is *derived* (`s1 || s2` in buildLatest.mjs), and the legacy
  *     Node-RED `Format CMD` nodes only ever emit `{dps: 1 | 2, set}`. A UI wanting "turn
@@ -34,13 +40,17 @@ export const ACCEPTED_STATUS = 202;
 
 const NOT_COMMANDABLE_CLASSES = new Set(['meter', 'sensor_temp_humidity']);
 
+/** The whole degrees the live flow's IR library actually has codes for. */
+export const ACU_MIN_C = 16;
+export const ACU_MAX_C = 30;
+
 /**
  * The wire target for a command — the exact string the legacy Node-RED `Outlet Router`/
  * lighting logic already switches on (`CO<n>_1`, `L<n>`), so a real Pi write path could
  * reuse this unchanged. `acu_ir` has no legacy topic of its own (it was IR-controlled, not
  * relay-controlled) — `AC_POWER` is this contract's own synthetic key, not a ported one.
  */
-function resolveTarget(device, socket) {
+export function resolveTarget(device, socket) {
   if (device.class === 'outlet_dual') return device.sockets[socket - 1];
   if (device.class === 'switch') return device.state_key;
   if (device.class === 'acu_ir') return 'AC_POWER';
@@ -61,7 +71,7 @@ export function validateCommand(body, registry) {
     return { ok: false, status: 400, code: 'invalid_body', error: 'request body must be a JSON object' };
   }
 
-  const { device_id, socket, action, command_id } = body;
+  const { device_id, socket, action, command_id, target_c } = body;
 
   if (typeof device_id !== 'string' || device_id.length === 0) {
     return { ok: false, status: 400, code: 'invalid_body', error: 'device_id must be a non-empty string' };
@@ -92,8 +102,22 @@ export function validateCommand(body, registry) {
     return { ok: false, status: 400, code: 'socket_not_applicable', error: `${device_id} has no sockets — omit socket` };
   }
 
+  if (target_c !== undefined) {
+    if (device.class !== 'acu_ir') {
+      return { ok: false, status: 400, code: 'target_c_not_applicable', error: `${device_id} has no setpoint — omit target_c` };
+    }
+    if (!Number.isInteger(target_c) || target_c < ACU_MIN_C || target_c > ACU_MAX_C) {
+      return {
+        ok: false,
+        status: 400,
+        code: 'invalid_target_c',
+        error: `target_c must be a whole number between ${ACU_MIN_C} and ${ACU_MAX_C}`,
+      };
+    }
+  }
+
   const target = resolveTarget(device, socket);
-  return { ok: true, cmd: { command_id, device_id, socket, action, target } };
+  return { ok: true, cmd: { command_id, device_id, socket, action, target, target_c } };
 }
 
 /**
