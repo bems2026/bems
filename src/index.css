@@ -1356,7 +1356,16 @@ body::before {
   position: relative;
   transition: opacity 0.2s ease;
 }
-.stale-wrap--stale {
+/* Dim the CONTENT, never the flag. This was `.stale-wrap--stale { opacity: 0.45 }`, which
+   is a group opacity applying to the whole subtree — including the flag announcing the
+   staleness. Composited at 45% the flag measured 1.55:1 in light and 2.70:1 in dark against
+   its own backdrop: the single most important state change on a monitoring dashboard,
+   rendered barely legible by the very rule meant to draw attention to it.
+
+   Scoped with :not() rather than by wrapping children in an inner element, deliberately —
+   an extra div would become the flex/grid item wherever this is mounted, silently changing
+   consumers' layout, and StaleDataBadge.test.tsx asserts the current parent/child shape. */
+.stale-wrap--stale > *:not(.stale-flag) {
   opacity: 0.45;
 }
 .stale-flag {
@@ -1364,7 +1373,10 @@ body::before {
   top: 0;
   right: 0;
   background: var(--warn);
-  color: #1a1206;
+  /* The -text-tier inversion, same as .control-simulated-badge: --warn is a mid-dark amber
+     in light (white on it = 5.02:1, near-black only 3.69:1) and a light amber in dark (white
+     would be 2.11:1, near-black = 8.78:1). No single fixed value clears AA in both. */
+  color: #ffffff;
   font-size: var(--fs-xs);
   font-weight: 700;
   text-transform: uppercase;
@@ -1372,6 +1384,9 @@ body::before {
   padding: 2px 6px;
   border-radius: var(--r-sm);
   z-index: 1;
+}
+:root[data-theme='dark'] .stale-flag {
+  color: #1a1206;
 }
 
 /* ---------------------------------------------------------------------------
