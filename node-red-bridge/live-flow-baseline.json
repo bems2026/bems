@@ -1071,388 +1071,9 @@
     "h": 262
   },
   {
-    "id": "265e46b9e67cc527",
-    "type": "ui_tab",
-    "name": "Building Energy Management System",
-    "icon": "dashboard",
-    "order": 1,
-    "disabled": false,
-    "hidden": false
-  },
-  {
-    "id": "ecfaabf9b387e369",
-    "type": "ui_group",
-    "name": "C.O yellow",
-    "tab": "265e46b9e67cc527",
-    "order": 7,
-    "disp": true,
-    "width": "18",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "dbd8fd5823108908",
-    "type": "ui_group",
-    "name": "L.O red",
-    "tab": "265e46b9e67cc527",
-    "order": 4,
-    "disp": true,
-    "width": "18",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "0ea1e549aa37e7f9",
-    "type": "ui_group",
-    "name": "AREC ACU",
-    "tab": "265e46b9e67cc527",
-    "order": 5,
-    "disp": true,
-    "width": "18",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "0b0a4f4f80e58e3f",
-    "type": "ui_group",
-    "name": "L.O yellow",
-    "tab": "265e46b9e67cc527",
-    "order": 6,
-    "disp": true,
-    "width": "18",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "b3c73b0bd308c38f",
-    "type": "ui_base",
-    "theme": {
-      "name": "theme-dark",
-      "lightTheme": {
-        "default": "#0094CE",
-        "baseColor": "#0094CE",
-        "baseFont": "-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Oxygen-Sans,Ubuntu,Cantarell,Helvetica Neue,sans-serif",
-        "edited": true,
-        "reset": false
-      },
-      "darkTheme": {
-        "default": "#097479",
-        "baseColor": "#097479",
-        "baseFont": "-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Oxygen-Sans,Ubuntu,Cantarell,Helvetica Neue,sans-serif",
-        "edited": true,
-        "reset": false
-      },
-      "customTheme": {
-        "name": "Untitled Theme 1",
-        "default": "#4B7930",
-        "baseColor": "#4B7930",
-        "baseFont": "-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Oxygen-Sans,Ubuntu,Cantarell,Helvetica Neue,sans-serif",
-        "reset": false
-      },
-      "themeState": {
-        "base-color": {
-          "default": "#097479",
-          "value": "#097479",
-          "edited": false
-        },
-        "page-titlebar-backgroundColor": {
-          "value": "#097479",
-          "edited": false
-        },
-        "page-backgroundColor": {
-          "value": "#111111",
-          "edited": false
-        },
-        "page-sidebar-backgroundColor": {
-          "value": "#333333",
-          "edited": false
-        },
-        "group-textColor": {
-          "value": "#0eb8c0",
-          "edited": false
-        },
-        "group-borderColor": {
-          "value": "#555555",
-          "edited": false
-        },
-        "group-backgroundColor": {
-          "value": "#333333",
-          "edited": false
-        },
-        "widget-textColor": {
-          "value": "#eeeeee",
-          "edited": false
-        },
-        "widget-backgroundColor": {
-          "value": "#097479",
-          "edited": false
-        },
-        "widget-borderColor": {
-          "value": "#333333",
-          "edited": false
-        },
-        "base-font": {
-          "value": "-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Oxygen-Sans,Ubuntu,Cantarell,Helvetica Neue,sans-serif"
-        }
-      },
-      "angularTheme": {
-        "primary": "indigo",
-        "accents": "blue",
-        "warn": "red",
-        "background": "grey",
-        "palette": "light"
-      }
-    },
-    "site": {
-      "name": "Node-RED Dashboard",
-      "hideToolbar": "false",
-      "allowSwipe": "false",
-      "lockMenu": "false",
-      "allowTempTheme": "true",
-      "dateFormat": "DD/MM/YYYY",
-      "sizes": {
-        "sx": 48,
-        "sy": 48,
-        "gx": 6,
-        "gy": 6,
-        "cx": 6,
-        "cy": 6,
-        "px": 0,
-        "py": 0
-      }
-    }
-  },
-  {
     "id": "be2ab765fe05d905",
     "type": "gauth",
     "name": "bems-testing@bems-488212.iam.gserviceaccount.com"
-  },
-  {
-    "id": "e84b3a332ce5b475",
-    "type": "ui_tab",
-    "name": "Outlet",
-    "icon": "dashboard",
-    "order": 5,
-    "disabled": false,
-    "hidden": false
-  },
-  {
-    "id": "b64d0d914aae9efc",
-    "type": "ui_group",
-    "name": "Power Outlet 5",
-    "tab": "e84b3a332ce5b475",
-    "order": 12,
-    "disp": true,
-    "width": "18",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "fc0373ac8f6ce936",
-    "type": "ui_group",
-    "name": "Power Outlet 3",
-    "tab": "e84b3a332ce5b475",
-    "order": 10,
-    "disp": true,
-    "width": "18",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "11681799b0a16a63",
-    "type": "ui_group",
-    "name": "Power Outlet 4",
-    "tab": "e84b3a332ce5b475",
-    "order": 11,
-    "disp": true,
-    "width": "18",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "7c68137361681861",
-    "type": "ui_group",
-    "name": "Power Outlet 1",
-    "tab": "e84b3a332ce5b475",
-    "order": 8,
-    "disp": true,
-    "width": "18",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "ccbf7dba463cf0c5",
-    "type": "ui_group",
-    "name": "Power Outlet 2",
-    "tab": "e84b3a332ce5b475",
-    "order": 9,
-    "disp": true,
-    "width": "18",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "ui_tab_schedules",
-    "type": "ui_tab",
-    "name": "Schedules",
-    "icon": "date_range",
-    "order": 2,
-    "disabled": false,
-    "hidden": false
-  },
-  {
-    "id": "ui_grp_s1",
-    "type": "ui_group",
-    "name": "Switch 1 Schedule",
-    "tab": "ui_tab_schedules",
-    "order": 1,
-    "disp": true,
-    "width": "9",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "ui_grp_s2",
-    "type": "ui_group",
-    "name": "Switch 2 Schedule",
-    "tab": "ui_tab_schedules",
-    "order": 2,
-    "disp": true,
-    "width": "9",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "ui_grp_s3",
-    "type": "ui_group",
-    "name": "Switch 3 Schedule",
-    "tab": "ui_tab_schedules",
-    "order": 3,
-    "disp": true,
-    "width": "9",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "ui_grp_s4",
-    "type": "ui_group",
-    "name": "Switch 4 Schedule",
-    "tab": "ui_tab_schedules",
-    "order": 4,
-    "disp": true,
-    "width": "9",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "ui_grp_s5",
-    "type": "ui_group",
-    "name": "Switch 5 Schedule",
-    "tab": "ui_tab_schedules",
-    "order": 5,
-    "disp": true,
-    "width": "9",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "ui_grp_s6",
-    "type": "ui_group",
-    "name": "Switch 6 Schedule",
-    "tab": "ui_tab_schedules",
-    "order": 6,
-    "disp": true,
-    "width": "9",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "ui_grp_s7",
-    "type": "ui_group",
-    "name": "Switch 7 Schedule",
-    "tab": "ui_tab_schedules",
-    "order": 7,
-    "disp": true,
-    "width": "9",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "co_ui_grp_s1",
-    "type": "ui_group",
-    "name": "Outlet 1 Schedule",
-    "tab": "ui_tab_schedules",
-    "order": 8,
-    "disp": true,
-    "width": "9",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "co_ui_grp_s2",
-    "type": "ui_group",
-    "name": "Outlet 2 Schedule",
-    "tab": "ui_tab_schedules",
-    "order": 9,
-    "disp": true,
-    "width": "9",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "co_ui_grp_s3",
-    "type": "ui_group",
-    "name": "Outlet 3 Schedule",
-    "tab": "ui_tab_schedules",
-    "order": 10,
-    "disp": true,
-    "width": "9",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "co_ui_grp_s4",
-    "type": "ui_group",
-    "name": "Outlet 4 Schedule",
-    "tab": "ui_tab_schedules",
-    "order": 11,
-    "disp": true,
-    "width": "9",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "co_ui_grp_s5",
-    "type": "ui_group",
-    "name": "Outlet 5 Schedule",
-    "tab": "ui_tab_schedules",
-    "order": 12,
-    "disp": true,
-    "width": "9",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "co_ui_grp_s6",
-    "type": "ui_group",
-    "name": "Outlet 6 Schedule",
-    "tab": "ui_tab_schedules",
-    "order": 13,
-    "disp": true,
-    "width": "9",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "co_ui_grp_s7",
-    "type": "ui_group",
-    "name": "Outlet 7 Schedule",
-    "tab": "ui_tab_schedules",
-    "order": 14,
-    "disp": true,
-    "width": "9",
-    "collapse": false,
-    "className": ""
   },
   {
     "id": "a8746c9ecc2718e2",
@@ -1480,172 +1101,6 @@
     "willMsg": {},
     "userProps": "",
     "sessionExpiry": ""
-  },
-  {
-    "id": "fc3145e8d50ddbca",
-    "type": "ui_group",
-    "name": "Main System Overview",
-    "tab": "265e46b9e67cc527",
-    "order": 1,
-    "disp": true,
-    "width": "18",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "5301b75930e11809",
-    "type": "ui_group",
-    "name": "Power Outlet 6",
-    "tab": "e84b3a332ce5b475",
-    "order": 13,
-    "disp": true,
-    "width": "18",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "a9655bbe8b77287a",
-    "type": "ui_group",
-    "name": "Power Outlet 7",
-    "tab": "e84b3a332ce5b475",
-    "order": 14,
-    "disp": true,
-    "width": "18",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "1cb78c69dc71d057",
-    "type": "ui_group",
-    "name": "Power Trend Chart",
-    "tab": "265e46b9e67cc527",
-    "order": 7,
-    "disp": true,
-    "width": "18",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "f327023da29e4c01",
-    "type": "ui_group",
-    "name": "Phase Current Trend",
-    "tab": "265e46b9e67cc527",
-    "order": 7,
-    "disp": true,
-    "width": "18",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "a3795871dd5ea081",
-    "type": "ui_tab",
-    "name": "Aircon",
-    "icon": "dashboard",
-    "order": 6,
-    "disabled": false,
-    "hidden": false
-  },
-  {
-    "id": "047d82b3d93aefa3",
-    "type": "ui_group",
-    "name": "ACU",
-    "tab": "a3795871dd5ea081",
-    "order": 2,
-    "disp": true,
-    "width": 18,
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "b97d397b70a44d2a",
-    "type": "ui_group",
-    "name": "Aircon Control",
-    "tab": "a3795871dd5ea081",
-    "order": 1,
-    "disp": false,
-    "width": "18",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "5e93cbf4c6a45434",
-    "type": "ui_spacer",
-    "z": "f034cec8ea750f69",
-    "name": "spacer",
-    "group": "fc3145e8d50ddbca",
-    "order": 7,
-    "width": 2,
-    "height": 1
-  },
-  {
-    "id": "b86a0beab45c48cd",
-    "type": "ui_spacer",
-    "z": "f034cec8ea750f69",
-    "name": "spacer",
-    "group": "fc3145e8d50ddbca",
-    "order": 9,
-    "width": 1,
-    "height": 1
-  },
-  {
-    "id": "1299f53a0817b0ec",
-    "type": "ui_tab",
-    "name": "Control Panel",
-    "icon": "dashboard",
-    "order": 3,
-    "disabled": false,
-    "hidden": false
-  },
-  {
-    "id": "ab02f0455a1becd2",
-    "type": "ui_group",
-    "name": "Lighting",
-    "tab": "1299f53a0817b0ec",
-    "order": 2,
-    "disp": true,
-    "width": "9",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "5aebf51b63e0ffa2",
-    "type": "ui_group",
-    "name": "Convenience Outlet",
-    "tab": "1299f53a0817b0ec",
-    "order": 3,
-    "disp": true,
-    "width": "9",
-    "collapse": false,
-    "className": ""
-  },
-  {
-    "id": "twin_broker",
-    "type": "mqtt-broker",
-    "name": "local mosquitto",
-    "broker": "127.0.0.1",
-    "port": "1883",
-    "clientid": "nodered-bems",
-    "autoConnect": true,
-    "usetls": false,
-    "protocolVersion": "4",
-    "keepalive": "60",
-    "cleansession": true,
-    "birthTopic": "",
-    "birthQos": "0",
-    "birthPayload": "",
-    "closeTopic": "",
-    "willTopic": ""
-  },
-  {
-    "id": "master_dash_group",
-    "type": "ui_group",
-    "name": "System Overview",
-    "tab": "1299f53a0817b0ec",
-    "order": 1,
-    "disp": false,
-    "width": "18",
-    "collapse": false,
-    "className": ""
   },
   {
     "id": "e66d327467675985",
@@ -1736,28 +1191,8 @@
     "x": 1180,
     "y": 180,
     "wires": [
-      [
-        "086906264e37f7eb"
-      ]
+      []
     ]
-  },
-  {
-    "id": "086906264e37f7eb",
-    "type": "debug",
-    "z": "b91949ed325c0ab6",
-    "g": "a87197f56b57eaf2",
-    "name": "Sheet Response",
-    "active": true,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "payload",
-    "targetType": "msg",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 1390,
-    "y": 180,
-    "wires": []
   },
   {
     "id": "bcb82e251cbddf40",
@@ -1848,28 +1283,8 @@
     "x": 1170,
     "y": 400,
     "wires": [
-      [
-        "2dfff12cade40ea8"
-      ]
+      []
     ]
-  },
-  {
-    "id": "2dfff12cade40ea8",
-    "type": "debug",
-    "z": "b91949ed325c0ab6",
-    "g": "6f9ba56adf065c9e",
-    "name": "Sheet Response",
-    "active": true,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "payload",
-    "targetType": "msg",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 1390,
-    "y": 400,
-    "wires": []
   },
   {
     "id": "1819261d415fe8a9",
@@ -1960,28 +1375,8 @@
     "x": 1180,
     "y": 620,
     "wires": [
-      [
-        "d972935c517a2916"
-      ]
+      []
     ]
-  },
-  {
-    "id": "d972935c517a2916",
-    "type": "debug",
-    "z": "b91949ed325c0ab6",
-    "g": "e1c41fc2a65e18c6",
-    "name": "Sheet Response",
-    "active": true,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "payload",
-    "targetType": "msg",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 1390,
-    "y": 620,
-    "wires": []
   },
   {
     "id": "05621905449d89fb",
@@ -2072,294 +1467,6 @@
     "x": 1180,
     "y": 840,
     "wires": [
-      [
-        "766ae659b48aadc8"
-      ]
-    ]
-  },
-  {
-    "id": "766ae659b48aadc8",
-    "type": "debug",
-    "z": "b91949ed325c0ab6",
-    "g": "92d2f0b9cc42b744",
-    "name": "Sheet Response",
-    "active": true,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "payload",
-    "targetType": "msg",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 1390,
-    "y": 840,
-    "wires": []
-  },
-  {
-    "id": "1d1ae5521a33a16c",
-    "type": "ui_chart",
-    "z": "b91949ed325c0ab6",
-    "g": "a87197f56b57eaf2",
-    "name": "Power Trend Chart C.OY",
-    "group": "ecfaabf9b387e369",
-    "order": 2,
-    "width": 18,
-    "height": 8,
-    "label": "C.O Yellow Power Trend (W)",
-    "chartType": "line",
-    "legend": "false",
-    "xformat": "HH:mm",
-    "interpolate": "linear",
-    "nodata": "Waiting for data...",
-    "dot": false,
-    "ymin": "0",
-    "ymax": "",
-    "removeOlder": "12",
-    "removeOlderPoints": "",
-    "removeOlderUnit": "3600",
-    "cutout": 0,
-    "useOneColor": true,
-    "useUTC": false,
-    "colors": [
-      "#ffea00",
-      "#aec7e8",
-      "#ff7f0e",
-      "#2ca02c",
-      "#98df8a",
-      "#d62728",
-      "#ff9896",
-      "#9467bd",
-      "#c5b0d5"
-    ],
-    "outputs": 1,
-    "useDifferentColor": false,
-    "className": "",
-    "x": 670,
-    "y": 140,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "977fa942dd848dc8",
-    "type": "ui_chart",
-    "z": "b91949ed325c0ab6",
-    "g": "6f9ba56adf065c9e",
-    "name": "Power Trend Chart L.OR",
-    "group": "dbd8fd5823108908",
-    "order": 2,
-    "width": 18,
-    "height": 8,
-    "label": "L.O Red Power Trend (W)",
-    "chartType": "line",
-    "legend": "false",
-    "xformat": "HH:mm",
-    "interpolate": "linear",
-    "nodata": "Waiting for data...",
-    "dot": false,
-    "ymin": "0",
-    "ymax": "",
-    "removeOlder": "12",
-    "removeOlderPoints": "",
-    "removeOlderUnit": "3600",
-    "cutout": 0,
-    "useOneColor": true,
-    "useUTC": false,
-    "colors": [
-      "#ff1744",
-      "#aec7e8",
-      "#ff7f0e",
-      "#2ca02c",
-      "#98df8a",
-      "#d62728",
-      "#ff9896",
-      "#9467bd",
-      "#c5b0d5"
-    ],
-    "outputs": 1,
-    "useDifferentColor": false,
-    "className": "",
-    "x": 670,
-    "y": 360,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "4c947b17ba1fd15a",
-    "type": "ui_chart",
-    "z": "b91949ed325c0ab6",
-    "g": "e1c41fc2a65e18c6",
-    "name": "Power Trend Chart AREC ACU",
-    "group": "0ea1e549aa37e7f9",
-    "order": 2,
-    "width": 18,
-    "height": 8,
-    "label": "AREC ACU Power Trend (W)",
-    "chartType": "line",
-    "legend": "false",
-    "xformat": "HH:mm",
-    "interpolate": "linear",
-    "nodata": "Waiting for data...",
-    "dot": false,
-    "ymin": "0",
-    "ymax": "",
-    "removeOlder": "12",
-    "removeOlderPoints": "",
-    "removeOlderUnit": "3600",
-    "cutout": 0,
-    "useOneColor": true,
-    "useUTC": false,
-    "colors": [
-      "#00e5ff",
-      "#aec7e8",
-      "#ff7f0e",
-      "#2ca02c",
-      "#98df8a",
-      "#d62728",
-      "#ff9896",
-      "#9467bd",
-      "#c5b0d5"
-    ],
-    "outputs": 1,
-    "useDifferentColor": false,
-    "className": "",
-    "x": 690,
-    "y": 580,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "232b8a7cc0f252c5",
-    "type": "ui_chart",
-    "z": "b91949ed325c0ab6",
-    "g": "92d2f0b9cc42b744",
-    "name": "Power Trend Chart L.OY",
-    "group": "0b0a4f4f80e58e3f",
-    "order": 2,
-    "width": 18,
-    "height": 8,
-    "label": "L.O Yellow Power Trend (W)",
-    "chartType": "line",
-    "legend": "false",
-    "xformat": "HH:mm",
-    "interpolate": "linear",
-    "nodata": "Waiting for data...",
-    "dot": false,
-    "ymin": "0",
-    "ymax": "",
-    "removeOlder": "12",
-    "removeOlderPoints": "",
-    "removeOlderUnit": "3600",
-    "cutout": 0,
-    "useOneColor": true,
-    "useUTC": false,
-    "colors": [
-      "#ffea00",
-      "#aec7e8",
-      "#ff7f0e",
-      "#2ca02c",
-      "#98df8a",
-      "#d62728",
-      "#ff9896",
-      "#9467bd",
-      "#c5b0d5"
-    ],
-    "outputs": 1,
-    "useDifferentColor": false,
-    "className": "",
-    "x": 670,
-    "y": 800,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "f246fcac144cc04e",
-    "type": "ui_template",
-    "z": "b91949ed325c0ab6",
-    "g": "a87197f56b57eaf2",
-    "group": "ecfaabf9b387e369",
-    "name": "C.O Yellow Panel",
-    "order": 1,
-    "width": 18,
-    "height": 4,
-    "format": "<style>\n  .mod-card { background: #1e1e1e; color: #fff; padding: 15px; border-radius: 8px; font-family: 'Segoe UI', sans-serif; }\n  .mod-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; }\n  .mod-title { font-size: 18px; font-weight: bold; margin:0; text-shadow: 0 0 5px rgba(255, 255, 255, 0.2); }\n  .mod-badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; background-color: {{msg.payload.statusColor}}; color: #000; }\n  .mod-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; text-align: center; }\n  .mod-box { background: #262626; padding: 10px; border-radius: 6px; border: 1px solid #333;}\n  .mod-val { font-size: 26px; font-weight: bold; color: #fff; }\n  .mod-lbl { font-size: 11px; color: #aaa; text-transform: uppercase; margin-top:4px;}\n  .mod-footer { margin-top: 12px; font-size: 11px; color: #777; text-align: right; }\n</style>\n\n<div class=\"mod-card\">\n  <div class=\"mod-header\">\n    <h3 class=\"mod-title\" style=\"color: {{msg.payload.titleColor}};\">{{msg.payload.name}}</h3>\n    <div class=\"mod-badge\">{{msg.payload.status || 'WAITING...'}}</div>\n  </div>\n  <div class=\"mod-grid\">\n    <div class=\"mod-box\">\n        <div class=\"mod-val\" style=\"color: #e6e600;\">{{msg.payload.voltage || '0.0'}}</div>\n        <div class=\"mod-lbl\">Voltage (V)</div>\n    </div>\n    <div class=\"mod-box\">\n        <div class=\"mod-val\" style=\"color: #00b500;\">{{msg.payload.current || '0.000'}}</div>\n        <div class=\"mod-lbl\">Current (A)</div>\n    </div>\n    <div class=\"mod-box\">\n        <div class=\"mod-val\" style=\"color: #ca3838;\">{{msg.payload.power || '0.0'}}</div>\n        <div class=\"mod-lbl\">Power (W)</div>\n    </div>\n    <div class=\"mod-box\">\n        <div class=\"mod-val\" style=\"color: #69f0ae;\">{{msg.payload.energy || '0.000'}}</div>\n        <div class=\"mod-lbl\">Today's Energy (kWh)</div>\n    </div>\n  </div>\n  <div class=\"mod-footer\">Last Packet Received: {{msg.payload.time || 'N/A'}}</div>\n</div>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 650,
-    "y": 100,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "aa05774198d9174f",
-    "type": "ui_template",
-    "z": "b91949ed325c0ab6",
-    "g": "6f9ba56adf065c9e",
-    "group": "dbd8fd5823108908",
-    "name": "L.O Red Panel",
-    "order": 1,
-    "width": 18,
-    "height": 4,
-    "format": "<style>\n  .mod-card { background: #1e1e1e; color: #fff; padding: 15px; border-radius: 8px; font-family: 'Segoe UI', sans-serif; }\n  .mod-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; }\n  .mod-title { font-size: 18px; font-weight: bold; margin:0; text-shadow: 0 0 5px rgba(255, 255, 255, 0.2); }\n  .mod-badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; background-color: {{msg.payload.statusColor}}; color: #000; }\n  .mod-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; text-align: center; }\n  .mod-box { background: #262626; padding: 10px; border-radius: 6px; border: 1px solid #333;}\n  .mod-val { font-size: 26px; font-weight: bold; color: #fff; }\n  .mod-lbl { font-size: 11px; color: #aaa; text-transform: uppercase; margin-top:4px;}\n  .mod-footer { margin-top: 12px; font-size: 11px; color: #777; text-align: right; }\n</style>\n\n<div class=\"mod-card\">\n  <div class=\"mod-header\">\n    <h3 class=\"mod-title\" style=\"color: {{msg.payload.titleColor}};\">{{msg.payload.name}}</h3>\n    <div class=\"mod-badge\">{{msg.payload.status || 'WAITING...'}}</div>\n  </div>\n  <div class=\"mod-grid\">\n    <div class=\"mod-box\">\n        <div class=\"mod-val\" style=\"color: #e6e600;\">{{msg.payload.voltage || '0.0'}}</div>\n        <div class=\"mod-lbl\">Voltage (V)</div>\n    </div>\n    <div class=\"mod-box\">\n        <div class=\"mod-val\" style=\"color: #00b500;\">{{msg.payload.current || '0.000'}}</div>\n        <div class=\"mod-lbl\">Current (A)</div>\n    </div>\n    <div class=\"mod-box\">\n        <div class=\"mod-val\" style=\"color: #ca3838;\">{{msg.payload.power || '0.0'}}</div>\n        <div class=\"mod-lbl\">Power (W)</div>\n    </div>\n    <div class=\"mod-box\">\n        <div class=\"mod-val\" style=\"color: #69f0ae;\">{{msg.payload.energy || '0.000'}}</div>\n        <div class=\"mod-lbl\">Today's Energy (kWh)</div>\n    </div>\n  </div>\n  <div class=\"mod-footer\">Last Packet Received: {{msg.payload.time || 'N/A'}}</div>\n</div>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 640,
-    "y": 320,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "a00dde9f8e94db87",
-    "type": "ui_template",
-    "z": "b91949ed325c0ab6",
-    "g": "e1c41fc2a65e18c6",
-    "group": "0ea1e549aa37e7f9",
-    "name": "AREC ACU Panel",
-    "order": 1,
-    "width": 18,
-    "height": 4,
-    "format": "<style>\n  .mod-card { background: #1e1e1e; color: #fff; padding: 15px; border-radius: 8px; font-family: 'Segoe UI', sans-serif; }\n  .mod-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; }\n  .mod-title { font-size: 18px; font-weight: bold; margin:0; text-shadow: 0 0 5px rgba(255, 255, 255, 0.2); }\n  .mod-badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; background-color: {{msg.payload.statusColor}}; color: #000; }\n  .mod-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; text-align: center; }\n  .mod-box { background: #262626; padding: 10px; border-radius: 6px; border: 1px solid #333;}\n  .mod-val { font-size: 26px; font-weight: bold; color: #fff; }\n  .mod-lbl { font-size: 11px; color: #aaa; text-transform: uppercase; margin-top:4px;}\n  .mod-footer { margin-top: 12px; font-size: 11px; color: #777; text-align: right; }\n</style>\n\n<div class=\"mod-card\">\n  <div class=\"mod-header\">\n    <h3 class=\"mod-title\" style=\"color: {{msg.payload.titleColor}};\">{{msg.payload.name}}</h3>\n    <div class=\"mod-badge\">{{msg.payload.status || 'WAITING...'}}</div>\n  </div>\n  <div class=\"mod-grid\">\n    <div class=\"mod-box\">\n        <div class=\"mod-val\" style=\"color: #e6e600;\">{{msg.payload.voltage || '0.0'}}</div>\n        <div class=\"mod-lbl\">Voltage (V)</div>\n    </div>\n    <div class=\"mod-box\">\n        <div class=\"mod-val\" style=\"color: #00b500;\">{{msg.payload.current || '0.000'}}</div>\n        <div class=\"mod-lbl\">Current (A)</div>\n    </div>\n    <div class=\"mod-box\">\n        <div class=\"mod-val\" style=\"color: #ca3838;\">{{msg.payload.power || '0.0'}}</div>\n        <div class=\"mod-lbl\">Power (W)</div>\n    </div>\n    <div class=\"mod-box\">\n        <div class=\"mod-val\" style=\"color: #69f0ae;\">{{msg.payload.energy || '0.000'}}</div>\n        <div class=\"mod-lbl\">Today's Energy (kWh)</div>\n    </div>\n  </div>\n  <div class=\"mod-footer\">Last Packet Received: {{msg.payload.time || 'N/A'}}</div>\n</div>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 650,
-    "y": 540,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "088ccb1d185da0fd",
-    "type": "ui_template",
-    "z": "b91949ed325c0ab6",
-    "g": "92d2f0b9cc42b744",
-    "group": "0b0a4f4f80e58e3f",
-    "name": "L.O Yellow Panel",
-    "order": 1,
-    "width": 18,
-    "height": 4,
-    "format": "<style>\n  .mod-card { background: #1e1e1e; color: #fff; padding: 15px; border-radius: 8px; font-family: 'Segoe UI', sans-serif; }\n  .mod-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; }\n  .mod-title { font-size: 18px; font-weight: bold; margin:0; text-shadow: 0 0 5px rgba(255, 255, 255, 0.2); }\n  .mod-badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; background-color: {{msg.payload.statusColor}}; color: #000; }\n  .mod-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; text-align: center; }\n  .mod-box { background: #262626; padding: 10px; border-radius: 6px; border: 1px solid #333;}\n  .mod-val { font-size: 26px; font-weight: bold; color: #fff; }\n  .mod-lbl { font-size: 11px; color: #aaa; text-transform: uppercase; margin-top:4px;}\n  .mod-footer { margin-top: 12px; font-size: 11px; color: #777; text-align: right; }\n</style>\n\n<div class=\"mod-card\">\n  <div class=\"mod-header\">\n    <h3 class=\"mod-title\" style=\"color: {{msg.payload.titleColor}};\">{{msg.payload.name}}</h3>\n    <div class=\"mod-badge\">{{msg.payload.status || 'WAITING...'}}</div>\n  </div>\n  <div class=\"mod-grid\">\n    <div class=\"mod-box\">\n        <div class=\"mod-val\" style=\"color: #e6e600;\">{{msg.payload.voltage || '0.0'}}</div>\n        <div class=\"mod-lbl\">Voltage (V)</div>\n    </div>\n    <div class=\"mod-box\">\n        <div class=\"mod-val\" style=\"color: #00b500;\">{{msg.payload.current || '0.000'}}</div>\n        <div class=\"mod-lbl\">Current (A)</div>\n    </div>\n    <div class=\"mod-box\">\n        <div class=\"mod-val\" style=\"color: #ca3838;\">{{msg.payload.power || '0.0'}}</div>\n        <div class=\"mod-lbl\">Power (W)</div>\n    </div>\n    <div class=\"mod-box\">\n        <div class=\"mod-val\" style=\"color: #69f0ae;\">{{msg.payload.energy || '0.000'}}</div>\n        <div class=\"mod-lbl\">Today's Energy (kWh)</div>\n    </div>\n  </div>\n  <div class=\"mod-footer\">Last Packet Received: {{msg.payload.time || 'N/A'}}</div>\n</div>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 650,
-    "y": 760,
-    "wires": [
       []
     ]
   },
@@ -2405,340 +1512,13 @@
     "x": 1050,
     "y": 1040,
     "wires": [
-      [
-        "bae398eeef5f7420"
-      ],
-      [
-        "11ac306eed732cc4",
-        "24cb8eee1191df52"
-      ],
-      [
-        "24cb8eee1191df52",
-        "3edc375a62c0a949"
-      ],
-      [
-        "24cb8eee1191df52",
-        "3f62447f4513853a"
-      ],
-      [
-        "481d06f724422466"
-      ],
-      [
-        "ae2940fdce9ee674",
-        "a62c5155359756c6"
-      ],
-      [
-        "772dfbb5740480da"
-      ]
-    ]
-  },
-  {
-    "id": "bae398eeef5f7420",
-    "type": "ui_gauge",
-    "z": "b91949ed325c0ab6",
-    "g": "b401361e9c0bc680",
-    "name": "Main Voltage",
-    "group": "fc3145e8d50ddbca",
-    "order": 1,
-    "width": 9,
-    "height": 4,
-    "gtype": "gage",
-    "title": "System Voltage",
-    "label": "V",
-    "format": "{{value}}",
-    "min": 0,
-    "max": "260",
-    "colors": [
-      "#e6e600",
-      "#00b500",
-      "#ca3838"
-    ],
-    "seg1": "200",
-    "seg2": "240",
-    "diff": false,
-    "className": "",
-    "x": 1350,
-    "y": 960,
-    "wires": []
-  },
-  {
-    "id": "11ac306eed732cc4",
-    "type": "ui_gauge",
-    "z": "b91949ed325c0ab6",
-    "g": "b401361e9c0bc680",
-    "name": "Phase Red Current",
-    "group": "fc3145e8d50ddbca",
-    "order": 3,
-    "width": 6,
-    "height": 3,
-    "gtype": "gage",
-    "title": "Phase RED",
-    "label": "A",
-    "format": "{{value}}",
-    "min": 0,
-    "max": "100",
-    "colors": [
-      "#00b500",
-      "#e6e600",
-      "#ca3838"
-    ],
-    "seg1": "60",
-    "seg2": "85",
-    "diff": false,
-    "className": "",
-    "x": 1370,
-    "y": 1000,
-    "wires": []
-  },
-  {
-    "id": "3edc375a62c0a949",
-    "type": "ui_gauge",
-    "z": "b91949ed325c0ab6",
-    "g": "b401361e9c0bc680",
-    "name": "Phase Yellow Current",
-    "group": "fc3145e8d50ddbca",
-    "order": 4,
-    "width": 6,
-    "height": 3,
-    "gtype": "gage",
-    "title": "Phase YEL",
-    "label": "A",
-    "format": "{{value}}",
-    "min": 0,
-    "max": "100",
-    "colors": [
-      "#00b500",
-      "#e6e600",
-      "#ca3838"
-    ],
-    "seg1": "60",
-    "seg2": "85",
-    "diff": false,
-    "className": "",
-    "x": 1380,
-    "y": 1040,
-    "wires": []
-  },
-  {
-    "id": "3f62447f4513853a",
-    "type": "ui_gauge",
-    "z": "b91949ed325c0ab6",
-    "g": "b401361e9c0bc680",
-    "name": "Phase Blue Current",
-    "group": "fc3145e8d50ddbca",
-    "order": 5,
-    "width": 6,
-    "height": 3,
-    "gtype": "gage",
-    "title": "Phase BLUE",
-    "label": "A",
-    "format": "{{value}}",
-    "min": 0,
-    "max": "100",
-    "colors": [
-      "#00b500",
-      "#e6e600",
-      "#ca3838"
-    ],
-    "seg1": "60",
-    "seg2": "85",
-    "diff": false,
-    "className": "",
-    "x": 1370,
-    "y": 1080,
-    "wires": []
-  },
-  {
-    "id": "481d06f724422466",
-    "type": "ui_text",
-    "z": "b91949ed325c0ab6",
-    "g": "b401361e9c0bc680",
-    "group": "fc3145e8d50ddbca",
-    "order": 6,
-    "width": 6,
-    "height": 1,
-    "name": "Last Update",
-    "label": "Last Update",
-    "format": "{{msg.payload}}",
-    "layout": "row-spread",
-    "className": "",
-    "style": false,
-    "font": "",
-    "fontSize": "",
-    "color": "#000000",
-    "x": 1350,
-    "y": 1120,
-    "wires": []
-  },
-  {
-    "id": "a62c5155359756c6",
-    "type": "ui_chart",
-    "z": "b91949ed325c0ab6",
-    "g": "b401361e9c0bc680",
-    "name": "MIain Power Trend Chart",
-    "group": "1cb78c69dc71d057",
-    "order": 1,
-    "width": 18,
-    "height": 12,
-    "label": "Main System Power Trend (W)",
-    "chartType": "line",
-    "legend": "true",
-    "xformat": "HH:mm",
-    "interpolate": "linear",
-    "nodata": "",
-    "dot": false,
-    "ymin": "0",
-    "ymax": "",
-    "removeOlder": "12",
-    "removeOlderPoints": "",
-    "removeOlderUnit": "3600",
-    "cutout": 0,
-    "useOneColor": false,
-    "useUTC": false,
-    "colors": [
-      "#1f77b4",
-      "#aec7e8",
-      "#ff7f0e",
-      "#2ca02c",
-      "#98df8a",
-      "#d62728",
-      "#ff9896",
-      "#9467bd",
-      "#c5b0d5"
-    ],
-    "outputs": 1,
-    "useDifferentColor": false,
-    "className": "",
-    "x": 1390,
-    "y": 1200,
-    "wires": [
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
       []
-    ]
-  },
-  {
-    "id": "24cb8eee1191df52",
-    "type": "ui_chart",
-    "z": "b91949ed325c0ab6",
-    "g": "b401361e9c0bc680",
-    "name": "Phase Currents Chart",
-    "group": "f327023da29e4c01",
-    "order": 1,
-    "width": 18,
-    "height": 12,
-    "label": "Phase Currents (A)",
-    "chartType": "line",
-    "legend": "true",
-    "xformat": "HH:mm",
-    "interpolate": "linear",
-    "nodata": "",
-    "dot": false,
-    "ymin": "0",
-    "ymax": "",
-    "removeOlder": "12",
-    "removeOlderPoints": "",
-    "removeOlderUnit": "3600",
-    "cutout": 0,
-    "useOneColor": false,
-    "useUTC": false,
-    "colors": [
-      "#d62728",
-      "#e6e600",
-      "#1f77b4",
-      "#2ca02c",
-      "#98df8a",
-      "#d62728",
-      "#ff9896",
-      "#9467bd",
-      "#c5b0d5"
-    ],
-    "outputs": 1,
-    "useDifferentColor": false,
-    "className": "",
-    "x": 1380,
-    "y": 1240,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "772dfbb5740480da",
-    "type": "ui_template",
-    "z": "b91949ed325c0ab6",
-    "g": "b401361e9c0bc680",
-    "group": "fc3145e8d50ddbca",
-    "name": "Accumulated Energy UI",
-    "order": 10,
-    "width": 18,
-    "height": 4,
-    "format": "<style>\n  .bems-card { background: #1e1e1e; color: #fff; padding: 15px; border-radius: 8px; font-family: 'Segoe UI', sans-serif; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); height: 100%; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center;}\n  .bems-metric { font-size: 32px; font-weight: bold; color: #00e5ff; margin: 5px 0;}\n  .bems-label { font-size: 12px; color: #9e9e9e; text-transform: uppercase; letter-spacing: 1px;}\n  .bems-row { display: flex; justify-content: space-around; margin-top: 15px; border-top: 1px solid #333; padding-top: 15px;}\n  .bems-sub-metric { font-size: 18px; font-weight: bold; }\n</style>\n\n<div class=\"bems-card\">\n  <div class=\"bems-label\">Total Energy Today</div>\n  <div class=\"bems-metric\">{{msg.payload.today}} <span style=\"font-size:16px; color:#aaa\">kWh</span></div>\n  \n  <div class=\"bems-row\">\n    <div>\n      <div class=\"bems-label\">This Week</div>\n      <div class=\"bems-sub-metric\" style=\"color: #69f0ae\">{{msg.payload.week}} <span style=\"font-size:12px; color:#aaa\">kWh</span></div>\n    </div>\n    <div>\n      <div class=\"bems-label\">This Month</div>\n      <div class=\"bems-sub-metric\" style=\"color: #ffd740\">{{msg.payload.month}} <span style=\"font-size:12px; color:#aaa\">kWh</span></div>\n    </div>\n  </div>\n</div>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 1390,
-    "y": 1280,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "ae2940fdce9ee674",
-    "type": "ui_gauge",
-    "z": "b91949ed325c0ab6",
-    "g": "b401361e9c0bc680",
-    "name": "Total Power",
-    "group": "fc3145e8d50ddbca",
-    "order": 2,
-    "width": 9,
-    "height": 4,
-    "gtype": "gage",
-    "title": "Total Power",
-    "label": "kW",
-    "format": "{{value}}",
-    "min": 0,
-    "max": "20",
-    "colors": [
-      "#00b500",
-      "#e6e600",
-      "#ca3838"
-    ],
-    "seg1": "10000",
-    "seg2": "16000",
-    "diff": false,
-    "className": "",
-    "x": 1350,
-    "y": 1160,
-    "wires": []
-  },
-  {
-    "id": "d9e2bb8688197748",
-    "type": "ui_button",
-    "z": "b91949ed325c0ab6",
-    "d": true,
-    "g": "b401361e9c0bc680",
-    "name": "Reset Energy",
-    "group": "fc3145e8d50ddbca",
-    "order": 8,
-    "width": 9,
-    "height": 1,
-    "passthru": false,
-    "label": "Reset Today's Energy",
-    "tooltip": "Resets the accumulated kWh back to zero",
-    "color": "white",
-    "bgcolor": "#d32f2f",
-    "className": "",
-    "icon": "delete",
-    "payload": "true",
-    "payloadType": "bool",
-    "topic": "topic",
-    "topicType": "msg",
-    "x": 910,
-    "y": 1380,
-    "wires": [
-      [
-        "a21d212645ee7f40"
-      ]
     ]
   },
   {
@@ -2768,26 +1548,6 @@
     ]
   },
   {
-    "id": "1c874bd55777d6ea",
-    "type": "ui_toast",
-    "z": "b91949ed325c0ab6",
-    "g": "b401361e9c0bc680",
-    "position": "top right",
-    "displayTime": "3",
-    "highlight": "",
-    "sendall": true,
-    "outputs": 0,
-    "ok": "OK",
-    "cancel": "",
-    "raw": false,
-    "className": "",
-    "topic": "",
-    "name": "Notify UI",
-    "x": 1360,
-    "y": 1360,
-    "wires": []
-  },
-  {
     "id": "89e9c8697b0785e9",
     "type": "function",
     "z": "b91949ed325c0ab6",
@@ -2802,12 +1562,8 @@
     "x": 390,
     "y": 160,
     "wires": [
-      [
-        "f246fcac144cc04e"
-      ],
-      [
-        "1d1ae5521a33a16c"
-      ]
+      [],
+      []
     ]
   },
   {
@@ -2825,12 +1581,8 @@
     "x": 390,
     "y": 380,
     "wires": [
-      [
-        "aa05774198d9174f"
-      ],
-      [
-        "977fa942dd848dc8"
-      ]
+      [],
+      []
     ]
   },
   {
@@ -2849,12 +1601,8 @@
     "x": 400,
     "y": 600,
     "wires": [
-      [
-        "a00dde9f8e94db87"
-      ],
-      [
-        "4c947b17ba1fd15a"
-      ]
+      [],
+      []
     ]
   },
   {
@@ -2872,12 +1620,8 @@
     "x": 390,
     "y": 820,
     "wires": [
-      [
-        "088ccb1d185da0fd"
-      ],
-      [
-        "232b8a7cc0f252c5"
-      ]
+      [],
+      []
     ]
   },
   {
@@ -2896,9 +1640,7 @@
     "x": 1150,
     "y": 1360,
     "wires": [
-      [
-        "1c874bd55777d6ea"
-      ]
+      []
     ]
   },
   {
@@ -3008,24 +1750,6 @@
     ]
   },
   {
-    "id": "f23001162b5c19f6",
-    "type": "debug",
-    "z": "f034cec8ea750f69",
-    "g": "eb47a02f370cf2f3",
-    "name": "Tuya Error",
-    "active": false,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "payload",
-    "targetType": "msg",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 1630,
-    "y": 1720,
-    "wires": []
-  },
-  {
     "id": "e39486a314af5d97",
     "type": "function",
     "z": "f034cec8ea750f69",
@@ -3108,28 +1832,8 @@
     "x": 1680,
     "y": 1600,
     "wires": [
-      [
-        "86ba6fc6a91b3cad"
-      ]
+      []
     ]
-  },
-  {
-    "id": "86ba6fc6a91b3cad",
-    "type": "debug",
-    "z": "f034cec8ea750f69",
-    "g": "eb47a02f370cf2f3",
-    "name": "Sheet Response",
-    "active": true,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "payload",
-    "targetType": "msg",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 1910,
-    "y": 1600,
-    "wires": []
   },
   {
     "id": "369f2588c66e4d7e",
@@ -3178,24 +1882,6 @@
         "85f8f717e5e059f4"
       ]
     ]
-  },
-  {
-    "id": "f3cda060b97e80f8",
-    "type": "debug",
-    "z": "f034cec8ea750f69",
-    "g": "85e21b2a516377f7",
-    "name": "Tuya Error",
-    "active": false,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "payload",
-    "targetType": "msg",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 1630,
-    "y": 520,
-    "wires": []
   },
   {
     "id": "d057fb695f4086ae",
@@ -3280,28 +1966,8 @@
     "x": 1680,
     "y": 400,
     "wires": [
-      [
-        "5cb2b89e494a353c"
-      ]
+      []
     ]
-  },
-  {
-    "id": "5cb2b89e494a353c",
-    "type": "debug",
-    "z": "f034cec8ea750f69",
-    "g": "85e21b2a516377f7",
-    "name": "Sheet Response",
-    "active": true,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "payload",
-    "targetType": "msg",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 1910,
-    "y": 400,
-    "wires": []
   },
   {
     "id": "b94a8f9f990c49b4",
@@ -3350,24 +2016,6 @@
         "9b6ee35b33d67b3c"
       ]
     ]
-  },
-  {
-    "id": "39e6659ed81ac109",
-    "type": "debug",
-    "z": "f034cec8ea750f69",
-    "g": "93533b039dab126c",
-    "name": "Tuya Error",
-    "active": false,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "payload",
-    "targetType": "msg",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 1630,
-    "y": 820,
-    "wires": []
   },
   {
     "id": "f62f8efd187dcb4e",
@@ -3452,28 +2100,8 @@
     "x": 1680,
     "y": 700,
     "wires": [
-      [
-        "083a74e2b68ddede"
-      ]
+      []
     ]
-  },
-  {
-    "id": "083a74e2b68ddede",
-    "type": "debug",
-    "z": "f034cec8ea750f69",
-    "g": "93533b039dab126c",
-    "name": "Sheet Response",
-    "active": true,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "payload",
-    "targetType": "msg",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 1910,
-    "y": 700,
-    "wires": []
   },
   {
     "id": "fcc67af7fdf2b88b",
@@ -3522,24 +2150,6 @@
         "082689c6589dee25"
       ]
     ]
-  },
-  {
-    "id": "954c7c8de354fddd",
-    "type": "debug",
-    "z": "f034cec8ea750f69",
-    "g": "4a557efc2e898912",
-    "name": "Tuya Error",
-    "active": false,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "payload",
-    "targetType": "msg",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 1630,
-    "y": 1120,
-    "wires": []
   },
   {
     "id": "17205ab2be30010f",
@@ -3624,28 +2234,8 @@
     "x": 1680,
     "y": 1000,
     "wires": [
-      [
-        "9bd6c6fbadc75414"
-      ]
+      []
     ]
-  },
-  {
-    "id": "9bd6c6fbadc75414",
-    "type": "debug",
-    "z": "f034cec8ea750f69",
-    "g": "4a557efc2e898912",
-    "name": "Sheet Response",
-    "active": true,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "payload",
-    "targetType": "msg",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 1910,
-    "y": 1000,
-    "wires": []
   },
   {
     "id": "c51793dde46177f7",
@@ -3694,24 +2284,6 @@
         "b98c424d8fa0a013"
       ]
     ]
-  },
-  {
-    "id": "5463333364c7834d",
-    "type": "debug",
-    "z": "f034cec8ea750f69",
-    "g": "388d24bfa9e88160",
-    "name": "Tuya Error",
-    "active": false,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "payload",
-    "targetType": "msg",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 1630,
-    "y": 1420,
-    "wires": []
   },
   {
     "id": "a71be73f526b0fc5",
@@ -3796,28 +2368,8 @@
     "x": 1680,
     "y": 1300,
     "wires": [
-      [
-        "384af8d1ed40c522"
-      ]
+      []
     ]
-  },
-  {
-    "id": "384af8d1ed40c522",
-    "type": "debug",
-    "z": "f034cec8ea750f69",
-    "g": "388d24bfa9e88160",
-    "name": "Sheet Response",
-    "active": true,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "payload",
-    "targetType": "msg",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 1910,
-    "y": 1300,
-    "wires": []
   },
   {
     "id": "aee7ddbadda2becb",
@@ -3866,24 +2418,6 @@
         "928b4f6459d42b9f"
       ]
     ]
-  },
-  {
-    "id": "3a0eff502d74b981",
-    "type": "debug",
-    "z": "f034cec8ea750f69",
-    "g": "9347c2d4d884771b",
-    "name": "Tuya Error",
-    "active": false,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "payload",
-    "targetType": "msg",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 1630,
-    "y": 2020,
-    "wires": []
   },
   {
     "id": "564bbaa96c843569",
@@ -3968,28 +2502,8 @@
     "x": 1680,
     "y": 1900,
     "wires": [
-      [
-        "6a82ff61cc45dd14"
-      ]
+      []
     ]
-  },
-  {
-    "id": "6a82ff61cc45dd14",
-    "type": "debug",
-    "z": "f034cec8ea750f69",
-    "g": "9347c2d4d884771b",
-    "name": "Sheet Response",
-    "active": true,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "payload",
-    "targetType": "msg",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 1910,
-    "y": 1900,
-    "wires": []
   },
   {
     "id": "1bf0922c4af6052c",
@@ -4038,24 +2552,6 @@
         "dab910c43b77b046"
       ]
     ]
-  },
-  {
-    "id": "89365a5480351202",
-    "type": "debug",
-    "z": "f034cec8ea750f69",
-    "g": "f9ffabc79d012ec2",
-    "name": "Tuya Error",
-    "active": false,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "payload",
-    "targetType": "msg",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 1630,
-    "y": 2320,
-    "wires": []
   },
   {
     "id": "7ef0a1694e58b579",
@@ -4140,28 +2636,8 @@
     "x": 1680,
     "y": 2200,
     "wires": [
-      [
-        "0b07807cd1c62c07"
-      ]
+      []
     ]
-  },
-  {
-    "id": "0b07807cd1c62c07",
-    "type": "debug",
-    "z": "f034cec8ea750f69",
-    "g": "f9ffabc79d012ec2",
-    "name": "Sheet Response",
-    "active": true,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "payload",
-    "targetType": "msg",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 1910,
-    "y": 2200,
-    "wires": []
   },
   {
     "id": "85f8f717e5e059f4",
@@ -4179,78 +2655,7 @@
     "x": 1660,
     "y": 460,
     "wires": [
-      [
-        "bems_co1_ui_template"
-      ],
-      [
-        "bd7b2f067914c545"
-      ]
-    ]
-  },
-  {
-    "id": "bd7b2f067914c545",
-    "type": "ui_chart",
-    "z": "f034cec8ea750f69",
-    "g": "85e21b2a516377f7",
-    "name": "Power Trend",
-    "group": "7c68137361681861",
-    "order": 2,
-    "width": "18",
-    "height": "8",
-    "label": "Power Trend (W)",
-    "chartType": "line",
-    "legend": "false",
-    "xformat": "HH:mm",
-    "interpolate": "linear",
-    "nodata": "Waiting for data...",
-    "dot": false,
-    "ymin": "0",
-    "ymax": "",
-    "removeOlder": "12",
-    "removeOlderPoints": "",
-    "removeOlderUnit": "3600",
-    "cutout": 0,
-    "useOneColor": true,
-    "useUTC": false,
-    "colors": [
-      "#ca3838",
-      "#aec7e8",
-      "#ff7f0e",
-      "#2ca02c",
-      "#98df8a",
-      "#d62728",
-      "#ff9896",
-      "#9467bd",
-      "#c5b0d5"
-    ],
-    "outputs": 1,
-    "useDifferentColor": false,
-    "className": "",
-    "x": 1890,
-    "y": 520,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "bems_co1_ui_template",
-    "type": "ui_template",
-    "z": "f034cec8ea750f69",
-    "g": "85e21b2a516377f7",
-    "group": "7c68137361681861",
-    "name": "Outlet 1 Metrics Panel",
-    "order": 1,
-    "width": "18",
-    "height": "4",
-    "format": "<style>\n  .outlet-card { background: #1e1e1e; color: #fff; padding: 15px; border-radius: 8px; font-family: 'Segoe UI', sans-serif; }\n  .outlet-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; }\n  .outlet-title { font-size: 18px; font-weight: bold; color: #00e5ff; margin:0; }\n  .status-badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; background-color: {{msg.payload.statusColor}}; color: #000; }\n  .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; text-align: center; }\n  .metric-box { background: #262626; padding: 10px; border-radius: 6px; border: 1px solid #333;}\n  .metric-val { font-size: 26px; font-weight: bold; color: #fff; }\n  .metric-lbl { font-size: 11px; color: #aaa; text-transform: uppercase; margin-top:4px;}\n  .footer-timestamp { margin-top: 12px; font-size: 11px; color: #777; text-align: right; }\n</style>\n\n<div class=\"outlet-card\">\n  <div class=\"outlet-header\">\n    <h3 class=\"outlet-title\">Outlet 1</h3>\n    <div class=\"status-badge\">{{msg.payload.status || 'WAITING...'}}</div>\n  </div>\n  \n  <div class=\"metrics-grid\">\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #e6e600;\">{{msg.payload.voltage || '0.0'}}</div>\n        <div class=\"metric-lbl\">Voltage (V)</div>\n    </div>\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #00b500;\">{{msg.payload.current || '0.000'}}</div>\n        <div class=\"metric-lbl\">Current (A)</div>\n    </div>\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #ca3838;\">{{msg.payload.power || '0.0'}}</div>\n        <div class=\"metric-lbl\">Power (W)</div>\n    </div>\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #69f0ae;\">{{msg.payload.energy || '0.000'}}</div>\n        <div class=\"metric-lbl\">Energy (kWh)</div>\n    </div>\n  </div>\n  \n  <div class=\"footer-timestamp\">Last Packet Received: {{msg.payload.time || 'N/A'}}</div>\n</div>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 1920,
-    "y": 460,
-    "wires": [
+      [],
       []
     ]
   },
@@ -4270,78 +2675,7 @@
     "x": 1660,
     "y": 760,
     "wires": [
-      [
-        "c708af25bbfbf4d6"
-      ],
-      [
-        "187ca0b48261cea1"
-      ]
-    ]
-  },
-  {
-    "id": "c708af25bbfbf4d6",
-    "type": "ui_template",
-    "z": "f034cec8ea750f69",
-    "g": "93533b039dab126c",
-    "group": "ccbf7dba463cf0c5",
-    "name": "Outlet 2 Metrics Panel",
-    "order": 1,
-    "width": "18",
-    "height": "4",
-    "format": "<style>\n  .outlet-card { background: #1e1e1e; color: #fff; padding: 15px; border-radius: 8px; font-family: 'Segoe UI', sans-serif; }\n  .outlet-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; }\n  .outlet-title { font-size: 18px; font-weight: bold; color: #00e5ff; margin:0; }\n  .status-badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; background-color: {{msg.payload.statusColor}}; color: #000; }\n  .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; text-align: center; }\n  .metric-box { background: #262626; padding: 10px; border-radius: 6px; border: 1px solid #333;}\n  .metric-val { font-size: 26px; font-weight: bold; color: #fff; }\n  .metric-lbl { font-size: 11px; color: #aaa; text-transform: uppercase; margin-top:4px;}\n  .footer-timestamp { margin-top: 12px; font-size: 11px; color: #777; text-align: right; }\n</style>\n\n<div class=\"outlet-card\">\n  <div class=\"outlet-header\">\n    <h3 class=\"outlet-title\">Outlet 2</h3>\n    <div class=\"status-badge\">{{msg.payload.status || 'WAITING...'}}</div>\n  </div>\n  \n  <div class=\"metrics-grid\">\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #e6e600;\">{{msg.payload.voltage || '0.0'}}</div>\n        <div class=\"metric-lbl\">Voltage (V)</div>\n    </div>\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #00b500;\">{{msg.payload.current || '0.000'}}</div>\n        <div class=\"metric-lbl\">Current (A)</div>\n    </div>\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #ca3838;\">{{msg.payload.power || '0.0'}}</div>\n        <div class=\"metric-lbl\">Power (W)</div>\n    </div>\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #69f0ae;\">{{msg.payload.energy || '0.000'}}</div>\n        <div class=\"metric-lbl\">Energy (kWh)</div>\n    </div>\n  </div>\n  \n  <div class=\"footer-timestamp\">Last Packet Received: {{msg.payload.time || 'N/A'}}</div>\n</div>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 1920,
-    "y": 760,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "187ca0b48261cea1",
-    "type": "ui_chart",
-    "z": "f034cec8ea750f69",
-    "g": "93533b039dab126c",
-    "name": "Power Trend",
-    "group": "ccbf7dba463cf0c5",
-    "order": 2,
-    "width": "18",
-    "height": "8",
-    "label": "Power Trend (W)",
-    "chartType": "line",
-    "legend": "false",
-    "xformat": "HH:mm",
-    "interpolate": "linear",
-    "nodata": "Waiting for data...",
-    "dot": false,
-    "ymin": "0",
-    "ymax": "",
-    "removeOlder": "12",
-    "removeOlderPoints": "",
-    "removeOlderUnit": "3600",
-    "cutout": 0,
-    "useOneColor": true,
-    "useUTC": false,
-    "colors": [
-      "#ca3838",
-      "#aec7e8",
-      "#ff7f0e",
-      "#2ca02c",
-      "#98df8a",
-      "#d62728",
-      "#ff9896",
-      "#9467bd",
-      "#c5b0d5"
-    ],
-    "outputs": 1,
-    "useDifferentColor": false,
-    "className": "",
-    "x": 1890,
-    "y": 820,
-    "wires": [
+      [],
       []
     ]
   },
@@ -4361,78 +2695,7 @@
     "x": 1660,
     "y": 1060,
     "wires": [
-      [
-        "86aadc9aea314e3e"
-      ],
-      [
-        "0fa7ed03d7e88073"
-      ]
-    ]
-  },
-  {
-    "id": "86aadc9aea314e3e",
-    "type": "ui_template",
-    "z": "f034cec8ea750f69",
-    "g": "4a557efc2e898912",
-    "group": "fc0373ac8f6ce936",
-    "name": "Outlet 3 Metrics Panel",
-    "order": 1,
-    "width": "18",
-    "height": "4",
-    "format": "<style>\n  .outlet-card { background: #1e1e1e; color: #fff; padding: 15px; border-radius: 8px; font-family: 'Segoe UI', sans-serif; }\n  .outlet-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; }\n  .outlet-title { font-size: 18px; font-weight: bold; color: #00e5ff; margin:0; }\n  .status-badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; background-color: {{msg.payload.statusColor}}; color: #000; }\n  .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; text-align: center; }\n  .metric-box { background: #262626; padding: 10px; border-radius: 6px; border: 1px solid #333;}\n  .metric-val { font-size: 26px; font-weight: bold; color: #fff; }\n  .metric-lbl { font-size: 11px; color: #aaa; text-transform: uppercase; margin-top:4px;}\n  .footer-timestamp { margin-top: 12px; font-size: 11px; color: #777; text-align: right; }\n</style>\n\n<div class=\"outlet-card\">\n  <div class=\"outlet-header\">\n    <h3 class=\"outlet-title\">Outlet 3</h3>\n    <div class=\"status-badge\">{{msg.payload.status || 'WAITING...'}}</div>\n  </div>\n  \n  <div class=\"metrics-grid\">\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #e6e600;\">{{msg.payload.voltage || '0.0'}}</div>\n        <div class=\"metric-lbl\">Voltage (V)</div>\n    </div>\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #00b500;\">{{msg.payload.current || '0.000'}}</div>\n        <div class=\"metric-lbl\">Current (A)</div>\n    </div>\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #ca3838;\">{{msg.payload.power || '0.0'}}</div>\n        <div class=\"metric-lbl\">Power (W)</div>\n    </div>\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #69f0ae;\">{{msg.payload.energy || '0.000'}}</div>\n        <div class=\"metric-lbl\">Energy (kWh)</div>\n    </div>\n  </div>\n  \n  <div class=\"footer-timestamp\">Last Packet Received: {{msg.payload.time || 'N/A'}}</div>\n</div>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 1920,
-    "y": 1060,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "0fa7ed03d7e88073",
-    "type": "ui_chart",
-    "z": "f034cec8ea750f69",
-    "g": "4a557efc2e898912",
-    "name": "Power Trend",
-    "group": "fc0373ac8f6ce936",
-    "order": 2,
-    "width": "18",
-    "height": "8",
-    "label": "Power Trend (W)",
-    "chartType": "line",
-    "legend": "false",
-    "xformat": "HH:mm",
-    "interpolate": "linear",
-    "nodata": "Waiting for data...",
-    "dot": false,
-    "ymin": "0",
-    "ymax": "",
-    "removeOlder": "12",
-    "removeOlderPoints": "",
-    "removeOlderUnit": "3600",
-    "cutout": 0,
-    "useOneColor": true,
-    "useUTC": false,
-    "colors": [
-      "#ca3838",
-      "#aec7e8",
-      "#ff7f0e",
-      "#2ca02c",
-      "#98df8a",
-      "#d62728",
-      "#ff9896",
-      "#9467bd",
-      "#c5b0d5"
-    ],
-    "outputs": 1,
-    "useDifferentColor": false,
-    "className": "",
-    "x": 1890,
-    "y": 1120,
-    "wires": [
+      [],
       []
     ]
   },
@@ -4452,78 +2715,7 @@
     "x": 1660,
     "y": 1360,
     "wires": [
-      [
-        "c6c89fbb288e2c96"
-      ],
-      [
-        "dc8bb182aa07816d"
-      ]
-    ]
-  },
-  {
-    "id": "c6c89fbb288e2c96",
-    "type": "ui_template",
-    "z": "f034cec8ea750f69",
-    "g": "388d24bfa9e88160",
-    "group": "11681799b0a16a63",
-    "name": "Outlet 4 Metrics Panel",
-    "order": 1,
-    "width": "18",
-    "height": "4",
-    "format": "<style>\n  .outlet-card { background: #1e1e1e; color: #fff; padding: 15px; border-radius: 8px; font-family: 'Segoe UI', sans-serif; }\n  .outlet-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; }\n  .outlet-title { font-size: 18px; font-weight: bold; color: #00e5ff; margin:0; }\n  .status-badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; background-color: {{msg.payload.statusColor}}; color: #000; }\n  .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; text-align: center; }\n  .metric-box { background: #262626; padding: 10px; border-radius: 6px; border: 1px solid #333;}\n  .metric-val { font-size: 26px; font-weight: bold; color: #fff; }\n  .metric-lbl { font-size: 11px; color: #aaa; text-transform: uppercase; margin-top:4px;}\n  .footer-timestamp { margin-top: 12px; font-size: 11px; color: #777; text-align: right; }\n</style>\n\n<div class=\"outlet-card\">\n  <div class=\"outlet-header\">\n    <h3 class=\"outlet-title\">Outlet 4</h3>\n    <div class=\"status-badge\">{{msg.payload.status || 'WAITING...'}}</div>\n  </div>\n  \n  <div class=\"metrics-grid\">\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #e6e600;\">{{msg.payload.voltage || '0.0'}}</div>\n        <div class=\"metric-lbl\">Voltage (V)</div>\n    </div>\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #00b500;\">{{msg.payload.current || '0.000'}}</div>\n        <div class=\"metric-lbl\">Current (A)</div>\n    </div>\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #ca3838;\">{{msg.payload.power || '0.0'}}</div>\n        <div class=\"metric-lbl\">Power (W)</div>\n    </div>\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #69f0ae;\">{{msg.payload.energy || '0.000'}}</div>\n        <div class=\"metric-lbl\">Energy (kWh)</div>\n    </div>\n  </div>\n  \n  <div class=\"footer-timestamp\">Last Packet Received: {{msg.payload.time || 'N/A'}}</div>\n</div>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 1900,
-    "y": 1360,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "dc8bb182aa07816d",
-    "type": "ui_chart",
-    "z": "f034cec8ea750f69",
-    "g": "388d24bfa9e88160",
-    "name": "Power Trend",
-    "group": "11681799b0a16a63",
-    "order": 2,
-    "width": "18",
-    "height": "8",
-    "label": "Power Trend (W)",
-    "chartType": "line",
-    "legend": "false",
-    "xformat": "HH:mm",
-    "interpolate": "linear",
-    "nodata": "Waiting for data...",
-    "dot": false,
-    "ymin": "0",
-    "ymax": "",
-    "removeOlder": "12",
-    "removeOlderPoints": "",
-    "removeOlderUnit": "3600",
-    "cutout": 0,
-    "useOneColor": true,
-    "useUTC": false,
-    "colors": [
-      "#ca3838",
-      "#aec7e8",
-      "#ff7f0e",
-      "#2ca02c",
-      "#98df8a",
-      "#d62728",
-      "#ff9896",
-      "#9467bd",
-      "#c5b0d5"
-    ],
-    "outputs": 1,
-    "useDifferentColor": false,
-    "className": "",
-    "x": 1870,
-    "y": 1420,
-    "wires": [
+      [],
       []
     ]
   },
@@ -4543,78 +2735,7 @@
     "x": 1660,
     "y": 1660,
     "wires": [
-      [
-        "55450e7690a05093"
-      ],
-      [
-        "9c0ebf195095ab35"
-      ]
-    ]
-  },
-  {
-    "id": "55450e7690a05093",
-    "type": "ui_template",
-    "z": "f034cec8ea750f69",
-    "g": "eb47a02f370cf2f3",
-    "group": "b64d0d914aae9efc",
-    "name": "Outlet 5 Metrics Panel",
-    "order": 1,
-    "width": "18",
-    "height": "4",
-    "format": "<style>\n  .outlet-card { background: #1e1e1e; color: #fff; padding: 15px; border-radius: 8px; font-family: 'Segoe UI', sans-serif; }\n  .outlet-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; }\n  .outlet-title { font-size: 18px; font-weight: bold; color: #00e5ff; margin:0; }\n  .status-badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; background-color: {{msg.payload.statusColor}}; color: #000; }\n  .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; text-align: center; }\n  .metric-box { background: #262626; padding: 10px; border-radius: 6px; border: 1px solid #333;}\n  .metric-val { font-size: 26px; font-weight: bold; color: #fff; }\n  .metric-lbl { font-size: 11px; color: #aaa; text-transform: uppercase; margin-top:4px;}\n  .footer-timestamp { margin-top: 12px; font-size: 11px; color: #777; text-align: right; }\n</style>\n\n<div class=\"outlet-card\">\n  <div class=\"outlet-header\">\n    <h3 class=\"outlet-title\">Outlet 5</h3>\n    <div class=\"status-badge\">{{msg.payload.status || 'WAITING...'}}</div>\n  </div>\n  \n  <div class=\"metrics-grid\">\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #e6e600;\">{{msg.payload.voltage || '0.0'}}</div>\n        <div class=\"metric-lbl\">Voltage (V)</div>\n    </div>\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #00b500;\">{{msg.payload.current || '0.000'}}</div>\n        <div class=\"metric-lbl\">Current (A)</div>\n    </div>\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #ca3838;\">{{msg.payload.power || '0.0'}}</div>\n        <div class=\"metric-lbl\">Power (W)</div>\n    </div>\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #69f0ae;\">{{msg.payload.energy || '0.000'}}</div>\n        <div class=\"metric-lbl\">Energy (kWh)</div>\n    </div>\n  </div>\n  \n  <div class=\"footer-timestamp\">Last Packet Received: {{msg.payload.time || 'N/A'}}</div>\n</div>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 1900,
-    "y": 1660,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "9c0ebf195095ab35",
-    "type": "ui_chart",
-    "z": "f034cec8ea750f69",
-    "g": "eb47a02f370cf2f3",
-    "name": "Power Trend",
-    "group": "b64d0d914aae9efc",
-    "order": 2,
-    "width": "18",
-    "height": "8",
-    "label": "Power Trend (W)",
-    "chartType": "line",
-    "legend": "false",
-    "xformat": "HH:mm",
-    "interpolate": "linear",
-    "nodata": "Waiting for data...",
-    "dot": false,
-    "ymin": "0",
-    "ymax": "",
-    "removeOlder": "12",
-    "removeOlderPoints": "",
-    "removeOlderUnit": "3600",
-    "cutout": 0,
-    "useOneColor": true,
-    "useUTC": false,
-    "colors": [
-      "#ca3838",
-      "#aec7e8",
-      "#ff7f0e",
-      "#2ca02c",
-      "#98df8a",
-      "#d62728",
-      "#ff9896",
-      "#9467bd",
-      "#c5b0d5"
-    ],
-    "outputs": 1,
-    "useDifferentColor": false,
-    "className": "",
-    "x": 1870,
-    "y": 1720,
-    "wires": [
+      [],
       []
     ]
   },
@@ -4634,78 +2755,7 @@
     "x": 1660,
     "y": 1960,
     "wires": [
-      [
-        "24490c5f155b5507"
-      ],
-      [
-        "acdfb6ffd0f50e87"
-      ]
-    ]
-  },
-  {
-    "id": "24490c5f155b5507",
-    "type": "ui_template",
-    "z": "f034cec8ea750f69",
-    "g": "9347c2d4d884771b",
-    "group": "5301b75930e11809",
-    "name": "Outlet 6 Metrics Panel",
-    "order": 1,
-    "width": "18",
-    "height": "4",
-    "format": "<style>\n  .outlet-card { background: #1e1e1e; color: #fff; padding: 15px; border-radius: 8px; font-family: 'Segoe UI', sans-serif; }\n  .outlet-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; }\n  .outlet-title { font-size: 18px; font-weight: bold; color: #00e5ff; margin:0; }\n  .status-badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; background-color: {{msg.payload.statusColor}}; color: #000; }\n  .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; text-align: center; }\n  .metric-box { background: #262626; padding: 10px; border-radius: 6px; border: 1px solid #333;}\n  .metric-val { font-size: 26px; font-weight: bold; color: #fff; }\n  .metric-lbl { font-size: 11px; color: #aaa; text-transform: uppercase; margin-top:4px;}\n  .footer-timestamp { margin-top: 12px; font-size: 11px; color: #777; text-align: right; }\n</style>\n\n<div class=\"outlet-card\">\n  <div class=\"outlet-header\">\n    <h3 class=\"outlet-title\">Outlet 6</h3>\n    <div class=\"status-badge\">{{msg.payload.status || 'WAITING...'}}</div>\n  </div>\n  \n  <div class=\"metrics-grid\">\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #e6e600;\">{{msg.payload.voltage || '0.0'}}</div>\n        <div class=\"metric-lbl\">Voltage (V)</div>\n    </div>\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #00b500;\">{{msg.payload.current || '0.000'}}</div>\n        <div class=\"metric-lbl\">Current (A)</div>\n    </div>\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #ca3838;\">{{msg.payload.power || '0.0'}}</div>\n        <div class=\"metric-lbl\">Power (W)</div>\n    </div>\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #69f0ae;\">{{msg.payload.energy || '0.000'}}</div>\n        <div class=\"metric-lbl\">Energy (kWh)</div>\n    </div>\n  </div>\n  \n  <div class=\"footer-timestamp\">Last Packet Received: {{msg.payload.time || 'N/A'}}</div>\n</div>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 1900,
-    "y": 1960,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "acdfb6ffd0f50e87",
-    "type": "ui_chart",
-    "z": "f034cec8ea750f69",
-    "g": "9347c2d4d884771b",
-    "name": "Power Trend",
-    "group": "5301b75930e11809",
-    "order": 2,
-    "width": "18",
-    "height": "8",
-    "label": "Power Trend (W)",
-    "chartType": "line",
-    "legend": "false",
-    "xformat": "HH:mm",
-    "interpolate": "linear",
-    "nodata": "Waiting for data...",
-    "dot": false,
-    "ymin": "0",
-    "ymax": "",
-    "removeOlder": "12",
-    "removeOlderPoints": "",
-    "removeOlderUnit": "3600",
-    "cutout": 0,
-    "useOneColor": true,
-    "useUTC": false,
-    "colors": [
-      "#ca3838",
-      "#aec7e8",
-      "#ff7f0e",
-      "#2ca02c",
-      "#98df8a",
-      "#d62728",
-      "#ff9896",
-      "#9467bd",
-      "#c5b0d5"
-    ],
-    "outputs": 1,
-    "useDifferentColor": false,
-    "className": "",
-    "x": 1870,
-    "y": 2020,
-    "wires": [
+      [],
       []
     ]
   },
@@ -4725,103 +2775,8 @@
     "x": 1660,
     "y": 2260,
     "wires": [
-      [
-        "b4930491b923f6bd"
-      ],
-      [
-        "ec4971a72d6bf412"
-      ]
-    ]
-  },
-  {
-    "id": "b4930491b923f6bd",
-    "type": "ui_template",
-    "z": "f034cec8ea750f69",
-    "g": "f9ffabc79d012ec2",
-    "group": "a9655bbe8b77287a",
-    "name": "Outlet 7 Metrics Panel",
-    "order": 1,
-    "width": "18",
-    "height": "4",
-    "format": "<style>\n  .outlet-card { background: #1e1e1e; color: #fff; padding: 15px; border-radius: 8px; font-family: 'Segoe UI', sans-serif; }\n  .outlet-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; }\n  .outlet-title { font-size: 18px; font-weight: bold; color: #00e5ff; margin:0; }\n  .status-badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; background-color: {{msg.payload.statusColor}}; color: #000; }\n  .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; text-align: center; }\n  .metric-box { background: #262626; padding: 10px; border-radius: 6px; border: 1px solid #333;}\n  .metric-val { font-size: 26px; font-weight: bold; color: #fff; }\n  .metric-lbl { font-size: 11px; color: #aaa; text-transform: uppercase; margin-top:4px;}\n  .footer-timestamp { margin-top: 12px; font-size: 11px; color: #777; text-align: right; }\n</style>\n\n<div class=\"outlet-card\">\n  <div class=\"outlet-header\">\n    <h3 class=\"outlet-title\">Outlet 7</h3>\n    <div class=\"status-badge\">{{msg.payload.status || 'WAITING...'}}</div>\n  </div>\n  \n  <div class=\"metrics-grid\">\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #e6e600;\">{{msg.payload.voltage || '0.0'}}</div>\n        <div class=\"metric-lbl\">Voltage (V)</div>\n    </div>\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #00b500;\">{{msg.payload.current || '0.000'}}</div>\n        <div class=\"metric-lbl\">Current (A)</div>\n    </div>\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #ca3838;\">{{msg.payload.power || '0.0'}}</div>\n        <div class=\"metric-lbl\">Power (W)</div>\n    </div>\n    <div class=\"metric-box\">\n        <div class=\"metric-val\" style=\"color: #69f0ae;\">{{msg.payload.energy || '0.000'}}</div>\n        <div class=\"metric-lbl\">Energy (kWh)</div>\n    </div>\n  </div>\n  \n  <div class=\"footer-timestamp\">Last Packet Received: {{msg.payload.time || 'N/A'}}</div>\n</div>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 1900,
-    "y": 2260,
-    "wires": [
+      [],
       []
-    ]
-  },
-  {
-    "id": "ec4971a72d6bf412",
-    "type": "ui_chart",
-    "z": "f034cec8ea750f69",
-    "g": "f9ffabc79d012ec2",
-    "name": "Power Trend",
-    "group": "a9655bbe8b77287a",
-    "order": 2,
-    "width": "18",
-    "height": "8",
-    "label": "Power Trend (W)",
-    "chartType": "line",
-    "legend": "false",
-    "xformat": "HH:mm",
-    "interpolate": "linear",
-    "nodata": "Waiting for data...",
-    "dot": false,
-    "ymin": "0",
-    "ymax": "",
-    "removeOlder": "12",
-    "removeOlderPoints": "",
-    "removeOlderUnit": "3600",
-    "cutout": 0,
-    "useOneColor": true,
-    "useUTC": false,
-    "colors": [
-      "#ca3838",
-      "#aec7e8",
-      "#ff7f0e",
-      "#2ca02c",
-      "#98df8a",
-      "#d62728",
-      "#ff9896",
-      "#9467bd",
-      "#c5b0d5"
-    ],
-    "outputs": 1,
-    "useDifferentColor": false,
-    "className": "",
-    "x": 1870,
-    "y": 2320,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "d24798fef995fa2c",
-    "type": "ui_template",
-    "z": "f034cec8ea750f69",
-    "g": "68621373339fb619",
-    "group": "co_ui_grp_s1",
-    "name": "Outlet 1 UI",
-    "order": 1,
-    "width": 9,
-    "height": 6,
-    "format": "<div style=\"padding: 10px; background-color: var(--nr-dashboard-widgetColor); border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);\">\n    <h3 style=\"margin-top: 0; margin-bottom: 10px; color: var(--nr-dashboard-widgetTextColor); font-weight: 500; font-size: 16px;\">Outlet 1 Schedule</h3>\n    \n    <div style=\"display: flex; gap: 5px; align-items: center; margin-bottom: 15px; flex-wrap: wrap; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px;\">\n        <select ng-model=\"newSched.action\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 60px;\">\n            <option value=\"\" disabled selected>Action</option>\n            <option value=\"true\">ON</option>\n            <option value=\"false\">OFF</option>\n        </select>\n\n        <select ng-model=\"newSched.day\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n            <option value=\"\" disabled selected>Day</option>\n            <option value=\"All\">Every Day</option>\n            <option value=\"0\">Sun</option>\n            <option value=\"1\">Mon</option>\n            <option value=\"2\">Tue</option>\n            <option value=\"3\">Wed</option>\n            <option value=\"4\">Thu</option>\n            <option value=\"5\">Fri</option>\n            <option value=\"6\">Sat</option>\n        </select>\n        \n        <input type=\"time\" ng-model=\"newSched.timeObj\" style=\"padding: 4px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n        \n        <md-button class=\"md-raised md-primary\" ng-click=\"addSched()\" style=\"margin:0; padding: 0 10px; min-width: 40px;\">Add</md-button>\n    </div>\n\n    <div style=\"max-height: 140px; overflow-y: auto;\">\n        <table style=\"width: 100%; text-align: left; border-collapse: collapse; font-size: 13px;\">\n            <thead>\n                <tr style=\"border-bottom: 2px solid rgba(0,0,0,0.1); color: var(--nr-dashboard-widgetTextColor);\">\n                    <th style=\"padding: 4px 2px;\">Action</th>\n                    <th style=\"padding: 4px 2px;\">Day</th>\n                    <th style=\"padding: 4px 2px;\">Time</th>\n                    <th style=\"padding: 4px 2px; text-align: right;\">Remove</th>\n                </tr>\n            </thead>\n            <tbody>\n                <tr ng-repeat=\"s in schedules track by $index\" style=\"border-bottom: 1px solid rgba(0,0,0,0.05);\">\n                    <td style=\"padding: 6px 2px;\">\n                        <span style=\"padding: 2px 6px; border-radius: 12px; font-weight: bold; font-size: 11px;\" \n                              ng-style=\"{'background-color': s.action == 'true' ? '#e6f4ea' : '#fce8e6', 'color': s.action == 'true' ? '#137333' : '#c5221f'}\">\n                            {{s.action == 'true' ? 'ON' : 'OFF'}}\n                        </span>\n                    </td>\n                    <td style=\"padding: 6px 2px;\">{{getDayName(s.day)}}</td>\n                    <td style=\"padding: 6px 2px; font-family: monospace;\">{{s.timeStr}}</td>\n                    <td style=\"padding: 2px; text-align: right;\">\n                        <md-button class=\"md-icon-button md-warn\" ng-click=\"removeSched($index)\" style=\"margin: 0; width: 24px; height: 24px; min-height: 24px;\">\n                            <i class=\"fa fa-trash\" style=\"font-size: 14px;\"></i>\n                        </md-button>\n                    </td>\n                </tr>\n                <tr ng-if=\"!schedules || schedules.length === 0\">\n                    <td colspan=\"4\" style=\"text-align: center; padding: 10px; color: #888; font-style: italic;\">No schedules set.</td>\n                </tr>\n            </tbody>\n        </table>\n    </div>\n</div>\n\n<script>\n(function(scope) {\n    scope.schedules = [];\n    scope.newSched = { action: \"\", day: \"\", timeObj: new Date(1970, 0, 1, 12, 0, 0) };\n\n    const dayNames = { \"All\": \"Every Day\", \"0\": \"Sun\", \"1\": \"Mon\", \"2\": \"Tue\", \"3\": \"Wed\", \"4\": \"Thu\", \"5\": \"Fri\", \"6\": \"Sat\" };\n    scope.getDayName = function(val) { return dayNames[val] || val; };\n\n    scope.addSched = function() {\n        if(!scope.newSched.action || !scope.newSched.day || !scope.newSched.timeObj) return;\n        let h = scope.newSched.timeObj.getHours().toString().padStart(2, '0');\n        let m = scope.newSched.timeObj.getMinutes().toString().padStart(2, '0');\n        \n        scope.schedules.push({ action: scope.newSched.action, day: scope.newSched.day, timeStr: h + \":\" + m });\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.removeSched = function(index) {\n        scope.schedules.splice(index, 1);\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.$watch('msg', function(msg) {\n        if(msg && Array.isArray(msg.payload)) scope.schedules = msg.payload;\n    });\n})(scope);\n</script>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 670,
-    "y": 420,
-    "wires": [
-      [
-        "9366c94bea458aa3"
-      ]
     ]
   },
   {
@@ -4860,9 +2815,7 @@
     "x": 490,
     "y": 420,
     "wires": [
-      [
-        "d24798fef995fa2c"
-      ]
+      []
     ]
   },
   {
@@ -4912,30 +2865,6 @@
     ]
   },
   {
-    "id": "6982bedbb8478ef3",
-    "type": "ui_template",
-    "z": "f034cec8ea750f69",
-    "g": "36b8be1e68d9691d",
-    "group": "co_ui_grp_s2",
-    "name": "Outlet 2 UI",
-    "order": 1,
-    "width": 9,
-    "height": 6,
-    "format": "<div style=\"padding: 10px; background-color: var(--nr-dashboard-widgetColor); border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);\">\n    <h3 style=\"margin-top: 0; margin-bottom: 10px; color: var(--nr-dashboard-widgetTextColor); font-weight: 500; font-size: 16px;\">Outlet 2 Schedule</h3>\n    \n    <div style=\"display: flex; gap: 5px; align-items: center; margin-bottom: 15px; flex-wrap: wrap; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px;\">\n        <select ng-model=\"newSched.action\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 60px;\">\n            <option value=\"\" disabled selected>Action</option>\n            <option value=\"true\">ON</option>\n            <option value=\"false\">OFF</option>\n        </select>\n\n        <select ng-model=\"newSched.day\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n            <option value=\"\" disabled selected>Day</option>\n            <option value=\"All\">Every Day</option>\n            <option value=\"0\">Sun</option>\n            <option value=\"1\">Mon</option>\n            <option value=\"2\">Tue</option>\n            <option value=\"3\">Wed</option>\n            <option value=\"4\">Thu</option>\n            <option value=\"5\">Fri</option>\n            <option value=\"6\">Sat</option>\n        </select>\n        \n        <input type=\"time\" ng-model=\"newSched.timeObj\" style=\"padding: 4px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n        \n        <md-button class=\"md-raised md-primary\" ng-click=\"addSched()\" style=\"margin:0; padding: 0 10px; min-width: 40px;\">Add</md-button>\n    </div>\n\n    <div style=\"max-height: 140px; overflow-y: auto;\">\n        <table style=\"width: 100%; text-align: left; border-collapse: collapse; font-size: 13px;\">\n            <thead>\n                <tr style=\"border-bottom: 2px solid rgba(0,0,0,0.1); color: var(--nr-dashboard-widgetTextColor);\">\n                    <th style=\"padding: 4px 2px;\">Action</th>\n                    <th style=\"padding: 4px 2px;\">Day</th>\n                    <th style=\"padding: 4px 2px;\">Time</th>\n                    <th style=\"padding: 4px 2px; text-align: right;\">Remove</th>\n                </tr>\n            </thead>\n            <tbody>\n                <tr ng-repeat=\"s in schedules track by $index\" style=\"border-bottom: 1px solid rgba(0,0,0,0.05);\">\n                    <td style=\"padding: 6px 2px;\">\n                        <span style=\"padding: 2px 6px; border-radius: 12px; font-weight: bold; font-size: 11px;\" \n                              ng-style=\"{'background-color': s.action == 'true' ? '#e6f4ea' : '#fce8e6', 'color': s.action == 'true' ? '#137333' : '#c5221f'}\">\n                            {{s.action == 'true' ? 'ON' : 'OFF'}}\n                        </span>\n                    </td>\n                    <td style=\"padding: 6px 2px;\">{{getDayName(s.day)}}</td>\n                    <td style=\"padding: 6px 2px; font-family: monospace;\">{{s.timeStr}}</td>\n                    <td style=\"padding: 2px; text-align: right;\">\n                        <md-button class=\"md-icon-button md-warn\" ng-click=\"removeSched($index)\" style=\"margin: 0; width: 24px; height: 24px; min-height: 24px;\">\n                            <i class=\"fa fa-trash\" style=\"font-size: 14px;\"></i>\n                        </md-button>\n                    </td>\n                </tr>\n                <tr ng-if=\"!schedules || schedules.length === 0\">\n                    <td colspan=\"4\" style=\"text-align: center; padding: 10px; color: #888; font-style: italic;\">No schedules set.</td>\n                </tr>\n            </tbody>\n        </table>\n    </div>\n</div>\n\n<script>\n(function(scope) {\n    scope.schedules = [];\n    scope.newSched = { action: \"\", day: \"\", timeObj: new Date(1970, 0, 1, 12, 0, 0) };\n\n    const dayNames = { \"All\": \"Every Day\", \"0\": \"Sun\", \"1\": \"Mon\", \"2\": \"Tue\", \"3\": \"Wed\", \"4\": \"Thu\", \"5\": \"Fri\", \"6\": \"Sat\" };\n    scope.getDayName = function(val) { return dayNames[val] || val; };\n\n    scope.addSched = function() {\n        if(!scope.newSched.action || !scope.newSched.day || !scope.newSched.timeObj) return;\n        let h = scope.newSched.timeObj.getHours().toString().padStart(2, '0');\n        let m = scope.newSched.timeObj.getMinutes().toString().padStart(2, '0');\n        \n        scope.schedules.push({ action: scope.newSched.action, day: scope.newSched.day, timeStr: h + \":\" + m });\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.removeSched = function(index) {\n        scope.schedules.splice(index, 1);\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.$watch('msg', function(msg) {\n        if(msg && Array.isArray(msg.payload)) scope.schedules = msg.payload;\n    });\n})(scope);\n</script>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 670,
-    "y": 720,
-    "wires": [
-      [
-        "b6741b7236436cb6"
-      ]
-    ]
-  },
-  {
     "id": "eda523978f1254c5",
     "type": "inject",
     "z": "f034cec8ea750f69",
@@ -4971,9 +2900,7 @@
     "x": 490,
     "y": 720,
     "wires": [
-      [
-        "6982bedbb8478ef3"
-      ]
+      []
     ]
   },
   {
@@ -5023,30 +2950,6 @@
     ]
   },
   {
-    "id": "99e0b045b65afa67",
-    "type": "ui_template",
-    "z": "f034cec8ea750f69",
-    "g": "b74e5dc17a60ee63",
-    "group": "co_ui_grp_s3",
-    "name": "Outlet 3 UI",
-    "order": 1,
-    "width": 9,
-    "height": 6,
-    "format": "<div style=\"padding: 10px; background-color: var(--nr-dashboard-widgetColor); border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);\">\n    <h3 style=\"margin-top: 0; margin-bottom: 10px; color: var(--nr-dashboard-widgetTextColor); font-weight: 500; font-size: 16px;\">Outlet 3 Schedule</h3>\n    \n    <div style=\"display: flex; gap: 5px; align-items: center; margin-bottom: 15px; flex-wrap: wrap; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px;\">\n        <select ng-model=\"newSched.action\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 60px;\">\n            <option value=\"\" disabled selected>Action</option>\n            <option value=\"true\">ON</option>\n            <option value=\"false\">OFF</option>\n        </select>\n\n        <select ng-model=\"newSched.day\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n            <option value=\"\" disabled selected>Day</option>\n            <option value=\"All\">Every Day</option>\n            <option value=\"0\">Sun</option>\n            <option value=\"1\">Mon</option>\n            <option value=\"2\">Tue</option>\n            <option value=\"3\">Wed</option>\n            <option value=\"4\">Thu</option>\n            <option value=\"5\">Fri</option>\n            <option value=\"6\">Sat</option>\n        </select>\n        \n        <input type=\"time\" ng-model=\"newSched.timeObj\" style=\"padding: 4px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n        \n        <md-button class=\"md-raised md-primary\" ng-click=\"addSched()\" style=\"margin:0; padding: 0 10px; min-width: 40px;\">Add</md-button>\n    </div>\n\n    <div style=\"max-height: 140px; overflow-y: auto;\">\n        <table style=\"width: 100%; text-align: left; border-collapse: collapse; font-size: 13px;\">\n            <thead>\n                <tr style=\"border-bottom: 2px solid rgba(0,0,0,0.1); color: var(--nr-dashboard-widgetTextColor);\">\n                    <th style=\"padding: 4px 2px;\">Action</th>\n                    <th style=\"padding: 4px 2px;\">Day</th>\n                    <th style=\"padding: 4px 2px;\">Time</th>\n                    <th style=\"padding: 4px 2px; text-align: right;\">Remove</th>\n                </tr>\n            </thead>\n            <tbody>\n                <tr ng-repeat=\"s in schedules track by $index\" style=\"border-bottom: 1px solid rgba(0,0,0,0.05);\">\n                    <td style=\"padding: 6px 2px;\">\n                        <span style=\"padding: 2px 6px; border-radius: 12px; font-weight: bold; font-size: 11px;\" \n                              ng-style=\"{'background-color': s.action == 'true' ? '#e6f4ea' : '#fce8e6', 'color': s.action == 'true' ? '#137333' : '#c5221f'}\">\n                            {{s.action == 'true' ? 'ON' : 'OFF'}}\n                        </span>\n                    </td>\n                    <td style=\"padding: 6px 2px;\">{{getDayName(s.day)}}</td>\n                    <td style=\"padding: 6px 2px; font-family: monospace;\">{{s.timeStr}}</td>\n                    <td style=\"padding: 2px; text-align: right;\">\n                        <md-button class=\"md-icon-button md-warn\" ng-click=\"removeSched($index)\" style=\"margin: 0; width: 24px; height: 24px; min-height: 24px;\">\n                            <i class=\"fa fa-trash\" style=\"font-size: 14px;\"></i>\n                        </md-button>\n                    </td>\n                </tr>\n                <tr ng-if=\"!schedules || schedules.length === 0\">\n                    <td colspan=\"4\" style=\"text-align: center; padding: 10px; color: #888; font-style: italic;\">No schedules set.</td>\n                </tr>\n            </tbody>\n        </table>\n    </div>\n</div>\n\n<script>\n(function(scope) {\n    scope.schedules = [];\n    scope.newSched = { action: \"\", day: \"\", timeObj: new Date(1970, 0, 1, 12, 0, 0) };\n\n    const dayNames = { \"All\": \"Every Day\", \"0\": \"Sun\", \"1\": \"Mon\", \"2\": \"Tue\", \"3\": \"Wed\", \"4\": \"Thu\", \"5\": \"Fri\", \"6\": \"Sat\" };\n    scope.getDayName = function(val) { return dayNames[val] || val; };\n\n    scope.addSched = function() {\n        if(!scope.newSched.action || !scope.newSched.day || !scope.newSched.timeObj) return;\n        let h = scope.newSched.timeObj.getHours().toString().padStart(2, '0');\n        let m = scope.newSched.timeObj.getMinutes().toString().padStart(2, '0');\n        \n        scope.schedules.push({ action: scope.newSched.action, day: scope.newSched.day, timeStr: h + \":\" + m });\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.removeSched = function(index) {\n        scope.schedules.splice(index, 1);\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.$watch('msg', function(msg) {\n        if(msg && Array.isArray(msg.payload)) scope.schedules = msg.payload;\n    });\n})(scope);\n</script>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 670,
-    "y": 1020,
-    "wires": [
-      [
-        "c0b677ad17bf0735"
-      ]
-    ]
-  },
-  {
     "id": "6d1a66f126bd9e5f",
     "type": "inject",
     "z": "f034cec8ea750f69",
@@ -5082,9 +2985,7 @@
     "x": 490,
     "y": 1020,
     "wires": [
-      [
-        "99e0b045b65afa67"
-      ]
+      []
     ]
   },
   {
@@ -5134,30 +3035,6 @@
     ]
   },
   {
-    "id": "abc869edd946e1af",
-    "type": "ui_template",
-    "z": "f034cec8ea750f69",
-    "g": "0736e5a0454a968e",
-    "group": "co_ui_grp_s4",
-    "name": "Outlet 4 UI",
-    "order": 1,
-    "width": 9,
-    "height": 6,
-    "format": "<div style=\"padding: 10px; background-color: var(--nr-dashboard-widgetColor); border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);\">\n    <h3 style=\"margin-top: 0; margin-bottom: 10px; color: var(--nr-dashboard-widgetTextColor); font-weight: 500; font-size: 16px;\">Outlet 4 Schedule</h3>\n    \n    <div style=\"display: flex; gap: 5px; align-items: center; margin-bottom: 15px; flex-wrap: wrap; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px;\">\n        <select ng-model=\"newSched.action\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 60px;\">\n            <option value=\"\" disabled selected>Action</option>\n            <option value=\"true\">ON</option>\n            <option value=\"false\">OFF</option>\n        </select>\n\n        <select ng-model=\"newSched.day\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n            <option value=\"\" disabled selected>Day</option>\n            <option value=\"All\">Every Day</option>\n            <option value=\"0\">Sun</option>\n            <option value=\"1\">Mon</option>\n            <option value=\"2\">Tue</option>\n            <option value=\"3\">Wed</option>\n            <option value=\"4\">Thu</option>\n            <option value=\"5\">Fri</option>\n            <option value=\"6\">Sat</option>\n        </select>\n        \n        <input type=\"time\" ng-model=\"newSched.timeObj\" style=\"padding: 4px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n        \n        <md-button class=\"md-raised md-primary\" ng-click=\"addSched()\" style=\"margin:0; padding: 0 10px; min-width: 40px;\">Add</md-button>\n    </div>\n\n    <div style=\"max-height: 140px; overflow-y: auto;\">\n        <table style=\"width: 100%; text-align: left; border-collapse: collapse; font-size: 13px;\">\n            <thead>\n                <tr style=\"border-bottom: 2px solid rgba(0,0,0,0.1); color: var(--nr-dashboard-widgetTextColor);\">\n                    <th style=\"padding: 4px 2px;\">Action</th>\n                    <th style=\"padding: 4px 2px;\">Day</th>\n                    <th style=\"padding: 4px 2px;\">Time</th>\n                    <th style=\"padding: 4px 2px; text-align: right;\">Remove</th>\n                </tr>\n            </thead>\n            <tbody>\n                <tr ng-repeat=\"s in schedules track by $index\" style=\"border-bottom: 1px solid rgba(0,0,0,0.05);\">\n                    <td style=\"padding: 6px 2px;\">\n                        <span style=\"padding: 2px 6px; border-radius: 12px; font-weight: bold; font-size: 11px;\" \n                              ng-style=\"{'background-color': s.action == 'true' ? '#e6f4ea' : '#fce8e6', 'color': s.action == 'true' ? '#137333' : '#c5221f'}\">\n                            {{s.action == 'true' ? 'ON' : 'OFF'}}\n                        </span>\n                    </td>\n                    <td style=\"padding: 6px 2px;\">{{getDayName(s.day)}}</td>\n                    <td style=\"padding: 6px 2px; font-family: monospace;\">{{s.timeStr}}</td>\n                    <td style=\"padding: 2px; text-align: right;\">\n                        <md-button class=\"md-icon-button md-warn\" ng-click=\"removeSched($index)\" style=\"margin: 0; width: 24px; height: 24px; min-height: 24px;\">\n                            <i class=\"fa fa-trash\" style=\"font-size: 14px;\"></i>\n                        </md-button>\n                    </td>\n                </tr>\n                <tr ng-if=\"!schedules || schedules.length === 0\">\n                    <td colspan=\"4\" style=\"text-align: center; padding: 10px; color: #888; font-style: italic;\">No schedules set.</td>\n                </tr>\n            </tbody>\n        </table>\n    </div>\n</div>\n\n<script>\n(function(scope) {\n    scope.schedules = [];\n    scope.newSched = { action: \"\", day: \"\", timeObj: new Date(1970, 0, 1, 12, 0, 0) };\n\n    const dayNames = { \"All\": \"Every Day\", \"0\": \"Sun\", \"1\": \"Mon\", \"2\": \"Tue\", \"3\": \"Wed\", \"4\": \"Thu\", \"5\": \"Fri\", \"6\": \"Sat\" };\n    scope.getDayName = function(val) { return dayNames[val] || val; };\n\n    scope.addSched = function() {\n        if(!scope.newSched.action || !scope.newSched.day || !scope.newSched.timeObj) return;\n        let h = scope.newSched.timeObj.getHours().toString().padStart(2, '0');\n        let m = scope.newSched.timeObj.getMinutes().toString().padStart(2, '0');\n        \n        scope.schedules.push({ action: scope.newSched.action, day: scope.newSched.day, timeStr: h + \":\" + m });\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.removeSched = function(index) {\n        scope.schedules.splice(index, 1);\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.$watch('msg', function(msg) {\n        if(msg && Array.isArray(msg.payload)) scope.schedules = msg.payload;\n    });\n})(scope);\n</script>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 670,
-    "y": 1320,
-    "wires": [
-      [
-        "603c6ef74a03789c"
-      ]
-    ]
-  },
-  {
     "id": "ff89788138301645",
     "type": "inject",
     "z": "f034cec8ea750f69",
@@ -5193,9 +3070,7 @@
     "x": 490,
     "y": 1320,
     "wires": [
-      [
-        "abc869edd946e1af"
-      ]
+      []
     ]
   },
   {
@@ -5245,30 +3120,6 @@
     ]
   },
   {
-    "id": "872fccd5a3699eab",
-    "type": "ui_template",
-    "z": "f034cec8ea750f69",
-    "g": "b8089255864e701e",
-    "group": "co_ui_grp_s5",
-    "name": "Outlet 5 UI",
-    "order": 1,
-    "width": 9,
-    "height": 6,
-    "format": "<div style=\"padding: 10px; background-color: var(--nr-dashboard-widgetColor); border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);\">\n    <h3 style=\"margin-top: 0; margin-bottom: 10px; color: var(--nr-dashboard-widgetTextColor); font-weight: 500; font-size: 16px;\">Outlet 5 Schedule</h3>\n    \n    <div style=\"display: flex; gap: 5px; align-items: center; margin-bottom: 15px; flex-wrap: wrap; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px;\">\n        <select ng-model=\"newSched.action\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 60px;\">\n            <option value=\"\" disabled selected>Action</option>\n            <option value=\"true\">ON</option>\n            <option value=\"false\">OFF</option>\n        </select>\n\n        <select ng-model=\"newSched.day\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n            <option value=\"\" disabled selected>Day</option>\n            <option value=\"All\">Every Day</option>\n            <option value=\"0\">Sun</option>\n            <option value=\"1\">Mon</option>\n            <option value=\"2\">Tue</option>\n            <option value=\"3\">Wed</option>\n            <option value=\"4\">Thu</option>\n            <option value=\"5\">Fri</option>\n            <option value=\"6\">Sat</option>\n        </select>\n        \n        <input type=\"time\" ng-model=\"newSched.timeObj\" style=\"padding: 4px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n        \n        <md-button class=\"md-raised md-primary\" ng-click=\"addSched()\" style=\"margin:0; padding: 0 10px; min-width: 40px;\">Add</md-button>\n    </div>\n\n    <div style=\"max-height: 140px; overflow-y: auto;\">\n        <table style=\"width: 100%; text-align: left; border-collapse: collapse; font-size: 13px;\">\n            <thead>\n                <tr style=\"border-bottom: 2px solid rgba(0,0,0,0.1); color: var(--nr-dashboard-widgetTextColor);\">\n                    <th style=\"padding: 4px 2px;\">Action</th>\n                    <th style=\"padding: 4px 2px;\">Day</th>\n                    <th style=\"padding: 4px 2px;\">Time</th>\n                    <th style=\"padding: 4px 2px; text-align: right;\">Remove</th>\n                </tr>\n            </thead>\n            <tbody>\n                <tr ng-repeat=\"s in schedules track by $index\" style=\"border-bottom: 1px solid rgba(0,0,0,0.05);\">\n                    <td style=\"padding: 6px 2px;\">\n                        <span style=\"padding: 2px 6px; border-radius: 12px; font-weight: bold; font-size: 11px;\" \n                              ng-style=\"{'background-color': s.action == 'true' ? '#e6f4ea' : '#fce8e6', 'color': s.action == 'true' ? '#137333' : '#c5221f'}\">\n                            {{s.action == 'true' ? 'ON' : 'OFF'}}\n                        </span>\n                    </td>\n                    <td style=\"padding: 6px 2px;\">{{getDayName(s.day)}}</td>\n                    <td style=\"padding: 6px 2px; font-family: monospace;\">{{s.timeStr}}</td>\n                    <td style=\"padding: 2px; text-align: right;\">\n                        <md-button class=\"md-icon-button md-warn\" ng-click=\"removeSched($index)\" style=\"margin: 0; width: 24px; height: 24px; min-height: 24px;\">\n                            <i class=\"fa fa-trash\" style=\"font-size: 14px;\"></i>\n                        </md-button>\n                    </td>\n                </tr>\n                <tr ng-if=\"!schedules || schedules.length === 0\">\n                    <td colspan=\"4\" style=\"text-align: center; padding: 10px; color: #888; font-style: italic;\">No schedules set.</td>\n                </tr>\n            </tbody>\n        </table>\n    </div>\n</div>\n\n<script>\n(function(scope) {\n    scope.schedules = [];\n    scope.newSched = { action: \"\", day: \"\", timeObj: new Date(1970, 0, 1, 12, 0, 0) };\n\n    const dayNames = { \"All\": \"Every Day\", \"0\": \"Sun\", \"1\": \"Mon\", \"2\": \"Tue\", \"3\": \"Wed\", \"4\": \"Thu\", \"5\": \"Fri\", \"6\": \"Sat\" };\n    scope.getDayName = function(val) { return dayNames[val] || val; };\n\n    scope.addSched = function() {\n        if(!scope.newSched.action || !scope.newSched.day || !scope.newSched.timeObj) return;\n        let h = scope.newSched.timeObj.getHours().toString().padStart(2, '0');\n        let m = scope.newSched.timeObj.getMinutes().toString().padStart(2, '0');\n        \n        scope.schedules.push({ action: scope.newSched.action, day: scope.newSched.day, timeStr: h + \":\" + m });\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.removeSched = function(index) {\n        scope.schedules.splice(index, 1);\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.$watch('msg', function(msg) {\n        if(msg && Array.isArray(msg.payload)) scope.schedules = msg.payload;\n    });\n})(scope);\n</script>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 670,
-    "y": 1620,
-    "wires": [
-      [
-        "a117b69976d46c37"
-      ]
-    ]
-  },
-  {
     "id": "aa4e59d743b31ce4",
     "type": "inject",
     "z": "f034cec8ea750f69",
@@ -5304,9 +3155,7 @@
     "x": 490,
     "y": 1620,
     "wires": [
-      [
-        "872fccd5a3699eab"
-      ]
+      []
     ]
   },
   {
@@ -5356,30 +3205,6 @@
     ]
   },
   {
-    "id": "a2ab0509d117d8ce",
-    "type": "ui_template",
-    "z": "f034cec8ea750f69",
-    "g": "75ce46611c74adf4",
-    "group": "co_ui_grp_s6",
-    "name": "Outlet 6 UI",
-    "order": 1,
-    "width": 9,
-    "height": 6,
-    "format": "<div style=\"padding: 10px; background-color: var(--nr-dashboard-widgetColor); border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);\">\n    <h3 style=\"margin-top: 0; margin-bottom: 10px; color: var(--nr-dashboard-widgetTextColor); font-weight: 500; font-size: 16px;\">Outlet 6 Schedule</h3>\n    \n    <div style=\"display: flex; gap: 5px; align-items: center; margin-bottom: 15px; flex-wrap: wrap; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px;\">\n        <select ng-model=\"newSched.action\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 60px;\">\n            <option value=\"\" disabled selected>Action</option>\n            <option value=\"true\">ON</option>\n            <option value=\"false\">OFF</option>\n        </select>\n\n        <select ng-model=\"newSched.day\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n            <option value=\"\" disabled selected>Day</option>\n            <option value=\"All\">Every Day</option>\n            <option value=\"0\">Sun</option>\n            <option value=\"1\">Mon</option>\n            <option value=\"2\">Tue</option>\n            <option value=\"3\">Wed</option>\n            <option value=\"4\">Thu</option>\n            <option value=\"5\">Fri</option>\n            <option value=\"6\">Sat</option>\n        </select>\n        \n        <input type=\"time\" ng-model=\"newSched.timeObj\" style=\"padding: 4px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n        \n        <md-button class=\"md-raised md-primary\" ng-click=\"addSched()\" style=\"margin:0; padding: 0 10px; min-width: 40px;\">Add</md-button>\n    </div>\n\n    <div style=\"max-height: 140px; overflow-y: auto;\">\n        <table style=\"width: 100%; text-align: left; border-collapse: collapse; font-size: 13px;\">\n            <thead>\n                <tr style=\"border-bottom: 2px solid rgba(0,0,0,0.1); color: var(--nr-dashboard-widgetTextColor);\">\n                    <th style=\"padding: 4px 2px;\">Action</th>\n                    <th style=\"padding: 4px 2px;\">Day</th>\n                    <th style=\"padding: 4px 2px;\">Time</th>\n                    <th style=\"padding: 4px 2px; text-align: right;\">Remove</th>\n                </tr>\n            </thead>\n            <tbody>\n                <tr ng-repeat=\"s in schedules track by $index\" style=\"border-bottom: 1px solid rgba(0,0,0,0.05);\">\n                    <td style=\"padding: 6px 2px;\">\n                        <span style=\"padding: 2px 6px; border-radius: 12px; font-weight: bold; font-size: 11px;\" \n                              ng-style=\"{'background-color': s.action == 'true' ? '#e6f4ea' : '#fce8e6', 'color': s.action == 'true' ? '#137333' : '#c5221f'}\">\n                            {{s.action == 'true' ? 'ON' : 'OFF'}}\n                        </span>\n                    </td>\n                    <td style=\"padding: 6px 2px;\">{{getDayName(s.day)}}</td>\n                    <td style=\"padding: 6px 2px; font-family: monospace;\">{{s.timeStr}}</td>\n                    <td style=\"padding: 2px; text-align: right;\">\n                        <md-button class=\"md-icon-button md-warn\" ng-click=\"removeSched($index)\" style=\"margin: 0; width: 24px; height: 24px; min-height: 24px;\">\n                            <i class=\"fa fa-trash\" style=\"font-size: 14px;\"></i>\n                        </md-button>\n                    </td>\n                </tr>\n                <tr ng-if=\"!schedules || schedules.length === 0\">\n                    <td colspan=\"4\" style=\"text-align: center; padding: 10px; color: #888; font-style: italic;\">No schedules set.</td>\n                </tr>\n            </tbody>\n        </table>\n    </div>\n</div>\n\n<script>\n(function(scope) {\n    scope.schedules = [];\n    scope.newSched = { action: \"\", day: \"\", timeObj: new Date(1970, 0, 1, 12, 0, 0) };\n\n    const dayNames = { \"All\": \"Every Day\", \"0\": \"Sun\", \"1\": \"Mon\", \"2\": \"Tue\", \"3\": \"Wed\", \"4\": \"Thu\", \"5\": \"Fri\", \"6\": \"Sat\" };\n    scope.getDayName = function(val) { return dayNames[val] || val; };\n\n    scope.addSched = function() {\n        if(!scope.newSched.action || !scope.newSched.day || !scope.newSched.timeObj) return;\n        let h = scope.newSched.timeObj.getHours().toString().padStart(2, '0');\n        let m = scope.newSched.timeObj.getMinutes().toString().padStart(2, '0');\n        \n        scope.schedules.push({ action: scope.newSched.action, day: scope.newSched.day, timeStr: h + \":\" + m });\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.removeSched = function(index) {\n        scope.schedules.splice(index, 1);\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.$watch('msg', function(msg) {\n        if(msg && Array.isArray(msg.payload)) scope.schedules = msg.payload;\n    });\n})(scope);\n</script>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 670,
-    "y": 1920,
-    "wires": [
-      [
-        "bd7a35a6149fbd45"
-      ]
-    ]
-  },
-  {
     "id": "60bc0a2fd207e8a7",
     "type": "inject",
     "z": "f034cec8ea750f69",
@@ -5415,9 +3240,7 @@
     "x": 490,
     "y": 1920,
     "wires": [
-      [
-        "a2ab0509d117d8ce"
-      ]
+      []
     ]
   },
   {
@@ -5467,30 +3290,6 @@
     ]
   },
   {
-    "id": "45ff0d83a26fde76",
-    "type": "ui_template",
-    "z": "f034cec8ea750f69",
-    "g": "142f66f63d3691ad",
-    "group": "co_ui_grp_s7",
-    "name": "Outlet 7 UI",
-    "order": 1,
-    "width": 9,
-    "height": 6,
-    "format": "<div style=\"padding: 10px; background-color: var(--nr-dashboard-widgetColor); border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);\">\n    <h3 style=\"margin-top: 0; margin-bottom: 10px; color: var(--nr-dashboard-widgetTextColor); font-weight: 500; font-size: 16px;\">Outlet 7 Schedule</h3>\n    \n    <div style=\"display: flex; gap: 5px; align-items: center; margin-bottom: 15px; flex-wrap: wrap; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px;\">\n        <select ng-model=\"newSched.action\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 60px;\">\n            <option value=\"\" disabled selected>Action</option>\n            <option value=\"true\">ON</option>\n            <option value=\"false\">OFF</option>\n        </select>\n\n        <select ng-model=\"newSched.day\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n            <option value=\"\" disabled selected>Day</option>\n            <option value=\"All\">Every Day</option>\n            <option value=\"0\">Sun</option>\n            <option value=\"1\">Mon</option>\n            <option value=\"2\">Tue</option>\n            <option value=\"3\">Wed</option>\n            <option value=\"4\">Thu</option>\n            <option value=\"5\">Fri</option>\n            <option value=\"6\">Sat</option>\n        </select>\n        \n        <input type=\"time\" ng-model=\"newSched.timeObj\" style=\"padding: 4px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n        \n        <md-button class=\"md-raised md-primary\" ng-click=\"addSched()\" style=\"margin:0; padding: 0 10px; min-width: 40px;\">Add</md-button>\n    </div>\n\n    <div style=\"max-height: 140px; overflow-y: auto;\">\n        <table style=\"width: 100%; text-align: left; border-collapse: collapse; font-size: 13px;\">\n            <thead>\n                <tr style=\"border-bottom: 2px solid rgba(0,0,0,0.1); color: var(--nr-dashboard-widgetTextColor);\">\n                    <th style=\"padding: 4px 2px;\">Action</th>\n                    <th style=\"padding: 4px 2px;\">Day</th>\n                    <th style=\"padding: 4px 2px;\">Time</th>\n                    <th style=\"padding: 4px 2px; text-align: right;\">Remove</th>\n                </tr>\n            </thead>\n            <tbody>\n                <tr ng-repeat=\"s in schedules track by $index\" style=\"border-bottom: 1px solid rgba(0,0,0,0.05);\">\n                    <td style=\"padding: 6px 2px;\">\n                        <span style=\"padding: 2px 6px; border-radius: 12px; font-weight: bold; font-size: 11px;\" \n                              ng-style=\"{'background-color': s.action == 'true' ? '#e6f4ea' : '#fce8e6', 'color': s.action == 'true' ? '#137333' : '#c5221f'}\">\n                            {{s.action == 'true' ? 'ON' : 'OFF'}}\n                        </span>\n                    </td>\n                    <td style=\"padding: 6px 2px;\">{{getDayName(s.day)}}</td>\n                    <td style=\"padding: 6px 2px; font-family: monospace;\">{{s.timeStr}}</td>\n                    <td style=\"padding: 2px; text-align: right;\">\n                        <md-button class=\"md-icon-button md-warn\" ng-click=\"removeSched($index)\" style=\"margin: 0; width: 24px; height: 24px; min-height: 24px;\">\n                            <i class=\"fa fa-trash\" style=\"font-size: 14px;\"></i>\n                        </md-button>\n                    </td>\n                </tr>\n                <tr ng-if=\"!schedules || schedules.length === 0\">\n                    <td colspan=\"4\" style=\"text-align: center; padding: 10px; color: #888; font-style: italic;\">No schedules set.</td>\n                </tr>\n            </tbody>\n        </table>\n    </div>\n</div>\n\n<script>\n(function(scope) {\n    scope.schedules = [];\n    scope.newSched = { action: \"\", day: \"\", timeObj: new Date(1970, 0, 1, 12, 0, 0) };\n\n    const dayNames = { \"All\": \"Every Day\", \"0\": \"Sun\", \"1\": \"Mon\", \"2\": \"Tue\", \"3\": \"Wed\", \"4\": \"Thu\", \"5\": \"Fri\", \"6\": \"Sat\" };\n    scope.getDayName = function(val) { return dayNames[val] || val; };\n\n    scope.addSched = function() {\n        if(!scope.newSched.action || !scope.newSched.day || !scope.newSched.timeObj) return;\n        let h = scope.newSched.timeObj.getHours().toString().padStart(2, '0');\n        let m = scope.newSched.timeObj.getMinutes().toString().padStart(2, '0');\n        \n        scope.schedules.push({ action: scope.newSched.action, day: scope.newSched.day, timeStr: h + \":\" + m });\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.removeSched = function(index) {\n        scope.schedules.splice(index, 1);\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.$watch('msg', function(msg) {\n        if(msg && Array.isArray(msg.payload)) scope.schedules = msg.payload;\n    });\n})(scope);\n</script>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 670,
-    "y": 2220,
-    "wires": [
-      [
-        "6986179ab7a8e48a"
-      ]
-    ]
-  },
-  {
     "id": "77010049cc43a0a8",
     "type": "inject",
     "z": "f034cec8ea750f69",
@@ -5526,9 +3325,7 @@
     "x": 490,
     "y": 2220,
     "wires": [
-      [
-        "45ff0d83a26fde76"
-      ]
+      []
     ]
   },
   {
@@ -5754,39 +3551,12 @@
     "x": 650,
     "y": 180,
     "wires": [
-      [
-        "16094d60ade4dfbe"
-      ],
+      [],
       [
         "ebd1e106d053f8a5"
       ],
       [
         "0448bc8489a7a461"
-      ]
-    ]
-  },
-  {
-    "id": "16094d60ade4dfbe",
-    "type": "ui_template",
-    "z": "f034cec8ea750f69",
-    "g": "2f90b20689badcbc",
-    "group": "5aebf51b63e0ffa2",
-    "name": "Outlet Floor Plan (Status Only)",
-    "order": 1,
-    "width": "9",
-    "height": "15",
-    "format": "<div style=\"background: #0d1117; padding: 15px; border-radius: 10px; border: 1px solid #00ffff; font-family: 'Segoe UI', sans-serif;\">\n    <h4 style=\"color: #00ffff; text-align: center; margin: 0 0 10px 0;\">CONVENIENCE OUTLETS (CO1-CO7)</h4>\n    <style>\n        .status-text { font-size: 8px; font-weight: 900; text-anchor: middle; pointer-events: none; }\n        .on-text { fill: #00ff88; }\n        .off-text { fill: #ff4d4d; }\n        .label-id { fill: #888; font-size: 10px; font-weight: bold; text-anchor: middle; }\n    </style>\n    <svg viewBox=\"0 0 320 550\" style=\"width: 100%; height: auto;\">\n        <rect x=\"10\" y=\"10\" width=\"300\" height=\"530\" fill=\"none\" stroke=\"#444\" stroke-width=\"2\" rx=\"5\"/>\n        <line x1=\"10\" y1=\"100\" x2=\"310\" y2=\"100\" stroke=\"#444\" stroke-width=\"2\"/>\n\n        <g ng-repeat=\"i in [1,2,3,4,5,6,7]\" \n           ng-init=\"coords = [{x:25,y:470},{x:50,y:515},{x:285,y:470},{x:25,y:370},{x:65,y:115},{x:235,y:115},{x:285,y:190}]\">\n           \n           <path d=\"M {{coords[i-1].x}} {{coords[i-1].y - 12}} A 12 12 0 0 0 {{coords[i-1].x}} {{coords[i-1].y + 12}} Z\" \n                 style=\"cursor:pointer; stroke:#00ffff; stroke-width:1.5; transition: 0.3s;\"\n                 ng-attr-fill=\"{{localState.status['CO'+i+'_1'] ? '#00ffff' : '#0d1117'}}\"\n                 ng-click=\"toggleOutlet('CO'+i+'_1')\"/>\n           \n           <text ng-attr-x=\"{{coords[i-1].x - 18}}\" ng-attr-y=\"{{coords[i-1].y + 3}}\" \n                 class=\"status-text\" ng-class=\"localState.status['CO'+i+'_1'] ? 'on-text' : 'off-text'\">\n                 {{localState.status['CO'+i+'_1'] ? 'ON' : 'OFF'}}\n           </text>\n\n           <path d=\"M {{coords[i-1].x}} {{coords[i-1].y - 12}} A 12 12 0 0 1 {{coords[i-1].x}} {{coords[i-1].y + 12}} Z\" \n                 style=\"cursor:pointer; stroke:#00ffff; stroke-width:1.5; transition: 0.3s;\"\n                 ng-attr-fill=\"{{localState.status['CO'+i+'_2'] ? '#00ffff' : '#0d1117'}}\"\n                 ng-click=\"toggleOutlet('CO'+i+'_2')\"/>\n\n           <text ng-attr-x=\"{{coords[i-1].x + 18}}\" ng-attr-y=\"{{coords[i-1].y + 3}}\" \n                 class=\"status-text\" ng-class=\"localState.status['CO'+i+'_2'] ? 'on-text' : 'off-text'\">\n                 {{localState.status['CO'+i+'_2'] ? 'ON' : 'OFF'}}\n           </text>\n           \n           <text ng-attr-x=\"{{coords[i-1].x}}\" ng-attr-y=\"{{coords[i-1].y - 18}}\" class=\"label-id\">CO{{i}}</text>\n        </g>\n    </svg>\n</div>\n\n<script>\n(function(scope) {\n    let saved = sessionStorage.getItem('bems_outlet_floor_state');\n    scope.localState = saved ? JSON.parse(saved) : { status: {} };\n\n    scope.toggleOutlet = function(id) {\n        let currentState = scope.localState.status[id] || false;\n        scope.send({ topic: id, payload: !currentState });\n    };\n\n    scope.$watch('msg', function(msg) {\n        if (msg && msg.payload && typeof msg.payload === 'object' && msg.payload.status) {\n            scope.localState = Object.assign(scope.localState, msg.payload);\n            sessionStorage.setItem('bems_outlet_floor_state', JSON.stringify(scope.localState));\n            if (!scope.$$phase) scope.$applyAsync();\n        }\n    });\n})(scope);\n</script>",
-    "storeOutMessages": true,
-    "fwdInMessages": false,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 330,
-    "y": 180,
-    "wires": [
-      [
-        "8e58e6ceebbd4868",
-        "16094d60ade4dfbe"
       ]
     ]
   },
@@ -6304,30 +4074,6 @@
     ]
   },
   {
-    "id": "09cc1b14b73f68f3",
-    "type": "ui_template",
-    "z": "5ba0bb77c042d889",
-    "g": "02d072766b97ac76",
-    "group": "ui_grp_s1",
-    "name": "Switch 1 UI",
-    "order": 1,
-    "width": 9,
-    "height": 6,
-    "format": "<div style=\"padding: 10px; background-color: var(--nr-dashboard-widgetColor); border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);\">\n    <h3 style=\"margin-top: 0; margin-bottom: 10px; color: var(--nr-dashboard-widgetTextColor); font-weight: 500; font-size: 16px;\">Switch 1 Schedule</h3>\n    \n    <div style=\"display: flex; gap: 5px; align-items: center; margin-bottom: 15px; flex-wrap: wrap; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px;\">\n        <select ng-model=\"newSched.action\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 60px;\">\n            <option value=\"\" disabled selected>Action</option>\n            <option value=\"true\">ON</option>\n            <option value=\"false\">OFF</option>\n        </select>\n\n        <select ng-model=\"newSched.day\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n            <option value=\"\" disabled selected>Day</option>\n            <option value=\"All\">Every Day</option>\n            <option value=\"0\">Sun</option>\n            <option value=\"1\">Mon</option>\n            <option value=\"2\">Tue</option>\n            <option value=\"3\">Wed</option>\n            <option value=\"4\">Thu</option>\n            <option value=\"5\">Fri</option>\n            <option value=\"6\">Sat</option>\n        </select>\n        \n        <input type=\"time\" ng-model=\"newSched.timeObj\" style=\"padding: 4px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n        \n        <md-button class=\"md-raised md-primary\" ng-click=\"addSched()\" style=\"margin:0; padding: 0 10px; min-width: 40px;\">Add</md-button>\n    </div>\n\n    <div style=\"max-height: 140px; overflow-y: auto;\">\n        <table style=\"width: 100%; text-align: left; border-collapse: collapse; font-size: 13px;\">\n            <thead>\n                <tr style=\"border-bottom: 2px solid rgba(0,0,0,0.1); color: var(--nr-dashboard-widgetTextColor);\">\n                    <th style=\"padding: 4px 2px;\">Action</th>\n                    <th style=\"padding: 4px 2px;\">Day</th>\n                    <th style=\"padding: 4px 2px;\">Time</th>\n                    <th style=\"padding: 4px 2px; text-align: right;\">Remove</th>\n                </tr>\n            </thead>\n            <tbody>\n                <tr ng-repeat=\"s in schedules track by $index\" style=\"border-bottom: 1px solid rgba(0,0,0,0.05);\">\n                    <td style=\"padding: 6px 2px;\">\n                        <span style=\"padding: 2px 6px; border-radius: 12px; font-weight: bold; font-size: 11px;\" \n                              ng-style=\"{'background-color': s.action == 'true' ? '#e6f4ea' : '#fce8e6', 'color': s.action == 'true' ? '#137333' : '#c5221f'}\">\n                            {{s.action == 'true' ? 'ON' : 'OFF'}}\n                        </span>\n                    </td>\n                    <td style=\"padding: 6px 2px;\">{{getDayName(s.day)}}</td>\n                    <td style=\"padding: 6px 2px; font-family: monospace;\">{{s.timeStr}}</td>\n                    <td style=\"padding: 2px; text-align: right;\">\n                        <md-button class=\"md-icon-button md-warn\" ng-click=\"removeSched($index)\" style=\"margin: 0; width: 24px; height: 24px; min-height: 24px;\">\n                            <i class=\"fa fa-trash\" style=\"font-size: 14px;\"></i>\n                        </md-button>\n                    </td>\n                </tr>\n                <tr ng-if=\"!schedules || schedules.length === 0\">\n                    <td colspan=\"4\" style=\"text-align: center; padding: 10px; color: #888; font-style: italic;\">No schedules set.</td>\n                </tr>\n            </tbody>\n        </table>\n    </div>\n</div>\n\n<script>\n(function(scope) {\n    scope.schedules = [];\n    scope.newSched = { action: \"\", day: \"\", timeObj: new Date(1970, 0, 1, 12, 0, 0) };\n\n    const dayNames = { \"All\": \"Every Day\", \"0\": \"Sun\", \"1\": \"Mon\", \"2\": \"Tue\", \"3\": \"Wed\", \"4\": \"Thu\", \"5\": \"Fri\", \"6\": \"Sat\" };\n    scope.getDayName = function(val) { return dayNames[val] || val; };\n\n    scope.addSched = function() {\n        if(!scope.newSched.action || !scope.newSched.day || !scope.newSched.timeObj) return;\n        let h = scope.newSched.timeObj.getHours().toString().padStart(2, '0');\n        let m = scope.newSched.timeObj.getMinutes().toString().padStart(2, '0');\n        \n        scope.schedules.push({ action: scope.newSched.action, day: scope.newSched.day, timeStr: h + \":\" + m });\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.removeSched = function(index) {\n        scope.schedules.splice(index, 1);\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.$watch('msg', function(msg) {\n        if(msg && Array.isArray(msg.payload)) scope.schedules = msg.payload;\n    });\n})(scope);\n</script>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 550,
-    "y": 240,
-    "wires": [
-      [
-        "9cbf68e1d7620577"
-      ]
-    ]
-  },
-  {
     "id": "d777f5ad421ef5b6",
     "type": "inject",
     "z": "5ba0bb77c042d889",
@@ -6363,9 +4109,7 @@
     "x": 370,
     "y": 240,
     "wires": [
-      [
-        "09cc1b14b73f68f3"
-      ]
+      []
     ]
   },
   {
@@ -6436,30 +4180,6 @@
     ]
   },
   {
-    "id": "7281eeea06b774e6",
-    "type": "ui_template",
-    "z": "5ba0bb77c042d889",
-    "g": "442e896ecaf65bdc",
-    "group": "ui_grp_s2",
-    "name": "Switch 2 UI",
-    "order": 1,
-    "width": 9,
-    "height": 6,
-    "format": "<div style=\"padding: 10px; background-color: var(--nr-dashboard-widgetColor); border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);\">\n    <h3 style=\"margin-top: 0; margin-bottom: 10px; color: var(--nr-dashboard-widgetTextColor); font-weight: 500; font-size: 16px;\">Switch 2 Schedule</h3>\n    \n    <div style=\"display: flex; gap: 5px; align-items: center; margin-bottom: 15px; flex-wrap: wrap; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px;\">\n        <select ng-model=\"newSched.action\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 60px;\">\n            <option value=\"\" disabled selected>Action</option>\n            <option value=\"true\">ON</option>\n            <option value=\"false\">OFF</option>\n        </select>\n\n        <select ng-model=\"newSched.day\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n            <option value=\"\" disabled selected>Day</option>\n            <option value=\"All\">Every Day</option>\n            <option value=\"0\">Sun</option>\n            <option value=\"1\">Mon</option>\n            <option value=\"2\">Tue</option>\n            <option value=\"3\">Wed</option>\n            <option value=\"4\">Thu</option>\n            <option value=\"5\">Fri</option>\n            <option value=\"6\">Sat</option>\n        </select>\n        \n        <input type=\"time\" ng-model=\"newSched.timeObj\" style=\"padding: 4px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n        \n        <md-button class=\"md-raised md-primary\" ng-click=\"addSched()\" style=\"margin:0; padding: 0 10px; min-width: 40px;\">Add</md-button>\n    </div>\n\n    <div style=\"max-height: 140px; overflow-y: auto;\">\n        <table style=\"width: 100%; text-align: left; border-collapse: collapse; font-size: 13px;\">\n            <thead>\n                <tr style=\"border-bottom: 2px solid rgba(0,0,0,0.1); color: var(--nr-dashboard-widgetTextColor);\">\n                    <th style=\"padding: 4px 2px;\">Action</th>\n                    <th style=\"padding: 4px 2px;\">Day</th>\n                    <th style=\"padding: 4px 2px;\">Time</th>\n                    <th style=\"padding: 4px 2px; text-align: right;\">Remove</th>\n                </tr>\n            </thead>\n            <tbody>\n                <tr ng-repeat=\"s in schedules track by $index\" style=\"border-bottom: 1px solid rgba(0,0,0,0.05);\">\n                    <td style=\"padding: 6px 2px;\">\n                        <span style=\"padding: 2px 6px; border-radius: 12px; font-weight: bold; font-size: 11px;\" \n                              ng-style=\"{'background-color': s.action == 'true' ? '#e6f4ea' : '#fce8e6', 'color': s.action == 'true' ? '#137333' : '#c5221f'}\">\n                            {{s.action == 'true' ? 'ON' : 'OFF'}}\n                        </span>\n                    </td>\n                    <td style=\"padding: 6px 2px;\">{{getDayName(s.day)}}</td>\n                    <td style=\"padding: 6px 2px; font-family: monospace;\">{{s.timeStr}}</td>\n                    <td style=\"padding: 2px; text-align: right;\">\n                        <md-button class=\"md-icon-button md-warn\" ng-click=\"removeSched($index)\" style=\"margin: 0; width: 24px; height: 24px; min-height: 24px;\">\n                            <i class=\"fa fa-trash\" style=\"font-size: 14px;\"></i>\n                        </md-button>\n                    </td>\n                </tr>\n                <tr ng-if=\"!schedules || schedules.length === 0\">\n                    <td colspan=\"4\" style=\"text-align: center; padding: 10px; color: #888; font-style: italic;\">No schedules set.</td>\n                </tr>\n            </tbody>\n        </table>\n    </div>\n</div>\n\n<script>\n(function(scope) {\n    scope.schedules = [];\n    scope.newSched = { action: \"\", day: \"\", timeObj: new Date(1970, 0, 1, 12, 0, 0) };\n\n    const dayNames = { \"All\": \"Every Day\", \"0\": \"Sun\", \"1\": \"Mon\", \"2\": \"Tue\", \"3\": \"Wed\", \"4\": \"Thu\", \"5\": \"Fri\", \"6\": \"Sat\" };\n    scope.getDayName = function(val) { return dayNames[val] || val; };\n\n    scope.addSched = function() {\n        if(!scope.newSched.action || !scope.newSched.day || !scope.newSched.timeObj) return;\n        let h = scope.newSched.timeObj.getHours().toString().padStart(2, '0');\n        let m = scope.newSched.timeObj.getMinutes().toString().padStart(2, '0');\n        \n        scope.schedules.push({ action: scope.newSched.action, day: scope.newSched.day, timeStr: h + \":\" + m });\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.removeSched = function(index) {\n        scope.schedules.splice(index, 1);\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.$watch('msg', function(msg) {\n        if(msg && Array.isArray(msg.payload)) scope.schedules = msg.payload;\n    });\n})(scope);\n</script>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 550,
-    "y": 400,
-    "wires": [
-      [
-        "ade839249a367346"
-      ]
-    ]
-  },
-  {
     "id": "43bd0a2279125922",
     "type": "inject",
     "z": "5ba0bb77c042d889",
@@ -6495,9 +4215,7 @@
     "x": 370,
     "y": 400,
     "wires": [
-      [
-        "7281eeea06b774e6"
-      ]
+      []
     ]
   },
   {
@@ -6568,30 +4286,6 @@
     ]
   },
   {
-    "id": "3206ccdc33ceacda",
-    "type": "ui_template",
-    "z": "5ba0bb77c042d889",
-    "g": "33fb84e3a36cd160",
-    "group": "ui_grp_s3",
-    "name": "Switch 3 UI",
-    "order": 1,
-    "width": 9,
-    "height": 6,
-    "format": "<div style=\"padding: 10px; background-color: var(--nr-dashboard-widgetColor); border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);\">\n    <h3 style=\"margin-top: 0; margin-bottom: 10px; color: var(--nr-dashboard-widgetTextColor); font-weight: 500; font-size: 16px;\">Switch 3 Schedule</h3>\n    \n    <div style=\"display: flex; gap: 5px; align-items: center; margin-bottom: 15px; flex-wrap: wrap; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px;\">\n        <select ng-model=\"newSched.action\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 60px;\">\n            <option value=\"\" disabled selected>Action</option>\n            <option value=\"true\">ON</option>\n            <option value=\"false\">OFF</option>\n        </select>\n\n        <select ng-model=\"newSched.day\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n            <option value=\"\" disabled selected>Day</option>\n            <option value=\"All\">Every Day</option>\n            <option value=\"0\">Sun</option>\n            <option value=\"1\">Mon</option>\n            <option value=\"2\">Tue</option>\n            <option value=\"3\">Wed</option>\n            <option value=\"4\">Thu</option>\n            <option value=\"5\">Fri</option>\n            <option value=\"6\">Sat</option>\n        </select>\n        \n        <input type=\"time\" ng-model=\"newSched.timeObj\" style=\"padding: 4px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n        \n        <md-button class=\"md-raised md-primary\" ng-click=\"addSched()\" style=\"margin:0; padding: 0 10px; min-width: 40px;\">Add</md-button>\n    </div>\n\n    <div style=\"max-height: 140px; overflow-y: auto;\">\n        <table style=\"width: 100%; text-align: left; border-collapse: collapse; font-size: 13px;\">\n            <thead>\n                <tr style=\"border-bottom: 2px solid rgba(0,0,0,0.1); color: var(--nr-dashboard-widgetTextColor);\">\n                    <th style=\"padding: 4px 2px;\">Action</th>\n                    <th style=\"padding: 4px 2px;\">Day</th>\n                    <th style=\"padding: 4px 2px;\">Time</th>\n                    <th style=\"padding: 4px 2px; text-align: right;\">Remove</th>\n                </tr>\n            </thead>\n            <tbody>\n                <tr ng-repeat=\"s in schedules track by $index\" style=\"border-bottom: 1px solid rgba(0,0,0,0.05);\">\n                    <td style=\"padding: 6px 2px;\">\n                        <span style=\"padding: 2px 6px; border-radius: 12px; font-weight: bold; font-size: 11px;\" \n                              ng-style=\"{'background-color': s.action == 'true' ? '#e6f4ea' : '#fce8e6', 'color': s.action == 'true' ? '#137333' : '#c5221f'}\">\n                            {{s.action == 'true' ? 'ON' : 'OFF'}}\n                        </span>\n                    </td>\n                    <td style=\"padding: 6px 2px;\">{{getDayName(s.day)}}</td>\n                    <td style=\"padding: 6px 2px; font-family: monospace;\">{{s.timeStr}}</td>\n                    <td style=\"padding: 2px; text-align: right;\">\n                        <md-button class=\"md-icon-button md-warn\" ng-click=\"removeSched($index)\" style=\"margin: 0; width: 24px; height: 24px; min-height: 24px;\">\n                            <i class=\"fa fa-trash\" style=\"font-size: 14px;\"></i>\n                        </md-button>\n                    </td>\n                </tr>\n                <tr ng-if=\"!schedules || schedules.length === 0\">\n                    <td colspan=\"4\" style=\"text-align: center; padding: 10px; color: #888; font-style: italic;\">No schedules set.</td>\n                </tr>\n            </tbody>\n        </table>\n    </div>\n</div>\n\n<script>\n(function(scope) {\n    scope.schedules = [];\n    scope.newSched = { action: \"\", day: \"\", timeObj: new Date(1970, 0, 1, 12, 0, 0) };\n\n    const dayNames = { \"All\": \"Every Day\", \"0\": \"Sun\", \"1\": \"Mon\", \"2\": \"Tue\", \"3\": \"Wed\", \"4\": \"Thu\", \"5\": \"Fri\", \"6\": \"Sat\" };\n    scope.getDayName = function(val) { return dayNames[val] || val; };\n\n    scope.addSched = function() {\n        if(!scope.newSched.action || !scope.newSched.day || !scope.newSched.timeObj) return;\n        let h = scope.newSched.timeObj.getHours().toString().padStart(2, '0');\n        let m = scope.newSched.timeObj.getMinutes().toString().padStart(2, '0');\n        \n        scope.schedules.push({ action: scope.newSched.action, day: scope.newSched.day, timeStr: h + \":\" + m });\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.removeSched = function(index) {\n        scope.schedules.splice(index, 1);\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.$watch('msg', function(msg) {\n        if(msg && Array.isArray(msg.payload)) scope.schedules = msg.payload;\n    });\n})(scope);\n</script>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 550,
-    "y": 560,
-    "wires": [
-      [
-        "26b82715945386f7"
-      ]
-    ]
-  },
-  {
     "id": "387cef1444265328",
     "type": "inject",
     "z": "5ba0bb77c042d889",
@@ -6627,9 +4321,7 @@
     "x": 370,
     "y": 560,
     "wires": [
-      [
-        "3206ccdc33ceacda"
-      ]
+      []
     ]
   },
   {
@@ -6700,30 +4392,6 @@
     ]
   },
   {
-    "id": "443922836345369d",
-    "type": "ui_template",
-    "z": "5ba0bb77c042d889",
-    "g": "ad7c46fbeb7ba881",
-    "group": "ui_grp_s4",
-    "name": "Switch 4 UI",
-    "order": 1,
-    "width": 9,
-    "height": 6,
-    "format": "<div style=\"padding: 10px; background-color: var(--nr-dashboard-widgetColor); border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);\">\n    <h3 style=\"margin-top: 0; margin-bottom: 10px; color: var(--nr-dashboard-widgetTextColor); font-weight: 500; font-size: 16px;\">Switch 4 Schedule</h3>\n    \n    <div style=\"display: flex; gap: 5px; align-items: center; margin-bottom: 15px; flex-wrap: wrap; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px;\">\n        <select ng-model=\"newSched.action\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 60px;\">\n            <option value=\"\" disabled selected>Action</option>\n            <option value=\"true\">ON</option>\n            <option value=\"false\">OFF</option>\n        </select>\n\n        <select ng-model=\"newSched.day\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n            <option value=\"\" disabled selected>Day</option>\n            <option value=\"All\">Every Day</option>\n            <option value=\"0\">Sun</option>\n            <option value=\"1\">Mon</option>\n            <option value=\"2\">Tue</option>\n            <option value=\"3\">Wed</option>\n            <option value=\"4\">Thu</option>\n            <option value=\"5\">Fri</option>\n            <option value=\"6\">Sat</option>\n        </select>\n        \n        <input type=\"time\" ng-model=\"newSched.timeObj\" style=\"padding: 4px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n        \n        <md-button class=\"md-raised md-primary\" ng-click=\"addSched()\" style=\"margin:0; padding: 0 10px; min-width: 40px;\">Add</md-button>\n    </div>\n\n    <div style=\"max-height: 140px; overflow-y: auto;\">\n        <table style=\"width: 100%; text-align: left; border-collapse: collapse; font-size: 13px;\">\n            <thead>\n                <tr style=\"border-bottom: 2px solid rgba(0,0,0,0.1); color: var(--nr-dashboard-widgetTextColor);\">\n                    <th style=\"padding: 4px 2px;\">Action</th>\n                    <th style=\"padding: 4px 2px;\">Day</th>\n                    <th style=\"padding: 4px 2px;\">Time</th>\n                    <th style=\"padding: 4px 2px; text-align: right;\">Remove</th>\n                </tr>\n            </thead>\n            <tbody>\n                <tr ng-repeat=\"s in schedules track by $index\" style=\"border-bottom: 1px solid rgba(0,0,0,0.05);\">\n                    <td style=\"padding: 6px 2px;\">\n                        <span style=\"padding: 2px 6px; border-radius: 12px; font-weight: bold; font-size: 11px;\" \n                              ng-style=\"{'background-color': s.action == 'true' ? '#e6f4ea' : '#fce8e6', 'color': s.action == 'true' ? '#137333' : '#c5221f'}\">\n                            {{s.action == 'true' ? 'ON' : 'OFF'}}\n                        </span>\n                    </td>\n                    <td style=\"padding: 6px 2px;\">{{getDayName(s.day)}}</td>\n                    <td style=\"padding: 6px 2px; font-family: monospace;\">{{s.timeStr}}</td>\n                    <td style=\"padding: 2px; text-align: right;\">\n                        <md-button class=\"md-icon-button md-warn\" ng-click=\"removeSched($index)\" style=\"margin: 0; width: 24px; height: 24px; min-height: 24px;\">\n                            <i class=\"fa fa-trash\" style=\"font-size: 14px;\"></i>\n                        </md-button>\n                    </td>\n                </tr>\n                <tr ng-if=\"!schedules || schedules.length === 0\">\n                    <td colspan=\"4\" style=\"text-align: center; padding: 10px; color: #888; font-style: italic;\">No schedules set.</td>\n                </tr>\n            </tbody>\n        </table>\n    </div>\n</div>\n\n<script>\n(function(scope) {\n    scope.schedules = [];\n    scope.newSched = { action: \"\", day: \"\", timeObj: new Date(1970, 0, 1, 12, 0, 0) };\n\n    const dayNames = { \"All\": \"Every Day\", \"0\": \"Sun\", \"1\": \"Mon\", \"2\": \"Tue\", \"3\": \"Wed\", \"4\": \"Thu\", \"5\": \"Fri\", \"6\": \"Sat\" };\n    scope.getDayName = function(val) { return dayNames[val] || val; };\n\n    scope.addSched = function() {\n        if(!scope.newSched.action || !scope.newSched.day || !scope.newSched.timeObj) return;\n        let h = scope.newSched.timeObj.getHours().toString().padStart(2, '0');\n        let m = scope.newSched.timeObj.getMinutes().toString().padStart(2, '0');\n        \n        scope.schedules.push({ action: scope.newSched.action, day: scope.newSched.day, timeStr: h + \":\" + m });\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.removeSched = function(index) {\n        scope.schedules.splice(index, 1);\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.$watch('msg', function(msg) {\n        if(msg && Array.isArray(msg.payload)) scope.schedules = msg.payload;\n    });\n})(scope);\n</script>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 550,
-    "y": 720,
-    "wires": [
-      [
-        "c4be31a8b72c9826"
-      ]
-    ]
-  },
-  {
     "id": "c9b5496405af4945",
     "type": "inject",
     "z": "5ba0bb77c042d889",
@@ -6759,9 +4427,7 @@
     "x": 370,
     "y": 720,
     "wires": [
-      [
-        "443922836345369d"
-      ]
+      []
     ]
   },
   {
@@ -6832,30 +4498,6 @@
     ]
   },
   {
-    "id": "98c7f8b6ab63b1f8",
-    "type": "ui_template",
-    "z": "5ba0bb77c042d889",
-    "g": "8c7a6c20cb1df32a",
-    "group": "ui_grp_s5",
-    "name": "Switch 5 UI",
-    "order": 1,
-    "width": 9,
-    "height": 6,
-    "format": "<div style=\"padding: 10px; background-color: var(--nr-dashboard-widgetColor); border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);\">\n    <h3 style=\"margin-top: 0; margin-bottom: 10px; color: var(--nr-dashboard-widgetTextColor); font-weight: 500; font-size: 16px;\">Switch 5 Schedule</h3>\n    \n    <div style=\"display: flex; gap: 5px; align-items: center; margin-bottom: 15px; flex-wrap: wrap; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px;\">\n        <select ng-model=\"newSched.action\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 60px;\">\n            <option value=\"\" disabled selected>Action</option>\n            <option value=\"true\">ON</option>\n            <option value=\"false\">OFF</option>\n        </select>\n\n        <select ng-model=\"newSched.day\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n            <option value=\"\" disabled selected>Day</option>\n            <option value=\"All\">Every Day</option>\n            <option value=\"0\">Sun</option>\n            <option value=\"1\">Mon</option>\n            <option value=\"2\">Tue</option>\n            <option value=\"3\">Wed</option>\n            <option value=\"4\">Thu</option>\n            <option value=\"5\">Fri</option>\n            <option value=\"6\">Sat</option>\n        </select>\n        \n        <input type=\"time\" ng-model=\"newSched.timeObj\" style=\"padding: 4px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n        \n        <md-button class=\"md-raised md-primary\" ng-click=\"addSched()\" style=\"margin:0; padding: 0 10px; min-width: 40px;\">Add</md-button>\n    </div>\n\n    <div style=\"max-height: 140px; overflow-y: auto;\">\n        <table style=\"width: 100%; text-align: left; border-collapse: collapse; font-size: 13px;\">\n            <thead>\n                <tr style=\"border-bottom: 2px solid rgba(0,0,0,0.1); color: var(--nr-dashboard-widgetTextColor);\">\n                    <th style=\"padding: 4px 2px;\">Action</th>\n                    <th style=\"padding: 4px 2px;\">Day</th>\n                    <th style=\"padding: 4px 2px;\">Time</th>\n                    <th style=\"padding: 4px 2px; text-align: right;\">Remove</th>\n                </tr>\n            </thead>\n            <tbody>\n                <tr ng-repeat=\"s in schedules track by $index\" style=\"border-bottom: 1px solid rgba(0,0,0,0.05);\">\n                    <td style=\"padding: 6px 2px;\">\n                        <span style=\"padding: 2px 6px; border-radius: 12px; font-weight: bold; font-size: 11px;\" \n                              ng-style=\"{'background-color': s.action == 'true' ? '#e6f4ea' : '#fce8e6', 'color': s.action == 'true' ? '#137333' : '#c5221f'}\">\n                            {{s.action == 'true' ? 'ON' : 'OFF'}}\n                        </span>\n                    </td>\n                    <td style=\"padding: 6px 2px;\">{{getDayName(s.day)}}</td>\n                    <td style=\"padding: 6px 2px; font-family: monospace;\">{{s.timeStr}}</td>\n                    <td style=\"padding: 2px; text-align: right;\">\n                        <md-button class=\"md-icon-button md-warn\" ng-click=\"removeSched($index)\" style=\"margin: 0; width: 24px; height: 24px; min-height: 24px;\">\n                            <i class=\"fa fa-trash\" style=\"font-size: 14px;\"></i>\n                        </md-button>\n                    </td>\n                </tr>\n                <tr ng-if=\"!schedules || schedules.length === 0\">\n                    <td colspan=\"4\" style=\"text-align: center; padding: 10px; color: #888; font-style: italic;\">No schedules set.</td>\n                </tr>\n            </tbody>\n        </table>\n    </div>\n</div>\n\n<script>\n(function(scope) {\n    scope.schedules = [];\n    scope.newSched = { action: \"\", day: \"\", timeObj: new Date(1970, 0, 1, 12, 0, 0) };\n\n    const dayNames = { \"All\": \"Every Day\", \"0\": \"Sun\", \"1\": \"Mon\", \"2\": \"Tue\", \"3\": \"Wed\", \"4\": \"Thu\", \"5\": \"Fri\", \"6\": \"Sat\" };\n    scope.getDayName = function(val) { return dayNames[val] || val; };\n\n    scope.addSched = function() {\n        if(!scope.newSched.action || !scope.newSched.day || !scope.newSched.timeObj) return;\n        let h = scope.newSched.timeObj.getHours().toString().padStart(2, '0');\n        let m = scope.newSched.timeObj.getMinutes().toString().padStart(2, '0');\n        \n        scope.schedules.push({ action: scope.newSched.action, day: scope.newSched.day, timeStr: h + \":\" + m });\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.removeSched = function(index) {\n        scope.schedules.splice(index, 1);\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.$watch('msg', function(msg) {\n        if(msg && Array.isArray(msg.payload)) scope.schedules = msg.payload;\n    });\n})(scope);\n</script>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 550,
-    "y": 880,
-    "wires": [
-      [
-        "2f9bc259b7979b5b"
-      ]
-    ]
-  },
-  {
     "id": "c7bb15781102a081",
     "type": "inject",
     "z": "5ba0bb77c042d889",
@@ -6891,9 +4533,7 @@
     "x": 370,
     "y": 880,
     "wires": [
-      [
-        "98c7f8b6ab63b1f8"
-      ]
+      []
     ]
   },
   {
@@ -6964,30 +4604,6 @@
     ]
   },
   {
-    "id": "7563c0c9b73b7169",
-    "type": "ui_template",
-    "z": "5ba0bb77c042d889",
-    "g": "0543cdccca385a55",
-    "group": "ui_grp_s6",
-    "name": "Switch 6 UI",
-    "order": 1,
-    "width": 9,
-    "height": 6,
-    "format": "<div style=\"padding: 10px; background-color: var(--nr-dashboard-widgetColor); border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);\">\n    <h3 style=\"margin-top: 0; margin-bottom: 10px; color: var(--nr-dashboard-widgetTextColor); font-weight: 500; font-size: 16px;\">Switch 6 Schedule</h3>\n    \n    <div style=\"display: flex; gap: 5px; align-items: center; margin-bottom: 15px; flex-wrap: wrap; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px;\">\n        <select ng-model=\"newSched.action\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 60px;\">\n            <option value=\"\" disabled selected>Action</option>\n            <option value=\"true\">ON</option>\n            <option value=\"false\">OFF</option>\n        </select>\n\n        <select ng-model=\"newSched.day\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n            <option value=\"\" disabled selected>Day</option>\n            <option value=\"All\">Every Day</option>\n            <option value=\"0\">Sun</option>\n            <option value=\"1\">Mon</option>\n            <option value=\"2\">Tue</option>\n            <option value=\"3\">Wed</option>\n            <option value=\"4\">Thu</option>\n            <option value=\"5\">Fri</option>\n            <option value=\"6\">Sat</option>\n        </select>\n        \n        <input type=\"time\" ng-model=\"newSched.timeObj\" style=\"padding: 4px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n        \n        <md-button class=\"md-raised md-primary\" ng-click=\"addSched()\" style=\"margin:0; padding: 0 10px; min-width: 40px;\">Add</md-button>\n    </div>\n\n    <div style=\"max-height: 140px; overflow-y: auto;\">\n        <table style=\"width: 100%; text-align: left; border-collapse: collapse; font-size: 13px;\">\n            <thead>\n                <tr style=\"border-bottom: 2px solid rgba(0,0,0,0.1); color: var(--nr-dashboard-widgetTextColor);\">\n                    <th style=\"padding: 4px 2px;\">Action</th>\n                    <th style=\"padding: 4px 2px;\">Day</th>\n                    <th style=\"padding: 4px 2px;\">Time</th>\n                    <th style=\"padding: 4px 2px; text-align: right;\">Remove</th>\n                </tr>\n            </thead>\n            <tbody>\n                <tr ng-repeat=\"s in schedules track by $index\" style=\"border-bottom: 1px solid rgba(0,0,0,0.05);\">\n                    <td style=\"padding: 6px 2px;\">\n                        <span style=\"padding: 2px 6px; border-radius: 12px; font-weight: bold; font-size: 11px;\" \n                              ng-style=\"{'background-color': s.action == 'true' ? '#e6f4ea' : '#fce8e6', 'color': s.action == 'true' ? '#137333' : '#c5221f'}\">\n                            {{s.action == 'true' ? 'ON' : 'OFF'}}\n                        </span>\n                    </td>\n                    <td style=\"padding: 6px 2px;\">{{getDayName(s.day)}}</td>\n                    <td style=\"padding: 6px 2px; font-family: monospace;\">{{s.timeStr}}</td>\n                    <td style=\"padding: 2px; text-align: right;\">\n                        <md-button class=\"md-icon-button md-warn\" ng-click=\"removeSched($index)\" style=\"margin: 0; width: 24px; height: 24px; min-height: 24px;\">\n                            <i class=\"fa fa-trash\" style=\"font-size: 14px;\"></i>\n                        </md-button>\n                    </td>\n                </tr>\n                <tr ng-if=\"!schedules || schedules.length === 0\">\n                    <td colspan=\"4\" style=\"text-align: center; padding: 10px; color: #888; font-style: italic;\">No schedules set.</td>\n                </tr>\n            </tbody>\n        </table>\n    </div>\n</div>\n\n<script>\n(function(scope) {\n    scope.schedules = [];\n    scope.newSched = { action: \"\", day: \"\", timeObj: new Date(1970, 0, 1, 12, 0, 0) };\n\n    const dayNames = { \"All\": \"Every Day\", \"0\": \"Sun\", \"1\": \"Mon\", \"2\": \"Tue\", \"3\": \"Wed\", \"4\": \"Thu\", \"5\": \"Fri\", \"6\": \"Sat\" };\n    scope.getDayName = function(val) { return dayNames[val] || val; };\n\n    scope.addSched = function() {\n        if(!scope.newSched.action || !scope.newSched.day || !scope.newSched.timeObj) return;\n        let h = scope.newSched.timeObj.getHours().toString().padStart(2, '0');\n        let m = scope.newSched.timeObj.getMinutes().toString().padStart(2, '0');\n        \n        scope.schedules.push({ action: scope.newSched.action, day: scope.newSched.day, timeStr: h + \":\" + m });\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.removeSched = function(index) {\n        scope.schedules.splice(index, 1);\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.$watch('msg', function(msg) {\n        if(msg && Array.isArray(msg.payload)) scope.schedules = msg.payload;\n    });\n})(scope);\n</script>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 550,
-    "y": 1040,
-    "wires": [
-      [
-        "45f6dd861dd23dc2"
-      ]
-    ]
-  },
-  {
     "id": "8e6e83c6932a8d12",
     "type": "inject",
     "z": "5ba0bb77c042d889",
@@ -7023,9 +4639,7 @@
     "x": 370,
     "y": 1040,
     "wires": [
-      [
-        "7563c0c9b73b7169"
-      ]
+      []
     ]
   },
   {
@@ -7096,30 +4710,6 @@
     ]
   },
   {
-    "id": "42f55dc921f3f21c",
-    "type": "ui_template",
-    "z": "5ba0bb77c042d889",
-    "g": "dfec7aaaa674e1df",
-    "group": "ui_grp_s7",
-    "name": "Switch 7 UI",
-    "order": 1,
-    "width": 9,
-    "height": 6,
-    "format": "<div style=\"padding: 10px; background-color: var(--nr-dashboard-widgetColor); border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);\">\n    <h3 style=\"margin-top: 0; margin-bottom: 10px; color: var(--nr-dashboard-widgetTextColor); font-weight: 500; font-size: 16px;\">Switch 7 Schedule</h3>\n    \n    <div style=\"display: flex; gap: 5px; align-items: center; margin-bottom: 15px; flex-wrap: wrap; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px;\">\n        <select ng-model=\"newSched.action\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 60px;\">\n            <option value=\"\" disabled selected>Action</option>\n            <option value=\"true\">ON</option>\n            <option value=\"false\">OFF</option>\n        </select>\n\n        <select ng-model=\"newSched.day\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n            <option value=\"\" disabled selected>Day</option>\n            <option value=\"All\">Every Day</option>\n            <option value=\"0\">Sun</option>\n            <option value=\"1\">Mon</option>\n            <option value=\"2\">Tue</option>\n            <option value=\"3\">Wed</option>\n            <option value=\"4\">Thu</option>\n            <option value=\"5\">Fri</option>\n            <option value=\"6\">Sat</option>\n        </select>\n        \n        <input type=\"time\" ng-model=\"newSched.timeObj\" style=\"padding: 4px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n        \n        <md-button class=\"md-raised md-primary\" ng-click=\"addSched()\" style=\"margin:0; padding: 0 10px; min-width: 40px;\">Add</md-button>\n    </div>\n\n    <div style=\"max-height: 140px; overflow-y: auto;\">\n        <table style=\"width: 100%; text-align: left; border-collapse: collapse; font-size: 13px;\">\n            <thead>\n                <tr style=\"border-bottom: 2px solid rgba(0,0,0,0.1); color: var(--nr-dashboard-widgetTextColor);\">\n                    <th style=\"padding: 4px 2px;\">Action</th>\n                    <th style=\"padding: 4px 2px;\">Day</th>\n                    <th style=\"padding: 4px 2px;\">Time</th>\n                    <th style=\"padding: 4px 2px; text-align: right;\">Remove</th>\n                </tr>\n            </thead>\n            <tbody>\n                <tr ng-repeat=\"s in schedules track by $index\" style=\"border-bottom: 1px solid rgba(0,0,0,0.05);\">\n                    <td style=\"padding: 6px 2px;\">\n                        <span style=\"padding: 2px 6px; border-radius: 12px; font-weight: bold; font-size: 11px;\" \n                              ng-style=\"{'background-color': s.action == 'true' ? '#e6f4ea' : '#fce8e6', 'color': s.action == 'true' ? '#137333' : '#c5221f'}\">\n                            {{s.action == 'true' ? 'ON' : 'OFF'}}\n                        </span>\n                    </td>\n                    <td style=\"padding: 6px 2px;\">{{getDayName(s.day)}}</td>\n                    <td style=\"padding: 6px 2px; font-family: monospace;\">{{s.timeStr}}</td>\n                    <td style=\"padding: 2px; text-align: right;\">\n                        <md-button class=\"md-icon-button md-warn\" ng-click=\"removeSched($index)\" style=\"margin: 0; width: 24px; height: 24px; min-height: 24px;\">\n                            <i class=\"fa fa-trash\" style=\"font-size: 14px;\"></i>\n                        </md-button>\n                    </td>\n                </tr>\n                <tr ng-if=\"!schedules || schedules.length === 0\">\n                    <td colspan=\"4\" style=\"text-align: center; padding: 10px; color: #888; font-style: italic;\">No schedules set.</td>\n                </tr>\n            </tbody>\n        </table>\n    </div>\n</div>\n\n<script>\n(function(scope) {\n    scope.schedules = [];\n    scope.newSched = { action: \"\", day: \"\", timeObj: new Date(1970, 0, 1, 12, 0, 0) };\n\n    const dayNames = { \"All\": \"Every Day\", \"0\": \"Sun\", \"1\": \"Mon\", \"2\": \"Tue\", \"3\": \"Wed\", \"4\": \"Thu\", \"5\": \"Fri\", \"6\": \"Sat\" };\n    scope.getDayName = function(val) { return dayNames[val] || val; };\n\n    scope.addSched = function() {\n        if(!scope.newSched.action || !scope.newSched.day || !scope.newSched.timeObj) return;\n        let h = scope.newSched.timeObj.getHours().toString().padStart(2, '0');\n        let m = scope.newSched.timeObj.getMinutes().toString().padStart(2, '0');\n        \n        scope.schedules.push({ action: scope.newSched.action, day: scope.newSched.day, timeStr: h + \":\" + m });\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.removeSched = function(index) {\n        scope.schedules.splice(index, 1);\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.$watch('msg', function(msg) {\n        if(msg && Array.isArray(msg.payload)) scope.schedules = msg.payload;\n    });\n})(scope);\n</script>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 550,
-    "y": 1200,
-    "wires": [
-      [
-        "bd49bcc8ced1f63f"
-      ]
-    ]
-  },
-  {
     "id": "b2b7c1b87f4021fc",
     "type": "inject",
     "z": "5ba0bb77c042d889",
@@ -7155,9 +4745,7 @@
     "x": 370,
     "y": 1200,
     "wires": [
-      [
-        "42f55dc921f3f21c"
-      ]
+      []
     ]
   },
   {
@@ -7330,33 +4918,7 @@
     "x": 1000,
     "y": 120,
     "wires": [
-      [
-        "a88e7ce16631afe9"
-      ]
-    ]
-  },
-  {
-    "id": "a88e7ce16631afe9",
-    "type": "ui_template",
-    "z": "5ba0bb77c042d889",
-    "g": "23ee1724ab4bf57a",
-    "group": "master_dash_group",
-    "name": "Master Control",
-    "order": 1,
-    "width": "18",
-    "height": "10",
-    "format": "<style>\n    .master-panel { \n        background: linear-gradient(145deg, #161616 0%, #1e1e1e 100%); \n        padding: 20px; \n        border-radius: 12px; \n        color: #eee; \n        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\n        box-shadow: inset 0 1px 1px rgba(255,255,255,0.05), 0 4px 15px rgba(0,0,0,0.5);\n    }\n    .master-header { \n        font-size: 20px; \n        font-weight: 600;\n        color: #00e5ff; \n        margin-bottom: 20px; \n        border-bottom: 1px solid #333; \n        padding-bottom: 12px; \n        display: flex;\n        justify-content: space-between;\n        align-items: center;\n    }\n    .header-title { display: flex; align-items: center; gap: 10px; }\n    .header-buttons { display: flex; gap: 10px; }\n    .master-off-btn {\n        border: none;\n        padding: 8px 16px;\n        border-radius: 6px;\n        font-size: 13px;\n        font-weight: bold;\n        cursor: pointer;\n        box-shadow: 0 2px 5px rgba(0,0,0,0.3);\n        transition: 0.2s;\n        display: flex;\n        align-items: center;\n        gap: 6px;\n    }\n    .light-off { background-color: #fbc02d; color: #000; }\n    .light-off:hover { background-color: #f9a825; }\n    .outlet-off { background-color: #ff1744; color: #fff; }\n    .outlet-off:hover { background-color: #d50000; }\n    .master-off-btn:active { transform: scale(0.96); }\n\n    .grid-container { display: grid; grid-template-columns: 1fr 1fr; gap: 25px; }\n    .device-list { background: rgba(0,0,0,0.25); border-radius: 8px; padding: 15px 20px; border: 1px solid rgba(255,255,255,0.02); }\n    .section-title { color: #888; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 15px 0; }\n    .device-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }\n    .device-row:last-child { border-bottom: none; padding-bottom: 0; }\n    .device-name { font-weight: 500; font-size: 14px; color: #ddd; }\n    .switch { position: relative; display: inline-block; width: 44px; height: 22px; margin: 0; }\n    .switch input { opacity: 0; width: 0; height: 0; }\n    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #444; transition: .3s; border-radius: 22px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.5); }\n    .slider:before { position: absolute; content: \"\"; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: #fff; transition: .3s; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,0.3); }\n    input:checked + .slider { background-color: #00e676; }\n    input:checked + .slider:before { transform: translateX(22px); }\n    input:checked + .slider.outlet-slider { background-color: #ff9800; }\n    .socket-label { font-size: 11px; color: #aaa; margin-right: 6px; font-weight: bold; }\n    .toggle-item { display: flex; align-items: center; }\n</style>\n\n<div class=\"master-panel\">\n    <div class=\"master-header\">\n        <div class=\"header-title\"><i class=\"fa fa-sliders\"></i> Master Control</div>\n        <div class=\"header-buttons\">\n            <button class=\"master-off-btn light-off\" ng-click=\"masterOffLights()\">\n                <i class=\"fa fa-lightbulb-o\"></i> LIGHTS OFF\n            </button>\n            <button class=\"master-off-btn outlet-off\" ng-click=\"masterOffOutlets()\">\n                <i class=\"fa fa-plug\"></i> OUTLETS OFF\n            </button>\n        </div>\n    </div>\n    <div class=\"grid-container\">\n        <div class=\"device-list\">\n            <h4 class=\"section-title\"><i class=\"fa fa-lightbulb-o\"></i> Lighting Zones</h4>\n            <div class=\"device-row\" ng-repeat=\"i in [1,2,3,4,5,6,7]\">\n                <div class=\"device-name\">Light Switch {{i}}</div>\n                <label class=\"switch\">\n                    <input type=\"checkbox\" ng-model=\"state['L'+i]\" ng-change=\"toggle('L'+i, state['L'+i])\">\n                    <span class=\"slider\"></span>\n                </label>\n            </div>\n        </div>\n        <div class=\"device-list\">\n            <h4 class=\"section-title\"><i class=\"fa fa-plug\"></i> Smart Plugs (Dual Socket)</h4>\n            <div class=\"device-row\" ng-repeat=\"i in [1,2,3,4,5,6,7]\">\n                <div class=\"device-name\">Outlet {{i}}</div>\n                <div style=\"display: flex; gap: 15px;\">\n                    <div class=\"toggle-item\">\n                        <span class=\"socket-label\">S1</span>\n                        <label class=\"switch\">\n                            <input type=\"checkbox\" ng-model=\"state['CO'+i+'_1']\" ng-change=\"toggle('CO'+i+'_1', state['CO'+i+'_1'])\">\n                            <span class=\"slider outlet-slider\"></span>\n                        </label>\n                    </div>\n                    <div class=\"toggle-item\">\n                        <span class=\"socket-label\">S2</span>\n                        <label class=\"switch\">\n                            <input type=\"checkbox\" ng-model=\"state['CO'+i+'_2']\" ng-change=\"toggle('CO'+i+'_2', state['CO'+i+'_2'])\">\n                            <span class=\"slider outlet-slider\"></span>\n                        </label>\n                    </div>\n                </div>\n            </div>\n        </div>\n    </div>\n</div>\n\n<script>\n(function(scope) {\n    let savedState = sessionStorage.getItem('bems_master_state');\n    if (savedState) {\n        try { scope.state = JSON.parse(savedState); } \n        catch(e) { initDefaultState(); }\n    } else {\n        initDefaultState();\n    }\n\n    function initDefaultState() {\n        scope.state = {};\n        for(let i=1; i<=7; i++) { \n            scope.state['L'+i] = false; \n            scope.state['CO'+i+'_1'] = false; \n            scope.state['CO'+i+'_2'] = false; \n        }\n    }\n    \n    scope.toggle = function(id, val) {\n        scope.send({ topic: id, payload: val });\n        sessionStorage.setItem('bems_master_state', JSON.stringify(scope.state));\n    };\n\n    scope.masterOffLights = function() {\n        for(let i=1; i<=7; i++) { \n            scope.state['L'+i] = false; \n            scope.toggle('L'+i, false);\n        }\n    };\n\n    scope.masterOffOutlets = function() {\n        for(let i=1; i<=7; i++) { \n            scope.state['CO'+i+'_1'] = false; \n            scope.toggle('CO'+i+'_1', false);\n            scope.state['CO'+i+'_2'] = false; \n            scope.toggle('CO'+i+'_2', false);\n        }\n    };\n\n    scope.$watch('msg', function(msg) {\n        if (!msg) return;\n        let updated = false;\n\n        if (msg.topic && scope.state.hasOwnProperty(msg.topic)) {\n            scope.state[msg.topic] = (msg.payload === true || msg.payload === 'true' || msg.payload === 'ON');\n            updated = true;\n        } else if (msg.payload && typeof msg.payload === 'object') {\n            for (const key in msg.payload) {\n                if (scope.state.hasOwnProperty(key)) {\n                    scope.state[key] = (msg.payload[key] === true || msg.payload[key] === 'true');\n                    updated = true;\n                }\n            }\n        }\n        \n        if (updated) {\n            sessionStorage.setItem('bems_master_state', JSON.stringify(scope.state));\n            if (!scope.$$phase) scope.$applyAsync();\n        }\n    });\n})(scope);\n</script>",
-    "storeOutMessages": true,
-    "fwdInMessages": false,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 1180,
-    "y": 120,
-    "wires": [
-      [
-        "5a9300ab31280f1e"
-      ]
+      []
     ]
   },
   {
@@ -7480,38 +5042,12 @@
     "x": 510,
     "y": 80,
     "wires": [
-      [
-        "8a84d5fec547c73f"
-      ],
+      [],
       [
         "2090f4a4b105b2a9"
       ],
       [
         "aaacae55095a532d"
-      ]
-    ]
-  },
-  {
-    "id": "8a84d5fec547c73f",
-    "type": "ui_template",
-    "z": "5ba0bb77c042d889",
-    "g": "254f893a3cc40831",
-    "group": "ab02f0455a1becd2",
-    "name": "Lighting Floor Plan",
-    "order": 1,
-    "width": "9",
-    "height": "15",
-    "format": "<div style=\"background: #0d1117; padding: 15px; border-radius: 10px; border: 1px solid #ffff00;\">\n    <h4 style=\"color: #ffff00; text-align: center; margin: 0 0 10px 0;\">LIGHTING CONTROL (L1-L7)</h4>\n    <svg viewBox=\"0 0 320 550\" style=\"width: 100%; height: auto;\">\n        <rect x=\"10\" y=\"10\" width=\"300\" height=\"530\" fill=\"none\" stroke=\"#444\" stroke-width=\"2\" rx=\"5\"/>\n        <line x1=\"10\" y1=\"100\" x2=\"310\" y2=\"100\" stroke=\"#444\" stroke-width=\"2\"/>\n        <g ng-repeat=\"row in [1,2,3,4,5,6,7]\">\n            <rect ng-repeat=\"col in [1,2,3]\" width=\"18\" height=\"18\" rx=\"2\"\n                  ng-attr-x=\"{{50 + (col-1)*100}}\" ng-attr-y=\"{{480 - (row-1)*65}}\" \n                  style=\"cursor:pointer; transition:0.3s; stroke:#888;\"\n                  ng-attr-fill=\"{{localState['L'+row] ? '#ffff00' : '#1a1a1a'}}\"\n                  ng-click=\"toggleLight(row)\" />\n            <text ng-attr-x=\"285\" ng-attr-y=\"{{494 - (row-1)*65}}\" fill=\"#888\" font-size=\"12\" font-weight=\"bold\">L{{row}}</text>\n        </g>\n    </svg>\n</div>\n\n<script>\n(function(scope) {\n    let saved = sessionStorage.getItem('bems_light_floor_state');\n    scope.localState = saved ? JSON.parse(saved) : {};\n\n    scope.toggleLight = function(row) {\n        let currentState = scope.localState['L'+row] || false;\n        scope.send({ topic: 'L'+row, payload: !currentState });\n    };\n\n    scope.$watch('msg', function(msg) {\n        if (msg && msg.payload && typeof msg.payload === 'object') {\n            scope.localState = Object.assign(scope.localState, msg.payload);\n            sessionStorage.setItem('bems_light_floor_state', JSON.stringify(scope.localState));\n            if (!scope.$$phase) scope.$applyAsync();\n        }\n    });\n})(scope);\n</script>",
-    "storeOutMessages": true,
-    "fwdInMessages": false,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 170,
-    "y": 80,
-    "wires": [
-      [
-        "2fe7f36dbe7ba944"
       ]
     ]
   },
@@ -7976,48 +5512,7 @@
     "x": 1090,
     "y": 1120,
     "wires": [
-      [
-        "twin_out"
-      ]
-    ]
-  },
-  {
-    "id": "twin_out",
-    "type": "mqtt out",
-    "z": "5ba0bb77c042d889",
-    "name": "publish state",
-    "topic": "",
-    "qos": "0",
-    "retain": "true",
-    "respTopic": "",
-    "contentType": "",
-    "userProps": "",
-    "correl": "",
-    "expiry": "",
-    "broker": "twin_broker",
-    "x": 1300,
-    "y": 1120,
-    "wires": []
-  },
-  {
-    "id": "twin_cmd_in",
-    "type": "mqtt in",
-    "z": "5ba0bb77c042d889",
-    "name": "twin commands",
-    "topic": "mmsu/office/cmd/#",
-    "qos": "0",
-    "datatype": "auto",
-    "broker": "twin_broker",
-    "nl": false,
-    "rap": true,
-    "rh": 0,
-    "inputs": 0,
-    "x": 330,
-    "y": 1200,
-    "wires": [
-      [
-        "twin_cmd_fn"
-      ]
+      []
     ]
   },
   {
@@ -8134,27 +5629,9 @@
     "y": 320,
     "wires": [
       [
-        "0ea54ca120c62453",
         "9f117dc60f29f8c4"
       ]
     ]
-  },
-  {
-    "id": "0ea54ca120c62453",
-    "type": "debug",
-    "z": "5ae2a6bf87435d7a",
-    "name": "MQTT Debug",
-    "active": true,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "payload",
-    "targetType": "msg",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 1360,
-    "y": 320,
-    "wires": []
   },
   {
     "id": "ae0a6d7639d18c4a",
@@ -8215,9 +5692,7 @@
     "x": 1640,
     "y": 320,
     "wires": [
-      [
-        "ad030d2388efbb32"
-      ]
+      []
     ]
   },
   {
@@ -8236,165 +5711,6 @@
     "wires": [
       [
         "9f117dc60f29f8c4"
-      ]
-    ]
-  },
-  {
-    "id": "ad030d2388efbb32",
-    "type": "ui_template",
-    "z": "5ae2a6bf87435d7a",
-    "group": "b97d397b70a44d2a",
-    "name": "Aircon Overview Panel",
-    "order": 1,
-    "width": "18",
-    "height": "7",
-    "format": "<style>\n  .bems-ac-card {\n      background: linear-gradient(145deg, #1e1e1e 0%, #2a2a2a 100%);\n      color: #fff;\n      padding: 20px;\n      border-radius: 12px;\n      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\n      box-shadow: 0 4px 10px rgba(0,0,0,0.5);\n  }\n  .bems-ac-header {\n      display: flex;\n      justify-content: space-between;\n      align-items: center;\n      margin-bottom: 20px;\n      border-bottom: 1px solid #444;\n      padding-bottom: 15px;\n  }\n  .bems-ac-title {\n      font-size: 20px;\n      font-weight: 600;\n      color: #00e5ff;\n      margin: 0;\n      display: flex;\n      align-items: center;\n      gap: 10px;\n  }\n  .bems-ac-status-badge {\n      padding: 6px 16px;\n      border-radius: 20px;\n      font-size: 14px;\n      font-weight: bold;\n      background-color: {{msg.payload.power == 'ON' ? '#00e676' : (msg.payload.power == 'OFF' ? '#ff1744' : '#888')}};\n      color: #000;\n      text-transform: uppercase;\n      box-shadow: 0 2px 5px rgba(0,0,0,0.2);\n  }\n  .bems-ac-grid {\n      display: grid;\n      grid-template-columns: repeat(3, 1fr);\n      gap: 15px;\n      margin-bottom: 20px;\n  }\n  .bems-ac-box {\n      background: rgba(0, 0, 0, 0.2);\n      padding: 20px 10px;\n      border-radius: 10px;\n      text-align: center;\n      border: 1px solid rgba(255, 255, 255, 0.05);\n      transition: transform 0.2s ease;\n  }\n  .bems-ac-box:hover {\n      transform: translateY(-2px);\n      background: rgba(0, 0, 0, 0.3);\n  }\n  .bems-ac-box-title {\n      font-size: 13px;\n      color: #bbb;\n      text-transform: uppercase;\n      letter-spacing: 1px;\n      margin-bottom: 10px;\n  }\n  .bems-ac-box-val {\n      font-size: 38px;\n      font-weight: 700;\n  }\n  .bems-ac-footer {\n      display: flex;\n      justify-content: space-between;\n      background: rgba(0,0,0,0.3);\n      padding: 15px 20px;\n      border-radius: 8px;\n      align-items: center;\n      border: 1px solid rgba(255,255,255,0.05);\n  }\n  .bems-set-temp {\n      font-size: 24px;\n      font-weight: bold;\n      color: #fff;\n  }\n  .bems-set-label {\n      font-size: 14px;\n      color: #aaa;\n      margin-right: 15px;\n  }\n</style>\n\n<div class=\"bems-ac-card\">\n  <div class=\"bems-ac-header\">\n    <h3 class=\"bems-ac-title\">\n        <i class=\"fa fa-snowflake-o\"></i> Aircon Climate Overview\n    </h3>\n    <div class=\"bems-ac-status-badge\">\n        <i class=\"fa fa-power-off\"></i> {{msg.payload.power || 'OFFLINE'}}\n    </div>\n  </div>\n  \n  <div class=\"bems-ac-grid\">\n     <div class=\"bems-ac-box\">\n        <div class=\"bems-ac-box-title\">Room Temp</div>\n        <div class=\"bems-ac-box-val\" style=\"color: #00e5ff;\">{{msg.payload.roomTemp || '--'}}°C</div>\n     </div>\n     <div class=\"bems-ac-box\">\n        <div class=\"bems-ac-box-title\">Humidity</div>\n        <div class=\"bems-ac-box-val\" style=\"color: #69f0ae;\">{{msg.payload.humidity || '--'}}%</div>\n     </div>\n     <div class=\"bems-ac-box\">\n        <div class=\"bems-ac-box-title\">Outside Temp</div>\n        <div class=\"bems-ac-box-val\" style=\"color: #ff9800;\">{{msg.payload.outTemp || '--'}}°C</div>\n     </div>\n  </div>\n\n  <div class=\"bems-ac-footer\">\n     <div>\n        <span class=\"bems-set-label\">Target Temperature:</span>\n        <span class=\"bems-set-temp\">{{msg.payload.setTemp || '--'}}°C</span>\n     </div>\n     <div style=\"font-size: 12px; color: #666;\">\n        <i class=\"fa fa-circle\" style=\"color: #00e676; font-size: 8px; margin-right: 5px; vertical-align: middle;\"></i> Data synced live\n     </div>\n  </div>\n</div>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 1880,
-    "y": 320,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "eb2f46e5767f3a3b",
-    "type": "ui_dropdown",
-    "z": "5ae2a6bf87435d7a",
-    "g": "28c8288b5a370301",
-    "name": "Select Temperature",
-    "label": "Set Temperature",
-    "tooltip": "",
-    "place": "Select °C",
-    "group": "b97d397b70a44d2a",
-    "order": 3,
-    "width": "9",
-    "height": 1,
-    "passthru": true,
-    "multiple": false,
-    "options": [
-      {
-        "label": "16°C",
-        "value": "16",
-        "type": "str"
-      },
-      {
-        "label": "17°C",
-        "value": "17",
-        "type": "str"
-      },
-      {
-        "label": "18°C",
-        "value": "18",
-        "type": "str"
-      },
-      {
-        "label": "19°C",
-        "value": "19",
-        "type": "str"
-      },
-      {
-        "label": "20°C",
-        "value": "20",
-        "type": "str"
-      },
-      {
-        "label": "21°C",
-        "value": "21",
-        "type": "str"
-      },
-      {
-        "label": "22°C",
-        "value": "22",
-        "type": "str"
-      },
-      {
-        "label": "23°C",
-        "value": "23",
-        "type": "str"
-      },
-      {
-        "label": "24°C",
-        "value": "24",
-        "type": "str"
-      },
-      {
-        "label": "25°C",
-        "value": "25",
-        "type": "str"
-      },
-      {
-        "label": "26°C",
-        "value": "26",
-        "type": "str"
-      },
-      {
-        "label": "27°C",
-        "value": "27",
-        "type": "str"
-      },
-      {
-        "label": "28°C",
-        "value": "28",
-        "type": "str"
-      },
-      {
-        "label": "29°C",
-        "value": "29",
-        "type": "str"
-      },
-      {
-        "label": "30°C",
-        "value": "30",
-        "type": "str"
-      }
-    ],
-    "topic": "temp_set",
-    "topicType": "str",
-    "className": "",
-    "x": 950,
-    "y": 140,
-    "wires": [
-      [
-        "7301d59fe01a962c"
-      ]
-    ]
-  },
-  {
-    "id": "f6a8d1e578de9de8",
-    "type": "ui_switch",
-    "z": "5ae2a6bf87435d7a",
-    "g": "28c8288b5a370301",
-    "name": "AC Master Power",
-    "label": "AC Power",
-    "tooltip": "",
-    "group": "b97d397b70a44d2a",
-    "order": 2,
-    "width": "9",
-    "height": 1,
-    "passthru": true,
-    "decouple": "false",
-    "topic": "pwr_cmd",
-    "topicType": "str",
-    "style": "",
-    "onvalue": "25",
-    "onvalueType": "str",
-    "onicon": "",
-    "oncolor": "",
-    "offvalue": "OFF",
-    "offvalueType": "str",
-    "officon": "",
-    "offcolor": "",
-    "animate": true,
-    "className": "",
-    "x": 950,
-    "y": 100,
-    "wires": [
-      [
-        "7301d59fe01a962c"
       ]
     ]
   },
@@ -8499,9 +5815,7 @@
     "x": 380,
     "y": 140,
     "wires": [
-      [
-        "aeb2429ec9e70bfa"
-      ]
+      []
     ]
   },
   {
@@ -8567,31 +5881,7 @@
     "y": 100,
     "wires": [
       [
-        "f6a8d1e578de9de8"
-      ]
-    ]
-  },
-  {
-    "id": "aeb2429ec9e70bfa",
-    "type": "ui_template",
-    "z": "5ae2a6bf87435d7a",
-    "g": "7d8606a4843d3022",
-    "group": "b97d397b70a44d2a",
-    "name": "Aircon UI",
-    "order": 4,
-    "width": "18",
-    "height": "6",
-    "format": "<div style=\"padding: 10px; background-color: var(--nr-dashboard-widgetColor); border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);\">\n    <h3 style=\"margin-top: 0; margin-bottom: 10px; color: var(--nr-dashboard-widgetTextColor); font-weight: 500; font-size: 16px;\">Aircon Schedule</h3>\n    \n    <div style=\"display: flex; gap: 5px; align-items: center; margin-bottom: 15px; flex-wrap: wrap; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px;\">\n        <select ng-model=\"newSched.action\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n            <option value=\"\" disabled selected>Action / Temp</option>\n            <option value=\"OFF\">Turn OFF</option>\n            <option value=\"25\">Turn ON (25°C)</option>\n            <option disabled>──────────</option>\n            <option value=\"16\">16°C</option>\n            <option value=\"17\">17°C</option>\n            <option value=\"18\">18°C</option>\n            <option value=\"19\">19°C</option>\n            <option value=\"20\">20°C</option>\n            <option value=\"21\">21°C</option>\n            <option value=\"22\">22°C</option>\n            <option value=\"23\">23°C</option>\n            <option value=\"24\">24°C</option>\n            <option value=\"25\">25°C</option>\n            <option value=\"26\">26°C</option>\n            <option value=\"27\">27°C</option>\n            <option value=\"28\">28°C</option>\n            <option value=\"29\">29°C</option>\n            <option value=\"30\">30°C</option>\n        </select>\n\n        <select ng-model=\"newSched.day\" style=\"padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n            <option value=\"\" disabled selected>Day</option>\n            <option value=\"All\">Every Day</option>\n            <option value=\"0\">Sun</option>\n            <option value=\"1\">Mon</option>\n            <option value=\"2\">Tue</option>\n            <option value=\"3\">Wed</option>\n            <option value=\"4\">Thu</option>\n            <option value=\"5\">Fri</option>\n            <option value=\"6\">Sat</option>\n        </select>\n        \n        <input type=\"time\" ng-model=\"newSched.timeObj\" style=\"padding: 4px; border-radius: 4px; border: 1px solid #ccc; flex: 1; min-width: 80px;\">\n        \n        <md-button class=\"md-raised md-primary\" ng-click=\"addSched()\" style=\"margin:0; padding: 0 10px; min-width: 40px;\">Add</md-button>\n    </div>\n\n    <div style=\"max-height: 140px; overflow-y: auto;\">\n        <table style=\"width: 100%; text-align: left; border-collapse: collapse; font-size: 13px;\">\n            <thead>\n                <tr style=\"border-bottom: 2px solid rgba(0,0,0,0.1); color: var(--nr-dashboard-widgetTextColor);\">\n                    <th style=\"padding: 4px 2px;\">Action</th>\n                    <th style=\"padding: 4px 2px;\">Day</th>\n                    <th style=\"padding: 4px 2px;\">Time</th>\n                    <th style=\"padding: 4px 2px; text-align: right;\">Remove</th>\n                </tr>\n            </thead>\n            <tbody>\n                <tr ng-repeat=\"s in schedules track by $index\" style=\"border-bottom: 1px solid rgba(0,0,0,0.05);\">\n                    <td style=\"padding: 6px 2px;\">\n                        <span style=\"padding: 2px 6px; border-radius: 12px; font-weight: bold; font-size: 11px;\" \n                              ng-style=\"{'background-color': s.action != 'OFF' ? '#e6f4ea' : '#fce8e6', 'color': s.action != 'OFF' ? '#137333' : '#c5221f'}\">\n                            {{s.action == 'OFF' ? 'OFF' : s.action == '25' && s.isDefaultOn ? 'ON' : s.action + '°C'}}\n                        </span>\n                    </td>\n                    <td style=\"padding: 6px 2px;\">{{getDayName(s.day)}}</td>\n                    <td style=\"padding: 6px 2px; font-family: monospace;\">{{s.timeStr}}</td>\n                    <td style=\"padding: 2px; text-align: right;\">\n                        <md-button class=\"md-icon-button md-warn\" ng-click=\"removeSched($index)\" style=\"margin: 0; width: 24px; height: 24px; min-height: 24px;\">\n                            <i class=\"fa fa-trash\" style=\"font-size: 14px;\"></i>\n                        </md-button>\n                    </td>\n                </tr>\n                <tr ng-if=\"!schedules || schedules.length === 0\">\n                    <td colspan=\"4\" style=\"text-align: center; padding: 10px; color: #888; font-style: italic;\">No schedules set.</td>\n                </tr>\n            </tbody>\n        </table>\n    </div>\n</div>\n\n<script>\n(function(scope) {\n    scope.schedules = [];\n    scope.newSched = { action: \"\", day: \"\", timeObj: new Date(1970, 0, 1, 12, 0, 0) };\n\n    const dayNames = { \"All\": \"Every Day\", \"0\": \"Sun\", \"1\": \"Mon\", \"2\": \"Tue\", \"3\": \"Wed\", \"4\": \"Thu\", \"5\": \"Fri\", \"6\": \"Sat\" };\n    scope.getDayName = function(val) { return dayNames[val] || val; };\n\n    scope.addSched = function() {\n        if(!scope.newSched.action || !scope.newSched.day || !scope.newSched.timeObj) return;\n        let h = scope.newSched.timeObj.getHours().toString().padStart(2, '0');\n        let m = scope.newSched.timeObj.getMinutes().toString().padStart(2, '0');\n        \n        scope.schedules.push({\n            action: scope.newSched.action, \n            day: scope.newSched.day, \n            timeStr: h + \":\" + m,\n            isDefaultOn: scope.newSched.action === \"25\"\n        });\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.removeSched = function(index) {\n        scope.schedules.splice(index, 1);\n        scope.send({payload: scope.schedules});\n    };\n\n    scope.$watch('msg', function(msg) {\n        if(msg && Array.isArray(msg.payload)) scope.schedules = msg.payload;\n    });\n})(scope);\n</script>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 540,
-    "y": 140,
-    "wires": [
-      [
-        "d875722604dc396a"
+        "7301d59fe01a962c"
       ]
     ]
   },
@@ -8621,73 +5911,6 @@
     ]
   },
   {
-    "id": "85244bc1a0a06f9c",
-    "type": "ui_chart",
-    "z": "5ae2a6bf87435d7a",
-    "g": "2117824a3d22ad1a",
-    "name": "Power Trend Chart AREC ACU",
-    "group": "047d82b3d93aefa3",
-    "order": 2,
-    "width": "18",
-    "height": "9",
-    "label": "ACU Power Trend (W)",
-    "chartType": "line",
-    "legend": "false",
-    "xformat": "HH:mm",
-    "interpolate": "linear",
-    "nodata": "Waiting for data...",
-    "dot": false,
-    "ymin": "0",
-    "ymax": "",
-    "removeOlder": "12",
-    "removeOlderPoints": "",
-    "removeOlderUnit": "3600",
-    "cutout": 0,
-    "useOneColor": true,
-    "useUTC": false,
-    "colors": [
-      "#00e5ff",
-      "#aec7e8",
-      "#ff7f0e",
-      "#2ca02c",
-      "#98df8a",
-      "#d62728",
-      "#ff9896",
-      "#9467bd",
-      "#c5b0d5"
-    ],
-    "outputs": 1,
-    "useDifferentColor": false,
-    "className": "",
-    "x": 790,
-    "y": 360,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "b62323a5d4c314ea",
-    "type": "ui_template",
-    "z": "5ae2a6bf87435d7a",
-    "g": "2117824a3d22ad1a",
-    "group": "047d82b3d93aefa3",
-    "name": "AREC ACU Panel",
-    "order": 1,
-    "width": "18",
-    "height": "4",
-    "format": "<style>\n  .mod-card { background: #1e1e1e; color: #fff; padding: 15px; border-radius: 8px; font-family: 'Segoe UI', sans-serif; }\n  .mod-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; }\n  .mod-title { font-size: 18px; font-weight: bold; margin:0; text-shadow: 0 0 5px rgba(255, 255, 255, 0.2); }\n  .mod-badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; background-color: {{msg.payload.statusColor}}; color: #000; }\n  .mod-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; text-align: center; }\n  .mod-box { background: #262626; padding: 10px; border-radius: 6px; border: 1px solid #333;}\n  .mod-val { font-size: 26px; font-weight: bold; color: #fff; }\n  .mod-lbl { font-size: 11px; color: #aaa; text-transform: uppercase; margin-top:4px;}\n  .mod-footer { margin-top: 12px; font-size: 11px; color: #777; text-align: right; }\n</style>\n\n<div class=\"mod-card\">\n  <div class=\"mod-header\">\n    <h3 class=\"mod-title\" style=\"color: {{msg.payload.titleColor}};\">{{msg.payload.name}}</h3>\n    <div class=\"mod-badge\">{{msg.payload.status || 'WAITING...'}}</div>\n  </div>\n  <div class=\"mod-grid\">\n    <div class=\"mod-box\">\n        <div class=\"mod-val\" style=\"color: #e6e600;\">{{msg.payload.voltage || '0.0'}}</div>\n        <div class=\"mod-lbl\">Voltage (V)</div>\n    </div>\n    <div class=\"mod-box\">\n        <div class=\"mod-val\" style=\"color: #00b500;\">{{msg.payload.current || '0.000'}}</div>\n        <div class=\"mod-lbl\">Current (A)</div>\n    </div>\n    <div class=\"mod-box\">\n        <div class=\"mod-val\" style=\"color: #ca3838;\">{{msg.payload.power || '0.0'}}</div>\n        <div class=\"mod-lbl\">Power (W)</div>\n    </div>\n    <div class=\"mod-box\">\n        <div class=\"mod-val\" style=\"color: #69f0ae;\">{{msg.payload.energy || '0.000'}}</div>\n        <div class=\"mod-lbl\">Today's Energy (kWh)</div>\n    </div>\n  </div>\n  <div class=\"mod-footer\">Last Packet Received: {{msg.payload.time || 'N/A'}}</div>\n</div>",
-    "storeOutMessages": true,
-    "fwdInMessages": true,
-    "resendOnRefresh": true,
-    "templateScope": "local",
-    "className": "",
-    "x": 750,
-    "y": 300,
-    "wires": [
-      []
-    ]
-  },
-  {
     "id": "ae816c4f373cc99a",
     "type": "function",
     "z": "5ae2a6bf87435d7a",
@@ -8703,12 +5926,8 @@
     "x": 500,
     "y": 320,
     "wires": [
-      [
-        "b62323a5d4c314ea"
-      ],
-      [
-        "85244bc1a0a06f9c"
-      ]
+      [],
+      []
     ]
   },
   {
