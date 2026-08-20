@@ -3,6 +3,7 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { useContextStore } from '@/stores/contextStore';
 import { nextUpSchedules, armedScheduleCount } from '@/components/automation/automationMath';
 import { CLASS_ICON } from '@/lib/deviceIcons';
+import { CardLink } from '@/components/ui/CardLink';
 
 /**
  * v4's "Active Schedules" card, retitled "Next up" per the Phase M plan — v3's
@@ -22,11 +23,14 @@ export function NextUpCard() {
   return (
     <div className="card">
       <div className="card-head">
-        <h3 className="card-title">
-          <CalendarClock size={14} className="title-icon" aria-hidden="true" />
-          Active Schedules
-        </h3>
-        <span className="card-sub">{armed > 0 ? `${armed} armed · ` : ''}Node-RED global context</span>
+        <div>
+          <h3 className="card-title">
+            <CalendarClock size={14} className="title-icon" aria-hidden="true" />
+            Active Schedules
+          </h3>
+          <p className="card-sub">{armed > 0 ? `${armed} armed · ` : ''}Node-RED global context</p>
+        </div>
+        <CardLink to="automation" label="Open schedules on Automation" />
       </div>
       {entries.length === 0 ? (
         <p className="section-placeholder">No schedules armed — No data</p>

@@ -621,20 +621,39 @@ body::before {
   color: var(--muted-2);
   margin: 2px 0 0;
 }
-/* The "View details ↗" / "Manage ↗" / "Fleet status ↗" text-link pattern in a card header —
-   used across most Overview cards, always a plain text button, never a bordered pill. */
+/* The "go to this card's full page" affordance in a card header (see ui/CardLink.tsx).
+   Icon-only: four cards previously spelled out four different labels ("View details",
+   "Details", "Fleet status", "Open controls") for one identical action, each consuming header
+   width the card's own title needed. The accessible name moved to aria-label/title rather
+   than being dropped — see CardLink for why that prop is required rather than optional.
+
+   Sized 32px so the touch target meets the 24px minimum with room to spare, then pulled back
+   with negative margin so the header's visual rhythm is unchanged despite the bigger hit
+   area. Focus is handled by the global :focus-visible rule near the top of this file. */
 .card-head-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: -6px -6px -6px 0;
   border: none;
   background: none;
   padding: 0;
-  color: var(--blue);
-  font: 600 var(--fs-xs) inherit;
+  border-radius: var(--r-sm);
+  color: var(--muted-2);
   cursor: pointer;
-  white-space: nowrap;
   flex: none;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 .card-head-link:hover {
-  text-decoration: underline;
+  background: var(--bg-inset);
+  color: var(--txt);
+}
+.card-head-link:active {
+  transform: translateY(1px);
 }
 
 /*
@@ -1420,11 +1439,26 @@ body::before {
   min-width: 0;
   min-height: 0;
 }
-/* Stretched to the row's full height (the tallest column) and split evenly among children,
-   so 3 cards in the left column are equal thirds and 2 in the right are equal halves —
-   not stacked top-down with a void at the bottom. */
+/* Stretched to the row's full height (the tallest column) and split among children, so 3
+   cards in the left column fill it rather than stacking top-down with a void at the bottom.
+
+   `flex: 1 1 auto`, NOT `flex: 1`. The latter is `flex: 1 1 0%` — a zero basis, which means
+   the share each card gets is computed with no regard for how much content it holds. Paired
+   with the `min-height: 0` that used to sit here, a card could be sized SMALLER than its own
+   content, and since `.card` doesn't clip, the surplus simply painted outside the card's
+   border. Measured: with more branch meters than the current site has, Energy Breakdown grew
+   221px -> 244px while its content needed 72px more than that, and those 72px spilled past
+   the bottom edge. An `auto` basis floors each card at its content height and distributes
+   only the genuinely free space, so the column still fills without any card being crushed.
+
+   Deliberately not solved with `overflow: hidden`: clipping would hide readings on a
+   monitoring dashboard, trading a visible layout bug for an invisible data one. */
 .overview-col > * {
-  flex: 1;
+  flex: 1 1 auto;
+}
+/* The one child that MUST be allowed below its content height: the 3D canvas sizes itself to
+   its box rather than the other way round, so without this it can only ever grow. */
+.overview-col--center > * {
   min-height: 0;
 }
 /* `.card` is the shared primitive every page uses and stays plain block flow everywhere

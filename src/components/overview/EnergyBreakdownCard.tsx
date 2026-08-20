@@ -1,7 +1,7 @@
 import { ChartPie } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { InfoHint } from '@/components/ui/InfoHint';
-import { navigateTo } from '@/lib/useHashRoute';
+import { CardLink } from '@/components/ui/CardLink';
 
 /**
  * Today's consumed energy, split by branch — the "where did the kWh go" counterpart to
@@ -34,9 +34,7 @@ export function EnergyBreakdownCard() {
             longer-period accumulators are reported.
           </InfoHint>
         </h3>
-        <button type="button" className="card-head-link" onClick={() => navigateTo('analytics')}>
-          Details ↗
-        </button>
+        <CardLink to="analytics" label="View the full energy breakdown on Analytics" />
       </div>
 
       {branches.length === 0 ? (

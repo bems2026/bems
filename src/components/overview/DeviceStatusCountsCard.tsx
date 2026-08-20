@@ -1,5 +1,6 @@
+import { Router } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
-import { navigateTo } from '@/lib/useHashRoute';
+import { CardLink } from '@/components/ui/CardLink';
 import { countOnline } from './overviewMath';
 
 /**
@@ -22,10 +23,11 @@ export function DeviceStatusCountsCard() {
   return (
     <div className="card">
       <div className="card-head">
-        <h3 className="card-title">Device Status</h3>
-        <button type="button" className="card-head-link" onClick={() => navigateTo('devices')}>
-          Fleet status ↗
-        </button>
+        <h3 className="card-title">
+          <Router size={14} className="title-icon" aria-hidden="true" />
+          Device Status
+        </h3>
+        <CardLink to="devices" label="Open the device fleet status" />
       </div>
       <CountRow label="Reporting" value={`${online}/${total}`} color="var(--green-bright)" />
       <CountRow label="Lights on" value={`${lightsOn}/${lights.length}`} color="var(--accent)" />

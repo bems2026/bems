@@ -4,13 +4,13 @@ import { useCommandStore, targetKey } from '@/stores/commandStore';
 import { controlView } from '@/lib/socketView';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
-import { navigateTo } from '@/lib/useHashRoute';
+import { CardLink } from '@/components/ui/CardLink';
 
 /** The one "quick toggle" light circuit shown here — L1, a real commandable device, not
  * the design's unlabelled sample row. Any one would do; this is simply the first of the
  * seven lighting circuits. Was L1 + L2 — trimmed to one row so this card (and the bottom
  * bento row it's stretched to match, per `.overview-trio` in index.css) reads shorter;
- * the full 7-circuit list is one click away via "Open controls ↗" regardless. */
+ * the full 7-circuit list is one click away via this card's header link regardless. */
 const QUICK_TOGGLE_IDS = ['l1'];
 
 /**
@@ -19,7 +19,7 @@ const QUICK_TOGGLE_IDS = ['l1'];
  * toggle — §0.3 of the spec: IR blasts don't cut power, so "Send ON"/"Send OFF" are two
  * distinct one-shot actions, not two states of one switch).
  *
- * "Open controls ↗" is the ONLY link to the Control page anywhere in the Overview bento —
+ * This card's header link is the ONLY route to the Control page anywhere in the Overview bento —
  * the 3D hero card's own "Switch a row"/"Open controls" buttons were removed so there's one
  * place to look for it, not three saying the same thing.
  */
@@ -51,9 +51,7 @@ export function MasterQuickActionsCard() {
           <SlidersHorizontal size={14} className="title-icon" aria-hidden="true" />
           Quick Control
         </h3>
-        <button type="button" className="card-head-link" onClick={() => navigateTo('control')}>
-          Open controls ↗
-        </button>
+        <CardLink to="control" label="Open the full controls on Control" />
       </div>
 
       <div className="quick-row">

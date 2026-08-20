@@ -3,7 +3,7 @@ import { Zap } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useConnectionStore } from '@/stores/connectionStore';
 import { isStale } from '@/lib/bridgeClient';
-import { navigateTo } from '@/lib/useHashRoute';
+import { CardLink } from '@/components/ui/CardLink';
 import { MetricValue } from '@/components/ui/MetricValue';
 import { InfoHint } from '@/components/ui/InfoHint';
 
@@ -36,9 +36,7 @@ export function LiveDemandCard() {
           Live Demand
           <InfoHint label="Where these totals come from">Today/week/month are the edge buffer's own running totals — the same figures Analytics reads.</InfoHint>
         </h3>
-        <button type="button" className="card-head-link" onClick={() => navigateTo('analytics')}>
-          View details ↗
-        </button>
+        <CardLink to="analytics" label="View live demand details on Analytics" />
       </div>
       <div className="live-demand-hero">
         <span className="live-demand-value">{totals?.total_power_w != null ? (totals.total_power_w / 1000).toFixed(2) : '—'}</span>

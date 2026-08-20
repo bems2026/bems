@@ -5,7 +5,7 @@ import { SpatialView } from './SpatialView';
 /**
  * v4's 3D hero card chrome (title, subtitle) wrapping `SpatialView`. No link to Control from
  * here — "Switch a row"/"Open controls" (this card's own and `OfficeScene3D`'s) were removed
- * so Quick Control's "Open controls ↗" is the single place to navigate to Control from
+ * so Quick Control's header link is the single place to navigate to Control from
  * Overview, not three buttons saying the same thing. The overlay chips (lit count, ACU
  * state), the auto-rotate/top-down/reset-view controls, and the Edit Layout toolbar all live
  * inside `OfficeScene3D` itself — that's where the container ref and device-derived state
