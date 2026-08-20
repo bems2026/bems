@@ -52,6 +52,8 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-044** Rolling z-score/IQR anomaly detection with a noise floor substituted into the denominator rather than used as a skip-gate — `server/anomalyStats.mjs`
 - [x] **EX-045** Systemd units for ingest, proxy, and the office kiosk display — `server/ibems-ingest.service`, `server/ibems-proxy.service`, `server/ibems-kiosk.service`
 - [x] **EX-047** Scheduler daemon firing the Automation page's schedules through the same gate and audit trail as a manual click, attributed to whoever saved the schedule — `server/scheduler.mjs`, `server/schedulePlan.mjs`, `server/ibems-scheduler.service`
+- [x] **EX-049** Automatic load shedding on a DSM threshold breach — shed-only, one tier per evaluation, never touching Protected or unassigned devices; same gate and audit trail as any other command — `server/shedPlan.mjs`, `shared/dsmMath.mjs`
+- [x] **EX-050** The Automation page records who saved a schedule or threshold, without which neither can fire — `src/lib/supabaseConfig.ts`
 - [x] **EX-048** Light dispatch shared by the proxy and the scheduler rather than duplicated — `server/dispatchLight.mjs`
 - [x] **EX-046** Log rate limit for the bridge unit, so a device-discovery failure loop cannot evict the journal's history — `server/nodered-log-ratelimit.conf`
 
@@ -121,6 +123,10 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       publishes nothing, Mosquitto has no remaining user and can go.**
 - [ ] **RM-006** Data retention: automatic cleanup so `readings` does not grow without bound, and a backup policy for the Supabase project.
       *Acceptance:* a documented, scheduled policy; old rows aged out on a defined schedule.
+- [ ] **RM-006c** Assign load-shed tiers and set DSM limits before auto-shed can do anything.
+      *Acceptance:* at least one device has a shed group, a threshold is set, and auto-shed is on.
+      Nothing is configured today, so the mechanism is live but inert by design. Note that only
+      lights can currently be shed, which limits how much load it can actually drop.
 - [ ] **RM-006b** Move outlet and ACU schedules onto the scheduler once they have a real
       dispatch path (FI-004). Until then `server/scheduler.mjs` deliberately ignores them:
       emitting commands would write `dry_run` audit rows for switching Node-RED really did.

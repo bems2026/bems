@@ -45,6 +45,8 @@ npm run build:flow       # regenerate the flow after editing shared/
   them is a rotation, not an offset, and it lives in exactly one place
   (`schedulePlan.appDayIndex`). Getting it wrong yields a schedule that looks healthy and
   switches the office lights on the wrong day.
+- **Auto-shed sheds, it never restores.** Switching load off unattended is recoverable by a
+  person; switching it back on is not. Restoring is deliberately manual.
 - **Never change the Pi's Wi-Fi remotely.** A wrong SSID or credential loses the host with
   nobody on site to recover it.
 
