@@ -4092,6 +4092,45 @@ body::before {
   font-size: var(--fs-sm);
 }
 
+/* Three states, three tones — all via existing semantic tokens, so both themes follow
+   automatically (a hardcoded value here is exactly the dark-mode bug class this file's
+   header warns about).
+   --closed: nothing dispatches. Amber caution, the long-standing default.
+   --partial: some controls are live and some are not. The most dangerous state to
+     misread, so it keeps the amber rather than being softened into an info tone.
+   --full: everything on the page moves real hardware. Red, because this is the state
+     where a mis-click has physical consequences — not a success message. */
+.control-dispatch-banner--full {
+  background: var(--bad-soft);
+  color: var(--bad);
+  font-weight: 600;
+}
+/* --bad measures 4.45:1 on this banner's own tinted background in dark — just under AA for
+   text this size. --red-bright is the dark theme's already-defined lighter red and takes it
+   to 5.03:1, matching light's 5.05:1. */
+:root[data-theme='dark'] .control-dispatch-banner--full {
+  color: var(--red-bright);
+}
+
+.control-simulated-badge {
+  margin-left: auto;
+  background: var(--warn);
+  color: #ffffff;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+}
+/* The -text-tier inversion this file's header describes: --warn is a mid-dark amber in
+   light (white on it = 5.02:1) and a light amber in dark (white would be 2.11:1, so near-
+   black instead = 8.78:1). Both clear AA; a single fixed text color cannot. */
+:root[data-theme='dark'] .control-simulated-badge {
+  color: #1a1206;
+}
+
 .automation-grid {
   display: grid;
   grid-template-columns: 1.25fr 1fr;

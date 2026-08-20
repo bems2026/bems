@@ -40,7 +40,9 @@
  * real to the live Node-RED flow's `POST /light/:id` (see `dispatchLightCommand`) — the
  * same entry point the physical node-red-dashboard UI already uses. Outlets and the ACU
  * have no equivalent endpoint and stay `dry_run` even with the gate open; building those
- * is separate, later work.
+ * is separate, later work. `GET /api/capabilities` reports that asymmetry as
+ * `dispatch_classes` so the UI can name which controls are actually live, rather than
+ * treating an open gate as "everything on this page now moves hardware."
  */
 
 import http from 'node:http';
@@ -72,6 +74,13 @@ const LIGHT_API_TOKEN = process.env.LIGHT_API_TOKEN || null;
 // before it's called failed" (shared/registry.mjs's TIMING, Stage 2/command-path
 // comment) — not a new number invented for this one call.
 const LIGHT_DISPATCH_TIMEOUT_MS = TIMING.COMMAND_TIMEOUT_MS;
+// The device classes a command actually reaches hardware for. Lights are the only class with
+// a real endpoint on the live flow (see dispatchLightCommand); outlets and the ACU have none
+// and stay dry_run even with the gate open. Declared ONCE here and consumed by both
+// handleCommand and GET /api/capabilities, so what the frontend is told and what the server
+// will really do cannot drift apart — adding outlet dispatch later means adding its class
+// here and its branch below, not hunting for a second hardcoded list.
+const DISPATCH_CLASSES = ['switch'];
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error('[ibems-proxy] SUPABASE_URL and VITE_SUPABASE_ANON_KEY are required — see server/.env.example');
@@ -293,7 +302,7 @@ async function handleCommand(req, res, token) {
   // outlet/ACU dispatch path is a one-line change here, not a rewrite of this function.
   let status = 'dry_run';
   let dispatchFailureDetail = null;
-  if (HARDWARE_DISPATCH_ENABLED && device.class === 'switch') {
+  if (HARDWARE_DISPATCH_ENABLED && DISPATCH_CLASSES.includes(device.class)) {
     const result = await dispatchLightCommand(device, cmd);
     if (result.ok) {
       status = 'dispatched';
@@ -374,7 +383,13 @@ const server = http.createServer(async (req, res) => {
   if (!authorized) return sendJson(res, 401, { error: 'unauthorized' });
 
   if (req.method === 'GET' && url.pathname === '/api/capabilities') {
-    return sendJson(res, 200, { hardware_dispatch_enabled: HARDWARE_DISPATCH_ENABLED });
+    // dispatch_classes is what the gate means in practice, not just whether it is open:
+    // with the gate closed nothing dispatches, so the list is empty. The frontend uses it to
+    // say which controls are live rather than going silent the moment the gate opens.
+    return sendJson(res, 200, {
+      hardware_dispatch_enabled: HARDWARE_DISPATCH_ENABLED,
+      dispatch_classes: HARDWARE_DISPATCH_ENABLED ? DISPATCH_CLASSES : [],
+    });
   }
   if (req.method === 'POST' && url.pathname === '/api/command') {
     return handleCommand(req, res, token);

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Lightbulb, Plug, Snowflake } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
@@ -13,6 +13,8 @@ import { OutletsListCard } from './OutletsListCard';
 import { IrCommandCenterCard } from './IrCommandCenterCard';
 import { CommandLogCard } from './CommandLogCard';
 import { useControlLog } from './controlLog';
+import type { DeviceClass } from '@/lib/types';
+import { dispatchScope, dispatchScopeMessage } from './dispatchScope';
 
 type MasterAction = 'lights-off' | 'outlets-off' | 'ac-off';
 
@@ -63,7 +65,15 @@ export function ControlPage() {
   const devices = useDeviceStore((s) => s.devices);
   const send = useCommandStore((s) => s.send);
   const log = useControlLog((s) => s.log);
-  const hardwareDispatchEnabled = useCapabilitiesStore((s) => s.hardwareDispatchEnabled);
+  const dispatchClasses = useCapabilitiesStore((s) => s.dispatchClasses);
+  // Which controls on this page are actually wired to hardware right now. `null` (not yet
+  // loaded) resolves to 'closed' inside dispatchScope — never claim otherwise before a real
+  // /api/capabilities response says so.
+  const scope = useMemo(() => dispatchScope(devices, dispatchClasses), [devices, dispatchClasses]);
+  // Flag individual cards only in the MIXED state. When nothing dispatches at all, the banner
+  // above already says so once, and repeating it on every card is noise that trains people to
+  // ignore the flag — which would defeat it at the one moment it matters.
+  const flagSimulated = (cls: DeviceClass) => scope.state === 'partial' && scope.simulated.includes(cls);
   const [confirming, setConfirming] = useState<MasterAction | null>(null);
   useFaultLogging();
 
@@ -114,13 +124,13 @@ export function ControlPage() {
         }
       />
 
-      {/* null (not yet loaded) is treated the same as false — never claim dispatch is
-          open before a real /api/capabilities response confirms it. */}
-      {hardwareDispatchEnabled !== true && (
-        <p className="control-dispatch-banner" role="status">
-          Hardware dispatch is closed — every command here is validated and audit-logged, but nothing on this page currently changes a real relay.
-        </p>
-      )}
+      {/* Always rendered, in all three states. An earlier version showed this only while
+          dispatch was closed, which meant opening the gate made it disappear — and a page
+          with no notice reads as "everything here is live", which is exactly wrong while
+          outlets and the ACU still change nothing. */}
+      <p className={`control-dispatch-banner control-dispatch-banner--${scope.state}`} role="status">
+        {dispatchScopeMessage(scope)}
+      </p>
 
       <div className="control-grid">
         <div className="control-grid__main">
@@ -140,12 +150,12 @@ export function ControlPage() {
 
           <div className="control-list-grid">
             <SwitchesListCard />
-            <OutletsListCard />
+            <OutletsListCard simulated={flagSimulated('outlet_dual')} />
           </div>
         </div>
 
         <div className="control-grid__side">
-          <IrCommandCenterCard />
+          <IrCommandCenterCard simulated={flagSimulated('acu_ir')} />
           <CommandLogCard />
         </div>
       </div>

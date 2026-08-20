@@ -330,7 +330,7 @@ test('GET /api/capabilities reflects HARDWARE_DISPATCH_ENABLED — false by defa
   try {
     const res = await fetch(`${proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: false });
+    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: false, dispatch_classes: [] });
   } finally {
     cleanup();
   }
@@ -340,7 +340,40 @@ test('GET /api/capabilities reports true once the gate is explicitly opened', as
   const { proxyUrl, cleanup } = await setup({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-light-token' });
   try {
     const res = await fetch(`${proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
-    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: true });
+    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: true, dispatch_classes: ['switch'] });
+  } finally {
+    cleanup();
+  }
+});
+
+// The whole point of reporting classes rather than a boolean: the frontend must be able to
+// say "lights are live, outlets are not" instead of going silent the moment the gate opens.
+// This asserts the reported list is not just plausible but exactly matches what handleCommand
+// will really do, so the two can never drift apart.
+test('the classes /api/capabilities advertises are exactly the ones that actually dispatch', async () => {
+  const { proxyUrl, lightState, cleanup } = await setupDispatch();
+  try {
+    const res = await fetch(`${proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
+    const { dispatch_classes } = await res.json();
+    assert.deepEqual(dispatch_classes, ['switch']);
+
+    // A class it advertises really does reach the hardware endpoint...
+    const lightRes = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l1', action: 'on' }),
+    });
+    assert.equal(lightRes.status, 202);
+    assert.equal(lightState.requests.length, 1);
+
+    // ...and one it does NOT advertise really does not.
+    const outletRes = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'co1', socket: 1, action: 'on' }),
+    });
+    assert.equal(outletRes.status, 202);
+    assert.equal(lightState.requests.length, 1, 'an unadvertised class must not reach the light endpoint');
   } finally {
     cleanup();
   }

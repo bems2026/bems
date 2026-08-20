@@ -170,4 +170,9 @@ export interface ContextAck {
  * path to enable, so there is nothing it could honestly report as `true`. */
 export interface Capabilities {
   hardware_dispatch_enabled: boolean;
+  /** The device classes a command actually reaches hardware for, right now — empty while the
+   * gate is closed. Not the same fact as `hardware_dispatch_enabled`: the proxy only ever
+   * dispatches `switch` commands, so an open gate still leaves outlets and the ACU changing
+   * nothing. See `components/control/dispatchScope.ts` for why the UI needs both. */
+  dispatch_classes: string[];
 }

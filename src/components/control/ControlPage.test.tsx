@@ -47,7 +47,7 @@ afterEach(() => {
   vi.clearAllMocks();
   useDeviceStore.setState({ devices: [], latestReadings: {}, totals: null, history: {} });
   useCommandStore.setState({ pending: {} });
-  useCapabilitiesStore.setState({ hardwareDispatchEnabled: null });
+  useCapabilitiesStore.setState({ hardwareDispatchEnabled: null, dispatchClasses: null });
   useControlLog.setState({ entries: [] });
 });
 
@@ -59,17 +59,47 @@ describe('ControlPage', () => {
   });
 
   it('keeps showing the banner when the gate is confirmed closed', () => {
-    useCapabilitiesStore.setState({ hardwareDispatchEnabled: false });
+    useCapabilitiesStore.setState({ hardwareDispatchEnabled: false, dispatchClasses: [] });
     useDeviceStore.setState({ devices: [light(1)] });
     render(<ControlPage />);
     expect(screen.getByText(/Hardware dispatch is closed/)).toBeInTheDocument();
   });
 
-  it('hides the banner only once the gate is confirmed open', () => {
-    useCapabilitiesStore.setState({ hardwareDispatchEnabled: true });
+  it('stops claiming dispatch is closed once the gate is confirmed open', () => {
+    useCapabilitiesStore.setState({ hardwareDispatchEnabled: true, dispatchClasses: ['switch'] });
     useDeviceStore.setState({ devices: [light(1)] });
     render(<ControlPage />);
     expect(screen.queryByText(/Hardware dispatch is closed/)).not.toBeInTheDocument();
+    expect(screen.getByText(/switches real hardware/)).toBeInTheDocument();
+  });
+
+  // The regression this whole feature exists to prevent: the banner used to be a single
+  // boolean, so opening the gate made it vanish entirely — silently implying outlets and the
+  // ACU had gone live too, when server/proxy.mjs only ever dispatches `switch` commands.
+  it('names what is live AND what only looks live when the gate is open but lights are the only class that dispatches', () => {
+    useCapabilitiesStore.setState({ hardwareDispatchEnabled: true, dispatchClasses: ['switch'] });
+    useDeviceStore.setState({ devices: [light(1), outlet(1), acu()] });
+    render(<ControlPage />);
+    const banner = document.querySelector('.control-dispatch-banner') as HTMLElement;
+    expect(banner).toHaveTextContent(/Lighting now switches real hardware/);
+    expect(banner).toHaveTextContent(/Outlets and the ACU are validated and audit-logged only/);
+  });
+
+  it('flags the outlets and ACU cards themselves, not just the page banner — the banner is easy to scroll past', () => {
+    useCapabilitiesStore.setState({ hardwareDispatchEnabled: true, dispatchClasses: ['switch'] });
+    useDeviceStore.setState({ devices: [light(1), outlet(1), acu()] });
+    render(<ControlPage />);
+    const outletsCard = screen.getByText('Outlets').closest('.control-list-card') as HTMLElement;
+    expect(within(outletsCard).getByText(/not dispatched/i)).toBeInTheDocument();
+    const irCard = screen.getByText('IR HVAC').closest('.control-ir-card') as HTMLElement;
+    expect(within(irCard).getByText(/not dispatched/i)).toBeInTheDocument();
+  });
+
+  it('adds no per-card flags while the gate is fully closed — the page banner already says nothing dispatches, and repeating it on every card is noise', () => {
+    useCapabilitiesStore.setState({ hardwareDispatchEnabled: false, dispatchClasses: [] });
+    useDeviceStore.setState({ devices: [light(1), outlet(1), acu()] });
+    render(<ControlPage />);
+    expect(screen.queryByText(/not dispatched/i)).not.toBeInTheDocument();
   });
 
   it('renders the real registry devices across the switches and outlets lists', () => {

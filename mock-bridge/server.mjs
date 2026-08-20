@@ -3,6 +3,7 @@
  *
  *     node mock-bridge/server.mjs [--port=1880] [--500] [--drop-ws] [--stale=co3]
  *                                  [--cmd-latency=800] [--cmd-fail=co3] [--cmd-drop=co3]
+ *                                  [--dispatch=switch]
  *
  * Why this exists: the real Node-RED runs on a Raspberry Pi on the building LAN and is
  * not reachable from a dev machine. Without this, none of the frontend work in Phases
@@ -27,6 +28,9 @@
  *                      global.lightStatus entry going DISCONNECTED, same as the real bridge.
  *   --cmd-latency=<ms> delay a command's mutation AND its ack by this long (default 0)
  *   --cmd-fail=<id|all> that command 502s; state is left untouched
+ *   --dispatch=<classes>  comma-separated device classes GET /api/capabilities reports as
+ *                         really reaching hardware (e.g. `--dispatch=switch` reproduces the
+ *                         real Pi's lights-only state). Default: none, i.e. gate closed.
  *   --cmd-drop=<id|all> that command never responds at all (exercises the client's abort)
  */
 
@@ -50,6 +54,10 @@ const DROP_WS = flag('drop-ws');
 const STALE_ID = val('stale', '');
 const CMD_LATENCY = Number(val('cmd-latency', 0));
 const CMD_FAIL = val('cmd-fail', '');
+// Lets a frontend dev preview the mixed dispatch state (some classes live, some not) that
+// only a real Pi with the gate open would otherwise produce. Same purpose as --cmd-fail
+// above: make a state that needs hardware reachable without hardware.
+const DISPATCH_CLASSES = val('dispatch', '') ? val('dispatch', '').split(',').filter(Boolean) : [];
 const CMD_DROP = val('cmd-drop', '');
 
 // ---------------------------------------------------------------------------
@@ -440,12 +448,14 @@ const server = http.createServer((req, res) => {
     case '/api/devices':
       return send(res, 200, publicDevices());
 
-    // Contract parity with server/proxy.mjs's real (Phase 6) endpoint — always false here.
-    // The mock has no Supabase-backed command audit log to gate, so there is nothing this
-    // flag could honestly report as enabled; a frontend dev pointed at the mock should see
-    // the same "commanded, not yet dispatchable" UI it would see against the real gated proxy.
+    // Contract parity with server/proxy.mjs's real (Phase 6/7) endpoint. Closed by default:
+    // the mock has no hardware to reach, so a frontend dev pointed at it sees the same
+    // "commanded, not yet dispatchable" UI the real gated proxy produces. --dispatch=<classes>
+    // overrides that purely so the mixed state (lights live, outlets/ACU not) can be worked
+    // on without a Pi — it changes only what this endpoint claims, never what the mock does
+    // with a command, which has no hardware path either way.
     case '/api/capabilities':
-      return send(res, 200, { hardware_dispatch_enabled: false });
+      return send(res, 200, { hardware_dispatch_enabled: DISPATCH_CLASSES.length > 0, dispatch_classes: DISPATCH_CLASSES });
 
     case '/api/readings/latest':
       return send(res, 200, latest());
@@ -539,6 +549,7 @@ server.listen(PORT, () => {
     STALE_ID && `--stale=${STALE_ID}`,
     CMD_LATENCY > 0 && `--cmd-latency=${CMD_LATENCY}`,
     CMD_FAIL && `--cmd-fail=${CMD_FAIL}`,
+    DISPATCH_CLASSES.length && `--dispatch=${DISPATCH_CLASSES.join(',')}`,
     CMD_DROP && `--cmd-drop=${CMD_DROP}`,
   ].filter(Boolean);
   console.log(`iBEMS mock bridge  http://localhost:${PORT}`);

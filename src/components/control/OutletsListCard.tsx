@@ -7,6 +7,7 @@ import { corroborate } from '@/lib/relayCorroboration';
 import { isReadingStale } from '@/lib/staleness';
 import { StaleDataBadge } from '@/components/common/StaleDataBadge';
 import { InfoHint } from '@/components/ui/InfoHint';
+import { SimulatedBadge } from './SimulatedBadge';
 import type { Device, Reading, SocketIndex } from '@/lib/types';
 import { useControlLog, type LogTag } from './controlLog';
 
@@ -16,7 +17,7 @@ import { useControlLog, type LogTag } from './controlLog';
  * See `LightingMatrixCard.tsx`'s `useLightSwitches` comment for why the sort is a
  * `useMemo` over the raw selector rather than inline in the selector itself.
  */
-export function OutletsListCard() {
+export function OutletsListCard({ simulated = false }: { simulated?: boolean }) {
   const devices = useDeviceStore((s) => s.devices);
   const outlets = useMemo(() => devices.filter((d) => d.class === 'outlet_dual').sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true })), [devices]);
 
@@ -26,6 +27,7 @@ export function OutletsListCard() {
         <Plug size={16} className="title-icon" aria-hidden="true" />
         Outlets
         <InfoHint label="Hardware">7x Tuya 20A dual-socket, S1/S2.</InfoHint>
+        {simulated && <SimulatedBadge />}
       </h3>
       {outlets.map((d) => (
         <OutletRow key={d.id} device={d} />

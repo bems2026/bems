@@ -6,6 +6,7 @@ import { isReadingStale } from '@/lib/staleness';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { InfoHint } from '@/components/ui/InfoHint';
+import { SimulatedBadge } from './SimulatedBadge';
 import { useControlLog } from './controlLog';
 
 const ACU_ID = 'acu_main';
@@ -17,7 +18,7 @@ const ACU_ID = 'acu_main';
  * never a toggle: an IR blast is a one-shot command, and the compressor is never power-cut
  * from here (§0.3 of the design's own spec).
  */
-export function IrCommandCenterCard() {
+export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean }) {
   const device = useDeviceStore((s) => s.devices.find((d) => d.id === ACU_ID));
   const reading = useDeviceStore((s) => s.latestReadings[ACU_ID]);
   const pending = useCommandStore((s) => s.pending[targetKey(ACU_ID)]);
@@ -62,6 +63,7 @@ export function IrCommandCenterCard() {
         <Snowflake size={14} className="title-icon" aria-hidden="true" />
         IR HVAC
         <InfoHint label="How IR commands work">Commands are emitted by the IR blaster. Power is never cut — the compressor stays protected.</InfoHint>
+        {simulated && <SimulatedBadge />}
       </h3>
 
       <div className="control-ir-unit">

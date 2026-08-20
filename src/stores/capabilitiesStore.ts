@@ -9,6 +9,11 @@ interface CapabilitiesState {
    * everywhere the UI reads this (see `ControlPage.tsx`'s dispatch banner): never claim
    * hardware dispatch is open before it's actually confirmed open. */
   hardwareDispatchEnabled: boolean | null;
+  /** Which device classes actually reach hardware right now. `null` until the first
+   * successful load — deliberately distinct from `[]`, which is the server positively
+   * confirming that nothing dispatches. `components/control/dispatchScope.ts` treats both as
+   * closed, but only one of them is a fact we were actually told. */
+  dispatchClasses: string[] | null;
   load: () => Promise<void>;
 }
 
@@ -20,6 +25,7 @@ interface CapabilitiesState {
  */
 export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
   hardwareDispatchEnabled: null,
+  dispatchClasses: null,
 
   // Same retry-with-backoff shape as useLiveConnection.ts's device-catalogue fetch — a
   // failed load here must never get stuck reporting "unknown" forever just because one
@@ -31,9 +37,15 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
     }
     const attempt = async (): Promise<void> => {
       try {
-        const { hardware_dispatch_enabled } = await getCapabilities();
+        const { hardware_dispatch_enabled, dispatch_classes } = await getCapabilities();
         loadAttempt = 0;
-        set({ hardwareDispatchEnabled: hardware_dispatch_enabled });
+        set({
+          hardwareDispatchEnabled: hardware_dispatch_enabled,
+          // A proxy old enough to predate this field is reported as null (unknown) rather
+          // than [], for the same reason the initial value is null: absence of an answer is
+          // not the same as an answer of "nothing".
+          dispatchClasses: Array.isArray(dispatch_classes) ? dispatch_classes : null,
+        });
       } catch {
         loadAttempt++;
         loadRetryTimer = setTimeout(attempt, nextPollDelayMs(loadAttempt));
