@@ -1017,12 +1017,18 @@ body::before {
   display: inline-flex;
   align-items: center;
 }
+/* 24x24 hit area for a 13px glyph: measured 17x17 before, which is under SC 2.5.8's minimum,
+   and this control appears many times on every page. The padding does the work so the icon
+   itself is unchanged; negative margin keeps the surrounding text rhythm identical. */
 .info-hint__btn {
   border: none;
   background: none;
   color: var(--muted-2);
   cursor: pointer;
-  padding: 2px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 4px;
+  margin: -4px;
   display: grid;
   place-items: center;
   border-radius: 50%;
@@ -3041,6 +3047,11 @@ body::before {
 .control-master-btn:active,
 .control-plan-btn:active,
 .control-lamp:not(:disabled):active,
+/* The DP1/DP2 halves stay ~13x25, below SC 2.5.8's 24px minimum, deliberately. They are
+   positioned to scale on a spatial plan of the room; widening them would put them where the
+   sockets are not, which is the one thing a floor plan has to get right. This is the
+   criterion's own "equivalent control" exception: every socket is also switchable at full size
+   from the Outlets list on the same page (see OutletsListCard's .outlet-socket-toggle). */
 .control-outlet-pin__half:not(:disabled):active,
 .devices-filter-chip:active,
 .analytics-scope-btn:active,
@@ -3436,6 +3447,7 @@ body::before {
 }
 .control-ir-unit__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--sp-2);
   margin-top: var(--sp-3);
 }
@@ -3674,6 +3686,8 @@ body::before {
   gap: var(--sp-3);
   flex-wrap: wrap;
 }
+/* These toggle series on the chart, so they are real controls rather than a static key.
+   Measured 13px tall; padding lifts the hit area to 24 without moving the text. */
 .analytics-legend__item {
   border: none;
   background: none;
@@ -3682,7 +3696,9 @@ body::before {
   align-items: center;
   gap: 5px;
   font: 600 var(--fs-xxs) 'IBM Plex Mono', monospace;
-  padding: 0;
+  min-height: 24px;
+  padding: 0 2px;
+  margin: 0 -2px;
   white-space: nowrap;
 }
 .analytics-legend__swatch {
@@ -3982,7 +3998,8 @@ body::before {
   border: none;
   background: none;
   cursor: pointer;
-  padding: 3px 10px;
+  min-height: 24px;
+  padding: 4px 10px;
   border-radius: calc(var(--r-sm) - 2px);
   font: 600 var(--fs-xs) 'Manrope', sans-serif;
   color: var(--muted-2);
@@ -4284,7 +4301,10 @@ body::before {
 }
 .automation-sched-row {
   display: grid;
-  grid-template-columns: 1.5fr 86px 86px 1fr 56px;
+  /* minmax(0, ...) rather than a bare fr: an `fr` track's default minimum is `auto`, i.e. its
+     content, so the 7 day chips (154px + gaps) held the 4th track open and pushed the whole
+     row past its card. Measured at 375px before this: 341px of overflow. */
+  grid-template-columns: minmax(0, 1.5fr) 86px 86px minmax(0, 1fr) 56px;
   gap: var(--sp-2);
   align-items: center;
   padding: var(--sp-2) 0;
@@ -4342,11 +4362,14 @@ body::before {
 }
 .automation-day-chips {
   display: flex;
+  flex-wrap: wrap;
   gap: 3px;
 }
+/* 22px was just under the 24px minimum. They wrap now (see .automation-day-chips), so the
+   extra 2px costs nothing at any width. */
 .automation-day-chip {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border-radius: 6px;
   border: none;
   cursor: pointer;
@@ -4384,8 +4407,11 @@ body::before {
   font-size: var(--fs-md);
   color: var(--blue);
 }
+/* The track renders ~16px tall, under SC 2.5.8's 24px. The height here enlarges the hit area
+   without thickening the track itself, which the browser still draws at its own size. */
 .automation-trigger-card__slider {
   width: 100%;
+  height: 24px;
   margin-top: var(--sp-3);
   accent-color: var(--blue-bright);
 }
@@ -4815,4 +4841,45 @@ body::before {
 .nav-session__signout:hover {
   background: var(--bg-inset);
   color: var(--txt);
+}
+
+/* ---------------------------------------------------------------------------
+ * Automation — narrow screens.
+ *
+ * The schedule row's five rigid columns (device, on, off, seven day chips, arm) cannot fit a
+ * phone: the fixed tracks alone are 228px plus gaps, before the day chips ask for another
+ * ~154px. Measured 341px of overflow at 375px wide. Below this breakpoint the row stops being
+ * a table row and becomes a small stacked card instead, which is what the content actually is.
+ *
+ * The header row goes with it: column captions are meaningless once nothing lines up beneath
+ * them, and leaving them would label the wrong things.
+ * ------------------------------------------------------------------------ */
+@media (max-width: 720px) {
+  .automation-sched-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    align-items: center;
+  }
+  .automation-sched-row--head {
+    display: none;
+  }
+  /* The 640px floor exists to hold the five-column grid's shape. Once the row stacks it is
+     no longer holding anything up — it was simply forcing a 640px table inside a 319px card,
+     which is where the measured overflow actually came from. */
+  .automation-sched-table {
+    min-width: 0;
+  }
+  .automation-sched-row__device {
+    flex: 1 1 100%;
+  }
+  .automation-sched-row .automation-time-input {
+    flex: 0 1 auto;
+  }
+  .automation-day-chips {
+    flex: 1 1 100%;
+  }
+  .automation-sched-row__arm {
+    margin-left: auto;
+  }
 }
