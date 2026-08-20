@@ -16,7 +16,7 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { loadDotEnv, createAdminClient } from './nodeRedAdmin.mjs';
-import { planCleanup } from './cleanupPlan.mjs';
+import { planCleanup, DEAD_ENDPOINTS } from './cleanupPlan.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 loadDotEnv(join(HERE, '..'));
@@ -64,18 +64,40 @@ async function main() {
   const problems = [];
   if (plan.flows.filter((n) => n.type === 'tab').length !== flows.filter((n) => n.type === 'tab').length) problems.push('a tab would be deleted');
   if (!survivingTypes.has('tuya-smart-device')) problems.push('no tuya devices would survive');
-  const httpBefore = flows.filter((n) => n.type === 'http in').length;
-  const httpAfter = plan.flows.filter((n) => n.type === 'http in').length;
-  if (httpBefore !== httpAfter) problems.push(`http endpoints changed ${httpBefore} -> ${httpAfter}`);
-  const fnBefore = flows.filter((n) => n.type === 'function').length;
-  const fnAfter = plan.flows.filter((n) => n.type === 'function').length;
-  if (fnBefore !== fnAfter) problems.push(`function nodes changed ${fnBefore} -> ${fnAfter}`);
+  // Endpoints may only disappear if they are ones this cleanup explicitly targets. A blanket
+  // count check would either block the intended removals or, once relaxed, stop noticing an
+  // unintended one — so compare the actual sets instead.
+  const urlsBefore = new Set(flows.filter((n) => n.type === 'http in').map((n) => n.url));
+  const urlsAfter = new Set(plan.flows.filter((n) => n.type === 'http in').map((n) => n.url));
+  const droppedUrls = [...urlsBefore].filter((u) => !urlsAfter.has(u));
+  const unexpected = droppedUrls.filter((u) => !DEAD_ENDPOINTS.includes(u));
+  if (unexpected.length) problems.push(`unexpected HTTP endpoint(s) removed: ${unexpected.join(', ')}`);
+  // The reachability sweep is powerful enough to remove things nobody listed, so the things
+  // that must NEVER go are asserted by name rather than by count.
+  const survives = (pred, what) => {
+    if (!plan.flows.some(pred)) problems.push(`${what} would be removed`);
+  };
+  survives((n) => n.type === 'http in' && n.url === '/light/:id', 'POST /light/:id (the live dispatch path)');
+  survives((n) => n.name === 'Lighting Logic Hub', 'Lighting Logic Hub');
+  survives((n) => n.name === 'Outlet Logic Hub', 'Outlet Logic Hub');
+  survives((n) => n.name === 'AC Master Logic', 'AC Master Logic');
+  survives((n) => n.type === 'websocket-listener', 'the websocket-listener behind /ws/live');
+  survives((n) => n.type === 'websocket out', 'the /ws/live publisher');
+  const gsBefore = flows.filter((n) => n.type === 'GSheet').length;
+  const gsAfter = plan.flows.filter((n) => n.type === 'GSheet').length;
+  if (gsBefore !== gsAfter) problems.push(`Google Sheets logging changed ${gsBefore} -> ${gsAfter} (it is meant to be kept)`);
+  const apiBefore = flows.filter((n) => n.type === 'http in' && n.url.startsWith('/api/')).length;
+  const apiAfter = plan.flows.filter((n) => n.type === 'http in' && n.url.startsWith('/api/')).length;
+  if (apiBefore !== apiAfter) problems.push(`/api/* endpoints changed ${apiBefore} -> ${apiAfter}`);
+  const tuyaBefore = flows.filter((n) => n.type === 'tuya-smart-device').length;
+  const tuyaAfter = plan.flows.filter((n) => n.type === 'tuya-smart-device').length;
+  if (tuyaBefore !== tuyaAfter) problems.push(`tuya devices changed ${tuyaBefore} -> ${tuyaAfter}`);
   if (problems.length) {
     console.error('\n[prune] REFUSING — the plan violates a safety invariant:');
     for (const p of problems) console.error(`  - ${p}`);
     process.exit(1);
   }
-  console.log('[prune] safety invariants hold: every tab, every function, every HTTP endpoint and the Tuya devices all survive.');
+  console.log('[prune] safety invariants hold: the dispatch endpoint, all three control hubs, the live feed, /api/*, Google Sheets and every Tuya device survive.');
 
   if (!APPLY) {
     console.log('\n[prune] DRY RUN — nothing written. Re-run with --apply to deploy.');
