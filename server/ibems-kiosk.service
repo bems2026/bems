@@ -1,0 +1,84 @@
+# systemd USER unit for the CARE office kiosk display.
+#
+# Unlike server/ibems-proxy.service and server/ibems-ingest.service, this is a --user unit,
+# not a system one: it has to run inside the logged-in graphical session to reach the
+# Wayland compositor. It installs to the user's own systemd directory, and needs no sudo:
+#
+#     mkdir -p ~/.config/systemd/user
+#     cp server/ibems-kiosk.service ~/.config/systemd/user/ibems-kiosk.service
+#     systemctl --user daemon-reload
+#     systemctl --user enable --now ibems-kiosk.service
+#     systemctl --user status ibems-kiosk.service
+#
+# Reboot survival depends on lightdm autologin being configured (autologin-user=bems in
+# /etc/lightdm/lightdm.conf) — that login is what starts the user manager, which activates
+# default.target, which starts this. Without autologin the Pi would sit at a greeter and
+# the screen would stay blank; check that first if the kiosk ever fails to come back.
+#
+# Verified on Raspberry Pi OS trixie / labwc / Wayland, Chromium 151.
+
+[Unit]
+Description=iBEMS kiosk — full-screen dashboard on the CARE office display
+Documentation=https://github.com/bems2026/bems
+
+# Deliberately NOT bound to graphical-session.target: on this Pi (Raspberry Pi OS trixie,
+# labwc/Wayland via lightdm autologin) that target is never activated, so a unit wanted by
+# it would silently never start. default.target IS active in the user manager, and the
+# ExecStartPre below is what actually waits for the compositor rather than unit ordering.
+After=default.target
+
+[Service]
+Type=simple
+
+# The user manager sets XDG_RUNTIME_DIR itself, but this unit must not depend on the
+# compositor having exported anything into the systemd user environment — it doesn't here.
+# Both values are stated explicitly so the service is reproducible from a cold boot.
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=XDG_SESSION_TYPE=wayland
+
+# default.target can activate before labwc has created its socket, so wait for the socket
+# itself rather than trusting startup ordering. 90s is generous for a cold boot on an SD
+# card; failing loudly after that is better than a Chromium that starts headless and shows
+# nothing on the physical screen.
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 90); do [ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ] && exit 0; sleep 1; done; echo "wayland socket $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY never appeared" >&2; exit 1'
+
+# Chromium in --kiosk mode does NOT retry a page that fails to load: if ibems-dashboard is
+# not yet listening on :5183 when this launches, the office screen shows "This site can't
+# be reached" and stays there until a human intervenes — the exact class of failure this
+# unit exists to prevent. So wait for the dashboard to actually serve before opening it.
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 90); do curl -sf -o /dev/null http://127.0.0.1:5183/ && exit 0; sleep 1; done; echo "dashboard never answered on 127.0.0.1:5183" >&2; exit 1'
+
+# --user-data-dir is a dedicated profile, separate from whatever a human opens by hand.
+#   Without it, launching this while someone has Chromium open fails outright ("profile in
+#   use"), and a person browsing on the desktop could leave state that breaks the kiosk.
+# --disable-session-crashed-bubble / --hide-crash-restore-bubble: after a power cut Chromium
+#   otherwise opens with a "Restore pages?" prompt sitting over the dashboard, waiting for a
+#   click nobody is there to give. That is precisely the failure this service exists to end.
+# --password-store=basic: a fresh profile otherwise triggers a keyring unlock dialog.
+# --use-angle=gles / --enable-gpu-rasterization: copied from the Chromium instance already
+#   running correctly on this machine, not guessed.
+ExecStart=/usr/bin/chromium \
+  --kiosk \
+  --ozone-platform=wayland \
+  --user-data-dir=/home/bems/.config/ibems-kiosk \
+  --app=http://127.0.0.1:5183/ \
+  --noerrdialogs \
+  --disable-infobars \
+  --disable-session-crashed-bubble \
+  --hide-crash-restore-bubble \
+  --disable-features=Translate \
+  --password-store=basic \
+  --no-first-run \
+  --no-default-browser-check \
+  --check-for-update-interval=31536000 \
+  --enable-gpu-rasterization \
+  --use-angle=gles
+
+# A kiosk that dies must come back without a person. RestartSec is 5s so a genuine crash
+# loop is still visible in the journal rather than hammering.
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
