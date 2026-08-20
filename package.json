@@ -17,6 +17,7 @@
     "rotate-light-token:pi": "node node-red-bridge/rotate-light-api-token.mjs",
     "capture-flow:pi": "node node-red-bridge/capture-live-flow.mjs",
     "prune-flow:pi": "node node-red-bridge/prune-dead-flow.mjs",
+    "add-endpoints:pi": "node node-red-bridge/add-device-endpoints.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:bridge": "node --test \"test/**/*.test.mjs\"",

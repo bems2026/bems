@@ -52,6 +52,9 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-044** Rolling z-score/IQR anomaly detection with a noise floor substituted into the denominator rather than used as a skip-gate — `server/anomalyStats.mjs`
 - [x] **EX-045** Systemd units for ingest, proxy, and the office kiosk display — `server/ibems-ingest.service`, `server/ibems-proxy.service`, `server/ibems-kiosk.service`
 - [x] **EX-047** Scheduler daemon firing the Automation page's schedules through the same gate and audit trail as a manual click, attributed to whoever saved the schedule — `server/scheduler.mjs`, `server/schedulePlan.mjs`, `server/ibems-scheduler.service`
+- [x] **EX-051** Outlet and aircon control endpoints on the flow, mirroring the light chain — `node-red-bridge/addDeviceEndpoints.mjs`
+- [x] **EX-052** Dispatch routed per device class from one shared list, so capabilities, scheduling and shedding all cover the same classes — `server/dispatchLight.mjs`
+- [x] **EX-053** Aircon setpoint end to end: bounded in the contract, carried by the command, selectable on the Control page — `shared/commands.mjs`, `src/components/control/IrCommandCenterCard.tsx`
 - [x] **EX-049** Automatic load shedding on a DSM threshold breach — shed-only, one tier per evaluation, never touching Protected or unassigned devices; same gate and audit trail as any other command — `server/shedPlan.mjs`, `shared/dsmMath.mjs`
 - [x] **EX-050** The Automation page records who saved a schedule or threshold, without which neither can fire — `src/lib/supabaseConfig.ts`
 - [x] **EX-048** Light dispatch shared by the proxy and the scheduler rather than duplicated — `server/dispatchLight.mjs`
@@ -127,11 +130,6 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       *Acceptance:* at least one device has a shed group, a threshold is set, and auto-shed is on.
       Nothing is configured today, so the mechanism is live but inert by design. Note that only
       lights can currently be shed, which limits how much load it can actually drop.
-- [ ] **RM-006b** Move outlet and ACU schedules onto the scheduler once they have a real
-      dispatch path (FI-004). Until then `server/scheduler.mjs` deliberately ignores them:
-      emitting commands would write `dry_run` audit rows for switching Node-RED really did.
-      *Acceptance:* an outlet schedule fires through `/api/command` and its audit row reads
-      `dispatched`.
 - [ ] **RM-007** Sign in once on the office kiosk so it leaves the login screen.
       *Acceptance:* the kiosk shows the dashboard and stays signed in across a reboot. The session-refresh fix (EX-021) is what keeps it there.
 
@@ -147,7 +145,6 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - **FI-003** (L) Packaging so a second site can be stood up without redoing the wiring by hand: install script or card image, plus a physical-install guide.
 
 ### Robustness
-- **FI-004** (S) Per-class dispatch for outlets and the ACU. Neither has a hardware endpoint today; the proxy already isolates the rule to one constant, so this is additive.
 - **FI-005** (S) An out-of-dashboard alert channel. Deliberately deferred once, but a multi-hour device outage went unnoticed because the only place it would have surfaced was a screen nobody was looking at.
 - **FI-006** (S) Wire `StaleDataBadge` into the remaining views that derive staleness inline, so freshness is announced consistently rather than re-implemented per card.
 
