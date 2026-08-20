@@ -75,6 +75,46 @@ export function dsmRowToContext(row: DsmThresholdsRow | null): ContextMap {
 
 /** Everything `contextStore.load()` needs, in the one shape every existing Automation
  * component already reads (`saved: ContextMap`). */
+/**
+ * The rows a schedules write sends. Pure and exported so attribution is unit-testable without
+ * a Supabase client, the same way `supabaseDeviceConfig.deviceConfigToRow` is.
+ *
+ * `updated_by` is load-bearing rather than bookkeeping: `server/scheduler.mjs` attributes the
+ * command it fires to whoever saved the schedule, and skips any row without one, because
+ * `commands.requested_by` is NOT NULL and a fabricated user in the audit table is worse than
+ * a gap. A write that omits this produces schedules that silently never fire.
+ *
+ * `updated_at` is set explicitly because the column's `default now()` only applies on INSERT,
+ * and these are upserts over rows that usually already exist.
+ */
+export function scheduleRowsFor(deviceIds: Set<string>, merged: ContextMap, actorUserId: string | null) {
+  const now = new Date().toISOString();
+  return Array.from(deviceIds).map((deviceId) => ({
+    device_id: deviceId,
+    socket: null,
+    rule: {
+      on: merged[scheduleKey(deviceId, 'on')] ?? null,
+      off: merged[scheduleKey(deviceId, 'off')] ?? null,
+      days: merged[scheduleKey(deviceId, 'days')] ?? null,
+    },
+    enabled: merged[scheduleKey(deviceId, 'armed')] === 'true',
+    updated_by: actorUserId,
+    updated_at: now,
+  }));
+}
+
+/** The DSM singleton's update payload. Same attribution reasoning as `scheduleRowsFor`. */
+export function dsmRowFrom(merged: ContextMap, actorUserId: string | null) {
+  return {
+    max_phase_current: num(merged[MAX_PHASE_KEY]),
+    max_total_kw: num(merged[MAX_TOTAL_KEY]),
+    auto_shed: merged[AUTO_SHED_KEY] === 'true',
+    care_acu_trigger_c: num(merged[TRIGGER_KEY]),
+    updated_by: actorUserId,
+    updated_at: new Date().toISOString(),
+  };
+}
+
 export async function fetchScheduleContext(): Promise<ContextMap> {
   const client = requireSupabase();
   const [schedules, thresholds] = await Promise.all([
@@ -94,6 +134,8 @@ export async function fetchScheduleContext(): Promise<ContextMap> {
  */
 export async function writeScheduleContext(pending: ContextMap, merged: ContextMap): Promise<void> {
   const client = requireSupabase();
+  // Same source of truth for "who is acting" that deviceConfigStore already uses.
+  const actorUserId = (await client.auth.getSession()).data.session?.user.id ?? null;
 
   const deviceIds = new Set<string>();
   let dsmChanged = false;
@@ -107,16 +149,7 @@ export async function writeScheduleContext(pending: ContextMap, merged: ContextM
   }
 
   if (deviceIds.size > 0) {
-    const rows = Array.from(deviceIds).map((deviceId) => ({
-      device_id: deviceId,
-      socket: null,
-      rule: {
-        on: merged[scheduleKey(deviceId, 'on')] ?? null,
-        off: merged[scheduleKey(deviceId, 'off')] ?? null,
-        days: merged[scheduleKey(deviceId, 'days')] ?? null,
-      },
-      enabled: merged[scheduleKey(deviceId, 'armed')] === 'true',
-    }));
+    const rows = scheduleRowsFor(deviceIds, merged, actorUserId);
     // Matches supabase/phase6_schedules_unique_fix.sql's plain UNIQUE(device_id) — a
     // partial index (WHERE socket IS NULL, this app's first attempt) can't be targeted by
     // upsert()'s generated `ON CONFLICT (device_id) DO UPDATE`; Postgres only matches that
@@ -136,12 +169,7 @@ export async function writeScheduleContext(pending: ContextMap, merged: ContextM
   if (dsmChanged) {
     const { data, error } = await client
       .from('dsm_thresholds')
-      .update({
-        max_phase_current: num(merged[MAX_PHASE_KEY]),
-        max_total_kw: num(merged[MAX_TOTAL_KEY]),
-        auto_shed: merged[AUTO_SHED_KEY] === 'true',
-        care_acu_trigger_c: num(merged[TRIGGER_KEY]),
-      })
+      .update(dsmRowFrom(merged, actorUserId))
       .eq('id', 1)
       .select('id');
     if (error) throw new Error(`Supabase dsm_thresholds write failed: ${error.message}`);
