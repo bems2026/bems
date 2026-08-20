@@ -1516,15 +1516,18 @@ body::before {
     grid-template-columns: 1fr 1fr;
   }
   /*
-   * `.overview-col > *`'s `flex: 1` (equal-thirds/equal-halves, see that rule's own
-   * comment) is a desktop-only idea: it only makes sense when the column has a real height
-   * to split, borrowed from the 3D card's tall row in the 3-column grid. Once the layout
-   * stacks to one column above, each bento area becomes its own `auto`-sized grid row, and
-   * `flex: 1 1 0%` on a card inside an auto-height flex column doesn't distribute real
-   * space anymore — it forces every card in a column to the SAME height regardless of what
-   * either one actually contains, which is what was silently capping Energy Flow's card
-   * short of its own chart (a fixed 220px below, see `.energy-flow-chart`) and letting the
-   * chart spill out past the card's own bottom edge into whatever sat below it.
+   * `.overview-col > *`'s `flex: 1 1 auto` (see that rule's own comment) is a desktop-only
+   * idea: sharing out a column's spare height only means something when the column has a
+   * real height to share, borrowed from the 3D card's tall row in the 3-column grid. Once
+   * the layout stacks to one column above, each bento area becomes its own `auto`-sized
+   * grid row and there is no spare height to distribute — growth would only ever come from
+   * a neighbour being taller, forcing cards to match a height neither one asked for. That
+   * is what used to cap Energy Flow's card short of its own chart (a fixed 220px below, see
+   * `.energy-flow-chart`) and let the chart spill past the card's bottom edge.
+   *
+   * The desktop rule no longer has the sharper form of that bug — an `auto` basis floors
+   * each card at its content — but `flex: none` is still the right answer here, because
+   * stacked cards should size off their own content and nothing else.
    *
    * `flex: none` here lets each card go back to sizing off its own content, which is what
    * stacked cards should do — nothing forces them to match a neighbour's height once
