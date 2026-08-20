@@ -36,6 +36,15 @@ npm run build:flow       # regenerate the flow after editing shared/
   network, so the Pi must sit on the same 2.4 GHz L2 segment as the devices. Putting the Pi on
   a 5 GHz SSID leaves it with working internet and remote access while every device reads
   `online: false` and building totals read `null` — which looks like a code fault and is not.
+- **Schedules are Supabase's, not Node-RED's.** The Automation page writes to Supabase and
+  `server/scheduler.mjs` fires them through the gated, audited command path. Node-RED's own
+  cron schedules read flow context (`sched_N`, `outlet_sched_N`, `ac_sched`) and bypass both
+  the gate and the audit trail — those arrays are currently empty and should stay that way for
+  lights, or both would fire.
+- **The app stores schedule days Mon..Sun; `Date.getDay()` is Sun..Sat.** Converting between
+  them is a rotation, not an offset, and it lives in exactly one place
+  (`schedulePlan.appDayIndex`). Getting it wrong yields a schedule that looks healthy and
+  switches the office lights on the wrong day.
 - **Never change the Pi's Wi-Fi remotely.** A wrong SSID or credential loses the host with
   nobody on site to recover it.
 

@@ -51,6 +51,8 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-043** Command audit path: validate, dispatch, then record — a failed dispatch is logged as `failed`, never silently omitted — `server/proxy.mjs`
 - [x] **EX-044** Rolling z-score/IQR anomaly detection with a noise floor substituted into the denominator rather than used as a skip-gate — `server/anomalyStats.mjs`
 - [x] **EX-045** Systemd units for ingest, proxy, and the office kiosk display — `server/ibems-ingest.service`, `server/ibems-proxy.service`, `server/ibems-kiosk.service`
+- [x] **EX-047** Scheduler daemon firing the Automation page's schedules through the same gate and audit trail as a manual click, attributed to whoever saved the schedule — `server/scheduler.mjs`, `server/schedulePlan.mjs`, `server/ibems-scheduler.service`
+- [x] **EX-048** Light dispatch shared by the proxy and the scheduler rather than duplicated — `server/dispatchLight.mjs`
 - [x] **EX-046** Log rate limit for the bridge unit, so a device-discovery failure loop cannot evict the journal's history — `server/nodered-log-ratelimit.conf`
 
 ### Bridge & hardware
@@ -119,6 +121,11 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       publishes nothing, Mosquitto has no remaining user and can go.**
 - [ ] **RM-006** Data retention: automatic cleanup so `readings` does not grow without bound, and a backup policy for the Supabase project.
       *Acceptance:* a documented, scheduled policy; old rows aged out on a defined schedule.
+- [ ] **RM-006b** Move outlet and ACU schedules onto the scheduler once they have a real
+      dispatch path (FI-004). Until then `server/scheduler.mjs` deliberately ignores them:
+      emitting commands would write `dry_run` audit rows for switching Node-RED really did.
+      *Acceptance:* an outlet schedule fires through `/api/command` and its audit row reads
+      `dispatched`.
 - [ ] **RM-007** Sign in once on the office kiosk so it leaves the login screen.
       *Acceptance:* the kiosk shows the dashboard and stays signed in across a reboot. The session-refresh fix (EX-021) is what keeps it there.
 
