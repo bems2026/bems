@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "iBEMS web dashboard — Stage 1 (local, live-data via Node-RED bridge, view-only)",
+  "description": "iBEMS web dashboard — live data via the Node-RED bridge, Supabase-backed history, and audited device control (hardware dispatch gated)",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

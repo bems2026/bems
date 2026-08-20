@@ -1,11 +1,11 @@
-# iBEMS Dashboard — Stage 1
+# iBEMS Dashboard
 
-Local, live-data (Node-RED bridge), view-only. See:
+Live data via the Node-RED bridge, Supabase-backed history, and audited device
+control. See [`ROADMAP.md`](ROADMAP.md) for the current feature state and what is in
+flight; the notes below cover layout and how to run it.
 
 - [`docs/bridge-contract.md`](docs/bridge-contract.md) — the JSON contract, single source of truth
 - [`docs/phase-f-runbook.md`](docs/phase-f-runbook.md) — deploying to the real Pi once it's reachable
-- [`C:\Users\g16\BEMS\ibems-dashboard-stage1-plan.md`](../ibems-dashboard-stage1-plan.md) — original Stage 1 plan
-- The implementation plan this repo follows (Phases A–F) is `ibems-onboarding-wizar-agile-donut.md` in the Claude plans directory.
 
 ## Layout
 
@@ -16,12 +16,14 @@ node-red-bridge/           generated Node-RED flow (`npm run build:flow` to rege
                             plus deploy.mjs/verify.mjs for the real Pi (see phase-f-runbook.md)
 mock-bridge/                local fake bridge, same contract, no hardware needed
 test/                      bridge/mock contract tests (Node's test runner)
-src/                       React + Vite + TS frontend — Overview, Floor Plan, and Trends
-                            are all live against the bridge (Phases C–E complete)
-server/                    ibems-server — the Supabase ingestion daemon (architecture plan
-                            Phase 3). `npm run ingest`, tests via `npm run test:server`.
+src/                       React + Vite + TS frontend — Overview, Analytics, Control,
+                            Devices and Automation, all live against the bridge
+server/                    the ingestion daemon, the authenticated proxy that fronts the
+                            bridge, and the systemd units for both plus the office kiosk.
+                            `npm run ingest`, tests via `npm run test:server`.
                             See docs/storage-contract.md.
-supabase/schema.sql        the Supabase schema — apply once against a new project
+supabase/                  schema.sql, then the phase migrations in order — apply once
+                            against a new project
 ```
 
 ## Quickstart
@@ -65,5 +67,11 @@ Pi's tab ids/labels match what `build-flow.mjs` assumed and there are no node id
   fails loudly if the two drift apart.
 - **The only place a bridge URL appears is `src/config/bridge.ts`.** Don't hardcode one
   elsewhere.
-- **Stage 1 is view-only.** No `POST` endpoints, no control wiring, no toggles anywhere
-  in this repo. That's Stage 2.
+- **Control exists, but hardware dispatch is gated.** `POST /api/command` validates every
+  command and writes an audit row before anything else happens. Whether it then reaches
+  real hardware depends on `HARDWARE_DISPATCH_ENABLED`, which is off unless a deployment
+  explicitly sets it — and even then only lighting has a real endpoint today. The UI says
+  which classes are actually live rather than implying all of them are; see
+  `src/components/control/dispatchScope.ts`.
+- **Never open the dispatch gate without someone watching the hardware.** It is the one
+  setting in this repo that can physically move a relay.
