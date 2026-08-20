@@ -153,6 +153,14 @@
   --good-soft: var(--green-soft);
   --warn: #b45309; /* = --accent-text */
   --warn-soft: var(--accent-soft);
+  /* --warn as text on a --warn-soft fill measures 4.65:1 over a card (--bg-surface, white)
+     but only 4.15:1 over the page itself (--bg-page, #eef1f6) — the page is the darker of
+     the two surfaces, and that difference straddles AA. Raising the alpha cannot fix it:
+     --warn on the UNTINTED page is 4.44:1, so the ceiling is already below the threshold and
+     the text color is what has to change. This is that value — same amber family, 4.90:1 on
+     the page. Use it for warn-toned text sitting directly on --bg-page; the plain --warn is
+     correct on a card. Dark needs no equivalent (7.31:1 there), so it aliases straight back. */
+  --warn-on-page: #a34a08;
   --bad: #b91c1c; /* = --red */
   --bad-soft: var(--red-soft);
   --info: #3b82f6; /* = --blue-bright; PhaseBalance's Blue-phase swatch — decorative dot only */
@@ -313,6 +321,11 @@
   --good-soft: rgb(37 168 120 / 0.16);
   --warn: #e0a94a; /* = --accent-text */
   --warn-soft: rgb(194 121 14 / 0.16);
+  /* No separate value needed here: dark's --warn already measures 7.31:1 on the page and
+     6.40:1 on a surface. Aliased rather than omitted so any rule using it stays defined in
+     both themes — a token that exists in only one theme is the dark-mode bug this file's
+     header warns about. */
+  --warn-on-page: var(--warn);
   --bad: #e06155; /* = --red */
   --bad-soft: rgb(224 97 85 / 0.16);
   --info: #6690e8; /* = --blue-bright */
@@ -4088,7 +4101,9 @@ body::before {
   padding: var(--sp-3);
   border-radius: var(--r-inner);
   background: var(--warn-soft);
-  color: var(--warn);
+  /* Not --warn: this banner sits directly on --bg-page, where --warn is 4.15:1. See
+     --warn-on-page's definition for why the background can't be adjusted to fix it. */
+  color: var(--warn-on-page);
   font-size: var(--fs-sm);
 }
 
