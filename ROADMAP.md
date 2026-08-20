@@ -44,12 +44,14 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 ### Server & ingestion
 
-- [x] **EX-040** Ingestion daemon polling the bridge and writing devices/readings/building_totals/ingestion_health, with local NDJSON buffering on outage — `server/ingest.mjs`, `server/ingestBuffer.mjs`
+- [x] **EX-040** Ingestion daemon polling the bridge and writing devices/readings/building_totals/ingestion_health, with local NDJSON buffering on outage — `server/ingest.mjs`, `server/ingestBuffer.mjs`.
+      Confirmed in production 2026-08-21: a real ~7-minute uplink loss buffered 8 rows, then flushed and cleared them on reconnect with no data loss (`buffered_row_count` back to 0, `last_error` null).
 - [x] **EX-041** Authenticated proxy: the only process besides Node-RED allowed to reach the bridge; validates a session before forwarding — `server/proxy.mjs`
 - [x] **EX-042** Break-glass local login for when Supabase Auth is unreachable; view-only, cannot issue commands — `server/breakGlass.mjs`, `server/hashBreakGlassPassword.mjs`
 - [x] **EX-043** Command audit path: validate, dispatch, then record — a failed dispatch is logged as `failed`, never silently omitted — `server/proxy.mjs`
 - [x] **EX-044** Rolling z-score/IQR anomaly detection with a noise floor substituted into the denominator rather than used as a skip-gate — `server/anomalyStats.mjs`
 - [x] **EX-045** Systemd units for ingest, proxy, and the office kiosk display — `server/ibems-ingest.service`, `server/ibems-proxy.service`, `server/ibems-kiosk.service`
+- [x] **EX-046** Log rate limit for the bridge unit, so a device-discovery failure loop cannot evict the journal's history — `server/nodered-log-ratelimit.conf`
 
 ### Bridge & hardware
 
@@ -90,7 +92,7 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 - [ ] **RM-001** Restore the site network link between the Pi and the Tuya devices.
       *Acceptance:* `GET /api/readings/latest` reports `online: true` for the metered devices, and building totals stop reading `null`.
-      **Blocked — requires on-site or router access.** All 18 devices with a health signal stopped responding on 2026-08-20 at 15:27 local; local discovery times out for every device while the Pi keeps its uplink.
+      **Blocked — requires on-site or router access.** All 18 devices with a health signal stopped responding on 2026-08-20 at 15:27 local; local discovery times out for every device. The Pi has since also lost its own uplink for ~7 minutes without rebooting (uptime unbroken), so whatever is failing is progressing beyond the devices to the Pi's link as well.
 - [ ] **RM-002** Verify the rotated light token against a real fixture.
       *Acceptance:* a light physically changes state in response to one command. **Requires eyes on the fixture** — switches carry no metering context, so there is no telemetry-based confirmation.
 - [ ] **RM-003** Open the hardware-dispatch gate (`HARDWARE_DISPATCH_ENABLED=true`) and confirm a real relay responds.
