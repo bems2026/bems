@@ -30,6 +30,15 @@ npm run build            # tsc -b && vite build — catches what vitest's type-s
 npm run build:flow       # regenerate the flow after editing shared/
 ```
 
+## Site facts worth never re-deriving
+
+- **The Tuya field devices are 2.4 GHz-only.** The bridge discovers them over the local
+  network, so the Pi must sit on the same 2.4 GHz L2 segment as the devices. Putting the Pi on
+  a 5 GHz SSID leaves it with working internet and remote access while every device reads
+  `online: false` and building totals read `null` — which looks like a code fault and is not.
+- **Never change the Pi's Wi-Fi remotely.** A wrong SSID or credential loses the host with
+  nobody on site to recover it.
+
 ## Conventions
 
 - **The default branch is `master`.** Do not create or rename branches.

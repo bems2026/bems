@@ -1,7 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
 **Last audited:** 2026-08-21 (UTC)
-**Audited at commit:** `b8e7159`
+**Audited at commit:** `48c3333`
 **Audit method:** static read of the working tree, plus live inspection of the deployed Pi over SSH
 
 > This repository is **public**. No tokens, keys, passwords, hostnames, IP addresses, or
@@ -90,9 +90,17 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 ## 2. Current roadmap (active execution)
 
-- [ ] **RM-001** Restore the site network link between the Pi and the Tuya devices.
+- [ ] **RM-001** Put the Pi back on the same 2.4 GHz network as the field devices.
       *Acceptance:* `GET /api/readings/latest` reports `online: true` for the metered devices, and building totals stop reading `null`.
-      **Blocked — requires on-site or router access.** All 18 devices with a health signal stopped responding on 2026-08-20 at 15:27 local; local discovery times out for every device. The Pi has since also lost its own uplink for ~7 minutes without rebooting (uptime unbroken), so whatever is failing is progressing beyond the devices to the Pi's link as well.
+      **Blocked — requires on-site access. Root cause known: a Wi-Fi band mismatch.** The Tuya
+      field devices join 2.4 GHz only; the network the Pi is on is 5 GHz. Every symptom follows
+      from that — the Pi keeps internet and remote access, yet sees exactly one other host on its
+      own subnet and times out local discovery for all 18 devices. All 18 stopped responding on
+      2026-08-20 at 15:27 local.
+      *Do not attempt this remotely.* Re-pointing the Pi's Wi-Fi over SSH risks losing the host
+      outright if the SSID or credentials are wrong, with nobody on site to recover it.
+      Once the band is corrected, expect no code change to be needed: the bridge resumes
+      discovery on its own, and `online` flips back without intervention.
 - [ ] **RM-002** Verify the rotated light token against a real fixture.
       *Acceptance:* a light physically changes state in response to one command. **Requires eyes on the fixture** — switches carry no metering context, so there is no telemetry-based confirmation.
 - [ ] **RM-003** Open the hardware-dispatch gate (`HARDWARE_DISPATCH_ENABLED=true`) and confirm a real relay responds.
@@ -144,8 +152,14 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 ## 5. Unverified / needs confirmation
 
-1. **Why did every Tuya device drop at once?** The Pi kept its uplink and internet while losing sight of essentially every host on its own subnet. Access-point client isolation, an SSID or VLAN change, and a power event affecting the devices' AP all fit what is observable remotely. Which was it?
+1. ~~**Why did every Tuya device drop at once?**~~ **Answered 2026-08-21: a Wi-Fi band
+   mismatch.** The devices are 2.4 GHz-only and the Pi's network is 5 GHz. See RM-001.
+   Separately, the Pi lost its *own* uplink for about seven minutes on 2026-08-21 and recovered
+   without rebooting (uptime unbroken, boot id unchanged) — a distinct, transient event, not the
+   same fault, and not evidence of a worsening one.
 2. **Is Mosquitto still carrying the original sensor feed**, or is it vestigial? (RM-005)
+   Partly answered: the live flow has an `mqtt in` subscribed to the ESP32's status topic, so
+   something is *listening*. Whether anything still *publishes* is the open half.
 3. **Was the light token ever exercised against real hardware?** Rotation is confirmed — the old token is rejected — but no fixture has been observed responding to the new one.
 4. **Is there a backup of the Supabase project?** Nothing in this repo configures or verifies one.
 5. **Should `--good` be corrected pre-emptively** (FI-007), or left until a green badge actually lands on the page background?
