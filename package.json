@@ -15,6 +15,7 @@
     "verify:pi": "node node-red-bridge/verify.mjs",
     "deploy:pi": "node node-red-bridge/deploy.mjs",
     "rotate-light-token:pi": "node node-red-bridge/rotate-light-api-token.mjs",
+    "capture-flow:pi": "node node-red-bridge/capture-live-flow.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:bridge": "node --test \"test/**/*.test.mjs\"",
