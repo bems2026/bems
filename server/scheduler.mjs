@@ -17,11 +17,17 @@
  * commands for them would write `dry_run` audit rows for switching that really happened,
  * which is worse than not recording it. They move over when their dispatch path is built.
  *
+ * It also runs automatic load shedding, for the same reason and through the same path:
+ * when the building goes over a configured limit and auto-shed is on, it switches off the
+ * lowest tier of devices an operator marked as sheddable. Shed only, never restore — see
+ * shedPlan.mjs for why that asymmetry is deliberate.
+ *
  *     node server/scheduler.mjs
  */
 
 import { DEVICE_REGISTRY } from '../shared/registry.mjs';
 import { dueCommands } from './schedulePlan.mjs';
+import { planShed } from './shedPlan.mjs';
 import { dispatchLightCommand } from './dispatchLight.mjs';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -54,6 +60,9 @@ const sb = (path, init = {}) =>
   });
 
 let schedules = [];
+let thresholds = { maxPhaseA: null, maxTotalKw: null, autoShed: false };
+let shedActor = null;
+let shedGroups = {};
 let stopping = false;
 /** Guards against firing the same minute twice if a tick runs long or the clock jitters. */
 let lastFiredMinute = null;
@@ -62,6 +71,36 @@ async function refreshSchedules() {
   const res = await sb('schedules?select=device_id,socket,rule,enabled,updated_by&socket=is.null');
   if (!res.ok) throw new Error(`schedules fetch failed: HTTP ${res.status} ${await res.text().catch(() => '')}`);
   schedules = await res.json();
+}
+
+/** DSM limits plus each device's shed tier. Both are operator configuration, re-read on the
+ * same cadence as schedules so a change made in the app takes effect without a restart. */
+async function refreshDsmConfig() {
+  const [tRes, cRes] = await Promise.all([
+    sb('dsm_thresholds?select=max_phase_current,max_total_kw,auto_shed,updated_by&id=eq.1'),
+    sb('device_config?select=device_id,load_shed_group'),
+  ]);
+  if (!tRes.ok) throw new Error(`dsm_thresholds fetch failed: HTTP ${tRes.status}`);
+  if (!cRes.ok) throw new Error(`device_config fetch failed: HTTP ${cRes.status}`);
+  const row = (await tRes.json())[0] ?? {};
+  thresholds = {
+    maxPhaseA: row.max_phase_current ?? null,
+    maxTotalKw: row.max_total_kw ?? null,
+    autoShed: row.auto_shed === true,
+  };
+  shedActor = row.updated_by ?? null;
+  shedGroups = Object.fromEntries((await cRes.json()).map((r) => [r.device_id, r.load_shed_group ?? null]));
+}
+
+/** The live reading, straight from the bridge rather than via Supabase — shedding should react
+ * to what the building is drawing now, not to a row written up to a minute ago. */
+async function fetchLatest() {
+  const res = await fetch(`http://${BRIDGE_HOST}:${BRIDGE_PORT}/api/readings/latest`, { signal: AbortSignal.timeout(5000) });
+  if (!res.ok) throw new Error(`readings fetch failed: HTTP ${res.status}`);
+  const rows = await res.json();
+  const totals = rows.find((r) => r.device_id === '_totals') ?? null;
+  const readings = Object.fromEntries(rows.filter((r) => r.device_id !== '_totals').map((r) => [r.device_id, r]));
+  return { totals, readings };
 }
 
 async function recordCommand(cmd, status, note) {
@@ -85,16 +124,17 @@ async function recordCommand(cmd, status, note) {
   if (!res.ok) console.error(`[ibems-scheduler] audit insert failed: HTTP ${res.status} ${await res.text().catch(() => '')}`);
 }
 
-async function fire(cmd) {
+async function fire(cmd, reasonNote) {
   const device = DEVICE_REGISTRY.find((d) => d.id === cmd.device_id);
   if (!device) return;
 
+  const why = reasonNote ?? 'schedule due';
   let status = 'dry_run';
-  let note = 'schedule due; hardware dispatch closed';
+  let note = `${why}; hardware dispatch closed`;
   if (HARDWARE_DISPATCH_ENABLED) {
     const result = await dispatchLightCommand(device, cmd, { bridgeHost: BRIDGE_HOST, bridgePort: BRIDGE_PORT, lightApiToken: LIGHT_API_TOKEN });
     status = result.ok ? 'dispatched' : 'failed';
-    note = result.ok ? 'schedule due' : `schedule due; dispatch failed: ${result.detail}`;
+    note = result.ok ? why : `${why}; dispatch failed: ${result.detail}`;
     if (!result.ok) console.error(`[ibems-scheduler] dispatch failed for ${cmd.device_id}: ${result.detail}`);
   }
   // Recorded whether it reached hardware or not — an attempted-and-failed scheduled switch is
@@ -119,6 +159,48 @@ async function tick() {
   }
 }
 
+/** Runs every loop rather than once a minute: an overload should not have to wait out the rest
+ * of a minute. Naturally self-limiting — planShed only ever targets devices that are currently
+ * on, so each pass sheds strictly less than the last until the breach clears. */
+async function shedTick() {
+  if (!thresholds.autoShed && thresholds.maxPhaseA === null && thresholds.maxTotalKw === null) return;
+
+  let latest;
+  try {
+    latest = await fetchLatest();
+  } catch (err) {
+    console.error('[ibems-scheduler] could not read totals for load shedding:', String(err));
+    return;
+  }
+
+  const plan = planShed({
+    thresholds,
+    totals: latest.totals,
+    configs: shedGroups,
+    readings: latest.readings,
+    dispatchableDeviceIds: DISPATCHABLE_DEVICE_IDS,
+    actorUserId: shedActor,
+  });
+
+  if (plan.breached && plan.shed.length === 0) {
+    // Over the limit and doing nothing about it is a state an operator needs to be able to
+    // see, whether the cause is auto-shed being off, nobody on record as having enabled it,
+    // or nothing left that is allowed to be shed.
+    console.warn(`[ibems-scheduler] DSM breach, no action taken: ${plan.reason}`);
+    return;
+  }
+  if (plan.shed.length === 0) return;
+
+  console.warn(`[ibems-scheduler] DSM breach — shedding ${plan.tier}: ${plan.reason}`);
+  for (const cmd of plan.shed) {
+    try {
+      await fire(cmd, `auto-shed ${plan.tier}: ${plan.reason}`);
+    } catch (err) {
+      console.error(`[ibems-scheduler] error shedding ${cmd.device_id}:`, String(err));
+    }
+  }
+}
+
 async function main() {
   console.log(
     `[ibems-scheduler] starting — dispatch=${HARDWARE_DISPATCH_ENABLED ? 'OPEN' : 'closed'} ` +
@@ -126,13 +208,19 @@ async function main() {
   );
   try {
     await refreshSchedules();
-    console.log(`[ibems-scheduler] loaded ${schedules.length} schedule row(s)`);
+    await refreshDsmConfig();
+    const tiered = Object.values(shedGroups).filter((g) => g && g !== 'never').length;
+    console.log(
+      `[ibems-scheduler] loaded ${schedules.length} schedule row(s); auto-shed ${thresholds.autoShed ? 'ON' : 'off'}, ` +
+        `${tiered} device(s) assigned a shed tier`,
+    );
   } catch (err) {
     console.error('[ibems-scheduler] initial schedule load failed (will retry):', String(err));
   }
 
   setInterval(() => {
     refreshSchedules().catch((err) => console.error('[ibems-scheduler] schedule refresh failed:', String(err)));
+    refreshDsmConfig().catch((err) => console.error('[ibems-scheduler] DSM config refresh failed:', String(err)));
   }, REFRESH_MS);
 
   // Checked every 15s rather than once a minute so a schedule is never missed because the
@@ -141,6 +229,7 @@ async function main() {
     if (stopping) return;
     try {
       await tick();
+      await shedTick();
     } catch (err) {
       console.error('[ibems-scheduler] tick error:', String(err));
     }
