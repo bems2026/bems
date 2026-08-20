@@ -61,6 +61,8 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-063** Tuya health-signal repair: devices can now actually report disconnected, and a disconnected meter contributes nothing to totals rather than its frozen last reading — `node-red-bridge/fix-tuya-health-signals.mjs`, `shared/buildLatest.mjs`
 - [x] **EX-064** Light API token rotation, moving a hardcoded plaintext token to an environment variable and closing the fail-open branch — `node-red-bridge/rotate-light-api-token.mjs`
 - [x] **EX-065** Real hardware dispatch for lights, gated closed by default; the proxy refuses to start if the gate is open with no token — `server/proxy.mjs`
+- [x] **EX-067** The live flow is under version control as a redacted structural baseline, and the capture tool refuses to write if anything survives redaction — `node-red-bridge/capture-live-flow.mjs`, `node-red-bridge/redactFlow.mjs`, `node-red-bridge/live-flow-baseline.json`
+- [x] **EX-068** Dead-flow pruning: 426 -> 307 nodes, removing the legacy `/ui` dashboard, debug sinks and the MQTT twin. Closed an unauthenticated MQTT path that could switch real lights with no audit row and no dispatch gate — `node-red-bridge/cleanupPlan.mjs`, `node-red-bridge/prune-dead-flow.mjs`
 - [x] **EX-066** Mock bridge implementing the same contract with fault injection (`--cmd-fail`, `--cmd-drop`, `--dispatch`) so every state is reachable without hardware — `mock-bridge/server.mjs`
 
 ### Data & Supabase
@@ -108,7 +110,13 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [ ] **RM-004** Re-check anomaly detection for false positives once real telemetry resumes.
       *Acceptance:* a week of live-varying data with no unexplained alerts on the cyclical-load branch meters. The current zero-alert result is not evidence — the meters have been returning frozen values.
 - [ ] **RM-005** Decide whether Mosquitto is still load-bearing or can be decommissioned.
-      *Acceptance:* a recorded answer. Checkable remotely by subscribing to all topics for a short window; only escalate on-site if a live publisher appears.
+      *Acceptance:* a recorded answer. **Mostly answered 2026-08-21.** A live listen showed the
+      only clients on the broker were Node-RED's own connections, and the only traffic was the
+      MQTT twin talking to itself — since removed (EX-068), along with a stale retained message
+      on its topic. What remains is one subscription: the ESP32 AC sniffer, which received
+      nothing. That is *not* proof it is retired, because the ESP32 is a 2.4 GHz device and the
+      site is currently on 5 GHz (RM-001). **Re-check once the band is fixed: if the ESP32 still
+      publishes nothing, Mosquitto has no remaining user and can go.**
 - [ ] **RM-006** Data retention: automatic cleanup so `readings` does not grow without bound, and a backup policy for the Supabase project.
       *Acceptance:* a documented, scheduled policy; old rows aged out on a defined schedule.
 - [ ] **RM-007** Sign in once on the office kiosk so it leaves the login screen.
@@ -157,9 +165,10 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
    Separately, the Pi lost its *own* uplink for about seven minutes on 2026-08-21 and recovered
    without rebooting (uptime unbroken, boot id unchanged) — a distinct, transient event, not the
    same fault, and not evidence of a worsening one.
-2. **Is Mosquitto still carrying the original sensor feed**, or is it vestigial? (RM-005)
-   Partly answered: the live flow has an `mqtt in` subscribed to the ESP32's status topic, so
-   something is *listening*. Whether anything still *publishes* is the open half.
+2. **Is the ESP32 still publishing its AC status?** (RM-005) Nothing arrived during a live
+   listen, but the ESP32 is a 2.4 GHz device and the site is on 5 GHz, so the outage fully
+   explains the silence. Answerable only once RM-001 is fixed. Everything else that used
+   Mosquitto has now been removed.
 3. **Was the light token ever exercised against real hardware?** Rotation is confirmed — the old token is rejected — but no fixture has been observed responding to the new one.
 4. **Is there a backup of the Supabase project?** Nothing in this repo configures or verifies one.
 5. **Should `--good` be corrected pre-emptively** (FI-007), or left until a green badge actually lands on the page background?
