@@ -1,11 +1,10 @@
 import { create } from 'zustand';
-import { nextPollDelayMs } from '@/lib/bridgeClient';
 import { supabase } from '@/config/supabase';
 import { fetchDeviceConfigs, writeDeviceConfig } from '@/lib/supabaseDeviceConfig';
 import { coerceCategory, coerceLoadShedGroup, effectiveConfig, emptyDeviceConfig, isSameConfig, normalizeDeviceConfig, type DeviceConfig, type DeviceConfigField } from '@/lib/deviceConfig';
+import { createRetrySchedule } from './retrySchedule';
 
-let loadAttempt = 0;
-let loadRetryTimer: ReturnType<typeof setTimeout> | null = null;
+const retry = createRetrySchedule();
 
 function withoutKey<T>(map: Record<string, T>, key: string): Record<string, T> {
   const out = { ...map };
@@ -52,10 +51,7 @@ export const useDeviceConfigStore = create<DeviceConfigState>((set, get) => ({
   // an empty, ready store instead of retrying forever.
   load: async () => {
     set({ status: 'loading' });
-    if (loadRetryTimer) {
-      clearTimeout(loadRetryTimer);
-      loadRetryTimer = null;
-    }
+    retry.cancel();
     if (!supabase) {
       set({ saved: {}, status: 'ready' });
       return;
@@ -63,11 +59,10 @@ export const useDeviceConfigStore = create<DeviceConfigState>((set, get) => ({
     const attempt = async (): Promise<void> => {
       try {
         const saved = await fetchDeviceConfigs();
-        loadAttempt = 0;
+        retry.succeeded();
         set({ saved, status: 'ready' });
       } catch {
-        loadAttempt++;
-        loadRetryTimer = setTimeout(attempt, nextPollDelayMs(loadAttempt));
+        retry.retryAfterFailure(attempt);
       }
     };
     await attempt();

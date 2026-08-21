@@ -1,8 +1,8 @@
 import { create } from 'zustand';
-import { getCapabilities, nextPollDelayMs } from '@/lib/bridgeClient';
+import { getCapabilities } from '@/lib/bridgeClient';
+import { createRetrySchedule } from './retrySchedule';
 
-let loadAttempt = 0;
-let loadRetryTimer: ReturnType<typeof setTimeout> | null = null;
+const retry = createRetrySchedule();
 
 interface CapabilitiesState {
   /** `null` until the first successful load — deliberately treated the SAME as `false`
@@ -31,14 +31,11 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
   // failed load here must never get stuck reporting "unknown" forever just because one
   // request over a real network hop dropped.
   load: async () => {
-    if (loadRetryTimer) {
-      clearTimeout(loadRetryTimer);
-      loadRetryTimer = null;
-    }
+    retry.cancel();
     const attempt = async (): Promise<void> => {
       try {
         const { hardware_dispatch_enabled, dispatch_classes } = await getCapabilities();
-        loadAttempt = 0;
+        retry.succeeded();
         set({
           hardwareDispatchEnabled: hardware_dispatch_enabled,
           // A proxy old enough to predate this field is reported as null (unknown) rather
@@ -47,8 +44,7 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
           dispatchClasses: Array.isArray(dispatch_classes) ? dispatch_classes : null,
         });
       } catch {
-        loadAttempt++;
-        loadRetryTimer = setTimeout(attempt, nextPollDelayMs(loadAttempt));
+        retry.retryAfterFailure(attempt);
       }
     };
     await attempt();

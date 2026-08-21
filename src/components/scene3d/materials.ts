@@ -20,14 +20,26 @@ export interface MaterialState {
  * `FloorPlanView` and `StaleDataBadge` use — one freshness rule, not a second one invented
  * for the 3D scene.
  */
+/**
+ * How far a stale fixture dims in the 3D scene.
+ *
+ * Deliberately NOT shared with `FloorPlanView`'s SVG opacity, which is 0.5. These are
+ * different media: this value applies to a lit, emissive mesh whose `emissiveIntensity`
+ * also drops to 0.05 and whose colour changes at the same time, so the two numbers do not
+ * mean the same thing and matching them would not make the two views look alike. Named here
+ * so the 3D side has one value rather than the two identical literals it used to carry.
+ */
+const STALE_OPACITY = 0.4;
+const STALE_EMISSIVE = 0.05;
+
 export function lightMaterialState(reading: Reading | undefined): MaterialState {
-  if (isReadingStale(reading)) return { color: TOKENS.muted2, emissiveIntensity: 0.05, opacity: 0.4 };
+  if (isReadingStale(reading)) return { color: TOKENS.muted2, emissiveIntensity: STALE_EMISSIVE, opacity: STALE_OPACITY };
   const on = reading?.state === 'on';
   return on ? { color: TOKENS.accent, emissiveIntensity: 1.2, opacity: 1 } : { color: TOKENS.bgSurface2, emissiveIntensity: 0.03, opacity: 1 };
 }
 
 export function outletSocketMaterialState(reading: Reading | undefined, socket: 1 | 2): MaterialState {
-  if (isReadingStale(reading)) return { color: TOKENS.muted2, emissiveIntensity: 0.05, opacity: 0.4 };
+  if (isReadingStale(reading)) return { color: TOKENS.muted2, emissiveIntensity: STALE_EMISSIVE, opacity: STALE_OPACITY };
   const on = reading?.socket_states?.[socket] === 'on';
   return on ? { color: TOKENS.accent, emissiveIntensity: 0.9, opacity: 1 } : { color: TOKENS.bgSurface2, emissiveIntensity: 0.02, opacity: 1 };
 }

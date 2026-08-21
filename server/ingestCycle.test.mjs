@@ -138,3 +138,27 @@ test('uses the upsert conflict targets the schema actually declares', async () =
   assert.equal(calls.writes.find((w) => w.table === 'readings').onConflict, 'device_id,ts');
   assert.equal(calls.writes.find((w) => w.table === 'building_totals').onConflict, 'ts');
 });
+
+// --- msUntilNextTick --------------------------------------------------------------------
+
+test('schedules against the wall clock rather than "period after the last tick finished"', async () => {
+  const { msUntilNextTick } = await import('./ingestCycle.mjs');
+  const minute = 60_000;
+  // 12:00:20.000 -> 40s until 12:01:00.000
+  assert.equal(msUntilNextTick(minute, Date.parse('2026-08-21T12:00:20.000Z')), 40_000);
+  assert.equal(msUntilNextTick(minute, Date.parse('2026-08-21T12:00:59.500Z')), 500);
+});
+
+test('never returns 0, so a tick landing exactly on a boundary does not fire twice', async () => {
+  const { msUntilNextTick } = await import('./ingestCycle.mjs');
+  assert.equal(msUntilNextTick(60_000, Date.parse('2026-08-21T12:00:00.000Z')), 60_000);
+});
+
+test('a tick that overran its period waits for the next boundary, not zero', async () => {
+  const { msUntilNextTick } = await import('./ingestCycle.mjs');
+  // Whatever the input, the answer is always a real wait inside one period.
+  for (const offset of [1, 59_999, 30_000, 123_456_789]) {
+    const d = msUntilNextTick(60_000, offset);
+    assert.ok(d > 0 && d <= 60_000, `${offset} -> ${d}`);
+  }
+});

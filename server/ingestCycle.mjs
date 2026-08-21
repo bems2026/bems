@@ -26,6 +26,25 @@
 import { splitLatestPayload } from './shapeRows.mjs';
 
 /**
+ * Milliseconds until the next wall-clock multiple of `periodMs`.
+ *
+ * The loop used to reschedule with a flat `setTimeout(loop, POLL_MS)` AFTER awaiting the
+ * tick, so each cycle's own duration was added to the interval. Measured on the live Pi:
+ * 60.2s per cycle, about 0.2s of drift each time — roughly five minutes a day. Harmless
+ * while every row stood alone, but Phase 9 groups these rows into hourly buckets, and a
+ * cadence that slides relative to the clock puts a varying number of samples in each bucket.
+ *
+ * Always returns a value in (0, periodMs], so a tick that overran its own period schedules
+ * the next one at the following boundary rather than firing immediately.
+ *
+ * Pure — exported for its own tests.
+ */
+export function msUntilNextTick(periodMs, nowMs = Date.now()) {
+  const remainder = nowMs % periodMs;
+  return remainder === 0 ? periodMs : periodMs - remainder;
+}
+
+/**
  * @param {{
  *   fetchLatest: () => Promise<unknown[]>,
  *   flushBuffer: () => Promise<void>,

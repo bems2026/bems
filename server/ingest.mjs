@@ -24,7 +24,7 @@ import { shapeDeviceRows, shapeAnomalyRows } from './shapeRows.mjs';
 import { makeSupabaseClient } from './supabaseRest.mjs';
 import { appendToBuffer, readBuffer, writeBuffer, bufferCount } from './ingestBuffer.mjs';
 import { selectAnomalyCandidates, detectAnomaly, pushSample } from './anomalyStats.mjs';
-import { runIngestCycle } from './ingestCycle.mjs';
+import { runIngestCycle, msUntilNextTick } from './ingestCycle.mjs';
 import { runRetention, DEFAULT_RETENTION_DAYS, RETENTION_CHECK_MS } from './retention.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -209,7 +209,10 @@ async function main() {
     } catch (err) {
       console.error('[ibems-ingest] tick error:', String(err));
     }
-    if (!stopping) setTimeout(loop, POLL_MS);
+    // Scheduled against the wall clock, not "POLL_MS after this tick finished" — see
+    // msUntilNextTick. Keeps samples landing on consistent boundaries, which is what makes
+    // an hourly rollup bucket hold a consistent number of them.
+    if (!stopping) setTimeout(loop, msUntilNextTick(POLL_MS));
   };
   loop();
 }

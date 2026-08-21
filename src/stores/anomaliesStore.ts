@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import { nextPollDelayMs } from '@/lib/bridgeClient';
 import { supabase } from '@/config/supabase';
 import { fetchRecentAnomalies, type AnomalyRow } from '@/lib/supabaseAnomalies';
+import { createRetrySchedule } from './retrySchedule';
 
 /** How often to re-poll once a load has succeeded. Unlike contextStore/deviceConfigStore
  * (load once — that data barely changes at runtime), a new anomaly can land any ingest
@@ -10,8 +10,7 @@ import { fetchRecentAnomalies, type AnomalyRow } from '@/lib/supabaseAnomalies';
  * cadence: the bell only needs to notice within a poll cycle or two, not instantly. */
 const ANOMALIES_POLL_MS = 60_000;
 
-let loadAttempt = 0;
-let pollTimer: ReturnType<typeof setTimeout> | null = null;
+const retry = createRetrySchedule();
 
 interface AnomaliesState {
   /** Raw rows from the last successful fetch — AlertsPopover.tsx derives "current, one per
@@ -33,10 +32,7 @@ export const useAnomaliesStore = create<AnomaliesState>((set) => ({
 
   load: async () => {
     set({ status: 'loading' });
-    if (pollTimer) {
-      clearTimeout(pollTimer);
-      pollTimer = null;
-    }
+    retry.cancel();
     if (!supabase) {
       set({ rows: [], status: 'ready' });
       return;
@@ -44,12 +40,11 @@ export const useAnomaliesStore = create<AnomaliesState>((set) => ({
     const attempt = async (): Promise<void> => {
       try {
         const rows = await fetchRecentAnomalies();
-        loadAttempt = 0;
+        retry.succeeded();
         set({ rows, status: 'ready' });
-        pollTimer = setTimeout(attempt, ANOMALIES_POLL_MS);
+        retry.scheduleNext(attempt, ANOMALIES_POLL_MS);
       } catch {
-        loadAttempt++;
-        pollTimer = setTimeout(attempt, nextPollDelayMs(loadAttempt));
+        retry.retryAfterFailure(attempt);
       }
     };
     await attempt();

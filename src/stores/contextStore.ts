@@ -1,11 +1,10 @@
 import { create } from 'zustand';
-import { nextPollDelayMs } from '@/lib/bridgeClient';
 import { supabase } from '@/config/supabase';
 import { fetchScheduleContext, writeScheduleContext } from '@/lib/supabaseConfig';
 import type { ContextMap } from '@/lib/types';
+import { createRetrySchedule } from './retrySchedule';
 
-let loadAttempt = 0;
-let loadRetryTimer: ReturnType<typeof setTimeout> | null = null;
+const retry = createRetrySchedule();
 
 /** Keys in `draft` not yet reflected in `saved` — what a "Write to Supabase" click would
  * actually send. Pure so Automation's "Pending writes" list can render the exact same diff
@@ -73,10 +72,7 @@ export const useContextStore = create<ContextState>((set, get) => ({
   // fabricated default schedules" behavior.
   load: async () => {
     set({ status: 'loading' });
-    if (loadRetryTimer) {
-      clearTimeout(loadRetryTimer);
-      loadRetryTimer = null;
-    }
+    retry.cancel();
     if (!supabase) {
       set({ saved: {}, status: 'ready' });
       return;
@@ -84,11 +80,10 @@ export const useContextStore = create<ContextState>((set, get) => ({
     const attempt = async (): Promise<void> => {
       try {
         const saved = await fetchScheduleContext();
-        loadAttempt = 0;
+        retry.succeeded();
         set({ saved, status: 'ready' });
       } catch {
-        loadAttempt++;
-        loadRetryTimer = setTimeout(attempt, nextPollDelayMs(loadAttempt));
+        retry.retryAfterFailure(attempt);
       }
     };
     await attempt();

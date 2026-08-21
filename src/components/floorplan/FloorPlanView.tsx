@@ -6,6 +6,13 @@ import { LIGHT_PLAN } from '@/components/scene3d/geometry';
 import type { Reading } from '@/lib/types';
 
 /**
+ * How far a stale element dims on the 2D plan. Not shared with the 3D scene's 0.4: that one
+ * applies to an emissive mesh that also loses its glow and changes colour, so the same
+ * number would not read as the same amount of dimming. One value here, three call sites.
+ */
+const STALE_OPACITY = 0.5;
+
+/**
  * Read-only 2D floor plan. Geometry ported from the live Node-RED dashboard's two
  * `ui_template` nodes — `Lighting Floor Plan` (id `8a84d5fec547c73f`) and `Outlet Floor
  * Plan (Status Only)` (id `a8e6460facb3860c`) — same 320×550 viewBox, rewritten from
@@ -97,7 +104,7 @@ function LightingPlan({ readings }: { readings: Record<string, Reading> }) {
                 rx={2}
                 fill={fill}
                 stroke="var(--border-strong)"
-                opacity={stale ? 0.5 : 1}
+                opacity={stale ? STALE_OPACITY : 1}
                 className={on && !stale ? 'floorplan-pin--on' : undefined}
               />
             ))}
@@ -127,7 +134,7 @@ function OutletPlan({ readings }: { readings: Record<string, Reading> }) {
               fill={stale ? 'var(--muted-2)' : s1 ? 'var(--accent)' : 'var(--bg-inset)'}
               stroke="var(--accent)"
               strokeWidth={1.5}
-              opacity={stale ? 0.5 : 1}
+              opacity={stale ? STALE_OPACITY : 1}
               className={s1 && !stale ? 'floorplan-pin--on' : undefined}
             />
             <path
@@ -135,7 +142,7 @@ function OutletPlan({ readings }: { readings: Record<string, Reading> }) {
               fill={stale ? 'var(--muted-2)' : s2 ? 'var(--accent)' : 'var(--bg-inset)'}
               stroke="var(--accent)"
               strokeWidth={1.5}
-              opacity={stale ? 0.5 : 1}
+              opacity={stale ? STALE_OPACITY : 1}
               className={s2 && !stale ? 'floorplan-pin--on' : undefined}
             />
             <text
