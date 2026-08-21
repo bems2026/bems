@@ -1,13 +1,43 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { getHistory } from '@/lib/bridgeClient';
-import { getLongHistory, LONG_HISTORY_REFRESH_MS, type LongRange } from '@/lib/supabaseHistory';
+import {
+  ARCHIVE_RANGES,
+  ARCHIVE_REFRESH_MS,
+  getArchiveHistory,
+  getLongHistory,
+  LONG_HISTORY_REFRESH_MS,
+  type ArchiveRange,
+  type LongRange,
+} from '@/lib/supabaseHistory';
 import { supabase } from '@/config/supabase';
 import { TIMING } from '@/lib/timing';
+import type { HistoryPoint } from '@/lib/types';
 
 /** '24h' is the original, bridge-backed range — unchanged. '7d'/'30d' are Phase 4's
- * Supabase-backed addition, only meaningful once `supabase` is configured. */
-export type AnalyticsRange = '24h' | LongRange;
+ * Supabase-backed addition; '90d'/'1y' are Phase 10's, crossing the retention boundary into
+ * `readings_hourly`. All four are only meaningful once `supabase` is configured. */
+export type AnalyticsRange = '24h' | LongRange | ArchiveRange;
+
+function isArchiveRange(range: AnalyticsRange): range is ArchiveRange {
+  return (ARCHIVE_RANGES as readonly string[]).includes(range);
+}
+
+/**
+ * Which source answers a range, and how often to re-ask it. Cadence follows the source
+ * rather than the UI: the bridge samples every 60s, a week/month chart does not need
+ * per-minute freshness, and a year-wide chart whose every point but the last is immutable
+ * history needs it even less.
+ */
+function sourceFor(range: AnalyticsRange): { fetch: (id: string) => Promise<HistoryPoint[]>; refetchMs: number } {
+  if (range === '24h') {
+    return { fetch: (id) => getHistory(id, '24h').then((r) => r.points), refetchMs: TIMING.HISTORY_SAMPLE_MS };
+  }
+  if (isArchiveRange(range)) {
+    return { fetch: (id) => getArchiveHistory(id, range), refetchMs: ARCHIVE_REFRESH_MS };
+  }
+  return { fetch: (id) => getLongHistory(id, range), refetchMs: LONG_HISTORY_REFRESH_MS };
+}
 
 /**
  * Self-fetches history for every branch meter AND every outlet — Overview's cards only
@@ -16,7 +46,8 @@ export type AnalyticsRange = '24h' | LongRange;
  *
  * `range` picks the data source, not just a query parameter: '24h' stays on the bridge
  * (the original path, untouched), '7d'/'30d' read from Supabase instead — the bridge's own
- * ring buffer is capped at 24h and has nothing further back to give. Refetch cadence
+ * ring buffer is capped at 24h and has nothing further back to give, and '90d'/'1y' read
+ * through the archive RPC so they span the retention boundary. Refetch cadence
  * follows the source: the bridge's own 60s sample rate for '24h', a much slower
  * `LONG_HISTORY_REFRESH_MS` for the long ranges (a week/month-wide chart doesn't need
  * per-minute freshness, and polling Supabase that often would be pure waste).
@@ -53,7 +84,7 @@ export function useAnalyticsHistory(range: AnalyticsRange = '24h') {
     if (allIds.length === 0 || longRangeUnavailable) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const refetchMs = range === '24h' ? TIMING.HISTORY_SAMPLE_MS : LONG_HISTORY_REFRESH_MS;
+    const { fetch: fetchOne, refetchMs } = sourceFor(range);
 
     // Promise.allSettled, not Promise.all: one device's fetch failing (a timeout, a
     // transient network blip) used to reject the whole batch and blank every OTHER
@@ -62,10 +93,7 @@ export function useAnalyticsHistory(range: AnalyticsRange = '24h') {
     // gap, not an error, so a device that failed this tick just keeps whatever it last
     // had (or stays empty) while everything else updates normally.
     const load = async () => {
-      const results =
-        range === '24h'
-          ? await Promise.allSettled(allIds.map((id) => getHistory(id, '24h').then((r) => r.points)))
-          : await Promise.allSettled(allIds.map((id) => getLongHistory(id, range)));
+      const results = await Promise.allSettled(allIds.map(fetchOne));
       if (cancelled) return;
       let anySucceeded = false;
       for (let i = 0; i < allIds.length; i++) {

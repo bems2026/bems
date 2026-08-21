@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { assertNotTruncated, mapReadingsRows } from './supabaseHistory';
+import {
+  ARCHIVE_RANGES,
+  MAX_POINTS,
+  archiveWindow,
+  assertNotTruncated,
+  mapReadingsRows,
+} from './supabaseHistory';
 
 describe('mapReadingsRows', () => {
   it('maps a full row straight through', () => {
@@ -79,5 +85,41 @@ describe('mapReadingsRows on bucket rows', () => {
       { ts: 't1', power_w: 10, voltage: null, current: null, sample_count: 15, online_count: 3 },
     ]);
     expect(points[0]).toEqual({ ts: 't1', power_w: 10, voltage: undefined, current: undefined });
+  });
+});
+
+describe('archiveWindow', () => {
+  const NOW = Date.parse('2026-08-21T12:00:00.000Z');
+
+  it('spans exactly the range it names, ending now', () => {
+    const w = archiveWindow('90d', NOW);
+    expect(w.untilIso).toBe(new Date(NOW).toISOString());
+    expect(Date.parse(w.untilIso) - Date.parse(w.sinceIso)).toBe(90 * 24 * 60 * 60 * 1000);
+  });
+
+  it.each(ARCHIVE_RANGES)(
+    '%s asks for a bucket that is a whole number of hours — readings_archive raises otherwise',
+    (range) => {
+      // The RPC's floor is one hour, because readings_hourly has no finer grain. A range
+      // added with a 30-minute bucket would raise at runtime, in production, on a page that
+      // had rendered fine in dev against the raw window. Catch it here instead.
+      const { bucketSeconds } = archiveWindow(range, NOW);
+      expect(bucketSeconds % 3600).toBe(0);
+      expect(bucketSeconds).toBeGreaterThanOrEqual(3600);
+    }
+  );
+
+  it.each(ARCHIVE_RANGES)('%s stays under the truncation cap it would otherwise trip', (range) => {
+    // This is the Phase 9 bug's whole lesson, held as an invariant rather than a comment:
+    // if a range's bucket count reaches MAX_POINTS, assertNotTruncated throws and the chart
+    // shows an error. Reaching PostgREST's own 1000-row cap would be worse — a short array
+    // and a plausible-looking chart, which is what shipped last time.
+    const { sinceIso, untilIso, bucketSeconds } = archiveWindow(range, NOW);
+    const buckets = (Date.parse(untilIso) - Date.parse(sinceIso)) / 1000 / bucketSeconds;
+    expect(buckets).toBeLessThan(MAX_POINTS);
+  });
+
+  it('uses coarser buckets for longer ranges, never the reverse', () => {
+    expect(archiveWindow('1y', NOW).bucketSeconds).toBeGreaterThan(archiveWindow('90d', NOW).bucketSeconds);
   });
 });

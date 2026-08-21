@@ -46,8 +46,10 @@ const BUCKET_SECONDS: Record<LongRange, number> = {
 };
 
 /** Above this, assume we hit a cap rather than reached the end of the data. Must stay under
- * PostgREST's `db-max-rows` (1000) — see `assertNotTruncated`. */
-const MAX_POINTS = 900;
+ * PostgREST's `db-max-rows` (1000) — see `assertNotTruncated`. Exported so the range tables
+ * below can be unit-tested against it: a range whose bucket count reaches this throws at
+ * runtime, and the point of Phase 9 was to stop discovering that in production. */
+export const MAX_POINTS = 900;
 
 /** How often to re-poll a long-range view. Far less frequent than the bridge's 60s
  * sample rate on purpose — a week/month-wide chart doesn't need per-minute freshness,
@@ -119,5 +121,76 @@ export async function getLongHistory(deviceId: string, range: LongRange): Promis
   if (error) throw new Error(`Supabase history fetch failed for ${deviceId}: ${error.message}`);
   const rows = (data ?? []) as BucketRow[];
   assertNotTruncated(rows, MAX_POINTS, `readings_buckets(${deviceId}, ${range})`);
+  return mapReadingsRows(rows);
+}
+
+// --- The archive: history older than the raw retention window ---------------------------
+
+/**
+ * Ranges served by `readings_archive` (`supabase/phase10_history_archive.sql`) rather than
+ * `readings_buckets`.
+ *
+ * WHY A SECOND PATH: `readings_buckets` reads `readings` only, and `server/retention.mjs`
+ * prunes that table at 30 days. Phase 9 built `readings_hourly` to keep the history past
+ * that point — but nothing read it, so anything older than the retention window was
+ * unreachable from the app. These ranges cross that boundary; the RPC merges both tables and
+ * deduplicates the seam, so a caller never has to know where the boundary currently sits.
+ */
+export const ARCHIVE_RANGES = ['90d', '1y'] as const;
+export type ArchiveRange = (typeof ARCHIVE_RANGES)[number];
+
+const ARCHIVE_RANGE_MS: Record<ArchiveRange, number> = {
+  '90d': 90 * 24 * 60 * 60 * 1000,
+  '1y': 365 * 24 * 60 * 60 * 1000,
+};
+
+/**
+ * Bucket width per archive range. Every value must be a whole number of hours —
+ * `readings_hourly` has no finer grain and the RPC raises rather than fabricating one — and
+ * every range must yield fewer than `MAX_POINTS` buckets. Both are asserted in the tests,
+ * because getting either wrong fails at runtime in production rather than at build time:
+ * 90d/6h = 360 points, 1y/1d = 365 points.
+ */
+const ARCHIVE_BUCKET_SECONDS: Record<ArchiveRange, number> = {
+  '90d': 6 * 60 * 60,
+  '1y': 24 * 60 * 60,
+};
+
+/** How often to re-poll an archive view. A year-wide chart moves even more slowly than a
+ * month-wide one, and every point but the last is already immutable history. */
+export const ARCHIVE_REFRESH_MS = 30 * 60 * 1000;
+
+/** Pure — the window and bucket size for a range, split out so the two invariants above are
+ * testable without a live Supabase project. */
+export function archiveWindow(
+  range: ArchiveRange,
+  nowMs: number = Date.now()
+): { sinceIso: string; untilIso: string; bucketSeconds: number } {
+  return {
+    sinceIso: new Date(nowMs - ARCHIVE_RANGE_MS[range]).toISOString(),
+    untilIso: new Date(nowMs).toISOString(),
+    bucketSeconds: ARCHIVE_BUCKET_SECONDS[range],
+  };
+}
+
+/**
+ * Long-range history spanning the retention boundary. Same contract as `getLongHistory`:
+ * throws if Supabase is unconfigured, throws rather than returning a possibly-truncated
+ * answer, and drops null-power buckets as gaps instead of coercing them to zero.
+ */
+export async function getArchiveHistory(deviceId: string, range: ArchiveRange): Promise<HistoryPoint[]> {
+  if (!supabase) {
+    throw new Error('Supabase is not configured (VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY unset)');
+  }
+  const { sinceIso, untilIso, bucketSeconds } = archiveWindow(range);
+  const { data, error } = await supabase.rpc('readings_archive', {
+    p_device_id: deviceId,
+    p_since: sinceIso,
+    p_until: untilIso,
+    p_bucket_seconds: bucketSeconds,
+  });
+  if (error) throw new Error(`Supabase archive fetch failed for ${deviceId}: ${error.message}`);
+  const rows = (data ?? []) as BucketRow[];
+  assertNotTruncated(rows, MAX_POINTS, `readings_archive(${deviceId}, ${range})`);
   return mapReadingsRows(rows);
 }
