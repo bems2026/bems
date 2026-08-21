@@ -28,6 +28,56 @@ directly via `@supabase/supabase-js` + RLS, once Phase 5's auth lands).
 | `schedules` | App-originated schedule edits (Phase 6+) | On write |
 | `dsm_thresholds` | App-originated threshold edits (Phase 6+) | On write |
 | `ingestion_health` | `server/ingest.mjs`, every tick | Every `INGEST_POLL_MS`, best-effort (not buffered on outage) |
+| `readings_hourly` | `readings` rows aged past the retention window, aggregated in Postgres | Whenever a retention pass finds something older than `INGEST_RETENTION_DAYS` (checked every 6h) |
+| `anomalies` | `server/anomalyStats.mjs`, on a flagged tick | Only when a reading is flagged |
+
+## Retention — Phase 9
+
+`readings` grew unbounded until Phase 9: one row per device per 60s tick, forever, with
+nothing ever deleting one (130,367 rows after 4.7 days of operation, ~27,700/day for 20
+devices). That is a correctness problem, not a tidiness one — when the storage ceiling is
+reached it is ingestion's own writes that start failing.
+
+**The policy:** keep `INGEST_RETENTION_DAYS` (default 30) of per-minute resolution; roll
+everything older into permanent hourly buckets in `readings_hourly`. Steady state is roughly
+830k rows in `readings` and 175k rows/year in `readings_hourly`, both bounded.
+
+`server/retention.mjs` calls `roll_up_and_prune_readings(p_before)`
+(`supabase/phase9_readings_hourly.sql`) from the ingest daemon's own loop. Three properties
+worth not re-deriving:
+
+- **The rollup and the prune share one transaction**, because a delete that commits without
+  its rollup destroys the data permanently.
+- **`p_before` is truncated to an hour boundary**, so a partial hour is never rolled up and
+  then completed from a fragment on the next pass.
+- **The trigger is stateless.** There is no last-run file and no cron: each pass asks the
+  database whether anything is older than the window and acts on the answer, so a restart
+  can neither double-run nor skip it.
+
+## Reading history — never `select` the raw table
+
+Long-range history is read through the **`readings_buckets` RPC**
+(`supabase/phase9_history_buckets.sql`), never a plain `select` on `readings`. Two reasons,
+both learned the hard way:
+
+- **PostgREST silently caps every result at `db-max-rows`** (1000 on this project) and gives
+  no signal that it did — no error, no flag, just a shorter array. A `select` with
+  `order by ts asc` therefore returned the *oldest* 1000 rows: a "7d" chart drew 17 hours of
+  data ending four days in the past, with axes and a plausible curve. An explicit
+  `limit=20000` still returns 1000, so this cannot be fixed client-side.
+- **The RPC averages only online samples** (`filter (where r.online)`), so a disconnected
+  meter's frozen last wattage produces a gap rather than a flat, real-looking line — the
+  same invariant `shared/buildLatest.mjs` enforces for building totals.
+
+The RPC **raises** rather than truncating when asked for more buckets than it will return.
+An implicit limit from an external service is not a contract, and this is the read-path twin
+of the write-path lesson in the Phase 6 section below: PostgREST reports both a truncated
+read and an RLS-blocked write as ordinary success.
+
+On the frontend, `deviceStore.history` is **tagged with the range it was fetched for** and
+read only via `historyFor()`, because one untagged map was shared by writers asking for
+24h, 7d and 30d — so a mismatch now renders as a gap instead of one range's points being
+charted under another's label.
 
 ## Deliberate omissions (mirror `bridge-contract.md`'s own honesty about what's absent)
 
