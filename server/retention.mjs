@@ -1,5 +1,9 @@
 /**
- * Retention for the `readings` table — architecture plan Phase 9, closing ROADMAP RM-006.
+ * Retention for the tables that grow without bound — Phase 9 (`readings`, closing ROADMAP
+ * RM-006) and Phase 11 (`building_totals` and `anomalies`, which Phase 9 left untouched).
+ *
+ * `commands` is deliberately NOT among them: it is the audit trail for every attempt to move
+ * a relay, and it is small. See supabase/phase11_totals_retention.sql's header.
  *
  * THE PROBLEM THIS SOLVES:
  * `server/ingest.mjs` has written one row per device per 60s tick since Phase 3 and nothing
@@ -26,6 +30,16 @@
 
 export const DEFAULT_RETENTION_DAYS = 30;
 
+/**
+ * `anomalies` gets a far longer window than `readings`, and no rollup — Phase 11.
+ *
+ * It is one row per FLAGGED tick rather than one per tick, so it grows in a different order
+ * of magnitude, and it is derived from readings that are themselves retained. A year is long
+ * enough that "was this device misbehaving last season?" stays answerable, and short enough
+ * that the table is still bounded.
+ */
+export const DEFAULT_ANOMALY_RETENTION_DAYS = 365;
+
 /** Don't re-ask the database on every 60s tick — the answer only changes once a day. */
 export const RETENTION_CHECK_MS = 6 * 60 * 60 * 1000; // 6h
 
@@ -38,12 +52,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  *   `oldestTs` is the `ts` of the oldest surviving row, or null when the table is empty.
  * @returns {{ run: boolean, cutoffIso: string, reason: string }}
  */
-export function shouldRunRetention({ oldestTs, nowMs, retentionDays = DEFAULT_RETENTION_DAYS }) {
+export function shouldRunRetention({ oldestTs, nowMs, retentionDays = DEFAULT_RETENTION_DAYS, label = 'readings' }) {
   const cutoffMs = nowMs - retentionDays * DAY_MS;
   const cutoffIso = new Date(cutoffMs).toISOString();
 
   if (oldestTs === null || oldestTs === undefined) {
-    return { run: false, cutoffIso, reason: 'no readings yet' };
+    return { run: false, cutoffIso, reason: `no ${label} yet` };
   }
   const oldestMs = Date.parse(oldestTs);
   if (Number.isNaN(oldestMs)) {
@@ -52,30 +66,37 @@ export function shouldRunRetention({ oldestTs, nowMs, retentionDays = DEFAULT_RE
     return { run: false, cutoffIso, reason: `unparseable oldest ts: ${oldestTs}` };
   }
   if (oldestMs >= cutoffMs) {
-    return { run: false, cutoffIso, reason: 'nothing older than the retention window' };
+    return { run: false, cutoffIso, reason: `nothing older than the ${label} retention window` };
   }
-  return { run: true, cutoffIso, reason: `oldest reading ${oldestTs} predates the ${retentionDays}d window` };
+  return { run: true, cutoffIso, reason: `oldest ${label} row ${oldestTs} predates the ${retentionDays}d window` };
 }
 
 /**
- * Runs one retention pass if one is due. Never throws for an ordinary "nothing to do" —
- * only a real Supabase failure propagates, and the caller in `ingest.mjs` catches even
- * that, because retention failing must never stop the daemon from ingesting.
+ * Runs one retention pass over one table, if one is due. Never throws for an ordinary
+ * "nothing to do" — only a real Supabase failure propagates, and the caller in `ingest.mjs`
+ * catches even that, because retention failing must never stop the daemon from ingesting.
  *
- * @param {{ client: {select: Function, rpc: Function}, retentionDays?: number, nowMs?: number }} args
+ * Generic over the table because Phase 11 added two more passes with identical shape. One
+ * body rather than three near-copies, for the same reason `src/stores/retrySchedule.ts`
+ * replaced four hand-copied backoff schedules (EX-030): three copies of a function whose
+ * only destructive branch is a DELETE is three places for the guard to drift.
+ *
+ * @param {{ client: {select: Function, rpc: Function}, table: string, rpc: string,
+ *           retentionDays: number, nowMs: number }} args
  * @returns {Promise<{ ran: boolean, rolled: number, deleted: number, reason: string }>}
  */
-export async function runRetention({ client, retentionDays = DEFAULT_RETENTION_DAYS, nowMs = Date.now() }) {
-  const oldest = await client.select('readings', 'select=ts&order=ts.asc&limit=1');
+async function runPass({ client, table, rpc, retentionDays, nowMs }) {
+  const oldest = await client.select(table, 'select=ts&order=ts.asc&limit=1');
   const oldestTs = Array.isArray(oldest) && oldest.length > 0 ? oldest[0].ts : null;
 
-  const decision = shouldRunRetention({ oldestTs, nowMs, retentionDays });
+  const decision = shouldRunRetention({ oldestTs, nowMs, retentionDays, label: table });
   if (!decision.run) return { ran: false, rolled: 0, deleted: 0, reason: decision.reason };
 
-  const result = await client.rpc('roll_up_and_prune_readings', { p_before: decision.cutoffIso });
-  // The function `returns table (rolled int, deleted int)`, which PostgREST serializes as a
-  // one-element array. Read the counts rather than assuming the call did anything — the same
-  // "verify the affected-row count, never trust a bare 200" lesson as commit 2e4c0c2.
+  const result = await client.rpc(rpc, { p_before: decision.cutoffIso });
+  // Every one of these functions `returns table (rolled int, deleted int)`, which PostgREST
+  // serializes as a one-element array. Read the counts rather than assuming the call did
+  // anything — the same "verify the affected-row count, never trust a bare 200" lesson as
+  // commit 2e4c0c2.
   const row = Array.isArray(result) ? result[0] : result;
   return {
     ran: true,
@@ -83,4 +104,36 @@ export async function runRetention({ client, retentionDays = DEFAULT_RETENTION_D
     deleted: Number(row?.deleted ?? 0),
     reason: decision.reason,
   };
+}
+
+/** `readings` — 30 days of per-minute resolution, rolled into permanent hourly buckets. */
+export function runRetention({ client, retentionDays = DEFAULT_RETENTION_DAYS, nowMs = Date.now() } = {}) {
+  return runPass({ client, table: 'readings', rpc: 'roll_up_and_prune_readings', retentionDays, nowMs });
+}
+
+/**
+ * `building_totals` — same window and same rollup-then-prune treatment as `readings`.
+ *
+ * Rolled up rather than simply deleted because it holds `energy_kwh_week`,
+ * `energy_kwh_month` and the per-phase currents: the building-wide figures a report has to
+ * quote, which exist nowhere else once these rows are gone.
+ */
+export function runTotalsRetention({ client, retentionDays = DEFAULT_RETENTION_DAYS, nowMs = Date.now() } = {}) {
+  return runPass({
+    client,
+    table: 'building_totals',
+    rpc: 'roll_up_and_prune_building_totals',
+    retentionDays,
+    nowMs,
+  });
+}
+
+/** `anomalies` — pruned outright on its own, much longer window. No rollup; see
+ * DEFAULT_ANOMALY_RETENTION_DAYS. `rolled` always comes back 0 and means it. */
+export function runAnomalyRetention({
+  client,
+  retentionDays = DEFAULT_ANOMALY_RETENTION_DAYS,
+  nowMs = Date.now(),
+} = {}) {
+  return runPass({ client, table: 'anomalies', rpc: 'prune_anomalies', retentionDays, nowMs });
 }

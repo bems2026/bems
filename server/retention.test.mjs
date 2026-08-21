@@ -7,7 +7,14 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { shouldRunRetention, runRetention, DEFAULT_RETENTION_DAYS } from './retention.mjs';
+import {
+  shouldRunRetention,
+  runRetention,
+  runTotalsRetention,
+  runAnomalyRetention,
+  DEFAULT_RETENTION_DAYS,
+  DEFAULT_ANOMALY_RETENTION_DAYS,
+} from './retention.mjs';
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.parse('2026-08-21T12:00:00.000Z');
@@ -124,4 +131,67 @@ test('a second pass right after a successful one is a no-op — the trigger is s
   const result = await runRetention({ client: afterPrune, nowMs: NOW });
   assert.equal(result.ran, false);
   assert.equal(afterPrune.calls.rpc.length, 0);
+});
+
+// --- Phase 11: the two tables Phase 9 left unbounded ------------------------------------
+
+test('the totals pass reads building_totals and calls its own rollup function', async () => {
+  const client = fakeClient({ oldestTs: new Date(NOW - 45 * DAY).toISOString() });
+  const r = await runTotalsRetention({ client, retentionDays: 30, nowMs: NOW });
+
+  assert.equal(client.calls.select[0].table, 'building_totals');
+  assert.match(client.calls.select[0].query, /limit=1/);
+  assert.equal(client.calls.rpc[0].fn, 'roll_up_and_prune_building_totals');
+  assert.equal(client.calls.rpc[0].args.p_before, new Date(NOW - 30 * DAY).toISOString());
+  assert.equal(r.ran, true);
+  assert.equal(r.deleted, 120);
+});
+
+test('the anomaly pass prunes on its own, much longer window — not the readings one', async () => {
+  // An anomaly 60 days old is still inside the anomaly window and must survive a pass that
+  // would have pruned a reading of the same age.
+  const client = fakeClient({ oldestTs: new Date(NOW - 60 * DAY).toISOString() });
+  const r = await runAnomalyRetention({ client, nowMs: NOW });
+
+  assert.equal(r.ran, false);
+  assert.equal(client.calls.rpc.length, 0, 'nothing older than 365d, so nothing to delete');
+  assert.equal(DEFAULT_ANOMALY_RETENTION_DAYS, 365);
+});
+
+test('the anomaly pass does prune once rows pass its own window', async () => {
+  const client = fakeClient({ oldestTs: new Date(NOW - 400 * DAY).toISOString(), rpcResult: [{ rolled: 0, deleted: 9 }] });
+  const r = await runAnomalyRetention({ client, nowMs: NOW });
+
+  assert.equal(client.calls.select[0].table, 'anomalies');
+  assert.equal(client.calls.rpc[0].fn, 'prune_anomalies');
+  assert.equal(r.ran, true);
+  assert.equal(r.deleted, 9);
+  assert.equal(r.rolled, 0, 'anomalies are pruned outright — there is no rollup to report');
+});
+
+test('every pass refuses to call its destructive RPC when nothing is due', async () => {
+  // The guarantee that matters most: a pass that has nothing to do must touch nothing.
+  for (const run of [runRetention, runTotalsRetention, runAnomalyRetention]) {
+    const client = fakeClient({ oldestTs: new Date(NOW - 1 * DAY).toISOString() });
+    const r = await run({ client, nowMs: NOW });
+    assert.equal(r.ran, false);
+    assert.equal(client.calls.rpc.length, 0);
+  }
+});
+
+test('every pass is a no-op on an empty table rather than pruning a window it cannot see', async () => {
+  for (const run of [runRetention, runTotalsRetention, runAnomalyRetention]) {
+    const client = fakeClient({ oldestTs: null });
+    const r = await run({ client, nowMs: NOW });
+    assert.equal(r.ran, false);
+    assert.equal(client.calls.rpc.length, 0);
+  }
+});
+
+test('each pass names its own table in the "nothing to do" reason, not always "readings"', async () => {
+  // The three run on one schedule and log to one journal. A reason that always said
+  // "readings" would make an anomaly-pass no-op indistinguishable from a readings one.
+  const client = fakeClient({ oldestTs: new Date(NOW - 1 * DAY).toISOString() });
+  const totals = await runTotalsRetention({ client, nowMs: NOW });
+  assert.match(totals.reason, /building_totals/i);
 });
