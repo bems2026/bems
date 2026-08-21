@@ -1,8 +1,11 @@
 # ADR-001 — The time-series store stays Postgres (Supabase). No InfluxDB.
 
-**Status:** Accepted, 2026-08-21
+**Status:** Accepted, 2026-08-21. Amended 2026-08-22 to answer the split proposal and
+Google Sheets, both raised after the original decision.
 **Decides:** ROADMAP §5 — "should iBEMS move device readings to a purpose-built time-series
-database?"
+database?", and the follow-up form of the same question: "should Supabase be the brain for
+application logic while InfluxDB is the engine for sensor telemetry, with Google Sheets as
+the reporting surface?"
 
 A recorded answer, in the sense RM-005 uses the phrase. The question is reasonable, it will
 be asked again at the next site, and an ADR exists so it is answered once with its reasoning
@@ -85,6 +88,78 @@ instinct — `supabaseRest.mjs` is a hand-rolled dozen-line client rather than a
 `mock-bridge` is zero-dependency — is to refuse complexity that has not earned itself. This
 has not.
 
+## The split version: Supabase as "brain", InfluxDB as "engine"
+
+Raised 2026-08-22, and answered separately because it is a genuinely better proposal than
+"replace Postgres with InfluxDB" — and because a future reader will arrive at it
+independently.
+
+The shape: application state (auth, devices, schedules, thresholds, the command audit) stays
+in Supabase; sensor telemetry moves to InfluxDB. Polyglot persistence, each store doing what
+it is good at.
+
+**What is right about it**, said plainly rather than waved past: the instinct is correct.
+Telemetry does have a different access pattern from application state — high-volume
+append-only writes, time-ordered reads, downsampling, retention windows. Splitting the two is
+a real pattern in production IoT, not a mistake. A system built from scratch at ten times
+this scale should probably look roughly like this.
+
+**Why it is still the wrong call here: the split cuts straight through the queries this
+system actually runs.** Measured against the code rather than asserted:
+
+- **Auto-shed** is the sharpest case. `planShed` takes four inputs and produces a fifth:
+  live per-device `readings` and the building `_totals` (telemetry), `dsm_thresholds` (the
+  operator's configured limits), `device_config` (the operator's shed-group assignments), and
+  it writes a `commands` audit row. Three of those five are application state and two are
+  telemetry — so the split would run straight through the middle of a single decision, taken
+  every 15 seconds, about whether to switch a real relay off.
+- **The monthly report** joins six sources: `readings_hourly`, `readings`,
+  `building_totals_hourly`, `building_totals`, `commands`, `anomalies`. Four are "brain", two
+  are "engine".
+- **The Devices table** renders each row from three sources at once: live telemetry, the
+  device registry, and the operator's own `device_config` edits (room, category, shed group).
+  Analytics is the milder case — it joins telemetry to `devices` only, not to
+  `device_config`.
+
+Each of those becomes application-side join code: more surface, no index, and a new class of
+bug in the one path that can move a relay.
+
+**The security argument survives the split unchanged, and is the strongest one.** Today the
+browser reads telemetry *directly* from Supabase with the anon key, and RLS is the only thing
+keeping it behind a login — `readings_buckets` is `security invoker` precisely for that. Move
+telemetry to InfluxDB and the proxy must mediate every telemetry read, behind a second
+authorization model with no relationship to a Supabase Auth user. That is a large new surface
+added to protect data that is already protected, and it is the kind of change that fails
+quietly rather than loudly.
+
+**And the "engine" already exists.** Continuous downsampling and retention policies are the
+features the split would be buying, and they were built, tested and verified against real
+data in Phases 9 and 11. Adopting InfluxDB means deleting working code to re-solve a solved
+problem.
+
+## Google Sheets
+
+Raised alongside the split, as the reporting surface. It gets a different answer: **Sheets is
+a good destination and a bad database.**
+
+As a destination it fits this project well — the deliverables are institutional reports, and
+everyone at the site can already read a spreadsheet. The only question is how the data gets
+there, and that is where it stops being free:
+
+- An automated sync needs a Google service-account credential on a deployment whose
+  repository is public, plus the `googleapis` dependency, on a server that deliberately has
+  none (`server/supabaseRest.mjs` is hand-rolled for exactly this reason).
+- The CSV export built in Phase 12 already reaches Sheets in one step (File -> Import).
+
+So an automated sync buys "nobody has to click" and costs a managed secret. That is a bad
+trade today and a defensible one later, if monthly reporting becomes an obligation to someone
+who will not log in. Recorded as **FI-011**, deliberately paired with FI-005's alert channel
+so the credential problem is solved once rather than twice.
+
+Sheets as the *store* — the system writing readings into a spreadsheet and reading them back
+— is not on the table. No types, no constraints, no RLS, a hard row ceiling, and an API quota
+that would drop writes silently.
+
 ## What would change this answer
 
 Stated as triggers, so this is a decision rather than a preference. Any one of these raises
@@ -92,10 +167,38 @@ the row rate by roughly two orders of magnitude and makes the question live agai
 
 - **Sub-minute sampling** — per-second metering, or streaming waveform/power-quality data.
 - **100+ devices at the current cadence**, or ~20 devices at per-second cadence.
-- **The multi-site rollout (FI-003)** — many buildings ingesting concurrently into one store.
+- **The multi-site rollout (FI-003)** — many buildings ingesting concurrently into one
+  store. This is the realistic trigger, and the only one likely to fire on its own: ten
+  buildings at the current cadence is roughly **105M rows/year** before retention, which is
+  where the split stops being premature and starts being the right answer.
 - **Query latency becoming user-visible** on the rollup path despite correct indexing.
 
 Absent one of those, re-opening this is a rewrite in search of a reason.
+
+## The one argument for the split that is not technical
+
+Recorded because it is the argument most likely to actually reverse this decision, and
+because dismissing it as unserious would be dishonest.
+
+This is an academic project. A panel or reviewer may expect to see a recognised IoT stack,
+and "we used Postgres" can read as not having considered the question at all. That is a
+presentation concern rather than an engineering one — but presentation concerns are real when
+the deliverable is a thesis.
+
+The better answer to it is this document. *"We measured 0.33 writes/sec, implemented
+downsampling and retention in Postgres, and recorded the thresholds at which we would
+migrate"* is a stronger defence than *"we used InfluxDB because it is what is used."* If a
+panel still disagrees after reading it, that is a legitimate reason to revisit — and it
+should then be recorded as what it is: a decision made for how the work is received, not for
+how it runs.
+
+## The staged answer
+
+| Stage | Trigger | Move |
+|---|---|---|
+| **Now** | — | One Postgres store, plus CSV export. Built and running. |
+| **Next** | `readings` growth outpaces the prune | Partition by month; the prune becomes `DROP TABLE`. Same store, same RLS, same backups. (FI-012) |
+| **Only then** | One of the triggers above actually fires | Revisit a TSDB — with partitioning experience in hand to judge whether it is still needed. |
 
 ## The successor inside Postgres, if growth does bite
 

@@ -215,10 +215,11 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - **FI-009** (S) Narrow the three remaining whole-map store selectors — `FloorPlanView`, `AlertsPopover`, `EnergyBreakdownCard`. Left alone in the Phase 9 pass because each needs value-level rather than reference-level comparison to gain anything, and FloorPlanView genuinely reads every device.
 - **FI-010** (M) The 24h chart has the same offline-blindness the 7d/30d charts just lost: the bridge's ring buffer and `HistoryPoint` carry no `online` field, so a device offline for a day still draws its frozen last wattage. Fixing it means regenerating and redeploying the live Node-RED flow — a layer-1 change on load-bearing hardware, so it needs explicit approval, not a quiet follow-up.
 - **FI-011** (S) Push delivery for the monthly report, once FI-005's channel exists. Reports
-  are deliberately pull-only today — email or Sheets delivery would put an SMTP credential or
-  an API key on a deployment whose repository is public, to solve a problem the CSV download
-  already solves. Worth revisiting only as a second consumer of the alert channel, never as a
-  reason to build one.
+  are deliberately pull-only today — email or Google Sheets sync would put an SMTP credential
+  or a service-account key on a deployment whose repository is public, to solve a problem the
+  CSV download already solves in one step (File -> Import). Worth revisiting only as a second
+  consumer of the alert channel, never as a reason to build one. Reasoning recorded in
+  `docs/adr-001-timeseries-store.md`.
 - **FI-012** (M) Partition `readings` by month if growth ever outgrows the current prune. The
   prune is a single unbounded `DELETE` in one transaction — fine at today's volumes, and the
   first thing to degrade as the table grows. Partitioning turns it into a `DROP TABLE` while
@@ -264,6 +265,13 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
    tried, and whether Supabase itself takes a backup depends on a plan tier this pass could
    not check. See RM-006d.
 5. **Should `--good` be corrected pre-emptively** (FI-007), or left until a green badge actually lands on the page background?
+5b. ~~**Should device readings move to a purpose-built time-series database?**~~ **Answered
+   2026-08-21, amended 2026-08-22** — including the stronger form of the question, "Supabase
+   as the brain and InfluxDB as the engine, with Google Sheets for reporting". The answer is
+   one Postgres store, with the triggers that would reverse it and the partitioning step to
+   try first both written down: `docs/adr-001-timeseries-store.md`. The amendment records the
+   measured evidence (auto-shed alone spans telemetry, thresholds, device config and the audit
+   trail in one 15-second decision) and the one argument against that is not technical.
 6. ~~**What retention period is wanted for `readings`?**~~ **Answered 2026-08-21: 30 days of
    per-minute resolution, with permanent hourly buckets behind it** (RM-006). Chosen by the
    operator so a year-scale energy claim stays defensible without the raw table growing
