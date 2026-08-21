@@ -51,13 +51,17 @@ import crypto from 'node:crypto';
 import { URL } from 'node:url';
 import { verifyBreakGlassPassword } from './breakGlass.mjs';
 import { validateCommand, buildAck, ACCEPTED_STATUS } from '../shared/commands.mjs';
-import { DEVICE_REGISTRY } from '../shared/registry.mjs';
+import { DEVICE_REGISTRY, TIMING } from '../shared/registry.mjs';
 import { dispatchCommand, DISPATCH_CLASSES } from './dispatchLight.mjs';
 import { auditedDispatch } from './auditedDispatch.mjs';
 
 const PROXY_PORT = Number(process.env.PROXY_PORT) || 8080;
 const BRIDGE_HOST = process.env.BRIDGE_HOST || '127.0.0.1';
 const BRIDGE_PORT = Number(process.env.BRIDGE_PORT) || 1880;
+// How long to wait on an upstream that has accepted the connection but not answered.
+// Overridable only so the test suite can exercise the hang path without waiting 10s for it;
+// the default is the same budget every other bridge call in this repo uses.
+const BRIDGE_TIMEOUT_MS = Number(process.env.BRIDGE_TIMEOUT_MS) || TIMING.FETCH_TIMEOUT_MS;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 // The ANON key, not service-role — verifying a user's own token needs no elevated
 // privilege, and this process's whole point is to hold less power than ingest.mjs, not more.
@@ -120,6 +124,25 @@ setInterval(() => {
 // --- Supabase token verification, cached briefly to avoid a round trip per request ------
 const supabaseVerifyCache = new Map(); // token -> { validUntil, ok, userId }
 
+// Entries were never evicted. Supabase mints a NEW access token on every refresh, and
+// src/lib/authToken.ts refreshes on every 401, so this accumulated one entry per token ever
+// presented for the life of the process — only `validUntil` went stale, never the entry.
+// Slow, uncapped, and bounded by nothing an operator controls. localSessions has had a
+// sweep since Phase 5; this is the same sweep, plus a hard ceiling so a burst of distinct
+// tokens between sweeps cannot grow it without limit either.
+const SUPABASE_VERIFY_CACHE_MAX = 5000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [t, entry] of supabaseVerifyCache) if (now >= entry.validUntil) supabaseVerifyCache.delete(t);
+}, 60_000).unref();
+
+/** Map preserves insertion order, so deleting from the front evicts the oldest entries. */
+function capVerifyCache() {
+  while (supabaseVerifyCache.size > SUPABASE_VERIFY_CACHE_MAX) {
+    supabaseVerifyCache.delete(supabaseVerifyCache.keys().next().value);
+  }
+}
+
 /** Returns `{ok, userId}` — `userId` is `auth.users.id`, needed by `handleCommand` to
  * attribute a command's audit row to a real user. Kept in the same cache entry as `ok`
  * rather than a second lookup, so a cached miss and a cached user id can never disagree. */
@@ -144,6 +167,7 @@ async function verifySupabaseSession(token) {
     result = { ok: false, userId: null };
   }
   supabaseVerifyCache.set(token, { ...result, validUntil: Date.now() + SUPABASE_VERIFY_CACHE_MS });
+  capVerifyCache();
   return result;
 }
 
@@ -220,7 +244,29 @@ function proxyHttp(req, res, url) {
       proxyRes.pipe(res);
     }
   );
-  proxyReq.on('error', (err) => sendJson(res, 502, { error: 'bridge_unreachable', detail: String(err) }));
+  // A bridge that REFUSES a connection raises 'error' and is handled below. A bridge that
+  // ACCEPTS and then hangs raises nothing at all, and without this timeout the request would
+  // sit open indefinitely, holding a socket on both legs. Node-RED under a Tuya
+  // discovery-retry storm is exactly the process that hangs rather than refuses — the
+  // condition that produced ~104,500 journal lines an hour and needed
+  // server/nodered-log-ratelimit.conf. The client's own abort would free the browser side,
+  // but never this one.
+  proxyReq.setTimeout(BRIDGE_TIMEOUT_MS, () => {
+    proxyReq.destroy(new Error(`bridge did not respond within ${BRIDGE_TIMEOUT_MS}ms`));
+  });
+
+  proxyReq.on('error', (err) => {
+    // The upstream detail goes to the journal, not to the caller. `String(err)` on a
+    // Supabase or bridge error can carry project-identifying strings, and the caller has no
+    // use for them — dispatchLight.mjs's 502 path already draws this line; the two
+    // bridge-facing paths here did not.
+    console.error(`[ibems-proxy] upstream ${req.method} ${upstream.pathname} failed: ${String(err)}`);
+    // A hang that trips the timeout above may already have had headers written if the
+    // bridge started responding and then stalled mid-body; there is no second status line
+    // to send in that case, only a socket to close.
+    if (res.headersSent) return res.destroy();
+    sendJson(res, 502, { error: 'bridge_unreachable', detail: 'The Node-RED bridge did not respond.' });
+  });
   req.pipe(proxyReq);
 }
 

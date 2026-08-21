@@ -722,3 +722,137 @@ test('the proxy refuses to start with HARDWARE_DISPATCH_ENABLED=true and no LIGH
     fakeAuth.server.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// Phase 9 — the two paths the suite never reached: a HUNG upstream, and the WS relay
+// ---------------------------------------------------------------------------
+
+/** A bridge that accepts the connection and then never answers. Distinct from a refused
+ * connection, which raises 'error' immediately and was already covered. */
+function startHangingBridge() {
+  return new Promise((resolve) => {
+    const port = nextPort++;
+    const sockets = [];
+    const server = http.createServer(() => { /* deliberately never responds */ });
+    server.on('connection', (s) => sockets.push(s));
+    server.listen(port, () => resolve({
+      port,
+      close: () => { sockets.forEach((s) => s.destroy()); server.close(); },
+    }));
+  });
+}
+
+test('a bridge that accepts and then hangs is given up on, rather than held open forever', async () => {
+  // proxyHttp used raw http.request with no timeout: 'error' fires for a REFUSED connection
+  // but never for one that is accepted and then stalls. Node-RED under a Tuya
+  // discovery-retry storm is exactly the process that hangs rather than refuses, and every
+  // such request used to hold a socket on both legs indefinitely.
+  const fakeAuth = await startFakeSupabaseAuth();
+  const bridge = await startHangingBridge();
+  const proxyPort = nextPort++;
+  const proxyChild = await spawnChild(PROXY, {
+    PROXY_PORT: String(proxyPort),
+    BRIDGE_HOST: '127.0.0.1',
+    BRIDGE_PORT: String(bridge.port),
+    BRIDGE_TIMEOUT_MS: '600',
+    SUPABASE_URL: fakeAuth.url,
+    VITE_SUPABASE_ANON_KEY: 'dummy-anon-key',
+  });
+  try {
+    const started = Date.now();
+    const res = await fetch(`http://localhost:${proxyPort}/api/devices`, {
+      headers: { Authorization: `Bearer ${VALID_TOKEN}` },
+    });
+    assert.equal(res.status, 502);
+    assert.equal((await res.json()).error, 'bridge_unreachable');
+    assert.ok(Date.now() - started < 5000, 'the request must not wait out the client timeout');
+  } finally {
+    fakeAuth.server.close();
+    bridge.close();
+    proxyChild.kill();
+  }
+});
+
+test('a 502 does not leak the raw upstream error to the caller', async () => {
+  // String(err) on a bridge or Supabase failure can carry project-identifying strings, and
+  // the caller has no use for them. dispatchLight.mjs's 502 path already drew this line.
+  const fakeAuth = await startFakeSupabaseAuth();
+  const proxyPort = nextPort++;
+  const proxyChild = await spawnChild(PROXY, {
+    PROXY_PORT: String(proxyPort),
+    BRIDGE_HOST: '127.0.0.1',
+    BRIDGE_PORT: String(nextPort++), // nothing listening: connection refused
+    SUPABASE_URL: fakeAuth.url,
+    VITE_SUPABASE_ANON_KEY: 'dummy-anon-key',
+  });
+  try {
+    const res = await fetch(`http://localhost:${proxyPort}/api/devices`, {
+      headers: { Authorization: `Bearer ${VALID_TOKEN}` },
+    });
+    const body = await res.json();
+    assert.equal(res.status, 502);
+    assert.equal(body.error, 'bridge_unreachable');
+    assert.equal(/ECONNREFUSED|127\.0\.0\.1|Error:/.test(body.detail ?? ''), false, `detail leaked: ${body.detail}`);
+  } finally {
+    fakeAuth.server.close();
+    proxyChild.kill();
+  }
+});
+
+/** Issues a raw HTTP Upgrade and resolves with either the upgrade or the plain response. */
+function upgrade(port, path) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      port, host: '127.0.0.1', path, method: 'GET',
+      headers: {
+        Connection: 'Upgrade',
+        Upgrade: 'websocket',
+        'Sec-WebSocket-Key': 'dGhlIHNhbXBsZSBub25jZQ==',
+        'Sec-WebSocket-Version': '13',
+      },
+    });
+    req.on('upgrade', (res, socket) => { socket.destroy(); resolve({ upgraded: true, status: res.statusCode }); });
+    req.on('response', (res) => { res.resume(); resolve({ upgraded: false, status: res.statusCode }); });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+test('the WebSocket relay refuses an upgrade carrying no token', async () => {
+  // The relay is a raw net.connect TCP pipe, and no test had ever issued an Upgrade request
+  // against it — the auth check, the header forwarding, and the failure path were all
+  // unexercised, on the one route that carries live data continuously.
+  const { proxyUrl, cleanup } = await setup();
+  try {
+    const port = Number(new URL(proxyUrl).port);
+    const result = await upgrade(port, '/ws/live');
+    assert.equal(result.upgraded, false, 'an unauthenticated upgrade must not be relayed');
+    assert.equal(result.status, 401);
+  } finally {
+    cleanup();
+  }
+});
+
+test('the WebSocket relay refuses an upgrade carrying a bad token', async () => {
+  const { proxyUrl, cleanup } = await setup();
+  try {
+    const port = Number(new URL(proxyUrl).port);
+    const result = await upgrade(port, '/ws/live?token=not-a-real-token');
+    assert.equal(result.upgraded, false);
+    assert.equal(result.status, 401);
+  } finally {
+    cleanup();
+  }
+});
+
+test('the WebSocket relay passes a valid token through to the bridge', async () => {
+  const { proxyUrl, cleanup } = await setup();
+  try {
+    const port = Number(new URL(proxyUrl).port);
+    const result = await upgrade(port, `/ws/live?token=${VALID_TOKEN}`);
+    assert.equal(result.upgraded, true, 'a valid session must reach the bridge’s WS endpoint');
+    assert.equal(result.status, 101);
+  } finally {
+    cleanup();
+  }
+});
