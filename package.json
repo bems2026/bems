@@ -23,7 +23,8 @@
     "test:bridge": "node --test \"test/**/*.test.mjs\"",
     "test:server": "node --test \"server/**/*.test.mjs\"",
     "ingest": "node server/ingest.mjs",
-    "scheduler": "node server/scheduler.mjs"
+    "scheduler": "node server/scheduler.mjs",
+    "backup": "node server/backup.mjs"
   },
   "dependencies": {
     "@fontsource-variable/manrope": "^5.3.0",
