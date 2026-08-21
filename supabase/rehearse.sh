@@ -53,6 +53,12 @@ create table if not exists auth.users (id uuid primary key default gen_random_uu
 -- they parse and attach to the right tables.
 create or replace function auth.role() returns text language sql stable as
   $$ select coalesce(current_setting('request.jwt.claim.role', true), 'authenticated') $$;
+-- auth.uid() is used by phase9_command_outcome.sql's own-row-while-in-flight policy. The
+-- full set of Supabase-provided symbols the migrations rely on is exactly three:
+-- auth.role(), auth.uid() and auth.users. Missing one stops the run at that file, which is
+-- how this stub was found to be short in the first place.
+create or replace function auth.uid() returns uuid language sql stable as
+  $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
 do $$
 begin
   if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon; end if;
