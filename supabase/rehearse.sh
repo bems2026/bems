@@ -207,8 +207,12 @@ begin
   select anomaly_count into n from monthly_building_reports where month = date '2026-06-01';
   assert n = 1, format('report: expected 1 anomaly counted, got %s', n);
 
+  -- 3.57, not the 1.77 in building_totals_hourly: hour 0 has been rolled up and pruned while
+  -- hour 1 is still raw, and the month counter's high-water mark across BOTH is 119 * 0.03.
+  -- So this assertion is really about the seam — it only holds if the report reads the
+  -- rollup and the raw table together, which is the thing most likely to silently regress.
   select energy_kwh into v from monthly_building_reports where month = date '2026-06-01';
-  assert v = 1.77, format('report: building energy should be the month counter max, got %s', v);
+  assert v = 3.57, format('report: building energy should span the seam (3.57), got %s', v);
 
   raise notice 'all assertions passed';
 end $$;
