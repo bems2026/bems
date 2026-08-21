@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { AppShell } from '@/components/layout/AppShell';
+import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { NAV_ITEMS } from '@/components/layout/navItems';
 import { useHashRoute } from '@/lib/useHashRoute';
 import { useLiveConnection } from '@/hooks/useLiveConnection';
@@ -43,11 +44,16 @@ function AuthenticatedApp() {
 
   return (
     <AppShell activeId={activeId}>
-      {activeId === 'overview' && <OverviewPage />}
-      {activeId === 'analytics' && <AnalyticsPage />}
-      {activeId === 'control' && <ControlPage />}
-      {activeId === 'devices' && <DevicesView />}
-      {activeId === 'automation' && <AutomationPage />}
+      {/* Keyed on the route so navigating away from a broken page clears its error — the
+          boundary is per-page, not per-app, so a fault in one view leaves the nav and every
+          other page usable rather than taking the whole kiosk down with it. */}
+      <ErrorBoundary key={activeId} scope="This page">
+        {activeId === 'overview' && <OverviewPage />}
+        {activeId === 'analytics' && <AnalyticsPage />}
+        {activeId === 'control' && <ControlPage />}
+        {activeId === 'devices' && <DevicesView />}
+        {activeId === 'automation' && <AutomationPage />}
+      </ErrorBoundary>
     </AppShell>
   );
 }

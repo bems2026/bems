@@ -4911,3 +4911,76 @@ body::before {
     margin-left: auto;
   }
 }
+
+/* ===========================================================================
+   Error boundary — src/components/common/ErrorBoundary.tsx
+
+   Every colour here is an existing token, so both themes follow automatically. --bad on
+   --bad-soft is the pairing already used for failure states elsewhere; the panel sits on
+   --bg-surface (a card), not --bg-page, which is the surface --bad was measured against.
+   =========================================================================== */
+.error-boundary {
+  max-width: 560px;
+  margin: var(--sp-6) auto;
+  padding: var(--sp-5);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--bad);
+  border-radius: var(--r-card);
+}
+
+.error-boundary-title {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-lg);
+  color: var(--txt);
+}
+
+.error-boundary-body {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-base);
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.error-boundary-detail {
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-3);
+  background: var(--bad-soft);
+  border-radius: var(--r-inner);
+  color: var(--bad);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: var(--fs-sm);
+  /* A stack trace must never widen the page — the panel scrolls, the layout does not. */
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.error-boundary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.error-boundary-btn {
+  /* 44px minimum touch target — the same floor d97e8b2 applied across the other pages, and
+     this one is reachable from the kiosk's own touchscreen. */
+  min-height: 44px;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-inner);
+  background: var(--bg-surface-2);
+  color: var(--txt);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.error-boundary-btn:hover {
+  background: var(--bg-inset);
+}
+
+.error-boundary-btn--quiet {
+  background: transparent;
+  color: var(--muted);
+}
