@@ -120,6 +120,14 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       replace). Until `phase9_command_outcome.sql` is applied, proxy-issued commands stay at
       `status: 'dispatching'` — visibly, not silently, and the audit row is still written.
       *Acceptance:* a 7d chart runs to the present, and `readings_hourly` exists.
+      **All three were applied and exercised against a real PostgreSQL 16 before shipping**
+      (throwaway container, `auth`/roles stubbed, every migration in this directory applied
+      in order): 10,080 raw rows returned 673 buckets spanning the full 7 days rather than
+      1,000 rows spanning 17 hours; a fully-offline bucket came back as a gap and the frozen
+      wattage appeared nowhere in the output; a request for 43,200 buckets raised instead of
+      truncating; the rollup moved 96 hours and pruned 5,756 rows, and a second pass was a
+      clean no-op with no partial hour rolled up. They apply cleanly — this is a paste, not
+      a debugging session.
 - [ ] **RM-001** Put the Pi back on the same 2.4 GHz network as the field devices.
       *Acceptance:* `GET /api/readings/latest` reports `online: true` for the metered devices, and building totals stop reading `null`.
       **Blocked — requires on-site access. Root cause known: a Wi-Fi band mismatch.** The Tuya
