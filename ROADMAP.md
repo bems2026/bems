@@ -113,22 +113,19 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 ## 2. Current roadmap (active execution)
 
-- [ ] **RM-008** Apply the three Phase 9 migrations in the Supabase SQL editor, in order:
-      `supabase/phase9_history_buckets.sql`, `supabase/phase9_readings_hourly.sql`,
-      `supabase/phase9_command_outcome.sql`. **Required — the code that depends on them is
-      already deployed.** Until `readings_buckets` exists the Analytics 7d/30d ranges error
-      instead of rendering (deliberately: the alternative was the silently-wrong chart they
-      replace). Until `phase9_command_outcome.sql` is applied, proxy-issued commands stay at
-      `status: 'dispatching'` — visibly, not silently, and the audit row is still written.
-      *Acceptance:* a 7d chart runs to the present, and `readings_hourly` exists.
-      **All three were applied and exercised against a real PostgreSQL 16 before shipping**
-      (throwaway container, `auth`/roles stubbed, every migration in this directory applied
-      in order): 10,080 raw rows returned 673 buckets spanning the full 7 days rather than
-      1,000 rows spanning 17 hours; a fully-offline bucket came back as a gap and the frozen
-      wattage appeared nowhere in the output; a request for 43,200 buckets raised instead of
-      truncating; the rollup moved 96 hours and pruned 5,756 rows, and a second pass was a
-      clean no-op with no partial hour rolled up. They apply cleanly — this is a paste, not
-      a debugging session.
+- [x] **RM-008** ~~Apply the three Phase 9 migrations.~~ **Done 2026-08-21.** Applied via the
+      Supabase Management API; all four objects confirmed live (`readings_buckets`,
+      `roll_up_and_prune_readings`, `readings_hourly`, `commands_complete_own_inflight`),
+      PostgREST's schema cache reloaded, and the three daemons restarted onto Phase 9 code.
+      Verified end to end against real data: a 7d request now returns 475 buckets whose
+      newest point is ~9 minutes behind now, where the same window previously returned 1,000
+      raw rows ending four days in the past. Every bucket covering the outage is a gap — 124
+      of them, all with zero online samples and null power — while the 24 buckets reading
+      746.5 W all predate the outage and all have real online samples, i.e. the meter was
+      genuinely drawing that at the time. The over-cap guard raises through PostgREST as
+      designed. Retention correctly reports nothing to do: the oldest reading is 2026-08-16,
+      inside the 30-day window.
+
 - [ ] **RM-001** Put the Pi back on the same 2.4 GHz network as the field devices.
       *Acceptance:* `GET /api/readings/latest` reports `online: true` for the metered devices, and building totals stop reading `null`.
       **Blocked — requires on-site access. Root cause known: a Wi-Fi band mismatch.** The Tuya
