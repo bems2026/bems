@@ -140,3 +140,86 @@ of those components needed to change for this migration — only `contextStore.t
 - `dsm_thresholds` is the existing Phase 3 singleton (`id = 1`), extended with
   `care_acu_trigger_c` — the ACU's ambient trigger setpoint (`global.trigger.care_acu_on`
   in the old flat context) is a second building-wide scalar with nowhere else to live.
+
+## Phase 10 — reading across the retention boundary
+
+Phase 9 built `readings_hourly` so long-range history would survive the 30-day prune, and
+`server/retention.mjs` has been filling it. **Nothing read it.** `readings_buckets` selects
+from `readings` alone, so the archive was write-only: invisible while every query still landed
+inside the raw window, and "the history is gone" the first time one didn't.
+
+**`readings_archive(p_device_id, p_since, p_until, p_bucket_seconds)`**
+(`supabase/phase10_history_archive.sql`) is the read path. It merges both tables and returns
+one series, so a caller never has to know where the boundary currently sits. Three properties
+worth not re-deriving:
+
+- **The rollup wins the seam.** `roll_up_and_prune_readings` is atomic, so an hour should
+  never exist in both tables — but it uses `on conflict do nothing` precisely because raw rows
+  for an already-rolled-up hour *could* come back. A naive union would count that hour twice
+  and silently double a total.
+- **Coarser buckets are weighted by each hour's own `online_sample_count`.** Rolling hourly
+  averages up to a day is an average of averages; a flat `avg()` treats an hour with 3 online
+  samples as equal to one with 60, which is wrong in exactly the situation this site is in
+  most often — partial coverage during an outage.
+- **The bucket floor is one hour, and asking for less RAISES.** `readings_hourly` has no
+  sub-hour grain, so a smaller bucket would be real inside the raw window and fabricated
+  outside it, with nothing in the response to tell them apart.
+
+Buckets are epoch-aligned, so an 86400-second bucket is a UTC day, not a local one. Callers
+needing calendar boundaries handle that themselves.
+
+## Phase 11 — retention for what Phase 9 left behind
+
+RM-006 was scoped to `readings`. Two tables kept growing: `building_totals` at one row per
+minute (~525k/year, and **read by nothing**), and `anomalies` per detection. Same failure mode
+Phase 9 existed to prevent — ingestion's own writes failing at the storage ceiling.
+
+- **`building_totals` is rolled up, not simply pruned.** It holds `energy_kwh_week`,
+  `energy_kwh_month` and the per-phase currents — the building-wide figures a report has to
+  quote, which exist nowhere else. `building_totals_hourly` is its permanent form.
+- **`anomalies` is pruned outright at 365 days**, no rollup: it is derived from readings that
+  are themselves retained, and a count-per-period belongs in a report, not a second table.
+- **`commands` is deliberately exempt.** It is the audit trail for every attempt to move a
+  relay. `test/phase11-totals-retention-schema.test.mjs` asserts nothing deletes from it, so a
+  later "finish the job" pass has to argue with a failing test rather than a comment.
+- The prune predicates are now indexed (`readings_ts_idx`, `anomalies_ts_idx`). `readings`'
+  only index led with `device_id`, which cannot serve a `ts`-only predicate — every retention
+  pass had been seq-scanning the whole table.
+
+All three passes run from the ingest daemon's own loop, each guarded so one table's failure
+cannot stop the other two.
+
+## Phase 12 — monthly reports
+
+`generate_monthly_report(p_month, p_tz)` writes `monthly_reports` (per device) and
+`monthly_building_reports` (building-wide). `server/reports.mjs` decides which months need
+one, using the same **stateless trigger** as retention: ask which complete months have no
+report row, rather than remember what was done. It waits a grace period after a month ends,
+because buffered rows flush late and the rollup runs every six hours, so a month reported at
+00:01 on the 1st can be missing its own last hours.
+
+Three things that are easy to get wrong here:
+
+- **Energy is a sum of daily maxima, never an average.** `energy_kwh_today` is a cumulative
+  counter that resets at local midnight, not a rate.
+- **Days are grouped in the site's timezone** (`Asia/Manila` by default). Grouping in UTC
+  would split every device-day across two report-days and undercount the month's last day.
+- **Coverage travels with every figure.** Each row carries `online_sample_count` and
+  `expected_sample_count`, and nothing may present the energy figure without the ratio. A
+  device offline for most of a month still produces a real, small, confident-looking number —
+  the same class of error as the truncated chart Phase 9 fixed. With the field devices down
+  since 2026-08-20 (RM-001), this is the current state of the data, not a hypothetical.
+
+Reports are **pull, not push**: read in-app and downloadable as CSV. There is no email or
+webhook delivery, deliberately — that would put an SMTP credential or an API key on a
+deployment whose repository is public, to solve a problem a download button already solves.
+
+## Backups
+
+`server/backup.mjs` (`npm run backup`) exports the rows that cannot be reconstructed. It is
+**not** a `pg_dump`: no schema, no policies, no functions, no `auth.users` — those live in
+`supabase/*.sql` under version control. The raw, pruned tables are deliberately excluded;
+their permanent form is the hourly rollups, which are exported.
+
+See [`backup-policy.md`](backup-policy.md) for the restore procedure and, importantly, for
+what a restore will **not** give you.

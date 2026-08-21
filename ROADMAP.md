@@ -1,8 +1,10 @@
 # iBEMS — Feature State & Roadmap
 
 **Last audited:** 2026-08-21 (UTC)
-**Audited at commit:** `bc2ceb3`
-**Audit method:** static read of the working tree, plus live inspection of the deployed Pi over SSH
+**Audited at commit:** `c40998d` + the Phase 10-13 working tree
+**Audit method:** static read of the working tree, plus live inspection of the deployed Pi over SSH.
+The Phase 10-13 entries below were added from a workstation with no database access — see
+§5 Q8 for exactly what that leaves unverified.
 
 > This repository is **public**. No tokens, keys, passwords, hostnames, IP addresses, or
 > Supabase project identifiers may appear in this file. Where a deployment detail matters,
@@ -47,6 +49,9 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-029** Long-range history read as server-side time buckets, with a truncation guard that throws rather than returning a plausible-looking partial answer — `src/lib/supabaseHistory.ts`
 - [x] **EX-031** History is tagged with the range it was fetched for and read only via `historyFor()`, so one range's points can never be charted under another's label — `src/stores/deviceStore.ts`
 - [x] **EX-030** One retry/backoff schedule shared by the four Supabase-backed stores instead of four hand-copies — `src/stores/retrySchedule.ts`
+- [x] **EX-032** Archive-backed 90d/1y ranges on Analytics, reading across the retention boundary through one RPC so the caller never has to know where it sits — `src/lib/supabaseHistory.ts`, `src/components/analytics/AnalyticsPage.tsx`
+- [x] **EX-033** Reports page: stored monthly figures per device and building-wide, with CSV export. Coverage is rendered beside every figure, so a barely-observed month can never quote a bare total — `src/components/reports/ReportsPage.tsx`, `src/lib/supabaseReports.ts`
+- [x] **EX-034** RFC 4180 CSV serializer with spreadsheet-formula neutralisation, a UTF-8 BOM for Excel, and missing rendered as empty rather than 0 — `src/lib/csv.ts`
 
 ### Server & ingestion
 
@@ -69,6 +74,9 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-055** `readings` retention: a 30-day raw window rolled into permanent hourly buckets, triggered statelessly from the database's own answer rather than a remembered timestamp — `server/retention.mjs`, `supabase/phase9_readings_hourly.sql`
 - [x] **EX-056** The ingestion cycle is orchestration-tested with its I/O injected, and a bridge outage now reaches `ingestion_health` instead of only being logged — `server/ingestCycle.mjs`
 - [x] **EX-057** Proxy upstream timeout for a bridge that accepts and then hangs, a bounded token-verify cache, and 502s that no longer echo the raw upstream error — `server/proxy.mjs`
+- [x] **EX-058** Retention generalised over the table, covering `building_totals` and `anomalies` as well as `readings`, each pass guarded so one table's failure cannot stop the others — `server/retention.mjs`
+- [x] **EX-059** Monthly report generation on the same stateless trigger as retention — "which complete months have no report row?" — with a grace period so a month is never reported before its late-flushing rows land — `server/reports.mjs`
+- [x] **EX-070** Supabase data export for the tables that cannot be reconstructed, explicitly paginated because a full page is what a silent cap also looks like; exits non-zero on a partial backup — `server/backup.mjs`, `npm run backup`
 
 ### Bridge & hardware
 
@@ -92,6 +100,9 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-085** `readings_buckets` RPC: server-side time-bucketed history, averaging only online samples, `security invoker` so RLS still applies, and raising rather than truncating — `supabase/phase9_history_buckets.sql`
 - [x] **EX-086** `readings_hourly` rollup table plus an atomic roll-up-and-prune function — `supabase/phase9_readings_hourly.sql`
 - [x] **EX-087** A narrow update policy letting a command's own outcome be attached to its audit row: own row, only while in flight, only to a terminal status — `supabase/phase9_command_outcome.sql`
+- [x] **EX-088** `readings_archive` RPC merging `readings_hourly` and `readings` into one series, deduplicating the seam, weighting coarser buckets by each hour's own sample count, and raising rather than fabricating a sub-hour grain — `supabase/phase10_history_archive.sql`
+- [x] **EX-089** `building_totals_hourly` plus atomic rollup-and-prune, an outright `anomalies` prune, and the `ts` indexes the prune predicates always needed — `supabase/phase11_totals_retention.sql`
+- [x] **EX-090** `monthly_reports` / `monthly_building_reports` and an idempotent generator: energy as a sum of daily maxima, days grouped in the site timezone, coverage recorded on every row — `supabase/phase12_monthly_reports.sql`
 
 ### Auth & security
 
@@ -102,12 +113,12 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 ### Testing & tooling
 
-- [x] **EX-120** 435 frontend tests (vitest) — `src/**/*.test.ts(x)`
-- [x] **EX-121** 153 bridge/contract tests, including assertions that the generated flow contains no write nodes and no MQTT — `test/`
-- [x] **EX-122** 137 server tests against real spawned processes and hand-rolled fake HTTP servers, no mocking library — `server/*.test.mjs`
-- [x] **EX-123** Schema guard tests asserting RLS shape per migration — `test/device-config-schema.test.mjs`, `test/phase8-anomalies-schema.test.mjs`, `test/phase9-history-schema.test.mjs`
+- [x] **EX-120** 478 frontend tests (vitest) — `src/**/*.test.ts(x)`
+- [x] **EX-121** 189 bridge/contract tests, including assertions that the generated flow contains no write nodes and no MQTT — `test/`
+- [x] **EX-122** 166 server tests against real spawned processes and hand-rolled fake HTTP servers, no mocking library — `server/*.test.mjs`
+- [x] **EX-123** Schema guard tests asserting RLS shape per migration — `test/device-config-schema.test.mjs`, `test/phase8-anomalies-schema.test.mjs`, `test/phase9-history-schema.test.mjs`, `test/phase10-archive-schema.test.mjs`, `test/phase11-totals-retention-schema.test.mjs`, `test/phase12-monthly-reports-schema.test.mjs`
 - [x] **EX-125** First tests against the proxy's WebSocket relay and against a bridge that hangs rather than refuses — `server/proxy.test.mjs`
-- [x] **EX-124** Operational scripts encoding the real workflow — `package.json` (`mock`, `verify:pi`, `deploy:pi`, `ingest`, `build:flow`, `rotate-light-token:pi`)
+- [x] **EX-124** Operational scripts encoding the real workflow — `package.json` (`mock`, `verify:pi`, `deploy:pi`, `ingest`, `build:flow`, `rotate-light-token:pi`, `backup`)
 
 ---
 
@@ -125,6 +136,22 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       genuinely drawing that at the time. The over-cap guard raises through PostgREST as
       designed. Retention correctly reports nothing to do: the oldest reading is 2026-08-16,
       inside the 30-day window.
+
+- [ ] **RM-009** Apply the three Phase 10-12 migrations and restart the ingest daemon.
+      *Acceptance:* `readings_archive`, `building_totals_hourly`, `roll_up_and_prune_building_totals`,
+      `prune_anomalies`, `monthly_reports`, `monthly_building_reports` and `generate_monthly_report`
+      all live; PostgREST's schema cache reloaded; the daemon's log shows all three retention
+      passes and one report pass.
+      **Not yet applied, and — unlike Phase 9 — not yet exercised against a real Postgres.**
+      RM-008 was validated in a throwaway PostgreSQL 16 container before shipping, precisely
+      because handing over unverified migrations was judged the wrong shape of ask. That step
+      could not be repeated here: the workstation this was written on has neither `psql` nor
+      Docker. **Run these against a container on the Pi before pasting them into the SQL
+      editor.** The guard tests in `test/phase1{0,1,2}-*.test.mjs` check intent, not syntax.
+      *Then:* confirm a window straddling the 30-day line returns buckets from both tables with
+      no gap and no duplicate at the seam; run the totals prune against a state where one hour
+      is deliberately un-rolled-up and confirm those raw rows survive; and reconcile one
+      generated month by hand against `building_totals.energy_kwh_month`.
 
 - [ ] **RM-001** Put the Pi back on the same 2.4 GHz network as the field devices.
       *Acceptance:* `GET /api/readings/latest` reports `online: true` for the metered devices, and building totals stop reading `null`.
@@ -160,6 +187,12 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [ ] **RM-006d** A backup policy for the Supabase project — the other half of the original
       RM-006, unaffected by the retention work above.
       *Acceptance:* a documented, verified backup, and a restore that has actually been tried.
+      **Half done.** The policy is written (`docs/backup-policy.md`) and the export tool is
+      built and tested (`npm run backup`, `server/backup.mjs`). **No restore has been
+      performed**, so this stays open: a backup nobody has restored is a belief, not a backup.
+      The doc's final section is the checklist that closes it. Note also that `auth.users` is
+      not exported — restored into a new project, every `commands` row keeps its audit
+      content but loses its attribution.
 - [ ] **RM-006c** Assign load-shed tiers and set DSM limits before auto-shed can do anything.
       *Acceptance:* at least one device has a shed group, a threshold is set, and auto-shed is on.
       Nothing is configured today, so the mechanism is live but inert by design. Note that only
@@ -181,6 +214,16 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 ### Robustness
 - **FI-009** (S) Narrow the three remaining whole-map store selectors — `FloorPlanView`, `AlertsPopover`, `EnergyBreakdownCard`. Left alone in the Phase 9 pass because each needs value-level rather than reference-level comparison to gain anything, and FloorPlanView genuinely reads every device.
 - **FI-010** (M) The 24h chart has the same offline-blindness the 7d/30d charts just lost: the bridge's ring buffer and `HistoryPoint` carry no `online` field, so a device offline for a day still draws its frozen last wattage. Fixing it means regenerating and redeploying the live Node-RED flow — a layer-1 change on load-bearing hardware, so it needs explicit approval, not a quiet follow-up.
+- **FI-011** (S) Push delivery for the monthly report, once FI-005's channel exists. Reports
+  are deliberately pull-only today — email or Sheets delivery would put an SMTP credential or
+  an API key on a deployment whose repository is public, to solve a problem the CSV download
+  already solves. Worth revisiting only as a second consumer of the alert channel, never as a
+  reason to build one.
+- **FI-012** (M) Partition `readings` by month if growth ever outgrows the current prune. The
+  prune is a single unbounded `DELETE` in one transaction — fine at today's volumes, and the
+  first thing to degrade as the table grows. Partitioning turns it into a `DROP TABLE` while
+  staying inside RLS, Auth and the existing backups. See `docs/adr-001-timeseries-store.md`,
+  which names this as the successor to reach for rather than a second datastore.
 - **FI-005** (S) An out-of-dashboard alert channel. Deliberately deferred once, but a multi-hour device outage went unnoticed because the only place it would have surfaced was a screen nobody was looking at.
 - **FI-006** (S) Wire `StaleDataBadge` into the remaining views that derive staleness inline, so freshness is announced consistently rather than re-implemented per card. *(Partly addressed 2026-08-21: every view now shares one wall-clock tick and one stale-dim constant per medium, but the badge itself is still not used everywhere.)*
 
@@ -216,7 +259,10 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
    explains the silence. Answerable only once RM-001 is fixed. Everything else that used
    Mosquitto has now been removed.
 3. **Was the light token ever exercised against real hardware?** Rotation is confirmed — the old token is rejected — but no fixture has been observed responding to the new one.
-4. **Is there a backup of the Supabase project?** Nothing in this repo configures or verifies one.
+4. **Is there a backup of the Supabase project?** The repo now *configures* one — `npm run
+   backup` and `docs/backup-policy.md` — but nothing has *verified* one. No restore has been
+   tried, and whether Supabase itself takes a backup depends on a plan tier this pass could
+   not check. See RM-006d.
 5. **Should `--good` be corrected pre-emptively** (FI-007), or left until a green badge actually lands on the page background?
 6. ~~**What retention period is wanted for `readings`?**~~ **Answered 2026-08-21: 30 days of
    per-minute resolution, with permanent hourly buckets behind it** (RM-006). Chosen by the
@@ -225,3 +271,15 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 7. **Has the Analytics 7d/30d fix been seen in a real browser?** The truncation is fixed and
    unit-tested, but the end-to-end check needs RM-008 applied first, and needs a browser —
    the duplicate-CORS-header incident recorded in `server/proxy.mjs` was invisible to curl.
+8. **Everything Phase 10-13 asserts about the live database is unverified.** This pass was
+   written from a workstation with no Supabase credentials, no `psql` and no Docker, and the
+   Supabase MCP connector was not authorised. Specifically unconfirmed: that the three new
+   migrations parse and run; the project's plan tier and therefore whether Supabase takes any
+   backup of its own (`docs/backup-policy.md` turns on this); current row counts; and whether
+   the report timezone default (`Asia/Manila`) matches what the Tuya devices actually reset
+   their daily counters on. The last one is worth a deliberate check — the report's energy
+   figures depend on it, and it is invisible until a month is reconciled by hand.
+9. **Has the Reports page been seen with real data?** The coverage logic, the CSV serializer
+   and the page's honesty properties are unit-tested (`ReportsPage.test.tsx` asserts that a
+   sparse month cannot quote a bare total), but no report has been generated from real rows.
+   Blocked on RM-009.

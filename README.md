@@ -6,6 +6,8 @@ flight; the notes below cover layout and how to run it.
 
 - [`docs/bridge-contract.md`](docs/bridge-contract.md) — the JSON contract, single source of truth
 - [`docs/phase-f-runbook.md`](docs/phase-f-runbook.md) — deploying to the real Pi once it's reachable
+- [`docs/adr-001-timeseries-store.md`](docs/adr-001-timeseries-store.md) — why the time-series store is Postgres and not InfluxDB
+- [`docs/backup-policy.md`](docs/backup-policy.md) — what is backed up, what a restore will not give you
 
 ## Layout
 
@@ -17,9 +19,10 @@ node-red-bridge/           generated Node-RED flow (`npm run build:flow` to rege
 mock-bridge/                local fake bridge, same contract, no hardware needed
 test/                      bridge/mock contract tests (Node's test runner)
 src/                       React + Vite + TS frontend — Overview, Analytics, Control,
-                            Devices and Automation, all live against the bridge
+                            Devices, Automation and Reports
 server/                    the ingestion daemon, the authenticated proxy that fronts the
                             bridge, and the systemd units for both plus the office kiosk.
+                            the retention/report passes, and the backup export.
                             `npm run ingest`, tests via `npm run test:server`.
                             See docs/storage-contract.md.
 supabase/                  schema.sql, then the phase migrations in order — apply once
@@ -70,8 +73,8 @@ Pi's tab ids/labels match what `build-flow.mjs` assumed and there are no node id
 - **Control exists, but hardware dispatch is gated.** `POST /api/command` validates every
   command and writes an audit row before anything else happens. Whether it then reaches
   real hardware depends on `HARDWARE_DISPATCH_ENABLED`, which is off unless a deployment
-  explicitly sets it — and even then only lighting has a real endpoint today. The UI says
-  which classes are actually live rather than implying all of them are; see
+  explicitly sets it. Lighting, outlets and the aircon all have real endpoints now (EX-051);
+  the UI says which classes are actually live rather than implying all of them are — see
   `src/components/control/dispatchScope.ts`.
 - **Never open the dispatch gate without someone watching the hardware.** It is the one
   setting in this repo that can physically move a relay.
