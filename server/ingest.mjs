@@ -25,7 +25,14 @@ import { makeSupabaseClient } from './supabaseRest.mjs';
 import { appendToBuffer, readBuffer, writeBuffer, bufferCount } from './ingestBuffer.mjs';
 import { selectAnomalyCandidates, detectAnomaly, pushSample } from './anomalyStats.mjs';
 import { runIngestCycle, msUntilNextTick } from './ingestCycle.mjs';
-import { runRetention, DEFAULT_RETENTION_DAYS, RETENTION_CHECK_MS } from './retention.mjs';
+import {
+  runRetention,
+  runTotalsRetention,
+  runAnomalyRetention,
+  DEFAULT_RETENTION_DAYS,
+  RETENTION_CHECK_MS,
+} from './retention.mjs';
+import { runReportGeneration, REPORT_CHECK_MS } from './reports.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -160,22 +167,72 @@ async function tick() {
   }
 }
 
-/** One retention pass, guarded so it can never take the daemon down with it. Ingesting is
- * this process's job; pruning is housekeeping, and housekeeping failing is not a reason to
- * stop recording the building's electricity. */
+/** The three tables that age out, and what each pass writes to the journal when it does
+ * something. `readings` and `building_totals` roll up before pruning; `anomalies` prunes
+ * outright on a far longer window — see server/retention.mjs for why each is treated as it
+ * is. `commands` is deliberately absent: it is the audit trail for anything that moved a
+ * relay, and nothing prunes it. */
+const RETENTION_PASSES = [
+  {
+    run: runRetention,
+    // Both raw tables share INGEST_RETENTION_DAYS: they are written by the same tick and
+    // there is no coherent reading of "keep totals longer than the readings behind them".
+    usesConfiguredWindow: true,
+    describe: (r) => `rolled ${r.rolled} hour(s) into readings_hourly, pruned ${r.deleted} raw reading(s)`,
+  },
+  {
+    run: runTotalsRetention,
+    usesConfiguredWindow: true,
+    describe: (r) => `rolled ${r.rolled} hour(s) into building_totals_hourly, pruned ${r.deleted} raw total(s)`,
+  },
+  {
+    // Keeps its own much longer default window — see DEFAULT_ANOMALY_RETENTION_DAYS.
+    run: runAnomalyRetention,
+    usesConfiguredWindow: false,
+    describe: (r) => `pruned ${r.deleted} anomal(ies) past the retention window`,
+  },
+];
+
+/** One retention pass over every table that ages out, each guarded so it can never take the
+ * daemon down with it — and, since Phase 11 made this three passes rather than one, so that
+ * one table's failure cannot stop the other two from running. Ingesting is this process's
+ * job; pruning is housekeeping, and housekeeping failing is not a reason to stop recording
+ * the building's electricity. */
 async function retentionPass() {
+  for (const { run, usesConfiguredWindow, describe } of RETENTION_PASSES) {
+    try {
+      const result = await run({
+        client: supabase,
+        ...(usesConfiguredWindow ? { retentionDays: RETENTION_DAYS } : {}),
+      });
+      if (result.ran) {
+        console.log(`[ibems-ingest] retention: ${describe(result)}`);
+      } else {
+        console.log(`[ibems-ingest] retention: nothing to do (${result.reason})`);
+      }
+    } catch (err) {
+      console.error('[ibems-ingest] retention pass failed (will retry on the next check):', String(err));
+    }
+  }
+}
+
+/** One report-generation pass, guarded like the retention pass and for the same reason:
+ * ingesting is this process's job, and a monthly summary failing is not a reason to stop
+ * recording the building's electricity. */
+async function reportPass() {
   try {
-    const { ran, rolled, deleted, reason } = await runRetention({
-      client: supabase,
-      retentionDays: RETENTION_DAYS,
-    });
-    if (ran) {
-      console.log(`[ibems-ingest] retention: rolled ${rolled} hour(s) into readings_hourly, pruned ${deleted} raw row(s)`);
-    } else {
-      console.log(`[ibems-ingest] retention: nothing to do (${reason})`);
+    const { generated, failed } = await runReportGeneration({ client: supabase });
+    if (generated.length > 0) {
+      console.log(`[ibems-ingest] reports: generated ${generated.join(', ')}`);
+    }
+    for (const f of failed) {
+      console.error(`[ibems-ingest] reports: ${f.month} failed (will retry on the next check): ${f.error}`);
+    }
+    if (generated.length === 0 && failed.length === 0) {
+      console.log('[ibems-ingest] reports: nothing to do (every complete month already has one)');
     }
   } catch (err) {
-    console.error('[ibems-ingest] retention pass failed (will retry on the next check):', String(err));
+    console.error('[ibems-ingest] report pass failed (will retry on the next check):', String(err));
   }
 }
 
@@ -201,6 +258,11 @@ async function main() {
   // reason the other two timers aren't (see the comment above).
   retentionPass();
   setInterval(retentionPass, RETENTION_CHECK_MS);
+
+  // Same stateless shape as retention: ask which complete months lack a report and generate
+  // those. See server/reports.mjs for why it waits out a grace period after a month ends.
+  reportPass();
+  setInterval(reportPass, REPORT_CHECK_MS);
 
   const loop = async () => {
     if (stopping) return;
