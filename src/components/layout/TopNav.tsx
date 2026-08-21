@@ -7,7 +7,8 @@ import { useThemeStore } from '@/stores/themeStore';
 import { supabase } from '@/config/supabase';
 import { isStale } from '@/lib/bridgeClient';
 import type { ConnStatus } from '@/lib/bridgeClient';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
+import { useNowTick } from '@/lib/useNowTick';
 
 const LIVE_LABEL: Record<ConnStatus, string> = {
   connected: 'LIVE',
@@ -62,13 +63,9 @@ export function TopNav({ activeId }: { activeId: string }) {
   const wsStatus = useConnectionStore((s) => s.wsStatus);
   const lastMessageAt = useConnectionStore((s) => s.lastMessageAt);
 
-  // Same "re-render on wall-clock time" pattern as StaleDataBadge/AlertsPopover — staleness
-  // is a function of elapsed time, not just store writes.
-  const [, tick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => tick((n) => n + 1), 1000);
-    return () => clearInterval(id);
-  }, []);
+  // Staleness is a function of elapsed time, not just store writes. This used to be one of
+  // five separate 1s intervals saying "same pattern as X"; they now share one.
+  useNowTick();
 
   const navRef = useRef<HTMLElement>(null);
   useNavHeight(navRef);

@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useDeviceStore } from '@/stores/deviceStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
 import { hasSwitchableState } from '@/lib/deviceClass';
 import { isReadingStale } from '@/lib/staleness';
@@ -55,7 +56,12 @@ const COMM_CLASS: Record<CommState, string> = {
  */
 export function DevicesView() {
   const devices = useDeviceStore((s) => s.devices);
-  const readings = useDeviceStore((s) => s.latestReadings);
+  // Two scalars, shallow-compared, instead of the whole latestReadings map. The map is
+  // rebuilt on every WS frame (~2s) and every row carries a fresh `ts`, so selecting it
+  // here re-rendered the entire view — filter chips, sort, prose and all ~18 rows — twice a
+  // minute times thirty, forever, on a screen nobody is touching. The online count changes
+  // only when a device actually appears or drops.
+  const { online, total } = useDeviceStore(useShallow((s) => countOnline(s.devices, s.latestReadings)));
   const configs = useDeviceConfigStore((s) => s.saved);
   const [filter, setFilter] = useState<DeviceClass | 'all'>('all');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -66,7 +72,6 @@ export function DevicesView() {
     return [...list].sort((a, b) => CLASS_ORDER.indexOf(a.class) - CLASS_ORDER.indexOf(b.class) || a.id.localeCompare(b.id, undefined, { numeric: true }));
   }, [devices, filter]);
 
-  const { online, total } = countOnline(devices, readings);
 
   if (devices.length === 0) {
     return (
@@ -147,7 +152,7 @@ export function DevicesView() {
               <span role="columnheader">Edit</span>
             </div>
             {filtered.map((d) => (
-              <DeviceRow key={d.id} device={d} reading={readings[d.id]} config={configs[d.id]} onEdit={() => setEditingId(d.id)} />
+              <DeviceRow key={d.id} device={d} config={configs[d.id]} onEdit={() => setEditingId(d.id)} />
             ))}
           </div>
         </div>
@@ -164,7 +169,13 @@ export function DevicesView() {
   );
 }
 
-function DeviceRow({ device, reading, config, onEdit }: { device: Device; reading: Reading | undefined; config: DeviceConfig | undefined; onEdit: () => void }) {
+/**
+ * `memo` plus a per-device selector: each row subscribes to its own reading, so the parent
+ * no longer has to hold the whole map to hand rows their data, and a row re-renders for its
+ * own device rather than for any device.
+ */
+const DeviceRow = memo(function DeviceRow({ device, config, onEdit }: { device: Device; config: DeviceConfig | undefined; onEdit: () => void }) {
+  const reading = useDeviceStore((s) => s.latestReadings[device.id]);
   const switchable = hasSwitchableState(device.class);
   const comm = commState(reading);
   const Icon = CLASS_ICON[device.class];
@@ -217,4 +228,4 @@ function DeviceRow({ device, reading, config, onEdit }: { device: Device; readin
       </span>
     </div>
   );
-}
+});

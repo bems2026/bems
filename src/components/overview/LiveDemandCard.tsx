@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { Zap } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useConnectionStore } from '@/stores/connectionStore';
@@ -6,6 +5,7 @@ import { isStale } from '@/lib/bridgeClient';
 import { CardLink } from '@/components/ui/CardLink';
 import { MetricValue } from '@/components/ui/MetricValue';
 import { InfoHint } from '@/components/ui/InfoHint';
+import { useNowTick } from '@/lib/useNowTick';
 
 /**
  * v4's "Live Demand" card, bound to real data throughout. Its own spec has TODAY render a
@@ -19,11 +19,9 @@ export function LiveDemandCard() {
   const wsStatus = useConnectionStore((s) => s.wsStatus);
   const lastMessageAt = useConnectionStore((s) => s.lastMessageAt);
 
-  const [, tick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => tick((n) => n + 1), 1000);
-    return () => clearInterval(id);
-  }, []);
+  // Staleness is a function of elapsed time, not just store writes. One shared app-wide
+  // tick — see useNowTick.
+  useNowTick();
 
   const stale = isStale(lastMessageAt ? Date.parse(lastMessageAt) : null);
   const linkOk = wsStatus === 'connected' && !stale;

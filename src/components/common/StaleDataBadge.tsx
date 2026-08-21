@@ -1,6 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { isReadingStale } from '@/lib/staleness';
+import { useNowTick } from '@/lib/useNowTick';
 
 interface StaleDataBadgeProps {
   /** Omit to badge the building `_totals` row instead of a single device. */
@@ -33,13 +34,11 @@ interface StaleDataBadgeProps {
 export function StaleDataBadge({ deviceId, label, children, className }: StaleDataBadgeProps) {
   const reading = useDeviceStore((s) => (deviceId ? s.latestReadings[deviceId] : s.totals));
 
-  // Staleness is a function of wall-clock time, not just store writes — without this
-  // tick, a device that simply stops sending updates would never visibly go stale.
-  const [, tick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => tick((n) => n + 1), 1000);
-    return () => clearInterval(id);
-  }, []);
+  // Staleness is a function of wall-clock time, not just store writes — without this tick,
+  // a device that simply stops sending updates would never visibly go stale. This component
+  // is mounted once per device/socket, so sharing one interval instead of owning one each
+  // is the difference between a dozen timers on the Control page and none of its own.
+  useNowTick();
 
   const stale = isReadingStale(reading);
   const subject = label ?? (deviceId ? 'This device' : 'Building totals');

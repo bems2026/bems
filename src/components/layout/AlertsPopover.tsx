@@ -4,6 +4,7 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { useAnomaliesStore } from '@/stores/anomaliesStore';
 import { isReadingStale } from '@/lib/staleness';
 import { latestAnomalyPerDevice, isAnomalyCurrent } from '@/lib/anomalies';
+import { useNowTick } from '@/lib/useNowTick';
 
 /** One row in the bell — either source (staleness watchdog, anomaly detection) is shaped
  * into this before rendering, so the render/ack logic below only ever deals with one shape
@@ -40,12 +41,8 @@ export function AlertsPopover() {
   const ref = useRef<HTMLDivElement>(null);
 
   // Re-render once a second so a device crossing the 30s stale threshold appears without
-  // waiting for its next store write — same pattern as StaleDataBadge/ConnectionStatus.
-  const [, tick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => tick((n) => n + 1), 1000);
-    return () => clearInterval(id);
-  }, []);
+  // waiting for its next store write — via the one shared app-wide tick.
+  useNowTick();
 
   useEffect(() => {
     if (!open) return;

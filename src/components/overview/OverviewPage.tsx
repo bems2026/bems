@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { LiveDemandCard } from './LiveDemandCard';
 import { MainPanelHealthCard } from './MainPanelHealthCard';
@@ -10,6 +9,7 @@ import { MasterQuickActionsCard } from './MasterQuickActionsCard';
 import { NextUpCard } from './NextUpCard';
 import { ClimateDiagnosticsCard } from './ClimateDiagnosticsCard';
 import { WeatherStatusCard } from '@/components/weather/WeatherStatusCard';
+import { useNowTick } from '@/lib/useNowTick';
 
 /**
  * Overview as one bento grid (`.overview-bento`, `grid-template-areas` in index.css), laid
@@ -71,11 +71,8 @@ export function OverviewPage() {
 }
 
 function Clock() {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
+  // The one place that wants the tick's VALUE rather than just the re-render it causes.
+  const now = new Date(useNowTick());
 
   return (
     <div className="page-header-right">

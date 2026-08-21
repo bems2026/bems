@@ -3,6 +3,7 @@ import { X, RotateCw, Pause, Home, LayoutPanelTop, Pencil, Armchair, Table2, Gla
 import { OfficeScene, type PickResult } from './officeScene';
 import { FloorPlanView } from '@/components/floorplan/FloorPlanView';
 import { useDeviceStore } from '@/stores/deviceStore';
+import { useShallow } from 'zustand/react/shallow';
 import { Card } from '@/components/ui/Card';
 import { MetricValue } from '@/components/ui/MetricValue';
 import { Badge } from '@/components/ui/Badge';
@@ -100,10 +101,19 @@ export function OfficeScene3D() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { ask, modalProps } = useConfirm();
 
-  const devices = useDeviceStore((s) => s.devices);
-  const latestReadings = useDeviceStore((s) => s.latestReadings);
-  const litCount = devices.filter((d) => d.class === 'switch' && latestReadings[d.id]?.state === 'on').length * FIXTURES_PER_CIRCUIT;
-  const acuState = latestReadings['acu_main']?.state;
+  // Derive inside the selector, with a shallow compare on the RESULT. Selecting the whole
+  // latestReadings map re-rendered this 577-line component — and everything in its JSX:
+  // toolbar, edit controls, hover tooltip, inspector — on every WS frame, because
+  // ingestReadings builds a new map object each time and every row carries a fresh `ts`.
+  // That directly contradicted this file's own note below that readings "should update
+  // materials directly without re-rendering this component". Only two scalars are actually
+  // needed up here, and neither changes on a routine tick.
+  const { litCount, acuState } = useDeviceStore(
+    useShallow((s) => ({
+      litCount: s.devices.filter((d) => d.class === 'switch' && s.latestReadings[d.id]?.state === 'on').length * FIXTURES_PER_CIRCUIT,
+      acuState: s.latestReadings['acu_main']?.state,
+    }))
+  );
 
   useEffect(() => {
     if (!webgl || !canvasRef.current || !containerRef.current) return;
@@ -127,6 +137,18 @@ export function OfficeScene3D() {
     // Default-on auto-rotate (v4's behaviour) — never started at all under
     // prefers-reduced-motion, not started-then-immediately-stopped.
     if (!reducedMotion) scene.setAutoRotate(true);
+
+    // Auto-rotate is the one thing in this scene that runs a continuous rAF loop rather
+    // than rendering on demand, and this dashboard lives on a kiosk that is never closed.
+    // Pausing it while the page is hidden — the display asleep, another tab in front —
+    // costs nothing visually (nobody is looking) and stops the GPU spinning an invisible
+    // scene indefinitely. The default stays ON when visible: that is a design decision,
+    // not a performance one.
+    const onVisibility = () => {
+      if (reducedMotion) return;
+      scene.setAutoRotate(document.visibilityState === 'visible');
+    };
+    document.addEventListener('visibilitychange', onVisibility);
 
     // ResizeObserver is the standards-correct way to track a container that can resize
     // independently of the window (e.g. the sidebar collapsing). It does not fire in this
@@ -157,6 +179,7 @@ export function OfficeScene3D() {
       unsubscribe();
       ro.disconnect();
       window.removeEventListener('resize', onWindowResize);
+      document.removeEventListener('visibilitychange', onVisibility);
       canvas.removeEventListener('wheel', onWheel);
       scene.dispose();
       sceneRef.current = null;
