@@ -221,7 +221,7 @@ async function retentionPass() {
  * recording the building's electricity. */
 async function reportPass() {
   try {
-    const { generated, failed } = await runReportGeneration({ client: supabase });
+    const { generated, failed, reason } = await runReportGeneration({ client: supabase });
     if (generated.length > 0) {
       console.log(`[ibems-ingest] reports: generated ${generated.join(', ')}`);
     }
@@ -229,7 +229,10 @@ async function reportPass() {
       console.error(`[ibems-ingest] reports: ${f.month} failed (will retry on the next check): ${f.error}`);
     }
     if (generated.length === 0 && failed.length === 0) {
-      console.log('[ibems-ingest] reports: nothing to do (every complete month already has one)');
+      // The real reason, not the most reassuring one — "every complete month already has a
+      // report" is vacuously true when no month has finished at all, and reads to whoever is
+      // scanning this journal as though reports exist.
+      console.log(`[ibems-ingest] reports: nothing to do (${reason})`);
     }
   } catch (err) {
     console.error('[ibems-ingest] report pass failed (will retry on the next check):', String(err));
