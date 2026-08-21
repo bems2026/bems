@@ -9,8 +9,16 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SCHEDULER = join(HERE, 'scheduler.mjs');
 let nextPort = 21400;
 
-/** Minimal Supabase REST stand-in: serves one schedules row and collects command inserts. */
-function startFakeSupabase(scheduleRow, dsm = { max_phase_current: null, max_total_kw: null, auto_shed: false, updated_by: null }, deviceConfig = []) {
+/**
+ * Minimal Supabase REST stand-in: serves one schedules row and collects command inserts.
+ *
+ * Commands are recorded and then MUTATED by the daemon's follow-up PATCH, because
+ * auditedDispatch writes the row before dispatching (status 'dispatching') and attaches the
+ * outcome afterwards. Applying the patch here means `state.commands[0].status` reads the
+ * row's final state — a strictly stronger assertion than before, since it now proves the
+ * whole record -> dispatch -> record-outcome sequence rather than just the opening insert.
+ */
+function startFakeSupabase(scheduleRow, dsm = { max_phase_current: null, max_total_kw: null, auto_shed: false, updated_by: null }, deviceConfig = [], failCommandInsert = false) {
   return new Promise((resolve) => {
     const port = nextPort++;
     const state = { commands: [] };
@@ -30,9 +38,26 @@ function startFakeSupabase(scheduleRow, dsm = { max_phase_current: null, max_tot
         return res.end(JSON.stringify(deviceConfig));
       }
       if (req.url.startsWith('/rest/v1/commands') && req.method === 'POST') {
-        state.commands.push(JSON.parse(raw));
-        res.writeHead(201);
-        return res.end();
+        if (failCommandInsert) {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          return res.end('{"message":"service unavailable"}');
+        }
+        const row = { id: `cmd-${state.commands.length + 1}`, ...JSON.parse(raw) };
+        state.commands.push(row);
+        // The daemon asks for `Prefer: return=representation` so it gets an id back to
+        // PATCH; returning nothing here would leave it unable to record the outcome.
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify([row]));
+      }
+      if (req.url.startsWith('/rest/v1/commands') && req.method === 'PATCH') {
+        const id = decodeURIComponent((req.url.match(/id=eq\.([^&]+)/) ?? [])[1] ?? '');
+        const row = state.commands.find((c) => c.id === id);
+        if (row) Object.assign(row, JSON.parse(raw));
+        // Real PostgREST shape for `Prefer: return=representation`: the updated rows, or an
+        // empty array when nothing matched. fire() reads that count, so a fake that always
+        // returned 204 would let a silently-failing update pass as healthy.
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify(row ? [row] : []));
       }
       res.writeHead(404);
       res.end();
@@ -73,7 +98,7 @@ function dueNowRow(over = {}) {
 }
 
 async function run(env, scheduleRow, waitMs = 2500, opts = {}) {
-  const sb = await startFakeSupabase(scheduleRow, opts.dsm, opts.deviceConfig);
+  const sb = await startFakeSupabase(scheduleRow, opts.dsm, opts.deviceConfig, opts.failCommandInsert);
   const light = await startFakeLight(opts.latest);
   const child = spawn(process.execPath, [SCHEDULER], {
     env: {
@@ -245,4 +270,32 @@ test('sheds nothing when nobody is on record as having enabled it', async () => 
     latest: OVER,
   });
   assert.equal(r.commands.filter((c) => c.source === 'dsm_autoshed').length, 0);
+});
+
+test('a due schedule is NOT dispatched when its audit row cannot be written', async () => {
+  // The asymmetry this closes: fire() used to dispatch first and merely console.error a
+  // failed audit insert, so an unattended scheduled command could move a real relay with
+  // nothing in the audit trail. proxy.mjs already refused to proceed without a row; the
+  // scheduler now refuses the same way, through the same shared helper.
+  const r = await run(
+    { HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-token' },
+    dueNowRow(),
+    2500,
+    { failCommandInsert: true }
+  );
+
+  assert.equal(r.lightRequests.length, 0, 'nothing may reach the hardware endpoint without an audit row');
+  assert.match(r.out, /NOT fired — could not record the command/);
+});
+
+test('the audit row is opened before dispatch, so an interrupted command still leaves a trace', async () => {
+  // Even in the happy path the row must exist BEFORE the light is touched. Asserting the
+  // final status alone could not tell record-first from record-after.
+  const r = await run(
+    { HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-token' },
+    dueNowRow()
+  );
+  assert.equal(r.commands.length, 1);
+  assert.equal(r.commands[0].status, 'dispatched', 'the outcome is attached after dispatch');
+  assert.equal(r.lightRequests.length, 1);
 });

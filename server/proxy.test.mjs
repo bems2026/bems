@@ -31,11 +31,17 @@ const BREAK_GLASS_HASH = hashBreakGlassPassword(BREAK_GLASS_PASSWORD);
  * row is recorded on `.insertedCommands` so tests can assert on what was actually logged,
  * not just the HTTP response. `rejectCommandInserts` flips the REST endpoint to always
  * 500, for testing the "audit log unreachable" path.
+ *
+ * The recorded row is MUTATED by the daemon's follow-up PATCH: auditedDispatch writes the
+ * row before dispatching (status 'dispatching') and attaches the outcome afterwards, so the
+ * fake has to apply the patch for `.insertedCommands[0].status` to read the row's final
+ * state. That makes these assertions stronger than they were — they now prove the whole
+ * record -> dispatch -> record-outcome sequence, not just the opening insert.
  */
 function startFakeSupabaseAuth() {
   return new Promise((resolve) => {
     const port = nextPort++;
-    const state = { insertedCommands: [], rejectCommandInserts: false };
+    const state = { insertedCommands: [], rejectCommandInserts: false, blockCommandUpdates: false };
     const server = http.createServer(async (req, res) => {
       if (req.method === 'GET' && req.url === '/auth/v1/user') {
         const auth = req.headers['authorization'];
@@ -55,9 +61,31 @@ function startFakeSupabaseAuth() {
         }
         let raw = '';
         for await (const chunk of req) raw += chunk;
-        state.insertedCommands.push(JSON.parse(raw));
+        const row = { id: `cmd-${state.insertedCommands.length + 1}`, ...JSON.parse(raw) };
+        state.insertedCommands.push(row);
+        // handleCommand asks for `Prefer: return=representation` so it gets an id back to
+        // PATCH the outcome onto; returning nothing would leave the row stuck at
+        // 'dispatching' with no way to complete it.
         res.writeHead(201, { 'Content-Type': 'application/json' });
-        return res.end('[]');
+        return res.end(JSON.stringify([row]));
+      }
+      if (req.method === 'PATCH' && req.url.startsWith('/rest/v1/commands')) {
+        let raw = '';
+        for await (const chunk of req) raw += chunk;
+        if (state.blockCommandUpdates) {
+          // How PostgREST reports an RLS-blocked UPDATE: 200, no error, empty result.
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end('[]');
+        }
+        const id = decodeURIComponent((req.url.match(/id=eq\.([^&]+)/) ?? [])[1] ?? '');
+        const row = state.insertedCommands.find((c) => c.id === id);
+        if (row) Object.assign(row, JSON.parse(raw));
+        // Answer the way real PostgREST does for `Prefer: return=representation` — the
+        // updated rows, or an empty array when nothing matched. handleCommand reads that
+        // count to tell a real update from an RLS-blocked one, so a fake that always
+        // returned 204 would let a silently-failing update pass as healthy.
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify(row ? [row] : []));
       }
       res.writeHead(404);
       res.end();
@@ -489,6 +517,56 @@ test('a command is refused, not silently un-logged, when the audit insert itself
     assert.equal(res.status, 502);
     const body = await res.json();
     assert.equal(body.error, 'audit_log_unreachable');
+  } finally {
+    cleanup();
+  }
+});
+
+test('with the gate OPEN, a failed audit insert stops the command reaching hardware at all', async () => {
+  // Strengthens the test above. handleCommand used to dispatch FIRST and record after, so a
+  // failed insert could only be detected once the relay had already moved — the 502 was a
+  // report of an incomplete trail, not a prevention of one. auditedDispatch writes the row
+  // first, so "hardware moved with no audit row" is now unrepresentable. This is also the
+  // asymmetry scheduler.mjs was on the wrong side of; both go through the same helper now.
+  const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch();
+  try {
+    supabaseState.rejectCommandInserts = true;
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l1', action: 'on' }),
+    });
+    assert.equal(res.status, 502);
+    assert.equal((await res.json()).error, 'audit_log_unreachable');
+    assert.equal(lightState.requests.length, 0, 'no audit row means nothing may reach the light');
+  } finally {
+    cleanup();
+  }
+});
+
+test('an outcome update that silently affects no rows leaves the row honestly at "dispatching"', async () => {
+  // This is how RLS refuses an UPDATE through PostgREST: 200, no error, empty result — the
+  // same shape that let a schedule save report "saved" while writing nothing (2e4c0c2).
+  // `commands` grants authenticated select and insert but no update, so without
+  // supabase/phase9_command_outcome.sql applied every proxy-issued command would be
+  // stranded here. It must be visible when that happens, not assumed away.
+  const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch();
+  try {
+    supabaseState.blockCommandUpdates = true;
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l1', action: 'on' }),
+    });
+
+    // The dispatch itself succeeded, so the caller is told so — the command really did reach
+    // the light.
+    assert.equal(res.status, 202);
+    assert.equal(lightState.requests.length, 1);
+    // But the row keeps the only status we actually earned. 'dispatched' would be a claim
+    // the database never confirmed, and 'failed' would be a claim about hardware that is
+    // flatly untrue.
+    assert.equal(supabaseState.insertedCommands[0].status, 'dispatching');
   } finally {
     cleanup();
   }

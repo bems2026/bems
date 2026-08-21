@@ -77,7 +77,12 @@ create table if not exists commands (
   confirmed     boolean not null default false,
   confirmation  text,
   note          text,
-  status        text not null,            -- 'dispatched' | 'dry_run' | 'failed' | 'superseded'
+  -- 'dispatching' is written BEFORE dispatch is attempted and replaced with the outcome
+  -- once it is known (server/auditedDispatch.mjs). A row still reading 'dispatching' means
+  -- the attempt was made and its result could not be recorded — deliberately distinct from
+  -- 'failed', which is a claim about the hardware. Free text, no CHECK: adding a value here
+  -- must never require a migration on a table this safety-critical.
+  status        text not null,            -- 'dispatching' | 'dispatched' | 'dry_run' | 'failed' | 'superseded'
   source        text not null             -- 'ibems-app' | 'schedule' | 'dsm_autoshed'
 );
 create index if not exists commands_device_id_requested_at_idx on commands (device_id, requested_at desc);

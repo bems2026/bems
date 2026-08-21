@@ -28,6 +28,7 @@ import { DEVICE_REGISTRY } from '../shared/registry.mjs';
 import { dueCommands } from './schedulePlan.mjs';
 import { planShed } from './shedPlan.mjs';
 import { dispatchCommand, DISPATCH_CLASSES } from './dispatchLight.mjs';
+import { auditedDispatch } from './auditedDispatch.mjs';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -104,25 +105,34 @@ async function fetchLatest() {
   return { totals, readings };
 }
 
-async function recordCommand(cmd, status, note) {
+/** Insert one `commands` row, asking PostgREST for the id back so the outcome can be
+ * attached to it once dispatch has been attempted. */
+async function insertAudit(row) {
   const res = await sb('commands', {
     method: 'POST',
-    headers: { Prefer: 'return=minimal' },
-    body: JSON.stringify({
-      device_id: cmd.device_id,
-      socket: cmd.socket,
-      action: cmd.action,
-      target: null,
-      requested_by: cmd.requested_by,
-      accepted_at: new Date().toISOString(),
-      confirmed: false,
-      confirmation: 'none',
-      note,
-      status,
-      source: cmd.source,
-    }),
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ ...row, accepted_at: new Date().toISOString(), confirmed: false, confirmation: 'none', target: null }),
   });
-  if (!res.ok) console.error(`[ibems-scheduler] audit insert failed: HTTP ${res.status} ${await res.text().catch(() => '')}`);
+  if (!res.ok) return { ok: false, detail: `HTTP ${res.status} ${await res.text().catch(() => '')}` };
+  const body = await res.json().catch(() => null);
+  return { ok: true, id: Array.isArray(body) ? body[0]?.id : body?.id };
+}
+
+async function updateAudit(id, patch) {
+  const res = await sb(`commands?id=eq.${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    // `return=representation` so the affected-row count can be checked: PostgREST reports a
+    // policy-blocked UPDATE as a success with an empty result, the trap 2e4c0c2 fixed on
+    // the schedule-save path. This daemon writes with the service-role key so RLS does not
+    // apply to it, but "the write reported 200 and changed nothing" is not a failure mode
+    // worth leaving detectable in only one of the two callers.
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) return { ok: false, detail: `HTTP ${res.status} ${await res.text().catch(() => '')}` };
+  const rows = await res.json().catch(() => null);
+  if (!Array.isArray(rows) || rows.length === 0) return { ok: false, detail: 'update affected no rows' };
+  return { ok: true };
 }
 
 async function fire(cmd, reasonNote) {
@@ -130,18 +140,34 @@ async function fire(cmd, reasonNote) {
   if (!device) return;
 
   const why = reasonNote ?? 'schedule due';
-  let status = 'dry_run';
-  let note = `${why}; hardware dispatch closed`;
-  if (HARDWARE_DISPATCH_ENABLED) {
-    const result = await dispatchCommand(device, cmd, { bridgeHost: BRIDGE_HOST, bridgePort: BRIDGE_PORT, lightApiToken: LIGHT_API_TOKEN });
-    status = result.ok ? 'dispatched' : 'failed';
-    note = result.ok ? why : `${why}; dispatch failed: ${result.detail}`;
-    if (!result.ok) console.error(`[ibems-scheduler] dispatch failed for ${cmd.device_id}: ${result.detail}`);
+  // Record-then-act, via the same helper proxy.mjs uses. This function used to dispatch
+  // first and merely console.error a failed audit insert, so an unattended scheduled or
+  // auto-shed command could move a real relay with nothing in the audit trail — on the one
+  // path where the trail is the only record that anything happened at all.
+  const result = await auditedDispatch({
+    device,
+    cmd,
+    note: HARDWARE_DISPATCH_ENABLED ? why : `${why}; hardware dispatch closed`,
+    auditRow: {
+      device_id: cmd.device_id,
+      socket: cmd.socket,
+      action: cmd.action,
+      requested_by: cmd.requested_by,
+      source: cmd.source,
+    },
+    dispatchEnabled: HARDWARE_DISPATCH_ENABLED,
+    dispatchClasses: DISPATCH_CLASSES,
+    dispatch: (d, c) => dispatchCommand(d, c, { bridgeHost: BRIDGE_HOST, bridgePort: BRIDGE_PORT, lightApiToken: LIGHT_API_TOKEN }),
+    insertAudit,
+    updateAudit,
+    log: (msg) => console.error(`[ibems-scheduler] ${msg}`),
+  });
+
+  if (result.auditFailure) {
+    console.error(`[ibems-scheduler] ${cmd.device_id} NOT fired — could not record the command: ${result.auditFailure}`);
+    return;
   }
-  // Recorded whether it reached hardware or not — an attempted-and-failed scheduled switch is
-  // exactly what an audit trail exists to capture.
-  await recordCommand(cmd, status, note);
-  console.log(`[ibems-scheduler] ${cmd.device_id} -> ${cmd.action} (${status})`);
+  console.log(`[ibems-scheduler] ${cmd.device_id} -> ${cmd.action} (${result.status})`);
 }
 
 async function tick() {

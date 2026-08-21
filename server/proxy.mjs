@@ -53,6 +53,7 @@ import { verifyBreakGlassPassword } from './breakGlass.mjs';
 import { validateCommand, buildAck, ACCEPTED_STATUS } from '../shared/commands.mjs';
 import { DEVICE_REGISTRY } from '../shared/registry.mjs';
 import { dispatchCommand, DISPATCH_CLASSES } from './dispatchLight.mjs';
+import { auditedDispatch } from './auditedDispatch.mjs';
 
 const PROXY_PORT = Number(process.env.PROXY_PORT) || 8080;
 const BRIDGE_HOST = process.env.BRIDGE_HOST || '127.0.0.1';
@@ -252,62 +253,83 @@ async function handleCommand(req, res, token) {
   const acceptedAtMs = Date.now();
   const ack = buildAck(cmd, acceptedAtMs);
 
-  // Which classes really reach hardware is declared once, in dispatchLight.mjs, next to the
-  // routing that implements it — so what /api/capabilities advertises and what this function
-  // will actually do cannot drift apart.
-  let status = 'dry_run';
-  let dispatchFailureDetail = null;
-  if (HARDWARE_DISPATCH_ENABLED && DISPATCH_CLASSES.includes(device.class)) {
-    const result = await dispatchCommand(device, cmd, { bridgeHost: BRIDGE_HOST, bridgePort: BRIDGE_PORT, lightApiToken: LIGHT_API_TOKEN });
-    if (result.ok) {
-      status = 'dispatched';
-    } else {
-      status = 'failed';
-      dispatchFailureDetail = result.detail;
-      console.error(`[ibems-proxy] hardware dispatch failed for ${cmd.device_id}: ${result.detail}`);
-    }
-  }
-
   // The audit row is written with the CALLER's own token, not SUPABASE_ANON_KEY alone —
   // RLS's `auth.role() = 'authenticated'` check needs the request to actually carry a
-  // signed-in user's session for PostgREST to grant the insert. Audit completeness is
-  // part of Phase 6's DoD, so a failure here is NOT swallowed: no row, no command, even
-  // though the command was otherwise valid — see the file header for why.
-  try {
-    const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/commands`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-      body: JSON.stringify({
-        command_id: cmd.command_id ?? null,
-        device_id: cmd.device_id,
-        socket: cmd.socket ?? null,
-        action: cmd.action,
-        target: cmd.target,
-        requested_by: session.userId,
-        accepted_at: new Date(acceptedAtMs).toISOString(),
-        confirmed: false,
-        confirmation: 'none',
-        note: ack.note,
-        status,
-        source: 'ibems-app',
-      }),
+  // signed-in user's session for PostgREST to grant the insert.
+  const sbCommands = (path, init) =>
+    fetch(`${SUPABASE_URL}/rest/v1/commands${path}`, {
+      ...init,
+      headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json', ...init.headers },
       signal: AbortSignal.timeout(5000),
     });
-    if (!insertRes.ok) {
-      const detail = await insertRes.text();
-      console.error(`[ibems-proxy] command audit insert failed: ${insertRes.status} ${detail}`);
-      return sendJson(res, 502, { error: 'audit_log_unreachable', detail: 'Could not record this command — refusing to proceed without an audit trail.' });
-    }
-  } catch (err) {
-    console.error('[ibems-proxy] command audit insert error:', err);
-    return sendJson(res, 502, { error: 'audit_log_unreachable', detail: String(err) });
+
+  // Which classes really reach hardware is declared once, in dispatchLight.mjs, next to the
+  // routing that implements it — so what /api/capabilities advertises and what this function
+  // will actually do cannot drift apart. The record-then-act ordering is shared with
+  // scheduler.mjs via auditedDispatch, so the two paths cannot disagree about what a failed
+  // audit insert means (they used to: this one refused, the scheduler carried on).
+  const outcome = await auditedDispatch({
+    device,
+    cmd,
+    note: ack.note,
+    auditRow: {
+      command_id: cmd.command_id ?? null,
+      device_id: cmd.device_id,
+      socket: cmd.socket ?? null,
+      action: cmd.action,
+      target: cmd.target,
+      requested_by: session.userId,
+      accepted_at: new Date(acceptedAtMs).toISOString(),
+      confirmed: false,
+      confirmation: 'none',
+      source: 'ibems-app',
+    },
+    dispatchEnabled: HARDWARE_DISPATCH_ENABLED,
+    dispatchClasses: DISPATCH_CLASSES,
+    dispatch: (d, c) => dispatchCommand(d, c, { bridgeHost: BRIDGE_HOST, bridgePort: BRIDGE_PORT, lightApiToken: LIGHT_API_TOKEN }),
+    insertAudit: async (row) => {
+      try {
+        const res = await sbCommands('', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(row) });
+        if (!res.ok) return { ok: false, detail: `HTTP ${res.status} ${await res.text().catch(() => '')}` };
+        const body = await res.json().catch(() => null);
+        return { ok: true, id: Array.isArray(body) ? body[0]?.id : body?.id };
+      } catch (err) {
+        return { ok: false, detail: String(err) };
+      }
+    },
+    updateAudit: async (id, patch) => {
+      try {
+        // `return=representation`, not `return=minimal`, so the affected-row count can be
+        // checked. PostgREST reports an RLS-blocked UPDATE as a success with an empty
+        // result — the exact trap 2e4c0c2 fixed on the schedule-save path, where a write
+        // that changed nothing reported "saved". An empty array here means the row was not
+        // updated, whatever the status code says.
+        const res = await sbCommands(`?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(patch) });
+        if (!res.ok) return { ok: false, detail: `HTTP ${res.status} ${await res.text().catch(() => '')}` };
+        const rows = await res.json().catch(() => null);
+        if (!Array.isArray(rows) || rows.length === 0) {
+          return { ok: false, detail: 'update affected no rows — check supabase/phase9_command_outcome.sql is applied' };
+        }
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, detail: String(err) };
+      }
+    },
+    log: (msg) => console.error(`[ibems-proxy] ${msg}`),
+  });
+
+  // Audit completeness is part of Phase 6's DoD: no row, no command. With record-first this
+  // is now a genuine refusal rather than a report of one — nothing has touched hardware.
+  if (outcome.auditFailure) {
+    console.error(`[ibems-proxy] command audit insert failed: ${outcome.auditFailure}`);
+    return sendJson(res, 502, { error: 'audit_log_unreachable', detail: 'Could not record this command — refusing to proceed without an audit trail.' });
   }
 
-  // The command is validated and logged above (status:'failed', not silently omitted — an
+  // The attempt is logged above (status:'failed', not silently omitted — an
   // attempted-and-failed command is exactly what a safety-critical audit trail exists to
-  // capture) before this refusal, so the record of the attempt survives even though the
-  // caller gets an error rather than the ack.
-  if (dispatchFailureDetail) {
+  // capture) before this refusal, so the record survives even though the caller gets an
+  // error rather than the ack.
+  if (outcome.dispatchFailure) {
     return sendJson(res, 502, {
       error: 'hardware_dispatch_failed',
       detail: 'The command was validated and logged, but the light did not actually respond — refusing to report it as accepted.',
