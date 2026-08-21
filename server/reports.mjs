@@ -1,0 +1,129 @@
+/**
+ * Monthly report generation — architecture plan Phase 12.
+ *
+ * WHAT THIS IS FOR:
+ * a stored, downloadable record of what the building consumed each month, for someone who
+ * will never open the dashboard. The aggregation itself lives in Postgres
+ * (`generate_monthly_report`, supabase/phase12_monthly_reports.sql) so a month of rows never
+ * crosses the Pi's uplink to be summed; this module only decides WHICH months still need one.
+ *
+ * WHY THE TRIGGER IS STATELESS:
+ * exactly the reasoning server/retention.mjs's header sets out, and deliberately the same
+ * shape. There is no last-run file and no cron. Each pass asks the database a question it can
+ * always answer — "which complete months have no report row?" — and acts on the answer. A
+ * restart can neither double-run (the month now has a row) nor skip (the next pass asks
+ * again).
+ *
+ * WHY A GRACE PERIOD:
+ * a month is not finished being written the instant it ends. `ingestBuffer.mjs` flushes rows
+ * buffered during an outage whenever Supabase comes back, and the hourly rollup runs every
+ * six hours. Reporting a month at 00:01 on the 1st can therefore miss its own last hours, and
+ * a report that quietly undercounts is worse than one that arrives two days later.
+ *
+ * Regenerating is always safe: `generate_monthly_report` upserts, and a report rebuilt later
+ * sees more of its month rather than less. To force one, call the RPC directly with that
+ * month — this module will not, because it only looks for missing rows.
+ */
+
+/** Days to wait after a month ends before reporting it. See the header. */
+export const REPORT_GRACE_DAYS = 2;
+
+/** Most months one pass will generate. A first run against years of history should not hold
+ * the daemon in one long loop — and it does not need to, because nothing is remembered
+ * between passes and the next one resumes exactly where this stopped. */
+export const MAX_MONTHS_PER_PASS = 6;
+
+/** How often to look for missing reports. The answer changes at most once a month; this is
+ * frequent enough to pick one up the same day and cheap enough to be irrelevant. */
+export const REPORT_CHECK_MS = 6 * 60 * 60 * 1000; // 6h
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** `YYYY-MM-01` for the month containing a UTC instant. */
+function monthKey(date) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-01`;
+}
+
+/**
+ * Pure. Which months still need a report?
+ *
+ * Month boundaries are computed in UTC while the report itself groups days in the site's
+ * timezone (`p_tz`, default Asia/Manila). That mismatch is deliberate and safe in one
+ * direction only: Manila is UTC+8, so a local month ends BEFORE the UTC month boundary, and
+ * waiting for the UTC boundary plus a grace period can only ever be conservative. A site west
+ * of UTC would need this revisited — hence saying so here rather than leaving it implied.
+ *
+ * @param {{ generatedMonths: Array<string|{month: string}>, earliestDataTs: string|null,
+ *           nowMs: number, graceDays?: number }} args
+ * @returns {string[]} `YYYY-MM-01` keys, oldest first, at most MAX_MONTHS_PER_PASS of them.
+ */
+export function monthsNeedingReport({ generatedMonths, earliestDataTs, nowMs, graceDays = REPORT_GRACE_DAYS }) {
+  if (earliestDataTs === null || earliestDataTs === undefined) return [];
+  const earliestMs = Date.parse(earliestDataTs);
+  // An unparseable timestamp is a reason to do nothing and say so, not a reason to guess —
+  // the same resolution shouldRunRetention takes for the same ambiguity.
+  if (Number.isNaN(earliestMs)) return [];
+
+  // A `date` column can arrive as '2026-05-01' or as a full timestamp depending on how the
+  // client rendered it. Normalising to the first 10 characters makes both the same month;
+  // not doing so would regenerate every report on every pass.
+  const done = new Set(
+    (generatedMonths ?? []).map((m) => String(typeof m === 'string' ? m : m?.month ?? '').slice(0, 10))
+  );
+
+  const months = [];
+  const cursor = new Date(Date.UTC(new Date(earliestMs).getUTCFullYear(), new Date(earliestMs).getUTCMonth(), 1));
+  while (months.length < MAX_MONTHS_PER_PASS) {
+    const nextMonth = Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1);
+    // Not settled yet — and since months only get newer from here, neither is anything after.
+    if (nextMonth + graceDays * DAY_MS > nowMs) break;
+    const key = monthKey(cursor);
+    if (!done.has(key)) months.push(key);
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  return months;
+}
+
+/** The `ts`/`hour` of the oldest row in a table, or null when it is empty. */
+async function oldestStamp(client, table, column) {
+  const rows = await client.select(table, `select=${column}&order=${column}.asc&limit=1`);
+  return Array.isArray(rows) && rows.length > 0 ? rows[0][column] : null;
+}
+
+/**
+ * Generates every missing report, oldest month first.
+ *
+ * One month failing does not abandon the rest: a report is per-month and independent, so a
+ * single bad month should not cost the good ones — the same reasoning `useAnalyticsHistory`'s
+ * `Promise.allSettled` follows for per-device fetches. Failures are returned rather than
+ * thrown so the caller can log them and carry on.
+ *
+ * @param {{ client: {select: Function, rpc: Function}, nowMs?: number, tz?: string }} args
+ * @returns {Promise<{ generated: string[], failed: Array<{month: string, error: string}> }>}
+ */
+export async function runReportGeneration({ client, nowMs = Date.now(), tz }) {
+  // The archive is consulted as well as the raw table, and the EARLIER of the two wins.
+  // `readings` is pruned at 30 days, so its oldest row is newer than the archive's — trusting
+  // it alone would silently skip every month that had already been rolled up.
+  const [oldestHour, oldestRaw] = await Promise.all([
+    oldestStamp(client, 'readings_hourly', 'hour'),
+    oldestStamp(client, 'readings', 'ts'),
+  ]);
+  const candidates = [oldestHour, oldestRaw].filter((t) => t !== null && !Number.isNaN(Date.parse(t)));
+  const earliestDataTs = candidates.length > 0 ? candidates.reduce((a, b) => (Date.parse(a) <= Date.parse(b) ? a : b)) : null;
+
+  const generatedMonths = await client.select('monthly_building_reports', 'select=month&order=month.asc&limit=1000');
+  const missing = monthsNeedingReport({ generatedMonths, earliestDataTs, nowMs });
+
+  const generated = [];
+  const failed = [];
+  for (const month of missing) {
+    try {
+      await client.rpc('generate_monthly_report', tz ? { p_month: month, p_tz: tz } : { p_month: month });
+      generated.push(month);
+    } catch (err) {
+      failed.push({ month, error: String(err) });
+    }
+  }
+  return { generated, failed };
+}
