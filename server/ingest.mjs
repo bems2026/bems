@@ -20,10 +20,12 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TIMING, METERED } from '../shared/registry.mjs';
-import { splitLatestPayload, shapeDeviceRows, shapeAnomalyRows } from './shapeRows.mjs';
+import { shapeDeviceRows, shapeAnomalyRows } from './shapeRows.mjs';
 import { makeSupabaseClient } from './supabaseRest.mjs';
 import { appendToBuffer, readBuffer, writeBuffer, bufferCount } from './ingestBuffer.mjs';
 import { selectAnomalyCandidates, detectAnomaly, pushSample } from './anomalyStats.mjs';
+import { runIngestCycle } from './ingestCycle.mjs';
+import { runRetention, DEFAULT_RETENTION_DAYS, RETENTION_CHECK_MS } from './retention.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -33,6 +35,7 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const POLL_MS = Number(process.env.INGEST_POLL_MS) || TIMING.HISTORY_SAMPLE_MS;
 const DEVICE_SYNC_MS = Number(process.env.INGEST_DEVICE_SYNC_MS) || 5 * 60 * 1000;
 const BUFFER_PATH = process.env.INGEST_BUFFER_PATH || path.join(__dirname, 'data', 'ingest-buffer.ndjson');
+const RETENTION_DAYS = Number(process.env.INGEST_RETENTION_DAYS) || DEFAULT_RETENTION_DAYS;
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.error('[ibems-ingest] SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required — see server/.env.example');
@@ -46,7 +49,6 @@ const supabase = makeSupabaseClient({
 });
 
 let stopping = false;
-let lastError = null;
 
 // The 11 devices with real power_w metering — outlet_dual (co1..co7) + meter
 // (mtr_co_yellow/mtr_lo_red/mtr_arec_acu/mtr_lo_yellow). Reused from the registry, not
@@ -120,7 +122,7 @@ async function writeOrBuffer(table, rows, onConflict) {
   }
 }
 
-async function updateHealth(ok) {
+async function updateHealth(ok, lastError = null) {
   const row = {
     id: 1,
     buffered_row_count: bufferCount(BUFFER_PATH),
@@ -137,50 +139,43 @@ async function updateHealth(ok) {
 }
 
 async function tick() {
-  const latest = await fetchJson(`${BRIDGE_URL}/readings/latest`, TIMING.FETCH_TIMEOUT_MS);
-  const { readings, totals } = splitLatestPayload(latest);
-
-  // Drain any backlog first so buffered rows land before this cycle's, preserving order.
-  try {
-    await flushBuffer();
-  } catch {
-    // Still down — this cycle's writes below will also buffer; the flushBuffer error is
-    // the same underlying failure, no need to log it twice.
-  }
-
-  let ok = true;
-  try {
-    await writeOrBuffer('readings', readings, 'device_id,ts');
-  } catch (err) {
-    ok = false;
-    lastError = String(err);
-  }
-  if (totals) {
-    try {
-      await writeOrBuffer('building_totals', [totals], 'ts');
-    } catch (err) {
-      ok = false;
-      lastError = String(err);
-    }
-  }
-
-  const anomalyRows = detectAnomalies(readings);
-  if (anomalyRows.length > 0) {
-    try {
-      await writeOrBuffer('anomalies', anomalyRows, 'device_id,ts,metric');
-    } catch (err) {
-      ok = false;
-      lastError = String(err);
-    }
-  }
-
-  await updateHealth(ok);
+  const result = await runIngestCycle({
+    fetchLatest: () => fetchJson(`${BRIDGE_URL}/readings/latest`, TIMING.FETCH_TIMEOUT_MS),
+    flushBuffer,
+    write: writeOrBuffer,
+    detectAnomalies,
+    updateHealth,
+  });
 
   const stamp = new Date().toISOString();
-  if (ok) {
-    console.log(`[ibems-ingest] ${stamp} wrote ${readings.length} readings${totals ? ' + totals' : ''}${anomalyRows.length ? ` + ${anomalyRows.length} anomalies` : ''}`);
+  if (result.ok) {
+    console.log(`[ibems-ingest] ${stamp} wrote ${result.readingCount} readings${result.hasTotals ? ' + totals' : ''}${result.anomalyCount ? ` + ${result.anomalyCount} anomalies` : ''}`);
+  } else if (result.stage === 'bridge') {
+    // Distinguished from the Supabase case on purpose: these are different outages with
+    // different fixes, and conflating them in the log is how a 2.4/5 GHz band mismatch ends
+    // up looking like a database problem.
+    console.error(`[ibems-ingest] ${stamp} bridge unreachable, nothing to write: ${result.error}`);
   } else {
-    console.error(`[ibems-ingest] ${stamp} Supabase unreachable, buffered (${bufferCount(BUFFER_PATH)} pending): ${lastError}`);
+    console.error(`[ibems-ingest] ${stamp} Supabase unreachable, buffered (${bufferCount(BUFFER_PATH)} pending): ${result.error}`);
+  }
+}
+
+/** One retention pass, guarded so it can never take the daemon down with it. Ingesting is
+ * this process's job; pruning is housekeeping, and housekeeping failing is not a reason to
+ * stop recording the building's electricity. */
+async function retentionPass() {
+  try {
+    const { ran, rolled, deleted, reason } = await runRetention({
+      client: supabase,
+      retentionDays: RETENTION_DAYS,
+    });
+    if (ran) {
+      console.log(`[ibems-ingest] retention: rolled ${rolled} hour(s) into readings_hourly, pruned ${deleted} raw row(s)`);
+    } else {
+      console.log(`[ibems-ingest] retention: nothing to do (${reason})`);
+    }
+  } catch (err) {
+    console.error('[ibems-ingest] retention pass failed (will retry on the next check):', String(err));
   }
 }
 
@@ -200,6 +195,12 @@ async function main() {
   setInterval(() => {
     syncDevices().catch((err) => console.error('[ibems-ingest] device sync failed:', String(err)));
   }, DEVICE_SYNC_MS);
+
+  // Retention asks the database whether anything has aged out — a question whose answer
+  // changes once a day, so checking every 6h is generous. Not .unref()'d, for the same
+  // reason the other two timers aren't (see the comment above).
+  retentionPass();
+  setInterval(retentionPass, RETENTION_CHECK_MS);
 
   const loop = async () => {
     if (stopping) return;

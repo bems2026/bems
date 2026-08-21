@@ -1,10 +1,13 @@
 /**
  * Pure-logic tests for the ingestion daemon — no network, no live bridge, no live
  * Supabase project. Covers `shapeRows.mjs` (bridge payload -> table rows) and
- * `ingestBuffer.mjs` (the local outage queue). `ingest.mjs`'s orchestration (fetch loop,
- * buffer-then-write ordering) is exercised indirectly by these plus manual verification
- * per the architecture plan's Phase 3 DoD (kill/restore connectivity, watch
- * ingestion_health) — that needs a live Supabase project and isn't a unit test.
+ * `ingestBuffer.mjs` (the local outage queue).
+ *
+ * The cycle orchestration (fetch, buffer-then-write ordering, which failures reach
+ * `ingestion_health`) moved to `server/ingestCycle.mjs` in Phase 9 and is covered directly
+ * by `server/ingestCycle.test.mjs`. It was assumed here to need a live Supabase project;
+ * it only needed its I/O passed in — and the untested gap was hiding a real bug, where a
+ * bridge outage never reached the health row at all.
  *
  *     node --test server/ingest.test.mjs
  */
