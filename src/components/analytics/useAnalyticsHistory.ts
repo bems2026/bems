@@ -57,7 +57,7 @@ export function useAnalyticsHistory(range: AnalyticsRange = '24h') {
         const result = results[i];
         if (result.status === 'fulfilled') {
           anySucceeded = true;
-          useDeviceStore.getState().setHistory(allIds[i], result.value);
+          useDeviceStore.getState().setHistory(allIds[i], result.value, range);
         }
       }
       setStatus(anySucceeded ? 'ready' : 'error');

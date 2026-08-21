@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Activity, Gauge, Plug } from 'lucide-react';
-import { useDeviceStore } from '@/stores/deviceStore';
+import { useDeviceStore, historyFor } from '@/stores/deviceStore';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { HistoryAreaChart } from './HistoryAreaChart';
 import { InfoHint } from '@/components/ui/InfoHint';
@@ -72,7 +72,13 @@ export function AnalyticsPage() {
   const selectedId = selectedByScope[scope] && scopeIds.includes(selectedByScope[scope]!) ? selectedByScope[scope]! : (scopeIds[0] ?? null);
   const selectDevice = (id: string) => setSelectedByScope((s) => ({ ...s, [scope]: id }));
 
-  const rows = useMemo(() => buildChartRows(scopeIds, historyMap, MAX_CHART_POINTS, param), [scopeIds, historyMap, param]);
+  // Filter to the active range BEFORE charting. buildChartRows stays a pure function over a
+  // plain map; deciding what counts as this range's data is this component's job.
+  const scopedHistory = useMemo(
+    () => Object.fromEntries(scopeIds.map((id) => [id, historyFor(historyMap, id, range)])),
+    [scopeIds, historyMap, range],
+  );
+  const rows = useMemo(() => buildChartRows(scopeIds, scopedHistory, MAX_CHART_POINTS, param), [scopeIds, scopedHistory, param]);
   const selectedDevice = scopeDevices.find((d) => d.id === selectedId);
   const selectedReading = selectedId ? readings[selectedId] : undefined;
 
@@ -212,7 +218,7 @@ export function AnalyticsPage() {
           {selectedDevice && <SelectedStatPanel reading={selectedReading} />}
           <div className="analytics-stat-card__spark-label">{CHART_PARAMS[param].label.toUpperCase()} · 24 H</div>
           <HistoryAreaChart
-            history={selectedId ? historyMap[selectedId] : undefined}
+            history={selectedId ? historyFor(historyMap, selectedId, range) : undefined}
             color="var(--blue-bright)"
             name={selectedDevice?.display_name ?? 'Selected source'}
             className="analytics-stat-card__chart"
@@ -224,10 +230,10 @@ export function AnalyticsPage() {
 
       <EnergySection branchDevices={branchDevices} />
 
-      <SourceSection title="Branches" tag="CHNT CT · 4 FEEDERS" devices={branchDevices} scope="branches" activeScope={scope} param={param} selectedId={selectedByScope.branches} onSelect={(id) => { setScope('branches'); selectDevice(id); }} className="analytics-branch-grid" />
-      <SourceSection title="Outlets" tag="EACH SOCKET METERED" devices={outletDevices} scope="outlets" activeScope={scope} param={param} selectedId={selectedByScope.outlets} onSelect={(id) => { setScope('outlets'); selectDevice(id); }} className="analytics-outlet-grid" />
+      <SourceSection title="Branches" tag="CHNT CT · 4 FEEDERS" devices={branchDevices} scope="branches" activeScope={scope} param={param} range={range} selectedId={selectedByScope.branches} onSelect={(id) => { setScope('branches'); selectDevice(id); }} className="analytics-branch-grid" />
+      <SourceSection title="Outlets" tag="EACH SOCKET METERED" devices={outletDevices} scope="outlets" activeScope={scope} param={param} range={range} selectedId={selectedByScope.outlets} onSelect={(id) => { setScope('outlets'); selectDevice(id); }} className="analytics-outlet-grid" />
 
-      <UntrackedLoadCard branchIds={branchIds} outletIds={outletIds} />
+      <UntrackedLoadCard branchIds={branchIds} outletIds={outletIds} range={range} />
     </>
   );
 }
@@ -261,6 +267,7 @@ function SourceSection({
   scope,
   activeScope,
   param,
+  range,
   selectedId,
   onSelect,
   className,
@@ -271,6 +278,7 @@ function SourceSection({
   scope: Scope;
   activeScope: Scope;
   param: ChartParam;
+  range: string;
   selectedId: string | null;
   onSelect: (id: string) => void;
   className: string;
@@ -288,7 +296,7 @@ function SourceSection({
       </div>
       <div className={className}>
         {devices.map((d, i) => (
-          <SourceCard key={d.id} device={d} color={PALETTE[i % PALETTE.length]} scope={scope} param={param} selected={activeScope === scope && selectedId === d.id} onSelect={() => onSelect(d.id)} />
+          <SourceCard key={d.id} device={d} color={PALETTE[i % PALETTE.length]} scope={scope} param={param} range={range} selected={activeScope === scope && selectedId === d.id} onSelect={() => onSelect(d.id)} />
         ))}
       </div>
     </div>

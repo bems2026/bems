@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook, waitFor, cleanup } from '@testing-library/react';
 import { useAnalyticsHistory } from './useAnalyticsHistory';
-import { useDeviceStore } from '@/stores/deviceStore';
+import { useDeviceStore, historyFor } from '@/stores/deviceStore';
 import * as bridgeClient from '@/lib/bridgeClient';
 import type { Device } from '@/lib/types';
 
@@ -29,10 +29,12 @@ describe('useAnalyticsHistory — 24h (bridge-backed)', () => {
     const { result } = renderHook(() => useAnalyticsHistory('24h'));
 
     await waitFor(() => expect(result.current.status).toBe('ready'));
-    expect(useDeviceStore.getState().history['mtr_ok']).toEqual([{ ts: 't1', power_w: 100 }]);
+    // Read through historyFor, not the raw map: history is tagged with the range it was
+    // fetched for, so that points from one window can never be charted as another.
+    expect(historyFor(useDeviceStore.getState().history, 'mtr_ok', '24h')).toEqual([{ ts: 't1', power_w: 100 }]);
     // The flaky device's history simply stays unset — a gap, not a fabricated series —
     // rather than the whole hook reporting 'error' and every device losing its chart.
-    expect(useDeviceStore.getState().history['mtr_flaky']).toBeUndefined();
+    expect(historyFor(useDeviceStore.getState().history, 'mtr_flaky', '24h')).toEqual([]);
   });
 
   it('reports error only when every device fails, not just one', async () => {

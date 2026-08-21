@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { GitFork } from 'lucide-react';
-import { useDeviceStore } from '@/stores/deviceStore';
+import { useDeviceStore, historyFor } from '@/stores/deviceStore';
 import { getHistory } from '@/lib/bridgeClient';
 import { TIMING } from '@/lib/timing';
 import { InfoHint } from '@/components/ui/InfoHint';
@@ -43,7 +43,7 @@ export function EnergyFlowCard() {
       try {
         const results = await Promise.all(meterIds.map((id) => getHistory(id, '24h')));
         if (cancelled) return;
-        for (let i = 0; i < meterIds.length; i++) useDeviceStore.getState().setHistory(meterIds[i], results[i].points);
+        for (let i = 0; i < meterIds.length; i++) useDeviceStore.getState().setHistory(meterIds[i], results[i].points, '24h');
         setStatus('ready');
       } catch {
         if (!cancelled) setStatus('error');
@@ -60,7 +60,9 @@ export function EnergyFlowCard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- meterKey is the stable proxy for meterIds' contents
   }, [meterKey]);
 
-  const total = useMemo(() => sumHistories(meterIds.map((id) => historyMap[id] ?? [])), [meterIds, historyMap]);
+  // Always 24h here — this card is Overview's, and Analytics may have left 7d/30d
+  // points in the shared map.
+  const total = useMemo(() => sumHistories(meterIds.map((id) => historyFor(historyMap, id, '24h'))), [meterIds, historyMap]);
   const loading = status === 'loading' && total.length === 0;
 
   return (

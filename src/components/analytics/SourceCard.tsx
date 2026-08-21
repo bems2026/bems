@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { useDeviceStore } from '@/stores/deviceStore';
+import { useDeviceStore, historyFor } from '@/stores/deviceStore';
 import { isReadingStale } from '@/lib/staleness';
 import { HistoryAreaChart } from './HistoryAreaChart';
 import type { ChartParam } from './chartParams';
@@ -12,9 +12,9 @@ import { formatNumber } from '@/lib/format';
  * per card, so the bigger tiles read fine. Outlets stay a compact single-column list (7
  * cards, no room to spare) — same underlying numbers, denser layout.
  */
-export function SourceCard({ device, color, scope, param, selected, onSelect }: { device: Device; color: string; scope: 'branches' | 'outlets'; param: ChartParam; selected: boolean; onSelect: () => void }) {
+export function SourceCard({ device, color, scope, param, range, selected, onSelect }: { device: Device; color: string; scope: 'branches' | 'outlets'; param: ChartParam; range: string; selected: boolean; onSelect: () => void }) {
   const reading = useDeviceStore((s) => s.latestReadings[device.id]);
-  const history = useDeviceStore((s) => s.history[device.id]);
+  const history = useDeviceStore((s) => historyFor(s.history, device.id, range));
   const stale = isReadingStale(reading);
 
   return (

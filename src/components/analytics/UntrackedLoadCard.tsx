@@ -1,7 +1,7 @@
 import { useId, useMemo, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { SplitSquareVertical } from 'lucide-react';
-import { useDeviceStore } from '@/stores/deviceStore';
+import { useDeviceStore, historyFor } from '@/stores/deviceStore';
 import { sumHistories } from '@/components/overview/totalPowerSeries';
 import { downsampleTrend } from '@/components/trends/chartSummary';
 import { InfoHint } from '@/components/ui/InfoHint';
@@ -16,11 +16,11 @@ const MAX_POINTS = 120;
  * shape but never renders it (see the Phase M plan §6.2); this is that chart, built from
  * real summed history instead of the fabricated wave the rest of that Analytics tab uses.
  */
-export function UntrackedLoadCard({ branchIds, outletIds }: { branchIds: string[]; outletIds: string[] }) {
+export function UntrackedLoadCard({ branchIds, outletIds, range }: { branchIds: string[]; outletIds: string[]; range: string }) {
   const historyMap = useDeviceStore((s) => s.history);
 
-  const totalSeries = useMemo(() => sumHistories(branchIds.map((id) => historyMap[id] ?? [])), [branchIds, historyMap]);
-  const meteredSeries = useMemo(() => sumHistories(outletIds.map((id) => historyMap[id] ?? [])), [outletIds, historyMap]);
+  const totalSeries = useMemo(() => sumHistories(branchIds.map((id) => historyFor(historyMap, id, range))), [branchIds, historyMap, range]);
+  const meteredSeries = useMemo(() => sumHistories(outletIds.map((id) => historyFor(historyMap, id, range))), [outletIds, historyMap, range]);
   const paired = useMemo(() => alignTotalAndMetered(totalSeries, meteredSeries), [totalSeries, meteredSeries]);
 
   const data = downsamplePaired(paired, MAX_POINTS);
