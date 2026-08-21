@@ -18,8 +18,9 @@ node-red-bridge/           generated Node-RED flow (`npm run build:flow` to rege
                             plus deploy.mjs/verify.mjs for the real Pi (see phase-f-runbook.md)
 mock-bridge/                local fake bridge, same contract, no hardware needed
 test/                      bridge/mock contract tests (Node's test runner)
-src/                       React + Vite + TS frontend — Overview, Analytics, Control,
-                            Devices, Automation and Reports
+src/                       React + Vite + TS frontend — five tabs (Overview, Analytics,
+                            Control, Devices, Automation) plus Reports, which lives in the
+                            nav's account menu rather than the tab bar
 server/                    the ingestion daemon, the authenticated proxy that fronts the
                             bridge, and the systemd units for both plus the office kiosk.
                             the retention/report passes, and the backup export.

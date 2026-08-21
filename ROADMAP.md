@@ -51,6 +51,7 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-030** One retry/backoff schedule shared by the four Supabase-backed stores instead of four hand-copies — `src/stores/retrySchedule.ts`
 - [x] **EX-032** Archive-backed 90d/1y ranges on Analytics, reading across the retention boundary through one RPC so the caller never has to know where it sits — `src/lib/supabaseHistory.ts`, `src/components/analytics/AnalyticsPage.tsx`
 - [x] **EX-033** Reports page: stored monthly figures per device and building-wide, with CSV export. Coverage is rendered beside every figure, so a barely-observed month can never quote a bare total — `src/components/reports/ReportsPage.tsx`, `src/lib/supabaseReports.ts`
+- [x] **EX-035** Account menu in the nav's right-hand cluster holding Reports and sign-out, keeping the tab bar at the five live operational views. Routes are derived from `ROUTE_ITEMS`, not the tab bar, so a page can leave the tabs without leaving the router — `src/components/layout/AccountMenu.tsx`, `src/components/layout/navItems.ts`
 - [x] **EX-034** RFC 4180 CSV serializer with spreadsheet-formula neutralisation, a UTF-8 BOM for Excel, and missing rendered as empty rather than 0 — `src/lib/csv.ts`
 
 ### Server & ingestion
@@ -113,7 +114,7 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 ### Testing & tooling
 
-- [x] **EX-120** 478 frontend tests (vitest) — `src/**/*.test.ts(x)`
+- [x] **EX-120** 494 frontend tests (vitest) — `src/**/*.test.ts(x)`
 - [x] **EX-121** 189 bridge/contract tests, including assertions that the generated flow contains no write nodes and no MQTT — `test/`
 - [x] **EX-122** 166 server tests against real spawned processes and hand-rolled fake HTTP servers, no mocking library — `server/*.test.mjs`
 - [x] **EX-123** Schema guard tests asserting RLS shape per migration — `test/device-config-schema.test.mjs`, `test/phase8-anomalies-schema.test.mjs`, `test/phase9-history-schema.test.mjs`, `test/phase10-archive-schema.test.mjs`, `test/phase11-totals-retention-schema.test.mjs`, `test/phase12-monthly-reports-schema.test.mjs`

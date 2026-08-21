@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { AppShell } from '@/components/layout/AppShell';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
-import { NAV_ITEMS } from '@/components/layout/navItems';
+import { ROUTE_ITEMS } from '@/components/layout/navItems';
 import { useHashRoute } from '@/lib/useHashRoute';
 import { useLiveConnection } from '@/hooks/useLiveConnection';
 import { OverviewPage } from '@/components/overview/OverviewPage';
@@ -14,7 +14,9 @@ import { LoginPage } from '@/components/auth/LoginPage';
 import { useAuthStore } from '@/stores/authStore';
 import { supabase } from '@/config/supabase';
 
-const ROUTE_IDS = NAV_ITEMS.map((n) => n.id);
+// Every navigable page, not just the tab bar — Reports is a real route reached from the
+// account menu, and deriving this from NAV_ITEMS would send `#reports` back to Overview.
+const ROUTE_IDS = ROUTE_ITEMS.map((n) => n.id);
 
 /**
  * Auth gate — Phase 5 of the architecture plan. Only active when Supabase is configured
@@ -93,7 +95,7 @@ function useRouteAnnouncement(activeId: string) {
   const isFirstRender = useRef(true);
 
   useEffect(() => {
-    const label = NAV_ITEMS.find((n) => n.id === activeId)?.label ?? 'Overview';
+    const label = ROUTE_ITEMS.find((n) => n.id === activeId)?.label ?? 'Overview';
     document.title = `${label} · iBEMS`;
 
     if (isFirstRender.current) {

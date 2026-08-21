@@ -971,10 +971,9 @@ body::before {
 /* 32px visual box reads correctly at this nav's density; the tap TARGET still needs to
    clear 44x44 (WCAG 2.5.5 / Apple HIG), so the hit area is extended via ::after rather
    than growing the box itself and reflowing the whole right-hand cluster. Shared with
-   .nav-theme-toggle/.nav-session__signout below — same fix, same reasoning, once. */
+   .nav-theme-toggle below — same fix, same reasoning, once. */
 .nav-icon-btn::after,
-.nav-theme-toggle::after,
-.nav-session__signout::after {
+.nav-theme-toggle::after {
   content: '';
   position: absolute;
   inset: -6px;
@@ -4823,11 +4822,6 @@ body::before {
  * Session badge (TopNav) — Phase 5. Local (break-glass) sessions get a
  * distinct warning tone; never rendered as an equivalent to a normal login.
  * ------------------------------------------------------------------------- */
-.nav-session {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
 .nav-session__label {
   display: flex;
   align-items: center;
@@ -4844,31 +4838,87 @@ body::before {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.nav-session--local .nav-session__label {
+/* A break-glass session is LAN-only and cannot issue commands, so it is toned and kept on
+   the open nav rather than inside the account menu — see AccountMenu.tsx. Standalone
+   modifier, not a descendant of a parent class: the old .nav-session wrapper is gone. */
+.nav-session__label--local {
   background: var(--accent-soft);
   color: var(--accent-text);
 }
-.nav-session__signout {
-  position: relative; /* anchors its own wider hit-area override below (26px box) */
+
+/* ---------------------------------------------------------------------------
+ * Account menu — the nav's right-hand cluster (AccountMenu.tsx).
+ * Placement and surface deliberately match .alerts-popover: they sit side by side and
+ * would read as two different components if they did not.
+ * --------------------------------------------------------------------------- */
+.nav-account {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--r-pill);
-  border: none;
-  background: transparent;
+  gap: 4px;
+}
+.nav-icon-btn--current {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.account-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 208px;
+  padding: 6px;
+  background: var(--pop-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-pop);
+  z-index: 60;
+}
+.account-menu__who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px 10px;
+  border-bottom: 1px solid var(--glass-border);
+  margin-bottom: 6px;
+}
+.account-menu__mode {
+  font-size: var(--fs-xxs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--muted);
+}
+.account-menu__note {
+  font-size: var(--fs-xs);
+  color: var(--txt);
+  overflow-wrap: anywhere;
+}
+.account-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  /* 38px tall, over SC 2.5.8's 24px minimum without needing a hit-area pseudo-element. */
+  padding: 10px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--txt);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  text-decoration: none;
   cursor: pointer;
 }
-/* 26px box needs a wider extension than the shared -6px rule (32 -> 44) gives it —
-   26 + 18 = 44. */
-.nav-session__signout::after {
-  inset: -9px;
-}
-.nav-session__signout:hover {
+.account-menu__item:hover {
   background: var(--bg-inset);
-  color: var(--txt);
+}
+.account-menu__item--active {
+  color: var(--accent);
+}
+.account-menu__item--danger {
+  color: var(--bad);
 }
 
 /* ---------------------------------------------------------------------------

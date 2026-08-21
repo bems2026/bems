@@ -1,10 +1,9 @@
-import { Zap, LogOut, WifiOff, CircleUserRound, Moon, Sun } from 'lucide-react';
+import { Zap, Moon, Sun } from 'lucide-react';
 import { NAV_ITEMS } from './navItems';
 import { AlertsPopover } from './AlertsPopover';
+import { AccountMenu } from './AccountMenu';
 import { useConnectionStore } from '@/stores/connectionStore';
-import { useAuthStore } from '@/stores/authStore';
 import { useThemeStore } from '@/stores/themeStore';
-import { supabase } from '@/config/supabase';
 import { isStale } from '@/lib/bridgeClient';
 import type { ConnStatus } from '@/lib/bridgeClient';
 import { useEffect, useRef } from 'react';
@@ -112,7 +111,7 @@ export function TopNav({ activeId }: { activeId: string }) {
         </span>
         <ThemeToggle />
         <AlertsPopover />
-        <SessionBadge />
+        <AccountMenu activeId={activeId} />
       </div>
     </nav>
   );
@@ -132,38 +131,3 @@ function ThemeToggle() {
   );
 }
 
-/**
- * Phase 5: shown only when Supabase is actually configured — with no Supabase project,
- * there's no session concept at all (unchanged from every phase before this one). A local
- * (break-glass) session gets its own distinct, warning-toned badge — never rendered as if
- * it were an equivalent, ordinary login. See authStore.ts's header comment.
- */
-function SessionBadge() {
-  const mode = useAuthStore((s) => s.mode);
-  const email = useAuthStore((s) => s.email);
-  const signOut = useAuthStore((s) => s.signOut);
-
-  if (supabase === null || mode === null) return null;
-
-  return (
-    <span className={`nav-session${mode === 'local' ? ' nav-session--local' : ''}`}>
-      {mode === 'local' ? (
-        <span className="nav-session__label" title="Local session — LAN only, remote access unavailable">
-          <WifiOff size={12} aria-hidden="true" />
-          LOCAL
-        </span>
-      ) : (
-        // An icon, not the visible email — this nav is on-screen in a shared office, and
-        // spelling out who's logged in to anyone walking past isn't the point of this
-        // badge. The email is still there for anyone who needs it (a screen reader, a
-        // hover), just not printed as on-screen text.
-        <span className="nav-session__label" title={email ?? undefined} aria-label={email ? `Signed in as ${email}` : 'Signed in'}>
-          <CircleUserRound size={14} aria-hidden="true" />
-        </span>
-      )}
-      <button type="button" className="nav-session__signout" onClick={() => signOut()} aria-label="Sign out">
-        <LogOut size={13} aria-hidden="true" />
-      </button>
-    </span>
-  );
-}
