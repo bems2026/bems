@@ -49,8 +49,8 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-029** Long-range history read as server-side time buckets, with a truncation guard that throws rather than returning a plausible-looking partial answer — `src/lib/supabaseHistory.ts`
 - [x] **EX-031** History is tagged with the range it was fetched for and read only via `historyFor()`, so one range's points can never be charted under another's label — `src/stores/deviceStore.ts`
 - [x] **EX-030** One retry/backoff schedule shared by the four Supabase-backed stores instead of four hand-copies — `src/stores/retrySchedule.ts`
-- [x] **EX-032** Archive-backed 90d/1y ranges on Analytics, reading across the retention boundary through one RPC so the caller never has to know where it sits — `src/lib/supabaseHistory.ts`, `src/components/analytics/AnalyticsPage.tsx`
-- [x] **EX-033** Reports page: stored monthly figures per device and building-wide, with CSV export. Coverage is rendered beside every figure, so a barely-observed month can never quote a bare total — `src/components/reports/ReportsPage.tsx`, `src/lib/supabaseReports.ts`
+- [x] **EX-032** *(deployed 2026-08-22)* Archive-backed 90d/1y ranges on Analytics, reading across the retention boundary through one RPC so the caller never has to know where it sits — `src/lib/supabaseHistory.ts`, `src/components/analytics/AnalyticsPage.tsx`
+- [x] **EX-033** *(deployed 2026-08-22)* Reports page: stored monthly figures per device and building-wide, with CSV export. Coverage is rendered beside every figure, so a barely-observed month can never quote a bare total — `src/components/reports/ReportsPage.tsx`, `src/lib/supabaseReports.ts`
 - [x] **EX-035** *(deployed to the Pi 2026-08-22)* Account menu in the nav's right-hand cluster holding Reports and sign-out, keeping the tab bar at the five live operational views. Routes are derived from `ROUTE_ITEMS`, not the tab bar, so a page can leave the tabs without leaving the router — `src/components/layout/AccountMenu.tsx`, `src/components/layout/navItems.ts`
 - [x] **EX-034** RFC 4180 CSV serializer with spreadsheet-formula neutralisation, a UTF-8 BOM for Excel, and missing rendered as empty rather than 0 — `src/lib/csv.ts`
 
@@ -139,35 +139,35 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       designed. Retention correctly reports nothing to do: the oldest reading is 2026-08-16,
       inside the 30-day window.
 
-- [ ] **RM-009** Apply the three Phase 10-12 migrations and restart the ingest daemon.
-      *Acceptance:* `readings_archive`, `building_totals_hourly`, `roll_up_and_prune_building_totals`,
-      `prune_anomalies`, `monthly_reports`, `monthly_building_reports` and `generate_monthly_report`
-      all live; PostgREST's schema cache reloaded; the daemon's log shows all three retention
-      passes and one report pass.
+- [x] **RM-009** ~~Apply the three Phase 10-12 migrations and restart the ingest daemon.~~
+      **Done 2026-08-22.** Applied by hand in the Supabase SQL editor, schema cache reloaded.
+      All four tables answer over the data API and PostgREST advertises all six functions.
 
-      **Rehearsal: done, 2026-08-22.** `supabase/rehearse.sh` applied `schema.sql` and all
-      twelve phase files in order against PostgreSQL 16 on the Pi, then drove all six
-      functions against seeded data — including the live failure shape, a meter frozen at
-      746.5 W while offline. All assertions passed: an offline hour averages to NULL rather
-      than charting the frozen value, the archive spans the rollup/raw seam with no gap and
-      no duplicate, `phase_current_blue` survives as NULL, the energy figure is a sum of
-      daily maxima, and both over-cap requests raise instead of truncating. Two defects were
-      found and fixed, both in the harness rather than the migrations.
+      *Rehearsed first:* `supabase/rehearse.sh` applied `schema.sql` and all twelve phase
+      files in order against PostgreSQL 16 on the Pi, then drove every function against
+      seeded data including the live failure shape — a meter frozen at 746.5 W while offline.
+      All assertions passed; the two defects it surfaced were both in the harness, not the
+      migrations.
 
-      **Still to do: applying them.** Blocked on credentials, not on confidence — the Pi holds
-      only the service-role and anon keys, which reach the data API but cannot execute DDL.
-      There is no Management API token and no direct database URL on the host. Apply the three
-      files by hand in the Supabase SQL editor in filename order (the convention every phase
-      file's header already states), or authorise the Supabase connector so it can be done
-      from a session.
+      *Verified against production:* `readings_archive` returns real 6-hourly buckets, and
+      every bucket with `online_count: 0` comes back `power_w: null` rather than charting the
+      frozen value — the invariant proven on live data, not only in a container. Both
+      destructive functions execute as no-ops against a cutoff nothing predates. `anon` gets
+      404 on all four new functions and empty results on all three new tables, so the
+      revoke-then-grant and the RLS both hold.
 
-      **Then, and only then, restart `ibems-ingest`.** The daemon is deliberately still running
-      its pre-pull code: the new report pass selects `monthly_building_reports`, so restarting
-      first would log a failure every six hours for no gain. Nothing else in the new code would
-      misbehave — both new retention passes ask the database what is old before calling
-      anything, and nothing is near its window yet.
+      *Daemon restarted onto the new code.* All three retention passes run and each names its
+      own table; the report pass runs clean; ingestion resumed at 60s with
+      `buffered_row_count: 0`, `last_error: null`, and zero error lines through a soak.
 
-- [ ] **RM-001** Put the Pi back on the same 2.4 GHz network as the field devices.
+      **Two things this does NOT yet prove**, recorded so they are not assumed:
+      1. `readings_hourly` is still empty — nothing is 30 days old, so the first real rollup
+         lands around 2026-09-15. The rollup/raw seam that `readings_archive` merges has been
+         exercised in the rehearsal but never in production. Worth re-checking then.
+      2. The report has never run on a complete month. The first is September's, generated in
+         early October.
+
+- [ ] **RM-001** Put the Pi back on the same 2.4 GHz network- [ ] **RM-001** Put the Pi back on the same 2.4 GHz network as the field devices.
       *Acceptance:* `GET /api/readings/latest` reports `online: true` for the metered devices, and building totals stop reading `null`.
       **Blocked — requires on-site access. Root cause known: a Wi-Fi band mismatch.** The Tuya
       field devices join 2.4 GHz only; the network the Pi is on is 5 GHz. Every symptom follows
@@ -228,6 +228,13 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 ### Robustness
 - **FI-009** (S) Narrow the three remaining whole-map store selectors — `FloorPlanView`, `AlertsPopover`, `EnergyBreakdownCard`. Left alone in the Phase 9 pass because each needs value-level rather than reference-level comparison to gain anything, and FloorPlanView genuinely reads every device.
 - **FI-010** (M) The 24h chart has the same offline-blindness the 7d/30d charts just lost: the bridge's ring buffer and `HistoryPoint` carry no `online` field, so a device offline for a day still draws its frozen last wattage. Fixing it means regenerating and redeploying the live Node-RED flow — a layer-1 change on load-bearing hardware, so it needs explicit approval, not a quiet follow-up.
+- **FI-013** (S) A report generated by hand for an in-progress month is never regenerated.
+  `monthsNeedingReport` looks for months with no report row, so a row created early freezes
+  that month at partial data — even though `generate_monthly_report` upserts and would happily
+  rebuild it. The daemon never does this to itself (it waits for a complete month plus a grace
+  period), so this only bites on manual use. Also: the "nothing to do" log line reads "every
+  complete month already has one", which is vacuously true when there are no complete months
+  at all and reads as though reports exist.
 - **FI-011** (S) Push delivery for the monthly report, once FI-005's channel exists. Reports
   are deliberately pull-only today — email or Google Sheets sync would put an SMTP credential
   or a service-account key on a deployment whose repository is public, to solve a problem the
