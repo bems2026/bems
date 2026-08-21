@@ -9,6 +9,7 @@ import { useConfirm } from '@/components/ui/useConfirm';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { SimulatedBadge } from './SimulatedBadge';
 import { useControlLog } from './controlLog';
+import { formatWithUnit } from '@/lib/format';
 
 const ACU_ID = 'acu_main';
 
@@ -92,11 +93,11 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
         <div className="control-ir-unit__readouts" style={stale ? { opacity: 0.6 } : undefined}>
           <div>
             <div className="metric-label">ROOM NOW</div>
-            <div className="control-ir-unit__temp">{typeof reading?.room_temp_c === 'number' ? `${reading.room_temp_c.toFixed(1)}°C` : '—'}</div>
+            <div className="control-ir-unit__temp">{formatWithUnit(reading?.room_temp_c, '°C', 1)}</div>
           </div>
           <div>
             <div className="metric-label">LAST SETPOINT</div>
-            <div className="control-ir-unit__temp">{typeof reading?.setpoint_c === 'number' ? `${reading.setpoint_c.toFixed(0)}°` : '—'}</div>
+            <div className="control-ir-unit__temp">{formatWithUnit(reading?.setpoint_c, '°', 0)}</div>
           </div>
         </div>
 

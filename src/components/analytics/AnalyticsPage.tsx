@@ -14,6 +14,7 @@ import { SourceCard } from './SourceCard';
 import { EnergySection } from './EnergySection';
 import { UntrackedLoadCard } from './UntrackedLoadCard';
 import type { Device, Reading } from '@/lib/types';
+import { formatNumber } from '@/lib/format';
 
 const MAX_CHART_POINTS = 140;
 /** v4's own 7-color cycle (amber, blue, green, purple, plus 3 more) — decoration only, so
@@ -244,7 +245,7 @@ function SelectedStatPanel({ reading }: { reading: Reading | undefined }) {
         <div className="analytics-stat-tile" key={s.label}>
           <div className="analytics-stat-tile__label">{s.label}</div>
           <div className="analytics-stat-tile__value-row">
-            <span className="analytics-stat-tile__value">{typeof s.value === 'number' ? s.value.toFixed(s.digits) : '—'}</span>
+            <span className="analytics-stat-tile__value">{formatNumber(s.value, s.digits)}</span>
             <span className="analytics-stat-tile__unit">{s.unit}</span>
           </div>
         </div>

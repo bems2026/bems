@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { formatNumber, MISSING } from '@/lib/format';
 
 type Size = 'sm' | 'md' | 'lg';
 
@@ -33,7 +34,9 @@ const SIZE_CLASS: Record<Size, string> = {
  */
 export function MetricValue({ value, unit, digits = 1, size = 'md', muted }: MetricValueProps) {
   const missing = value === null || value === undefined;
-  const text = missing ? '—' : typeof value === 'number' ? value.toFixed(digits) : value;
+  // The "missing renders —" rule lives in @/lib/format now, so this component and every
+  // place that needs a formatted STRING rather than a component share one implementation.
+  const text = typeof value === 'number' ? formatNumber(value, digits) : missing ? MISSING : value;
 
   const [pulse, setPulse] = useState(false);
   const prevText = useRef(text);

@@ -1,4 +1,5 @@
 import type { Device, Reading } from '@/lib/types';
+import { shareOfTotal } from '@/lib/format';
 
 export interface OnlineCount {
   online: number;
@@ -85,6 +86,6 @@ export function meteredVsUntracked(devices: Device[], readings: Record<string, R
   if (totalPowerW === null) return { meteredW, totalW: null, untrackedW: null, meteredPct: null };
 
   const untrackedW = Math.max(0, totalPowerW - meteredW);
-  const meteredPct = totalPowerW > 0 ? Math.min(100, (meteredW / totalPowerW) * 100) : 0;
+  const meteredPct = shareOfTotal(meteredW, totalPowerW);
   return { meteredW, totalW: totalPowerW, untrackedW, meteredPct };
 }

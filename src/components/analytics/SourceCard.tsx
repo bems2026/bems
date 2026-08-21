@@ -4,6 +4,7 @@ import { isReadingStale } from '@/lib/staleness';
 import { HistoryAreaChart } from './HistoryAreaChart';
 import type { ChartParam } from './chartParams';
 import type { Device } from '@/lib/types';
+import { formatNumber } from '@/lib/format';
 
 /**
  * Branches get the same 2x2 VOLTAGE/CURRENT/POWER/ENERGY tile grid the "selected source"
@@ -62,7 +63,7 @@ function Tile({ label, value, digits, unit }: { label: string; value: number | u
     <div className="analytics-stat-tile">
       <div className="analytics-stat-tile__label">{label}</div>
       <div className="analytics-stat-tile__value-row">
-        <span className="analytics-stat-tile__value">{typeof value === 'number' ? value.toFixed(digits) : '—'}</span>
+        <span className="analytics-stat-tile__value">{formatNumber(value, digits)}</span>
         <span className="analytics-stat-tile__unit">{unit}</span>
       </div>
     </div>
@@ -73,7 +74,7 @@ function Stat({ label, value, digits }: { label: string; value: number | undefin
   return (
     <div className="analytics-source-card__stat">
       <span className="analytics-source-card__stat-label">{label}</span>
-      <span className="analytics-source-card__stat-value">{typeof value === 'number' ? value.toFixed(digits) : '—'}</span>
+      <span className="analytics-source-card__stat-value">{formatNumber(value, digits)}</span>
     </div>
   );
 }

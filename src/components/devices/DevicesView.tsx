@@ -12,6 +12,7 @@ import { CLASS_ICON } from '@/lib/deviceIcons';
 import { metaSummary, type DeviceConfig } from '@/lib/deviceConfig';
 import { DeviceMetaEditor } from './DeviceMetaEditor';
 import type { Device, DeviceClass, Reading } from '@/lib/types';
+import { formatVolts, formatAmps, formatWithUnit } from '@/lib/format';
 
 const CLASS_ORDER: DeviceClass[] = ['outlet_dual', 'switch', 'meter', 'acu_ir', 'sensor_temp_humidity'];
 
@@ -204,13 +205,13 @@ const DeviceRow = memo(function DeviceRow({ device, config, onEdit }: { device: 
         {CLASS_PILL_LABEL[device.class]}
       </span>
       <span className="devices-table__num mono" role="cell">
-        {typeof reading?.voltage === 'number' ? `${reading.voltage.toFixed(1)}V` : '—'}
+        {formatVolts(reading?.voltage)}
       </span>
       <span className="devices-table__num mono" role="cell">
-        {typeof reading?.current === 'number' ? `${reading.current.toFixed(2)}A` : '—'}
+        {formatAmps(reading?.current)}
       </span>
       <span className="devices-table__num mono" role="cell">
-        {typeof reading?.power_w === 'number' ? `${reading.power_w.toFixed(0)}W` : '—'}
+        {formatWithUnit(reading?.power_w, 'W', 0)}
       </span>
       <span className="devices-table__lastseen mono" role="cell">
         {reading ? new Date(reading.ts).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}

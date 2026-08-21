@@ -2,6 +2,7 @@ import { ChartPie } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { CardLink } from '@/components/ui/CardLink';
+import { shareOfTotal } from '@/lib/format';
 
 /**
  * Today's consumed energy, split by branch — the "where did the kWh go" counterpart to
@@ -46,7 +47,7 @@ export function EnergyBreakdownCard() {
             <span className="breakdown-total__unit">kWh today</span>
           </div>
           {branches.map((b) => {
-            const share = total > 0 ? (b.kwh / total) * 100 : 0;
+            const share = shareOfTotal(b.kwh, total);
             return (
               <div className="breakdown-row" key={b.id}>
                 <span className="breakdown-row__name">{b.name}</span>

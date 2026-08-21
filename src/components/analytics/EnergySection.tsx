@@ -3,6 +3,7 @@ import { BatteryCharging } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { InfoHint } from '@/components/ui/InfoHint';
 import type { Device, Reading, Totals } from '@/lib/types';
+import { shareOfTotal } from '@/lib/format';
 
 type Period = 'today' | 'week' | 'month';
 
@@ -89,7 +90,7 @@ export function EnergySection({ branchDevices }: { branchDevices: Device[] }) {
           </p>
         ) : (
           branches.map((b) => {
-            const share = branchSum > 0 ? (b.kwh / branchSum) * 100 : 0;
+            const share = shareOfTotal(b.kwh, branchSum);
             return (
               <div className="analytics-energy-row" key={b.id}>
                 <span className="analytics-energy-row__name">{b.name}</span>
