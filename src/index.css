@@ -4984,3 +4984,88 @@ body::before {
   background: transparent;
   color: var(--muted);
 }
+
+/* ============================================================================
+   Reports (Phase 12)
+   Only the genuinely page-specific pieces. Coverage badges reuse `.badge--good/
+   warn/bad`, the table and its card reuse the Devices fleet-table classes, and
+   the month switcher reuses `.analytics-scope-btn` — per CLAUDE.md, existing
+   tokens and already contrast-checked tones beat new colour values.
+   ============================================================================ */
+
+.reports-months {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: var(--sp-4);
+}
+
+.reports-summary {
+  padding: var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+
+.reports-summary__grid {
+  display: grid;
+  /* auto-fit rather than a fixed column count: this block sits under a page header on a
+     phone and beside nothing on a wide monitor, and six labelled figures should reflow
+     rather than force a horizontal scroll. */
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--sp-3) var(--sp-4);
+  margin: var(--sp-3) 0 0;
+}
+
+.reports-summary__grid dt {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.reports-summary__grid dd {
+  margin: 2px 0 0;
+  font-size: var(--fs-md);
+  color: var(--txt);
+}
+
+.reports-figure {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A figure from an incomplete month stays legible rather than being dimmed into
+   deniability — the same correction b8e7159 made for the stale flag. It is the caveat
+   beside it that carries the warning, not a reduction in contrast. */
+.reports-figure--qualified {
+  color: var(--txt);
+}
+
+.reports-figure__caveat {
+  font-size: var(--fs-xs);
+  color: var(--warn-on-page);
+  white-space: nowrap;
+}
+
+/* Missing renders as an em dash, never as 0 — src/lib/format.ts holds the same rule for
+   every other number in this app. */
+.reports-figure--missing {
+  color: var(--muted);
+}
+
+.reports-table th[scope='row'] {
+  text-align: left;
+  font-weight: 500;
+  color: var(--txt);
+}
+
+.reports-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: var(--sp-4);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.reports-note--error {
+  color: var(--bad);
+}

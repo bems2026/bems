@@ -9,6 +9,7 @@ import { DevicesView } from '@/components/devices/DevicesView';
 import { ControlPage } from '@/components/control/ControlPage';
 import { AnalyticsPage } from '@/components/analytics/AnalyticsPage';
 import { AutomationPage } from '@/components/automation/AutomationPage';
+import { ReportsPage } from '@/components/reports/ReportsPage';
 import { LoginPage } from '@/components/auth/LoginPage';
 import { useAuthStore } from '@/stores/authStore';
 import { supabase } from '@/config/supabase';
@@ -53,6 +54,7 @@ function AuthenticatedApp() {
         {activeId === 'control' && <ControlPage />}
         {activeId === 'devices' && <DevicesView />}
         {activeId === 'automation' && <AutomationPage />}
+        {activeId === 'reports' && <ReportsPage />}
       </ErrorBoundary>
     </AppShell>
   );
