@@ -1310,7 +1310,22 @@ body::before {
   justify-content: flex-end;
   gap: var(--sp-2);
   flex-wrap: wrap;
-  flex: none;
+  /*
+   * `flex: 0 1 auto`, not `flex: none`.
+   *
+   * `flex: none` is `flex: 0 0 auto` — it forbids shrinking, so this row kept its full
+   * content width no matter how narrow the page got, and the overflow was CLIPPED rather
+   * than scrolled. Measured at a 375px viewport: Analytics' toggle row rendered 722px wide
+   * (its Parameter and Scope groups entirely off-screen and unreachable), the Devices
+   * toolbar 833px, Control's button row 363px. `flex-wrap: wrap` on the child rows never
+   * engaged, because wrapping only happens once a container is actually made narrower than
+   * its content — and this one never was.
+   *
+   * One rule, three pages: nothing page-specific was wrong with any of them.
+   */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
 }
 .page-header-right {
   text-align: right;
@@ -2546,6 +2561,10 @@ body::before {
 }
 .devices-filter-group {
   display: flex;
+  /* Same guard as .analytics-scope-toggle — five class filters plus their labels measured
+     576px, which is wider than a phone. */
+  flex-wrap: wrap;
+  max-width: 100%;
   gap: 3px;
   padding: 3px;
   background: var(--glass);
@@ -3640,6 +3659,11 @@ body::before {
 }
 .analytics-scope-toggle {
   display: flex;
+  /* Last-resort guard. Every group fits on one line at 375px today (widest is the 5-button
+     range group at 294px), but a sixth range or a longer label must degrade to a second row
+     inside the control rather than off the edge of the screen. */
+  flex-wrap: wrap;
+  max-width: 100%;
   gap: 2px;
   padding: 3px;
   background: var(--glass);
@@ -3672,7 +3696,18 @@ body::before {
 }
 @media (max-width: 1000px) {
   .analytics-main-grid {
-    grid-template-columns: 1fr;
+    /*
+     * `minmax(0, 1fr)`, not `1fr`. They are not the same: `1fr` is shorthand for
+     * `minmax(auto, 1fr)`, and `auto` as a grid MINIMUM resolves to min-content — so the
+     * column can never be narrower than the widest unbreakable thing inside it. A chart, a
+     * wide table or one long unbroken string then holds the whole column open and pushes the
+     * layout past the viewport.
+     *
+     * The wide layout above already used minmax(0, 1fr) for exactly this reason; only the
+     * single-column fallback had been written the short way, so the property it was relying
+     * on quietly disappeared at the breakpoint where narrow screens actually need it.
+     */
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 .analytics-chart-card {
@@ -3754,6 +3789,11 @@ body::before {
   gap: var(--sp-2);
 }
 .analytics-stat-tile {
+  /* Grid items default to `min-width: auto`, which is min-CONTENT, not zero — so these
+     tiles refused to shrink below their widest number and pushed their own two-column
+     grid past the card holding them. Measured inside a 152px card at 375px: two columns
+     asking for 84px + 81px. `min-width: 0` is what lets `1fr` actually mean a fraction. */
+  min-width: 0;
   padding: var(--sp-3);
   border-radius: var(--r-inner);
   background: var(--bg-surface-2);
@@ -3827,6 +3867,17 @@ body::before {
   .analytics-branch-grid,
   .analytics-outlet-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 480px) {
+  /* Two columns leaves 152px per card at 375px, which is not enough for a card carrying a
+     name, a square chart and four labelled figures — the figures end up narrower than the
+     numbers in them. One column per card, full width. */
+  .analytics-branch-grid,
+  .analytics-outlet-grid {
+    /* minmax(0, ...) for the same reason as .analytics-main-grid above: `1fr` alone floors
+       the column at min-content, and each of these cards holds a chart. */
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -5118,4 +5169,90 @@ body::before {
 
 .reports-note--error {
   color: var(--bad);
+}
+
+/* ============================================================================
+   Narrow screens — page header actions
+   The header is a two-part flex row: a title block and an actions block. Above
+   ~640px the actions sit right-aligned beside the title. Below it they wrap
+   under the title, and right-alignment stops being the right answer: a wrapped
+   row of segmented controls aligned to the right edge reads as ragged, and each
+   row starts in a different place, so the eye has no column to follow.
+   ============================================================================ */
+
+@media (max-width: 640px) {
+  .page-header {
+    align-items: flex-start;
+    row-gap: var(--sp-3);
+  }
+  /* Take the full row once wrapped, so the controls below line up with the title
+     above them instead of hugging the opposite edge. */
+  .page-header__actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .analytics-toggles,
+  .devices-toolbar,
+  .page-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  /* 16px of horizontal padding per button is generous on a phone: the five-button
+     range group spends 160px of a 375px screen on padding alone. 11px keeps the
+     tap target well over the 24px minimum (the button is 30px tall) while letting
+     the range and parameter groups sit comfortably rather than exactly. */
+  .analytics-scope-btn,
+  .devices-filter-chip {
+    padding-inline: 11px;
+  }
+  /* Each segmented group takes its own row at this width — three short rows read
+     faster than two crowded ones, and nothing lands mid-wrap. */
+  .analytics-scope-toggle {
+    width: 100%;
+    justify-content: center;
+  }
+  .analytics-scope-btn {
+    flex: 1 1 auto;
+  }
+}
+
+/* ============================================================================
+   Segmented controls — shared polish
+   One vocabulary, used by the Analytics range/parameter/scope groups, the
+   Devices class filter, and the Reports month switcher. Improving it here
+   improves all four rather than styling each page separately.
+   ============================================================================ */
+
+/* The inactive segments had no hover state at all: nothing moved until you
+   committed to a click, so the control did not read as interactive on a pointer
+   device. A background lift plus the full-strength text colour is the smallest
+   change that says "this is a button" without competing with the active one. */
+.analytics-scope-btn:hover:not(.analytics-scope-btn--active),
+.devices-filter-chip:hover:not(.devices-filter-chip--active) {
+  background: var(--bg-inset);
+  color: var(--txt);
+}
+
+/* The active segment was a flat inverted block — correct in contrast, but it sat
+   in the same plane as the track behind it, so which one was selected read as a
+   colour difference rather than as a raised chip. A tight shadow lifts it off the
+   track; it is doing the job the border cannot, since the group shares one. */
+.analytics-scope-btn--active,
+.devices-filter-chip--active {
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.22);
+}
+
+.analytics-scope-btn,
+.devices-filter-chip {
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .analytics-scope-btn,
+  .devices-filter-chip {
+    transition: none;
+  }
 }
