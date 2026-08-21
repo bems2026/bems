@@ -27,7 +27,22 @@ export function useAnalyticsHistory(range: AnalyticsRange = '24h') {
   const outletIds = useMemo(() => devices.filter((d) => d.class === 'outlet_dual').map((d) => d.id), [devices]);
   const allIds = useMemo(() => [...branchIds, ...outletIds], [branchIds, outletIds]);
   const idsKey = allIds.join(',');
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  /**
+   * The last settled result, TAGGED with the range it settled for — so `status` can be
+   * derived rather than stored.
+   *
+   * It used to be a plain `status` state assigned only inside `load()`, which meant
+   * switching 24h -> 7d left it reading 'ready' from the range just navigated away from.
+   * The page skipped its skeleton branch and flashed "No 7d history yet — data accumulates
+   * going forward from when ingestion started" for the second the fetch took. That sentence
+   * is a claim about the data, and it was false: the history existed, it just hadn't
+   * arrived.
+   *
+   * Deriving it fixes that without a setState in the effect body (which would cost a
+   * cascading render, and which `react-hooks/set-state-in-effect` rightly rejects): a
+   * result for a different range simply isn't a result for this one.
+   */
+  const [settled, setSettled] = useState<{ range: AnalyticsRange; status: 'ready' | 'error' } | null>(null);
   // Long-range history requested but Supabase isn't configured (e.g. local dev against
   // the mock bridge only) — a derived value, not a setState call, so there's nothing to
   // fetch and nothing to synchronize; fail visibly rather than silently showing stale or
@@ -60,7 +75,7 @@ export function useAnalyticsHistory(range: AnalyticsRange = '24h') {
           useDeviceStore.getState().setHistory(allIds[i], result.value, range);
         }
       }
-      setStatus(anySucceeded ? 'ready' : 'error');
+      setSettled({ range, status: anySucceeded ? 'ready' : 'error' });
       if (!cancelled) timer = setTimeout(load, refetchMs);
     };
 
@@ -71,6 +86,10 @@ export function useAnalyticsHistory(range: AnalyticsRange = '24h') {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- idsKey is the stable proxy for allIds' contents
   }, [idsKey, range]);
+
+  // A result for another range is not a result for this one — until this range settles, we
+  // are loading, which is what makes the page show its skeleton instead of a false claim.
+  const status = settled && settled.range === range ? settled.status : 'loading';
 
   return { branchIds, outletIds, status: longRangeUnavailable ? 'error' : status };
 }
