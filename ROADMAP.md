@@ -51,7 +51,7 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-030** One retry/backoff schedule shared by the four Supabase-backed stores instead of four hand-copies — `src/stores/retrySchedule.ts`
 - [x] **EX-032** Archive-backed 90d/1y ranges on Analytics, reading across the retention boundary through one RPC so the caller never has to know where it sits — `src/lib/supabaseHistory.ts`, `src/components/analytics/AnalyticsPage.tsx`
 - [x] **EX-033** Reports page: stored monthly figures per device and building-wide, with CSV export. Coverage is rendered beside every figure, so a barely-observed month can never quote a bare total — `src/components/reports/ReportsPage.tsx`, `src/lib/supabaseReports.ts`
-- [x] **EX-035** Account menu in the nav's right-hand cluster holding Reports and sign-out, keeping the tab bar at the five live operational views. Routes are derived from `ROUTE_ITEMS`, not the tab bar, so a page can leave the tabs without leaving the router — `src/components/layout/AccountMenu.tsx`, `src/components/layout/navItems.ts`
+- [x] **EX-035** *(deployed to the Pi 2026-08-22)* Account menu in the nav's right-hand cluster holding Reports and sign-out, keeping the tab bar at the five live operational views. Routes are derived from `ROUTE_ITEMS`, not the tab bar, so a page can leave the tabs without leaving the router — `src/components/layout/AccountMenu.tsx`, `src/components/layout/navItems.ts`
 - [x] **EX-034** RFC 4180 CSV serializer with spreadsheet-formula neutralisation, a UTF-8 BOM for Excel, and missing rendered as empty rather than 0 — `src/lib/csv.ts`
 
 ### Server & ingestion
@@ -117,6 +117,7 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-120** 494 frontend tests (vitest) — `src/**/*.test.ts(x)`
 - [x] **EX-121** 189 bridge/contract tests, including assertions that the generated flow contains no write nodes and no MQTT — `test/`
 - [x] **EX-122** 166 server tests against real spawned processes and hand-rolled fake HTTP servers, no mocking library — `server/*.test.mjs`
+- [x] **EX-126** Migration rehearsal kept rather than discarded: every phase file applied in order against a real PostgreSQL 16 in a throwaway container, with the Supabase-provided symbols stubbed, then all six functions driven against seeded data. The guard tests below check intent; this checks that Postgres will actually run the file — `supabase/rehearse.sh`
 - [x] **EX-123** Schema guard tests asserting RLS shape per migration — `test/device-config-schema.test.mjs`, `test/phase8-anomalies-schema.test.mjs`, `test/phase9-history-schema.test.mjs`, `test/phase10-archive-schema.test.mjs`, `test/phase11-totals-retention-schema.test.mjs`, `test/phase12-monthly-reports-schema.test.mjs`
 - [x] **EX-125** First tests against the proxy's WebSocket relay and against a bridge that hangs rather than refuses — `server/proxy.test.mjs`
 - [x] **EX-124** Operational scripts encoding the real workflow — `package.json` (`mock`, `verify:pi`, `deploy:pi`, `ingest`, `build:flow`, `rotate-light-token:pi`, `backup`)
@@ -143,16 +144,28 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       `prune_anomalies`, `monthly_reports`, `monthly_building_reports` and `generate_monthly_report`
       all live; PostgREST's schema cache reloaded; the daemon's log shows all three retention
       passes and one report pass.
-      **Not yet applied, and — unlike Phase 9 — not yet exercised against a real Postgres.**
-      RM-008 was validated in a throwaway PostgreSQL 16 container before shipping, precisely
-      because handing over unverified migrations was judged the wrong shape of ask. That step
-      could not be repeated here: the workstation this was written on has neither `psql` nor
-      Docker. **Run these against a container on the Pi before pasting them into the SQL
-      editor.** The guard tests in `test/phase1{0,1,2}-*.test.mjs` check intent, not syntax.
-      *Then:* confirm a window straddling the 30-day line returns buckets from both tables with
-      no gap and no duplicate at the seam; run the totals prune against a state where one hour
-      is deliberately un-rolled-up and confirm those raw rows survive; and reconcile one
-      generated month by hand against `building_totals.energy_kwh_month`.
+
+      **Rehearsal: done, 2026-08-22.** `supabase/rehearse.sh` applied `schema.sql` and all
+      twelve phase files in order against PostgreSQL 16 on the Pi, then drove all six
+      functions against seeded data — including the live failure shape, a meter frozen at
+      746.5 W while offline. All assertions passed: an offline hour averages to NULL rather
+      than charting the frozen value, the archive spans the rollup/raw seam with no gap and
+      no duplicate, `phase_current_blue` survives as NULL, the energy figure is a sum of
+      daily maxima, and both over-cap requests raise instead of truncating. Two defects were
+      found and fixed, both in the harness rather than the migrations.
+
+      **Still to do: applying them.** Blocked on credentials, not on confidence — the Pi holds
+      only the service-role and anon keys, which reach the data API but cannot execute DDL.
+      There is no Management API token and no direct database URL on the host. Apply the three
+      files by hand in the Supabase SQL editor in filename order (the convention every phase
+      file's header already states), or authorise the Supabase connector so it can be done
+      from a session.
+
+      **Then, and only then, restart `ibems-ingest`.** The daemon is deliberately still running
+      its pre-pull code: the new report pass selects `monthly_building_reports`, so restarting
+      first would log a failure every six hours for no gain. Nothing else in the new code would
+      misbehave — both new retention passes ask the database what is old before calling
+      anything, and nothing is near its window yet.
 
 - [ ] **RM-001** Put the Pi back on the same 2.4 GHz network as the field devices.
       *Acceptance:* `GET /api/readings/latest` reports `online: true` for the metered devices, and building totals stop reading `null`.
