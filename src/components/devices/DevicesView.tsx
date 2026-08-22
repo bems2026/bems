@@ -127,7 +127,7 @@ export function DevicesView() {
         {/* A scroll container needs to be keyboard-scrollable, which means focusable — and a
             focusable region needs an accessible name. Same reasoning as the `role="table"`
             below: the CSS grid layout stays exactly as it is, the semantics catch up to it. */}
-        <div className="devices-table-scroll" tabIndex={0} role="region" aria-label="Device table, scrolls horizontally">
+        <div className="devices-table-scroll" tabIndex={0} role="region" aria-label="Device table">
           {/*
             This is a CSS grid of <div>s, not a <table> — deliberately, because
             `.devices-table__row`'s `grid-template-columns` is what aligns the nine columns
@@ -201,25 +201,25 @@ const DeviceRow = memo(function DeviceRow({ device, config, onEdit }: { device: 
           {metaSummary(config) && <div className="devices-table__meta">{metaSummary(config)}</div>}
         </div>
       </div>
-      <span className="devices-table__class-pill" role="cell">
+      <span className="devices-table__class-pill" role="cell" data-label="Class">
         {CLASS_PILL_LABEL[device.class]}
       </span>
-      <span className="devices-table__num mono" role="cell">
+      <span className="devices-table__num mono" role="cell" data-label="Volt">
         {formatVolts(reading?.voltage)}
       </span>
-      <span className="devices-table__num mono" role="cell">
+      <span className="devices-table__num mono" role="cell" data-label="Current">
         {formatAmps(reading?.current)}
       </span>
-      <span className="devices-table__num mono" role="cell">
+      <span className="devices-table__num mono" role="cell" data-label="Power">
         {formatWithUnit(reading?.power_w, 'W', 0)}
       </span>
-      <span className="devices-table__lastseen mono" role="cell">
+      <span className="devices-table__lastseen mono" role="cell" data-label="Last seen">
         {reading ? new Date(reading.ts).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
       </span>
-      <span className={`devices-table__comm ${COMM_CLASS[comm]}`} role="cell">
+      <span className={`devices-table__comm ${COMM_CLASS[comm]}`} role="cell" data-label="Comm">
         {COMM_LABEL[comm]}
       </span>
-      <span className={`devices-table__state ${stateClass} mono`} role="cell">
+      <span className={`devices-table__state ${stateClass} mono`} role="cell" data-label="State">
         {stateText}
       </span>
       <span className="devices-table__edit-cell" role="cell">
