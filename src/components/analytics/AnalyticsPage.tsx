@@ -23,11 +23,11 @@ const PALETTE = ['var(--accent)', 'var(--blue-bright)', 'var(--green-bright)', '
 
 type Scope = 'branches' | 'outlets';
 
-// '90 d' and '1 y' cross the retention boundary into `readings_hourly` — see
+// '1 y' crosses the retention boundary into `readings_hourly` — see
 // `readings_archive` in supabase/phase10_history_archive.sql. Both Records are keyed by
 // `AnalyticsRange`, so adding a range without a label is a type error, not a blank button.
-const RANGE_LABEL: Record<AnalyticsRange, string> = { '24h': '24 h', '7d': '7 d', '90d': '90 d', '1y': '1 y' };
-const RANGE_WORDS: Record<AnalyticsRange, string> = { '24h': '24 hours', '7d': '7 days', '90d': '90 days', '1y': 'year' };
+const RANGE_LABEL: Record<AnalyticsRange, string> = { '24h': '24 h', '7d': '7 d', '30d': '30 d', '1y': '1 y' };
+const RANGE_WORDS: Record<AnalyticsRange, string> = { '24h': '24 hours', '7d': '7 days', '30d': '30 days', '1y': 'year' };
 
 /**
  * v4's Analytics tab, re-themed into the M1 glass tokens (the source design ships this
@@ -113,7 +113,7 @@ export function AnalyticsPage() {
           <div className="analytics-toggles">
             {longRangeAvailable && (
               <div className="analytics-scope-toggle" role="group" aria-label="Time range">
-                {(['24h', '7d', '90d', '1y'] as const).map((r) => (
+                {(['24h', '7d', '30d', '1y'] as const).map((r) => (
                   <button key={r} type="button" className={`analytics-scope-btn${range === r ? ' analytics-scope-btn--active' : ''}`} aria-pressed={range === r} onClick={() => setRange(r)}>
                     {RANGE_LABEL[r]}
                   </button>

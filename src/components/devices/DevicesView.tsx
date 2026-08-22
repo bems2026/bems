@@ -201,7 +201,7 @@ const DeviceRow = memo(function DeviceRow({ device, config, onEdit }: { device: 
           {metaSummary(config) && <div className="devices-table__meta">{metaSummary(config)}</div>}
         </div>
       </div>
-      <span className="devices-table__class-pill" role="cell" data-label="Class">
+      <span className="devices-table__class-pill" role="cell">
         {CLASS_PILL_LABEL[device.class]}
       </span>
       <span className="devices-table__num mono" role="cell" data-label="Volt">
@@ -216,7 +216,7 @@ const DeviceRow = memo(function DeviceRow({ device, config, onEdit }: { device: 
       <span className="devices-table__lastseen mono" role="cell" data-label="Last seen">
         {reading ? new Date(reading.ts).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
       </span>
-      <span className={`devices-table__comm ${COMM_CLASS[comm]}`} role="cell" data-label="Comm">
+      <span className={`devices-table__comm ${COMM_CLASS[comm]}`} role="cell">
         {COMM_LABEL[comm]}
       </span>
       <span className={`devices-table__state ${stateClass} mono`} role="cell" data-label="State">

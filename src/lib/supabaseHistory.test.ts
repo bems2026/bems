@@ -92,9 +92,9 @@ describe('archiveWindow', () => {
   const NOW = Date.parse('2026-08-21T12:00:00.000Z');
 
   it('spans exactly the range it names, ending now', () => {
-    const w = archiveWindow('90d', NOW);
+    const w = archiveWindow('1y', NOW);
     expect(w.untilIso).toBe(new Date(NOW).toISOString());
-    expect(Date.parse(w.untilIso) - Date.parse(w.sinceIso)).toBe(90 * 24 * 60 * 60 * 1000);
+    expect(Date.parse(w.untilIso) - Date.parse(w.sinceIso)).toBe(365 * 24 * 60 * 60 * 1000);
   });
 
   it.each(ARCHIVE_RANGES)(
@@ -119,7 +119,10 @@ describe('archiveWindow', () => {
     expect(buckets).toBeLessThan(MAX_POINTS);
   });
 
-  it('uses coarser buckets for longer ranges, never the reverse', () => {
-    expect(archiveWindow('1y', NOW).bucketSeconds).toBeGreaterThan(archiveWindow('90d', NOW).bucketSeconds);
+  it('buckets the year at day resolution — coarse enough to stay well under the cap', () => {
+    // There is only one archive range now that 90d has gone, so the old "coarser buckets for
+    // longer ranges" comparison had nothing to compare against and would have passed
+    // vacuously. This asserts the property that actually matters for the range that remains.
+    expect(archiveWindow('1y', NOW).bucketSeconds).toBe(24 * 60 * 60);
   });
 });

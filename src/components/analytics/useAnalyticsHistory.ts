@@ -15,8 +15,8 @@ import { TIMING } from '@/lib/timing';
 import type { HistoryPoint } from '@/lib/types';
 
 /** '24h' is the original, bridge-backed range — unchanged. '7d' is Phase 4's Supabase-backed
- * addition; '90d'/'1y' are Phase 10's, crossing the retention boundary into `readings_hourly`.
- * All three are only meaningful once `supabase` is configured. */
+ * addition; '1y' is Phase 10's, crossing the retention boundary into `readings_hourly`.
+ * All four are only meaningful once `supabase` is configured. */
 export type AnalyticsRange = '24h' | LongRange | ArchiveRange;
 
 function isArchiveRange(range: AnalyticsRange): range is ArchiveRange {
@@ -46,7 +46,7 @@ function sourceFor(range: AnalyticsRange): { fetch: (id: string) => Promise<Hist
  *
  * `range` picks the data source, not just a query parameter: '24h' stays on the bridge
  * (the original path, untouched), '7d' reads from Supabase instead — the bridge's own
- * ring buffer is capped at 24h and has nothing further back to give, and '90d'/'1y' read
+ * ring buffer is capped at 24h and has nothing further back to give, and '1y' reads
  * through the archive RPC so they span the retention boundary. Refetch cadence
  * follows the source: the bridge's own 60s sample rate for '24h', a much slower
  * `LONG_HISTORY_REFRESH_MS` for the long ranges (a week/month-wide chart doesn't need
