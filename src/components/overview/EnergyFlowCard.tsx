@@ -60,7 +60,7 @@ export function EnergyFlowCard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- meterKey is the stable proxy for meterIds' contents
   }, [meterKey]);
 
-  // Always 24h here — this card is Overview's, and Analytics may have left 7d/30d
+  // Always 24h here — this card is Overview's, and Analytics may have left a longer range
   // points in the shared map.
   const total = useMemo(() => sumHistories(meterIds.map((id) => historyFor(historyMap, id, '24h'))), [meterIds, historyMap]);
   const loading = status === 'loading' && total.length === 0;

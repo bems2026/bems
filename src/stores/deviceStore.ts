@@ -16,7 +16,7 @@ export interface DeviceState {
    * Per-device history, TAGGED with the range it was fetched for.
    *
    * The range used not to be recorded, and one untagged map was shared by three writers
-   * asking for different windows — Analytics at 24h/7d/30d and Overview's EnergyFlowCard,
+   * asking for different windows — Analytics at 24h/7d/90d/1y and Overview's EnergyFlowCard,
    * which always fetches 24h. Nothing ever cleared it, so points from one range were read
    * as another in three separate ways:
    *

@@ -14,9 +14,9 @@ import { supabase } from '@/config/supabase';
 import { TIMING } from '@/lib/timing';
 import type { HistoryPoint } from '@/lib/types';
 
-/** '24h' is the original, bridge-backed range — unchanged. '7d'/'30d' are Phase 4's
- * Supabase-backed addition; '90d'/'1y' are Phase 10's, crossing the retention boundary into
- * `readings_hourly`. All four are only meaningful once `supabase` is configured. */
+/** '24h' is the original, bridge-backed range — unchanged. '7d' is Phase 4's Supabase-backed
+ * addition; '90d'/'1y' are Phase 10's, crossing the retention boundary into `readings_hourly`.
+ * All three are only meaningful once `supabase` is configured. */
 export type AnalyticsRange = '24h' | LongRange | ArchiveRange;
 
 function isArchiveRange(range: AnalyticsRange): range is ArchiveRange {
@@ -45,7 +45,7 @@ function sourceFor(range: AnalyticsRange): { fetch: (id: string) => Promise<Hist
  * which scope is currently selected, so switching scope never shows a loading flicker.
  *
  * `range` picks the data source, not just a query parameter: '24h' stays on the bridge
- * (the original path, untouched), '7d'/'30d' read from Supabase instead — the bridge's own
+ * (the original path, untouched), '7d' reads from Supabase instead — the bridge's own
  * ring buffer is capped at 24h and has nothing further back to give, and '90d'/'1y' read
  * through the archive RPC so they span the retention boundary. Refetch cadence
  * follows the source: the bridge's own 60s sample rate for '24h', a much slower

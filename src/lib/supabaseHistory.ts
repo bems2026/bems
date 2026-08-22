@@ -28,21 +28,19 @@
 import { supabase } from '@/config/supabase';
 import type { HistoryPoint } from './types';
 
-export type LongRange = '7d' | '30d';
+export type LongRange = '7d';
 
 const RANGE_MS: Record<LongRange, number> = {
   '7d': 7 * 24 * 60 * 60 * 1000,
-  '30d': 30 * 24 * 60 * 60 * 1000,
 };
 
 /**
  * Bucket width per range. Chosen so the point count lands well under both the RPC's own
  * `max_buckets` guard and PostgREST's 1000-row cap, with enough resolution to still show a
- * daily load shape: 7d/15min = 672 points, 30d/1h = 720 points.
+ * daily load shape: 7d/15min = 672 points.
  */
 const BUCKET_SECONDS: Record<LongRange, number> = {
   '7d': 15 * 60,
-  '30d': 60 * 60,
 };
 
 /** Above this, assume we hit a cap rather than reached the end of the data. Must stay under
@@ -106,7 +104,7 @@ export function mapReadingsRows(rows: BucketRow[]): HistoryPoint[] {
 /**
  * Throws if Supabase isn't configured — callers must check `supabase !== null`
  * (re-exported from `@/config/supabase`) before calling this and fall back gracefully
- * (e.g. hide the 7d/30d range options) rather than surfacing a raw error to the UI.
+ * (e.g. hide the long-range options) rather than surfacing a raw error to the UI.
  */
 export async function getLongHistory(deviceId: string, range: LongRange): Promise<HistoryPoint[]> {
   if (!supabase) {

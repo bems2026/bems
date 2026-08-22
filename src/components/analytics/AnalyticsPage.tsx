@@ -26,8 +26,8 @@ type Scope = 'branches' | 'outlets';
 // '90 d' and '1 y' cross the retention boundary into `readings_hourly` — see
 // `readings_archive` in supabase/phase10_history_archive.sql. Both Records are keyed by
 // `AnalyticsRange`, so adding a range without a label is a type error, not a blank button.
-const RANGE_LABEL: Record<AnalyticsRange, string> = { '24h': '24 h', '7d': '7 d', '30d': '30 d', '90d': '90 d', '1y': '1 y' };
-const RANGE_WORDS: Record<AnalyticsRange, string> = { '24h': '24 hours', '7d': '7 days', '30d': '30 days', '90d': '90 days', '1y': 'year' };
+const RANGE_LABEL: Record<AnalyticsRange, string> = { '24h': '24 h', '7d': '7 d', '90d': '90 d', '1y': '1 y' };
+const RANGE_WORDS: Record<AnalyticsRange, string> = { '24h': '24 hours', '7d': '7 days', '90d': '90 days', '1y': 'year' };
 
 /**
  * v4's Analytics tab, re-themed into the M1 glass tokens (the source design ships this
@@ -51,7 +51,7 @@ export function AnalyticsPage() {
   const historyMap = useDeviceStore((s) => s.history);
   const [range, setRange] = useState<AnalyticsRange>('24h');
   const { branchIds, outletIds, status } = useAnalyticsHistory(range);
-  // Long-range (7d/30d) history is Supabase-backed (Phase 4) — only offer those options
+  // Long-range history is Supabase-backed — only offer those options
   // when it's actually configured, rather than showing buttons that would just error.
   const longRangeAvailable = supabase !== null;
 
@@ -104,7 +104,7 @@ export function AnalyticsPage() {
               Power, voltage, and current over the last {RANGE_WORDS[range]} for the 4 CHNT branch meters and the 7 individually-metered outlets, plus the building's energy consumed
               today, this week, and this month.{' '}
               {longRangeAvailable
-                ? '7d/30d views read from Supabase — the bridge itself only keeps a 24h buffer.'
+                ? 'Anything past 24 h reads from Supabase — the bridge itself only keeps a 24 h buffer.'
                 : ''}
             </InfoHint>
           </>
@@ -113,7 +113,7 @@ export function AnalyticsPage() {
           <div className="analytics-toggles">
             {longRangeAvailable && (
               <div className="analytics-scope-toggle" role="group" aria-label="Time range">
-                {(['24h', '7d', '30d', '90d', '1y'] as const).map((r) => (
+                {(['24h', '7d', '90d', '1y'] as const).map((r) => (
                   <button key={r} type="button" className={`analytics-scope-btn${range === r ? ' analytics-scope-btn--active' : ''}`} aria-pressed={range === r} onClick={() => setRange(r)}>
                     {RANGE_LABEL[r]}
                   </button>
@@ -306,7 +306,7 @@ function SourceSection({
   );
 }
 
-/** Time-only ticks read fine across 24h, but the same format across 7d/30d would show
+/** Time-only ticks read fine across 24h, but the same format across the longer ranges would show
  * indistinguishable repeating times with no way to tell which day a point falls on — those
  * ranges get a date instead. */
 function formatTick(t: number, range: AnalyticsRange): string {
@@ -314,7 +314,7 @@ function formatTick(t: number, range: AnalyticsRange): string {
     return new Date(t).toLocaleTimeString('en-PH', { hour12: false, hour: '2-digit', minute: '2-digit' });
   }
   // Over a year, a day-level tick repeats the same handful of visible labels with no way to
-  // tell which month a point falls in — the same failure the day-level tick fixed for 7d/30d.
+  // tell which month a point falls in — the same failure the day-level tick fixed for 7d.
   if (range === '1y') {
     return new Date(t).toLocaleDateString('en-PH', { month: 'short', year: '2-digit' });
   }

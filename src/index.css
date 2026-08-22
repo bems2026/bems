@@ -5287,13 +5287,27 @@ body::before {
     overflow-x: visible;
   }
 
+  /*
+   * Flex, not a two-column grid.
+   *
+   * The grid version placed cells in DOM order, which put the class chip in a column beside
+   * a voltage reading and left every row a different height — a chip is 31px, a labelled
+   * number is 46px, so nothing lined up and the card read as scattered. Flex with explicit
+   * `order` groups by KIND instead: identity, then the two status chips together, then the
+   * labelled readings, then the action. Like sits beside like, and each band has one height.
+   */
   .devices-table__row {
-    grid-template-columns: 1fr 1fr;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     gap: var(--sp-3);
-    align-items: start;
+    padding: var(--sp-4);
   }
 
   .devices-table__row--head {
+    /* Hidden visually but kept in the accessibility tree: `display: none` would drop the
+       nine role="columnheader" nodes, which is precisely what they were added to provide,
+       and DevicesView.test.tsx counts them. */
     position: absolute;
     width: 1px;
     height: 1px;
@@ -5305,18 +5319,72 @@ body::before {
     border: 0;
   }
 
-  /* The device identity and the edit action each take the full width — one is the
-     card's heading, the other its only control. Everything between them pairs up. */
-  .devices-table__device,
-  .devices-table__edit-cell {
-    grid-column: 1 / -1;
+  .devices-table__device {
+    order: 1;
+    flex: 1 1 100%;
   }
-  .devices-table__edit-cell {
-    justify-self: start;
+  /* The two chips share a band. Both already say what they are — "outlet", "OFFLINE" — so
+     they take no label; putting one inside a pill is what produced the tall blob the grid
+     version showed, a rounded box wrapped around a caption and a value. */
+  .devices-table__class-pill {
+    order: 2;
+  }
+  .devices-table__comm {
+    order: 3;
+  }
+  /*
+   * A zero-height full-width flex item, ordered between the chips and the readings, so the
+   * line always breaks there. Without it the chips and the first few readings share a band
+   * whenever the card happens to be wide enough — a 30px chip sitting next to a 36px
+   * labelled number, which is what made the card read as scattered rather than banded.
+   *
+   * The card now always has the same four bands regardless of width: who it is, what state
+   * it is in, what it is reading, what you can do about it.
+   */
+  .devices-table__row::after {
+    content: '';
+    order: 4;
+    flex: 0 0 100%;
+    height: 0;
+  }
+  .devices-table__class-pill::before,
+  .devices-table__comm::before {
+    content: none;
   }
 
-  /* A value with no column above it needs to say what it is. `attr()` keeps the label
-     next to the value it belongs to rather than in a second list that can drift. */
+  /* Readings auto-fit rather than sitting in a fixed pair: two across a phone, four across a
+     small tablet, without a second breakpoint to maintain. */
+  .devices-table__row > [data-label]:not(.devices-table__class-pill):not(.devices-table__comm) {
+    /* Grows to share the row evenly — but capped, because there are five readings and they
+       do not divide into any row count. Without the cap the odd one out lands alone on the
+       last line and stretches the full width of the card, which reads as a heading rather
+       than as the fifth of five equal things. */
+    flex: 1 1 118px;
+    max-width: 200px;
+    align-self: stretch;
+  }
+  .devices-table__num[data-label='Volt'] {
+    order: 5;
+  }
+  .devices-table__num[data-label='Current'] {
+    order: 6;
+  }
+  .devices-table__num[data-label='Power'] {
+    order: 7;
+  }
+  .devices-table__lastseen {
+    order: 8;
+  }
+  .devices-table__state {
+    order: 9;
+  }
+  .devices-table__edit-cell {
+    order: 10;
+    flex: 1 1 100%;
+  }
+
+  /* A value with no column above it has to say what it is. `attr()` keeps the label next to
+     the value it belongs to rather than in a second list that can drift. */
   .devices-table__row > [data-label] {
     display: block;
     min-width: 0;
@@ -5324,16 +5392,19 @@ body::before {
   .devices-table__row > [data-label]::before {
     content: attr(data-label);
     display: block;
-    margin-bottom: 3px;
+    margin-bottom: 2px;
     font: 600 var(--fs-3xs) 'IBM Plex Mono', monospace;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--muted-2);
+    white-space: nowrap;
   }
-  /* These two size themselves to their content, so `display: block` above would stretch
-     their pill background across the whole column. */
+  /* These size to their content, so the `display: block` above would otherwise stretch their
+     pill backgrounds across the whole line. */
   .devices-table__comm,
   .devices-table__class-pill {
+    display: inline-flex;
     width: fit-content;
+    flex: 0 0 auto;
   }
 }
