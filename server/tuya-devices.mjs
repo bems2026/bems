@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
- * Compares Tuya's cloud view of every device against the bridge's local view.
+ * Compares Tuya's cloud view of every device against the bridge's local view, and optionally
+ * audits the flow's local keys against the cloud's.
  *
- *     node server/tuya-devices.mjs [--bridge=<host>] [--keys]
+ *     node server/tuya-devices.mjs [--bridge=<host>] [--keys] [--verify-keys]
  *
  * WHY: when a device is unreachable on the LAN, nothing else here can tell "the device is off"
  * from "the device is fine and the network is in the way". The cloud reaches devices over the
@@ -29,6 +30,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { loadDotEnv } from '../node-red-bridge/nodeRedAdmin.mjs';
 import { createTuyaClient, TUYA_HOSTS, probeTuyaHost } from './tuyaCloud.mjs';
+import { auditKeys, auditIsClean, KEY_STATUS } from './keyAudit.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 loadDotEnv(join(HERE, '..'));
@@ -39,6 +41,7 @@ const arg = (name, fallback) => {
   return hit ? hit.slice(name.length + 3) : fallback;
 };
 const WANT_KEYS = process.argv.includes('--keys');
+const VERIFY_KEYS = process.argv.includes('--verify-keys');
 const BRIDGE = arg('bridge', '127.0.0.1');
 const REGION = (process.env.TUYA_REGION ?? 'us').toLowerCase();
 
@@ -163,4 +166,34 @@ if (nodes.length && local) {
   }
   console.log('\nRe-run this a few minutes apart: a device whose cloud state changes between runs is');
   console.log('flapping at the network level, which is RM-013 and is not fixable from this side.');
+}
+
+/**
+ * Key audit. A wrong local key does not fail loudly — the device is discovered, the connection
+ * is attempted, and it fails in a way that reads as a network problem. Re-pairing rotates the
+ * key, and this project has already once blamed a stale key for the wrong devices because
+ * nothing could check.
+ *
+ * Neither key is printed, and neither reaches the result object — see server/keyAudit.mjs.
+ */
+if (VERIFY_KEYS && nodes.length) {
+  console.log('\nVerifying local keys against the cloud (values are compared, never shown)...');
+  const cloudIds = new Set(cloud.map((d) => d.id));
+  const results = await auditKeys(nodes, async (deviceId) => {
+    if (!cloudIds.has(deviceId)) return undefined;
+    const detail = await client.describeDevice(deviceId);
+    return detail?.local_key ?? null;
+  });
+  console.log('');
+  for (const r of results.sort((a, b) => a.name.localeCompare(b.name))) {
+    const flag = r.status === KEY_STATUS.MISMATCH ? '  <-- REPAIR THIS' : '';
+    console.log(`  ${r.name.padEnd(18)} ${r.status}${r.detail ? ' (' + r.detail + ')' : ''}${flag}`);
+  }
+  const mismatched = results.filter((r) => r.status === KEY_STATUS.MISMATCH);
+  if (mismatched.length) {
+    console.log(`\n${mismatched.length} node(s) hold a key the cloud disagrees with. Those devices cannot`);
+    console.log('connect, and the symptom looks like a network fault. Update the flow with the current key.');
+  } else if (auditIsClean(results)) {
+    console.log('\nEvery key the cloud can vouch for matches the flow.');
+  }
 }
