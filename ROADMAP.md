@@ -240,16 +240,16 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       four hand-built source tabs, and a full flow regeneration would lose them until
       `build-flow.mjs` owns those nodes (FI-001 / the device-enrollment work).
 
-- [ ] **RM-001a** Three devices remain offline. A physical check, not a code change.
+- [ ] **RM-001a** Two devices remain offline. A physical check, not a code change.
       *Acceptance:* each is either restored or recorded as decommissioned in the registry.
-      `co3`, `co5`, `co6` — **not announcing on the LAN at all**, so no protocol or timeout
-      setting can reach them. They also read 0 V before the outage, so they have most likely been
-      unplugged or unpaired for some time.
-      *Corrected later the same day:* this entry first also listed `l6`/`l7` and read their heavy
-      retry rate as a stale local key. Wrong — both connected on their own once the raised
-      `findTimeout` gave them enough attempts. They were losing the 5 s discovery race harder
-      than their peers, nothing more. 17 of 20 devices are now online.
-
+      `co5` and `co6` do not announce on the LAN at all, so no protocol or timeout setting can
+      reach them; they also read 0 V before the outage. Most likely unplugged or unpaired.
+      *Corrected twice as evidence arrived, which is worth noting for how the next one is read:*
+      this entry first listed five devices and blamed a stale local key for `l6`/`l7`. Both
+      connected once the raised `findTimeout` gave them enough attempts. It then listed three,
+      and `co3` recovered on its own shortly after. Devices came back for hours after the fix —
+      so a device still dark an hour later was not evidence of a second fault, only of a slower
+      retry. 18 of 20 are now online.
 - [x] **RM-002** ~~Verify the rotated light token against a real fixture.~~ **Done 2026-08-24,
       on site.** A light physically changed state from the dashboard, observed by the operator.
 - [x] **RM-003** ~~Open the hardware-dispatch gate and confirm a real relay responds.~~
@@ -263,15 +263,24 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       live at once. The Control page's "Outlets off" master now genuinely cuts every socket.
 - [ ] **RM-004** Re-check anomaly detection for false positives once real telemetry resumes.
       *Acceptance:* a week of live-varying data with no unexplained alerts on the cyclical-load branch meters. The current zero-alert result is not evidence — the meters have been returning frozen values.
-- [ ] **RM-005** Decide whether Mosquitto is still load-bearing or can be decommissioned.
-      *Acceptance:* a recorded answer. **Mostly answered 2026-08-21.** A live listen showed the
-      only clients on the broker were Node-RED's own connections, and the only traffic was the
-      MQTT twin talking to itself — since removed (EX-068), along with a stale retained message
-      on its topic. What remains is one subscription: the ESP32 AC sniffer, which received
-      nothing. That is *not* proof it is retired, because the ESP32 is a 2.4 GHz device and the
-      site is currently on 5 GHz (RM-001). **Re-check once the band is fixed: if the ESP32 still
-      publishes nothing, Mosquitto has no remaining user and can go.**
-
+- [x] **RM-005** ~~Decide whether Mosquitto is still load-bearing or can be decommissioned.~~
+      **Answered 2026-08-24.** RM-001 removed the one thing that explained the silence — the
+      ESP32 is 2.4 GHz and the site was on 5 GHz — so the question is finally answerable, and the
+      answer is that **nothing publishes.**
+      - 90 s subscribed to `#` (every topic): zero messages.
+      - `ss` on :1883: one client, Node-RED, over loopback. Nothing external is connected.
+      - Of the 17 hosts now reachable on the LAN, 15 announce as Tuya devices and the other two
+        are the gateway and a randomised-MAC host with no open ports — no ESP32-shaped host.
+      What remains is one `mqtt in` node, "ESP32 AC Sniffer" on `nbric/ac/status` (Aircon tab),
+      plus the `mqtt-broker` config node.
+      **Deliberately not claimed:** that nothing has *ever* connected. The journal only reaches
+      back ~20 h and holds a single mosquitto line with no connection entries, so it is not
+      logging connections and proves nothing either way. The live evidence above is the whole
+      basis for this answer.
+      *Decommissioning is one action, not two:* removing the broker without also removing that
+      `mqtt in` node leaves Node-RED logging a connection failure on every start. Low-risk to
+      leave in place; the cost is only that Phase P would otherwise document "install Mosquitto"
+      as a real step for a second building, which is the thing worth avoiding.
 - [x] **RM-006** ~~Data retention: automatic cleanup so `readings` does not grow without bound.~~
       **Done 2026-08-21.** 30 days of per-minute resolution, rolled into permanent hourly
       buckets, pruned by `server/retention.mjs` on a 6-hourly check. Steady state ~830k rows
