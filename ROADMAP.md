@@ -1,8 +1,10 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-21 (UTC)
-**Audited at commit:** `c40998d` + the Phase 10-13 working tree
-**Audit method:** static read of the working tree, plus live inspection of the deployed Pi over SSH.
+**Last audited:** 2026-08-24 (UTC)
+**Audited at commit:** `82cf265`
+**Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
+live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
+discovery broadcasts.
 The Phase 10-13 entries below were added from a workstation with no database access — see
 §5 Q8 for exactly what that leaves unverified.
 
@@ -33,6 +35,15 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-010** Weather cards from Open-Meteo (no API key) — `src/components/weather/`
 - [x] **EX-011** Alerts bell merging staleness watchdog and anomaly alerts under one acknowledge set — `src/components/layout/AlertsPopover.tsx`
 - [x] **EX-012** Manual dark theme with WCAG-checked token overrides — `src/index.css`, `src/stores/themeStore.ts`
+- [x] **EX-039** A reading past a 5-minute expiry renders `—` rather than its last figure,
+      extending `format.ts`'s "missing renders `—`, never 0" rule to values whose *age* has made
+      them meaningless. Found on site 2026-08-24: the Outlet tab's parser refreshes
+      `<ctx>_last_time` on the device's **connection** event without touching the measurements,
+      so a reconnected outlet served a four-day-old 235.9 V under a minutes-old timestamp while
+      the device itself read 224.9 V — `online: true` throughout, so nothing downstream had cause
+      to doubt it. Deliberately keyed on age alone, not `online: false`: a device that dropped a
+      second after reporting still has a real last reading, and blanking it would discard the most
+      useful number on screen exactly when it is needed — `src/lib/staleness.ts`
 - [x] **EX-013** Per-reading freshness treatment: content dims, flag stays legible — `src/components/common/StaleDataBadge.tsx`, `src/lib/staleness.ts`
 
 ### Frontend — state & data layer
@@ -170,17 +181,46 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       2. The report has never run on a complete month. The first is September's, generated in
          early October.
 
-- [ ] **RM-001** Put the Pi back on the same 2.4 GHz network- [ ] **RM-001** Put the Pi back on the same 2.4 GHz network as the field devices.
-      *Acceptance:* `GET /api/readings/latest` reports `online: true` for the metered devices, and building totals stop reading `null`.
-      **Blocked — requires on-site access. Root cause known: a Wi-Fi band mismatch.** The Tuya
-      field devices join 2.4 GHz only; the network the Pi is on is 5 GHz. Every symptom follows
-      from that — the Pi keeps internet and remote access, yet sees exactly one other host on its
-      own subnet and times out local discovery for all 18 devices. All 18 stopped responding on
-      2026-08-20 at 15:27 local.
-      *Do not attempt this remotely.* Re-pointing the Pi's Wi-Fi over SSH risks losing the host
-      outright if the SSID or credentials are wrong, with nobody on site to recover it.
-      Once the band is corrected, expect no code change to be needed: the bridge resumes
-      discovery on its own, and `online` flips back without intervention.
+- [x] **RM-001** ~~Put the Pi back on the same 2.4 GHz network as the field devices.~~
+      **Done 2026-08-24, on site.** All four branch meters are online and reporting live,
+      changing values; `total_power_w` and `avg_voltage` read real numbers again after four
+      days of `null`.
+
+      **The recorded root cause was incomplete, and acting on it alone would not have fixed
+      this.** There were two independent faults:
+
+      1. **Network.** The Pi was on the general office SSID (5 GHz, ch 36) — but the decisive fault was
+         *client isolation*, not the band: the Pi (`…113`) and a laptop (`…173`) could not ping
+         each other **on the same /24**. A band split on a bridged SSID cannot do that. The
+         connection timestamps date it precisely — the Pi left the device SSID on Aug 20 at 14:38 and
+         the devices dropped at 15:27. Fixed by bringing the saved device-SSID profile back up; the profile and PSK were
+         already stored at `autoconnect-priority 30`, so it survives a reboot. The Pi also moved
+         off a LAN whose address range accidentally overlapped the tailnet's own CGNAT range.
+      2. **Protocol drift — the reason the meters stayed down after the network was fixed.**
+         The field devices had moved to Tuya protocol **v3.4/v3.5** while the flow still declared
+         3.1/3.3. This is what explains `mtr_co_yellow` dropping on **Aug 17, three days before
+         anyone touched the Wi-Fi** — a fact the network theory never accounted for.
+
+      Two live-flow config changes, each backed up first (`flows.json.bak-<ts>` on the Pi):
+      - `findTimeout` `1000` -> `10000` ms on all 21 `tuya-smart-device` nodes. Measured: every
+        device broadcasts on UDP 6667 every **5.0 s**, so a 1 s discovery window caught one in
+        five, by luck. That is what 2,520 discovery timeouts per 30 minutes actually was, and it
+        had been latent long before the outage.
+      - `tuyaVersion` corrected per node to what each device actually announces: the 4 meters and
+        all 7 light switches -> `3.5`, CO1/CO2/CO4/CO7 -> `3.4`. `tuyapi 7.7.1` supports both.
+
+      **Neither change lives in `shared/registry.mjs` or the generated flow** — both are on the
+      four hand-built source tabs, and a full flow regeneration would lose them until
+      `build-flow.mjs` owns those nodes (FI-001 / the device-enrollment work).
+
+- [ ] **RM-001a** Five devices remain offline; both groups need a physical check, not a code change.
+      *Acceptance:* each is either restored or recorded as decommissioned in the registry.
+      - `co3`, `co5`, `co6` — **not announcing on the LAN at all.** They also read 0 V before the
+        outage, so they have most likely been unplugged or unpaired for some time.
+      - `l6`, `l7` — **announcing normally at v3.5 but refusing to connect**, retrying hard
+        (~150 errors in 2 min, where a merely-absent device logs ~31). That shape points at a
+        stale local key rather than an absent device — the two to re-pair first.
+
 - [ ] **RM-002** Verify the rotated light token against a real fixture.
       *Acceptance:* a light physically changes state in response to one command. **Requires eyes on the fixture** — switches carry no metering context, so there is no telemetry-based confirmation.
 - [ ] **RM-003** Open the hardware-dispatch gate (`HARDWARE_DISPATCH_ENABLED=true`) and confirm a real relay responds.
@@ -215,7 +255,17 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       Nothing is configured today, so the mechanism is live but inert by design. Note that only
       lights can currently be shed, which limits how much load it can actually drop.
 - [ ] **RM-007** Sign in once on the office kiosk so it leaves the login screen.
-      *Acceptance:* the kiosk shows the dashboard and stays signed in across a reboot. The session-refresh fix (EX-021) is what keeps it there.
+      *Acceptance:* the kiosk shows the dashboard and stays signed in across a reboot.
+      **Mostly closed 2026-08-24, on site.** The kiosk is installed, `enabled`, `active`, and
+      **signed in**: Chromium is up in `--kiosk` on the Wayland session against
+      `http://127.0.0.1:5183/`, and the proxy logged **254 OK against 1 × 401** from the kiosk
+      origin in an hour. EX-021's session-refresh fix is holding in production — the old loop
+      ran 4,383 × 401 in 24 h.
+      *Note for future passes:* `ibems-kiosk` is a **`--user` unit**. `systemctl is-active`
+      in system scope reports it `inactive`/`not-found` and that is a false negative; use
+      `systemctl --user` with `XDG_RUNTIME_DIR=/run/user/1000`.
+      **What is left is only the reboot test** — that the session survives a cold boot via
+      lightdm autologin has still never actually been exercised.
 
 ---
 
@@ -229,6 +279,13 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - **FI-003** (L) Packaging so a second site can be stood up without redoing the wiring by hand: install script or card image, plus a physical-install guide.
 
 ### Robustness
+- **FI-013** (S) The Outlet tab never polls its devices. The 7 `Cron O*` injects drive schedule
+  logic and the 180 s triggers feed Google Sheets; nothing sends `{operation:'GET'}` to an outlet
+  node, so an outlet reading only advances when the device spontaneously pushes. EX-039 stops the
+  dashboard *presenting* the resulting gap as fact, but the data is still missing. The fix is one
+  inject plus one function wired to all 7 outlet nodes — deliberately deferred rather than
+  hand-added, because it belongs in `build-flow.mjs` with the rest of the device nodes (FI-001),
+  not in a hand-built tab that a regeneration would wipe.
 - **FI-009** (S) Narrow the three remaining whole-map store selectors — `FloorPlanView`, `AlertsPopover`, `EnergyBreakdownCard`. Left alone in the Phase 9 pass because each needs value-level rather than reference-level comparison to gain anything, and FloorPlanView genuinely reads every device.
 - **FI-010** (M) The 24h chart has the same offline-blindness the 7d/30d charts just lost: the bridge's ring buffer and `HistoryPoint` carry no `online` field, so a device offline for a day still draws its frozen last wattage. Fixing it means regenerating and redeploying the live Node-RED flow — a layer-1 change on load-bearing hardware, so it needs explicit approval, not a quiet follow-up.
 - **FI-011** (S) Push delivery for the monthly report, once FI-005's channel exists. Reports
@@ -267,11 +324,14 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 ## 5. Unverified / needs confirmation
 
-1. ~~**Why did every Tuya device drop at once?**~~ **Answered 2026-08-21: a Wi-Fi band
-   mismatch.** The devices are 2.4 GHz-only and the Pi's network is 5 GHz. See RM-001.
-   Separately, the Pi lost its *own* uplink for about seven minutes on 2026-08-21 and recovered
-   without rebooting (uptime unbroken, boot id unchanged) — a distinct, transient event, not the
-   same fault, and not evidence of a worsening one.
+1. ~~**Why did every Tuya device drop at once?**~~ **Answered 2026-08-24, on site — and
+   the earlier answer was wrong in a way that mattered.** It was recorded as a 2.4/5 GHz band
+   mismatch. On site that turns out to be two faults: the Pi's SSID had **client isolation**
+   (it could not reach a host on its own /24, which a band split cannot cause), *and* the
+   devices had moved to Tuya protocol v3.4/v3.5 while the flow still declared 3.1/3.3. Only
+   the second explains `mtr_co_yellow` dropping three days earlier than everything else. Both
+   fixed — see RM-001.
+
 2. **Is the ESP32 still publishing its AC status?** (RM-005) Nothing arrived during a live
    listen, but the ESP32 is a 2.4 GHz device and the site is on 5 GHz, so the outage fully
    explains the silence. Answerable only once RM-001 is fixed. Everything else that used

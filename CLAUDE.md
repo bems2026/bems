@@ -33,9 +33,28 @@ npm run build:flow       # regenerate the flow after editing shared/
 ## Site facts worth never re-deriving
 
 - **The Tuya field devices are 2.4 GHz-only.** The bridge discovers them over the local
-  network, so the Pi must sit on the same 2.4 GHz L2 segment as the devices. Putting the Pi on
-  a 5 GHz SSID leaves it with working internet and remote access while every device reads
-  `online: false` and building totals read `null` — which looks like a code fault and is not.
+  network, so the Pi must sit on the same 2.4 GHz L2 segment as the devices — **and that segment
+  must not have client isolation** (see below). Putting the Pi on a 5 GHz SSID leaves it with
+  working internet and remote access while every device reads `online: false` and building
+  totals read `null` — which looks like a code fault and is not.
+- **The field devices speak Tuya protocol v3.4/v3.5, not 3.1/3.3.** Verified 2026-08-24 by
+  decrypting their own UDP 6667 discovery broadcasts: the 4 branch meters and all 7 light
+  switches announce **v3.5**; CO1/CO2/CO4/CO7 announce **v3.4**. A node declaring the wrong
+  version fails as `find() timed out`, which reads exactly like a network fault and is not one.
+  `tuyapi 7.7.1` supports both. Check what a device *announces* before believing what the flow
+  *declares*.
+- **Devices broadcast every 5.0 s, so `findTimeout` must be well above that.** It shipped at
+  1000 ms, giving each discovery attempt roughly a 1-in-5 chance and producing thousands of
+  timeouts an hour. Now 10000 ms. If discovery ever gets flaky again, measure the broadcast
+  interval before suspecting the network.
+- **`findTimeout` and `tuyaVersion` live on the four hand-built source tabs, which
+  `build-flow.mjs` does not generate.** A full flow regeneration will silently revert both and
+  take every device offline. Back up `~/.node-red/flows.json` before any flow write.
+- **A wrong SSID is not the only way to lose the devices.** The general office SSID has
+  **client isolation**: two hosts on the same /24 cannot reach each other, so the Pi keeps
+  internet and remote access while local discovery fails completely. The devices are paired to a
+  **dedicated 2.4 GHz SSID**, whose profile is saved on the Pi at `autoconnect-priority 30` —
+  `nmcli con show` on the Pi names it.
 - **Schedules are Supabase's, not Node-RED's.** The Automation page writes to Supabase and
   `server/scheduler.mjs` fires them through the gated, audited command path. Node-RED's own
   cron schedules read flow context (`sched_N`, `outlet_sched_N`, `ac_sched`) and bypass both
