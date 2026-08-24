@@ -25,7 +25,8 @@
     "ingest": "node server/ingest.mjs",
     "scheduler": "node server/scheduler.mjs",
     "backup": "node server/backup.mjs",
-    "tuya:devices": "node server/tuya-devices.mjs"
+    "tuya:devices": "node server/tuya-devices.mjs",
+    "demand:profile": "node server/demand-profile.mjs"
   },
   "dependencies": {
     "@fontsource-variable/manrope": "^5.3.0",
