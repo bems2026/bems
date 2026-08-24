@@ -35,6 +35,21 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-010** Weather cards from Open-Meteo (no API key) — `src/components/weather/`
 - [x] **EX-011** Alerts bell merging staleness watchdog and anomaly alerts under one acknowledge set — `src/components/layout/AlertsPopover.tsx`
 - [x] **EX-012** Manual dark theme with WCAG-checked token overrides — `src/index.css`, `src/stores/themeStore.ts`
+- [x] **EX-023b** Per-device connectivity on the Devices page: 24 h uptime and how many times
+      each device changed state, plus one fleet line when any device is flapping. Built because
+      RM-013 — devices disassociating from the access point — was invisible from the dashboard
+      and took a packet capture on the Pi to find. The data had been there all along:
+      `readings.online` is `boolean not null` and has been written every 60 s per device since
+      ingestion started; nothing read it that way. Read-path only, no new storage.
+      An RPC rather than a client query for two reasons that agree: 20 devices x 1440
+      samples/day is ~28,800 rows against a 1,000-row PostgREST cap that reports nothing when it
+      truncates (the phase 9 trap), and counting transitions needs `lag()`, which PostgREST has
+      no equivalent for. Empty windows render `—` rather than 0%, because unknown uptime and
+      "down all day" are different claims. A single transition is not flapping — a device that
+      dropped once and recovered would otherwise flag on every ordinary restart, which is how a
+      warning becomes something people stop reading. Steady devices render nothing at all —
+      `supabase/phase15_device_connectivity.sql`, `src/lib/deviceConnectivity.ts`,
+      `src/hooks/useDeviceConnectivity.ts`, `test/phase15-device-connectivity.test.mjs`
 - [x] **EX-022b** Category vocabulary revised to how this site is actually laid out: Lighting,
       Aircon, Outlet, Branch Circuit, Critical, Others — replacing a generic building-management
       list (`hvac`, `office_equipment`, `kitchen`) with the groupings the CT map has always had
@@ -306,6 +321,14 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       in `shared/tuyaNodeSettings.mjs`. Working was not evidence the declaration was right; the
       declarations were corrected to the measured value and those three left the unverified list.
 
+- [ ] **RM-015** Apply `supabase/phase15_device_connectivity.sql`.
+      *Acceptance:* the Devices page shows a stability line while devices are flapping, and
+      per-device uptime beneath the unstable ones.
+      Read-path only — one `create or replace function`, no table or column changes, and
+      re-runnable. Until it is applied the RPC 404s, `useDeviceConnectivity` catches it and the
+      page renders exactly as it does today, so deploying ahead of the migration degrades
+      quietly rather than breaking. It simply shows nothing.
+
 - [ ] **RM-013** Devices are dropping off the 2.4 GHz network entirely and rejoining.
       *Acceptance:* the announcing-host count stays at the full device count for an hour.
       **Diagnosed 2026-08-24; this needs the access point, not the code.**
@@ -353,16 +376,14 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       *Worth keeping:* "two nodes share a device id" is a normal shape here, not a smell. The
       question to ask is whether the wiring shows two purposes or one duplicated.
 
-- [ ] **RM-014** Apply `supabase/phase14_device_categories.sql`, then deploy the frontend.
-      *Acceptance:* selecting Aircon, Outlet or Branch Circuit in the device editor saves and
-      reloads.
-      The category vocabulary is now Lighting / Aircon / Outlet / Branch Circuit / Critical /
-      Others. **Reading is safe before the migration** — the only stored row is `lighting`,
-      valid under both the old and new CHECK — but *writing* any of the three new values would
-      be rejected by the old constraint, so the editor's new options are unusable until it is
-      applied. `hvac` maps to `aircon`; `office_equipment` and `kitchen` map to NULL rather than
-      being forced into `other`, since inventing a grouping for a device nobody classified is
-      worse than leaving it blank.
+- [x] **RM-014** ~~Apply `supabase/phase14_device_categories.sql`, then deploy the frontend.~~
+      **Done 2026-08-24.** Applied by the operator; the frontend was already deployed.
+      Verified in both directions against the real project: `branch_circuit` is accepted, and
+      the retired `hvac` is rejected with `23514`, leaving the row unchanged.
+      *Method note worth keeping:* the first check wrote a valid new value to a production row
+      to see whether it was accepted, which mutated real data to answer a question. The
+      non-destructive form is to attempt a value the **new** constraint rejects — a failed write
+      proves which constraint is active and leaves nothing behind. The row was restored.
 
 - [x] **RM-002** ~~Verify the rotated light token against a real fixture.~~ **Done 2026-08-24,
       on site.** A light physically changed state from the dashboard, observed by the operator.
