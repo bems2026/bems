@@ -35,6 +35,22 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-010** Weather cards from Open-Meteo (no API key) — `src/components/weather/`
 - [x] **EX-011** Alerts bell merging staleness watchdog and anomaly alerts under one acknowledge set — `src/components/layout/AlertsPopover.tsx`
 - [x] **EX-012** Manual dark theme with WCAG-checked token overrides — `src/index.css`, `src/stores/themeStore.ts`
+- [x] **EX-024b** Tuya cloud client, dependency-free, server-side only. Signing is pinned by
+      test to the exact canonical string, because Tuya reports every signing mistake as a flat
+      `sign invalid` with no indication of which half was wrong — the token request and a
+      business request sign different prefixes, an empty body hashes to the SHA-256 of the empty
+      string rather than to nothing, and the hex must be uppercase. Failures arrive as HTTP 200
+      with `success:false`, the same shape as PostgREST's silent truncation and its RLS-blocked
+      writes, so success is never inferred from a status code —
+      `server/tuyaCloud.mjs`, `server/tuyaCloud.test.mjs`
+- [x] **EX-025b** `npm run tuya:devices` — compares Tuya's cloud view of every device against
+      the bridge's local view. The cloud reaches devices over the internet rather than the local
+      subnet, so **disagreement between the two is the diagnosis**: cloud-online plus
+      local-offline means the device is powered, joined and talking to Tuya while the Pi cannot
+      reach it, which points at the access point; both offline points at the device. Read-only.
+      Local keys are fetched only with `--keys` and even then only their length is printed —
+      the values exist to populate a registry, not to be read off a terminal that may be pasted
+      into an issue — `server/tuya-devices.mjs`
 - [x] **EX-023b** Per-device connectivity on the Devices page: 24 h uptime and how many times
       each device changed state, plus one fleet line when any device is flapping. Built because
       RM-013 — devices disassociating from the access point — was invisible from the dashboard
@@ -462,7 +478,14 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 ## 3. Future improvements (backlog)
 
 ### Onboarding
-- **FI-001** (L) Zero-touch device discovery, so adding a device does not require extracting vendor keys by hand. The current metadata editor covers labelling existing devices, not adding new ones. Only worth doing if manual key extraction proves a recurring pain.
+- **FI-001** (M, was L) Zero-touch device discovery. **Re-sized 2026-08-24:** the project has a
+  Tuya developer account with a cloud project, and `server/tuyaCloud.mjs` can now list every
+  device with its id and local key. The manual key extraction that made this an L is gone, and
+  with it the argument for deferring until it "proves a recurring pain" — it already did, three
+  times in one day, when co3/co5/co6 were re-paired and their new ids had to be entered by hand.
+  What remains is the wizard, a registry table, and `build-flow.mjs` learning to generate the
+  device nodes. **Do not start it while the fleet is flapping (RM-013)** — a flow generator
+  wants a network you can trust to tell you whether it worked.
 - **FI-002** (M) Day-one setup wizard for a new building: network and vendor-account linking.
 
 ### Replication

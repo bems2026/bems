@@ -63,6 +63,18 @@ npm run build:flow       # regenerate the flow after editing shared/
   internet and remote access while local discovery fails completely. The devices are paired to a
   **dedicated 2.4 GHz SSID**, whose profile is saved on the Pi at `autoconnect-priority 30` —
   `nmcli con show` on the Pi names it.
+- **There is a Tuya developer account with a cloud project, and a Smart Life account.** That
+  changes what is possible: the cloud API returns every device's id **and local key**, so
+  enrolment need not ask a human to copy secrets between browser tabs, and it reports the
+  cloud's own online state — reached over the internet rather than the local subnet, which is
+  what makes it a diagnosis rather than a second opinion. `npm run tuya:devices` compares the
+  two views.
+  **`TUYA_ACCESS_SECRET` is the most sensitive credential in this system** — ahead of the
+  Supabase service-role key, because it reaches hardware directly and no RLS scopes it. It
+  lives only in `server/.env` on the Pi, is read only by `server/` code, and must never be
+  imported by `src/`: the browser bundle carries the anon key and nothing else, on purpose.
+  Set `TUYA_ACCESS_ID`, `TUYA_ACCESS_SECRET`, and `TUYA_REGION` (cn/us/eu/in — a project is
+  bound to one data centre, and the wrong host fails as `sign invalid`, not as a redirect).
 - **Schedules are Supabase's, not Node-RED's.** The Automation page writes to Supabase and
   `server/scheduler.mjs` fires them through the gated, audited command path. Node-RED's own
   cron schedules read flow context (`sched_N`, `outlet_sched_N`, `ac_sched`) and bypass both

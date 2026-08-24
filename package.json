@@ -24,7 +24,8 @@
     "test:server": "node --test \"server/**/*.test.mjs\"",
     "ingest": "node server/ingest.mjs",
     "scheduler": "node server/scheduler.mjs",
-    "backup": "node server/backup.mjs"
+    "backup": "node server/backup.mjs",
+    "tuya:devices": "node server/tuya-devices.mjs"
   },
   "dependencies": {
     "@fontsource-variable/manrope": "^5.3.0",
