@@ -52,6 +52,30 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       verdict. Carrying the Tuya id into the registry is what makes the per-device join possible
       — which is FI-001's table —
       `server/tuyaFleet.mjs`, `src/lib/tuyaFleet.ts`, `src/components/devices/CloudFleetCard.tsx`
+- [x] **EX-032b** Devices page trimmed to what can be read at a glance: the fleet banner folded
+      into the page subtitle (`20 devices · 10 online · N unstable today`, clause omitted
+      entirely when nothing flaps), and the per-row note reduced to `16 drops today`.
+      The percentage it replaced was measured over however much data existed rather than over
+      the window, so `5% up` did not mean what it looked like — which is precisely why it needed
+      a coverage qualifier trailing it. A number needing a caveat to be read correctly is the
+      wrong number to show, and removing it removed the reason for the caveat: `uptimeRatio` and
+      `connectivityCoverage` went with it. A count needs no denominator and at worst
+      undercounts, which is honest — `src/components/devices/DevicesView.tsx`
+- [x] **EX-033b** An offline device no longer displays readings. `co5` rendered `OFFLINE` beside
+      `230.4 V / 2.23 A / 513.9 W`. **This reverses EX-039's own rule**, which keyed expiry on
+      age alone because "a device that dropped a second after reporting still has a real last
+      reading". That reasoning missed the mechanism: `shared/buildLatest.mjs` stamps `ts = now`
+      and only overrides it when the device reports its own time, so an offline device's
+      timestamp is **synthesized** — its age is not evidence of anything, and the age rule could
+      never fire for it. The COMM badge is the fact; the figures were not —
+      `src/lib/staleness.ts`
+- [x] **EX-034b** `Sensors` added to the category vocabulary — `sensor_temp_humidity` is a real
+      class here and could previously only be filed under `other`, which means "considered, none
+      of these fit". `phase17` only widens what the CHECK accepts, so unlike `phase14` it needs
+      no value mapping and is order-independent with the frontend. Applied and verified. The
+      "frontend agrees with the constraint" assertion moved to the phase 17 test, because it
+      pins the UI to one migration's vocabulary and must follow the newest or it fails the
+      moment a category is added — `supabase/phase17_device_categories_sensor.sql`
 - [x] **EX-027b** `npm run demand:profile` — the recorded building demand, so a DSM limit comes
       from evidence instead of a guess. Suggests a ceiling **above the observed peak**, not a
       percentile of it: a limit anchored inside normal operation sheds load on an ordinary busy
@@ -93,6 +117,40 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       Local keys are fetched only with `--keys` and even then only their length is printed —
       the values exist to populate a registry, not to be read off a terminal that may be pasted
       into an issue — `server/tuya-devices.mjs`
+- [x] **EX-029b** An offline device no longer displays readings. `co5` rendered `OFFLINE`
+      beside `230.4 V / 2.23 A / 513.9 W`. This **reverses EX-039's own rule** the day after it
+      shipped: age alone was the test, on the reasoning that a device which dropped a second
+      after reporting still has a real last value. That missed the thing that makes it wrong —
+      `shared/buildLatest.mjs` stamps `ts = now` and only overrides it when the device reports
+      its own time, so an offline device's timestamp is **synthesized**, its age is not evidence
+      of anything, and the age rule could never fire for it. The COMM badge is the fact; the
+      figures were not — `src/lib/staleness.ts`
+- [x] **EX-030b** `sensor` added to the category vocabulary, so a real device class can stop
+      being filed under `other` (which means "considered, none of these fit", not "no right
+      answer exists"). `phase17` only *widens* the CHECK, so unlike `phase14` it needs no value
+      mapping and is safe to apply in either order relative to the frontend. The "frontend
+      agrees with the constraint" assertion **moved** to the phase 17 test: it pins the UI to a
+      specific migration's vocabulary, so it must follow the newest one or it fails the moment a
+      category is added, reporting a correct change as a broken one —
+      `supabase/phase17_device_categories_sensor.sql`, `test/phase17-device-categories-sensor.test.mjs`
+- [x] **EX-031b** `server/schemaProbe.mjs` — probing an applied-by-hand migration without
+      leaving anything behind. `probeRejects` is genuinely read-only (a refused write changes
+      nothing); `probeAccepts` cannot avoid writing, because acceptance is only observable by
+      being accepted, so it captures the row first and restores it in a `finally` that runs even
+      when the probe throws.
+      **Written because a note was not enough.** Checking a constraint by writing a live value
+      and remembering the restore afterwards was done twice on 2026-08-24 — the second time
+      *after* the lesson had been recorded in RM-014. The fix for a mistake that survives being
+      written down is to make the safe shape the convenient one —
+      `server/schemaProbe.mjs`, `server/schemaProbe.test.mjs`
+      *Postscript, 2026-08-25 — the tool existing was still not enough.* The same live-data
+      probe was hand-rolled with `curl` a third time, against `device_config` again, without
+      checking whether a helper already existed; a redundant and weaker copy of this module was
+      then written and deleted. Two things generalise. Reaching for `curl` because it is one
+      line is how a safe path gets bypassed — check `server/` for an existing helper before
+      writing a probe. And ROADMAP's "Existing features" list is the index of what is already
+      built: consulting it before adding a module is cheaper than discovering the duplicate
+      afterwards from an id collision.
 - [x] **EX-023b** Per-device connectivity on the Devices page: 24 h uptime and how many times
       each device changed state, plus one fleet line when any device is flapping. Built because
       RM-013 — devices disassociating from the access point — was invisible from the dashboard
@@ -116,6 +174,12 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       returns `expected_samples` and the note carries coverage beside the figure, reusing
       `coverageOf` rather than restating its bands — the same rule `monthly_reports` applies so
       a barely-observed month can never quote a bare total.
+      *Amended again 2026-08-25, and this time by removing rather than qualifying.* The uptime
+      percentage is gone, along with the coverage qualifier that existed only to make it
+      readable. A figure needing a caveat to be understood is the wrong figure to show; the row
+      now reads `16 drops today`, and a count needs no denominator — at worst it undercounts,
+      which is honest. The fleet banner went with it, its one fact folded into the page
+      subtitle. `uptimeRatio` and `connectivityCoverage` were deleted, not left unused.
 - [x] **EX-022b** Category vocabulary revised to how this site is actually laid out: Lighting,
       Aircon, Outlet, Branch Circuit, Critical, Others — replacing a generic building-management
       list (`hvac`, `office_equipment`, `kitchen`) with the groupings the CT map has always had
@@ -396,6 +460,12 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       narrows RM-013 considerably — this is not the whole fleet disassociating, it is the ~14
       distributed relays and not the 3 panel-mounted meters, which is the shape a client limit
       or an association problem makes, not the shape a bad radio makes.
+
+- [x] **RM-017** ~~Apply `supabase/phase17_device_categories_sensor.sql`.~~ **Done 2026-08-25.**
+      Verified the way RM-014 said to and the way I then failed to twice: the retired `kitchen`
+      is refused with `23514` and the row is unchanged, which proves the constraint was replaced
+      without writing anything. `server/schemaProbe.mjs` (EX-031b) now encodes both halves of
+      that method so the next check does not depend on remembering it.
 
 - [ ] **RM-013** Devices genuinely leave the 2.4 GHz network and rejoin. **Confirmed from an
       independent vantage point 2026-08-24 — the access point is the remaining suspect.**
