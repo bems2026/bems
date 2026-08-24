@@ -11,7 +11,7 @@ import { InfoHint } from '@/components/ui/InfoHint';
 import { CLASS_ICON } from '@/lib/deviceIcons';
 import { DEVICE_CLASS_CATALOG, DEVICE_CLASS_ORDER } from '@/lib/deviceClassCatalog';
 import { useDeviceConnectivity } from '@/hooks/useDeviceConnectivity';
-import { flapSeverity, uptimeRatio, type ConnectivityRow } from '@/lib/deviceConnectivity';
+import { flapSeverity, uptimeRatio, connectivityCoverage, type ConnectivityRow } from '@/lib/deviceConnectivity';
 import { metaSummary, type DeviceConfig } from '@/lib/deviceConfig';
 import { DeviceMetaEditor } from './DeviceMetaEditor';
 import type { Device, DeviceClass, Reading } from '@/lib/types';
@@ -246,11 +246,21 @@ function ConnectivityNote({ row }: { row: ConnectivityRow }) {
   const severity = flapSeverity(row);
   if (severity === 'steady' || severity === 'unknown') return null;
   const uptime = uptimeRatio(row);
+  const coverage = connectivityCoverage(row);
   return (
     <div className={`devices-table__flap devices-table__flap--${severity}`}>
-      {/* Uptime renders — rather than 0% when the window is empty: unknown and "down all day" */}
-      {/* are different claims. Same rule as format.ts. */}
+      {/* Unknown uptime renders — rather than 0%: 'nothing recorded' and 'down all day' are
+          different claims. Same rule as format.ts. */}
       {uptime === null ? '—' : `${Math.round(uptime * 100)}%`} up · {row.transitions} drops / 24 h
+      {/* Coverage travels with the figure, never behind it. An outlet whose device clock
+          stalls records fewer rows than a meter, so its percentage is measured over a
+          different denominator — quoting it bare would compare two unlike numbers. Same
+          discipline monthly_reports applies to a barely-observed month. */}
+      {coverage && coverage.band !== 'complete' && (
+        <span className="devices-table__flap-coverage">
+          {' '}· from {Math.round(coverage.ratio * 100)}% of the window
+        </span>
+      )}
     </div>
   );
 }

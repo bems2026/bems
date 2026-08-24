@@ -33,7 +33,8 @@ returns table (
   online_samples   bigint,
   transitions      bigint,
   last_change      timestamptz,
-  currently_online boolean
+  currently_online boolean,
+  expected_samples int
 )
 language sql
 stable
@@ -59,7 +60,14 @@ as $$
                        and w.online is distinct from w.prev_online) as transitions,
     max(w.ts) filter (where w.prev_online is not null
                        and w.online is distinct from w.prev_online) as last_change,
-    (array_agg(w.online order by w.ts desc))[1]                    as currently_online
+    (array_agg(w.online order by w.ts desc))[1]                    as currently_online,
+    -- How many rows the window SHOULD hold, at ingestion's 60s cadence. Returned rather than
+    -- assumed by the caller, because `samples` is not the window length: `readings` is keyed
+    -- (device_id, ts) and ingestion upserts, so a device carrying a stalled device-reported
+    -- timestamp (outlets do — see shared/buildLatest.mjs) overwrites its own row instead of
+    -- adding one. Without this, its uptime percentage is computed over a different denominator
+    -- than a meter's and the two are not comparable.
+    (greatest(1, least(p_window_hours, 168)) * 60)::int              as expected_samples
   from windowed w
   group by w.device_id
   order by w.device_id;

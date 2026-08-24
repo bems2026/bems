@@ -1,4 +1,5 @@
 import { supabase } from '@/config/supabase';
+import { coverageOf, type Coverage } from './supabaseReports';
 
 /**
  * Per-device uptime and flap count, read from `readings.online` through the
@@ -23,6 +24,12 @@ export interface ConnectivityRow {
   transitions: number;
   last_change: string | null;
   currently_online: boolean;
+  /**
+   * How many samples the window *should* hold — the window in minutes, since ingestion writes
+   * every 60s. Optional because a row from the first version of the RPC does not carry it, and
+   * defaulting it would invent the denominator this field exists to make explicit.
+   */
+  expected_samples?: number;
 }
 
 export type FlapSeverity = 'unknown' | 'steady' | 'unstable' | 'severe';
@@ -63,6 +70,24 @@ export function uptimeRatio(row: ConnectivityRow): number | null {
   const samples = num(row.samples);
   if (samples === 0) return null;
   return num(row.online_samples) / samples;
+}
+
+/**
+ * How much of the window actually has data, as distinct from how much of it was online.
+ *
+ * These come apart for outlets specifically. `buildLatest.mjs` stamps a device-reported
+ * timestamp when one exists, `readings` is keyed `(device_id, ts)`, and ingestion upserts — so
+ * an outlet whose clock stalls overwrites its own row every minute instead of adding one, and
+ * its `samples` silently undercounts the window. Rendering its uptime beside a meter's, both as
+ * bare percentages, presents two different measurements as one.
+ *
+ * Same discipline `monthly_reports` already applies: a figure never travels without its
+ * coverage, so a barely-observed window cannot quote a bare total. Reuses `coverageOf` rather
+ * than restating its bands.
+ */
+export function connectivityCoverage(row: ConnectivityRow): Coverage | null {
+  if (row.expected_samples === undefined) return null;
+  return coverageOf(num(row.samples), num(row.expected_samples));
 }
 
 export function flapSeverity(row: ConnectivityRow): FlapSeverity {

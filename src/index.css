@@ -5488,3 +5488,10 @@ fieldset.device-meta-editor__field > legend {
   color: var(--red-bright, var(--warn-on-page));
   font-weight: 600;
 }
+
+/* Coverage qualifier beside an uptime figure. Deliberately quieter than the figure it
+   qualifies — it is context, not a second alarm. */
+.devices-table__flap-coverage {
+  color: var(--muted-2);
+  font-weight: 400;
+}

@@ -65,3 +65,10 @@ test('reads readings.online rather than inventing storage', () => {
 test('is re-runnable', () => {
   assert.match(sql, /create or replace function/i);
 });
+
+test('returns expected_samples, so a caller never has to assume the denominator', () => {
+  // `samples` is not the window length: readings is keyed (device_id, ts) and ingestion
+  // upserts, so a device with a stalled device-reported timestamp overwrites its own row.
+  assert.match(sql, /expected_samples\s+int/i);
+  assert.match(sql, /greatest\(1, least\(p_window_hours, 168\)\) \* 60/i);
+});

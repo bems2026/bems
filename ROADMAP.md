@@ -50,6 +50,14 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       warning becomes something people stop reading. Steady devices render nothing at all —
       `supabase/phase15_device_connectivity.sql`, `src/lib/deviceConnectivity.ts`,
       `src/hooks/useDeviceConnectivity.ts`, `test/phase15-device-connectivity.test.mjs`
+      *Amended within the hour, after its own output showed a flaw in it.* Outlets carry a
+      device-reported `ts` (`buildLatest.mjs:72`), `readings` is keyed `(device_id, ts)`, and
+      ingestion upserts — so an outlet whose clock stalls overwrites its own row rather than
+      adding one, and its `samples` undercounts the window. The first version rendered "73% up"
+      over 40 samples beside "58% up" over 60 as though they were one measurement. The RPC now
+      returns `expected_samples` and the note carries coverage beside the figure, reusing
+      `coverageOf` rather than restating its bands — the same rule `monthly_reports` applies so
+      a barely-observed month can never quote a bare total.
 - [x] **EX-022b** Category vocabulary revised to how this site is actually laid out: Lighting,
       Aircon, Outlet, Branch Circuit, Critical, Others — replacing a generic building-management
       list (`hvac`, `office_equipment`, `kitchen`) with the groupings the CT map has always had
@@ -321,13 +329,15 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       in `shared/tuyaNodeSettings.mjs`. Working was not evidence the declaration was right; the
       declarations were corrected to the measured value and those three left the unverified list.
 
-- [ ] **RM-015** Apply `supabase/phase15_device_connectivity.sql`.
-      *Acceptance:* the Devices page shows a stability line while devices are flapping, and
-      per-device uptime beneath the unstable ones.
-      Read-path only — one `create or replace function`, no table or column changes, and
-      re-runnable. Until it is applied the RPC 404s, `useDeviceConnectivity` catches it and the
-      page renders exactly as it does today, so deploying ahead of the migration degrades
-      quietly rather than breaking. It simply shows nothing.
+- [x] **RM-015** ~~Apply `supabase/phase15_device_connectivity.sql`.~~ **Done 2026-08-24.**
+      Applied and returning real data immediately. **Re-apply it** — the function was amended
+      the same day to also return `expected_samples`; see EX-023b.
+      *What running it revealed within minutes, which is the point of having built it:*
+      the four branch meters sit at **100% uptime with zero transitions**, while every device
+      that flaps is an outlet or a switch (30-98%, 2-8 transitions each in one hour). That
+      narrows RM-013 considerably — this is not the whole fleet disassociating, it is the ~14
+      distributed relays and not the 3 panel-mounted meters, which is the shape a client limit
+      or an association problem makes, not the shape a bad radio makes.
 
 - [ ] **RM-013** Devices are dropping off the 2.4 GHz network entirely and rejoining.
       *Acceptance:* the announcing-host count stays at the full device count for an hour.
