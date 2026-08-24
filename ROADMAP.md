@@ -274,16 +274,20 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       them, and an old `flows.json` restore or an editor hand-edit would lose them with no diff
       and no alarm while looking exactly like a network fault. Closed by EX-021b.
 
-- [ ] **RM-010** Apply `supabase/phase13_device_functions.sql`, then deploy the frontend.
-      *Acceptance:* `device_config` has a nullable `functions text[]` with the
-      `device_config_functions_valid` CHECK, and the Devices page's Functions fieldset saves and
-      reloads.
-      **Order matters and is not optional.** `src/lib/supabaseDeviceConfig.ts` now selects
-      `functions` by name; against a table without the column PostgREST fails the whole select,
-      which takes room, category, load-shed group and display-name overrides down with it. The
-      pages themselves degrade safely — an empty config map means every device falls through to
-      its class default, which is exactly today's behaviour — but the metadata editor would be
-      broken until the column exists. Apply first, deploy second.
+- [x] **RM-010** ~~Apply `supabase/phase13_device_functions.sql`, then deploy the frontend.~~
+      **Done 2026-08-24.** Applied by the operator in the Supabase SQL editor; frontend deployed
+      to the Pi at `bd1cbdc` and the kiosk reloaded onto the new bundle.
+      *Verified against the real project, not assumed:*
+      - the exact select the frontend runs — all six original columns plus `functions` — returns
+        200, with `functions: null` on the existing row, i.e. "not configured", which is the
+        value that falls through to the class default;
+      - the CHECK is live: an invalid element is rejected with `23514`
+        (`device_config_functions_valid`) and the row is unchanged afterwards;
+      - RLS still holds in both directions on the new column. `anon` SELECT returns `[]`, and an
+        `anon` PATCH returns **204** — which is *not* a refusal but PostgREST's "success, nothing
+        matched", the exact shape `server/proxy.mjs` already carries a warning about. Re-asking
+        with `Prefer: return=representation` returns `[]` (zero rows affected) and a service-role
+        read confirms the row unchanged. A 204 alone would not have been evidence.
 
 - [ ] **RM-001a** Two devices remain offline. A physical check, not a code change.
       *Acceptance:* each is either restored or recorded as decommissioned in the registry.
