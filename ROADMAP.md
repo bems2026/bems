@@ -487,24 +487,24 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       The doc's final section is the checklist that closes it. Note also that `auth.users` is
       not exported — restored into a new project, every `commands` row keeps its audit
       content but loses its attribution.
-- [ ] **RM-006c** Assign load-shed tiers and set DSM limits. Still inert: thresholds null,
-      `auto_shed` false, no device in a group.
+- [ ] **RM-006c** Assign load-shed tiers. **Thresholds done 2026-08-24; tiers are the operator's.**
       *Acceptance:* at least one device has a shed group, a threshold is set, and auto-shed is on.
-      **Measured 2026-08-24 over 1,877 readings** (`npm run demand:profile`), so the numbers are
-      no longer the blocker:
-      total power p50 326 W, p99 1,602 W, peak **1,767.8 W**; phase peak **12.30 A**.
-      Suggested ceilings — 25% above the observed peak — `max_total_kw 2.21`,
-      `max_phase_current 15.4`.
-      **Correction to this entry's own earlier note:** it said "only lights can currently be
-      shed". That stopped being true when `DISPATCH_CLASSES` gained `outlet_dual` and `acu_ir`
-      (`c287e4c`), and the gate is now open — so anything placed in a tier can actually be
-      switched, the aircon included. Combined with "auto-shed sheds, it never restores", a tier
-      assignment is a decision about what the building may lose unattended until a person
-      notices. That is why the groups are not being assigned without a decision.
-      *One risk already ruled out:* a flapping device cannot cause a false breach.
-      `shared/buildLatest.mjs` excludes an offline meter from totals, so losing a meter drives
-      the total **down or null**, never up. The four meters are also the most stable devices on
-      the site (100% uptime, zero transitions), so the trigger data is the reliable part.
+      **Limits written, `auto_shed` deliberately left OFF:** `max_total_kw 2.21`,
+      `max_phase_current 15.4` — 25% above a measured peak of 1,767.8 W / 12.30 A over 1,877
+      readings (`npm run demand:profile`). A breach is now *detected and reported* on the
+      dashboard while nothing switches on its own, which is the monitoring value with none of
+      the risk. Both are editable on the Automation page; the operator expects to revise them,
+      since the peak depends on what happens to be connected and tested at the time.
+      **Tiers deliberately unassigned.** Auto-shed can reach switches, outlets and the aircon
+      now that `DISPATCH_CLASSES` covers all three and the gate is open, and it never restores —
+      so which circuits the building may lose unattended is a facility decision, made in the
+      Devices page's Edit dialog rather than inferred from data.
+      *Attribution is what actually arms this, and it is worth knowing before the toggle is
+      flipped.* The write above went in as the service role, so `updated_by` is null — and
+      `planShed` returns idle without an actor (`commands.requested_by` is NOT NULL, and a
+      load-shed row is the last one anyone would want traced to an invented user). So auto-shed
+      cannot fire even if the flag were set directly in the database. Saving from the UI stamps
+      the real user and is the only path that arms it. That is a property to rely on, not a bug.
 
 - [ ] **RM-007** Sign in once on the office kiosk so it leaves the login screen.
       *Acceptance:* the kiosk shows the dashboard and stays signed in across a reboot.
