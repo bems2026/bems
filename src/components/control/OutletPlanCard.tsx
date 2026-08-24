@@ -1,7 +1,7 @@
 import { Plug } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
-import { controlView } from '@/lib/socketView';
+import { controlView, isCommandable } from '@/lib/socketView';
 import { corroborate } from '@/lib/relayCorroboration';
 import { isReadingStale } from '@/lib/staleness';
 import { StaleDataBadge } from '@/components/common/StaleDataBadge';
@@ -118,7 +118,7 @@ function OutletPin({ device, left, top }: { device: Device; left: string; top: s
           <button
             type="button"
             className={`control-outlet-pin__half control-outlet-pin__half--left${s1On ? ' control-outlet-pin__half--on' : ''}`}
-            disabled={s1Busy || s1Unknown || stale}
+            disabled={s1Busy || s1Unknown || !isCommandable(reading)}
             aria-pressed={s1On}
             aria-label={`${device.display_name} DP1`}
             title={`DP1: ${s1Unknown ? 'unknown' : stale ? 'stale' : s1Busy ? 'switching…' : s1On ? 'on' : 'off'}`}
@@ -127,7 +127,7 @@ function OutletPin({ device, left, top }: { device: Device; left: string; top: s
           <button
             type="button"
             className={`control-outlet-pin__half control-outlet-pin__half--right${s2On ? ' control-outlet-pin__half--on' : ''}`}
-            disabled={s2Busy || s2Unknown || stale}
+            disabled={s2Busy || s2Unknown || !isCommandable(reading)}
             aria-pressed={s2On}
             aria-label={`${device.display_name} DP2`}
             title={`DP2: ${s2Unknown ? 'unknown' : stale ? 'stale' : s2Busy ? 'switching…' : s2On ? 'on' : 'off'}`}

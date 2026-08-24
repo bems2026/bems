@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Lightbulb } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
-import { controlView } from '@/lib/socketView';
+import { controlView, isCommandable } from '@/lib/socketView';
 import { isReadingStale } from '@/lib/staleness';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
@@ -127,7 +127,7 @@ function LightRow({ row, device }: { row: number; device: Device }) {
             tabIndex={isPrimary ? 0 : -1}
             className={`control-lamp${on ? ' control-lamp--on' : ''}`}
             style={{ left: pct(px, VB_W), top: pct(py, VB_H) }}
-            disabled={busy || stale}
+            disabled={busy || !isCommandable(reading)}
             title={isPrimary && stale ? `${device.display_name}: stale — no reading in the last 30 seconds` : undefined}
             onClick={toggle}
           />

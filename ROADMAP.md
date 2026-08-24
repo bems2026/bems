@@ -35,6 +35,17 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-010** Weather cards from Open-Meteo (no API key) — `src/components/weather/`
 - [x] **EX-011** Alerts bell merging staleness watchdog and anomaly alerts under one acknowledge set — `src/components/layout/AlertsPopover.tsx`
 - [x] **EX-012** Manual dark theme with WCAG-checked token overrides — `src/index.css`, `src/stores/themeStore.ts`
+- [x] **EX-017** Control availability no longer depends on reading freshness. Reported on site
+      2026-08-24: **outlets could not be switched at all.** Every outlet toggle carried
+      `disabled={… || stale}`, and because nothing polls an outlet (FI-013) the reading is stale
+      almost always — so an outlet was operable only in the seconds after it happened to push a
+      change of its own accord. Lights escaped it purely because they report continuously.
+      Telemetry and dispatch are different facts travelling opposite directions: a reading comes
+      *from* the device, a command goes *to* it through the proxy and the bridge.
+      `isCommandable` gates on `online: false` — a real refusal, since the bridge is saying it has
+      no connection — and nothing else; `unknown` still gates a toggle that has no state to toggle
+      from. `IrCommandCenterCard` had already declined to make this conflation, and is now the
+      rule rather than the exception — `src/lib/socketView.ts`, and the four control cards
 - [x] **EX-039** A reading past a 5-minute expiry renders `—` rather than its last figure,
       extending `format.ts`'s "missing renders `—`, never 0" rule to values whose *age* has made
       them meaningless. Found on site 2026-08-24: the Outlet tab's parser refreshes

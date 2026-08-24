@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { controlView } from './socketView';
+import { controlView, isCommandable } from './socketView';
 import type { PendingCommand } from '@/stores/commandStore';
 import type { Reading } from './types';
 
@@ -63,5 +63,37 @@ describe('controlView', () => {
   it('a failed command with no reading at all falls back to a null value, not unknown', () => {
     const p = pending({ phase: 'failed', desired: 'on', error: 'boom' });
     expect(controlView(undefined, p, 1)).toEqual({ kind: 'failed', value: null, desired: 'on', error: 'boom' });
+  });
+});
+
+/**
+ * Reported on site 2026-08-24: outlets could not be switched at all. Their controls were
+ * disabled whenever the reading was stale, and because nothing polls an outlet (FI-013) the
+ * reading is stale almost always — so an outlet only became operable in the seconds after it
+ * happened to push a change. Lights were unaffected only because they report continuously.
+ *
+ * Freshness of a measurement and reachability of a device are different facts travelling
+ * different paths: telemetry arrives from the device, a command goes out through the proxy
+ * and the bridge. `IrCommandCenterCard` already refused to conflate them.
+ */
+describe('isCommandable', () => {
+  const at = (online: boolean): Reading => ({
+    device_id: 'co1',
+    ts: new Date(0).toISOString(),
+    state: 'off',
+    online,
+  });
+
+  it('allows a command to a device the bridge still calls online, however old the reading', () => {
+    expect(isCommandable(at(true))).toBe(true);
+  });
+
+  it('refuses a command to a device the bridge reports offline — the dispatch would not land', () => {
+    expect(isCommandable(at(false))).toBe(false);
+  });
+
+
+  it('allows a command before any reading has arrived — `controlView` reports unknown, and that is what gates the toggle', () => {
+    expect(isCommandable(undefined)).toBe(true);
   });
 });

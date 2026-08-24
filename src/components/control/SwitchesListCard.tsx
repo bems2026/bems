@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Lightbulb } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
-import { controlView } from '@/lib/socketView';
+import { controlView, isCommandable } from '@/lib/socketView';
 import { isReadingStale } from '@/lib/staleness';
 import { StaleDataBadge } from '@/components/common/StaleDataBadge';
 import { InfoHint } from '@/components/ui/InfoHint';
@@ -64,7 +64,7 @@ function SwitchRow({ deviceId, name }: { deviceId: string; name: string }) {
         aria-checked={on}
         aria-label={name}
         className={`quick-toggle${on ? ' quick-toggle--on' : ''}`}
-        disabled={busy || unknown || stale}
+        disabled={busy || unknown || !isCommandable(reading)}
         onClick={toggle}
       >
         <span className="quick-toggle__knob" />

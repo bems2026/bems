@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Plug } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey, type PendingCommand } from '@/stores/commandStore';
-import { controlView } from '@/lib/socketView';
+import { controlView, isCommandable } from '@/lib/socketView';
 import { corroborate } from '@/lib/relayCorroboration';
 import { isReadingStale } from '@/lib/staleness';
 import { StaleDataBadge } from '@/components/common/StaleDataBadge';
@@ -91,7 +91,7 @@ function SocketMiniToggle({
       className={`outlet-socket-toggle outlet-socket-toggle--compact${on ? ' outlet-socket-toggle--on' : ''}${busy ? ' outlet-socket-toggle--busy' : ''}`}
       aria-pressed={on}
       aria-busy={busy}
-      disabled={busy || unknown || stale}
+      disabled={busy || unknown || !isCommandable(reading)}
       onClick={() => {
         const next = on ? 'off' : 'on';
         send(deviceId, socket, next);

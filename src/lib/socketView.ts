@@ -29,3 +29,24 @@ export function controlView(reading: Reading | undefined, pending: PendingComman
   if (observed === undefined || observed === null) return { kind: 'unknown' };
   return { kind: 'idle', value: observed };
 }
+
+/**
+ * Whether a control may be operated — deliberately independent of whether its reading is
+ * fresh.
+ *
+ * These are two different facts travelling in opposite directions. Telemetry comes *from* the
+ * device and can lag for reasons that say nothing about reachability; a command goes *to* it
+ * through the proxy and the bridge. Gating the second on the first cost the outlets their
+ * controls entirely: nothing polls an outlet (FI-013), so its reading is stale almost always,
+ * and `disabled={… || stale}` meant an outlet was only operable in the seconds after it
+ * happened to push a change of its own accord. Lights escaped it purely because they report
+ * continuously. `IrCommandCenterCard` had already declined to make this conflation.
+ *
+ * `online: false` is a real refusal and stays one — the bridge is saying it has no connection
+ * to the device, so a dispatch would not land. Everything else is permitted, including a
+ * device that has never reported: `controlView` returns `unknown` there, and that is what
+ * gates the toggle, because a toggle with no known state has nothing to toggle *from*.
+ */
+export function isCommandable(reading: Reading | undefined): boolean {
+  return reading?.online !== false;
+}
