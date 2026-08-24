@@ -5385,3 +5385,71 @@ body::before {
     margin-left: auto;
   }
 }
+
+/* Device functions fieldset — what a device is FOR, declared per device (phase 13).
+   A <fieldset> rather than a div: the three checkboxes are one question, and a legend is how
+   that reaches assistive tech. `.device-meta-editor__field` already supplies the column
+   layout, so this only adds what a fieldset needs on top — browsers give it a default border
+   and padding that would otherwise sit oddly among the plain fields. */
+.device-meta-editor__field fieldset,
+fieldset.device-meta-editor__field {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm, 6px);
+  padding: 10px 12px 12px;
+  margin: 0;
+}
+fieldset.device-meta-editor__field > legend {
+  padding: 0 6px;
+  font-size: 0.8rem;
+  color: var(--muted-2);
+}
+.device-meta-editor__hint {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  /* --muted-2, not --muted: this is explanatory body text at 0.78rem, and --muted is
+     documented in this file as failing AA below 0.85rem on --bg-surface-2. */
+  color: var(--muted-2);
+}
+.device-meta-editor__check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--txt);
+  cursor: pointer;
+}
+.device-meta-editor__check input {
+  /* 16px is the platform default and already meets the 3:1 non-text contrast rule via the
+     browser's own accent handling; the 44px target comes from the whole row being the label. */
+  margin-top: 2px;
+  flex: none;
+}
+.device-meta-editor__reset {
+  margin-top: 8px;
+  align-self: flex-start;
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--accent);
+  background: none;
+  border: none;
+  padding: 4px 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* "N devices are not shown here" — the counterpart to filtering by function. Styled as a
+   note, deliberately not as a warning: nothing is wrong, a choice was made and is being
+   reported. Same reasoning as the dispatch banner's neutral state. */
+.control-not-listed {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--muted-2);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-faint, var(--border));
+  border-radius: var(--r-sm, 6px);
+}

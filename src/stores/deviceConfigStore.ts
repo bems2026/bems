@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '@/config/supabase';
 import { fetchDeviceConfigs, writeDeviceConfig } from '@/lib/supabaseDeviceConfig';
+import { coerceFunctions, type DeviceFunction } from '@/lib/deviceFunctions';
 import { coerceCategory, coerceLoadShedGroup, effectiveConfig, emptyDeviceConfig, isSameConfig, normalizeDeviceConfig, type DeviceConfig, type DeviceConfigField } from '@/lib/deviceConfig';
 import { createRetrySchedule } from './retrySchedule';
 
@@ -28,6 +29,12 @@ interface DeviceConfigState {
   lastSave: { at: number; deviceId: string } | null;
   load: () => Promise<void>;
   setDraftField: (deviceId: string, field: DeviceConfigField, value: string) => void;
+  /**
+   * `functions` is the one field that is neither text nor a single-select, so it gets its own
+   * action rather than widening `setDraftField`'s value type to `string | string[] | null` and
+   * making every existing caller carry a union it never uses.
+   */
+  setDraftFunctions: (deviceId: string, functions: DeviceFunction[] | null) => void;
   save: (deviceId: string) => Promise<void>;
 }
 
@@ -84,6 +91,12 @@ export const useDeviceConfigStore = create<DeviceConfigState>((set, get) => ({
             ? { ...base, loadShedGroup: coerceLoadShedGroup(value) }
             : { ...base, [field]: value };
       return { draft: { ...s.draft, [deviceId]: next } };
+    }),
+
+  setDraftFunctions: (deviceId, functions) =>
+    set((s) => {
+      const base = effectiveConfig(s.draft, s.saved, deviceId);
+      return { draft: { ...s.draft, [deviceId]: { ...base, functions: coerceFunctions(functions) } } };
     }),
 
   save: async (deviceId) => {

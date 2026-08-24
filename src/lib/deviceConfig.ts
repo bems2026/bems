@@ -11,6 +11,8 @@
  * UI — command validation, state shape, icons and filters all key off it. `category` is the
  * operator's own functional grouping and means nothing to the bridge.
  */
+import type { DeviceFunction } from './deviceFunctions';
+import { coerceFunctions } from './deviceFunctions';
 import type { Device } from './types';
 
 export type DeviceCategory = 'lighting' | 'hvac' | 'office_equipment' | 'critical' | 'kitchen' | 'other';
@@ -23,9 +25,11 @@ export interface DeviceConfig {
   loadShedGroup: LoadShedGroup | null;
   displayNameOverride: string | null;
   notes: string | null;
+  /** Which roles this device serves here; `null` means "not configured", so the class default applies. */
+  functions: DeviceFunction[] | null;
 }
 
-export type DeviceConfigField = 'room' | 'category' | 'loadShedGroup' | 'displayNameOverride' | 'notes';
+export type DeviceConfigField = 'room' | 'category' | 'loadShedGroup' | 'displayNameOverride' | 'notes' | 'functions';
 
 /** The `value`s are exactly what supabase/phase7_device_config.sql's CHECK constraint
  * accepts — the option list and the constraint are one fact in two places, and this comment
@@ -53,7 +57,7 @@ const CATEGORY_LABEL = Object.fromEntries(CATEGORY_OPTIONS.map((o) => [o.value, 
 const LOAD_SHED_SHORT: Record<LoadShedGroup, string> = { group_1: 'Shed 1', group_2: 'Shed 2', group_3: 'Shed 3', never: 'Protected' };
 
 export function emptyDeviceConfig(deviceId: string): DeviceConfig {
-  return { deviceId, room: null, category: null, loadShedGroup: null, displayNameOverride: null, notes: null };
+  return { deviceId, room: null, category: null, loadShedGroup: null, displayNameOverride: null, notes: null, functions: null };
 }
 
 /** Unknown values become null rather than throwing or passing through. The only ways one can
@@ -85,17 +89,28 @@ export function normalizeDeviceConfig(config: DeviceConfig): DeviceConfig {
     loadShedGroup: coerceLoadShedGroup(config.loadShedGroup),
     displayNameOverride: text(config.displayNameOverride),
     notes: text(config.notes),
+    functions: coerceFunctions(config.functions),
   };
 }
 
-/** Compares the five editable fields only — `deviceId` is the key, not part of the value. */
+/** Compares the editable fields only — `deviceId` is the key, not part of the value.
+ * `functions` is an array, so it is compared by value: reference equality would report a
+ * phantom edit every render and never clear. */
+/** `null` (unconfigured) and `[]` (configured as none) are different values, so a plain
+ * length-and-contents check has to keep them apart rather than treating both as empty. */
+function sameFunctions(a: DeviceFunction[] | null, b: DeviceFunction[] | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.length === b.length && a.every((f, i) => f === b[i]);
+}
+
 export function isSameConfig(a: DeviceConfig, b: DeviceConfig): boolean {
   return (
     a.room === b.room &&
     a.category === b.category &&
     a.loadShedGroup === b.loadShedGroup &&
     a.displayNameOverride === b.displayNameOverride &&
-    a.notes === b.notes
+    a.notes === b.notes &&
+    sameFunctions(a.functions, b.functions)
   );
 }
 

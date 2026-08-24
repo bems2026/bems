@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useContextStore } from '@/stores/contextStore';
-import { hasSwitchableState } from '@/lib/deviceClass';
+import { useDevicesFor } from '@/hooks/useDevicesFor';
 import { DEVICE_CLASS_CATALOG, classesWhere } from '@/lib/deviceClassCatalog';
 import { pendingWrites } from '@/stores/contextStore';
 import { CalendarClock, Thermometer, ListTodo } from 'lucide-react';
@@ -36,7 +36,10 @@ export function AutomationPage() {
 
   const [schedFilter, setSchedFilter] = useState<SchedFilter>('All');
 
-  const schedulable = useMemo(() => devices.filter((d) => hasSwitchableState(d.class)).sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true })), [devices]);
+  // Membership is the device's declared `scheduling` function, not its class — so an outlet
+  // that must never be switched unattended can be taken off this page without a code change.
+  const { included: schedulableDevices, excluded: notSchedulable } = useDevicesFor('scheduling');
+  const schedulable = useMemo(() => [...schedulableDevices].sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true })), [schedulableDevices]);
   const filtered = schedFilter === 'All' ? schedulable : schedulable.filter((d) => d.class === schedFilter);
 
   const armedCount = schedulable.filter((d) => (draft[`global.schedule.${d.id}.armed`] ?? saved[`global.schedule.${d.id}.armed`]) === 'true').length;
@@ -131,7 +134,19 @@ export function AutomationPage() {
               Arm all
             </button>
           </div>
-          <p className="automation-schedules-sub">Every relay and the IR unit, staged to Supabase's schedules table.</p>
+          <p className="automation-schedules-sub">
+            {schedulable.length} device{schedulable.length === 1 ? '' : 's'} declared for scheduling, staged to Supabase&apos;s schedules table.
+            {notSchedulable.length > 0 && (
+              <>
+                {' '}
+                <InfoHint label={`Why ${notSchedulable.length} devices are not listed`}>
+                  {notSchedulable.map((d) => d.display_name).join(', ')} — these have no{' '}
+                  <strong>scheduling</strong> function set. That is configuration, not an omission: change it on the
+                  Devices page, under Edit.
+                </InfoHint>
+              </>
+            )}
+          </p>
 
           {/* Focusable so the horizontal scroll is reachable from the keyboard, named so that
               focus stop means something. Same treatment as Devices' table scroller. */}

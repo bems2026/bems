@@ -35,6 +35,21 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-010** Weather cards from Open-Meteo (no API key) — `src/components/weather/`
 - [x] **EX-011** Alerts bell merging staleness watchdog and anomaly alerts under one acknowledge set — `src/components/layout/AlertsPopover.tsx`
 - [x] **EX-012** Manual dark theme with WCAG-checked token overrides — `src/index.css`, `src/stores/themeStore.ts`
+- [x] **EX-019** Per-device **function** declaration — `control`, `monitoring`, `scheduling` —
+      stored in `device_config` beside room and load-shed group, and driving which page lists a
+      device. Previously a device's page membership was decided by its class in frontend code,
+      which put a *site* decision inside a page: a light switch has control but no metering
+      here, while the identical relay elsewhere might feed a metered circuit. `null` means "not
+      configured" and falls through to a class default; `[]` is a real answer — "no role here" —
+      and the two stay distinguishable all the way down to the nullable column.
+      Defaults were chosen to reproduce the previous membership **exactly**, verified against
+      the real registry: Control 15/20, Automation 15/20, Analytics 11/20, all identical to
+      before. What changed is that each page now *names* what it left out and why, instead of
+      omitting devices silently — the reason the missing switches read as a bug rather than a
+      decision. Analytics keeps two independent gates: the operator's `monitoring` declaration
+      and the catalog's `metered` fact, because a temperature sensor is monitored and still has
+      no wattage to chart — `src/lib/deviceFunctions.ts`, `src/hooks/useDevicesFor.ts`,
+      `supabase/phase13_device_functions.sql`, `test/phase13-device-functions-schema.test.mjs`
 - [x] **EX-018** One device-class catalog replacing seven independent per-class tables, each of
       which answered part of "what is this class" and could drift alone: `SWITCHABLE_CLASSES`,
       `CLASS_ICON`, `DevicesView`'s `CLASS_ORDER`/`CLASS_FILTER_LABEL`/`CLASS_PILL_LABEL`,
@@ -239,6 +254,17 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       **Neither change lives in `shared/registry.mjs` or the generated flow** — both are on the
       four hand-built source tabs, and a full flow regeneration would lose them until
       `build-flow.mjs` owns those nodes (FI-001 / the device-enrollment work).
+
+- [ ] **RM-010** Apply `supabase/phase13_device_functions.sql`, then deploy the frontend.
+      *Acceptance:* `device_config` has a nullable `functions text[]` with the
+      `device_config_functions_valid` CHECK, and the Devices page's Functions fieldset saves and
+      reloads.
+      **Order matters and is not optional.** `src/lib/supabaseDeviceConfig.ts` now selects
+      `functions` by name; against a table without the column PostgREST fails the whole select,
+      which takes room, category, load-shed group and display-name overrides down with it. The
+      pages themselves degrade safely — an empty config map means every device falls through to
+      its class default, which is exactly today's behaviour — but the metadata editor would be
+      broken until the column exists. Apply first, deploy second.
 
 - [ ] **RM-001a** Two devices remain offline. A physical check, not a code change.
       *Acceptance:* each is either restored or recorded as decommissioned in the registry.

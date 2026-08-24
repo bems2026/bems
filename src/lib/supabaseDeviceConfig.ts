@@ -10,10 +10,12 @@
  */
 
 import { supabase } from '@/config/supabase';
+import { coerceFunctions } from './deviceFunctions';
 import { coerceCategory, coerceLoadShedGroup, normalizeDeviceConfig, type DeviceConfig } from './deviceConfig';
 
 interface DeviceConfigRow {
   device_id: string;
+  functions: string[] | null;
   room: string | null;
   category: string | null;
   load_shed_group: string | null;
@@ -24,6 +26,7 @@ interface DeviceConfigRow {
 /** What gets sent on a write — `updated_by` in, `device_id` as the PK the upsert targets. */
 interface DeviceConfigWriteRow {
   device_id: string;
+  functions: string[] | null;
   room: string | null;
   category: string | null;
   load_shed_group: string | null;
@@ -53,6 +56,7 @@ export function deviceConfigRowToModel(row: DeviceConfigRow): DeviceConfig {
     loadShedGroup: coerceLoadShedGroup(row.load_shed_group),
     displayNameOverride: row.display_name_override,
     notes: row.notes,
+    functions: coerceFunctions(row.functions),
   };
 }
 
@@ -73,6 +77,7 @@ export function deviceConfigToRow(config: DeviceConfig, actorUserId: string | nu
   const normalized = normalizeDeviceConfig(config);
   return {
     device_id: normalized.deviceId,
+    functions: normalized.functions,
     room: normalized.room,
     category: normalized.category,
     load_shed_group: normalized.loadShedGroup,
@@ -85,7 +90,7 @@ export function deviceConfigToRow(config: DeviceConfig, actorUserId: string | nu
 /** Everything `deviceConfigStore.load()` needs, keyed by device id. */
 export async function fetchDeviceConfigs(): Promise<Record<string, DeviceConfig>> {
   const client = requireSupabase();
-  const { data, error } = await client.from('device_config').select('device_id,room,category,load_shed_group,display_name_override,notes');
+  const { data, error } = await client.from('device_config').select('device_id,room,category,load_shed_group,display_name_override,notes,functions');
   if (error) throw new Error(`Supabase device_config fetch failed: ${error.message}`);
   return deviceConfigsToMap(data ?? []);
 }

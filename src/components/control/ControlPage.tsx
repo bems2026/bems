@@ -3,6 +3,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Lightbulb, Plug, Snowflake } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore } from '@/stores/commandStore';
+import { useDevicesFor } from '@/hooks/useDevicesFor';
 import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
 import { ConfirmModal, type ConfirmTone } from '@/components/ui/ConfirmModal';
 import { InfoHint } from '@/components/ui/InfoHint';
@@ -63,6 +64,10 @@ function useFaultLogging() {
 
 export function ControlPage() {
   const devices = useDeviceStore((s) => s.devices);
+  // The page's own membership: devices declared for `control`. The master actions below act on
+  // exactly what is rendered — a device configured off this page must not be swept up by
+  // "Lights off", which would switch something the operator deliberately removed from view.
+  const { included: controlled, excluded: notControlled } = useDevicesFor('control');
   const send = useCommandStore((s) => s.send);
   const log = useControlLog((s) => s.log);
   const dispatchClasses = useCapabilitiesStore((s) => s.dispatchClasses);
@@ -79,12 +84,12 @@ export function ControlPage() {
 
   const runMaster = (action: MasterAction) => {
     if (action === 'lights-off') {
-      for (const d of devices.filter((d) => d.class === 'switch')) {
+      for (const d of controlled.filter((d) => d.class === 'switch')) {
         send(d.id, undefined, 'off');
         log('RELAY', `${d.display_name} → off`);
       }
     } else if (action === 'outlets-off') {
-      for (const d of devices.filter((d) => d.class === 'outlet_dual')) {
+      for (const d of controlled.filter((d) => d.class === 'outlet_dual')) {
         send(d.id, 1, 'off');
         send(d.id, 2, 'off');
         log('RELAY', `${d.display_name} → off`);
@@ -131,6 +136,14 @@ export function ControlPage() {
       <p className={`control-dispatch-banner control-dispatch-banner--${scope.state}`} role="status">
         {dispatchScopeMessage(scope)}
       </p>
+
+      {notControlled.length > 0 && (
+        <p className="control-not-listed" role="note">
+          {notControlled.length} device{notControlled.length === 1 ? ' is' : 's are'} not shown here —{' '}
+          {notControlled.map((d) => d.display_name).join(', ')} — because {notControlled.length === 1 ? 'it has' : 'they have'} no{' '}
+          <strong>control</strong> function set. Change that on the Devices page, under Edit.
+        </p>
+      )}
 
       <div className="control-grid">
         <div className="control-grid__main">

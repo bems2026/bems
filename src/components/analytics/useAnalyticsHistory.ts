@@ -10,6 +10,8 @@ import {
   type ArchiveRange,
   type LongRange,
 } from '@/lib/supabaseHistory';
+import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
+import { hasFunction } from '@/lib/deviceFunctions';
 import { analyticsGroups, DEVICE_CLASS_CATALOG } from '@/lib/deviceClassCatalog';
 import { supabase } from '@/config/supabase';
 import { TIMING } from '@/lib/timing';
@@ -55,6 +57,12 @@ function sourceFor(range: AnalyticsRange): { fetch: (id: string) => Promise<Hist
  */
 export function useAnalyticsHistory(range: AnalyticsRange = '24h') {
   const devices = useDeviceStore((s) => s.devices);
+  // Two independent gates, and they answer different questions. `monitoring` is the operator's
+  // declaration that a device is worth watching; `metered` is whether it physically reports
+  // power at all. A temperature sensor is monitored and has no wattage — charting it here
+  // would be inventing a series. A metered outlet nobody cares about can be configured off
+  // this page without touching code.
+  const configs = useDeviceConfigStore((s) => s.saved);
   /**
    * Grouped by the catalog's `analyticsGroup` rather than by two hardcoded class checks, so a
    * newly-metered class is fetched and charted without editing this hook. The old form named
@@ -64,11 +72,12 @@ export function useAnalyticsHistory(range: AnalyticsRange = '24h') {
   const byGroup = useMemo(() => {
     const out: Record<string, string[]> = Object.fromEntries(analyticsGroups().map((g) => [g, [] as string[]]));
     for (const d of devices) {
+      if (!hasFunction(d, configs[d.id], 'monitoring')) continue;
       const group = DEVICE_CLASS_CATALOG[d.class]?.analyticsGroup;
       if (group !== null && group !== undefined && out[group]) out[group].push(d.id);
     }
     return out;
-  }, [devices]);
+  }, [devices, configs]);
   // `UntrackedLoadCard` compares branches against outlets specifically — that two-ness is
   // intrinsic to the comparison (untracked load *is* branches minus outlets), not an artefact
   // of the old hardcoding, so those two keep named accessors.

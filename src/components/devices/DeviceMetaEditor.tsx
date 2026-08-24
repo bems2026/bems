@@ -2,6 +2,7 @@ import { useEffect, useId, useRef } from 'react';
 import { Card } from '@/components/ui/Card';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
+import { FUNCTION_OPTIONS, functionsOf, DEFAULT_FUNCTIONS, type DeviceFunction } from '@/lib/deviceFunctions';
 import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
 import { CATEGORY_OPTIONS, LOAD_SHED_OPTIONS, effectiveConfig, knownRooms, type DeviceConfigField } from '@/lib/deviceConfig';
 import type { Device } from '@/lib/types';
@@ -25,6 +26,7 @@ export function DeviceMetaEditor({ device, onClose }: DeviceMetaEditorProps) {
   const draft = useDeviceConfigStore((s) => s.draft);
   const saved = useDeviceConfigStore((s) => s.saved);
   const setDraftField = useDeviceConfigStore((s) => s.setDraftField);
+  const setDraftFunctions = useDeviceConfigStore((s) => s.setDraftFunctions);
   const save = useDeviceConfigStore((s) => s.save);
   const saveStatus = useDeviceConfigStore((s) => s.saveStatus);
   const saveError = useDeviceConfigStore((s) => s.saveError);
@@ -56,6 +58,16 @@ export function DeviceMetaEditor({ device, onClose }: DeviceMetaEditorProps) {
   }, [onClose, modalProps.open]);
 
   const field = (f: DeviceConfigField, value: string) => setDraftField(device.id, f, value);
+
+  // What is in force right now — the device's own list if set, otherwise its class default.
+  const activeFunctions = functionsOf(device, config);
+  const usingClassDefault = config.functions === null;
+  const toggleFunction = (fn: DeviceFunction, on: boolean) => {
+    // First edit materialises the class default, so unticking one box cannot silently drop the
+    // others the device was relying on by inheritance.
+    const base = activeFunctions;
+    setDraftFunctions(device.id, on ? [...base, fn] : base.filter((f) => f !== fn));
+  };
 
   const askSave = () =>
     ask(
@@ -120,6 +132,35 @@ export function DeviceMetaEditor({ device, onClose }: DeviceMetaEditorProps) {
           <input type="text" value={config.displayNameOverride ?? ''} placeholder={device.display_name} onChange={(e) => field('displayNameOverride', e.target.value)} />
         </label>
 
+        <fieldset className="device-meta-editor__field device-meta-editor__field--wide">
+          <legend>Functions</legend>
+          <p className="device-meta-editor__hint">
+            What this device is for here. Determines which pages list it — not what the hardware can do.
+            {usingClassDefault && (
+              <>
+                {' '}Currently inheriting the default for a{' '}
+                <strong>{device.class}</strong> ({DEFAULT_FUNCTIONS[device.class]?.join(', ') || 'none'}).
+              </>
+            )}
+          </p>
+          {FUNCTION_OPTIONS.map((o) => (
+            <label key={o.value} className="device-meta-editor__check">
+              <input
+                type="checkbox"
+                checked={activeFunctions.includes(o.value)}
+                onChange={(e) => toggleFunction(o.value, e.target.checked)}
+              />
+              <span>
+                <strong>{o.label}</strong> — {o.hint}
+              </span>
+            </label>
+          ))}
+          {!usingClassDefault && (
+            <button type="button" className="device-meta-editor__reset" onClick={() => setDraftFunctions(device.id, null)}>
+              Reset to the class default
+            </button>
+          )}
+        </fieldset>
         <label className="device-meta-editor__field device-meta-editor__field--wide">
           <span>Notes</span>
           <textarea rows={3} maxLength={500} value={config.notes ?? ''} onChange={(e) => field('notes', e.target.value)} />
