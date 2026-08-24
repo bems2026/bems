@@ -39,13 +39,21 @@ export const EXPIRED_AFTER_MS = 300_000;
  * `co1` was serving a four-day-old 235.9 V while the device itself read 224.9 V. `online`
  * was `true` throughout, so nothing downstream had any reason to doubt it.
  *
- * Note what this does NOT key on: `online === false`. A device that went offline one second
- * after reporting still has a perfectly real last reading, and blanking it would throw away
- * the most useful number on the screen at exactly the moment someone needs it. Age is the
- * only thing that makes a measurement stop being one.
+ * An offline reading expires immediately, whatever its timestamp says. This originally did the
+ * opposite — age was the only test, on the reasoning that a device which dropped one second
+ * after reporting still has a real last value worth showing. That was wrong for a reason the
+ * first version missed: `shared/buildLatest.mjs` stamps `ts = now` and only overrides it when
+ * the device reports its own time, so **an offline device's timestamp is synthesized**. Its age
+ * is not evidence of anything, and the age rule can therefore never fire for it.
+ *
+ * Observed 2026-08-24: `co5` rendered `OFFLINE` beside `230.4 V / 2.23 A / 514 W` — values of
+ * genuinely unknown age, presented as current, next to a badge saying the device was
+ * unreachable. The badge is the fact; the figures were not.
  */
 export function isReadingExpired(reading: Reading | Totals | null | undefined, nowMs: number = Date.now()): boolean {
   if (!reading) return true;
+  // `Totals` has no `online` field, so this only narrows for a device reading.
+  if ('online' in reading && reading.online === false) return true;
   const ts = Date.parse(reading.ts);
   if (Number.isNaN(ts)) return true;
   return nowMs - ts > EXPIRED_AFTER_MS;

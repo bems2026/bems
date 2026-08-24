@@ -5454,24 +5454,6 @@ fieldset.device-meta-editor__field > legend {
   border-radius: var(--r-sm, 6px);
 }
 
-/* Fleet stability line — appears only when devices are actually flapping (phase 15).
-   Styled as a warning rather than an error: nothing is broken in the software, and the
-   sentence itself points at the access point. --warn-on-page, not --warn: this sits on the
-   page background, where index.css already records that --warn falls short of AA. */
-.devices-stability {
-  margin: 0 0 12px;
-  padding: 9px 13px;
-  font-size: 0.82rem;
-  line-height: 1.55;
-  color: var(--warn-on-page, var(--txt));
-  background: var(--bg-surface-2);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--warn-on-page, var(--border-strong));
-  border-radius: var(--r-sm, 6px);
-}
-.devices-stability strong {
-  font-variant-numeric: tabular-nums;
-}
 
 /* Per-device flap note on the meta line. Absent entirely for a steady device — see
    ConnectivityNote. */
@@ -5489,12 +5471,6 @@ fieldset.device-meta-editor__field > legend {
   font-weight: 600;
 }
 
-/* Coverage qualifier beside an uptime figure. Deliberately quieter than the figure it
-   qualifies — it is context, not a second alarm. */
-.devices-table__flap-coverage {
-  color: var(--muted-2);
-  font-weight: 400;
-}
 
 /* Vendor cloud view — what Tuya sees, beside what the bridge sees (phase 16).
    Presented as its own card rather than a column on the fleet table: the two views are not

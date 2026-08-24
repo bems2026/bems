@@ -100,7 +100,18 @@ describe('DevicesView', () => {
       latestReadings: { co1: { device_id: 'co1', ts: new Date().toISOString(), online: true, state: 'on' } },
     });
     render(<DevicesView />);
-    expect(screen.getByText(/2 devices in the registry · 1\/2 reporting online right now/)).toBeInTheDocument();
+    expect(screen.getByText(/2 devices · 1 online/)).toBeInTheDocument();
+  });
+
+  it('omits the unstable clause entirely when nothing is flapping, rather than showing a zero', () => {
+    // A healthy fleet should read as two facts, not three with an "0 unstable" in it — a
+    // counter that is almost always zero trains people to stop reading the line.
+    useDeviceStore.setState({
+      devices: [device('co1', 'Outlet 1', 'outlet_dual')],
+      latestReadings: { co1: { device_id: 'co1', ts: new Date().toISOString(), online: true, state: 'on' } },
+    });
+    render(<DevicesView />);
+    expect(screen.queryByText(/unstable/)).not.toBeInTheDocument();
   });
 
   it('every row has exactly one cell per column header, so the two can never silently drift', () => {

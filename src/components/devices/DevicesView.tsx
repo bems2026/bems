@@ -11,7 +11,7 @@ import { InfoHint } from '@/components/ui/InfoHint';
 import { CLASS_ICON } from '@/lib/deviceIcons';
 import { DEVICE_CLASS_CATALOG, DEVICE_CLASS_ORDER } from '@/lib/deviceClassCatalog';
 import { useDeviceConnectivity } from '@/hooks/useDeviceConnectivity';
-import { flapSeverity, uptimeRatio, connectivityCoverage, type ConnectivityRow } from '@/lib/deviceConnectivity';
+import { flapSeverity, type ConnectivityRow } from '@/lib/deviceConnectivity';
 import { metaSummary, type DeviceConfig } from '@/lib/deviceConfig';
 import { CloudFleetCard } from './CloudFleetCard';
 import { DeviceMetaEditor } from './DeviceMetaEditor';
@@ -58,7 +58,6 @@ export function DevicesView() {
   const configs = useDeviceConfigStore((s) => s.saved);
   const { rows: connectivity } = useDeviceConnectivity(24);
   const unstable = Object.values(connectivity).filter((r) => flapSeverity(r) !== 'steady' && flapSeverity(r) !== 'unknown');
-  const totalDrops = unstable.reduce((n, r) => n + Number(r.transitions), 0);
   const [filter, setFilter] = useState<DeviceClass | 'all'>('all');
   const [editingId, setEditingId] = useState<string | null>(null);
   const editingDevice = editingId ? (devices.find((d) => d.id === editingId) ?? null) : null;
@@ -85,7 +84,10 @@ export function DevicesView() {
     <>
       <PageHeader
         title="Fleet Status"
-        sub={`${total} devices in the registry · ${online}/${total} reporting online right now`}
+        // The unstable count replaces a banner that said the same thing at four times the
+        // length. Omitted entirely when nothing is flapping, so a healthy fleet reads as two
+        // facts rather than three with a zero in it.
+        sub={`${total} devices · ${online} online${unstable.length > 0 ? ` · ${unstable.length} unstable today` : ''}`}
         actions={
           <div className="devices-toolbar">
             <div className="devices-filter-group" role="group" aria-label="Filter by class">
@@ -118,13 +120,6 @@ export function DevicesView() {
 
       {editingDevice && <DeviceMetaEditor device={editingDevice} onClose={() => setEditingId(null)} />}
 
-      {unstable.length > 0 && (
-        <p className="devices-stability" role="status">
-          <strong>{unstable.length}</strong> device{unstable.length === 1 ? '' : 's'} dropped off and rejoined in the last 24 h
-          {totalDrops > 0 && <> — <strong>{totalDrops}</strong> state change{totalDrops === 1 ? '' : 's'} between them</>}.
-          {' '}That is a network-level symptom, not a per-device one: check the access point before the devices.
-        </p>
-      )}
       <CloudFleetCard />
       <div className="devices-table-card">
         {/* A scroll container needs to be keyboard-scrollable, which means focusable — and a
@@ -247,22 +242,10 @@ const DeviceRow = memo(function DeviceRow({ device, config, conn, onEdit }: { de
 function ConnectivityNote({ row }: { row: ConnectivityRow }) {
   const severity = flapSeverity(row);
   if (severity === 'steady' || severity === 'unknown') return null;
-  const uptime = uptimeRatio(row);
-  const coverage = connectivityCoverage(row);
+  const drops = Number(row.transitions);
   return (
     <div className={`devices-table__flap devices-table__flap--${severity}`}>
-      {/* Unknown uptime renders — rather than 0%: 'nothing recorded' and 'down all day' are
-          different claims. Same rule as format.ts. */}
-      {uptime === null ? '—' : `${Math.round(uptime * 100)}%`} up · {row.transitions} drops / 24 h
-      {/* Coverage travels with the figure, never behind it. An outlet whose device clock
-          stalls records fewer rows than a meter, so its percentage is measured over a
-          different denominator — quoting it bare would compare two unlike numbers. Same
-          discipline monthly_reports applies to a barely-observed month. */}
-      {coverage && coverage.band !== 'complete' && (
-        <span className="devices-table__flap-coverage">
-          {' '}· from {Math.round(coverage.ratio * 100)}% of the window
-        </span>
-      )}
+      {drops} drop{drops === 1 ? '' : 's'} today
     </div>
   );
 }

@@ -17,7 +17,6 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const sql = readFileSync(join(ROOT, 'supabase', 'phase14_device_categories.sql'), 'utf8');
 const ts = readFileSync(join(ROOT, 'src', 'lib', 'deviceConfig.ts'), 'utf8');
 
-const EXPECTED = ['lighting', 'aircon', 'outlet', 'branch_circuit', 'critical', 'other'];
 
 test('retired values are mapped BEFORE the constraint is swapped', () => {
   const firstUpdate = sql.search(/update device_config set category/i);
@@ -45,13 +44,11 @@ test('every retired value is gone from the CHECK', () => {
   }
 });
 
-test('the frontend option list and the constraint agree exactly', () => {
-  const values = [...ts.matchAll(/\{ value: '([a-z_]+)', label: '[^']+' \}/g)]
-    .map((m) => m[1])
-    .filter((v) => !v.startsWith('group_') && v !== 'never');
-  assert.deepEqual(values, EXPECTED);
-  for (const v of EXPECTED) assert.ok(sql.includes(`'${v}'`), `${v} missing from the migration`);
-});
+// The "frontend option list agrees with the constraint" assertion used to live here. It moved
+// to test/phase17-device-categories-sensor.test.mjs, because it pins the UI to a *specific*
+// migration's vocabulary and therefore has to follow the newest one — left here it would fail
+// the moment a category was added, reporting a correct change as a broken one. What stays are
+// the checks about this file's own internal correctness, which do not expire.
 
 test('adds no policy — device_config already has its three', () => {
   assert.equal(/create policy/i.test(sql), false);

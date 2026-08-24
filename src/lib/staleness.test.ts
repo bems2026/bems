@@ -70,8 +70,24 @@ describe('isReadingExpired', () => {
     expect(isReadingExpired(undefined, now)).toBe(true);
   });
 
-  it('does not expire on `online: false` alone — an offline device that reported a second ago still has a real last reading', () => {
+  /**
+   * This originally asserted the opposite — that `online: false` alone must NOT expire a
+   * reading, on the reasoning that a device which dropped a second after reporting still has a
+   * real last value. That reasoning was wrong, for a reason not understood when it was written:
+   * `shared/buildLatest.mjs` stamps `ts = now` and only overrides it when the device reports
+   * its own time, so **an offline device's timestamp is synthesized**. Its age is therefore not
+   * evidence of anything, and the age rule can never fire for it.
+   *
+   * Observed 2026-08-24: `co5` rendered `OFFLINE` beside `230.4 V / 2.23 A / 514 W`, values of
+   * genuinely unknown age shown as current. That is the frozen-value failure in miniature.
+   */
+  it('expires an offline reading however fresh its timestamp looks, because that timestamp is synthesized', () => {
     const r: Reading = { device_id: 'co1', ts: fresh, online: false, voltage: 224.9, state: 'off' };
+    expect(isReadingExpired(r, now)).toBe(true);
+  });
+
+  it('still keys on age for an online device, so a merely-late reading is not blanked', () => {
+    const r: Reading = { device_id: 'co1', ts: old, online: true, voltage: 224.9, state: 'off' };
     expect(isReadingExpired(r, now)).toBe(false);
   });
 });

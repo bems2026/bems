@@ -15,7 +15,7 @@ import type { DeviceFunction } from './deviceFunctions';
 import { coerceFunctions } from './deviceFunctions';
 import type { Device } from './types';
 
-export type DeviceCategory = 'lighting' | 'aircon' | 'outlet' | 'branch_circuit' | 'critical' | 'other';
+export type DeviceCategory = 'lighting' | 'aircon' | 'outlet' | 'branch_circuit' | 'sensor' | 'critical' | 'other';
 export type LoadShedGroup = 'group_1' | 'group_2' | 'group_3' | 'never';
 
 export interface DeviceConfig {
@@ -39,6 +39,7 @@ export const CATEGORY_OPTIONS: ReadonlyArray<{ value: DeviceCategory; label: str
   { value: 'aircon', label: 'Aircon' },
   { value: 'outlet', label: 'Outlet' },
   { value: 'branch_circuit', label: 'Branch Circuit' },
+  { value: 'sensor', label: 'Sensors' },
   { value: 'critical', label: 'Critical' },
   { value: 'other', label: 'Others' },
 ];
