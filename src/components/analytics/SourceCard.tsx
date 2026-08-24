@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { useDeviceStore, historyFor } from '@/stores/deviceStore';
-import { isReadingStale } from '@/lib/staleness';
+import { isReadingStale, measured } from '@/lib/staleness';
 import { HistoryAreaChart } from './HistoryAreaChart';
 import type { ChartParam } from './chartParams';
 import type { Device } from '@/lib/types';
@@ -16,6 +16,12 @@ export function SourceCard({ device, color, scope, param, range, selected, onSel
   const reading = useDeviceStore((s) => s.latestReadings[device.id]);
   const history = useDeviceStore((s) => historyFor(s.history, device.id, range));
   const stale = isReadingStale(reading);
+  // Values are withheld once the reading has expired, so an outlet that reconnected but
+  // never reported cannot present a days-old voltage as a current one — see `measured`.
+  const volts = measured(reading?.voltage, reading);
+  const amps = measured(reading?.current, reading);
+  const watts = measured(reading?.power_w, reading);
+  const kwhToday = measured(reading?.energy_kwh_today, reading);
 
   return (
     <button
@@ -40,17 +46,17 @@ export function SourceCard({ device, color, scope, param, range, selected, onSel
       </div>
       {scope === 'branches' ? (
         <div className="analytics-stat-grid analytics-source-card__grid">
-          <Tile label="VOLTAGE" value={reading?.voltage} digits={1} unit="V" />
-          <Tile label="CURRENT" value={reading?.current} digits={2} unit="A" />
-          <Tile label="POWER" value={reading?.power_w !== undefined ? reading.power_w / 1000 : undefined} digits={3} unit="kW" />
-          <Tile label="ENERGY" value={reading?.energy_kwh_today} digits={2} unit="kWh" />
+          <Tile label="VOLTAGE" value={volts} digits={1} unit="V" />
+          <Tile label="CURRENT" value={amps} digits={2} unit="A" />
+          <Tile label="POWER" value={watts !== undefined ? watts / 1000 : undefined} digits={3} unit="kW" />
+          <Tile label="ENERGY" value={kwhToday} digits={2} unit="kWh" />
         </div>
       ) : (
         <div className="analytics-source-card__stats">
-          <Stat label="V" value={reading?.voltage} digits={0} />
-          <Stat label="A" value={reading?.current} digits={2} />
-          <Stat label="W" value={reading?.power_w} digits={0} />
-          <Stat label="kWh" value={reading?.energy_kwh_today} digits={2} />
+          <Stat label="V" value={volts} digits={0} />
+          <Stat label="A" value={amps} digits={2} />
+          <Stat label="W" value={watts} digits={0} />
+          <Stat label="kWh" value={kwhToday} digits={2} />
         </div>
       )}
       <HistoryAreaChart history={history} color={color} name={device.display_name} className="analytics-source-card__chart" param={param} />

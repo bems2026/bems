@@ -4,7 +4,7 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
 import { hasSwitchableState } from '@/lib/deviceClass';
-import { isReadingStale } from '@/lib/staleness';
+import { isReadingStale, measured } from '@/lib/staleness';
 import { countOnline } from '@/components/overview/overviewMath';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { InfoHint } from '@/components/ui/InfoHint';
@@ -205,13 +205,13 @@ const DeviceRow = memo(function DeviceRow({ device, config, onEdit }: { device: 
         {CLASS_PILL_LABEL[device.class]}
       </span>
       <span className="devices-table__num mono" role="cell" data-label="Volt">
-        {formatVolts(reading?.voltage)}
+        {formatVolts(measured(reading?.voltage, reading))}
       </span>
       <span className="devices-table__num mono" role="cell" data-label="Current">
-        {formatAmps(reading?.current)}
+        {formatAmps(measured(reading?.current, reading))}
       </span>
       <span className="devices-table__num mono" role="cell" data-label="Power">
-        {formatWithUnit(reading?.power_w, 'W', 0)}
+        {formatWithUnit(measured(reading?.power_w, reading), 'W', 0)}
       </span>
       <span className="devices-table__lastseen mono" role="cell" data-label="Last seen">
         {reading ? new Date(reading.ts).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}

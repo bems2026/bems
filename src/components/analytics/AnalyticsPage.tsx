@@ -15,6 +15,7 @@ import { EnergySection } from './EnergySection';
 import { UntrackedLoadCard } from './UntrackedLoadCard';
 import type { Device, Reading } from '@/lib/types';
 import { formatNumber } from '@/lib/format';
+import { measured } from '@/lib/staleness';
 
 const MAX_CHART_POINTS = 140;
 /** v4's own 7-color cycle (amber, blue, green, purple, plus 3 more) — decoration only, so
@@ -242,11 +243,15 @@ export function AnalyticsPage() {
 }
 
 function SelectedStatPanel({ reading }: { reading: Reading | undefined }) {
+  // Withheld once the reading has expired: this is the largest, most authoritative rendering
+  // of a single source's numbers on the page, so a days-old voltage shown here at full size is
+  // the most convincing wrong answer the dashboard can give.
+  const watts = measured(reading?.power_w, reading);
   const stats = [
-    { label: 'VOLTAGE', value: reading?.voltage, digits: 1, unit: 'V' },
-    { label: 'CURRENT', value: reading?.current, digits: 2, unit: 'A' },
-    { label: 'POWER', value: reading?.power_w !== undefined ? reading.power_w / 1000 : undefined, digits: 3, unit: 'kW' },
-    { label: 'ENERGY TODAY', value: reading?.energy_kwh_today, digits: 2, unit: 'kWh' },
+    { label: 'VOLTAGE', value: measured(reading?.voltage, reading), digits: 1, unit: 'V' },
+    { label: 'CURRENT', value: measured(reading?.current, reading), digits: 2, unit: 'A' },
+    { label: 'POWER', value: watts !== undefined ? watts / 1000 : undefined, digits: 3, unit: 'kW' },
+    { label: 'ENERGY TODAY', value: measured(reading?.energy_kwh_today, reading), digits: 2, unit: 'kWh' },
   ];
   return (
     <div className="analytics-stat-grid">
