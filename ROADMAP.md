@@ -306,21 +306,25 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       in `shared/tuyaNodeSettings.mjs`. Working was not evidence the declaration was right; the
       declarations were corrected to the measured value and those three left the unverified list.
 
-- [ ] **RM-013** Session churn: ~4 of 20 devices read offline at any moment, and the set rotates.
-      *Acceptance:* a stable hour with no unexplained drops, or a recorded reason why not.
-      Observed 2026-08-24 after moving back to the device network. Sampled over ~2 minutes:
-      16 online each time, but `co6` recovered while `l3` dropped between samples. Persistent
-      across every sample were `co5`, `co7` and `l6`; the rest rotate.
-      **The network layer is not the cause.** `ip neigh` resolves 17 of 18 hosts (only `l6`
-      fails — RM-012), the Pi holds a 76% link at 130 Mbit/s, and the meters report
-      continuously throughout. The failure is at the Tuya session layer: devices are reachable,
-      sessions are not holding.
-      *Not yet distinguished, and worth doing before acting:* whether this is materially worse
-      than normal for this site. Earlier the same day the system sat at 18-20 online with 2-3
-      persistently absent, which is a similar order. One concrete candidate is RM-011's
-      duplicate session to `AREC ACU` — Tuya devices tolerate concurrent local connections
-      poorly — but that is a hypothesis, not a finding, and the meter itself is the one thing
-      that has stayed up.
+- [ ] **RM-013** Devices are dropping off the 2.4 GHz network entirely and rejoining.
+      *Acceptance:* the announcing-host count stays at the full device count for an hour.
+      **Diagnosed 2026-08-24; this needs the access point, not the code.**
+      Measured over a 65 s capture of the Tuya discovery broadcast (UDP 6667):
+      - **13 hosts announcing**, down from 17 about half an hour earlier;
+      - every one of those 13 broadcast at the *full* steady rate — **zero intermittent**.
+      That binary shape is the finding. Marginal RF degrades a device's rate; it does not
+      remove it cleanly. These devices are disassociating and rejoining. The Pi's ARP table
+      still listed 18 hosts with 0 FAILED at the same moment, which is the cache holding
+      entries for devices that had already gone — so the earlier per-device `find()` timeouts
+      were the symptom, not the cause.
+      **Candidate causes, in order of how cheap they are to rule out:** a client limit on the
+      access point (~17 devices plus the Pi sits right at the cap of many consumer units), DHCP
+      pool exhaustion (the Pi's own lease is a normal 7200 s), or AP instability following the
+      network restart. All three are answered by looking at the AP's admin page.
+      *Hypothesis already tested and rejected:* that RM-011's duplicate `ACU` session was
+      destabilising things. Matching its protocol version removed 39 timeouts per ten minutes
+      and the churn did not improve — it got marginally worse over the same window. Recorded
+      because a plausible-sounding cause that measurement rejects is worth not re-proposing.
 
 - [ ] **RM-012** `l6` (Light Switch 6) transmits but cannot be reached — a one-way link.
       *Acceptance:* `ip neigh` resolves its address, and it stays online across an hour.
