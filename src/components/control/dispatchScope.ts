@@ -1,11 +1,13 @@
+import { classesWhere } from '@/lib/deviceClassCatalog';
 import type { Device, DeviceClass } from '@/lib/types';
 
 /**
- * Which device classes this page can issue commands for at all. Meters and temp/humidity
+ * Which device classes this page can issue commands for at all — the catalog's `switchable`
+ * set, since "can be commanded" and "has an on/off state" are the same fact.
  * sensors are read-only, so they can never be "commanded but not dispatched" and must not
  * appear in either half of the message below.
  */
-export const COMMANDABLE_CLASSES: DeviceClass[] = ['switch', 'outlet_dual', 'acu_ir'];
+export const COMMANDABLE_CLASSES: DeviceClass[] = classesWhere('switchable');
 
 const LABELS: Record<string, string> = {
   switch: 'Lighting',
@@ -27,11 +29,18 @@ export interface DispatchScope {
  * Splits what this page can command into "actually moves a relay" and "only looks like it".
  *
  * The banner this drives used to be a single boolean: closed, or absent. That was fine while
- * nothing dispatched, but `server/proxy.mjs` only ever dispatches `switch` commands — outlets
- * and the ACU stay `dry_run` even with the gate open, because no endpoint exists for them.
- * So the moment the gate opens, a binary banner disappears entirely and the page silently
- * implies outlets and the ACU are live too. That is the misreading with real-world cost, and
- * it is the one this function exists to prevent.
+ * nothing dispatched. `server/proxy.mjs` now dispatches all three commandable classes —
+ * `switch`, `outlet_dual` and `acu_ir` (see `dispatchLight.mjs`'s `DISPATCH_CLASSES`) — so the
+ * asymmetry this was written for no longer exists on a fully-deployed Pi. It is kept because
+ * the asymmetry is a property of the *deployment*, not of the code: a bridge missing the
+ * outlet/aircon endpoints, or a partially-applied flow, still produces a page where some
+ * controls move relays and others only look like they do. A binary banner would vanish the
+ * moment the gate opened and silently imply everything is live. That is the misreading with
+ * real-world cost, and it is the one this function exists to prevent.
+ *
+ * (This comment previously asserted that outlets and the ACU could never dispatch because no
+ * endpoint existed. That stopped being true when those endpoints landed, and all three were
+ * observed moving real hardware on 2026-08-24.)
  *
  * `dispatchClasses` comes from `GET /api/capabilities`, which derives it from the same
  * constant `handleCommand` branches on — so this can't drift from what the server will do.

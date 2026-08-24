@@ -35,6 +35,22 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-010** Weather cards from Open-Meteo (no API key) — `src/components/weather/`
 - [x] **EX-011** Alerts bell merging staleness watchdog and anomaly alerts under one acknowledge set — `src/components/layout/AlertsPopover.tsx`
 - [x] **EX-012** Manual dark theme with WCAG-checked token overrides — `src/index.css`, `src/stores/themeStore.ts`
+- [x] **EX-018** One device-class catalog replacing seven independent per-class tables, each of
+      which answered part of "what is this class" and could drift alone: `SWITCHABLE_CLASSES`,
+      `CLASS_ICON`, `DevicesView`'s `CLASS_ORDER`/`CLASS_FILTER_LABEL`/`CLASS_PILL_LABEL`,
+      `AutomationPage`'s `FILTER_CLASS`, `AnalyticsPage`'s hardcoded `'branches' | 'outlets'`
+      union, and `dispatchScope`'s `COMMANDABLE_CLASSES`. Adding a device class is now one entry
+      plus whatever the type checker then demands, instead of a hunt through seven files where
+      five failed *silently* — a missing filter chip or scope group renders nothing rather than
+      erroring. `deviceIcons.ts` had already made this argument for icons alone; this is the same
+      argument for everything else. Analytics groups are derived from the catalog and rendered
+      through a presentation lookup **with a fallback**, so an unstyled group appears plain rather
+      than disappearing. Characterization tests copy each replaced table verbatim and assert the
+      consolidation changed no behaviour — `src/lib/deviceClassCatalog.ts`,
+      `src/lib/deviceClassCatalog.test.ts`
+      *Deliberately not folded in:* `server/dispatchLight.mjs`'s `DISPATCH_CLASSES`, which answers
+      what this *deployment* can currently drive rather than what a class is, and already reaches
+      the frontend through `capabilitiesStore`.
 - [x] **EX-017** Control availability no longer depends on reading freshness. Reported on site
       2026-08-24: **outlets could not be switched at all.** Every outlet toggle carried
       `disabled={… || stale}`, and because nothing polls an outlet (FI-013) the reading is stale

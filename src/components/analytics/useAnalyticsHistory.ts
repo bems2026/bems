@@ -10,6 +10,7 @@ import {
   type ArchiveRange,
   type LongRange,
 } from '@/lib/supabaseHistory';
+import { analyticsGroups, DEVICE_CLASS_CATALOG } from '@/lib/deviceClassCatalog';
 import { supabase } from '@/config/supabase';
 import { TIMING } from '@/lib/timing';
 import type { HistoryPoint } from '@/lib/types';
@@ -54,9 +55,26 @@ function sourceFor(range: AnalyticsRange): { fetch: (id: string) => Promise<Hist
  */
 export function useAnalyticsHistory(range: AnalyticsRange = '24h') {
   const devices = useDeviceStore((s) => s.devices);
-  const branchIds = useMemo(() => devices.filter((d) => d.class === 'meter').map((d) => d.id), [devices]);
-  const outletIds = useMemo(() => devices.filter((d) => d.class === 'outlet_dual').map((d) => d.id), [devices]);
-  const allIds = useMemo(() => [...branchIds, ...outletIds], [branchIds, outletIds]);
+  /**
+   * Grouped by the catalog's `analyticsGroup` rather than by two hardcoded class checks, so a
+   * newly-metered class is fetched and charted without editing this hook. The old form named
+   * `meter` and `outlet_dual` literally, which meant a third metered class would have been
+   * silently absent from every chart on the page.
+   */
+  const byGroup = useMemo(() => {
+    const out: Record<string, string[]> = Object.fromEntries(analyticsGroups().map((g) => [g, [] as string[]]));
+    for (const d of devices) {
+      const group = DEVICE_CLASS_CATALOG[d.class]?.analyticsGroup;
+      if (group !== null && group !== undefined && out[group]) out[group].push(d.id);
+    }
+    return out;
+  }, [devices]);
+  // `UntrackedLoadCard` compares branches against outlets specifically — that two-ness is
+  // intrinsic to the comparison (untracked load *is* branches minus outlets), not an artefact
+  // of the old hardcoding, so those two keep named accessors.
+  const branchIds = useMemo(() => byGroup.branches ?? [], [byGroup]);
+  const outletIds = useMemo(() => byGroup.outlets ?? [], [byGroup]);
+  const allIds = useMemo(() => Object.values(byGroup).flat(), [byGroup]);
   const idsKey = allIds.join(',');
   /**
    * The last settled result, TAGGED with the range it settled for — so `status` can be
@@ -119,5 +137,5 @@ export function useAnalyticsHistory(range: AnalyticsRange = '24h') {
   // are loading, which is what makes the page show its skeleton instead of a false claim.
   const status = settled && settled.range === range ? settled.status : 'loading';
 
-  return { branchIds, outletIds, status: longRangeUnavailable ? 'error' : status };
+  return { byGroup, branchIds, outletIds, status: longRangeUnavailable ? 'error' : status };
 }

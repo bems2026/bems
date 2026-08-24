@@ -3,6 +3,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useContextStore } from '@/stores/contextStore';
 import { hasSwitchableState } from '@/lib/deviceClass';
+import { DEVICE_CLASS_CATALOG, classesWhere } from '@/lib/deviceClassCatalog';
 import { pendingWrites } from '@/stores/contextStore';
 import { CalendarClock, Thermometer, ListTodo } from 'lucide-react';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
@@ -14,8 +15,14 @@ import type { DeviceClass } from '@/lib/types';
 
 const TRIGGER_KEY = 'global.trigger.care_acu_on';
 
-type SchedFilter = 'All' | 'Lighting' | 'Outlets' | 'ACU';
-const FILTER_CLASS: Record<Exclude<SchedFilter, 'All'>, DeviceClass> = { Lighting: 'switch', Outlets: 'outlet_dual', ACU: 'acu_ir' };
+/**
+ * The chips are derived from the catalog rather than hand-listed, so a new switchable class
+ * gets a filter without anyone editing this page. The failure it replaces was silent: a
+ * missing chip simply means those devices can never be filtered to.
+ */
+type SchedFilter = 'All' | DeviceClass;
+const SCHED_FILTERS: SchedFilter[] = ['All', ...classesWhere('switchable')];
+const filterLabel = (f: SchedFilter) => (f === 'All' ? 'All' : DEVICE_CLASS_CATALOG[f].label);
 
 export function AutomationPage() {
   const devices = useDeviceStore((s) => s.devices);
@@ -30,7 +37,7 @@ export function AutomationPage() {
   const [schedFilter, setSchedFilter] = useState<SchedFilter>('All');
 
   const schedulable = useMemo(() => devices.filter((d) => hasSwitchableState(d.class)).sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true })), [devices]);
-  const filtered = schedFilter === 'All' ? schedulable : schedulable.filter((d) => d.class === FILTER_CLASS[schedFilter]);
+  const filtered = schedFilter === 'All' ? schedulable : schedulable.filter((d) => d.class === schedFilter);
 
   const armedCount = schedulable.filter((d) => (draft[`global.schedule.${d.id}.armed`] ?? saved[`global.schedule.${d.id}.armed`]) === 'true').length;
 
@@ -114,9 +121,9 @@ export function AutomationPage() {
             </span>
             <span className="automation-armed-count mono">{armedCount} ARMED</span>
             <div className="automation-filter-group">
-              {(['All', 'Lighting', 'Outlets', 'ACU'] as SchedFilter[]).map((f) => (
+              {SCHED_FILTERS.map((f) => (
                 <button key={f} type="button" className={`automation-filter-chip${schedFilter === f ? ' automation-filter-chip--active' : ''}`} aria-pressed={schedFilter === f} onClick={() => setSchedFilter(f)}>
-                  {f}
+                  {filterLabel(f)}
                 </button>
               ))}
             </div>

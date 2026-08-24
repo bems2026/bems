@@ -9,28 +9,17 @@ import { countOnline } from '@/components/overview/overviewMath';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { CLASS_ICON } from '@/lib/deviceIcons';
+import { DEVICE_CLASS_CATALOG, DEVICE_CLASS_ORDER } from '@/lib/deviceClassCatalog';
 import { metaSummary, type DeviceConfig } from '@/lib/deviceConfig';
 import { DeviceMetaEditor } from './DeviceMetaEditor';
 import type { Device, DeviceClass, Reading } from '@/lib/types';
 import { formatVolts, formatAmps, formatWithUnit } from '@/lib/format';
 
-const CLASS_ORDER: DeviceClass[] = ['outlet_dual', 'switch', 'meter', 'acu_ir', 'sensor_temp_humidity'];
+const CLASS_ORDER: DeviceClass[] = DEVICE_CLASS_ORDER;
 
-const CLASS_FILTER_LABEL: Record<DeviceClass, string> = {
-  outlet_dual: 'Outlets',
-  switch: 'Lighting Switches',
-  meter: 'Branch Meters',
-  acu_ir: 'Air Conditioning',
-  sensor_temp_humidity: 'Sensors',
-};
+const CLASS_FILTER_LABEL = (cls: DeviceClass) => DEVICE_CLASS_CATALOG[cls].label;
 
-const CLASS_PILL_LABEL: Record<DeviceClass, string> = {
-  outlet_dual: 'outlet',
-  switch: 'switch',
-  meter: 'meter',
-  acu_ir: 'aircon',
-  sensor_temp_humidity: 'sensor',
-};
+const CLASS_PILL_LABEL = (cls: DeviceClass) => DEVICE_CLASS_CATALOG[cls].pill;
 
 type CommState = 'no-data' | 'offline' | 'stale' | 'live';
 
@@ -105,7 +94,7 @@ export function DevicesView() {
                   aria-pressed={filter === cls}
                   onClick={() => setFilter(cls)}
                 >
-                  {CLASS_FILTER_LABEL[cls]}
+                  {CLASS_FILTER_LABEL(cls)}
                 </button>
               ))}
             </div>
@@ -202,7 +191,7 @@ const DeviceRow = memo(function DeviceRow({ device, config, onEdit }: { device: 
         </div>
       </div>
       <span className="devices-table__class-pill" role="cell">
-        {CLASS_PILL_LABEL[device.class]}
+        {CLASS_PILL_LABEL(device.class)}
       </span>
       <span className="devices-table__num mono" role="cell" data-label="Volt">
         {formatVolts(measured(reading?.voltage, reading))}

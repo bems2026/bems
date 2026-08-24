@@ -1,3 +1,4 @@
+import { classesWhere } from './deviceClassCatalog';
 import type { DeviceClass } from './types';
 
 /**
@@ -6,7 +7,7 @@ import type { DeviceClass } from './types';
  * across every view that renders a device's state (`DevicesView`, `OutletsView`) so none
  * of them classify a class differently.
  */
-export const SWITCHABLE_CLASSES: DeviceClass[] = ['outlet_dual', 'switch', 'acu_ir'];
+export const SWITCHABLE_CLASSES: DeviceClass[] = classesWhere('switchable');
 
 export function hasSwitchableState(deviceClass: DeviceClass): boolean {
   return SWITCHABLE_CLASSES.includes(deviceClass);

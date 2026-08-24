@@ -22,7 +22,20 @@ const MAX_CHART_POINTS = 140;
  * literal hex/bright vars are fine here the same way `scene3d/tokens.ts`'s SCENE_PALETTE is. */
 const PALETTE = ['var(--accent)', 'var(--blue-bright)', 'var(--green-bright)', 'var(--purple-bright)', 'var(--red-bright)', '#0ea5e9', '#db2777'];
 
-type Scope = 'branches' | 'outlets';
+/** A scope is an Analytics group id from the catalog, no longer a closed union. */
+type Scope = string;
+
+/**
+ * Per-group presentation. Deliberately a lookup WITH a fallback rather than a
+ * `Record<Scope, …>`: a group that nobody has styled yet must still render — appearing plain
+ * is recoverable, disappearing silently is the failure this whole change exists to remove.
+ */
+const GROUP_PRESENTATION: Record<string, { title: string; tag: string; icon: typeof Gauge; gridClass: string }> = {
+  branches: { title: 'Branches', tag: 'CHNT CT · 4 FEEDERS', icon: Gauge, gridClass: 'analytics-branch-grid' },
+  outlets: { title: 'Outlets', tag: 'EACH SOCKET METERED', icon: Plug, gridClass: 'analytics-outlet-grid' },
+};
+const presentationFor = (scope: Scope) =>
+  GROUP_PRESENTATION[scope] ?? { title: scope, tag: '', icon: Gauge, gridClass: 'analytics-outlet-grid' };
 
 // '1 y' crosses the retention boundary into `readings_hourly` — see
 // `readings_archive` in supabase/phase10_history_archive.sql. Both Records are keyed by
@@ -51,14 +64,18 @@ export function AnalyticsPage() {
   const readings = useDeviceStore((s) => s.latestReadings);
   const historyMap = useDeviceStore((s) => s.history);
   const [range, setRange] = useState<AnalyticsRange>('24h');
-  const { branchIds, outletIds, status } = useAnalyticsHistory(range);
+  const { byGroup, branchIds, outletIds, status } = useAnalyticsHistory(range);
   // Long-range history is Supabase-backed — only offer those options
   // when it's actually configured, rather than showing buttons that would just error.
   const longRangeAvailable = supabase !== null;
 
-  const [scope, setScope] = useState<Scope>('branches');
+  const scopes = useMemo(() => Object.keys(byGroup), [byGroup]);
+  const [scopeState, setScope] = useState<Scope>('branches');
+  // A scope that no longer exists (a class removed from the registry) falls back to the first
+  // real one rather than rendering an empty page under a live-looking heading.
+  const scope = scopes.includes(scopeState) ? scopeState : (scopes[0] ?? 'branches');
   const [param, setParam] = useState<ChartParam>('power');
-  const [selectedByScope, setSelectedByScope] = useState<Record<Scope, string | null>>({ branches: null, outlets: null });
+  const [selectedByScope, setSelectedByScope] = useState<Record<Scope, string | null>>({});
   // Phase O: axes/gridlines stay hidden (opacity 0, still occupying their reserved space —
   // see `.chart-frame` in index.css) until the chart is hovered or touched.
   const [chartRevealed, setChartRevealed] = useState(false);
@@ -68,9 +85,16 @@ export function AnalyticsPage() {
     onTouchStart: () => setChartRevealed(true),
   };
 
-  const branchDevices = useMemo(() => branchIds.map((id) => devices.find((d) => d.id === id)).filter((d): d is Device => !!d), [branchIds, devices]);
-  const outletDevices = useMemo(() => outletIds.map((id) => devices.find((d) => d.id === id)).filter((d): d is Device => !!d), [outletIds, devices]);
-  const scopeDevices = scope === 'branches' ? branchDevices : outletDevices;
+  const devicesFor = useMemo(() => {
+    const byId = new Map(devices.map((d) => [d.id, d]));
+    const out: Record<string, Device[]> = {};
+    for (const [group, ids] of Object.entries(byGroup)) {
+      out[group] = ids.map((id) => byId.get(id)).filter((d): d is Device => !!d);
+    }
+    return out;
+  }, [byGroup, devices]);
+  const branchDevices = devicesFor.branches ?? [];
+  const scopeDevices = devicesFor[scope] ?? [];
   const scopeIds = scopeDevices.map((d) => d.id);
 
   const selectedId = selectedByScope[scope] && scopeIds.includes(selectedByScope[scope]!) ? selectedByScope[scope]! : (scopeIds[0] ?? null);
@@ -129,12 +153,11 @@ export function AnalyticsPage() {
               ))}
             </div>
             <div className="analytics-scope-toggle" role="group" aria-label="Scope">
-              <button type="button" className={`analytics-scope-btn${scope === 'branches' ? ' analytics-scope-btn--active' : ''}`} aria-pressed={scope === 'branches'} onClick={() => setScope('branches')}>
-                Branches
-              </button>
-              <button type="button" className={`analytics-scope-btn${scope === 'outlets' ? ' analytics-scope-btn--active' : ''}`} aria-pressed={scope === 'outlets'} onClick={() => setScope('outlets')}>
-                Outlets
-              </button>
+              {scopes.map((g) => (
+                <button key={g} type="button" className={`analytics-scope-btn${scope === g ? ' analytics-scope-btn--active' : ''}`} aria-pressed={scope === g} onClick={() => setScope(g)}>
+                  {presentationFor(g).title}
+                </button>
+              ))}
             </div>
           </div>
         }
@@ -234,8 +257,18 @@ export function AnalyticsPage() {
 
       <EnergySection branchDevices={branchDevices} />
 
-      <SourceSection title="Branches" tag="CHNT CT · 4 FEEDERS" devices={branchDevices} scope="branches" activeScope={scope} param={param} range={range} selectedId={selectedByScope.branches} onSelect={(id) => { setScope('branches'); selectDevice(id); }} className="analytics-branch-grid" />
-      <SourceSection title="Outlets" tag="EACH SOCKET METERED" devices={outletDevices} scope="outlets" activeScope={scope} param={param} range={range} selectedId={selectedByScope.outlets} onSelect={(id) => { setScope('outlets'); selectDevice(id); }} className="analytics-outlet-grid" />
+      {scopes.map((g) => (
+        <SourceSection
+          key={g}
+          scope={g}
+          devices={devicesFor[g] ?? []}
+          activeScope={scope}
+          param={param}
+          range={range}
+          selectedId={selectedByScope[g] ?? null}
+          onSelect={(id) => { setScope(g); selectDevice(id); }}
+        />
+      ))}
 
       <UntrackedLoadCard branchIds={branchIds} outletIds={outletIds} range={range} />
     </>
@@ -268,9 +301,12 @@ function SelectedStatPanel({ reading }: { reading: Reading | undefined }) {
   );
 }
 
+/**
+ * One per Analytics group. Title, tag, icon and grid class come from `presentationFor`, which
+ * falls back for a group nobody has styled — so a new metered class shows up as a plain
+ * section rather than not at all.
+ */
 function SourceSection({
-  title,
-  tag,
   devices,
   scope,
   activeScope,
@@ -278,10 +314,7 @@ function SourceSection({
   range,
   selectedId,
   onSelect,
-  className,
 }: {
-  title: string;
-  tag: string;
   devices: Device[];
   scope: Scope;
   activeScope: Scope;
@@ -289,10 +322,9 @@ function SourceSection({
   range: string;
   selectedId: string | null;
   onSelect: (id: string) => void;
-  className: string;
 }) {
   if (devices.length === 0) return null;
-  const SectionIcon = scope === 'branches' ? Gauge : Plug;
+  const { title, tag, icon: SectionIcon, gridClass } = presentationFor(scope);
   return (
     <div className="analytics-cards-section">
       <div className="analytics-cards-section__head">
@@ -302,7 +334,7 @@ function SourceSection({
         </span>
         <span className="analytics-cards-section__tag">{tag}</span>
       </div>
-      <div className={className}>
+      <div className={gridClass}>
         {devices.map((d, i) => (
           <SourceCard key={d.id} device={d} color={PALETTE[i % PALETTE.length]} scope={scope} param={param} range={range} selected={activeScope === scope && selectedId === d.id} onSelect={() => onSelect(d.id)} />
         ))}
