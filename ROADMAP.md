@@ -297,6 +297,22 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       in `shared/tuyaNodeSettings.mjs`. Working was not evidence the declaration was right; the
       declarations were corrected to the measured value and those three left the unverified list.
 
+- [ ] **RM-013** Session churn: ~4 of 20 devices read offline at any moment, and the set rotates.
+      *Acceptance:* a stable hour with no unexplained drops, or a recorded reason why not.
+      Observed 2026-08-24 after moving back to the device network. Sampled over ~2 minutes:
+      16 online each time, but `co6` recovered while `l3` dropped between samples. Persistent
+      across every sample were `co5`, `co7` and `l6`; the rest rotate.
+      **The network layer is not the cause.** `ip neigh` resolves 17 of 18 hosts (only `l6`
+      fails — RM-012), the Pi holds a 76% link at 130 Mbit/s, and the meters report
+      continuously throughout. The failure is at the Tuya session layer: devices are reachable,
+      sessions are not holding.
+      *Not yet distinguished, and worth doing before acting:* whether this is materially worse
+      than normal for this site. Earlier the same day the system sat at 18-20 online with 2-3
+      persistently absent, which is a similar order. One concrete candidate is RM-011's
+      duplicate session to `AREC ACU` — Tuya devices tolerate concurrent local connections
+      poorly — but that is a hypothesis, not a finding, and the meter itself is the one thing
+      that has stayed up.
+
 - [ ] **RM-012** `l6` (Light Switch 6) transmits but cannot be reached — a one-way link.
       *Acceptance:* `ip neigh` resolves its address, and it stays online across an hour.
       **Diagnosed 2026-08-24, and it is not a configuration fault.** It broadcasts discovery
