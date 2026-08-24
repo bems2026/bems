@@ -355,25 +355,29 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       distributed relays and not the 3 panel-mounted meters, which is the shape a client limit
       or an association problem makes, not the shape a bad radio makes.
 
-- [ ] **RM-013** Devices are dropping off the 2.4 GHz network entirely and rejoining.
-      *Acceptance:* the announcing-host count stays at the full device count for an hour.
-      **Diagnosed 2026-08-24; this needs the access point, not the code.**
-      Measured over a 65 s capture of the Tuya discovery broadcast (UDP 6667):
-      - **13 hosts announcing**, down from 17 about half an hour earlier;
-      - every one of those 13 broadcast at the *full* steady rate — **zero intermittent**.
-      That binary shape is the finding. Marginal RF degrades a device's rate; it does not
-      remove it cleanly. These devices are disassociating and rejoining. The Pi's ARP table
-      still listed 18 hosts with 0 FAILED at the same moment, which is the cache holding
-      entries for devices that had already gone — so the earlier per-device `find()` timeouts
-      were the symptom, not the cause.
-      **Candidate causes, in order of how cheap they are to rule out:** a client limit on the
-      access point (~17 devices plus the Pi sits right at the cap of many consumer units), DHCP
-      pool exhaustion (the Pi's own lease is a normal 7200 s), or AP instability following the
-      network restart. All three are answered by looking at the AP's admin page.
-      *Hypothesis already tested and rejected:* that RM-011's duplicate `ACU` session was
-      destabilising things. Matching its protocol version removed 39 timeouts per ten minutes
-      and the churn did not improve — it got marginally worse over the same window. Recorded
-      because a plausible-sounding cause that measurement rejects is worth not re-proposing.
+- [ ] **RM-013** Devices genuinely leave the 2.4 GHz network and rejoin. **Confirmed from an
+      independent vantage point 2026-08-24 — the access point is the remaining suspect.**
+      *Acceptance:* the set of cloud-offline devices stops changing between runs of
+      `npm run tuya:devices`.
+      Tuya's cloud reaches these devices over the internet, not the local subnet, and **it sees
+      them drop too.** Two runs minutes apart named different devices offline — first
+      CO4/CO7/L5/CO5, then CO5/L2/L3/L7 — so this is not the Pi failing to see devices that are
+      up. They are leaving the network.
+      *That rules out the earlier hypothesis.* Client isolation would keep a device online to
+      Tuya while invisible to the Pi; that is not what is happening for most of them. What
+      remains is access-point capacity, DHCP, or RF — all answerable from the AP's admin page,
+      none from this repository.
+      *Still consistent with the earlier measurement:* the branch meters never drop, and
+      everything that flaps is one of the ~14 distributed relays.
+
+- [ ] **RM-016** Two flow nodes reference devices that are not in the Tuya cloud project.
+      *Acceptance:* each is re-paired into the project, or removed from the flow and registry.
+      `NBRIC IR Blaster` and `Outside Temp` came back **NOT IN PROJECT** from
+      `npm run tuya:devices`. They can never work — the ids in the flow belong to no device this
+      account can see, which is why they have never announced and never will. Either they were
+      removed from the Smart Life account, or they belong to a different one.
+      This is also why `sens_outside_temp` has no real telemetry: `acu_main` and
+      `sens_outside_temp` both read `ac_dash_state`, which the IR blaster feeds.
 
 - [ ] **RM-012** `l6` (Light Switch 6) transmits but cannot be reached — a one-way link.
       *Acceptance:* `ip neigh` resolves its address, and it stays online across an hour.
