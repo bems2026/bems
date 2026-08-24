@@ -45,10 +45,10 @@ export const TUYA_NODE_VERSIONS = {
   'L.O yellow': '3.5',
   CO1: '3.4',
   CO2: '3.4',
-  CO3: '3.1',
+  CO3: '3.4',
   CO4: '3.4',
-  CO5: '3.1',
-  CO6: '3.1',
+  CO5: '3.4',
+  CO6: '3.4',
   CO7: '3.4',
   'Light Switch 1': '3.5',
   'Light Switch 2': '3.5',
@@ -68,9 +68,19 @@ export const TUYA_NODE_VERSIONS = {
  * These six devices were not announcing on the LAN when the survey ran, so their declarations
  * are simply whatever the flow already had. Recording that explicitly matters: an unverified
  * value that sits in the same table as twenty verified ones will be read as verified.
- * CO3 has since reconnected at 3.1; the other five remain unconfirmed either way.
+ * Narrowed 2026-08-24 (second pass): CO3, CO5 and CO6 were re-paired with new device ids and
+ * keys, and all three now announce **v3.4** — so their declarations are measured rather than
+ * inherited, and they have left this list. Note they had been running at 3.1 and reporting
+ * online, which is exactly the "tolerating a lower version" trap described above: working was
+ * never evidence the declaration was right.
+ *
+ * The three that remain do not announce on the LAN at all, so their versions stay unverifiable
+ * by this method. `ACU` additionally holds the same device id AND local key as `AREC ACU` and
+ * feeds that meter's parser — it is a second session to the branch meter, not a connection to
+ * the aircon. Commands are unaffected (`POST /acu` routes through "AC Master Logic", not this
+ * node), but it should not stay this way. See ROADMAP RM-011.
  */
-export const TUYA_VERSION_UNVERIFIED = new Set(['CO3', 'CO5', 'CO6', 'Outside Temp', 'NBRIC IR Blaster', 'ACU']);
+export const TUYA_VERSION_UNVERIFIED = new Set(['Outside Temp', 'NBRIC IR Blaster', 'ACU']);
 
 /** Compares a live/baseline flow against the declarations above. Pure; no I/O. */
 export function findSettingsDrift(flowNodes) {

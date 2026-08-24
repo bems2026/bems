@@ -289,16 +289,38 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
         with `Prefer: return=representation` returns `[]` (zero rows affected) and a service-role
         read confirms the row unchanged. A 204 alone would not have been evidence.
 
-- [ ] **RM-001a** Two devices remain offline. A physical check, not a code change.
-      *Acceptance:* each is either restored or recorded as decommissioned in the registry.
-      `co5` and `co6` do not announce on the LAN at all, so no protocol or timeout setting can
-      reach them; they also read 0 V before the outage. Most likely unplugged or unpaired.
-      *Corrected twice as evidence arrived, which is worth noting for how the next one is read:*
-      this entry first listed five devices and blamed a stale local key for `l6`/`l7`. Both
-      connected once the raised `findTimeout` gave them enough attempts. It then listed three,
-      and `co3` recovered on its own shortly after. Devices came back for hours after the fix —
-      so a device still dark an hour later was not evidence of a second fault, only of a slower
-      retry. 18 of 20 are now online.
+- [x] **RM-001a** ~~Devices offline that need a physical check.~~ **Closed 2026-08-24.** The
+      operator re-paired `co3`, `co5` and `co6` with new device ids and keys; all three now
+      announce and report. 19 of 20 devices online.
+      *Worth keeping:* they came back reporting `online: true` while their nodes still declared
+      `3.1` and the devices announced `3.4` — the same "tolerating a lower version" trap recorded
+      in `shared/tuyaNodeSettings.mjs`. Working was not evidence the declaration was right; the
+      declarations were corrected to the measured value and those three left the unverified list.
+
+- [ ] **RM-012** `l6` (Light Switch 6) transmits but cannot be reached — a one-way link.
+      *Acceptance:* `ip neigh` resolves its address, and it stays online across an hour.
+      **Diagnosed 2026-08-24, and it is not a configuration fault.** It broadcasts discovery
+      normally (its id appears in the UDP 6667 survey), but a direct probe returns
+      `EHOSTUNREACH …:6668` at *every* protocol version, and its address shows `FAILED` in the
+      Pi's ARP table while a healthy peer on the same AP resolves. So the device transmits and
+      the Pi cannot send anything back to it — no key, version or timeout setting can fix that.
+      Generating ~150 discovery timeouts every 2 minutes, by far the noisiest node.
+      Likely RF range, a power-save state, or a stale address. **Needs eyes on the fixture:** is
+      it powered, has it been moved, where is it relative to the access point.
+
+- [ ] **RM-011** The `ACU` node is a second session to the `AREC ACU` branch meter.
+      *Acceptance:* the aircon's own device is restored on that node, or the node is disabled.
+      Found 2026-08-24: it now carries the **same device id and the same local key** as
+      `AREC ACU`, and its output feeds "AREC ACU Daily Parser" — the meter's parser. Earlier the
+      same day it held a different id. It also declares `3.3` while that device announces `3.5`,
+      and it was the noisiest node on the flow before the light switches took over.
+      **Commands are unaffected** — `POST /acu` routes through "ACU auth + validate" into
+      "AC Master Logic", not through this node — so this is not a control-safety problem. The
+      cost is a duplicate local session to one physical meter, which Tuya devices tolerate
+      poorly, and the risk that `AREC ACU` (a real branch meter) is destabilised by it.
+      **Not changed unilaterally:** the correct device for that node is a question about the
+      hardware, not the code.
+
 - [x] **RM-002** ~~Verify the rotated light token against a real fixture.~~ **Done 2026-08-24,
       on site.** A light physically changed state from the dashboard, observed by the operator.
 - [x] **RM-003** ~~Open the hardware-dispatch gate and confirm a real relay responds.~~
