@@ -24,6 +24,7 @@
  * be read off a terminal — this repository is public and terminals get pasted into issues.
  */
 
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { loadDotEnv } from '../node-red-bridge/nodeRedAdmin.mjs';
@@ -115,24 +116,51 @@ for (const d of cloud.sort((a, b) => String(a.name).localeCompare(String(b.name)
   );
 }
 
-// The comparison is only meaningful for devices this bridge actually knows about, and the
-// cloud names them differently from the registry — so it is reported in aggregate rather than
-// guessing a per-device mapping that nothing in the repo records yet.
-if (local) {
-  const localOffline = [...local.entries()].filter(([, on]) => on === false).length;
-  const cloudOffline = cloud.filter((d) => !d.online).length;
-  console.log(`\nlocal view : ${local.size - localOffline}/${local.size} online`);
-  console.log(`cloud view : ${cloud.length - cloudOffline}/${cloud.length} online`);
-  if (cloudOffline < localOffline) {
-    console.log(
-      `\nThe cloud sees MORE devices up than the bridge does. Those devices are powered, joined,\n` +
-        `and talking to Tuya — the Pi simply cannot reach them. That points at the access point\n` +
-        `(client isolation, a client limit, or addressing), not at the devices. See ROADMAP RM-013.`,
-    );
-  } else if (cloudOffline >= localOffline && cloudOffline > 0) {
-    console.log(
-      `\nThe cloud agrees the devices are down, so this is not the network getting in the way.\n` +
-        `Look at the devices themselves: power, range, pairing.`,
-    );
+/**
+ * Per-device comparison, joined on the Tuya device id that both sides already carry: the flow's
+ * tuya nodes hold it, and the cloud listing returns it.
+ *
+ * An earlier version compared offline COUNTS instead — 21 local entries against 17 cloud
+ * devices — and drew a conclusion from the difference. Those denominators are not comparable:
+ * several registry devices are two logical readers of one physical meter, and two flow nodes
+ * have no cloud device at all. Counting across mismatched populations produced a confident
+ * verdict with nothing behind it.
+ */
+const flowPath = '/home/bems/.node-red/flows.json';
+let nodes = [];
+try {
+  nodes = JSON.parse(fs.readFileSync(flowPath, 'utf8')).filter((n) => n.type === 'tuya-smart-device');
+} catch {
+  console.log('\n(Per-device comparison needs the live flow; not readable from here.)');
+}
+
+if (nodes.length && local) {
+  const cloudById = new Map(cloud.map((d) => [d.id, d]));
+  const rows = [];
+  for (const n of nodes) {
+    const c = cloudById.get(n.deviceId);
+    rows.push({ node: n.deviceName, cloud: c ? (c.online ? 'ONLINE' : 'offline') : 'NOT IN PROJECT' });
   }
+  console.log('\nnode                cloud');
+  for (const r of rows.sort((a, b) => a.node.localeCompare(b.node))) {
+    console.log(`  ${r.node.padEnd(18)} ${r.cloud}`);
+  }
+
+  const orphans = rows.filter((r) => r.cloud === 'NOT IN PROJECT');
+  const cloudDown = rows.filter((r) => r.cloud === 'offline');
+  console.log('');
+  if (orphans.length) {
+    console.log(`${orphans.length} flow node(s) reference a device this cloud project does not contain:`);
+    console.log(`  ${orphans.map((r) => r.node).join(', ')}`);
+    console.log('  They cannot work. Either they belong to another account, or they were removed.');
+  }
+  if (cloudDown.length) {
+    console.log(`${cloudDown.length} device(s) are offline to TUYA as well as to the bridge:`);
+    console.log(`  ${cloudDown.map((r) => r.node).join(', ')}`);
+    console.log('  Tuya reaches these over the internet, not the local subnet — so these are genuinely');
+    console.log('  off the network. That is the device or the access point dropping them, not the Pi');
+    console.log('  failing to see them.');
+  }
+  console.log('\nRe-run this a few minutes apart: a device whose cloud state changes between runs is');
+  console.log('flapping at the network level, which is RM-013 and is not fixable from this side.');
 }
