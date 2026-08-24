@@ -35,6 +35,15 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-010** Weather cards from Open-Meteo (no API key) — `src/components/weather/`
 - [x] **EX-011** Alerts bell merging staleness watchdog and anomaly alerts under one acknowledge set — `src/components/layout/AlertsPopover.tsx`
 - [x] **EX-012** Manual dark theme with WCAG-checked token overrides — `src/index.css`, `src/stores/themeStore.ts`
+- [x] **EX-022b** Category vocabulary revised to how this site is actually laid out: Lighting,
+      Aircon, Outlet, Branch Circuit, Critical, Others — replacing a generic building-management
+      list (`hvac`, `office_equipment`, `kitchen`) with the groupings the CT map has always had
+      and the category list never did. `coerceCategory` drops the retired values, so a row
+      written before the migration reads as uncategorised rather than putting an option in the
+      `<select>` that the CHECK would reject on the next save. A guard test pins the option list
+      and the SQL CHECK to each other, making enforceable a comment `deviceConfig.ts` had only
+      asserted — `src/lib/deviceConfig.ts`, `supabase/phase14_device_categories.sql`,
+      `test/phase14-device-categories.test.mjs`
 - [x] **EX-021b** Drift guard for the tuya node settings on the hand-built source tabs.
       `shared/tuyaNodeSettings.mjs` declares the expected `findTimeout` and per-node
       `tuyaVersion`; `test/tuya-node-settings.test.mjs` checks them against the committed
@@ -324,18 +333,32 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       Likely RF range, a power-save state, or a stale address. **Needs eyes on the fixture:** is
       it powered, has it been moved, where is it relative to the access point.
 
-- [ ] **RM-011** The `ACU` node is a second session to the `AREC ACU` branch meter.
-      *Acceptance:* the aircon's own device is restored on that node, or the node is disabled.
-      Found 2026-08-24: it now carries the **same device id and the same local key** as
-      `AREC ACU`, and its output feeds "AREC ACU Daily Parser" — the meter's parser. Earlier the
-      same day it held a different id. It also declares `3.3` while that device announces `3.5`,
-      and it was the noisiest node on the flow before the light switches took over.
-      **Commands are unaffected** — `POST /acu` routes through "ACU auth + validate" into
-      "AC Master Logic", not through this node — so this is not a control-safety problem. The
-      cost is a duplicate local session to one physical meter, which Tuya devices tolerate
-      poorly, and the risk that `AREC ACU` (a real branch meter) is destabilised by it.
-      **Not changed unilaterally:** the correct device for that node is a question about the
-      hardware, not the code.
+- [x] **RM-011** ~~The `ACU` node is a second session to the `AREC ACU` branch meter.~~
+      **Withdrawn 2026-08-24 — this was a wrong finding, corrected by the operator.** `ACU` and
+      `AREC ACU` share a device id and local key **by design**: the aircon is the only load on
+      the CARE ACU branch, so the meter measuring that branch is measuring the aircon. Two
+      logical devices on one physical meter — the same arrangement `shared/registry.mjs` already
+      documents for `mtr_co_yellow`/`mtr_lo_yellow`. The wiring says so plainly and I did not
+      read it closely enough before filing: `AREC ACU` feeds the **Unified** parser (live
+      V/A/W), `ACU` feeds the **Daily** parser (accumulated energy). Different purposes, one
+      device.
+      *The one real defect inside the false finding, now fixed:* `ACU` declared protocol `3.3`
+      while that device announces `3.5`, which is why it alone logged 39 discovery timeouts in
+      ten minutes. Matched to `AREC ACU`, and it has left the unverified list — its version is
+      measured, because it is the same physical device.
+      *Worth keeping:* "two nodes share a device id" is a normal shape here, not a smell. The
+      question to ask is whether the wiring shows two purposes or one duplicated.
+
+- [ ] **RM-014** Apply `supabase/phase14_device_categories.sql`, then deploy the frontend.
+      *Acceptance:* selecting Aircon, Outlet or Branch Circuit in the device editor saves and
+      reloads.
+      The category vocabulary is now Lighting / Aircon / Outlet / Branch Circuit / Critical /
+      Others. **Reading is safe before the migration** — the only stored row is `lighting`,
+      valid under both the old and new CHECK — but *writing* any of the three new values would
+      be rejected by the old constraint, so the editor's new options are unusable until it is
+      applied. `hvac` maps to `aircon`; `office_equipment` and `kitchen` map to NULL rather than
+      being forced into `other`, since inventing a grouping for a device nobody classified is
+      worse than leaving it blank.
 
 - [x] **RM-002** ~~Verify the rotated light token against a real fixture.~~ **Done 2026-08-24,
       on site.** A light physically changed state from the dashboard, observed by the operator.

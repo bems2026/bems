@@ -45,13 +45,21 @@ describe('normalizeDeviceConfig', () => {
 
 describe('coerceCategory / coerceLoadShedGroup', () => {
   it('passes through the values the database CHECK accepts', () => {
-    expect(coerceCategory('office_equipment')).toBe('office_equipment');
+    expect(coerceCategory('branch_circuit')).toBe('branch_circuit');
     expect(coerceLoadShedGroup('never')).toBe('never');
   });
   it('maps null and unknown alike to null', () => {
     expect(coerceCategory(null)).toBeNull();
     expect(coerceCategory('Lighting')).toBeNull(); // case matters — the column stores lowercase
     expect(coerceLoadShedGroup('')).toBeNull();
+  });
+  it('drops the values phase 14 retired, so a row written before it reads as uncategorised', () => {
+    // A row can still hold one of these if the migration has not been applied to a given
+    // project yet. Rendering it would put an option in the <select> that the CHECK now
+    // rejects, so the next save would 400 on a field the operator never touched.
+    for (const retired of ['hvac', 'office_equipment', 'kitchen']) {
+      expect(coerceCategory(retired)).toBeNull();
+    }
   });
 });
 

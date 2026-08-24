@@ -130,9 +130,9 @@ describe('DevicesView', () => {
 
   it('shows a recorded room/category as a meta line under the device name', () => {
     useDeviceStore.setState({ devices: [device('co1', 'Outlet 1', 'outlet_dual')] });
-    useDeviceConfigStore.setState({ saved: { co1: { ...emptyDeviceConfig('co1'), room: 'CARE Office', category: 'office_equipment' } } });
+    useDeviceConfigStore.setState({ saved: { co1: { ...emptyDeviceConfig('co1'), room: 'CARE Office', category: 'outlet' } } });
     render(<DevicesView />);
-    expect(screen.getByText('CARE Office · Office Equipment')).toBeInTheDocument();
+    expect(screen.getByText('CARE Office · Outlet')).toBeInTheDocument();
   });
 
   it('shows no meta line at all for a device with nothing recorded, not a row of placeholders', () => {

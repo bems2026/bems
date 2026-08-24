@@ -7,7 +7,7 @@ describe('deviceConfigRowToModel', () => {
       deviceConfigRowToModel({
         device_id: 'co1', functions: null,
         room: 'CARE Office',
-        category: 'office_equipment',
+        category: 'outlet',
         load_shed_group: 'never',
         display_name_override: 'Reception outlet',
         notes: 'near the front door',
@@ -15,7 +15,7 @@ describe('deviceConfigRowToModel', () => {
     ).toEqual({
       deviceId: 'co1', functions: null,
       room: 'CARE Office',
-      category: 'office_equipment',
+      category: 'outlet',
       loadShedGroup: 'never',
       displayNameOverride: 'Reception outlet',
       notes: 'near the front door',
@@ -55,13 +55,13 @@ describe('deviceConfigToRow', () => {
   it('builds the upsert row, normalizing text and stamping the actor', () => {
     expect(
       deviceConfigToRow(
-        { deviceId: 'co1', functions: null, room: '  CARE Office  ', category: 'office_equipment', loadShedGroup: 'never', displayNameOverride: null, notes: '' },
+        { deviceId: 'co1', functions: null, room: '  CARE Office  ', category: 'outlet', loadShedGroup: 'never', displayNameOverride: null, notes: '' },
         'user-1',
       ),
     ).toEqual({
       device_id: 'co1', functions: null,
       room: 'CARE Office',
-      category: 'office_equipment',
+      category: 'outlet',
       load_shed_group: 'never',
       display_name_override: null,
       notes: null,

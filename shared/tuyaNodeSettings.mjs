@@ -59,7 +59,7 @@ export const TUYA_NODE_VERSIONS = {
   'Light Switch 7': '3.5',
   'Outside Temp': '3.3',
   'NBRIC IR Blaster': '3.3',
-  ACU: '3.3',
+  ACU: '3.5',
 };
 
 /**
@@ -74,13 +74,19 @@ export const TUYA_NODE_VERSIONS = {
  * online, which is exactly the "tolerating a lower version" trap described above: working was
  * never evidence the declaration was right.
  *
- * The three that remain do not announce on the LAN at all, so their versions stay unverifiable
- * by this method. `ACU` additionally holds the same device id AND local key as `AREC ACU` and
- * feeds that meter's parser — it is a second session to the branch meter, not a connection to
- * the aircon. Commands are unaffected (`POST /acu` routes through "AC Master Logic", not this
- * node), but it should not stay this way. See ROADMAP RM-011.
+ * The two that remain do not announce on the LAN at all, so their versions stay unverifiable by
+ * this method.
+ *
+ * `ACU` left the list once its situation was understood rather than guessed at. It shares a
+ * device id and local key with `AREC ACU` **by design**: the aircon is the only load on the
+ * CARE ACU branch, so the meter measuring that branch is measuring the aircon. Two logical
+ * devices on one physical meter — the same arrangement `registry.mjs` already documents for
+ * `mtr_co_yellow`/`mtr_lo_yellow`, and visible in the wiring: `AREC ACU` feeds the *Unified*
+ * parser (live V/A/W) while `ACU` feeds the *Daily* parser (accumulated energy). Its version is
+ * therefore measured, not assumed — it is the same physical device, so it is 3.5. It had been
+ * declared 3.3, which is why it alone logged 39 discovery timeouts in ten minutes.
  */
-export const TUYA_VERSION_UNVERIFIED = new Set(['Outside Temp', 'NBRIC IR Blaster', 'ACU']);
+export const TUYA_VERSION_UNVERIFIED = new Set(['Outside Temp', 'NBRIC IR Blaster']);
 
 /** Compares a live/baseline flow against the declarations above. Pure; no I/O. */
 export function findSettingsDrift(flowNodes) {

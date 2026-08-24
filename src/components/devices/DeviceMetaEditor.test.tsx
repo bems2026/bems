@@ -25,11 +25,11 @@ afterEach(() => {
 
 describe('DeviceMetaEditor', () => {
   it('pre-fills fields from the saved config and focuses the heading', () => {
-    useDeviceConfigStore.setState({ saved: { co1: { ...emptyDeviceConfig('co1'), room: 'CARE Office', category: 'office_equipment' } } });
+    useDeviceConfigStore.setState({ saved: { co1: { ...emptyDeviceConfig('co1'), room: 'CARE Office', category: 'outlet' } } });
     render(<DeviceMetaEditor device={outlet()} onClose={vi.fn()} />);
 
     expect(screen.getByLabelText('Room')).toHaveValue('CARE Office');
-    expect(screen.getByLabelText('Category')).toHaveValue('office_equipment');
+    expect(screen.getByLabelText('Category')).toHaveValue('outlet');
     expect(screen.getByRole('heading', { name: /Outlet 1/ })).toHaveFocus();
   });
 

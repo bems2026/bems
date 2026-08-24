@@ -15,7 +15,7 @@ import type { DeviceFunction } from './deviceFunctions';
 import { coerceFunctions } from './deviceFunctions';
 import type { Device } from './types';
 
-export type DeviceCategory = 'lighting' | 'hvac' | 'office_equipment' | 'critical' | 'kitchen' | 'other';
+export type DeviceCategory = 'lighting' | 'aircon' | 'outlet' | 'branch_circuit' | 'critical' | 'other';
 export type LoadShedGroup = 'group_1' | 'group_2' | 'group_3' | 'never';
 
 export interface DeviceConfig {
@@ -36,11 +36,11 @@ export type DeviceConfigField = 'room' | 'category' | 'loadShedGroup' | 'display
  * is the reminder to change both. */
 export const CATEGORY_OPTIONS: ReadonlyArray<{ value: DeviceCategory; label: string }> = [
   { value: 'lighting', label: 'Lighting' },
-  { value: 'hvac', label: 'HVAC' },
-  { value: 'office_equipment', label: 'Office Equipment' },
+  { value: 'aircon', label: 'Aircon' },
+  { value: 'outlet', label: 'Outlet' },
+  { value: 'branch_circuit', label: 'Branch Circuit' },
   { value: 'critical', label: 'Critical' },
-  { value: 'kitchen', label: 'Kitchen' },
-  { value: 'other', label: 'Other' },
+  { value: 'other', label: 'Others' },
 ];
 
 /** Order is the shed order: group_1 sheds first, `never` is protected. */

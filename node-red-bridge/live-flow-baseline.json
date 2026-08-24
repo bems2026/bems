@@ -5140,7 +5140,7 @@
     "deviceIp": "",
     "retryTimeout": "1000",
     "findTimeout": "10000",
-    "tuyaVersion": "3.3",
+    "tuyaVersion": "3.5",
     "eventMode": "event-both",
     "logLevel": "log-level-error",
     "x": 170,
