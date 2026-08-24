@@ -213,18 +213,27 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       four hand-built source tabs, and a full flow regeneration would lose them until
       `build-flow.mjs` owns those nodes (FI-001 / the device-enrollment work).
 
-- [ ] **RM-001a** Five devices remain offline; both groups need a physical check, not a code change.
+- [ ] **RM-001a** Three devices remain offline. A physical check, not a code change.
       *Acceptance:* each is either restored or recorded as decommissioned in the registry.
-      - `co3`, `co5`, `co6` — **not announcing on the LAN at all.** They also read 0 V before the
-        outage, so they have most likely been unplugged or unpaired for some time.
-      - `l6`, `l7` — **announcing normally at v3.5 but refusing to connect**, retrying hard
-        (~150 errors in 2 min, where a merely-absent device logs ~31). That shape points at a
-        stale local key rather than an absent device — the two to re-pair first.
+      `co3`, `co5`, `co6` — **not announcing on the LAN at all**, so no protocol or timeout
+      setting can reach them. They also read 0 V before the outage, so they have most likely been
+      unplugged or unpaired for some time.
+      *Corrected later the same day:* this entry first also listed `l6`/`l7` and read their heavy
+      retry rate as a stale local key. Wrong — both connected on their own once the raised
+      `findTimeout` gave them enough attempts. They were losing the 5 s discovery race harder
+      than their peers, nothing more. 17 of 20 devices are now online.
 
-- [ ] **RM-002** Verify the rotated light token against a real fixture.
-      *Acceptance:* a light physically changes state in response to one command. **Requires eyes on the fixture** — switches carry no metering context, so there is no telemetry-based confirmation.
-- [ ] **RM-003** Open the hardware-dispatch gate (`HARDWARE_DISPATCH_ENABLED=true`) and confirm a real relay responds.
-      *Acceptance:* a light toggles from the UI, its audit row reads `dispatched`, and outlet/ACU commands still read `dry_run`. **Requires someone watching the hardware.** Config is already staged; this is a one-word edit plus a proxy restart.
+- [x] **RM-002** ~~Verify the rotated light token against a real fixture.~~ **Done 2026-08-24,
+      on site.** A light physically changed state from the dashboard, observed by the operator.
+- [x] **RM-003** ~~Open the hardware-dispatch gate and confirm a real relay responds.~~
+      **Done 2026-08-24, on site.** `HARDWARE_DISPATCH_ENABLED=true`, proxy restarted (it starts
+      only if the token is present, so a clean start is itself evidence), and switches were
+      toggled against real fixtures successfully. The first commands in this project's history to
+      move real hardware.
+      **Note the scope is wider than this entry originally claimed.** It said outlets and the ACU
+      would still read `dry_run`; `server/dispatchLight.mjs` has listed
+      `['switch','outlet_dual','acu_ir']` since `c287e4c`, so opening the gate made all three
+      live at once. The Control page's "Outlets off" master now genuinely cuts every socket.
 - [ ] **RM-004** Re-check anomaly detection for false positives once real telemetry resumes.
       *Acceptance:* a week of live-varying data with no unexplained alerts on the cyclical-load branch meters. The current zero-alert result is not evidence — the meters have been returning frozen values.
 - [ ] **RM-005** Decide whether Mosquitto is still load-bearing or can be decommissioned.
