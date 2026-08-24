@@ -35,6 +35,19 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-010** Weather cards from Open-Meteo (no API key) — `src/components/weather/`
 - [x] **EX-011** Alerts bell merging staleness watchdog and anomaly alerts under one acknowledge set — `src/components/layout/AlertsPopover.tsx`
 - [x] **EX-012** Manual dark theme with WCAG-checked token overrides — `src/index.css`, `src/stores/themeStore.ts`
+- [x] **EX-027b** `npm run demand:profile` — the recorded building demand, so a DSM limit comes
+      from evidence instead of a guess. Suggests a ceiling **above the observed peak**, not a
+      percentile of it: a limit anchored inside normal operation sheds load on an ordinary busy
+      afternoon. Refuses to suggest anything from under 500 readings, because a number drawn
+      from a handful of samples is a guess wearing a decimal point and this system can act on it
+      by switching off lights. Writes nothing.
+      *Pagination is the load-bearing part.* The first pass asked for 4,000 rows, got exactly
+      1,000, and computed percentiles over 53% of the data with nothing to indicate it — the
+      same PostgREST cap `phase9_history_buckets.sql` and `server/backup.mjs` both exist to
+      escape, walked into anyway. The true count is 1,877, and the difference is not cosmetic:
+      the truncated peak was 1,577 W against a real 1,767.8 W, so a threshold derived from it
+      would have sat ~12% low and shed load on a normal day —
+      `server/demandProfile.mjs`, `server/demandProfile.test.mjs`, `server/demand-profile.mjs`
 - [x] **EX-026b** `npm run tuya:devices -- --verify-keys` — checks every flow node's local key
       against the key Tuya holds, and reports only whether it matches. A wrong key does not fail
       loudly: the device is discovered, the connection is attempted, and it fails looking like a
@@ -474,10 +487,25 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       The doc's final section is the checklist that closes it. Note also that `auth.users` is
       not exported — restored into a new project, every `commands` row keeps its audit
       content but loses its attribution.
-- [ ] **RM-006c** Assign load-shed tiers and set DSM limits before auto-shed can do anything.
+- [ ] **RM-006c** Assign load-shed tiers and set DSM limits. Still inert: thresholds null,
+      `auto_shed` false, no device in a group.
       *Acceptance:* at least one device has a shed group, a threshold is set, and auto-shed is on.
-      Nothing is configured today, so the mechanism is live but inert by design. Note that only
-      lights can currently be shed, which limits how much load it can actually drop.
+      **Measured 2026-08-24 over 1,877 readings** (`npm run demand:profile`), so the numbers are
+      no longer the blocker:
+      total power p50 326 W, p99 1,602 W, peak **1,767.8 W**; phase peak **12.30 A**.
+      Suggested ceilings — 25% above the observed peak — `max_total_kw 2.21`,
+      `max_phase_current 15.4`.
+      **Correction to this entry's own earlier note:** it said "only lights can currently be
+      shed". That stopped being true when `DISPATCH_CLASSES` gained `outlet_dual` and `acu_ir`
+      (`c287e4c`), and the gate is now open — so anything placed in a tier can actually be
+      switched, the aircon included. Combined with "auto-shed sheds, it never restores", a tier
+      assignment is a decision about what the building may lose unattended until a person
+      notices. That is why the groups are not being assigned without a decision.
+      *One risk already ruled out:* a flapping device cannot cause a false breach.
+      `shared/buildLatest.mjs` excludes an offline meter from totals, so losing a meter drives
+      the total **down or null**, never up. The four meters are also the most stable devices on
+      the site (100% uptime, zero transitions), so the trigger data is the reliable part.
+
 - [ ] **RM-007** Sign in once on the office kiosk so it leaves the login screen.
       *Acceptance:* the kiosk shows the dashboard and stays signed in across a reboot.
       **Mostly closed 2026-08-24, on site.** The kiosk is installed, `enabled`, `active`, and
