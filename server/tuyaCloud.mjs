@@ -53,7 +53,13 @@ export const TUYA_HOSTS = {
  * That failure is indistinguishable from a wrong secret, which is exactly the confusion this
  * exists to prevent: probe rather than guess, then write the answer down.
  *
- * Returns the first host whose token request succeeds, or null. Read-only — a token request
+ * Probes with a real BUSINESS call, not a token request. Learned the hard way: the token
+ * endpoint on a data centre that is not enabled for the project still issues a token, and the
+ * business call then fails with "the data center is suspended". A probe that stopped at the
+ * token therefore reported the wrong host with confidence, and skipped the right one entirely.
+ * Authentication working is not the same as the data centre being usable.
+ *
+ * Returns the first host that answers a business call, or null. Read-only — listing devices
  * creates nothing and changes nothing.
  */
 export async function probeTuyaHost({ accessId, accessSecret, fetchImpl = fetch, hosts = TUYA_HOSTS }) {
@@ -61,10 +67,10 @@ export async function probeTuyaHost({ accessId, accessSecret, fetchImpl = fetch,
   for (const [region, host] of Object.entries(hosts)) {
     try {
       const client = createTuyaClient({ accessId, accessSecret, host, fetchImpl });
-      await client.ensureToken();
+      await client.listDevices({ pageSize: 1 });
       return { region, host, attempts };
     } catch (e) {
-      attempts.push({ region, host, error: String(e.message).slice(0, 90) });
+      attempts.push({ region, host, error: String(e.message).slice(0, 160) });
     }
   }
   return { region: null, host: null, attempts };

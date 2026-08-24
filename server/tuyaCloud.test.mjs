@@ -134,3 +134,19 @@ test('probeTuyaHost reports no match rather than throwing, so a wrong secret is 
   assert.equal(region, null);
   assert.equal(attempts.length, 2);
 });
+
+test('probeTuyaHost rejects a host that issues a token but refuses business calls', async () => {
+  // The real failure this was rewritten for: an unenabled data centre still hands out a token,
+  // then answers business calls with "the data center is suspended". Probing on the token alone
+  // reported that host with confidence and never tried the right one.
+  const hosts = { bad: 'https://bad.example', good: 'https://good.example' };
+  const impl = async (url) => {
+    if (url.includes('/v1.0/token')) return { status: 200, json: async () => tokenOk };
+    if (url.startsWith('https://good.example')) return { status: 200, json: async () => ({ success: true, result: { devices: [] } }) };
+    return { status: 200, json: async () => ({ success: false, code: 28841107, msg: 'No permission. The data center is suspended.' }) };
+  };
+  const { region, attempts } = await probeTuyaHost({ accessId: ID, accessSecret: SECRET, fetchImpl: impl, hosts });
+  assert.equal(region, 'good', 'a host that only authenticates must not win the probe');
+  assert.match(attempts[0].error, /28841107/);
+  assert.match(attempts[0].error, /suspended/, 'the actionable half of the message must survive truncation');
+});
