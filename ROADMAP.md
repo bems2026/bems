@@ -35,6 +35,18 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-010** Weather cards from Open-Meteo (no API key) — `src/components/weather/`
 - [x] **EX-011** Alerts bell merging staleness watchdog and anomaly alerts under one acknowledge set — `src/components/layout/AlertsPopover.tsx`
 - [x] **EX-012** Manual dark theme with WCAG-checked token overrides — `src/index.css`, `src/stores/themeStore.ts`
+- [x] **EX-026b** `npm run tuya:devices -- --verify-keys` — checks every flow node's local key
+      against the key Tuya holds, and reports only whether it matches. A wrong key does not fail
+      loudly: the device is discovered, the connection is attempted, and it fails looking like a
+      network fault. This project has already made that mistake — RM-001a first blamed a stale
+      key for `l6`/`l7`, wrongly, because nothing could check.
+      Neither key is printed and neither reaches the result object; the comparison runs on a
+      per-run salted HMAC, so an accidental dump of an intermediate cannot leak one and two runs
+      produce nothing correlatable. A bare digest would have been false comfort — a Tuya local
+      key is drawn from a small enough space to be reversed from a candidate list.
+      **First run, 2026-08-24: all 19 keys match.** That rules stale keys out as a cause of
+      anything currently open, which is worth having as evidence rather than as an assumption —
+      `server/keyAudit.mjs`, `server/keyAudit.test.mjs`
 - [x] **EX-024b** Tuya cloud client, dependency-free, server-side only. Signing is pinned by
       test to the exact canonical string, because Tuya reports every signing mistake as a flat
       `sign invalid` with no indication of which half was wrong — the token request and a
@@ -363,6 +375,8 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       them drop too.** Two runs minutes apart named different devices offline — first
       CO4/CO7/L5/CO5, then CO5/L2/L3/L7 — so this is not the Pi failing to see devices that are
       up. They are leaving the network.
+      *Local keys are not the cause either* — EX-026b verified all 19 against the cloud and
+      every one matches.
       *That rules out the earlier hypothesis.* Client isolation would keep a device online to
       Tuya while invisible to the Pi; that is not what is happening for most of them. What
       remains is access-point capacity, DHCP, or RF — all answerable from the AP's admin page,

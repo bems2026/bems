@@ -73,8 +73,12 @@ npm run build:flow       # regenerate the flow after editing shared/
   Supabase service-role key, because it reaches hardware directly and no RLS scopes it. It
   lives only in `server/.env` on the Pi, is read only by `server/` code, and must never be
   imported by `src/`: the browser bundle carries the anon key and nothing else, on purpose.
-  Set `TUYA_ACCESS_ID`, `TUYA_ACCESS_SECRET`, and `TUYA_REGION` (cn/us/eu/in — a project is
-  bound to one data centre, and the wrong host fails as `sign invalid`, not as a redirect).
+  Set `TUYA_ACCESS_ID`, `TUYA_ACCESS_SECRET`, and `TUYA_REGION`. **This project is `sg`**
+  (`openapi-sg.iotbing.com`), measured rather than guessed — the console says "Singapore Data
+  Center", which is not a code, and newer data centres live on a different domain from the older
+  ones. A wrong host fails as `sign invalid`, indistinguishable from a bad secret; an *unenabled*
+  one still issues a token and then refuses business calls, which is why the probe verifies with
+  a real listing call rather than a token.
 - **Schedules are Supabase's, not Node-RED's.** The Automation page writes to Supabase and
   `server/scheduler.mjs` fires them through the gated, audited command path. Node-RED's own
   cron schedules read flow context (`sched_N`, `outlet_sched_N`, `ac_sched`) and bypass both
