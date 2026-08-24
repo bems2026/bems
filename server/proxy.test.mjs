@@ -856,3 +856,30 @@ test('the WebSocket relay passes a valid token through to the bridge', async () 
     cleanup();
   }
 });
+
+// ---------------------------------------------------------------------------
+// GET /api/tuya/devices — the cloud fleet view
+// ---------------------------------------------------------------------------
+
+test('GET /api/tuya/devices requires a session, like every other data route', async () => {
+  const { proxyUrl, cleanup } = await setup();
+  try {
+    const res = await fetch(`${proxyUrl}/api/tuya/devices`);
+    assert.equal(res.status, 401);
+  } finally {
+    cleanup();
+  }
+});
+
+test('GET /api/tuya/devices reports 501 when the deployment has no Tuya credentials', async () => {
+  // A configuration state, not a fault: a site that was never given credentials should lose
+  // this one endpoint rather than see an error for something nobody asked for.
+  const { proxyUrl, cleanup } = await setup();
+  try {
+    const res = await fetch(`${proxyUrl}/api/tuya/devices`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
+    assert.equal(res.status, 501);
+    assert.deepEqual(await res.json(), { error: 'tuya_not_configured' });
+  } finally {
+    cleanup();
+  }
+});

@@ -13,6 +13,7 @@ import { DEVICE_CLASS_CATALOG, DEVICE_CLASS_ORDER } from '@/lib/deviceClassCatal
 import { useDeviceConnectivity } from '@/hooks/useDeviceConnectivity';
 import { flapSeverity, uptimeRatio, connectivityCoverage, type ConnectivityRow } from '@/lib/deviceConnectivity';
 import { metaSummary, type DeviceConfig } from '@/lib/deviceConfig';
+import { CloudFleetCard } from './CloudFleetCard';
 import { DeviceMetaEditor } from './DeviceMetaEditor';
 import type { Device, DeviceClass, Reading } from '@/lib/types';
 import { formatVolts, formatAmps, formatWithUnit } from '@/lib/format';
@@ -124,6 +125,7 @@ export function DevicesView() {
           {' '}That is a network-level symptom, not a per-device one: check the access point before the devices.
         </p>
       )}
+      <CloudFleetCard />
       <div className="devices-table-card">
         {/* A scroll container needs to be keyboard-scrollable, which means focusable — and a
             focusable region needs an accessible name. Same reasoning as the `role="table"`

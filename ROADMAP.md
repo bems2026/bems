@@ -35,6 +35,23 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-010** Weather cards from Open-Meteo (no API key) — `src/components/weather/`
 - [x] **EX-011** Alerts bell merging staleness watchdog and anomaly alerts under one acknowledge set — `src/components/layout/AlertsPopover.tsx`
 - [x] **EX-012** Manual dark theme with WCAG-checked token overrides — `src/index.css`, `src/stores/themeStore.ts`
+- [x] **EX-028b** `GET /api/tuya/devices` on the proxy, and a vendor-cloud card on the Devices
+      page — so the cloud's view reaches the person at the screen instead of only someone with
+      SSH. This is also the server-side surface the enrolment wizard needs (Part B), built once.
+      `TUYA_ACCESS_SECRET` never leaves the proxy process: `server/tuyaFleet.mjs` copies fields
+      in by **allowlist**, so a credential Tuya adds in a future API version is dropped by
+      default rather than forwarded by default, and `assertNoSecrets` then throws on anything
+      credential-shaped rather than stripping it — quietly filtering would hide a wrong edit to
+      the allowlist until it resurfaced elsewhere. A deployment with no credentials gets 501 and
+      the card hides itself: not configured is not the same as broken.
+      **Deliberately not joined per device, and deliberately not counted against the local
+      total.** The registry carries no Tuya id, so the only sound join key does not exist on the
+      frontend yet; and comparing the two counts instead is unsound, because several registry
+      devices are two logical readers of one physical meter and two flow nodes have no cloud
+      device at all. That exact mistake was made once already and produced a confident, empty
+      verdict. Carrying the Tuya id into the registry is what makes the per-device join possible
+      — which is FI-001's table —
+      `server/tuyaFleet.mjs`, `src/lib/tuyaFleet.ts`, `src/components/devices/CloudFleetCard.tsx`
 - [x] **EX-027b** `npm run demand:profile` — the recorded building demand, so a DSM limit comes
       from evidence instead of a guess. Suggests a ceiling **above the observed peak**, not a
       percentile of it: a limit anchored inside normal operation sheds load on an ordinary busy

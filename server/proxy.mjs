@@ -53,7 +53,27 @@ import { verifyBreakGlassPassword } from './breakGlass.mjs';
 import { validateCommand, buildAck, ACCEPTED_STATUS } from '../shared/commands.mjs';
 import { DEVICE_REGISTRY, TIMING } from '../shared/registry.mjs';
 import { dispatchCommand, DISPATCH_CLASSES } from './dispatchLight.mjs';
+import { createTuyaClient, TUYA_HOSTS } from './tuyaCloud.mjs';
+import { toPublicFleet } from './tuyaFleet.mjs';
 import { auditedDispatch } from './auditedDispatch.mjs';
+
+/**
+ * The Tuya cloud client, or null when the credentials are absent. Built lazily so the proxy
+ * still starts without them — the cloud view is an addition, and a deployment that has not
+ * been given Tuya credentials should lose that one endpoint, not fail to boot.
+ *
+ * TUYA_ACCESS_SECRET never leaves this process. `/api/tuya/devices` returns an allowlisted
+ * shape (see tuyaFleet.mjs); the browser bundle carries the Supabase anon key and nothing else.
+ */
+let tuyaClient;
+function getTuyaClient() {
+  if (tuyaClient !== undefined) return tuyaClient;
+  const accessId = process.env.TUYA_ACCESS_ID;
+  const accessSecret = process.env.TUYA_ACCESS_SECRET;
+  const host = TUYA_HOSTS[(process.env.TUYA_REGION ?? '').toLowerCase()];
+  tuyaClient = accessId && accessSecret && host ? createTuyaClient({ accessId, accessSecret, host }) : null;
+  return tuyaClient;
+}
 
 const PROXY_PORT = Number(process.env.PROXY_PORT) || 8080;
 const BRIDGE_HOST = process.env.BRIDGE_HOST || '127.0.0.1';
@@ -405,6 +425,21 @@ const server = http.createServer(async (req, res) => {
   console.log(`[ibems-proxy] ${req.method} ${url.pathname} origin=${origin} token=${token ? token.slice(0, 12) + '…' : 'none'} -> ${authorized ? 'OK' : '401'}`);
   if (!authorized) return sendJson(res, 401, { error: 'unauthorized' });
 
+  if (req.method === 'GET' && url.pathname === '/api/tuya/devices') {
+    const client = getTuyaClient();
+    // 501, not 500: the deployment has not been given Tuya credentials, which is a
+    // configuration state rather than a fault. The frontend hides the column instead of
+    // showing an error for something nobody asked for.
+    if (!client) return sendJson(res, 501, { error: 'tuya_not_configured' });
+    try {
+      const devices = await client.listDevices();
+      return sendJson(res, 200, { devices: toPublicFleet(devices) });
+    } catch (err) {
+      // The upstream message can name the data centre and the account; log it, do not echo it.
+      console.error(`[ibems-proxy] tuya fleet fetch failed: ${err.message}`);
+      return sendJson(res, 502, { error: 'tuya_unavailable' });
+    }
+  }
   if (req.method === 'GET' && url.pathname === '/api/capabilities') {
     // dispatch_classes is what the gate means in practice, not just whether it is open:
     // with the gate closed nothing dispatches, so the list is empty. The frontend uses it to

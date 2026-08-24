@@ -5495,3 +5495,50 @@ fieldset.device-meta-editor__field > legend {
   color: var(--muted-2);
   font-weight: 400;
 }
+
+/* Vendor cloud view — what Tuya sees, beside what the bridge sees (phase 16).
+   Presented as its own card rather than a column on the fleet table: the two views are not
+   joined per device (the registry has no Tuya id), so putting them side by side in one row
+   would imply a correspondence that has not been established. */
+.cloud-fleet-card {
+  margin-bottom: 12px;
+}
+.cloud-fleet-card__count {
+  font-size: 0.78rem;
+  color: var(--muted-2);
+  font-variant-numeric: tabular-nums;
+}
+.cloud-fleet-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(190px, 100%), 1fr));
+  gap: 2px 16px;
+}
+.cloud-fleet-list__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--border-faint, var(--border));
+}
+.cloud-fleet-list__name {
+  color: var(--txt);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-fleet-list__state {
+  flex: none;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  /* --muted-2, not --muted: 0.72rem sits below the size at which --muted holds AA here. */
+  color: var(--muted-2);
+}
+.cloud-fleet-list__state--on {
+  color: var(--good-on-page, var(--good));
+}
