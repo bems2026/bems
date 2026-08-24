@@ -47,9 +47,17 @@ npm run build:flow       # regenerate the flow after editing shared/
   1000 ms, giving each discovery attempt roughly a 1-in-5 chance and producing thousands of
   timeouts an hour. Now 10000 ms. If discovery ever gets flaky again, measure the broadcast
   interval before suspecting the network.
-- **`findTimeout` and `tuyaVersion` live on the four hand-built source tabs, which
-  `build-flow.mjs` does not generate.** A full flow regeneration will silently revert both and
-  take every device offline. Back up `~/.node-red/flows.json` before any flow write.
+- **`findTimeout` and `tuyaVersion` live only on the live flow, not in this repo.** They sit on
+  the four hand-built source tabs, which `build-flow.mjs` does not generate. **`deploy:pi` does
+  NOT revert them** — it reads the live flow and *appends* the bridge tab
+  (`merged = baseFlows.concat(bridgeNodes)`), removing only bridge-tab nodes on `--force`; the
+  source tabs pass through untouched, and none of the other flow scripts rewrite tuya node
+  properties either. The real exposure is narrower and quieter: nothing in the repo *declares*
+  these values, so nothing verifies them. Restoring an older `flows.json`, rebuilding the Pi, or
+  a hand-edit in the Node-RED editor loses them with no diff and no alarm — and the symptom is
+  every device going offline, which reads as a network fault. Back up `~/.node-red/flows.json`
+  before any flow write, and see `node-red-bridge/live-flow-baseline.json` for what the values
+  should be.
 - **A wrong SSID is not the only way to lose the devices.** The general office SSID has
   **client isolation**: two hosts on the same /24 cannot reach each other, so the Pi keeps
   internet and remote access while local discovery fails completely. The devices are paired to a

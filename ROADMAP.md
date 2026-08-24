@@ -35,6 +35,19 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-010** Weather cards from Open-Meteo (no API key) — `src/components/weather/`
 - [x] **EX-011** Alerts bell merging staleness watchdog and anomaly alerts under one acknowledge set — `src/components/layout/AlertsPopover.tsx`
 - [x] **EX-012** Manual dark theme with WCAG-checked token overrides — `src/index.css`, `src/stores/themeStore.ts`
+- [x] **EX-021b** Drift guard for the tuya node settings on the hand-built source tabs.
+      `shared/tuyaNodeSettings.mjs` declares the expected `findTimeout` and per-node
+      `tuyaVersion`; `test/tuya-node-settings.test.mjs` checks them against the committed
+      `live-flow-baseline.json`, so a reverted timeout, a changed version, or a vanished node
+      fails `npm run test:bridge` rather than surfacing as "every device is offline" — which is
+      what it looks like otherwise. Each value is recorded with its provenance: the versions are
+      the devices' own decrypted announcements, and the 10 s timeout is two of the measured 5.0 s
+      broadcast intervals. The six nodes whose version could not be confirmed against a live
+      announcement are listed separately, so an unverified value cannot pass as a verified one —
+      `shared/tuyaNodeSettings.mjs`, `test/tuya-node-settings.test.mjs`
+      *Verified against the running system:* re-capturing the live flow produced no diff.
+      *Not proved:* that the live flow still matches later — the baseline is a snapshot, and
+      `npm run capture-flow:pi` is what refreshes it.
 - [x] **EX-019** Per-device **function** declaration — `control`, `monitoring`, `scheduling` —
       stored in `device_config` beside room and load-shed group, and driving which page lists a
       device. Previously a device's page membership was decided by its class in frontend code,
@@ -252,8 +265,14 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
         all 7 light switches -> `3.5`, CO1/CO2/CO4/CO7 -> `3.4`. `tuyapi 7.7.1` supports both.
 
       **Neither change lives in `shared/registry.mjs` or the generated flow** — both are on the
-      four hand-built source tabs, and a full flow regeneration would lose them until
-      `build-flow.mjs` owns those nodes (FI-001 / the device-enrollment work).
+      four hand-built source tabs.
+      *Corrected 2026-08-24, after checking rather than assuming.* This first said a flow
+      regeneration would revert them. It would not: `deploy.mjs` appends to the live flow
+      (`merged = baseFlows.concat(bridgeNodes)`) and removes only bridge-tab nodes, so the source
+      tabs survive, and no other script in this repo rewrites tuya node properties. The real
+      exposure is quieter — nothing in the repo *declared* these values, so nothing verified
+      them, and an old `flows.json` restore or an editor hand-edit would lose them with no diff
+      and no alarm while looking exactly like a network fault. Closed by EX-021b.
 
 - [ ] **RM-010** Apply `supabase/phase13_device_functions.sql`, then deploy the frontend.
       *Acceptance:* `device_config` has a nullable `functions text[]` with the
