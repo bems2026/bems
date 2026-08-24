@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { createTuyaClient, TUYA_HOSTS } from './tuyaCloud.mjs';
+import { createTuyaClient, TUYA_HOSTS, probeTuyaHost } from './tuyaCloud.mjs';
 
 const ID = 'test-access-id';
 const SECRET = 'test-access-secret';
@@ -109,4 +109,28 @@ test('refuses to construct without credentials, rather than failing later as an 
   assert.throws(() => createTuyaClient({ accessId: '', accessSecret: SECRET, host: HOST }), /required/);
   assert.throws(() => createTuyaClient({ accessId: ID, accessSecret: '', host: HOST }), /required/);
   assert.throws(() => createTuyaClient({ accessId: ID, accessSecret: SECRET, host: '' }), /host is required/);
+});
+
+test('probeTuyaHost returns the first host that authenticates, and records what the others said', async () => {
+  const hosts = { a: 'https://a.example', b: 'https://b.example' };
+  const impl = async (url) =>
+    url.startsWith('https://b.example')
+      ? { status: 200, json: async () => tokenOk }
+      : { status: 200, json: async () => ({ success: false, code: 1004, msg: 'sign invalid' }) };
+  const { region, host, attempts } = await probeTuyaHost({ accessId: ID, accessSecret: SECRET, fetchImpl: impl, hosts });
+  assert.equal(region, 'b');
+  assert.equal(host, 'https://b.example');
+  assert.equal(attempts.length, 1, 'the failing host is recorded, not swallowed');
+  assert.match(attempts[0].error, /sign invalid/);
+});
+
+test('probeTuyaHost reports no match rather than throwing, so a wrong secret is distinguishable', async () => {
+  // Every host failing means the credentials are wrong, not that one region is wrong. Throwing
+  // here would make those two look the same at the call site.
+  const impl = async () => ({ status: 200, json: async () => ({ success: false, code: 1004, msg: 'sign invalid' }) });
+  const { region, attempts } = await probeTuyaHost({
+    accessId: ID, accessSecret: SECRET, fetchImpl: impl, hosts: { a: 'https://a.example', b: 'https://b.example' },
+  });
+  assert.equal(region, null);
+  assert.equal(attempts.length, 2);
 });

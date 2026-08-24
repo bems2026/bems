@@ -27,7 +27,7 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { loadDotEnv } from '../node-red-bridge/nodeRedAdmin.mjs';
-import { createTuyaClient, TUYA_HOSTS } from './tuyaCloud.mjs';
+import { createTuyaClient, TUYA_HOSTS, probeTuyaHost } from './tuyaCloud.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 loadDotEnv(join(HERE, '..'));
@@ -50,12 +50,30 @@ if (!accessId || !accessSecret) {
   console.error('Optionally set TUYA_REGION to one of: ' + Object.keys(TUYA_HOSTS).join(', '));
   process.exit(2);
 }
-const host = TUYA_HOSTS[REGION];
+let host = TUYA_HOSTS[REGION];
 if (!host) {
-  console.error(`Unknown TUYA_REGION "${REGION}". Expected one of: ${Object.keys(TUYA_HOSTS).join(', ')}`);
-  process.exit(2);
+  // The region shown in the Tuya console does not map cleanly onto a host — newer data centres
+  // live on a different domain and the older ones were never renamed — so an unrecognised name
+  // is probed rather than rejected. Guessing would surface as `sign invalid`, which is
+  // indistinguishable from a wrong secret.
+  console.log(`TUYA_REGION="${process.env.TUYA_REGION}" is not a known code. Probing every data centre...`);
+  const found = await probeTuyaHost({ accessId, accessSecret });
+  if (!found.host) {
+    console.error('\nNo data centre accepted these credentials. Every host was tried:');
+    for (const a of found.attempts) console.error(`  ${a.region.padEnd(8)} ${a.error}`);
+    console.error('\nAll hosts failing points at the credentials, not the region.');
+    process.exit(1);
+  }
+  host = found.host;
+  console.log(`Authenticated against "${found.region}" (${found.host}).`);
+  console.log(`Set TUYA_REGION=${found.region} in server/.env to skip this probe next time.\n`);
 }
 
+/**
+ * The bridge's own view, for comparison. A failure here is reported and tolerated: the cloud
+ * listing is still worth printing on its own, and refusing to show it because the local side
+ * was unreachable would withhold the more useful half.
+ */
 async function localView() {
   try {
     const res = await fetch(`http://${BRIDGE}:1880/api/readings/latest`, { signal: AbortSignal.timeout(10_000) });

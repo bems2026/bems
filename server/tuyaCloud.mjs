@@ -39,9 +39,36 @@ const sha256 = (s) => crypto.createHash('sha256').update(s, 'utf8').digest('hex'
 export const TUYA_HOSTS = {
   cn: 'https://openapi.tuyacn.com',
   us: 'https://openapi.tuyaus.com',
+  'us-east': 'https://openapi-ueaz.tuyaus.com',
   eu: 'https://openapi.tuyaeu.com',
+  'eu-west': 'https://openapi-weaz.tuyaeu.com',
   in: 'https://openapi.tuyain.com',
+  sg: 'https://openapi-sg.iotbing.com',
 };
+
+/**
+ * Which host a project answers on is not reliably derivable from the region name shown in the
+ * console — Tuya has added data centres on a different domain (`iotbing.com`) without renaming
+ * the older ones, and a call to the wrong host fails as `sign invalid` rather than redirecting.
+ * That failure is indistinguishable from a wrong secret, which is exactly the confusion this
+ * exists to prevent: probe rather than guess, then write the answer down.
+ *
+ * Returns the first host whose token request succeeds, or null. Read-only — a token request
+ * creates nothing and changes nothing.
+ */
+export async function probeTuyaHost({ accessId, accessSecret, fetchImpl = fetch, hosts = TUYA_HOSTS }) {
+  const attempts = [];
+  for (const [region, host] of Object.entries(hosts)) {
+    try {
+      const client = createTuyaClient({ accessId, accessSecret, host, fetchImpl });
+      await client.ensureToken();
+      return { region, host, attempts };
+    } catch (e) {
+      attempts.push({ region, host, error: String(e.message).slice(0, 90) });
+    }
+  }
+  return { region: null, host: null, attempts };
+}
 
 /** HMAC-SHA256, uppercase hex — Tuya rejects lowercase. */
 function sign(secret, payload) {
