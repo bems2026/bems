@@ -3,9 +3,10 @@
  * it fail against real data: swapping the CHECK before mapping the retired values. Any row
  * still holding `hvac` at that point aborts the ALTER, and the file is left half-applied.
  *
- * Also pins the vocabulary to `src/lib/deviceConfig.ts`. The option list and the constraint are
- * one fact in two places — deviceConfig.ts already carries a comment saying so, and this is
- * what makes that comment enforceable rather than advisory.
+ * It deliberately does NOT pin the frontend vocabulary. That assertion owns a *specific*
+ * migration's option list, so it has to follow the newest one — see the note further down and
+ * `test/phase17-device-categories-sensor.test.mjs`, which holds it. What stays here are the
+ * checks about this file's own internal correctness, which do not expire.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,7 +16,6 @@ import { dirname, join } from 'node:path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const sql = readFileSync(join(ROOT, 'supabase', 'phase14_device_categories.sql'), 'utf8');
-const ts = readFileSync(join(ROOT, 'src', 'lib', 'deviceConfig.ts'), 'utf8');
 
 
 test('retired values are mapped BEFORE the constraint is swapped', () => {

@@ -70,7 +70,7 @@ const result = await removeDevice(
     readEnrolled: () => {
       const source = readFileSync(ENROLLED_PATH, 'utf8');
       const m = /export const ENROLLED_DEVICES = (\[[\s\S]*\]);/.exec(source);
-      let devices = [];
+      let devices;
       try {
         devices = m ? JSON.parse(m[1]) : [];
       } catch {
