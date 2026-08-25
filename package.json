@@ -31,7 +31,8 @@
     "collapse-sessions:pi": "node node-red-bridge/collapse-sessions.mjs",
     "poll-outlets:pi": "node node-red-bridge/poll-outlets.mjs",
     "enroll:pi": "node node-red-bridge/enroll-device.mjs",
-    "remove:pi": "node node-red-bridge/remove-device.mjs"
+    "remove:pi": "node node-red-bridge/remove-device.mjs",
+    "quiesce:pi": "node node-red-bridge/quiesce-dead-nodes.mjs"
   },
   "dependencies": {
     "@fontsource-variable/manrope": "^5.3.0",

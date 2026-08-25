@@ -178,6 +178,24 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       Verified against the running mock as well as the suite, so the healthy path is confirmed
       not to have become a false negative.
       `shared/buildLatest.mjs`, `test/contract.test.mjs`
+- [x] **EX-098** `npm run quiesce:pi` — stops a permanently unreachable tuya node retrying
+      forever, without removing it. `NBRIC IR Blaster` and `Outside Temp` each call
+      `findDevice()` every ~10 s in perpetuity, filling the Node-RED log with `find() timed
+      out` and holding a discovery listen slot open for hardware that will never answer.
+      Flips `disableAutoStart`, a field already present on every node in the flow, so this
+      changes a value rather than introducing one. **Reversible** via `--undo`, which is what
+      you want the moment either device is re-paired — nothing else has to be put back.
+      **The invariants are strict because the target is.** These nodes live on the four
+      hand-built source tabs that `build-flow.mjs` does not generate and nothing in the repo
+      can restore. `findTimeout` and `tuyaVersion` exist ONLY there, and losing them presents
+      as every device going offline — which reads as a network fault and has already cost days.
+      So `validateQuiescePlan` asserts exactly one boolean changes on exactly the named nodes:
+      a modified node that was not named is refused, a named node modified beyond
+      `disableAutoStart` is refused, and any change in node count is refused. The undo path is
+      checked by the same invariants with before/after swapped. Re-running is provably a no-op
+      — the plan returns the original object rather than a copy when a node is already quiet.
+      `node-red-bridge/quiescePlan.mjs`, `node-red-bridge/quiesce-dead-nodes.mjs`,
+      `test/quiesce-plan.test.mjs`
 
       **NOT YET LIVE ON THE PI.** `buildLatest.mjs` is inlined into the generated flow, so this
       only takes effect after `npm run build:flow && npm run deploy:pi`. The repo artifact is
@@ -784,6 +802,12 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 - [ ] **RM-016** Two flow nodes reference devices that are not in the Tuya cloud project.
       *Acceptance:* each is re-paired into the project, or removed from the flow and registry.
+      **Resolution chosen 2026-08-25: leave them, quiesce them.** Re-pairing needs the physical
+      devices and the Smart Life account, so it stays with the operator; removal was declined
+      because `acu_main` reads the same `ac_dash_state` and would lose its temperatures too.
+      The retry noise is stopped with `npm run quiesce:pi` (EX-098), and both devices now read
+      honestly as offline rather than a fabricated ONLINE (EX-097). Re-pairing later is a
+      `--undo` away. This stays open because the devices still cannot report.
       `NBRIC IR Blaster` and `Outside Temp` came back **NOT IN PROJECT** from
       `npm run tuya:devices`. They can never work — the ids in the flow belong to no device this
       account can see, which is why they have never announced and never will. Either they were
