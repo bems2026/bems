@@ -6,3 +6,14 @@ dist/
 *.tsbuildinfo
 server/.env
 server/data/
+
+# Backups and dated copies of an env file. `server/.env` alone did not cover these, and three
+# of them — each holding TUYA_ACCESS_SECRET and the Supabase service-role key — were sitting
+# untracked in the Pi's checkout on 2026-08-25, one `git add -A` away from a PUBLIC repository.
+# Written broadly on purpose: the next backup will be named something nobody predicted.
+.env.bak*
+*.env.bak*
+.env.backup*
+server/.env.*
+# ...but the checked-in template is the whole point of having one.
+!server/.env.example
