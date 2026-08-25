@@ -39,17 +39,29 @@ now" does not require reading all of it. Everything here is expanded below under
 - **RM-006c** — load-shed tiers. Thresholds are set; which loads shed first is a judgement
   about the building, not a technical question.
 
-### Next to build, in order
+### Built 2026-08-25 — needs applying / deploying
 
-1. **Stuck-node watchdog + bridge restart** — a Node-RED restart recovered five devices on
-   2026-08-25 that a written diagnosis had called a hardware fault. Nothing surfaces that
-   state today, and nothing offers the remedy.
-2. **Show how a command was dispatched** — `via` (local / cloud / none) exists in the
-   dispatch result but has no column and no UI. A command that only survived through the
-   vendor cloud means the device is half-dead.
-3. **FI-010** — the 24h chart still draws a frozen wattage for a device offline all day.
-4. **FI-005** — out-of-dashboard alerts. The six dead outlets are exactly its shape: an
-   outage whose only surface is a screen nobody is watching.
+All four queued features are written, tested and pushed. Three need one action each before
+they do anything on site:
+
+| Feature | Outstanding action |
+|---|---|
+| **EX-100** fleet-drop alert | None — live. |
+| **EX-101** dispatch `via` | Apply `supabase/phase18_command_via.sql` by hand. The code tolerates its absence (it retries the outcome patch without the column), so this is not urgent — but until it runs, the path is not recorded. |
+| **EX-102** 24h chart honesty | Needs `build:flow` + `deploy:pi --force --apply` on the Pi. Until then no history point carries `online` and the chart behaves as before. |
+| **EX-103** out-of-dashboard alerts | Set `NTFY_TOPIC` in `server/.env` and restart `ibems-ingest`. Unset is a supported state; the feature is simply inert. |
+
+### Next to build
+
+1. **The one-click bridge restart** deferred from EX-100 — it needs a `sudoers` entry, and
+   the alert should be seen firing correctly first. Claude on the Pi can already restart
+   services without any new privilege, which may make this unnecessary.
+2. **Device removal end-to-end** (EX-096) has never run against a real device, because
+   nothing has been enrolled yet. The first enrolment is also the first real test of the
+   `switch` path fixed in EX-094.
+3. **FI-006 / FI-008 / FI-009** — the small consistency and guard items. FI-008 (a contrast
+   regression guard) is the one that keeps paying: three AA failures were found by hand and
+   nothing prevents a fourth.
 
 ### The standing hazard
 
