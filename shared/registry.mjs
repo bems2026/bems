@@ -49,7 +49,13 @@ export const DPS_MAPS = {
  * assignment. Capturing it is exactly what the Phase 4.5 onboarding wizard is for.
  * Do not invent values here.
  */
-export const DEVICE_REGISTRY = [
+import { ENROLLED_DEVICES } from './registry.enrolled.mjs';
+
+/**
+ * The devices this system was built around, hand-written and stable.
+ * Enrolled devices are appended below — see `registry.enrolled.mjs`.
+ */
+const BUILT_IN_DEVICES = [
   // --- Convenience outlets: dual-socket, self-metering (DPS type_b) ------------
   ...[1, 2, 3, 4, 5, 6, 7].map((n) => ({
     id: `co${n}`,
@@ -151,6 +157,14 @@ export const DEVICE_REGISTRY = [
     status: 'active',
   },
 ];
+
+/**
+ * Everything the system knows about. Built-in devices come first so that enrolling one cannot
+ * reorder the list every existing test and generated flow was written against — several places
+ * key off position implicitly (the flow's node order, the analytics colour cycle), and a
+ * reordering would be a silent, wide-reaching change for no benefit.
+ */
+export const DEVICE_REGISTRY = [...BUILT_IN_DEVICES, ...ENROLLED_DEVICES];
 
 /**
  * Phase assignment, mirroring `Calculate 3-Phase Totals` in the live flow:
