@@ -116,5 +116,10 @@ export async function runIngestCycle(io) {
     readingCount: readings.length,
     hasTotals: Boolean(totals),
     anomalyCount: anomalyRows.length,
+    // The rows themselves, for callers that need to judge the fleet rather than count it —
+    // today the out-of-dashboard alarm (server/fleetAlarm.mjs). Returned rather than given its
+    // own injected hook: this function's job is one cycle's worth of truth, and deciding what
+    // to do with it belongs to the daemon, not here.
+    readings,
   };
 }

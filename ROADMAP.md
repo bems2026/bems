@@ -347,6 +347,35 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       The contract tests were confirmed to fail with the generator change neutered.
       `node-red-bridge/build-flow.mjs`, `src/components/analytics/chartParams.ts`,
       `src/lib/types.ts`, `test/contract.test.mjs`
+- [x] **EX-103** (FI-005) Alerts that leave the dashboard.
+      A multi-hour outage went unnoticed because the only place it would have surfaced was a
+      screen nobody was looking at. On 2026-08-25 six of seven outlets went off the network
+      while the operator was at home, and nothing said so.
+      **Edge-triggered, and that is the entire design.** The ingest daemon ticks every 60 s,
+      so a level check would re-send the same notification every minute — six outlets down
+      overnight is 480 messages, and the first thing anyone does with that is mute the
+      channel, which is strictly worse than no alerting at all. `createFleetAlarm` returns an
+      event only on a transition: once entering the state, once leaving it.
+      It tracks which devices it has seen online, for the same reason `fleetStuck` splits on
+      `online_samples` — the two permanently quiesced devices would otherwise trip the alarm
+      at startup and hold it there forever. A device MISSING from a tick is not counted as
+      down either: absence is a gap in the feed, and inferring failure from silence is how a
+      bridge hiccup becomes a fleet alarm. And the alarm is only consulted on a cycle that
+      actually reached the bridge — during a bridge outage we have no idea what the devices
+      are doing, and reporting that as "every device dropped" would be the loudest possible
+      way to be wrong.
+      **ntfy, because this repository is public.** FI-011 rejected email and Sheets delivery
+      precisely because a credential for either would sit in a file beside a public checkout.
+      ntfy needs no account and no OAuth: the only secret is a topic name, and someone who
+      guesses it can read notifications but cannot act on the building. Unset `NTFY_TOPIC` is
+      a supported state, not an error — and it stays silent about being unset, or the journal
+      would gain a line every time the fleet changed state on a site that never wanted this.
+      Every send failure is caught: the daemon exists to record the building electricity, and
+      being unable to push a notification about that is not a reason to stop.
+      The message names the remedy, like the bell does — a notification that only says
+      "something is wrong" costs a trip to the office.
+      `server/fleetAlarm.mjs`, `server/notify.mjs`, `server/ingest.mjs`,
+      `server/ingestCycle.mjs`, `server/.env.example`
 
       **Needs a flow deploy to take effect** — the ring buffer lives in the generated flow, so
       `build:flow` plus `deploy:pi --force --apply`. Until then no point carries the flag and
@@ -1175,7 +1204,7 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
   first thing to degrade as the table grows. Partitioning turns it into a `DROP TABLE` while
   staying inside RLS, Auth and the existing backups. See `docs/adr-001-timeseries-store.md`,
   which names this as the successor to reach for rather than a second datastore.
-- **FI-005** (S) An out-of-dashboard alert channel. Deliberately deferred once, but a multi-hour device outage went unnoticed because the only place it would have surfaced was a screen nobody was looking at.
+- ~~**FI-005** (S) An out-of-dashboard alert channel.~~ **Done 2026-08-25** — EX-103. Edge-triggered fleet alarm in the ingest daemon, delivered over ntfy (no account, no credential in a public repo). Set `NTFY_TOPIC` to enable; unset is a supported state.
 - **FI-006** (S) Wire `StaleDataBadge` into the remaining views that derive staleness inline, so freshness is announced consistently rather than re-implemented per card. *(Partly addressed 2026-08-21: every view now shares one wall-clock tick and one stale-dim constant per medium, but the badge itself is still not used everywhere.)*
 
 ### Accessibility

@@ -33,6 +33,8 @@ import {
   RETENTION_CHECK_MS,
 } from './retention.mjs';
 import { runReportGeneration, REPORT_CHECK_MS } from './reports.mjs';
+import { createFleetAlarm } from './fleetAlarm.mjs';
+import { createNotifier, fleetMessage } from './notify.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -40,9 +42,22 @@ const BRIDGE_URL = (process.env.BRIDGE_HTTP_URL || 'http://127.0.0.1:1880/api').
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const POLL_MS = Number(process.env.INGEST_POLL_MS) || TIMING.HISTORY_SAMPLE_MS;
+
 const DEVICE_SYNC_MS = Number(process.env.INGEST_DEVICE_SYNC_MS) || 5 * 60 * 1000;
 const BUFFER_PATH = process.env.INGEST_BUFFER_PATH || path.join(__dirname, 'data', 'ingest-buffer.ndjson');
 const RETENTION_DAYS = Number(process.env.INGEST_RETENTION_DAYS) || DEFAULT_RETENTION_DAYS;
+
+/**
+ * The out-of-dashboard alarm (FI-005). Inert unless NTFY_TOPIC is set — a deployment never
+ * given a channel loses the feature rather than failing, matching how the Tuya client and the
+ * cloud-dispatch fallback already treat missing configuration.
+ *
+ * Edge-triggered: createFleetAlarm returns an event only on a transition, never on every tick.
+ * This daemon ticks once a minute, so a level check would send the same notification 480 times
+ * overnight and the channel would simply be muted.
+ */
+const notifier = createNotifier(process.env);
+const fleetAlarm = createFleetAlarm();
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.error('[ibems-ingest] SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required — see server/.env.example');
@@ -153,6 +168,18 @@ async function tick() {
     detectAnomalies,
     updateHealth,
   });
+
+  // Judged only on a cycle that actually reached the bridge. A bridge outage means we have no
+  // idea what the devices are doing, and reporting that as "every device dropped" would be the
+  // loudest possible way to be wrong.
+  if (result.ok) {
+    const event = fleetAlarm.observe(result.readings);
+    if (event) {
+      const msg = fleetMessage(event);
+      console.log(`[ibems-ingest] fleet ${event.kind}${event.devices.length ? `: ${event.devices.join(', ')}` : ''}`);
+      await notifier.notify(msg.title, msg.body, msg.priority);
+    }
+  }
 
   const stamp = new Date().toISOString();
   if (result.ok) {
