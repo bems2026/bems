@@ -2772,6 +2772,35 @@ body::before {
 }
 
 /*
+ * Removal sits beside Edit and is styled the same until hovered, where it goes red. A
+ * destructive control that is red at rest turns the table into a wall of warnings and
+ * trains people to ignore the colour; the tone belongs on the intent to click, not on the
+ * resting state. The confirm dialog behind it carries the real weight.
+ * Only rendered for enrolled devices — see DevicesView.
+ */
+.devices-table__remove-btn {
+  border: 1px solid var(--border);
+  background: var(--bg-surface-2);
+  color: var(--muted-2);
+  border-radius: var(--r-sm);
+  padding: 5px 11px;
+  font: 600 var(--fs-xxs) inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  margin-left: 6px;
+}
+.devices-table__remove-btn:hover {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+/* --bad measures under AA on this surface in dark; --red-bright is the theme own lighter
+   red, already used for the same reason elsewhere in this file. */
+:root[data-theme='dark'] .devices-table__remove-btn:hover {
+  color: var(--red-bright);
+  border-color: var(--red-bright);
+}
+
+/*
  * A real control, not a status pill — min-width: 0 for the same reason a flex:1 pill row
  * needs it (a flex:1 item's default min-width:auto let a row overflow the whole page; see
  * index.css's Phase L docblock). 44px min-height only under pointer:coarse, per the

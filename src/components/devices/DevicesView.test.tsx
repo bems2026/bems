@@ -1,10 +1,14 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { DevicesView } from './DevicesView';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
 import { emptyDeviceConfig } from '@/lib/deviceConfig';
 import type { Device } from '@/lib/types';
+
+// Only `co8` is enrolled here. The real module is an empty array — nothing has been enrolled
+// on this site yet — so the distinction this test exists to prove needs a stand-in.
+vi.mock('@shared/registry.enrolled.mjs', () => ({ ENROLLED_DEVICES: [{ id: 'co8' }] }));
 
 const device = (id: string, display_name: string, deviceClass: Device['class'], extra: Partial<Device> = {}): Device => ({
   id,
@@ -159,6 +163,24 @@ describe('DevicesView', () => {
    * rather than deleted: that the control actually opens the wizard is the thing worth
    * guarding, and a disabled button is exactly the kind of regression that goes unnoticed.
    */
+  it('offers Remove only for an enrolled device, never for a built-in one', () => {
+    // The built-in devices are hand-written in registry.mjs and no script can remove them. A
+    // disabled button would invite the click and then explain itself; showing none is honest.
+    useDeviceStore.setState({ devices: [device('co1', 'Outlet 1', 'outlet_dual'), device('co8', 'Outlet 8', 'outlet_dual')] });
+    render(<DevicesView />);
+    const builtIn = screen.getByText('Outlet 1').closest('[role="row"]') as HTMLElement;
+    const enrolled = screen.getByText('Outlet 8').closest('[role="row"]') as HTMLElement;
+    expect(within(builtIn).queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument();
+    expect(within(enrolled).getByRole('button', { name: 'Remove' })).toBeInTheDocument();
+  });
+
+  it('opens the removal panel for the row whose Remove was clicked', () => {
+    useDeviceStore.setState({ devices: [device('co8', 'Outlet 8', 'outlet_dual')] });
+    render(<DevicesView />);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(screen.getByRole('heading', { name: /Remove Outlet 8/ })).toBeInTheDocument();
+  });
+
   it('the add-device control opens the enrolment panel', () => {
     useDeviceStore.setState({ devices: [device('co1', 'Outlet 1', 'outlet_dual')] });
     render(<DevicesView />);

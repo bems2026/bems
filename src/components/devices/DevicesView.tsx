@@ -15,6 +15,8 @@ import { flapSeverity, type ConnectivityRow } from '@/lib/deviceConnectivity';
 import { metaSummary, type DeviceConfig } from '@/lib/deviceConfig';
 import { DeviceMetaEditor } from './DeviceMetaEditor';
 import { EnrollWizard } from './EnrollWizard';
+import { RemoveDevicePanel } from './RemoveDevicePanel';
+import { ENROLLED_DEVICES } from '@shared/registry.enrolled.mjs';
 import type { Device, DeviceClass, Reading } from '@/lib/types';
 import { formatVolts, formatAmps, formatWithUnit } from '@/lib/format';
 
@@ -61,6 +63,12 @@ export function DevicesView() {
   const [filter, setFilter] = useState<DeviceClass | 'all'>('all');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [enrolling, setEnrolling] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const removingDevice = removingId ? (devices.find((d) => d.id === removingId) ?? null) : null;
+  // Only enrolled devices can be removed. The built-in ones are hand-written in registry.mjs,
+  // and no button is shown for them at all — a disabled control invites a click and then
+  // explains itself, which is worse than an absent one for something irreversible-looking.
+  const enrolledIds = useMemo(() => new Set((ENROLLED_DEVICES as { id: string }[]).map((d) => d.id)), []);
   const editingDevice = editingId ? (devices.find((d) => d.id === editingId) ?? null) : null;
 
   const filtered = useMemo(() => {
@@ -120,6 +128,17 @@ export function DevicesView() {
 
       {editingDevice && <DeviceMetaEditor device={editingDevice} onClose={() => setEditingId(null)} />}
       {enrolling && <EnrollWizard onClose={() => setEnrolling(false)} />}
+      {removingDevice && (
+        <RemoveDevicePanel
+          key={removingDevice.id}
+          device={removingDevice}
+          onClose={() => setRemovingId(null)}
+          // Nothing to refetch here: the fleet list is polled from the bridge, which reads the
+          // flow that was just written, so the row clears itself on the next poll. The panel
+          // stays open on purpose so its "Removed." result and the redeploy note stay readable.
+          onRemoved={() => {}}
+        />
+      )}
 
       <div className="devices-table-card">
         {/* A scroll container needs to be keyboard-scrollable, which means focusable — and a
@@ -151,7 +170,7 @@ export function DevicesView() {
               <span role="columnheader">Edit</span>
             </div>
             {filtered.map((d) => (
-              <DeviceRow key={d.id} device={d} config={configs[d.id]} conn={connectivity[d.id]} onEdit={() => setEditingId(d.id)} />
+              <DeviceRow key={d.id} device={d} config={configs[d.id]} conn={connectivity[d.id]} onEdit={() => setEditingId(d.id)} onRemove={enrolledIds.has(d.id) ? () => setRemovingId(d.id) : undefined} />
             ))}
           </div>
         </div>
@@ -173,7 +192,7 @@ export function DevicesView() {
  * no longer has to hold the whole map to hand rows their data, and a row re-renders for its
  * own device rather than for any device.
  */
-const DeviceRow = memo(function DeviceRow({ device, config, conn, onEdit }: { device: Device; config: DeviceConfig | undefined; conn: ConnectivityRow | undefined; onEdit: () => void }) {
+const DeviceRow = memo(function DeviceRow({ device, config, conn, onEdit, onRemove }: { device: Device; config: DeviceConfig | undefined; conn: ConnectivityRow | undefined; onEdit: () => void; onRemove?: () => void }) {
   const reading = useDeviceStore((s) => s.latestReadings[device.id]);
   const switchable = hasSwitchableState(device.class);
   const comm = commState(reading);
@@ -225,6 +244,11 @@ const DeviceRow = memo(function DeviceRow({ device, config, conn, onEdit }: { de
         <button type="button" className="devices-table__edit-btn" onClick={onEdit}>
           Edit
         </button>
+        {onRemove && (
+          <button type="button" className="devices-table__remove-btn" onClick={onRemove}>
+            Remove
+          </button>
+        )}
       </span>
     </div>
   );

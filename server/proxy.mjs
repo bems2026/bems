@@ -59,6 +59,7 @@ import { createAdminClient } from '../node-red-bridge/nodeRedAdmin.mjs';
 import { auditedDispatch } from './auditedDispatch.mjs';
 import { buildCloudDispatch } from './cloudDispatchConfig.mjs';
 import { handleEnroll } from './enrollRoute.mjs';
+import { handleRemove } from './removeRoute.mjs';
 
 /**
  * The Tuya cloud client, or null when the credentials are absent. Built lazily so the proxy
@@ -484,6 +485,13 @@ const server = http.createServer(async (req, res) => {
     // moves nothing. Conflating the two would mean a site that has not opened dispatch could
     // never add a device, which is backwards — you enrol before you switch.
     return handleEnroll(req, res, { readJsonBody, sendJson, token });
+  }
+  if (req.method === 'POST' && url.pathname === '/api/remove') {
+    // Same gate reasoning as enrolment, and the same authentication. Unlike enrolment this
+    // needs no vendor cloud — removal reads the flow and the registry only, so it stays
+    // available on a deployment with no Tuya credentials, which is also the deployment most
+    // likely to need to undo something.
+    return handleRemove(req, res, { readJsonBody, sendJson, token });
   }
   if (req.method === 'POST' && url.pathname === '/api/command') {
     return handleCommand(req, res, token);

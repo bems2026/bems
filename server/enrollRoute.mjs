@@ -96,8 +96,9 @@ export async function handleEnroll(req, res, { readJsonBody, sendJson }) {
   return sendJson(res, result.ok ? 200 : 422, result);
 }
 
-/** The array literal out of the generated module, without importing it. */
-function parseEnrolled(source) {
+/** The array literal out of the generated module, without importing it. Shared with
+ * `removeRoute.mjs`, so both halves read the generated file the same way. */
+export function parseEnrolled(source) {
   const m = /export const ENROLLED_DEVICES = (\[[\s\S]*\]);/.exec(source);
   if (!m) return [];
   try {

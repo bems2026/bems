@@ -130,6 +130,35 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       strongest test is a round trip: enrol-then-remove is asserted to be the identity function
       on the flow, for a metered device and a lighting circuit alike.
       `node-red-bridge/enrollPlan.mjs`, `test/removal-plan.test.mjs`
+- [x] **EX-096** Device removal, end to end — the other half of "add and remove devices", and
+      the mirror of enrolment at every layer: `validateRemoval` beside `validateEnrollment`,
+      `removeService.mjs` beside `enrollService.mjs`, `POST /api/remove` beside
+      `POST /api/enroll`, `npm run remove:pi` beside `npm run enroll:pi`, and a Remove button
+      beside Edit on each fleet row.
+      **The write order is reversed, deliberately.** Enrolment writes the registry first, so a
+      failed flow write leaves a device the app knows about but nothing polls — visible as NO
+      DATA and fixed by re-running. Removal writes the FLOW first, which is the same rule read
+      backwards: a failed registry write again leaves a device listed but not polled. The other
+      order would leave hardware polled that nothing displays, and that is the state nobody
+      notices. A test asserts the registry is untouched when the flow write fails.
+      **Only enrolled devices are offered.** The built-in ones are hand-written in
+      `registry.mjs`; a script editing hand-written source is what the separate generated
+      module exists to avoid. Refusing one says "built-in", never "not found" — the two have
+      different fixes, and the wrong word sends someone hunting a bug that is not there. No
+      button is rendered at all for a built-in, rather than a disabled one that invites the
+      click and then explains itself.
+      **History survives and the UI says so.** `readings` is keyed by `device_id`, not by a
+      foreign key into the registry, so removal deletes the device and keeps everything it
+      measured. That is the question someone hesitating over this button actually has, so it
+      is answered in the panel rather than left to be inferred.
+      The panel previews on open rather than behind a button — there is one input, the row you
+      clicked, so there is nothing to fill in first — and names the flow nodes that would go
+      rather than counting them: a count answers "is this plausible", the names answer "is this
+      the right device", which is the question that matters when the other side is real
+      hardware. Applying stays behind its own confirm.
+      `server/removeService.mjs`, `server/removeRoute.mjs`, `shared/enrollment.mjs`,
+      `src/lib/removeDevice.ts`, `src/components/devices/RemoveDevicePanel.tsx`,
+      `node-red-bridge/remove-device.mjs`
 - [x] **EX-040b** In-page enrolment wizard — the Devices page's "+ Add device" is real. Picks a
       vendor device the flow does not already poll, takes an id/class/name/room, previews, then
       enrols.

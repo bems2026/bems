@@ -105,3 +105,34 @@ export function registryEntryFor(draft) {
   }
   return entry;
 }
+
+/**
+ * Whether a device may be removed, and why not when it may not.
+ *
+ * Only devices that were *enrolled* can be removed this way. The built-in ones are hand-written
+ * in `registry.mjs`, and a script editing hand-written source is exactly what the separate
+ * `registry.enrolled.mjs` module exists to avoid. Saying "built-in" rather than "not found"
+ * matters: the two have completely different fixes, and "not found" would send someone looking
+ * for a bug that is not there.
+ *
+ * @param deviceId  the registry id
+ * @param context   { registry = DEVICE_REGISTRY, enrolled = [] }
+ */
+export function validateRemoval(deviceId, { registry = DEVICE_REGISTRY, enrolled = [] } = {}) {
+  const problems = [];
+  if (!deviceId) {
+    problems.push('a device id is required');
+    return { ok: false, problems };
+  }
+  const isEnrolled = enrolled.some((d) => d.id === deviceId);
+  const inRegistry = registry.some((d) => d.id === deviceId);
+
+  if (!isEnrolled && inRegistry) {
+    problems.push(
+      `"${deviceId}" is a built-in device, hand-written in shared/registry.mjs — only enrolled devices can be removed from here`,
+    );
+  } else if (!isEnrolled) {
+    problems.push(`"${deviceId}" is not in the registry`);
+  }
+  return { ok: problems.length === 0, problems };
+}
