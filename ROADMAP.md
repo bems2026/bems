@@ -95,6 +95,41 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       as deploy-script-only, which stopped being true when the proxy began reading the flow.
       `server/.env.example`, `server/proxy.mjs`, `src/lib/tuyaFleet.ts`,
       `src/components/devices/EnrollWizard.tsx`
+- [x] **EX-094** Two defects that made enrolment quietly wrong, both found 2026-08-25 by
+      comparing the generated nodes against `live-flow-baseline.json` rather than against the
+      tests — which had encoded one of them.
+      **1. Only one output port was wired.** A `tuya-smart-device` in `event-both` mode emits
+      data on port 1 and status on port 2, and every real node in the flow wires both to the
+      same target. The planner wired port 1 alone, so `CONNECTED`/`DISCONNECTED` never reached
+      the parser — its health branch could only ever set `isOnline` true via `else if (dps)`,
+      and an enrolled device would come online once and never go offline again. That is the
+      frozen-value class of failure this project has already paid for repeatedly.
+      `test/enroll-plan.test.mjs` asserted the single-port shape, so the suite defended it.
+      **2. `switch` was offered but unenrollable.** `ENROLLABLE_CLASSES` has always listed it
+      and the wizard has always shown it, but `registryEntryFor` sets `ctx: null` for a light
+      — correctly, since a light has no metering context — and the planner refused any entry
+      without one. The form validated, then the plan step refused. Lights are 7 of 19 devices
+      and the likeliest class to add, so this was the half of enrolment most likely to be used.
+      Fixed with a light path in the planner: device -> `change` node tagging `msg.lightId` ->
+      the existing shared `Collect status` function, which is **wired into, never modified**,
+      so the additive invariants still hold. The light number is derived from the trailing
+      digits of the device id, the same source `state_key` comes from, so the two cannot
+      disagree; enrolment is refused outright when the collector is absent, rather than
+      writing a wire to nothing.
+      `node-red-bridge/enrollPlan.mjs`, `test/enroll-plan.test.mjs`
+- [x] **EX-095** `planRemoval` / `validateRemovalPlan` — the mirror of enrolment, as pure
+      functions. Removal invariants are the inverse of enrolment ones and need their own care:
+      a subtractive write has a failure mode an additive one does not, because taking out a
+      node that something still wires TO leaves a dangling reference which Node-RED **accepts**.
+      The flow then loads and routes into nothing, reading as a dead device rather than a bad
+      edit — so wires to removed nodes are cleaned, and the invariants reject any that are not.
+      Node ids are derived rather than searched for: a `deviceName` is editable in the Node-RED
+      editor, and matching on one would eventually remove the wrong node. The class is never
+      consulted — every id enrolment could have created is listed and filtered by what is
+      actually present, so removal cannot miss a companion by misreading the class. The
+      strongest test is a round trip: enrol-then-remove is asserted to be the identity function
+      on the flow, for a metered device and a lighting circuit alike.
+      `node-red-bridge/enrollPlan.mjs`, `test/removal-plan.test.mjs`
 - [x] **EX-040b** In-page enrolment wizard — the Devices page's "+ Add device" is real. Picks a
       vendor device the flow does not already poll, takes an id/class/name/room, previews, then
       enrols.

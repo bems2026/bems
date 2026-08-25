@@ -21,7 +21,12 @@ test('adds a device node and its parser, wired together', () => {
   assert.equal(added.length, 2);
   const dev = flows.find((n) => n.type === 'tuya-smart-device');
   const parser = flows.find((n) => n.type === 'function');
-  assert.deepEqual(dev.wires, [[parser.id]]);
+  // BOTH ports, as every real node in the flow has. A tuya-smart-device in 'event-both'
+  // mode emits data on port 1 and status on port 2; wiring only port 1 means CONNECTED and
+  // DISCONNECTED never reach the parser, so its health branch can only ever set isOnline
+  // true (via `else if (dps)`) and the device never goes offline. This asserted the
+  // single-port shape until 2026-08-25 — the test encoded the bug.
+  assert.deepEqual(dev.wires, [[parser.id], [parser.id]]);
 });
 
 test('carries the settings this project measured, not the library defaults', () => {
@@ -120,3 +125,59 @@ function describe_validate() {
     assert.ok(validateEnrollmentPlan(before, tampered).some((p) => p.includes('modified')));
   });
 }
+
+// ---------------------------------------------------------------------------
+// Lighting circuits — a different flow topology from a metered outlet
+// ---------------------------------------------------------------------------
+
+/**
+ * `ENROLLABLE_CLASSES` has always listed `switch`, and the wizard has always offered it, but
+ * enrolling one was impossible: `registryEntryFor` sets `ctx: null` for a switch (a light has
+ * no metering context — it writes into the shared `lightStatus` map instead), and
+ * `planEnrollment` refused any entry without a ctx. The wizard let you fill the whole form in
+ * and then failed at the plan step. Found 2026-08-25.
+ *
+ * A light's chain is device -> `change` node setting `msg.lightId` -> the shared `Collect
+ * status` function. Only the first two are generated; the collector already exists and is
+ * wired INTO, never modified.
+ */
+const lightEntry = { id: 'l8', display_name: 'Light Switch 8', class: 'switch', ctx: null, dps_map: null, state_key: 'L8' };
+const lightFlow = () => [
+  { id: 'tabLights', type: 'tab', label: 'Lights' },
+  { id: 'st_collect', type: 'function', z: 'tabLights', name: 'Collect status', wires: [[]] },
+];
+
+test('enrols a lighting circuit, which has no metering context at all', () => {
+  const { added, problems } = planEnrollment(lightFlow(), lightEntry, creds, { z: 'tabLights', x: 100, y: 100 });
+  assert.deepEqual(problems, []);
+  assert.equal(added.length, 2);
+});
+
+test('a light gets a tag node feeding the shared collector, not a metering parser', () => {
+  const { flows } = planEnrollment(lightFlow(), lightEntry, creds, { z: 'tabLights', x: 100, y: 100 });
+  const tag = flows.find((n) => n.type === 'change');
+  assert.deepEqual(tag.rules, [{ t: 'set', p: 'lightId', pt: 'msg', to: '8', tot: 'num' }]);
+  assert.deepEqual(tag.wires, [['st_collect']]);
+  assert.equal(flows.filter((n) => n.type === 'function' && n.id !== 'st_collect').length, 0, 'no parser is generated for a light');
+});
+
+test('the light number comes from the id, so it cannot drift from state_key', () => {
+  const { flows } = planEnrollment(lightFlow(), lightEntry, creds, { z: 'tabLights', x: 100, y: 100 });
+  const tag = flows.find((n) => n.type === 'change');
+  assert.equal(tag.rules[0].to, '8');
+  assert.equal(tag.name, 'tag L8');
+});
+
+test('refuses a light when the collector it must feed is not in the flow', () => {
+  // Wiring to a node that does not exist produces a flow that loads and routes into nothing.
+  const noCollector = [{ id: 'tabLights', type: 'tab', label: 'Lights' }];
+  const { problems } = planEnrollment(noCollector, lightEntry, creds, { z: 'tabLights', x: 100, y: 100 });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /Collect status|st_collect/);
+});
+
+test('the additive invariants still hold for a light', () => {
+  const before = lightFlow();
+  const { flows } = planEnrollment(before, lightEntry, creds, { z: 'tabLights', x: 100, y: 100 });
+  assert.deepEqual(validateEnrollmentPlan(before, flows), []);
+});

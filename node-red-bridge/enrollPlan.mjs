@@ -7,7 +7,14 @@
  * WHAT IT GENERATES, and why that is all of it:
  *   - a `tuya-smart-device` node, carrying the settings `shared/tuyaNodeSettings.mjs` records
  *     as correct rather than the library defaults that cost this project four days;
- *   - a parser function writing the `<ctx>_*` flow-context keys that `buildLatest` reads.
+ *   - one companion node, whose shape depends on the class:
+ *       * a metered device gets a parser function writing the `<ctx>_*` flow-context keys
+ *         that `buildLatest` reads;
+ *       * a lighting circuit gets a `change` node tagging `msg.lightId`, feeding the shared
+ *         `Collect status` function that maintains the `lightStatus` map. A light has no
+ *         metering context at all, which is why it cannot use the parser path.
+ *
+ * `planRemoval` is the mirror and takes exactly these back out.
  *
  * It does NOT touch the bridge tab. That tab is generated from the registry by
  * `build-flow.mjs`, so once the registry entry exists the collector picks the device up on the
@@ -77,13 +84,33 @@ return null;`;
 }
 
 /**
+ * The numeric id the collector keys `lightStatus` by. Taken from the device id's trailing
+ * digits, the same source `state_key` is derived from, so the two cannot disagree.
+ */
+function lightNumber(entry) {
+  const m = /(\d+)$/.exec(entry.id ?? '');
+  return m ? Number(m[1]) : null;
+}
+
+/** The shared function every lighting circuit reports into. Exists on the hand-built tab. */
+const LIGHT_COLLECTOR_ID = 'st_collect';
+
+/**
  * @param entry        a registry entry from `registryEntryFor`
  * @param credentials  { tuyaDeviceId, localKey, tuyaVersion }
  * @param placement    { z, x, y } — the tab and canvas position
  */
 export function planEnrollment(flows, entry, credentials, placement) {
   const problems = [];
-  if (!entry?.ctx) problems.push(`${entry?.id ?? 'device'} has no ctx — only metered classes can be generated this way`);
+  // A light has no metering context by design — it writes into the shared `lightStatus` map
+  // rather than `<ctx>_*` flow keys — so "no ctx" is only a fault for a class that should
+  // have one. Requiring a ctx unconditionally made `switch` unenrollable while the wizard
+  // still offered it: the form validated, then the plan step refused. Found 2026-08-25.
+  const isLight = entry?.class === 'switch';
+  if (!isLight && !entry?.ctx) problems.push(`${entry?.id ?? 'device'} has no ctx — only metered classes can be generated this way`);
+  if (isLight && !flows.some((n) => n.id === LIGHT_COLLECTOR_ID)) {
+    problems.push(`this flow has no "Collect status" node (${LIGHT_COLLECTOR_ID}) for a lighting circuit to report into`);
+  }
   if (!credentials?.tuyaDeviceId) problems.push('vendor device id missing');
   if (!credentials?.localKey) problems.push('local key missing');
   if (!credentials?.tuyaVersion) problems.push('protocol version missing — match what the device announces, never a default');
@@ -92,26 +119,48 @@ export function planEnrollment(flows, entry, credentials, placement) {
   }
   const deviceNodeId = `bems_enrolled_${entry?.id}`;
   const parserNodeId = `bems_enrolled_${entry?.id}_parser`;
-  if (flows.some((n) => n.id === deviceNodeId || n.id === parserNodeId)) {
+  // Checks every id enrolment can create, not just the metered pair — otherwise a second
+  // enrolment of the same lighting circuit passes this gate, since a light has no `_parser`.
+  const taken = new Set(enrolledNodeIds(entry?.id));
+  if (flows.some((n) => taken.has(n.id))) {
     problems.push(`${entry.id} is already enrolled in this flow`);
   }
   if (problems.length) return { flows, added: [], problems };
 
-  const parser = {
-    id: parserNodeId,
-    type: 'function',
-    z: placement.z,
-    name: `${entry.display_name} Unified Parser`,
-    func: parserSource(entry.ctx, entry.dps_map),
-    outputs: 1,
-    noerr: 0,
-    initialize: '',
-    finalize: '',
-    libs: [],
-    x: placement.x + 260,
-    y: placement.y,
-    wires: [[]],
-  };
+  // A light's companion is a `change` node tagging the message with its number, feeding the
+  // shared collector. Everything else about the two paths is identical, which is why they
+  // share a planner rather than being two functions that would drift.
+  const companion = isLight
+    ? {
+        id: `bems_enrolled_${entry.id}_tag`,
+        type: 'change',
+        z: placement.z,
+        name: `tag ${entry.state_key}`,
+        rules: [{ t: 'set', p: 'lightId', pt: 'msg', to: String(lightNumber(entry)), tot: 'num' }],
+        action: '',
+        property: '',
+        from: '',
+        to: '',
+        reg: false,
+        x: placement.x + 260,
+        y: placement.y,
+        wires: [[LIGHT_COLLECTOR_ID]],
+      }
+    : {
+        id: parserNodeId,
+        type: 'function',
+        z: placement.z,
+        name: `${entry.display_name} Unified Parser`,
+        func: parserSource(entry.ctx, entry.dps_map),
+        outputs: 1,
+        noerr: 0,
+        initialize: '',
+        finalize: '',
+        libs: [],
+        x: placement.x + 260,
+        y: placement.y,
+        wires: [[]],
+      };
   const device = {
     id: deviceNodeId,
     type: 'tuya-smart-device',
@@ -131,10 +180,14 @@ export function planEnrollment(flows, entry, credentials, placement) {
     logLevel: 'log-level-error',
     x: placement.x,
     y: placement.y,
-    wires: [[parserNodeId]],
+    // BOTH ports. In `event-both` mode port 1 carries data and port 2 carries status; every
+    // real node in the flow wires both to the same target. Wiring only port 1 meant CONNECTED
+    // and DISCONNECTED never reached the parser, so a device could go online and never go
+    // offline again. Found 2026-08-25 by comparing against the live flow.
+    wires: [[companion.id], [companion.id]],
   };
 
-  return { flows: [...flows, device, parser], added: [device, parser], problems: [] };
+  return { flows: [...flows, device, companion], added: [device, companion], problems: [] };
 }
 
 /** Invariants. Additive only — nothing existing may change. */
@@ -154,6 +207,95 @@ export function validateEnrollmentPlan(before, after) {
   // Every device node must reach a parser, or it polls hardware nobody reads.
   for (const n of after.filter((x) => x.type === 'tuya-smart-device')) {
     if (!(n.wires ?? []).flat().length) problems.push(`${n.deviceName} has no parser`);
+  }
+  return problems;
+}
+
+/**
+ * The mirror of `planEnrollment`: takes the two nodes it added back out.
+ *
+ * Node ids are derived, not searched for. Enrolment names them `bems_enrolled_<id>` and
+ * `bems_enrolled_<id>_parser`, so removal reconstructs the same names rather than matching on
+ * `deviceName` or position — a name is editable in the Node-RED editor, and matching on one
+ * would remove the wrong node the first time somebody renamed something.
+ *
+ * Wires pointing at a removed node are cleaned rather than left. Node-RED accepts a write with
+ * a dangling wire: the flow loads, routes messages into nothing, and presents as a dead device
+ * rather than a bad edit. Only the removed targets are dropped — the rest of each wire array
+ * is preserved exactly, so an unrelated branch of a shared injector survives.
+ *
+ * @param flows     the live flow, as read from the admin API
+ * @param deviceId  the registry id, not the vendor id
+ */
+/**
+ * Every node id enrolment may have created for a device. A metered device gets `_parser`, a
+ * lighting circuit gets `_tag` — listing both and filtering by what is actually present means
+ * removal does not need to know which class it is dealing with, and cannot miss a companion
+ * because the class was read wrongly.
+ */
+function enrolledNodeIds(deviceId) {
+  return [`bems_enrolled_${deviceId}`, `bems_enrolled_${deviceId}_parser`, `bems_enrolled_${deviceId}_tag`];
+}
+
+export function planRemoval(flows, deviceId) {
+  const doomed = new Set(enrolledNodeIds(deviceId));
+
+  const present = flows.filter((n) => doomed.has(n.id));
+  if (present.length === 0) {
+    return { flows, removed: [], problems: [`${deviceId} has no enrolled nodes in this flow — nothing to remove`] };
+  }
+
+  const kept = flows.filter((n) => !doomed.has(n.id));
+  const rewired = kept.map((n) => {
+    if (!Array.isArray(n.wires)) return n;
+    const wires = n.wires.map((port) => (Array.isArray(port) ? port.filter((t) => !doomed.has(t)) : port));
+    // Only allocate a new node when something actually changed, so the invariants' own
+    // "was this node modified" check stays a meaningful signal rather than firing on every row.
+    return JSON.stringify(wires) === JSON.stringify(n.wires) ? n : { ...n, wires };
+  });
+
+  return { flows: rewired, removed: present, problems: [] };
+}
+
+/**
+ * Invariants for a removal. Subtractive only, and the inverse of `validateEnrollmentPlan`:
+ * exactly the two named nodes disappear, every survivor is untouched except for wires that
+ * referenced them, and nothing is left pointing at a node that no longer exists.
+ */
+export function validateRemovalPlan(before, after, deviceId) {
+  const problems = [];
+  const doomed = new Set(enrolledNodeIds(deviceId));
+
+  for (const id of doomed) {
+    if (before.some((n) => n.id === id) && after.some((n) => n.id === id)) problems.push(`node ${id} was not removed`);
+  }
+  const expected = before.filter((n) => doomed.has(n.id)).length;
+  if (after.length !== before.length - expected) {
+    problems.push(`expected ${expected} node(s) removed, got ${before.length - after.length}`);
+  }
+
+  // Nothing new may appear, and nothing may change except by losing a wire to a removed node.
+  const beforeById = new Map(before.map((n) => [n.id, n]));
+  for (const n of after) {
+    const was = beforeById.get(n.id);
+    if (was === undefined) {
+      problems.push(`node ${n.name ?? n.id} was added by a removal`);
+      continue;
+    }
+    const wasWithoutDoomedWires = Array.isArray(was.wires)
+      ? { ...was, wires: was.wires.map((p) => (Array.isArray(p) ? p.filter((t) => !doomed.has(t)) : p)) }
+      : was;
+    if (JSON.stringify(wasWithoutDoomedWires) !== JSON.stringify(n)) problems.push(`existing node ${n.name ?? n.id} was modified`);
+  }
+
+  const ids = new Set(after.map((n) => n.id));
+  for (const n of after) {
+    for (const t of (n.wires ?? []).flat()) if (!ids.has(t)) problems.push(`${n.name ?? n.id} wires to non-existent ${t}`);
+  }
+  // The same rule enrolment enforces, restated because removal can break it from the other
+  // side: taking out a parser would orphan the device node that fed it.
+  for (const n of after.filter((x) => x.type === 'tuya-smart-device')) {
+    if (!(n.wires ?? []).flat().length) problems.push(`${n.deviceName ?? n.id} would be left with no parser`);
   }
   return problems;
 }
