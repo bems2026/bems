@@ -479,29 +479,27 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       without writing anything. `server/schemaProbe.mjs` (EX-031b) now encodes both halves of
       that method so the next check does not depend on remembering it.
 
-- [ ] **RM-013** Devices leave the 2.4 GHz network and rejoin. **Cause identified 2026-08-25:
-      the access point is at an association limit of 20 clients.**
-      *Acceptance:* the client limit is raised (or a second AP added), and the announcing-host
-      count holds at the full device count for an hour.
-      Measured from a machine on the device network itself:
-      - **Exactly 20 clients associated** — 19 on the subnet plus the Pi, with `.1` the gateway.
-        17 Tuya devices + Pi + a laptop + one randomised-MAC host = 20. Sitting precisely on a
-        round number while devices rotate in and out cleanly is what a cap looks like; at the
-        limit, each new association evicts an existing one.
-      - **Everything else is ruled out by measurement.** One BSSID (`f8:5e:3c:…:36`), so no
-        roaming between APs. Channel utilisation **12%**, so not airtime congestion. Signal 95%
-        at 144 Mbps. WPA2-Personal with CCMP — not the mixed WPA1/TKIP that commonly breaks
-        ESP-based devices. Local keys verified against the cloud (EX-026b), protocol versions
-        matched to what each device announces, discovery timeout corrected.
-      **The fix is on the access point and cannot be made from this repository:** raise the
-      per-radio client limit above ~30, or add a second AP and split the devices across them.
-      Router is `aclink` firmware (2020) at the gateway address.
-      *Two smaller things worth doing while in there:* channel 9 overlaps neighbours on 6, 7, 11
-      and 12 — move to 1 or 11, which are non-overlapping. And **Telnet (23) is open** alongside
-      SSH on a network whose dispatch gate is now live; it should be closed.
-      *Note for whoever is counting:* every laptop that joins this SSID consumes one of the 20
-      slots, so diagnosing from a machine on the device network makes the problem slightly worse
-      while you look at it.
+- [ ] **RM-013** Devices leave the 2.4 GHz network and rejoin.
+      *Acceptance:* the AP holds one channel, and the announcing-host count stays at the full
+      device count for an hour.
+      **CONFIRMED cause — the access point re-selects its channel.** Observed 2026-08-25: the
+      same BSSID (`…:36`) was on **channel 9**, and ~40 minutes later on **channel 11**. A
+      channel change disassociates every client at once, which is exactly the clean, fleet-wide,
+      binary dropping seen here and independently by Tuya's cloud. Auto-channel selection is on
+      and should be pinned.
+      **CORRECTION to what this entry said earlier.** It asserted a 20-client association limit
+      as the cause. That was inferred from a single snapshot showing exactly 20 hosts — a round
+      number is suggestive, not evidence, and I stated it with more confidence than one
+      observation supports. The channel change is *directly observed*, so it now leads. A client
+      cap may still contribute (a laptop on this SSID was evicted outright while devices were
+      dropping), but it is a hypothesis and the channel hop is a fact.
+      *Also ruled out by measurement:* airtime congestion (12-16% utilisation), signal (-46 to
+      -48 dBm at the Pi, 95% at a laptop), encryption (WPA2/CCMP, not mixed WPA1/TKIP), local
+      keys (all 19 verified against the cloud), protocol versions, and discovery timeout.
+      **The fix is on the access point:** pin the channel (1, 6 or 11 — non-overlapping; it is
+      already on 11), disable auto-channel selection, and raise the client limit above 30 while
+      in there. Telnet (23) is also open alongside SSH on a network whose dispatch gate is live.
+
 - [ ] **RM-017** The shared dual-channel meter swaps its two channels.
       *Acceptance:* `npm run check:meters` reports no interchange across a week.
       Confirmed 2026-08-25 at 00:13: `mtr_co_yellow` and `mtr_lo_yellow` traded readings
