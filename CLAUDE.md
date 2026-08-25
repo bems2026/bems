@@ -6,6 +6,12 @@ Node-RED bridge to Tuya hardware, Node.js daemons, and Supabase for storage.
 **This repository is public.** Never commit tokens, keys, passwords, hostnames, IP
 addresses, or Supabase project identifiers — in code, in docs, or in commit messages.
 
+> **Running on the Pi itself? Read `docs/pi-session-brief.md` first.** It carries the current
+> fleet state, what you may do without asking, the first-moves checks, and the traps this
+> project has already paid for. Working *on* this project and working *on the Pi* are different
+> jobs — the Pi has the live flow, the logs, the services and the network, and none of them are
+> in this repository.
+
 ## Layout
 
 ```
