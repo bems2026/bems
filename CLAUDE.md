@@ -58,11 +58,16 @@ npm run build:flow       # regenerate the flow after editing shared/
   every device going offline, which reads as a network fault. Back up `~/.node-red/flows.json`
   before any flow write, and see `node-red-bridge/live-flow-baseline.json` for what the values
   should be.
-- **A wrong SSID is not the only way to lose the devices.** The general office SSID has
-  **client isolation**: two hosts on the same /24 cannot reach each other, so the Pi keeps
-  internet and remote access while local discovery fails completely. The devices are paired to a
-  **dedicated 2.4 GHz SSID**, whose profile is saved on the Pi at `autoconnect-priority 30` —
-  `nmcli con show` on the Pi names it.
+- **A ping that gets no reply is not evidence of client isolation.** This was concluded twice
+  on 2026-08-24/25 from the Pi being unable to ping a Windows laptop on the same /24, and both
+  times it was wrong: Windows Firewall defaults to `BlockInbound` and drops ICMP echo, so the
+  test cannot distinguish a filtered host from a blocked network. **Use ARP instead** — if
+  `ip neigh` resolves the other host's MAC, layer 2 is working whatever ICMP does. On the
+  device SSID the Pi resolves other clients fine, so there is no isolation there.
+- **The devices live on a dedicated 2.4 GHz SSID**, whose profile is saved on the Pi at
+  `autoconnect-priority 30`; `nmcli con show` on the Pi names it. Putting the Pi on the general
+  office 5 GHz SSID leaves it with internet and remote access while every device reads
+  `online: false` — which looks like a code fault and is not.
 - **There is a Tuya developer account with a cloud project, and a Smart Life account.** That
   changes what is possible: the cloud API returns every device's id **and local key**, so
   enrolment need not ask a human to copy secrets between browser tabs, and it reports the

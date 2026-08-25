@@ -500,6 +500,23 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       already on 11), disable auto-channel selection, and raise the client limit above 30 while
       in there. Telnet (23) is also open alongside SSH on a network whose dispatch gate is live.
 
+      *Channel pinned to 11 by the operator, 2026-08-25 ~08:45.* The AP has held 2462 MHz
+      through every sample since, so that half is done. Devices bounced to 2/20 on apply (every
+      client is disassociated when wireless config is applied) and had recovered to 8/20 within
+      ten minutes. **Too early to judge** — the honest test is whether the announcing count
+      holds over an hour, not whether it recovers.
+      *The firmware exposes no client-limit setting*, so that lever is unavailable. If drops
+      persist once settled, the next things to look for are an **idle/inactivity timeout** (many
+      APs deauthenticate quiet clients, and metering devices that report on change are exactly
+      that), WMM power-save, and airtime fairness. Failing those, a second AP.
+      *Correction worth carrying:* an earlier note here claimed client isolation on the office
+      SSID. That rested on the Pi being unable to ping a Windows laptop, which Windows Firewall
+      alone explains — see CLAUDE.md. On the device SSID the Pi resolves other clients by ARP
+      and reaches them, so there is no isolation.
+      *Limitation of the cloud diagnostic, found while using it:* Tuya's online state is not
+      instantaneous, so soon after a mass disassociation it can still report devices as up. The
+      signal to trust is the set of offline devices **changing between runs** — which it did
+      here, confirming genuine flapping rather than a stale snapshot.
 - [ ] **RM-017** The shared dual-channel meter swaps its two channels.
       *Acceptance:* `npm run check:meters` reports no interchange across a week.
       Confirmed 2026-08-25 at 00:13: `mtr_co_yellow` and `mtr_lo_yellow` traded readings
