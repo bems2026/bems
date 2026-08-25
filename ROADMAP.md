@@ -52,6 +52,29 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       verdict. Carrying the Tuya id into the registry is what makes the per-device join possible
       — which is FI-001's table —
       `server/tuyaFleet.mjs`, `src/lib/tuyaFleet.ts`, `src/components/devices/CloudFleetCard.tsx`
+- [x] **EX-039b** Device enrolment — registry entry and flow nodes generated from one validated
+      decision, with the local key fetched from the vendor cloud rather than copied between
+      browser tabs. That manual step is most of what made FI-001 an L. The key never reaches a
+      terminal; only its length is printed.
+      A device is only real once **both** halves exist. Writing only one fails quietly: a device
+      the app shows that never reports, or hardware the flow polls that nothing displays. The
+      registry is written first deliberately — if the flow write then fails, the app shows a
+      device that does not report yet, which is visible and recoverable; the reverse is not.
+      `registry.mjs` now merges a generated data module rather than reading JSON at runtime
+      (which would put `fs` in a module the frontend's own test imports) or being edited by a
+      script. Built-in devices stay first so enrolling one cannot reorder a list that several
+      places key off implicitly.
+      Validation **refuses rather than guesses**, because a bad enrolment fails weeks later as a
+      device reading offline forever — indistinguishable from a network fault. It refuses a
+      vendor device already enrolled, one the cloud cannot see, an id that would not survive as
+      a context key, and a protocol version the cloud did not report.
+      *Deliberately not enrollable:* `meter` and `acu_ir`. A meter's identity is a logical
+      channel chosen by which CT clamp sits on which circuit — an electrical decision a wizard
+      cannot validate — and the ACU's IR command set is bespoke.
+      The parser is generated from a template so a new device cannot get subtly different
+      online-detection from its neighbours, carries the settings this project measured rather
+      than library defaults, and stamps `_last_time` only when data actually arrived —
+      `shared/enrollment.mjs`, `node-red-bridge/enrollPlan.mjs`, `npm run enroll:pi`
 - [x] **EX-037b** Duplicate device sessions collapsed: 21 tuya nodes -> 19, one session per
       physical device. Two nodes carrying the same `deviceId` each held a TCP session to one
       device — the dual-channel yellow meter and the branch meter measuring the aircon. Halves
@@ -727,14 +750,13 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 ## 3. Future improvements (backlog)
 
 ### Onboarding
-- **FI-001** (M, was L) Zero-touch device discovery. **Re-sized 2026-08-24:** the project has a
-  Tuya developer account with a cloud project, and `server/tuyaCloud.mjs` can now list every
-  device with its id and local key. The manual key extraction that made this an L is gone, and
-  with it the argument for deferring until it "proves a recurring pain" — it already did, three
-  times in one day, when co3/co5/co6 were re-paired and their new ids had to be entered by hand.
-  What remains is the wizard, a registry table, and `build-flow.mjs` learning to generate the
-  device nodes. **Do not start it while the fleet is flapping (RM-013)** — a flow generator
-  wants a network you can trust to tell you whether it worked.
+- **FI-001** (S, was L) **Engine done 2026-08-25 — EX-039b.** `npm run enroll:pi` discovers
+  unenrolled vendor devices, validates a draft, and writes both the registry entry and the flow
+  nodes, with the local key fetched from the cloud rather than copied by hand.
+  *What remains is the in-page wizard.* The Devices page's "+ Add device" is still disabled,
+  though its tooltip now names the command instead of claiming the dashboard cannot do this.
+  The engine was the substantial half: the UI is a device picker over `useCloudFleet` plus a
+  form over `validateEnrollment`, which already reports every problem at once for exactly that.
 - **FI-002** (M) Day-one setup wizard for a new building: network and vendor-account linking.
 
 ### Replication

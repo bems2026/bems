@@ -109,10 +109,10 @@ export function DevicesView() {
             <button
               type="button"
               disabled
-              title="Enrolling a genuinely new device means regenerating and redeploying the Node-RED flow on the physical Pi — not something this dashboard can do. Editing an existing device's room, category, load-shed group, and notes is available now via each row's Edit button."
+              title="Enrolment runs from the Pi: npm run enroll:pi -- --host=127.0.0.1 --list shows which vendor devices are not yet in the flow, and enrolling one writes both its registry entry and its flow nodes. Doing it from this page is not built yet. Editing an existing device — room, category, functions, load-shed group, notes — is available now via each row's Edit button."
               className="devices-add-btn"
             >
-              + Add device (needs a Pi redeploy)
+              + Add device (from the Pi)
             </button>
           </div>
         }
