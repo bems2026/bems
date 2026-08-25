@@ -48,6 +48,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { loadDotEnv, createAdminClient } from './nodeRedAdmin.mjs';
+import { bridgeSignature } from './bridgeSignature.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 loadDotEnv(join(HERE, '..'));
@@ -165,8 +166,21 @@ async function main() {
   let baseFlows = liveFlows;
   if (alreadyDeployed) {
     if (!FORCE) {
-      console.log('The iBEMS bridge tab is already deployed on this instance. Nothing to do.');
-      console.log('(Regenerated bridge-flow.json and want to replace it? Re-run with --force.)');
+      // "Already deployed" used to be decided from the tab id being present and nothing else,
+      // so a regenerated bridge-flow.json printed "Nothing to do" and exited 0 — which reads
+      // exactly like success. On 2026-08-25 that silently skipped a fix to the aircon's online
+      // rule; it was caught only by reading the live flow back and diffing it by hand. Compare
+      // the CONTENT, and make a mismatch loud and non-zero so a script cannot mistake it for
+      // a no-op either.
+      const deployed = liveFlows.filter((n) => n.id === BRIDGE_TAB_ID || n.z === BRIDGE_TAB_ID);
+      if (bridgeSignature(deployed) !== bridgeSignature(bridgeNodes)) {
+        console.error('The deployed bridge tab DIFFERS from the generated bridge-flow.json.');
+        console.error('Nothing was written. Re-run with --force to replace it:');
+        console.error('    npm run deploy:pi -- --host=<pi> --force --apply');
+        process.exit(1);
+      }
+      console.log('The iBEMS bridge tab is already deployed on this instance, and its contents');
+      console.log('match bridge-flow.json exactly. Nothing to do.');
       process.exit(0);
     }
     console.log('--force given: removing the previously deployed bridge nodes before re-adding.');
