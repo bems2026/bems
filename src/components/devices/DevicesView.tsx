@@ -15,6 +15,7 @@ import { flapSeverity, type ConnectivityRow } from '@/lib/deviceConnectivity';
 import { metaSummary, type DeviceConfig } from '@/lib/deviceConfig';
 import { CloudFleetCard } from './CloudFleetCard';
 import { DeviceMetaEditor } from './DeviceMetaEditor';
+import { EnrollWizard } from './EnrollWizard';
 import type { Device, DeviceClass, Reading } from '@/lib/types';
 import { formatVolts, formatAmps, formatWithUnit } from '@/lib/format';
 
@@ -60,6 +61,7 @@ export function DevicesView() {
   const unstable = Object.values(connectivity).filter((r) => flapSeverity(r) !== 'steady' && flapSeverity(r) !== 'unknown');
   const [filter, setFilter] = useState<DeviceClass | 'all'>('all');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [enrolling, setEnrolling] = useState(false);
   const editingDevice = editingId ? (devices.find((d) => d.id === editingId) ?? null) : null;
 
   const filtered = useMemo(() => {
@@ -108,17 +110,17 @@ export function DevicesView() {
             </div>
             <button
               type="button"
-              disabled
-              title="Enrolment runs from the Pi: npm run enroll:pi -- --host=127.0.0.1 --list shows which vendor devices are not yet in the flow, and enrolling one writes both its registry entry and its flow nodes. Doing it from this page is not built yet. Editing an existing device — room, category, functions, load-shed group, notes — is available now via each row's Edit button."
               className="devices-add-btn"
+              onClick={() => setEnrolling(true)}
             >
-              + Add device (from the Pi)
+              + Add device
             </button>
           </div>
         }
       />
 
       {editingDevice && <DeviceMetaEditor device={editingDevice} onClose={() => setEditingId(null)} />}
+      {enrolling && <EnrollWizard onClose={() => setEnrolling(false)} />}
 
       <CloudFleetCard />
       <div className="devices-table-card">

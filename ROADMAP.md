@@ -52,6 +52,33 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       verdict. Carrying the Tuya id into the registry is what makes the per-device join possible
       — which is FI-001's table —
       `server/tuyaFleet.mjs`, `src/lib/tuyaFleet.ts`, `src/components/devices/CloudFleetCard.tsx`
+- [x] **EX-040b** In-page enrolment wizard — the Devices page's "+ Add device" is real. Picks a
+      vendor device the flow does not already poll, takes an id/class/name/room, previews, then
+      enrols.
+      **Validation runs client-side through the same `validateEnrollment` the server calls**, so
+      the feedback while typing is the answer submit will give rather than an approximation. A
+      form that accepts input the backend then rejects teaches people to ignore it.
+      **Preview and apply hit the same endpoint**, differing only by a flag, so the preview
+      cannot drift from the path that writes — and the preview exists precisely to be trusted.
+      Enrol stays disabled until a preview has actually succeeded.
+      *One bug found while building it:* the wizard first filtered candidates on
+      `device.tuya_device_id`, a field `Device` does not carry — the browser has no way to know
+      which vendor id backs which registry device. `claimed` is now derived server-side, where
+      the flow can actually be read, and marked rather than filtered so "already enrolled" stays
+      distinguishable from "not in the project".
+      The local key is never sent to the browser; the summary carries its length —
+      `src/components/devices/EnrollWizard.tsx`, `server/enrollRoute.mjs`,
+      `server/enrollService.mjs`
+- [x] **EX-041b** Enrolment logic exists once. `server/enrollService.mjs` is called by both the
+      CLI and `POST /api/enroll`; two implementations would eventually disagree about validation
+      or about what happens when the second write fails, and the symptom would be a device that
+      half exists. Every dependency is injected, so the whole path is tested without a cloud, a
+      Pi, or a filesystem — including the 409 case, which reports that the registry entry was
+      already written so re-running is safe rather than looking like corruption.
+      The endpoint is authenticated like every other route but deliberately **not** behind
+      `HARDWARE_DISPATCH_ENABLED`: that gate governs moving a relay, and enrolling moves
+      nothing. Conflating them would mean a site that has not opened dispatch could never add a
+      device — backwards, since you enrol before you switch — `server/enrollService.test.mjs`
 - [x] **EX-039b** Device enrolment — registry entry and flow nodes generated from one validated
       decision, with the local key fetched from the vendor cloud rather than copied between
       browser tabs. That manual step is most of what made FI-001 an L. The key never reaches a
@@ -750,13 +777,10 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 ## 3. Future improvements (backlog)
 
 ### Onboarding
-- **FI-001** (S, was L) **Engine done 2026-08-25 — EX-039b.** `npm run enroll:pi` discovers
-  unenrolled vendor devices, validates a draft, and writes both the registry entry and the flow
-  nodes, with the local key fetched from the cloud rather than copied by hand.
-  *What remains is the in-page wizard.* The Devices page's "+ Add device" is still disabled,
-  though its tooltip now names the command instead of claiming the dashboard cannot do this.
-  The engine was the substantial half: the UI is a device picker over `useCloudFleet` plus a
-  form over `validateEnrollment`, which already reports every problem at once for exactly that.
+- ~~**FI-001** (L) Zero-touch device discovery.~~ **Done 2026-08-25** — engine EX-039b, wizard
+  EX-040b. Adding a device is now a form on the Devices page: pick the vendor device, name it,
+  preview, enrol. The local key comes from the cloud, and both the registry entry and the flow
+  nodes are written from one validated decision.
 - **FI-002** (M) Day-one setup wizard for a new building: network and vendor-account linking.
 
 ### Replication

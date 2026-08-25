@@ -48,6 +48,13 @@ export function assertNoSecrets(payload) {
   return payload;
 }
 
-export function toPublicFleet(rawDevices) {
-  return assertNoSecrets(rawDevices.map(toPublicDevice));
+/**
+ * @param claimedIds  vendor ids that already have a node in the flow. Marked rather than
+ *                    filtered out: the enrolment wizard needs to distinguish "already enrolled"
+ *                    from "not in the project at all", and a device missing from a list tells
+ *                    you neither. `claimed` is derived here rather than in the browser because
+ *                    only the server can read the flow.
+ */
+export function toPublicFleet(rawDevices, claimedIds = new Set()) {
+  return assertNoSecrets(rawDevices.map((d) => ({ ...toPublicDevice(d), claimed: claimedIds.has(d.id) })));
 }

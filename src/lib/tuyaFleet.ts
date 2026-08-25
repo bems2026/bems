@@ -17,6 +17,8 @@ export interface CloudDevice {
   id: string;
   name?: string;
   online?: boolean;
+  /** Already has a node in the flow. Derived server-side — only it can read the flow. */
+  claimed?: boolean;
   category?: string;
   product_name?: string;
 }

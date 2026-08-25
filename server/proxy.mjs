@@ -55,8 +55,10 @@ import { DEVICE_REGISTRY, TIMING } from '../shared/registry.mjs';
 import { dispatchCommand, DISPATCH_CLASSES } from './dispatchLight.mjs';
 import { createTuyaClient, TUYA_HOSTS } from './tuyaCloud.mjs';
 import { toPublicFleet } from './tuyaFleet.mjs';
+import { createAdminClient } from '../node-red-bridge/nodeRedAdmin.mjs';
 import { auditedDispatch } from './auditedDispatch.mjs';
 import { buildCloudDispatch } from './cloudDispatchConfig.mjs';
+import { handleEnroll } from './enrollRoute.mjs';
 
 /**
  * The Tuya cloud client, or null when the credentials are absent. Built lazily so the proxy
@@ -441,7 +443,19 @@ const server = http.createServer(async (req, res) => {
     if (!client) return sendJson(res, 501, { error: 'tuya_not_configured' });
     try {
       const devices = await client.listDevices();
-      return sendJson(res, 200, { devices: toPublicFleet(devices) });
+      // Which vendor devices already have a node. Read fresh rather than cached at startup:
+      // enrolling one changes this, and a wizard showing a device it just added as still
+      // available is worse than one extra read on a page nobody opens often.
+      let claimed = new Set();
+      try {
+        const auth = await createAdminClient({ host: '127.0.0.1', port: BRIDGE_PORT, timeoutMs: 10000 });
+        const { flows } = await auth.getFlows(await auth.login());
+        claimed = new Set(flows.filter((n) => n.type === 'tuya-smart-device').map((n) => n.deviceId));
+      } catch {
+        // The cloud list is still worth returning without it; `claimed` simply stays false,
+        // and enrolment's own validation is what actually refuses a duplicate.
+      }
+      return sendJson(res, 200, { devices: toPublicFleet(devices, claimed) });
     } catch (err) {
       // The upstream message can name the data centre and the account; log it, do not echo it.
       console.error(`[ibems-proxy] tuya fleet fetch failed: ${err.message}`);
@@ -456,6 +470,13 @@ const server = http.createServer(async (req, res) => {
       hardware_dispatch_enabled: HARDWARE_DISPATCH_ENABLED,
       dispatch_classes: HARDWARE_DISPATCH_ENABLED ? DISPATCH_CLASSES : [],
     });
+  }
+  if (req.method === 'POST' && url.pathname === '/api/enroll') {
+    // Authenticated like every other route above. Deliberately NOT behind
+    // HARDWARE_DISPATCH_ENABLED: that gate governs moving a relay, and enrolling a device
+    // moves nothing. Conflating the two would mean a site that has not opened dispatch could
+    // never add a device, which is backwards — you enrol before you switch.
+    return handleEnroll(req, res, { readJsonBody, sendJson, token });
   }
   if (req.method === 'POST' && url.pathname === '/api/command') {
     return handleCommand(req, res, token);

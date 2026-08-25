@@ -5518,3 +5518,120 @@ fieldset.device-meta-editor__field > legend {
 .cloud-fleet-list__state--on {
   color: var(--good-on-page, var(--good));
 }
+
+/* Device enrolment panel. Sits above the fleet table, replacing nothing — the table stays
+   visible so the ids already in use are readable while choosing a new one. */
+.enroll-wizard {
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.enroll-wizard__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.enroll-wizard__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--muted-2);
+  min-width: 0;
+}
+.enroll-wizard__field input,
+.enroll-wizard__field select {
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--txt);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm, 6px);
+  padding: 8px 10px;
+}
+.enroll-wizard__field small {
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--muted-2);
+}
+.enroll-wizard__field em {
+  font-style: normal;
+  color: var(--muted-2);
+}
+.enroll-wizard__problems {
+  margin: 0;
+  padding: 8px 12px 8px 28px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  /* --warn-on-page, not --warn: this sits on a card but the token is documented as marginal
+     at small sizes, and these are 0.8rem. */
+  color: var(--warn-on-page, var(--txt));
+  background: var(--bg-surface-2);
+  border-left: 3px solid var(--warn-on-page, var(--border-strong));
+  border-radius: var(--r-sm, 6px);
+}
+.enroll-wizard__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.enroll-wizard__preview,
+.enroll-wizard__apply,
+.enroll-wizard__cancel {
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 8px 14px;
+  border-radius: var(--r-sm, 6px);
+  border: 1px solid var(--border);
+  background: var(--bg-surface-2);
+  color: var(--txt);
+  cursor: pointer;
+}
+.enroll-wizard__apply {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.enroll-wizard__preview:disabled,
+.enroll-wizard__apply:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.enroll-wizard__cancel {
+  margin-left: auto;
+  font-size: 0.78rem;
+}
+.enroll-wizard__result {
+  padding: 10px 13px;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm, 6px);
+}
+.enroll-wizard__result--bad {
+  border-left: 3px solid var(--red-bright, var(--warn-on-page));
+}
+.enroll-wizard__summary {
+  margin: 8px 0 0;
+  display: grid;
+  gap: 3px;
+}
+.enroll-wizard__summary > div {
+  display: grid;
+  grid-template-columns: minmax(110px, auto) 1fr;
+  gap: 10px;
+}
+.enroll-wizard__summary dt {
+  color: var(--muted-2);
+}
+.enroll-wizard__summary dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.enroll-wizard__note {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--muted-2);
+}

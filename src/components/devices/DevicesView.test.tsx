@@ -153,11 +153,18 @@ describe('DevicesView', () => {
     expect(row.querySelector('.devices-table__meta')).not.toBeInTheDocument();
   });
 
-  it('the add-device control names the real blocker instead of promising a feature that is not coming in this dashboard', () => {
+  /**
+   * This previously asserted the button was disabled and named the Pi as the only route,
+   * which was true right up until enrolment was built. Kept as a test of the opposite fact
+   * rather than deleted: that the control actually opens the wizard is the thing worth
+   * guarding, and a disabled button is exactly the kind of regression that goes unnoticed.
+   */
+  it('the add-device control opens the enrolment panel', () => {
     useDeviceStore.setState({ devices: [device('co1', 'Outlet 1', 'outlet_dual')] });
     render(<DevicesView />);
     const addBtn = screen.getByRole('button', { name: /Add device/ });
-    expect(addBtn).toBeDisabled();
-    expect(addBtn).toHaveAttribute('title', expect.stringMatching(/Pi/));
+    expect(addBtn).toBeEnabled();
+    fireEvent.click(addBtn);
+    expect(screen.getByRole('heading', { name: 'Add device' })).toBeInTheDocument();
   });
 });
