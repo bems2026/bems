@@ -1,7 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
 **Last audited:** 2026-08-25 (UTC)
-**Audited at commit:** `82cf265`
+**Audited at commit:** `c08a826`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
 discovery broadcasts.
@@ -11,6 +11,51 @@ The Phase 10-13 entries below were added from a workstation with no database acc
 > This repository is **public**. No tokens, keys, passwords, hostnames, IP addresses, or
 > Supabase project identifiers may appear in this file. Where a deployment detail matters,
 > describe it generically ("the Pi", "the tailnet address").
+
+---
+
+## 0. Triage — what to do next
+
+This file is long because the reasoning is the point; this section exists so that "what
+now" does not require reading all of it. Everything here is expanded below under its own id.
+
+### Blocked on someone being at the office
+
+| Item | Why it is stuck |
+|---|---|
+| **RM-020** Power-cycle `co1`–`co6` | Unreachable locally **and** through the Tuya cloud. A Node-RED restart was tried and did not recover them, unlike `l6`. No software path exists. |
+| **RM-007** Kiosk sign-in | Needs one interactive login at the physical screen. |
+| **RM-016** IR Blaster + Outside Temp | Re-pairing needs the devices and the Smart Life account. Quiesced meanwhile, so they cost nothing but still cannot report. |
+
+### Waiting on elapsed time, not on work
+
+- **RM-012** — `l6` is reachable and controllable again; only its one-hour stability window
+  is unproven.
+- **RM-004** — anomaly false-positive re-check needs about a week of continuous telemetry.
+- **RM-006d** — a restore has never been *performed*. Configured is not verified.
+
+### Waiting on an operator decision
+
+- **RM-006c** — load-shed tiers. Thresholds are set; which loads shed first is a judgement
+  about the building, not a technical question.
+
+### Next to build, in order
+
+1. **Stuck-node watchdog + bridge restart** — a Node-RED restart recovered five devices on
+   2026-08-25 that a written diagnosis had called a hardware fault. Nothing surfaces that
+   state today, and nothing offers the remedy.
+2. **Show how a command was dispatched** — `via` (local / cloud / none) exists in the
+   dispatch result but has no column and no UI. A command that only survived through the
+   vendor cloud means the device is half-dead.
+3. **FI-010** — the 24h chart still draws a frozen wattage for a device offline all day.
+4. **FI-005** — out-of-dashboard alerts. The six dead outlets are exactly its shape: an
+   outage whose only surface is a screen nobody is watching.
+
+### The standing hazard
+
+**RM-013** (devices leave the network and rejoin) is the root cause behind RM-020, RM-018
+and much of RM-012. It is not closed and may not be closeable from this side — see its entry
+for what was measured and what was ruled out.
 
 ---
 
@@ -745,6 +790,24 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       without writing anything. `server/schemaProbe.mjs` (EX-031b) now encodes both halves of
       that method so the next check does not depend on remembering it.
 
+- [ ] **RM-020** Six of the seven convenience outlets are off the network entirely.
+      *Acceptance:* `co1`–`co6` answer locally again, and stay answering for an hour.
+      **NEEDS SOMEONE AT THE OFFICE — power-cycle them.** Measured 2026-08-25: `co1`–`co6`
+      read `online: false` **both** locally and in the Tuya cloud, `CO1` logged no successful
+      connect in 40 minutes, and each was producing ~27 `find() timed out` entries per five
+      minutes. Only `co7` and the seven lights survive.
+      **A Node-RED restart was already tried and did NOT recover them.** That distinction is
+      the whole content of this entry: the same restart *did* recover `l6` and took the fleet
+      from 9/21 to 14/21, so these six are not the stuck-node case (RM-012, and the note now
+      in `CLAUDE.md`) — they are the genuine one ADR-002 names, where the device has lost both
+      its inbound local path and its outbound cloud connection and **power is the only
+      recovery**. Cloud dispatch cannot help; that limitation is stated in RM-018 on purpose.
+      Two of them (`co1`, `co3`) were still cloud-reachable ~20 minutes earlier and degraded
+      during the session, which is RM-013 doing what RM-013 does. Not caused by the dispatch
+      test run against `co1`: `co3` was never commanded and dropped identically.
+      *Do not close this by restarting anything.* If they return without a power-cycle, that
+      is new information and RM-013 needs it.
+
 - [ ] **RM-013** Devices leave the 2.4 GHz network and rejoin.
       *Acceptance:* the AP holds one channel, and the announcing-host count stays at the full
       device count for an hour.
@@ -1075,7 +1138,11 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
    listen, but the ESP32 is a 2.4 GHz device and the site is on 5 GHz, so the outage fully
    explains the silence. Answerable only once RM-001 is fixed. Everything else that used
    Mosquitto has now been removed.
-3. **Was the light token ever exercised against real hardware?** Rotation is confirmed — the old token is rejected — but no fixture has been observed responding to the new one.
+3. ~~**Was the light token ever exercised against real hardware?**~~ **Answered 2026-08-25.**
+   The operator toggled `l6` from the Control page and the physical fixture responded, with
+   three `POST /api/command` calls logged `-> OK` and Node-RED showing `Connected to device!`
+   for that node. Rotation was already confirmed (the old token is rejected); this closes the
+   other half — the new token drives real hardware.
 4. **Is there a backup of the Supabase project?** The repo now *configures* one — `npm run
    backup` and `docs/backup-policy.md` — but nothing has *verified* one. No restore has been
    tried, and whether Supabase itself takes a backup depends on a plan tier this pass could
