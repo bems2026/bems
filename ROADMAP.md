@@ -799,6 +799,15 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       button does nothing, recoverable only by removing power. Seventeen devices across an
       office makes that a walk to a breaker per incident.
       *Acceptance:* a hung device can be recovered without cutting its supply.
+      **FIRST, RESTART NODE-RED — it is free and it is not always the device (2026-08-25).**
+      `l6` had been diagnosed the previous day as physically unreachable: `EHOSTUNREACH` at
+      every protocol version, ARP `FAILED`, written up as RF range or a stale address and
+      "needs eyes on the fixture". `sudo systemctl restart nodered` reconnected it in two
+      seconds, and the operator then toggled the real fixture successfully. The same restart
+      took the fleet from 9/21 to 14/21 online. A tuya node that has given up stays given up,
+      and its symptoms are indistinguishable from a device that is out of range or unplugged —
+      so a walk to the breaker can be a walk taken for a software fault. Restart first, then
+      cut power only if the device is still dark. See RM-012.
       **Analysed in `docs/adr-002-device-recovery-path.md`.** A Tuya device holds two
       independent paths — inbound local TCP, and an outbound connection it keeps open to Tuya —
       and they fail separately. An ESP device with an exhausted socket table is unreachable
@@ -845,16 +854,32 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       This is also why `sens_outside_temp` has no real telemetry: `acu_main` and
       `sens_outside_temp` both read `ac_dash_state`, which the IR blaster feeds.
 
-- [ ] **RM-012** `l6` (Light Switch 6) transmits but cannot be reached — a one-way link.
+- [ ] **RM-012** `l6` (Light Switch 6) was a one-way link. **Reachable and controllable again
+      2026-08-25 — recovered by a Node-RED restart, with nobody touching the fixture.**
       *Acceptance:* `ip neigh` resolves its address, and it stays online across an hour.
-      **Diagnosed 2026-08-24, and it is not a configuration fault.** It broadcasts discovery
-      normally (its id appears in the UDP 6667 survey), but a direct probe returns
-      `EHOSTUNREACH …:6668` at *every* protocol version, and its address shows `FAILED` in the
-      Pi's ARP table while a healthy peer on the same AP resolves. So the device transmits and
-      the Pi cannot send anything back to it — no key, version or timeout setting can fix that.
-      Generating ~150 discovery timeouts every 2 minutes, by far the noisiest node.
-      Likely RF range, a power-save state, or a stale address. **Needs eyes on the fixture:** is
-      it powered, has it been moved, where is it relative to the access point.
+      *Remaining:* only the one-hour stability window. Reachability is no longer in question.
+
+      **This overturns the 2026-08-24 diagnosis, and that matters more than the device.** It
+      was recorded as not a configuration fault: discovery broadcasts arrived, but a direct
+      probe returned `EHOSTUNREACH …:6668` at *every* protocol version and its address showed
+      `FAILED` in the ARP table, so the conclusion was RF range, a power-save state or a stale
+      address — "needs eyes on the fixture". No one ever went. Restarting Node-RED on
+      2026-08-25 produced, within two seconds, `findDevice(): Found device, going to connect`
+      then `Connected to device! name : Light Switch 6`; three commands then dispatched `-> OK`
+      and the operator confirmed the physical fixture switching. Evidence of a live TCP session
+      to :6668 is strictly stronger than the ARP resolution the acceptance asks for, which was
+      only ever a proxy for reachability.
+
+      **So the fault was node-side session state, not RF.** A tuya node that has given up stays
+      given up: the retry loop keeps calling `findDevice()` against a socket that will never
+      recover, and the symptom — permanent `EHOSTUNREACH`, ARP `FAILED` — is indistinguishable
+      from a device that is out of range or unplugged. That is why a day of it read as a
+      hardware problem.
+      **Try `sudo systemctl restart nodered` BEFORE power-cycling anything** (see RM-018, where
+      cutting power to each device was the assumed remedy). The same restart took the fleet
+      from 9/21 to 14/21 online, so `l6` was not the only device stuck this way.
+      Not yet a general rule: one restart, one observation. If a device is still dark after a
+      restart, the hardware suspicion is back on.
 
 - [x] **RM-011** ~~The `ACU` node is a second session to the `AREC ACU` branch meter.~~
       **Withdrawn 2026-08-24 — this was a wrong finding, corrected by the operator.** `ACU` and

@@ -58,6 +58,16 @@ npm run build:flow       # regenerate the flow after editing shared/
   every device going offline, which reads as a network fault. Back up `~/.node-red/flows.json`
   before any flow write, and see `node-red-bridge/live-flow-baseline.json` for what the values
   should be.
+- **A device that looks physically unreachable may just be a stuck Node-RED node. Restart
+  Node-RED before suspecting hardware.** On 2026-08-24 `l6` was diagnosed as an RF/range or
+  stale-address problem — `EHOSTUNREACH …:6668` at every protocol version, ARP `FAILED`, and a
+  roadmap entry saying it needed eyes on the fixture. On 2026-08-25
+  `sudo systemctl restart nodered` reconnected it within two seconds (`Found device, going to
+  connect` -> `Connected to device!`), and the real fixture then toggled from the app. The same
+  restart took the fleet from 9/21 to 14/21 online. A tuya node that has given up stays given
+  up, and its symptoms are identical to a device that is unplugged or out of range — so this
+  costs a walk to the breaker, or a day of believing a hardware fault that is not there.
+  Restart first; only if the device is still dark is the hardware suspicion earned.
 - **A ping that gets no reply is not evidence of client isolation.** This was concluded twice
   on 2026-08-24/25 from the Pi being unable to ping a Windows laptop on the same /24, and both
   times it was wrong: Windows Firewall defaults to `BlockInbound` and drops ICMP echo, so the
