@@ -21,7 +21,7 @@ import type { DeviceClass } from '@/lib/types';
  */
 export function EnrollWizard({ onClose }: { onClose: () => void }) {
   const devices = useDeviceStore((s) => s.devices);
-  const { byId, status } = useCloudFleet();
+  const { byId, status, claimedKnown } = useCloudFleet();
   const { ask, modalProps } = useConfirm();
 
   const [vendorId, setVendorId] = useState<string | null>(null);
@@ -97,9 +97,15 @@ export function EnrollWizard({ onClose }: { onClose: () => void }) {
           ))}
         </select>
         <small>
-          {candidates.length === 0
-            ? 'Every device in the cloud project is already enrolled.'
-            : `${candidates.length} device(s) in the cloud project are not yet enrolled. Offline ones can still be added — offline now is not offline forever.`}
+          {/* An unknown claimed set is stated, never implied. With the flow unreadable every
+              device looks unenrolled, so a confident count here would be a fabrication —
+              enrolment's own validation still refuses a duplicate, which is what makes
+              proceeding safe rather than merely permitted. */}
+          {!claimedKnown
+            ? `Which devices are already enrolled could not be checked — the flow was unreadable, so this list may include devices that already have a node. Enrolling a duplicate is still refused.`
+            : candidates.length === 0
+              ? 'Every device in the cloud project is already enrolled.'
+              : `${candidates.length} device(s) in the cloud project are not yet enrolled. Offline ones can still be added — offline now is not offline forever.`}
         </small>
       </label>
 

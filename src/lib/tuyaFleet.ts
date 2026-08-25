@@ -27,9 +27,16 @@ export type CloudFleetStatus = 'loading' | 'ready' | 'unconfigured' | 'error';
 export interface CloudFleet {
   byId: Record<string, CloudDevice>;
   status: CloudFleetStatus;
+  /**
+   * Whether the server could actually determine which devices are already enrolled. That read
+   * needs Node-RED admin credentials the Tuya call does not, so it can fail on its own — and
+   * when it does, every `claimed` is false, which is indistinguishable from a genuinely empty
+   * flow. Carrying the distinction lets the wizard say "unknown" instead of implying "none".
+   */
+  claimedKnown: boolean;
 }
 
-export const EMPTY_FLEET: CloudFleet = { byId: {}, status: 'loading' };
+export const EMPTY_FLEET: CloudFleet = { byId: {}, status: 'loading', claimedKnown: false };
 
 export function fleetById(devices: CloudDevice[]): Record<string, CloudDevice> {
   const out: Record<string, CloudDevice> = {};
@@ -44,11 +51,11 @@ export function fleetById(devices: CloudDevice[]): Record<string, CloudDevice> {
  */
 export async function fetchCloudFleet(): Promise<CloudFleet> {
   try {
-    const data = await fetchJson<{ devices?: CloudDevice[] }>('/tuya/devices');
-    return { byId: fleetById(data.devices ?? []), status: 'ready' };
+    const data = await fetchJson<{ devices?: CloudDevice[]; claimed_known?: boolean }>('/tuya/devices');
+    return { byId: fleetById(data.devices ?? []), status: 'ready', claimedKnown: data.claimed_known === true };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    if (message.includes('501')) return { byId: {}, status: 'unconfigured' };
-    return { byId: {}, status: 'error' };
+    if (message.includes('501')) return { byId: {}, status: 'unconfigured', claimedKnown: false };
+    return { byId: {}, status: 'error', claimedKnown: false };
   }
 }

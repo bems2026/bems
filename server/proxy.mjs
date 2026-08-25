@@ -447,15 +447,22 @@ const server = http.createServer(async (req, res) => {
       // enrolling one changes this, and a wizard showing a device it just added as still
       // available is worse than one extra read on a page nobody opens often.
       let claimed = new Set();
+      let claimedKnown = false;
       try {
         const auth = await createAdminClient({ host: '127.0.0.1', port: BRIDGE_PORT, timeoutMs: 10000 });
         const { flows } = await auth.getFlows(await auth.login());
         claimed = new Set(flows.filter((n) => n.type === 'tuya-smart-device').map((n) => n.deviceId));
-      } catch {
-        // The cloud list is still worth returning without it; `claimed` simply stays false,
-        // and enrolment's own validation is what actually refuses a duplicate.
+        claimedKnown = true;
+      } catch (err) {
+        // Reported, not swallowed. This read needs NODE_RED_ADMIN_USER/PASS, which the Tuya
+        // call does not — so it fails independently, and on failure every `claimed` is false,
+        // which is indistinguishable from an empty flow. The wizard then offers devices that
+        // already have a node as available: a wrong list that looks right. That is exactly
+        // what happened when these keys were missing from server/.env, and it stayed invisible
+        // because this catch was empty. `claimed_known` lets the page say it does not know.
+        console.error(`[ibems-proxy] claimed-set lookup failed, enrolment candidates unfiltered: ${err.message}`);
       }
-      return sendJson(res, 200, { devices: toPublicFleet(devices, claimed) });
+      return sendJson(res, 200, { devices: toPublicFleet(devices, claimed), claimed_known: claimedKnown });
     } catch (err) {
       // The upstream message can name the data centre and the account; log it, do not echo it.
       console.error(`[ibems-proxy] tuya fleet fetch failed: ${err.message}`);

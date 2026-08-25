@@ -29,6 +29,7 @@ beforeEach(() => {
   enroll.fn.mockReset();
   cloudFleet.value = {
     status: 'ready',
+    claimedKnown: true,
     byId: { 'vendor-new': { id: 'vendor-new', name: 'New Outlet', online: true }, 'vendor-co1': { id: 'vendor-co1', name: 'CO1', online: true, claimed: true } },
   };
   useDeviceStore.setState({ devices: [device('co1')] });
@@ -45,6 +46,28 @@ describe('EnrollWizard', () => {
     cloudFleet.value = { status: 'ready', byId: { 'vendor-co1': { id: 'vendor-co1', name: 'CO1', online: true, claimed: true } } };
     render(<EnrollWizard onClose={() => {}} />);
     expect(screen.getByText(/already enrolled/)).toBeInTheDocument();
+  });
+
+  /**
+   * The claimed set is read server-side from the live flow, and that read can fail on its own
+   * — it needs Node-RED admin credentials the Tuya call does not. When it did fail it was
+   * swallowed, so `claimed` was false for everything and this list offered all 19 enrolled
+   * devices as available. A wrong list that looks right is worse than a missing one, so the
+   * server now reports whether it knows, and an unknown answer is stated rather than implied.
+   */
+  it('says the already-enrolled filter is unavailable rather than silently offering everything', () => {
+    cloudFleet.value = {
+      status: 'ready',
+      claimedKnown: false,
+      byId: { 'vendor-co1': { id: 'vendor-co1', name: 'CO1', online: true } },
+    };
+    render(<EnrollWizard onClose={() => {}} />);
+    expect(screen.getByText(/could not be checked/i)).toBeInTheDocument();
+  });
+
+  it('stays quiet about the filter when the server did determine the claimed set', () => {
+    render(<EnrollWizard onClose={() => {}} />);
+    expect(screen.queryByText(/could not be checked/i)).not.toBeInTheDocument();
   });
 
   it('explains itself rather than half-working when the cloud is not configured', () => {
