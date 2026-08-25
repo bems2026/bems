@@ -467,23 +467,29 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       without writing anything. `server/schemaProbe.mjs` (EX-031b) now encodes both halves of
       that method so the next check does not depend on remembering it.
 
-- [ ] **RM-013** Devices genuinely leave the 2.4 GHz network and rejoin. **Confirmed from an
-      independent vantage point 2026-08-24 — the access point is the remaining suspect.**
-      *Acceptance:* the set of cloud-offline devices stops changing between runs of
-      `npm run tuya:devices`.
-      Tuya's cloud reaches these devices over the internet, not the local subnet, and **it sees
-      them drop too.** Two runs minutes apart named different devices offline — first
-      CO4/CO7/L5/CO5, then CO5/L2/L3/L7 — so this is not the Pi failing to see devices that are
-      up. They are leaving the network.
-      *Local keys are not the cause either* — EX-026b verified all 19 against the cloud and
-      every one matches.
-      *That rules out the earlier hypothesis.* Client isolation would keep a device online to
-      Tuya while invisible to the Pi; that is not what is happening for most of them. What
-      remains is access-point capacity, DHCP, or RF — all answerable from the AP's admin page,
-      none from this repository.
-      *Still consistent with the earlier measurement:* the branch meters never drop, and
-      everything that flaps is one of the ~14 distributed relays.
-
+- [ ] **RM-013** Devices leave the 2.4 GHz network and rejoin. **Cause identified 2026-08-25:
+      the access point is at an association limit of 20 clients.**
+      *Acceptance:* the client limit is raised (or a second AP added), and the announcing-host
+      count holds at the full device count for an hour.
+      Measured from a machine on the device network itself:
+      - **Exactly 20 clients associated** — 19 on the subnet plus the Pi, with `.1` the gateway.
+        17 Tuya devices + Pi + a laptop + one randomised-MAC host = 20. Sitting precisely on a
+        round number while devices rotate in and out cleanly is what a cap looks like; at the
+        limit, each new association evicts an existing one.
+      - **Everything else is ruled out by measurement.** One BSSID (`f8:5e:3c:…:36`), so no
+        roaming between APs. Channel utilisation **12%**, so not airtime congestion. Signal 95%
+        at 144 Mbps. WPA2-Personal with CCMP — not the mixed WPA1/TKIP that commonly breaks
+        ESP-based devices. Local keys verified against the cloud (EX-026b), protocol versions
+        matched to what each device announces, discovery timeout corrected.
+      **The fix is on the access point and cannot be made from this repository:** raise the
+      per-radio client limit above ~30, or add a second AP and split the devices across them.
+      Router is `aclink` firmware (2020) at the gateway address.
+      *Two smaller things worth doing while in there:* channel 9 overlaps neighbours on 6, 7, 11
+      and 12 — move to 1 or 11, which are non-overlapping. And **Telnet (23) is open** alongside
+      SSH on a network whose dispatch gate is now live; it should be closed.
+      *Note for whoever is counting:* every laptop that joins this SSID consumes one of the 20
+      slots, so diagnosing from a machine on the device network makes the problem slightly worse
+      while you look at it.
 - [ ] **RM-016** Two flow nodes reference devices that are not in the Tuya cloud project.
       *Acceptance:* each is re-paired into the project, or removed from the flow and registry.
       `NBRIC IR Blaster` and `Outside Temp` came back **NOT IN PROJECT** from
