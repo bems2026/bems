@@ -277,6 +277,30 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       from the registry and a real topology change arrives with a node change beside it.
       `node-red-bridge/bridgeSignature.mjs`, `node-red-bridge/deploy.mjs`,
       `test/bridge-signature.test.mjs`
+- [x] **EX-100** The alerts bell reports a *fleet* drop, and names the remedy.
+      Per-device COMM FAULT rows already said what was down; nothing said what to do, and on
+      2026-08-25 what to do was cheap and remote — a Node-RED restart recovered five devices,
+      one of which (`l6`) had a written diagnosis calling it an RF/hardware fault that needed
+      eyes on the fixture. Eight separate COMM FAULTs also read as eight problems when they
+      are usually one, so the fleet row is listed first and reframes the rows beneath it.
+      **The hard part is not counting offline devices, it is not crying wolf.** Two devices
+      here are offline permanently by design (the quiesced IR blaster and outside-temp
+      sensor), and counting them would hold the alert on forever — which is how a warning
+      becomes furniture. `fleetStuck` splits on `online_samples`: a device seen up at any
+      point in the 24h window CAN be up, so its being down now is a change; one never up in
+      the window is not news and no restart will alter it. Evidence, not an exclusion list —
+      a hardcoded list of "expected offline" ids would go stale the first time one recovered.
+      Threshold is three simultaneous drops: one device is RM-013 being RM-013, and firing on
+      that would mean firing most days.
+      `src/lib/deviceConnectivity.ts`, `src/components/layout/AlertsPopover.tsx`
+
+      **The one-click restart button was deliberately NOT shipped with it.** The proxy runs
+      unprivileged, so a `POST /api/bridge/restart` needs a `sudoers` NOPASSWD entry, which
+      would let any authenticated app user bounce the bridge. That may still be worth it —
+      RM-018 alternative is a walk to a breaker — but the detection should be seen to be
+      right before the privilege is granted, and there is now a second route that needs no
+      privilege at all: Claude runs on the Pi (`docs/pi-session-brief.md`) and is authorised
+      to restart services there. Revisit once the alert has been observed firing correctly.
 - [x] **EX-040b** In-page enrolment wizard — the Devices page's "+ Add device" is real. Picks a
       vendor device the flow does not already poll, takes an id/class/name/room, previews, then
       enrols.

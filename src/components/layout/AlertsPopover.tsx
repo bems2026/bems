@@ -5,6 +5,8 @@ import { useAnomaliesStore } from '@/stores/anomaliesStore';
 import { isReadingStale } from '@/lib/staleness';
 import { latestAnomalyPerDevice, isAnomalyCurrent } from '@/lib/anomalies';
 import { useNowTick } from '@/lib/useNowTick';
+import { useDeviceConnectivity } from '@/hooks/useDeviceConnectivity';
+import { fleetStuck, isFleetStuck } from '@/lib/deviceConnectivity';
 
 /** One row in the bell — either source (staleness watchdog, anomaly detection) is shaped
  * into this before rendering, so the render/ack logic below only ever deals with one shape
@@ -14,7 +16,7 @@ interface AlertItem {
   title: string;
   body: string;
   meta: string;
-  kind: 'watchdog' | 'anomaly';
+  kind: 'watchdog' | 'anomaly' | 'fleet';
 }
 
 /**
@@ -36,6 +38,7 @@ export function AlertsPopover() {
   const devices = useDeviceStore((s) => s.devices);
   const latestReadings = useDeviceStore((s) => s.latestReadings);
   const anomalyRows = useAnomaliesStore((s) => s.rows);
+  const { rows: connectivity } = useDeviceConnectivity(24);
   const [open, setOpen] = useState(false);
   const [acked, setAcked] = useState<Set<string>>(new Set());
   const ref = useRef<HTMLDivElement>(null);
@@ -95,7 +98,35 @@ export function AlertsPopover() {
     return items;
   }, [anomalyRows, devices, staleItems]);
 
-  const allItems = useMemo(() => [...staleItems, ...anomalyItems], [staleItems, anomalyItems]);
+  /**
+   * One fleet-level row rather than N per-device ones — and it carries the REMEDY, which is the
+   * part that was missing. On 2026-08-25 a Node-RED restart recovered five devices that a
+   * written diagnosis had called a hardware fault; the fix was cheap and remote, and nothing on
+   * screen suggested it. `fleetStuck` excludes devices never seen online in the window, so the
+   * two permanently-quiesced ones cannot hold this on forever.
+   *
+   * Listed FIRST because it reframes the per-device rows beneath it: eight separate COMM FAULTs
+   * read as eight problems, when they are usually one.
+   */
+  const fleetItems: AlertItem[] = useMemo(() => {
+    const result = fleetStuck(connectivity);
+    if (!isFleetStuck(result)) return [];
+    return [
+      {
+        deviceId: '__fleet__',
+        title: `${result.stuck.length} devices dropped together`,
+        body:
+          'Each was reporting earlier today. Devices often stop answering because the bridge nodes gave up rather than because the hardware failed — restarting Node-RED on the Pi has recovered exactly this before. If they stay dark afterwards, they need power cycling.',
+        meta: `${result.stuck.join(', ')} · fleet`,
+        kind: 'fleet' as const,
+      },
+    ];
+  }, [connectivity]);
+
+  const allItems = useMemo(
+    () => [...fleetItems, ...staleItems, ...anomalyItems],
+    [fleetItems, staleItems, anomalyItems],
+  );
   const visible = allItems.filter((item) => !acked.has(item.deviceId));
 
   return (
@@ -130,7 +161,9 @@ export function AlertsPopover() {
                 <li className="alerts-popover__row" key={item.deviceId}>
                   <div>
                     <p className="alerts-popover__title">
-                      {item.kind === 'anomaly' ? <AlertTriangle size={12} aria-hidden="true" /> : <Bell size={12} aria-hidden="true" />}
+                      {/* A fleet drop earns the triangle for the same reason an anomaly does:
+                          both need a judgement, where a single COMM FAULT is just a fact. */}
+                      {item.kind === 'anomaly' || item.kind === 'fleet' ? <AlertTriangle size={12} aria-hidden="true" /> : <Bell size={12} aria-hidden="true" />}
                       {item.title}
                     </p>
                     <p className="alerts-popover__body">{item.body}</p>

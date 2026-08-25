@@ -80,3 +80,50 @@ export async function fetchDeviceConnectivity(windowHours = 24): Promise<Record<
   if (error) throw new Error(`Connectivity fetch failed: ${error.message}`);
   return connectivityRowsToMap((data ?? []) as ConnectivityRow[]);
 }
+
+/**
+ * Devices that WERE reachable in the window and are not now, separated from those that have
+ * never been reachable in it.
+ *
+ * WHY THE SEPARATION IS THE WHOLE POINT: on 2026-08-25 a Node-RED restart recovered five
+ * devices that a written diagnosis had called a hardware fault — `l6` was recorded as
+ * `EHOSTUNREACH` at every protocol version with a roadmap entry saying it needed eyes on the
+ * fixture, and it reconnected in two seconds. A tuya node that has given up stays given up and
+ * presents exactly like an unplugged device, so the remedy is cheap, remote, and was invisible.
+ *
+ * But two devices on this site are offline permanently by design (the IR blaster and the
+ * outside-temp sensor are not in the vendor cloud project and are deliberately quiesced), and
+ * counting them would hold this signal on forever — which is how a warning becomes furniture.
+ * `online_samples` draws the line with evidence rather than a hardcoded exclusion list: a
+ * device that was up at some point in the window CAN be up, so it being down now is a change.
+ * One that has never been up in 24 hours is not news, and no restart will alter that.
+ */
+export interface FleetStuckResult {
+  /** Offline now, but seen online within the window — the recoverable-looking case. */
+  stuck: string[];
+  /** Offline now and never seen online in the window. Reported, but deliberately not counted. */
+  chronic: string[];
+}
+
+/**
+ * How many simultaneous drops make it a fleet event rather than one device being flaky.
+ *
+ * One device dropping is RM-013 doing what RM-013 does, and firing on it would mean firing
+ * most days. Three at once is something that happened — an access point re-selecting its
+ * channel, or the bridge's nodes giving up together, which is the case a restart fixes.
+ */
+export const FLEET_STUCK_AT = 3;
+
+export function fleetStuck(rows: Record<string, ConnectivityRow>): FleetStuckResult {
+  const stuck: string[] = [];
+  const chronic: string[] = [];
+  for (const row of Object.values(rows)) {
+    if (row.currently_online) continue;
+    (row.online_samples > 0 ? stuck : chronic).push(row.device_id);
+  }
+  return { stuck: stuck.sort(), chronic: chronic.sort() };
+}
+
+export function isFleetStuck(result: FleetStuckResult): boolean {
+  return result.stuck.length >= FLEET_STUCK_AT;
+}
