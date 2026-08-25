@@ -52,6 +52,23 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       verdict. Carrying the Tuya id into the registry is what makes the per-device join possible
       — which is FI-001's table —
       `server/tuyaFleet.mjs`, `src/lib/tuyaFleet.ts`, `src/components/devices/CloudFleetCard.tsx`
+- [x] **EX-037b** Duplicate device sessions collapsed: 21 tuya nodes -> 19, one session per
+      physical device. Two nodes carrying the same `deviceId` each held a TCP session to one
+      device — the dual-channel yellow meter and the branch meter measuring the aircon. Halves
+      the socket pressure on both, and exhausting that table is what leaves a device answering
+      the cloud but not the LAN. Applied via a dry-run-by-default patch script whose plan is a
+      pure function, so the dry run and the apply cannot drift —
+      `node-red-bridge/sessionCollapsePlan.mjs`, `npm run collapse-sessions:pi`
+- [x] **EX-038b** Outlets are polled every 60 s. Nothing in the flow had ever asked an outlet
+      for its state, so a reading only advanced when the device happened to report a change.
+      Because `readings` is keyed `(device_id, ts)` and ingestion upserts, a stalled timestamp
+      overwrote its own row rather than adding one — `co1` recorded 40 samples against a
+      switch's 60 in the same hour, and every per-outlet figure downstream inherited that.
+      Verified after applying: outlet timestamps now advance within the poll cadence, where
+      `co1` had been stalling 15+ minutes. This patch only ADDS nodes, and validation asserts
+      every pre-existing node is byte-identical afterwards — an accidental rewire on a tab
+      carrying live control logic would be far harder to spot than a missing node —
+      `node-red-bridge/outletPollPlan.mjs`, `npm run poll-outlets:pi`
 - [x] **EX-036b** Vendor-cloud dispatch as a **fallback**, tried only after a local command has
       failed. Solves the reported hang: a device whose inbound socket table is exhausted stops
       answering on the LAN while its outbound cloud connection stays healthy, which previously
@@ -571,25 +588,18 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       for an offline device rather than failing, so a successful status read is **not** proof of
       reachability. Trust the `online` flag; a command is the only real test.
       *Worth doing regardless:* collapse the two shared meters to one local session each (which
-      would also make RM-017's channel interchange impossible by construction, since both
+      would also make RM-019's channel interchange impossible by construction, since both
       channels would come from one atomic read), and back off failed discovery.
-- [ ] **RM-017** The shared dual-channel meter swaps its two channels.
-      *Acceptance:* `npm run check:meters` reports no interchange across a week.
-      Confirmed 2026-08-25 at 00:13: `mtr_co_yellow` and `mtr_lo_yellow` traded readings
-      exactly (42 -> 1289 W against 1285 -> 41 W in the same sample).
-      **Not a software fault, and worth being sure of that before anyone edits the flow.** Every
-      stage is keyed by name rather than position: the parsers select by DPS number
-      (105/106/107 against 115/116/117), write to distinct context keys (`co_yel_*`,
-      `lo_yel2_*`), and `Calculate 3-Phase Totals` reads those keys by name. There is nowhere a
-      position could substitute for an identity. The physical meter remapped its channels.
-      **What is affected:** per-circuit power, and the per-meter energy accumulators from the
-      swap onward — they keep adding to whichever channel the device now calls which, so
-      per-circuit monthly reports drift from that moment.
-      **What is not:** building and phase totals sum both channels, and a sum is invariant under
-      a swap. Those are correct throughout, which is the half worth knowing first.
-      *The fix is at the device* — re-pair or re-flash the meter. If it proves persistent, the
-      alternative is to stop deriving two logical meters from one physical device and fit a
-      second meter, since the whole failure follows from identity resting on DPS index alone.
+- [x] **RM-019** ~~The shared dual-channel meter swaps its two channels.~~ **Closed by
+      construction 2026-08-25.** The two yellow channels used to arrive on two separate
+      sessions, which is what allowed them to disagree about which snapshot they came from.
+      EX-037b collapsed those to one session, so both parsers now read the *same message* and
+      there is no ordering left for them to get wrong.
+      *The detector stays* (`npm run check:meters`). It cost little and it is the only thing
+      that would notice if this returned by some route nobody predicted — and the confirmed
+      event on 2026-08-25 at 00:13 is exactly the kind of thing that is easy to stop believing
+      once it stops happening.
+
 - [ ] **RM-016** Two flow nodes reference devices that are not in the Tuya cloud project.
       *Acceptance:* each is re-paired into the project, or removed from the flow and registry.
       `NBRIC IR Blaster` and `Outside Temp` came back **NOT IN PROJECT** from
@@ -731,13 +741,7 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - **FI-003** (L) Packaging so a second site can be stood up without redoing the wiring by hand: install script or card image, plus a physical-install guide.
 
 ### Robustness
-- **FI-013** (S) The Outlet tab never polls its devices. The 7 `Cron O*` injects drive schedule
-  logic and the 180 s triggers feed Google Sheets; nothing sends `{operation:'GET'}` to an outlet
-  node, so an outlet reading only advances when the device spontaneously pushes. EX-039 stops the
-  dashboard *presenting* the resulting gap as fact, but the data is still missing. The fix is one
-  inject plus one function wired to all 7 outlet nodes — deliberately deferred rather than
-  hand-added, because it belongs in `build-flow.mjs` with the rest of the device nodes (FI-001),
-  not in a hand-built tab that a regeneration would wipe.
+- ~~**FI-013** (S) The Outlet tab never polls its devices.~~ **Done 2026-08-25** — EX-038b.
 - **FI-009** (S) Narrow the three remaining whole-map store selectors — `FloorPlanView`, `AlertsPopover`, `EnergyBreakdownCard`. Left alone in the Phase 9 pass because each needs value-level rather than reference-level comparison to gain anything, and FloorPlanView genuinely reads every device.
 - **FI-010** (M) The 24h chart has the same offline-blindness the 7d/30d charts just lost: the bridge's ring buffer and `HistoryPoint` carry no `online` field, so a device offline for a day still draws its frozen last wattage. Fixing it means regenerating and redeploying the live Node-RED flow — a layer-1 change on load-bearing hardware, so it needs explicit approval, not a quiet follow-up.
 - **FI-011** (S) Push delivery for the monthly report, once FI-005's channel exists. Reports
