@@ -170,13 +170,24 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       (RM-016) — while `/api/readings/latest` reported both devices `online: true` carrying no
       measurement at all: `state: null`, no `temp_c`, no `room_temp_c`. A fabricated online is
       worse than a stale reading, because a stale one at least happened once.
-      Emptiness is evidence here rather than an inference: a working blaster writes
-      `ac_dash_state` every poll and the mock populates it in full, so an empty object means
-      the path has never reported in either environment that exists. That is why this branch
-      can fail closed where the `switch` branch deliberately failed open — a missing
-      `lightStatus` really could mean an older flow, but nothing else ever writes this key.
-      Verified against the running mock as well as the suite, so the healthy path is confirmed
-      not to have become a false negative.
+      **The first version of this fix was wrong, and its tests passed anyway.** It checked
+      `Object.keys(ac).length > 0`, on the assumption that a dead blaster leaves
+      `ac_dash_state` empty. The mock populates it in full, so the assumption held in the
+      suite and the fix shipped green — and changed nothing in production. Reading the live
+      context off the Pi through the Node-RED admin API showed why: the flow seeds a
+      **placeholder** rather than leaving it empty —
+      `{power:"OFFLINE", setTemp:"--", roomTemp:"--", humidity:"--", outTemp:"--"}`.
+      Every key is present, so key-presence was always going to say ONLINE.
+      The rule is now "carries at least one real measurement": `num()` rejects `"--"` and
+      `"OFFLINE"` and accepts `"25.4"`, so the placeholder reads offline and a real poll reads
+      online, with no magic string to keep in sync. Any single field suffices — the blaster
+      sends temperature and humidity on separate DPS, so demanding all of them would report a
+      half-working device as dead. The empty-object case is still covered by the same test.
+      The regression test now uses the exact object read off the live Pi, not an invented one.
+      This is the same move the `switch` branch made when `lightStatus` turned out to be
+      readable — except that branch stayed optimistic on a missing health map, because it
+      really could mean an older flow. Here a placeholder is a positive statement that nothing
+      has reported, so this one fails closed.
       `shared/buildLatest.mjs`, `test/contract.test.mjs`
 - [x] **EX-098** `npm run quiesce:pi` — stops a permanently unreachable tuya node retrying
       forever, without removing it. `NBRIC IR Blaster` and `Outside Temp` each call

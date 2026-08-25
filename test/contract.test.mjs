@@ -82,6 +82,30 @@ test('absent readings are omitted, never coerced to zero', () => {
  * in full, and a working blaster writes it every poll, so empty means the path has never
  * reported in either environment that exists.
  */
+test('the aircon and its sensor report offline on the placeholder object the flow really writes', () => {
+  // THE SHAPE THAT MATTERS. Read off the live Pi 2026-08-25 via the Node-RED context API:
+  // the flow does not leave `ac_dash_state` empty when the blaster is dead, it seeds a
+  // placeholder. Every field is the literal "--" and power is the string "OFFLINE" — the
+  // object is self-describing, and `num("--")` is undefined, so "carries a real number" is
+  // the honest test. An earlier version of this fix checked `Object.keys(ac).length` and
+  // passed its own tests while changing nothing in production, because emptiness was an
+  // assumption rather than an observation.
+  const snap = snapshot();
+  snap.aircon = { state: { power: 'OFFLINE', setTemp: '--', roomTemp: '--', humidity: '--', outTemp: '--' } };
+  const built = buildLatest(snap, DEVICE_REGISTRY, PHASE_MAP, 1786000000000);
+  assert.equal(built.find((r) => r.device_id === 'acu_main').online, false);
+  assert.equal(built.find((r) => r.device_id === 'sens_outside_temp').online, false);
+});
+
+test('a single real reading is enough to count as reporting', () => {
+  // Partial data is still data. The blaster sends temperature and humidity on separate DPS,
+  // so demanding all of them would report a half-working device as dead.
+  const snap = snapshot();
+  snap.aircon = { state: { power: 'OFFLINE', setTemp: '--', roomTemp: '--', humidity: '--', outTemp: '31.8' } };
+  const built = buildLatest(snap, DEVICE_REGISTRY, PHASE_MAP, 1786000000000);
+  assert.equal(built.find((r) => r.device_id === 'sens_outside_temp').online, true);
+});
+
 test('the aircon and its sensor report offline when nothing has ever fed ac_dash_state', () => {
   const snap = snapshot();
   snap.aircon = { state: {} };

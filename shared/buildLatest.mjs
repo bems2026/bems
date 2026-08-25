@@ -90,13 +90,23 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs) {
       // both devices ONLINE carrying no measurement at all. A fabricated online is worse than a
       // stale reading: a stale one at least happened once.
       //
-      // Emptiness is evidence, not an inference. A working blaster writes `ac_dash_state` every
-      // poll and the mock populates it in full, so an empty object means the path has never
-      // reported in either environment that exists. This is the same move the `switch` branch
-      // above made when `lightStatus` turned out to be readable — except there the fallback
-      // stayed optimistic because a missing health map really could mean an older flow. Here
-      // there is no such ambiguity: nothing else ever writes this key.
-      r.online = Object.keys(ac).length > 0;
+      // ONLINE means "carries at least one real measurement", not "the key exists". The flow
+      // does not leave `ac_dash_state` empty when the blaster is dead — read off the live Pi,
+      // it seeds a placeholder: `{power:"OFFLINE", setTemp:"--", roomTemp:"--", humidity:"--",
+      // outTemp:"--"}`. A first version of this fix tested `Object.keys(ac).length` and so
+      // passed its own tests while changing nothing in production, because emptiness was an
+      // assumption rather than an observation.
+      //
+      // `num()` rejects "--" and "OFFLINE" and accepts "25.4", so the placeholder reads as
+      // offline and a real poll reads as online, with no magic string to keep in sync. ANY one
+      // field is enough: the blaster sends temperature and humidity on separate DPS, so
+      // demanding all of them would report a half-working device as dead.
+      //
+      // This is the same move the `switch` branch above made when `lightStatus` turned out to
+      // be readable — except there the fallback stayed optimistic, because a missing health map
+      // really could mean an older flow. Here there is no such ambiguity: nothing else writes
+      // this key, and a placeholder is a positive statement that nothing has reported.
+      r.online = [ac.roomTemp, ac.outTemp, ac.humidity, ac.setTemp].some((v) => num(v) !== undefined);
     } else {
       r.online = true;
     }
