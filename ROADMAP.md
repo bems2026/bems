@@ -536,6 +536,18 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       instantaneous, so soon after a mass disassociation it can still report devices as up. The
       signal to trust is the set of offline devices **changing between runs** — which it did
       here, confirming genuine flapping rather than a stale snapshot.
+      **Outcome measured an hour after the pin, 2026-08-25 09:48.** The pin worked, partially:
+      the AP has held 2462 MHz throughout, discovery errors fell roughly 3x (270 per 10 min
+      against ~840 before), and the online count is now **stable at 8/20 rather than rotating**.
+      Stable-and-low is a different fault from flapping, and the change is real.
+      **But 7 devices did not come back: `CO4-CO7` and `Light Switch 5-7`, offline to Tuya as
+      well as to the bridge.** Contiguous ranges, and unreachable by either path — which is
+      precisely the total-hang case RM-018's cloud fallback explicitly cannot recover. They need
+      power cycling. Applying wireless config disassociates every client, and these are the ones
+      that hung rather than rejoined.
+      *So the remaining question splits in two:* whether the channel pin holds the fleet stable
+      once those 7 are power-cycled back (the real test), and separately why a bounce hangs
+      devices at all — which is socket pressure, and is what RM-018's second half addresses.
 - [ ] **RM-018** Devices hang: the relay stops responding to local commands and the physical
       button does nothing, recoverable only by removing power. Seventeen devices across an
       office makes that a walk to a breaker per incident.
