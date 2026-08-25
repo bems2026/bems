@@ -87,7 +87,13 @@ export async function auditedDispatch({
 
   const result = await dispatch(device, cmd);
   const status = result.ok ? 'dispatched' : 'failed';
-  const finalNote = result.ok ? note : `${note}; dispatch failed: ${result.detail}`;
+  // A command that only landed through the vendor cloud is recorded as such. It means the
+  // device stopped answering on the LAN, which is a fault worth seeing even though the relay
+  // did move — collapsing it into a bare 'dispatched' would hide the one signal that says a
+  // device needs attention. See docs/adr-002-device-recovery-path.md.
+  const viaNote = result.ok && result.via === 'cloud' ? `${note}; via cloud fallback — ${result.detail}` : note;
+  const finalNote = result.ok ? viaNote : `${note}; dispatch failed: ${result.detail}`;
+  if (result.ok && result.via === 'cloud') log(`${cmd.device_id} did not answer locally; recovered via cloud`);
   if (!result.ok) log(`hardware dispatch failed for ${cmd.device_id}: ${result.detail}`);
 
   let statusRecorded = true;

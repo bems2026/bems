@@ -11,6 +11,7 @@
  * proxy is meant to reach any of them, so it is one trust boundary, not three.
  */
 
+import { dispatchViaCloud } from './dispatchCloud.mjs';
 import { TIMING } from '../shared/registry.mjs';
 import { resolveTarget } from '../shared/commands.mjs';
 
@@ -72,7 +73,7 @@ export function routeFor(device, cmd) {
  *
  * Returns `{ok:true}` or `{ok:false, detail}` — never throws.
  */
-export async function dispatchCommand(device, cmd, { bridgeHost, bridgePort, lightApiToken }) {
+async function dispatchLocal(device, cmd, { bridgeHost, bridgePort, lightApiToken }) {
   const route = routeFor(device, cmd);
   if (!route) return { ok: false, detail: `no dispatch route for device class ${device.class}` };
 
@@ -92,6 +93,36 @@ export async function dispatchCommand(device, cmd, { bridgeHost, bridgePort, lig
     return { ok: false, detail: `bridge endpoint returned HTTP ${res.status}: ${body}` };
   }
   return { ok: true };
+}
+
+/**
+ * Dispatches a command, falling back to the vendor cloud when the local path fails.
+ *
+ * Local is always tried first and is the only path attempted when it succeeds — it is faster,
+ * works without internet, and keeps a vendor out of the loop. The fallback exists for one
+ * specific failure this system actually has: a device whose inbound socket table is exhausted
+ * stops answering locally while its outbound cloud connection stays healthy, which previously
+ * meant walking to a breaker. See docs/adr-002-device-recovery-path.md.
+ *
+ * The result carries `via` so the audit row records which path actually moved the relay. A
+ * command that only succeeded through the cloud is evidence the device needs attention, and
+ * collapsing that into a bare `dispatched` would hide the one signal worth having.
+ *
+ * Returns `{ok, via, detail}` — never throws.
+ */
+export async function dispatchCommand(device, cmd, opts) {
+  const local = await dispatchLocal(device, cmd, opts);
+  if (local.ok) return { ok: true, via: 'local' };
+
+  // No cloud configured is the ordinary case, not an error: report the local failure as-is
+  // rather than appending a second one about a path nobody asked for.
+  if (!opts?.cloud?.client) return { ...local, via: 'local' };
+
+  const cloud = await dispatchViaCloud(device, cmd, opts.cloud);
+  if (cloud.ok) return { ok: true, via: 'cloud', detail: `local failed (${local.detail}); recovered via cloud` };
+  // Both failed. Carry both reasons — which one is the real story depends on the device, and
+  // discarding either would make the audit row unactionable.
+  return { ok: false, via: 'none', detail: `local: ${local.detail} | cloud: ${cloud.detail}` };
 }
 
 /** @deprecated Kept as the old name so nothing silently breaks; use dispatchCommand. */

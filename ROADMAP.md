@@ -52,6 +52,25 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       verdict. Carrying the Tuya id into the registry is what makes the per-device join possible
       — which is FI-001's table —
       `server/tuyaFleet.mjs`, `src/lib/tuyaFleet.ts`, `src/components/devices/CloudFleetCard.tsx`
+- [x] **EX-036b** Vendor-cloud dispatch as a **fallback**, tried only after a local command has
+      failed. Solves the reported hang: a device whose inbound socket table is exhausted stops
+      answering on the LAN while its outbound cloud connection stays healthy, which previously
+      meant walking to a breaker. Local remains primary and the cloud is never reached when
+      local succeeded — a test pins that ordering, because a control system that quietly started
+      routing through a vendor would be a worse outcome than the hang it fixes.
+      Command codes were read from the devices themselves (`GET /v1.0/devices/{id}/functions`),
+      not guessed: `switch_1` for a lighting circuit, `switch_1`/`switch_2` per outlet socket.
+      An outlet command with no socket is **refused rather than guessed**, since switching both
+      would act beyond what was asked. `acu_ir` has no cloud route at all — its IR blaster is
+      not in the cloud project (RM-016) — so no attempt is made that would bury the real local
+      failure behind a misleading second one.
+      The audit row records **which path moved the relay**: a command that only landed via cloud
+      means the device stopped answering locally, and collapsing that into a bare `dispatched`
+      would hide the one signal saying a device needs attention.
+      Vendor ids are read from the live flow at startup rather than added to this repository,
+      which is public; an unreadable flow disables the fallback instead of failing the proxy —
+      `server/dispatchCloud.mjs`, `server/cloudDispatchConfig.mjs`,
+      `docs/adr-002-device-recovery-path.md`
 - [x] **EX-035b** Channel-interchange detector for the shared dual-channel meter.
       `mtr_co_yellow` and `mtr_lo_yellow` are two logical meters on one physical device, told
       apart only by which DPS range each is read from. Confirmed 2026-08-25 that they swap

@@ -56,6 +56,7 @@ import { dispatchCommand, DISPATCH_CLASSES } from './dispatchLight.mjs';
 import { createTuyaClient, TUYA_HOSTS } from './tuyaCloud.mjs';
 import { toPublicFleet } from './tuyaFleet.mjs';
 import { auditedDispatch } from './auditedDispatch.mjs';
+import { buildCloudDispatch } from './cloudDispatchConfig.mjs';
 
 /**
  * The Tuya cloud client, or null when the credentials are absent. Built lazily so the proxy
@@ -74,6 +75,13 @@ function getTuyaClient() {
   tuyaClient = accessId && accessSecret && host ? createTuyaClient({ accessId, accessSecret, host }) : null;
   return tuyaClient;
 }
+
+/**
+ * The vendor-cloud fallback, or null when it is not configured — which is the ordinary case
+ * and not an error. Built once at startup: constructing a client per command would re-read the
+ * flow file and re-authenticate on a path that only runs when something is already wrong.
+ */
+const CLOUD_DISPATCH = buildCloudDispatch(process.env);
 
 const PROXY_PORT = Number(process.env.PROXY_PORT) || 8080;
 const BRIDGE_HOST = process.env.BRIDGE_HOST || '127.0.0.1';
@@ -352,7 +360,7 @@ async function handleCommand(req, res, token) {
     },
     dispatchEnabled: HARDWARE_DISPATCH_ENABLED,
     dispatchClasses: DISPATCH_CLASSES,
-    dispatch: (d, c) => dispatchCommand(d, c, { bridgeHost: BRIDGE_HOST, bridgePort: BRIDGE_PORT, lightApiToken: LIGHT_API_TOKEN }),
+    dispatch: (d, c) => dispatchCommand(d, c, { bridgeHost: BRIDGE_HOST, bridgePort: BRIDGE_PORT, lightApiToken: LIGHT_API_TOKEN, cloud: CLOUD_DISPATCH }),
     insertAudit: async (row) => {
       try {
         const res = await sbCommands('', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(row) });
