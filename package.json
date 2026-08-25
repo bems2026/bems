@@ -27,7 +27,8 @@
     "backup": "node server/backup.mjs",
     "tuya:devices": "node server/tuya-devices.mjs",
     "demand:profile": "node server/demand-profile.mjs",
-    "check:meters": "node server/check-meter-swap.mjs"
+    "check:meters": "node server/check-meter-swap.mjs",
+    "collapse-sessions:pi": "node node-red-bridge/collapse-sessions.mjs"
   },
   "dependencies": {
     "@fontsource-variable/manrope": "^5.3.0",
