@@ -13,7 +13,6 @@ import { DEVICE_CLASS_CATALOG, DEVICE_CLASS_ORDER } from '@/lib/deviceClassCatal
 import { useDeviceConnectivity } from '@/hooks/useDeviceConnectivity';
 import { flapSeverity, type ConnectivityRow } from '@/lib/deviceConnectivity';
 import { metaSummary, type DeviceConfig } from '@/lib/deviceConfig';
-import { CloudFleetCard } from './CloudFleetCard';
 import { DeviceMetaEditor } from './DeviceMetaEditor';
 import { EnrollWizard } from './EnrollWizard';
 import type { Device, DeviceClass, Reading } from '@/lib/types';
@@ -122,7 +121,6 @@ export function DevicesView() {
       {editingDevice && <DeviceMetaEditor device={editingDevice} onClose={() => setEditingId(null)} />}
       {enrolling && <EnrollWizard onClose={() => setEnrolling(false)} />}
 
-      <CloudFleetCard />
       <div className="devices-table-card">
         {/* A scroll container needs to be keyboard-scrollable, which means focusable — and a
             focusable region needs an accessible name. Same reasoning as the `role="table"`

@@ -53,7 +53,7 @@ export async function enrollDevice(body: EnrollRequest): Promise<EnrollResult> {
     // A path, not a URL, and an object body — `fetchJson` owns the base address and the
     // serialisation. Building either here would duplicate the one place a bridge URL is
     // allowed to appear (src/config/bridge.ts).
-    return await fetchJson<EnrollResult>('/api/enroll', { method: 'POST', body });
+    return await fetchJson<EnrollResult>('/enroll', { method: 'POST', body });
   } catch (err) {
     return {
       ok: false,

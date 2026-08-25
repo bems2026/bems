@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dispatchScope, dispatchScopeMessage } from './dispatchScope';
+import { dispatchScope } from './dispatchScope';
 import type { Device, DeviceClass } from '@/lib/types';
 
 const dev = (id: string, cls: DeviceClass): Device => ({
@@ -50,26 +50,5 @@ describe('dispatchScope', () => {
 
   it('treats an empty device list as closed rather than "full with nothing", which would read as an all-clear', () => {
     expect(dispatchScope([], ['switch']).state).toBe('closed');
-  });
-});
-
-describe('dispatchScopeMessage', () => {
-  it('keeps the established closed-gate wording, which is what operators already recognise', () => {
-    expect(dispatchScopeMessage(dispatchScope(ALL, null))).toMatch(/Hardware dispatch is closed/);
-  });
-
-  it('names both halves when partial — what is live AND what only looks live', () => {
-    const msg = dispatchScopeMessage(dispatchScope(ALL, ['switch']));
-    expect(msg).toMatch(/Lighting/);
-    expect(msg).toMatch(/Outlets/);
-    expect(msg).toMatch(/ACU/);
-    // The dangerous misreading is thinking outlets moved; the message must deny it.
-    expect(msg).toMatch(/validated and audit-logged only/);
-  });
-
-  it('does not claim anything is closed when the gate is fully open', () => {
-    const msg = dispatchScopeMessage(dispatchScope(ALL, ['switch', 'outlet_dual', 'acu_ir']));
-    expect(msg).not.toMatch(/closed/i);
-    expect(msg).toMatch(/real/i);
   });
 });

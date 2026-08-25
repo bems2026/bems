@@ -1,11 +1,12 @@
 /**
  * Marks a control card whose commands are validated and audit-logged but never reach
- * hardware, while OTHER controls on the same page do. Only shown in that mixed state — see
- * `ControlPage.tsx`'s `flagSimulated` for why it stays off when nothing dispatches at all.
+ * hardware. Shown whenever that class does not dispatch — a partly open gate, or a fully
+ * closed one.
  *
- * The page banner says the same thing, but a banner sits at the top and this card may be
- * well below the fold; someone scrolling straight to the outlets they want to switch would
- * otherwise never see it.
+ * This replaced a page-level dispatch banner (2026-08-25). A banner sits at the top while the
+ * card someone scrolls straight to may be well below the fold, and on a fully-dispatching site
+ * it degenerated into a paragraph announcing that nothing was wrong. Attaching the fact to the
+ * control it constrains keeps it closer to the click and silent when there is nothing to say.
  */
 export function SimulatedBadge() {
   return (

@@ -1,4 +1,3 @@
-import { BRIDGE_HTTP_URL } from '@/config/bridge';
 import { fetchJson } from './bridgeClient';
 
 /**
@@ -45,7 +44,7 @@ export function fleetById(devices: CloudDevice[]): Record<string, CloudDevice> {
  */
 export async function fetchCloudFleet(): Promise<CloudFleet> {
   try {
-    const data = await fetchJson<{ devices?: CloudDevice[] }>(`${BRIDGE_HTTP_URL}/tuya/devices`);
+    const data = await fetchJson<{ devices?: CloudDevice[] }>('/tuya/devices');
     return { byId: fleetById(data.devices ?? []), status: 'ready' };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

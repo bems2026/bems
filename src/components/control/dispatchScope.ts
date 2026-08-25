@@ -9,12 +9,6 @@ import type { Device, DeviceClass } from '@/lib/types';
  */
 export const COMMANDABLE_CLASSES: DeviceClass[] = classesWhere('switchable');
 
-const LABELS: Record<string, string> = {
-  switch: 'Lighting',
-  outlet_dual: 'Outlets',
-  acu_ir: 'the ACU',
-};
-
 export type DispatchState = 'closed' | 'partial' | 'full';
 
 export interface DispatchScope {
@@ -28,7 +22,7 @@ export interface DispatchScope {
 /**
  * Splits what this page can command into "actually moves a relay" and "only looks like it".
  *
- * The banner this drives used to be a single boolean: closed, or absent. That was fine while
+ * What this drives used to be a page-level banner, and before that a single boolean. That was fine while
  * nothing dispatched. `server/proxy.mjs` now dispatches all three commandable classes —
  * `switch`, `outlet_dual` and `acu_ir` (see `dispatchLight.mjs`'s `DISPATCH_CLASSES`) — so the
  * asymmetry this was written for no longer exists on a fully-deployed Pi. It is kept because
@@ -59,25 +53,4 @@ export function dispatchScope(devices: Device[], dispatchClasses: string[] | nul
   // "closed". An empty page reported as "full" would read as an all-clear it hasn't earned.
   const state: DispatchState = live.length === 0 ? 'closed' : simulated.length === 0 ? 'full' : 'partial';
   return { state, live, simulated };
-}
-
-/** Joins labels as "A, B and C" — the ACU's label is lowercase on purpose so it reads as
- * "Outlets and the ACU" rather than "Outlets and The ACU". */
-function list(classes: DeviceClass[]): string {
-  const names = classes.map((c) => LABELS[c] ?? c);
-  if (names.length <= 1) return names[0] ?? '';
-  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-}
-
-/** Capitalises only the first character, leaving the rest of the sentence alone. */
-const upperFirst = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
-
-export function dispatchScopeMessage(scope: DispatchScope): string {
-  if (scope.state === 'closed') {
-    return 'Hardware dispatch is closed — every command here is validated and audit-logged, but nothing on this page currently changes a real relay.';
-  }
-  if (scope.state === 'full') {
-    return 'Hardware dispatch is open — every command on this page switches real hardware.';
-  }
-  return `${upperFirst(list(scope.live))} now switches real hardware. ${upperFirst(list(scope.simulated))} ${scope.simulated.length === 1 ? 'is' : 'are'} validated and audit-logged only — commands there change nothing yet.`;
 }

@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-24 (UTC)
+**Last audited:** 2026-08-25 (UTC)
 **Audited at commit:** `82cf265`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
@@ -35,15 +35,18 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-010** Weather cards from Open-Meteo (no API key) — `src/components/weather/`
 - [x] **EX-011** Alerts bell merging staleness watchdog and anomaly alerts under one acknowledge set — `src/components/layout/AlertsPopover.tsx`
 - [x] **EX-012** Manual dark theme with WCAG-checked token overrides — `src/index.css`, `src/stores/themeStore.ts`
-- [x] **EX-028b** `GET /api/tuya/devices` on the proxy, and a vendor-cloud card on the Devices
-      page — so the cloud's view reaches the person at the screen instead of only someone with
-      SSH. This is also the server-side surface the enrolment wizard needs (Part B), built once.
+- [x] **EX-028b** `GET /api/tuya/devices` on the proxy — the cloud’s view of the fleet
+      without needing SSH, and the server-side surface the enrolment wizard needs (Part B),
+      built once. **The card that rendered it on the Devices page was removed 2026-08-25** at
+      the operator’s request: it restated what the fleet table already showed and spent a
+      screen of prose doing so. The endpoint stays — the wizard’s device picker and its
+      `claimed` flag are its real consumers, and `npm run tuya:devices` still prints it.
       `TUYA_ACCESS_SECRET` never leaves the proxy process: `server/tuyaFleet.mjs` copies fields
       in by **allowlist**, so a credential Tuya adds in a future API version is dropped by
       default rather than forwarded by default, and `assertNoSecrets` then throws on anything
       credential-shaped rather than stripping it — quietly filtering would hide a wrong edit to
       the allowlist until it resurfaced elsewhere. A deployment with no credentials gets 501 and
-      the card hides itself: not configured is not the same as broken.
+      the wizard says so plainly instead of half-working: not configured is not the same as broken.
       **Deliberately not joined per device, and deliberately not counted against the local
       total.** The registry carries no Tuya id, so the only sound join key does not exist on the
       frontend yet; and comparing the two counts instead is unsound, because several registry
@@ -51,7 +54,30 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       device at all. That exact mistake was made once already and produced a confident, empty
       verdict. Carrying the Tuya id into the registry is what makes the per-device join possible
       — which is FI-001's table —
-      `server/tuyaFleet.mjs`, `src/lib/tuyaFleet.ts`, `src/components/devices/CloudFleetCard.tsx`
+      `server/tuyaFleet.mjs`, `src/lib/tuyaFleet.ts`
+- [x] **EX-091** `fetchJson` call sites are checked by a test, not by review. `fetchJson` owns
+      the base address (`BRIDGE_HTTP_URL`, which already ends in `/api`), so callers must pass a
+      bare path. Both possible ways to get that wrong had shipped: `tuyaFleet.ts` passed a full
+      URL and produced `/apihttp://…/api/tuya/devices`, which missed every proxy route, fell
+      through to Node-RED and surfaced as **“The vendor cloud could not be reached”** — reading
+      as a credentials or network fault for as long as the card existed; `enroll.ts` passed
+      `/api/enroll` and produced `/api/api/enroll`, so the endpoint was never reachable at all.
+      Neither is a type error and both survive a green suite, because the mistake is inside a
+      string. The guard greps every call site and was confirmed to fail on the reintroduced bug
+      before being kept — `src/lib/bridgeClientPaths.test.ts`
+- [x] **EX-092** The Control page’s dispatch state moved from a page banner onto the cards it
+      constrains. The banner was removed 2026-08-25 at the operator’s request: with all three
+      classes dispatching it only ever read “every command on this page switches real hardware”,
+      a paragraph announcing the absence of a problem. `SimulatedBadge` already carried the same
+      fact per card and is strictly more precise, so `flagSimulated` dropped its `partial`-only
+      gate and `SwitchesListCard` gained the badge slot outlets and the ACU already had. **The
+      closed state is the one that needed care** — the banner used to own it alone, so removing
+      it naively would have left a fully-closed gate with no signal anywhere; every card is now
+      flagged instead of none. `dispatchScopeMessage` and its tests went with it.
+      The companion “N devices are not shown here” note went too: all five it named are meters,
+      the ACU and a sensor — classes that inherently have no control function — so it asked the
+      operator to go fix a setting that was already correct.
+      `src/components/control/SimulatedBadge.tsx`, `src/components/control/dispatchScope.ts`
 - [x] **EX-040b** In-page enrolment wizard — the Devices page's "+ Add device" is real. Picks a
       vendor device the flow does not already poll, takes an id/class/name/room, previews, then
       enrols.

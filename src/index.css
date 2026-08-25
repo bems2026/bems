@@ -4240,40 +4240,6 @@ body::before {
   font-size: var(--fs-sm);
 }
 
-/* Phase 6: honest about "commanded and audit-logged" vs "actually dispatched to
-   hardware" — the same distinction relayCorroboration.ts already draws for measurement,
-   applied to control. Warn-toned, not bad/red: nothing is wrong, dispatch is just closed. */
-.control-dispatch-banner {
-  margin: 0 0 var(--sp-3);
-  padding: var(--sp-3);
-  border-radius: var(--r-inner);
-  background: var(--warn-soft);
-  /* Not --warn: this banner sits directly on --bg-page, where --warn is 4.15:1. See
-     --warn-on-page's definition for why the background can't be adjusted to fix it. */
-  color: var(--warn-on-page);
-  font-size: var(--fs-sm);
-}
-
-/* Three states, three tones — all via existing semantic tokens, so both themes follow
-   automatically (a hardcoded value here is exactly the dark-mode bug class this file's
-   header warns about).
-   --closed: nothing dispatches. Amber caution, the long-standing default.
-   --partial: some controls are live and some are not. The most dangerous state to
-     misread, so it keeps the amber rather than being softened into an info tone.
-   --full: everything on the page moves real hardware. Red, because this is the state
-     where a mis-click has physical consequences — not a success message. */
-.control-dispatch-banner--full {
-  background: var(--bad-soft);
-  color: var(--bad);
-  font-weight: 600;
-}
-/* --bad measures 4.45:1 on this banner's own tinted background in dark — just under AA for
-   text this size. --red-bright is the dark theme's already-defined lighter red and takes it
-   to 5.03:1, matching light's 5.05:1. */
-:root[data-theme='dark'] .control-dispatch-banner--full {
-  color: var(--red-bright);
-}
-
 .control-simulated-badge {
   margin-left: auto;
   background: var(--warn);
@@ -5440,20 +5406,6 @@ fieldset.device-meta-editor__field > legend {
   text-decoration: underline;
 }
 
-/* "N devices are not shown here" — the counterpart to filtering by function. Styled as a
-   note, deliberately not as a warning: nothing is wrong, a choice was made and is being
-   reported. Same reasoning as the dispatch banner's neutral state. */
-.control-not-listed {
-  margin: 0 0 12px;
-  padding: 8px 12px;
-  font-size: 0.8rem;
-  line-height: 1.5;
-  color: var(--muted-2);
-  background: var(--bg-surface-2);
-  border: 1px solid var(--border-faint, var(--border));
-  border-radius: var(--r-sm, 6px);
-}
-
 
 /* Per-device flap note on the meta line. Absent entirely for a steady device — see
    ConnectivityNote. */
@@ -5471,53 +5423,6 @@ fieldset.device-meta-editor__field > legend {
   font-weight: 600;
 }
 
-
-/* Vendor cloud view — what Tuya sees, beside what the bridge sees (phase 16).
-   Presented as its own card rather than a column on the fleet table: the two views are not
-   joined per device (the registry has no Tuya id), so putting them side by side in one row
-   would imply a correspondence that has not been established. */
-.cloud-fleet-card {
-  margin-bottom: 12px;
-}
-.cloud-fleet-card__count {
-  font-size: 0.78rem;
-  color: var(--muted-2);
-  font-variant-numeric: tabular-nums;
-}
-.cloud-fleet-list {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(190px, 100%), 1fr));
-  gap: 2px 16px;
-}
-.cloud-fleet-list__row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 3px 0;
-  font-size: 0.8rem;
-  border-bottom: 1px solid var(--border-faint, var(--border));
-}
-.cloud-fleet-list__name {
-  color: var(--txt);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cloud-fleet-list__state {
-  flex: none;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  /* --muted-2, not --muted: 0.72rem sits below the size at which --muted holds AA here. */
-  color: var(--muted-2);
-}
-.cloud-fleet-list__state--on {
-  color: var(--good-on-page, var(--good));
-}
 
 /* Device enrolment panel. Sits above the fleet table, replacing nothing — the table stays
    visible so the ids already in use are readable while choosing a new one. */

@@ -52,54 +52,44 @@ afterEach(() => {
 });
 
 describe('ControlPage', () => {
-  it('shows the dispatch-closed banner while capabilities are unknown, not just while explicitly false', () => {
-    useDeviceStore.setState({ devices: [light(1)] });
+  // The page-level dispatch banner was removed on 2026-08-25: on a fully-dispatching site it
+  // only ever read "everything is live" — a paragraph announcing the absence of a problem. The
+  // same fact now rides on the card it applies to, which also covers the state the banner used
+  // to own alone: a fully closed gate, where every card is flagged rather than none.
+  it("marks every commandable card as not-dispatched while capabilities are still unknown", () => {
+    useDeviceStore.setState({ devices: [light(1), outlet(1), acu()] });
     render(<ControlPage />);
-    expect(screen.getByText(/Hardware dispatch is closed/)).toBeInTheDocument();
+    expect(screen.getAllByText(/not dispatched/i)).toHaveLength(3);
   });
 
-  it('keeps showing the banner when the gate is confirmed closed', () => {
+  it("keeps marking every card when the gate is confirmed closed", () => {
     useCapabilitiesStore.setState({ hardwareDispatchEnabled: false, dispatchClasses: [] });
-    useDeviceStore.setState({ devices: [light(1)] });
-    render(<ControlPage />);
-    expect(screen.getByText(/Hardware dispatch is closed/)).toBeInTheDocument();
-  });
-
-  it('stops claiming dispatch is closed once the gate is confirmed open', () => {
-    useCapabilitiesStore.setState({ hardwareDispatchEnabled: true, dispatchClasses: ['switch'] });
-    useDeviceStore.setState({ devices: [light(1)] });
-    render(<ControlPage />);
-    expect(screen.queryByText(/Hardware dispatch is closed/)).not.toBeInTheDocument();
-    expect(screen.getByText(/switches real hardware/)).toBeInTheDocument();
-  });
-
-  // The regression this whole feature exists to prevent: the banner used to be a single
-  // boolean, so opening the gate made it vanish entirely — silently implying outlets and the
-  // ACU had gone live too, when server/proxy.mjs only ever dispatches `switch` commands.
-  it('names what is live AND what only looks live when the gate is open but lights are the only class that dispatches', () => {
-    useCapabilitiesStore.setState({ hardwareDispatchEnabled: true, dispatchClasses: ['switch'] });
     useDeviceStore.setState({ devices: [light(1), outlet(1), acu()] });
     render(<ControlPage />);
-    const banner = document.querySelector('.control-dispatch-banner') as HTMLElement;
-    expect(banner).toHaveTextContent(/Lighting now switches real hardware/);
-    expect(banner).toHaveTextContent(/Outlets and the ACU are validated and audit-logged only/);
+    expect(screen.getAllByText(/not dispatched/i)).toHaveLength(3);
   });
 
-  it('flags the outlets and ACU cards themselves, not just the page banner — the banner is easy to scroll past', () => {
-    useCapabilitiesStore.setState({ hardwareDispatchEnabled: true, dispatchClasses: ['switch'] });
+  // The regression the scope split exists to prevent: a binary signal would vanish the moment
+  // the gate opened, silently implying outlets and the ACU had gone live with the lights.
+  it("flags only the classes that do not dispatch when the gate is partly open", () => {
+    useCapabilitiesStore.setState({ hardwareDispatchEnabled: true, dispatchClasses: ["switch"] });
     useDeviceStore.setState({ devices: [light(1), outlet(1), acu()] });
     render(<ControlPage />);
-    const outletsCard = screen.getByText('Outlets').closest('.control-list-card') as HTMLElement;
+    const outletsCard = screen.getByText("Outlets").closest(".control-list-card") as HTMLElement;
     expect(within(outletsCard).getByText(/not dispatched/i)).toBeInTheDocument();
-    const irCard = screen.getByText('IR AIRCON').closest('.control-ir-card') as HTMLElement;
+    const irCard = screen.getByText("IR AIRCON").closest(".control-ir-card") as HTMLElement;
     expect(within(irCard).getByText(/not dispatched/i)).toBeInTheDocument();
+    const lightsCard = screen.getByText("Lighting switches").closest(".control-list-card") as HTMLElement;
+    expect(within(lightsCard).queryByText(/not dispatched/i)).not.toBeInTheDocument();
   });
 
-  it('adds no per-card flags while the gate is fully closed — the page banner already says nothing dispatches, and repeating it on every card is noise', () => {
-    useCapabilitiesStore.setState({ hardwareDispatchEnabled: false, dispatchClasses: [] });
+  it("says nothing at all once every class dispatches — silence is the right signal for all-live", () => {
+    useCapabilitiesStore.setState({ hardwareDispatchEnabled: true, dispatchClasses: ["switch", "outlet_dual", "acu_ir"] });
     useDeviceStore.setState({ devices: [light(1), outlet(1), acu()] });
     render(<ControlPage />);
     expect(screen.queryByText(/not dispatched/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/switches real hardware/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Hardware dispatch/)).not.toBeInTheDocument();
   });
 
   it('renders the real registry devices across the switches and outlets lists', () => {

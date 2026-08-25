@@ -6,6 +6,7 @@ import { controlView, isCommandable } from '@/lib/socketView';
 import { isReadingStale } from '@/lib/staleness';
 import { StaleDataBadge } from '@/components/common/StaleDataBadge';
 import { InfoHint } from '@/components/ui/InfoHint';
+import { SimulatedBadge } from './SimulatedBadge';
 import { useControlLog } from './controlLog';
 
 /**
@@ -15,7 +16,7 @@ import { useControlLog } from './controlLog';
  * `LightingMatrixCard.tsx`'s `useLightSwitches` comment for why a selector can't allocate
  * a fresh array itself.
  */
-export function SwitchesListCard() {
+export function SwitchesListCard({ simulated = false }: { simulated?: boolean }) {
   const devices = useDeviceStore((s) => s.devices);
   const lights = useMemo(() => devices.filter((d) => d.class === 'switch').sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true })), [devices]);
 
@@ -25,6 +26,7 @@ export function SwitchesListCard() {
         <Lightbulb size={16} className="title-icon" aria-hidden="true" />
         Lighting switches
         <InfoHint label="Hardware">7x Tuya 16A mini relays.</InfoHint>
+        {simulated && <SimulatedBadge />}
       </h3>
       {lights.map((d) => (
         <SwitchRow key={d.id} deviceId={d.id} name={d.display_name} />
