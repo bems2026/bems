@@ -150,3 +150,54 @@ test('probeTuyaHost rejects a host that issues a token but refuses business call
   assert.match(attempts[0].error, /28841107/);
   assert.match(attempts[0].error, /suspended/, 'the actionable half of the message must survive truncation');
 });
+
+/**
+ * `call()` fetches a token itself when the request needs one.
+ *
+ * It used not to: every wrapper (`listDevices`, `describeDevice`) called `ensureToken()` first,
+ * and `call` assumed that had happened. `dispatchCloud.mjs` called `call` directly and did not,
+ * so the vendor-cloud fallback failed with `code 1010: token invalid` — the recovery path for a
+ * hung device, broken exactly when it was needed.
+ *
+ * It was intermittent, which is worse than broken: in the long-running proxy a token warmed by
+ * some earlier call (opening the enrolment wizard, say) made it work, so it would pass a casual
+ * test and fail in the incident. Found on the Pi 2026-08-25 by dispatching to a real device.
+ *
+ * Fixed in `call` rather than at that one call site, because the next caller would make the
+ * same assumption. The token request itself passes `useToken: false` and so does not recurse.
+ */
+test('call() obtains a token before a request that needs one, without being asked', async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, hasToken: Boolean(init.headers.access_token) });
+    if (url.includes('/v1.0/token')) {
+      return { json: async () => ({ success: true, result: { access_token: 'TOK', expire_time: 7200 } }) };
+    }
+    return { json: async () => ({ success: true, result: { ok: 1 } }) };
+  };
+  const client = createTuyaClient({ accessId: 'id', accessSecret: 'secret', host: 'https://h', fetchImpl });
+
+  // Straight to a business call — no ensureToken(), exactly as dispatchCloud did.
+  await client.call('POST', '/v1.0/devices/x/commands', { body: { commands: [] } });
+
+  assert.equal(calls.length, 2, 'a token request then the business request');
+  assert.match(calls[0].url, /\/v1\.0\/token/);
+  assert.equal(calls[0].hasToken, false, 'the token request must not send a token');
+  assert.match(calls[1].url, /\/commands$/);
+  assert.equal(calls[1].hasToken, true, 'the business request must carry the token');
+});
+
+test('call() reuses a warm token instead of fetching one per request', async () => {
+  const urls = [];
+  const fetchImpl = async (url) => {
+    urls.push(url);
+    if (url.includes('/v1.0/token')) {
+      return { json: async () => ({ success: true, result: { access_token: 'TOK', expire_time: 7200 } }) };
+    }
+    return { json: async () => ({ success: true, result: {} }) };
+  };
+  const client = createTuyaClient({ accessId: 'id', accessSecret: 'secret', host: 'https://h', fetchImpl });
+  await client.call('GET', '/a');
+  await client.call('GET', '/b');
+  assert.equal(urls.filter((u) => u.includes('/v1.0/token')).length, 1, 'one token for both calls');
+});

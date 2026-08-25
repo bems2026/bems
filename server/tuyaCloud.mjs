@@ -98,6 +98,16 @@ export function createTuyaClient({ accessId, accessSecret, host, fetchImpl = fet
   let tokenExpiresAt = 0;
 
   async function call(method, path, { body, useToken = true } = {}) {
+    // Fetch a token here rather than trusting the caller to have done it. Every wrapper below
+    // called `ensureToken()` first and `call` assumed that had happened — until
+    // `dispatchCloud.mjs` called `call` directly and did not, so the vendor-cloud fallback
+    // failed with `code 1010: token invalid`: the recovery path for a hung device, broken
+    // exactly when it was needed. It was intermittent, which is worse than broken — in the
+    // long-running proxy a token warmed by an earlier call made it work, so it survived casual
+    // testing and would have failed in the incident. Fixed here rather than at that one call
+    // site, because the next caller would make the same assumption. The token request itself
+    // passes `useToken: false`, so this does not recurse.
+    if (useToken) await ensureToken();
     const t = String(now());
     const raw = body === undefined ? '' : JSON.stringify(body);
     // The token request signs client_id + t + nonce; a business request inserts the access
