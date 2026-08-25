@@ -52,6 +52,18 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       verdict. Carrying the Tuya id into the registry is what makes the per-device join possible
       — which is FI-001's table —
       `server/tuyaFleet.mjs`, `src/lib/tuyaFleet.ts`, `src/components/devices/CloudFleetCard.tsx`
+- [x] **EX-035b** Channel-interchange detector for the shared dual-channel meter.
+      `mtr_co_yellow` and `mtr_lo_yellow` are two logical meters on one physical device, told
+      apart only by which DPS range each is read from. Confirmed 2026-08-25 that they swap
+      outright: `co` went 42 -> 1289 W in the same sample `lo` went 1285 -> 41 W, each taking
+      the other's previous value.
+      **Detects; deliberately does not correct.** Correcting means choosing which assignment is
+      true, and nothing in the data settles it — both circuits are real loads that can be large
+      or small. "The ACU is usually the bigger one" is a guess, and a guess applied silently
+      inside measurements is how an unauditable figure reaches a report.
+      Requires a real separation before calling a trade: two channels reading 43 W and 52 W
+      change order constantly, and firing on those would bury the one event that matters —
+      `shared/channelSwap.mjs`, `test/channel-swap.test.mjs`, `npm run check:meters`
 - [x] **EX-032b** Devices page trimmed to what can be read at a glance: the fleet banner folded
       into the page subtitle (`20 devices · 10 online · N unstable today`, clause omitted
       entirely when nothing flaps), and the per-row note reduced to `16 drops today`.
@@ -490,6 +502,23 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       *Note for whoever is counting:* every laptop that joins this SSID consumes one of the 20
       slots, so diagnosing from a machine on the device network makes the problem slightly worse
       while you look at it.
+- [ ] **RM-017** The shared dual-channel meter swaps its two channels.
+      *Acceptance:* `npm run check:meters` reports no interchange across a week.
+      Confirmed 2026-08-25 at 00:13: `mtr_co_yellow` and `mtr_lo_yellow` traded readings
+      exactly (42 -> 1289 W against 1285 -> 41 W in the same sample).
+      **Not a software fault, and worth being sure of that before anyone edits the flow.** Every
+      stage is keyed by name rather than position: the parsers select by DPS number
+      (105/106/107 against 115/116/117), write to distinct context keys (`co_yel_*`,
+      `lo_yel2_*`), and `Calculate 3-Phase Totals` reads those keys by name. There is nowhere a
+      position could substitute for an identity. The physical meter remapped its channels.
+      **What is affected:** per-circuit power, and the per-meter energy accumulators from the
+      swap onward — they keep adding to whichever channel the device now calls which, so
+      per-circuit monthly reports drift from that moment.
+      **What is not:** building and phase totals sum both channels, and a sum is invariant under
+      a swap. Those are correct throughout, which is the half worth knowing first.
+      *The fix is at the device* — re-pair or re-flash the meter. If it proves persistent, the
+      alternative is to stop deriving two logical meters from one physical device and fit a
+      second meter, since the whole failure follows from identity resting on DPS index alone.
 - [ ] **RM-016** Two flow nodes reference devices that are not in the Tuya cloud project.
       *Acceptance:* each is re-paired into the project, or removed from the flow and registry.
       `NBRIC IR Blaster` and `Outside Temp` came back **NOT IN PROJECT** from
