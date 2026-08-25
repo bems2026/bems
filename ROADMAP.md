@@ -159,6 +159,31 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       `server/removeService.mjs`, `server/removeRoute.mjs`, `shared/enrollment.mjs`,
       `src/lib/removeDevice.ts`, `src/components/devices/RemoveDevicePanel.tsx`,
       `node-red-bridge/remove-device.mjs`
+- [x] **EX-097** The aircon and the outside-temp sensor no longer report a fabricated ONLINE.
+      `buildLatest` derived `online` from real evidence for meters (`src.h`) and, since the
+      `lightStatus` work, for switches — but everything else fell through to a hardcoded
+      `r.online = true`. That covered exactly the two devices fed by `ac_dash_state`:
+      `acu_main` and `sens_outside_temp`.
+      **It was live, not hypothetical.** On 2026-08-25 `journalctl -u nodered` showed the
+      `NBRIC IR Blaster` and `Outside Temp` nodes in a permanent 10-second `find() timed out`
+      retry loop — they are not in the Tuya cloud project and have never once connected
+      (RM-016) — while `/api/readings/latest` reported both devices `online: true` carrying no
+      measurement at all: `state: null`, no `temp_c`, no `room_temp_c`. A fabricated online is
+      worse than a stale reading, because a stale one at least happened once.
+      Emptiness is evidence here rather than an inference: a working blaster writes
+      `ac_dash_state` every poll and the mock populates it in full, so an empty object means
+      the path has never reported in either environment that exists. That is why this branch
+      can fail closed where the `switch` branch deliberately failed open — a missing
+      `lightStatus` really could mean an older flow, but nothing else ever writes this key.
+      Verified against the running mock as well as the suite, so the healthy path is confirmed
+      not to have become a false negative.
+      `shared/buildLatest.mjs`, `test/contract.test.mjs`
+
+      **NOT YET LIVE ON THE PI.** `buildLatest.mjs` is inlined into the generated flow, so this
+      only takes effect after `npm run build:flow && npm run deploy:pi`. The repo artifact is
+      regenerated and committed; the flow redeploy is a layer-1 write to load-bearing hardware
+      and is being held for explicit approval, per the same rule FI-010 is held under. Back up
+      `~/.node-red/flows.json` first.
 - [x] **EX-040b** In-page enrolment wizard — the Devices page's "+ Add device" is real. Picks a
       vendor device the flow does not already poll, takes an id/class/name/room, previews, then
       enrols.

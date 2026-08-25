@@ -68,6 +68,41 @@ test('absent readings are omitted, never coerced to zero', () => {
   assert.equal(r.online, false);
 });
 
+/**
+ * The aircon and the outside-temp sensor both read `ac_dash_state`, fed by the IR blaster.
+ * Neither is a meter nor a switch, so both fell through to a hardcoded `online = true`.
+ *
+ * That is not a hypothetical. On site 2026-08-25 the `NBRIC IR Blaster` and `Outside Temp`
+ * nodes were in a permanent 10-second `find() timed out` retry loop — they are not in the
+ * Tuya cloud project and have never once connected (RM-016) — while the dashboard reported
+ * both `acu_main` and `sens_outside_temp` as ONLINE, carrying no measurement at all. A
+ * fabricated online is worse than a stale reading: a stale one at least happened.
+ *
+ * An empty `ac_dash_state` is sound evidence rather than an inference. The mock populates it
+ * in full, and a working blaster writes it every poll, so empty means the path has never
+ * reported in either environment that exists.
+ */
+test('the aircon and its sensor report offline when nothing has ever fed ac_dash_state', () => {
+  const snap = snapshot();
+  snap.aircon = { state: {} };
+  const built = buildLatest(snap, DEVICE_REGISTRY, PHASE_MAP, 1786000000000);
+  assert.equal(built.find((r) => r.device_id === 'acu_main').online, false);
+  assert.equal(built.find((r) => r.device_id === 'sens_outside_temp').online, false);
+});
+
+test('the aircon and its sensor stay online while the blaster is actually reporting', () => {
+  // The default snapshot is a healthy blaster; this must not become a false negative.
+  assert.equal(row('acu_main').online, true);
+  assert.equal(row('sens_outside_temp').online, true);
+});
+
+test('a missing aircon key is treated the same as an empty one — absent is not "fine"', () => {
+  const snap = snapshot();
+  delete snap.aircon;
+  const built = buildLatest(snap, DEVICE_REGISTRY, PHASE_MAP, 1786000000000);
+  assert.equal(built.find((r) => r.device_id === 'acu_main').online, false);
+});
+
 test('switch online reflects global.lightStatus.conn, not a hardcoded true', () => {
   const snap = snapshot();
   snap.switch.health = { 1: { conn: 'DISCONNECTED' }, 2: { conn: 'CONNECTED' } };

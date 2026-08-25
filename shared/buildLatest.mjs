@@ -80,6 +80,23 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs) {
       // No health entry at all (older flow, or a mock that doesn't simulate it) — fall
       // back to the previous always-online assumption rather than invent a false negative.
       r.online = entry ? entry.conn === 'CONNECTED' : true;
+    } else if (d.state_ctx === 'ac_dash_state') {
+      // The aircon and the outside-temp sensor are both fed by the IR blaster, and neither is
+      // a meter nor a switch — so both used to fall through to a hardcoded `online = true`.
+      //
+      // That hardcoded true was a fabrication, and it was live: on 2026-08-25 the blaster and
+      // `Outside Temp` nodes were in a permanent `find() timed out` retry loop (they are not in
+      // the Tuya cloud project and have never connected — RM-016), while the dashboard showed
+      // both devices ONLINE carrying no measurement at all. A fabricated online is worse than a
+      // stale reading: a stale one at least happened once.
+      //
+      // Emptiness is evidence, not an inference. A working blaster writes `ac_dash_state` every
+      // poll and the mock populates it in full, so an empty object means the path has never
+      // reported in either environment that exists. This is the same move the `switch` branch
+      // above made when `lightStatus` turned out to be readable — except there the fallback
+      // stayed optimistic because a missing health map really could mean an older flow. Here
+      // there is no such ambiguity: nothing else ever writes this key.
+      r.online = Object.keys(ac).length > 0;
     } else {
       r.online = true;
     }
