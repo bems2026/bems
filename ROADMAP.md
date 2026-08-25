@@ -517,6 +517,31 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       instantaneous, so soon after a mass disassociation it can still report devices as up. The
       signal to trust is the set of offline devices **changing between runs** — which it did
       here, confirming genuine flapping rather than a stale snapshot.
+- [ ] **RM-018** Devices hang: the relay stops responding to local commands and the physical
+      button does nothing, recoverable only by removing power. Seventeen devices across an
+      office makes that a walk to a breaker per incident.
+      *Acceptance:* a hung device can be recovered without cutting its supply.
+      **Analysed in `docs/adr-002-device-recovery-path.md`.** A Tuya device holds two
+      independent paths — inbound local TCP, and an outbound connection it keeps open to Tuya —
+      and they fail separately. An ESP device with an exhausted socket table is unreachable
+      locally while its cloud connection stays healthy, which is exactly "hung here, fine in the
+      app". Measured support: two nodes hold two sessions to each of the two shared meters (16
+      sessions for 14 devices), discovery hammered them at 2,520 failed attempts per 30 min
+      before `findTimeout` was fixed, and Tuya currently reports ~12 online against the bridge's
+      ~8.
+      **Proposed: cloud dispatch as a fallback**, retried when a local command fails. Local stays
+      primary — faster, works without internet, no vendor dependency. Cloud is the path that
+      exists precisely when local has failed.
+      **What it will not fix, so nobody expects otherwise:** a device with no cloud connection
+      either (what Tuya reporting `offline` means) is reachable by neither path, and power
+      remains the only recovery. This converts the common failure into a non-event, not the
+      total one.
+      *Caveat found while testing:* `GET /v1.0/devices/{id}/status` returns last-known values
+      for an offline device rather than failing, so a successful status read is **not** proof of
+      reachability. Trust the `online` flag; a command is the only real test.
+      *Worth doing regardless:* collapse the two shared meters to one local session each (which
+      would also make RM-017's channel interchange impossible by construction, since both
+      channels would come from one atomic read), and back off failed discovery.
 - [ ] **RM-017** The shared dual-channel meter swaps its two channels.
       *Acceptance:* `npm run check:meters` reports no interchange across a week.
       Confirmed 2026-08-25 at 00:13: `mtr_co_yellow` and `mtr_lo_yellow` traded readings
