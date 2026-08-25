@@ -207,6 +207,25 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       — the plan returns the original object rather than a copy when a node is already quiet.
       `node-red-bridge/quiescePlan.mjs`, `node-red-bridge/quiesce-dead-nodes.mjs`,
       `test/quiesce-plan.test.mjs`
+- [x] **EX-099** `deploy:pi` compares the deployed bridge tab CONTENTS, not just its id.
+      "Already deployed" was decided from the bridge tab id being present and nothing else, so
+      a regenerated `bridge-flow.json` printed **"Nothing to do"** and exited **0** — which
+      reads exactly like success. It silently skipped the EX-097 aircon fix on 2026-08-25:
+      the operator ran the deploy, saw a benign message, reported it applied, and the live
+      flow was still running the superseded rule. It was caught only by reading the live flow
+      back through the admin API and diffing the two `r.online` assignments by hand. Every
+      future flow change would have been skipped the same way.
+      Now a content signature decides it, and a mismatch exits **1** with the exact command to
+      fix it — verified against the real stale flow on the Pi, message and exit code both.
+      The signature **deliberately ignores node ids and canvas coordinates**: `build-flow.mjs`
+      numbers nodes sequentially and does not promise stability across a re-run, so including
+      them would report drift on every regeneration and make `--force` the reflex. A check
+      that always fires is the same failure wearing the opposite mask — both end with nobody
+      reading the message. Wire *targets* are ids too, so only their count is compared; a pure
+      rewiring would slip past, which is accepted because `build-flow.mjs` derives topology
+      from the registry and a real topology change arrives with a node change beside it.
+      `node-red-bridge/bridgeSignature.mjs`, `node-red-bridge/deploy.mjs`,
+      `test/bridge-signature.test.mjs`
 
       **NOT YET LIVE ON THE PI.** `buildLatest.mjs` is inlined into the generated flow, so this
       only takes effect after `npm run build:flow && npm run deploy:pi`. The repo artifact is
