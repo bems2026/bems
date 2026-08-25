@@ -189,6 +189,12 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       really could mean an older flow. Here a placeholder is a positive statement that nothing
       has reported, so this one fails closed.
       `shared/buildLatest.mjs`, `test/contract.test.mjs`
+      **Live on the Pi 2026-08-25.** `buildLatest.mjs` is inlined into the generated flow, so
+      this needed `build:flow` plus a forced `deploy:pi`. Verified by reading the live flow
+      back: the running `Build latest readings` node carries the new assignment, and both
+      `acu_main` and `sens_outside_temp` now report `online: false`. Fleet online went 14 -> 12,
+      which is exactly the two fabricated values disappearing and nothing else.
+      Getting it deployed took two attempts, and the first failure is why EX-099 exists.
 - [x] **EX-098** `npm run quiesce:pi` — stops a permanently unreachable tuya node retrying
       forever, without removing it. `NBRIC IR Blaster` and `Outside Temp` each call
       `findDevice()` every ~10 s in perpetuity, filling the Node-RED log with `find() timed
@@ -226,12 +232,6 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       from the registry and a real topology change arrives with a node change beside it.
       `node-red-bridge/bridgeSignature.mjs`, `node-red-bridge/deploy.mjs`,
       `test/bridge-signature.test.mjs`
-
-      **NOT YET LIVE ON THE PI.** `buildLatest.mjs` is inlined into the generated flow, so this
-      only takes effect after `npm run build:flow && npm run deploy:pi`. The repo artifact is
-      regenerated and committed; the flow redeploy is a layer-1 write to load-bearing hardware
-      and is being held for explicit approval, per the same rule FI-010 is held under. Back up
-      `~/.node-red/flows.json` first.
 - [x] **EX-040b** In-page enrolment wizard — the Devices page's "+ Add device" is real. Picks a
       vendor device the flow does not already poll, takes an id/class/name/room, previews, then
       enrols.
