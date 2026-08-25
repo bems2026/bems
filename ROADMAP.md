@@ -816,9 +816,35 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       sessions for 14 devices), discovery hammered them at 2,520 failed attempts per 30 min
       before `findTimeout` was fixed, and Tuya currently reports ~12 online against the bridge's
       ~8.
-      **Proposed: cloud dispatch as a fallback**, retried when a local command fails. Local stays
-      primary — faster, works without internet, no vendor dependency. Cloud is the path that
-      exists precisely when local has failed.
+      **Built, and as of 2026-08-25 actually reachable — it was not before.** Local stays
+      primary (faster, works without internet, no vendor in the loop); cloud is the path that
+      exists precisely when local has failed, and the audit row records `via` so a command
+      that only survived through the cloud is visible as the warning it is.
+
+      **It had never once fired, for two independent reasons, both silent.**
+      *1. Local never reported failure.* `dispatchLocal` decided success on HTTP 2xx, but the
+      Node-RED endpoint answers as soon as it ACCEPTS the message — the tuya node then fails
+      asynchronously, after the response has gone. Commanding `co1` returned
+      `{ok:true, via:"local"}` in 209 ms while Node-RED logged `Device not connected. Can't
+      send the SET commmand` at the same instant. So the operator was told a command worked
+      when it had not, AND the cloud branch below it was unreachable dead code.
+      *2. Cloud dispatch could not authenticate.* `dispatchCloud.mjs` called `client.call()`
+      directly while every other consumer called `ensureToken()` first, so it failed with
+      `code 1010: token invalid`. Intermittent rather than dead, which is worse: a token
+      warmed by an earlier call in the long-running proxy made it work, so it would pass a
+      casual test and fail during a real incident.
+
+      Fixed: `call()` now obtains its own token (at the source, so the next caller cannot
+      repeat it), and `dispatchCommand` asks the bridge whether the device is online before
+      attempting local — offline means a local SET cannot land, so it falls through to cloud
+      rather than fabricating a success. An unknown answer is deliberately NOT treated as
+      offline: a readings endpoint that hiccups must not reroute every command through the
+      vendor.
+      **Verified on real hardware:** cloud dispatch to `co1` — locally unreachable, cloud
+      online — returned `{ok:true}` in 972 ms. That is the acceptance met: a device that
+      cannot be reached locally was commanded without cutting its supply.
+      `server/dispatchLight.mjs`, `server/dispatchCloud.mjs`, `server/tuyaCloud.mjs`,
+      `server/proxy.mjs`
       **What it will not fix, so nobody expects otherwise:** a device with no cloud connection
       either (what Tuya reporting `offline` means) is reachable by neither path, and power
       remains the only recovery. This converts the common failure into a non-event, not the

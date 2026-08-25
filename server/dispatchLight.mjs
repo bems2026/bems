@@ -111,7 +111,23 @@ async function dispatchLocal(device, cmd, { bridgeHost, bridgePort, lightApiToke
  * Returns `{ok, via, detail}` — never throws.
  */
 export async function dispatchCommand(device, cmd, opts) {
-  const local = await dispatchLocal(device, cmd, opts);
+  // A 2xx from the bridge is NOT proof the relay moved. The Node-RED endpoint answers as soon
+  // as it accepts the message; the tuya node then fails asynchronously, after the response has
+  // gone. Observed on the Pi 2026-08-25: commanding `co1` returned ok in 209 ms while Node-RED
+  // logged `Device not connected. Can't send the SET commmand` at the same moment.
+  //
+  // That made the operator's "sent" a lie AND made this whole fallback unreachable — local
+  // never failed, so the cloud branch below was dead code, which is why it had never fired.
+  //
+  // The bridge's `online` flag is the evidence available: it is derived from the device's own
+  // health signal, so offline means a local SET cannot land. Asked BEFORE dispatching, so a
+  // node that is already failing does not get more traffic. `null` means "could not ask" and
+  // is deliberately NOT treated as offline — a readings endpoint that hiccups must not reroute
+  // every command through the vendor.
+  const online = opts?.readOnline ? await opts.readOnline(device).catch(() => null) : null;
+  const local = online === false
+    ? { ok: false, detail: 'the bridge reports this device offline, so a local SET cannot reach it' }
+    : await dispatchLocal(device, cmd, opts);
   if (local.ok) return { ok: true, via: 'local' };
 
   // No cloud configured is the ordinary case, not an error: report the local failure as-is

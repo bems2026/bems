@@ -141,3 +141,78 @@ test('the aircon never reaches the cloud, even when local fails', async () => {
     assert.equal(cloudCalled, false, 'no cloud attempt for a device with no cloud route');
   } finally { globalThis.fetch = originalFetch; }
 });
+
+/**
+ * A 2xx from the bridge is NOT proof the relay moved.
+ *
+ * The Node-RED endpoint answers as soon as it accepts the message; the tuya node then fails
+ * asynchronously, long after the HTTP response has gone. Observed on the Pi 2026-08-25:
+ * commanding `co1` (which the bridge reported offline) returned `{ok:true, via:'local'}` in
+ * 209 ms while Node-RED logged, at the same moment,
+ * `[tuya-smart-device:CO1] Device not connected. Can't send the SET commmand`.
+ *
+ * Two consequences, both silent. The operator is told a command worked when it did not — and
+ * because local never reports failure, THE CLOUD FALLBACK IS UNREACHABLE. The whole of RM-018
+ * was dead code in practice, which is why it had never been seen to fire.
+ *
+ * The bridge's `online` flag is the evidence available: it is derived from the device's own
+ * health signal, so "offline" means a local SET cannot land. Checking it before dispatching
+ * also avoids adding to the retry noise of a node that is already failing.
+ */
+const onlineOpts = (handler, readOnline) => ({ ...bridgeOpts(handler), readOnline });
+
+test('refuses to claim local success for a device the bridge reports offline', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => '' });
+  try {
+    let cloudCalled = false;
+    const r = await dispatchCommand(sw, { action: 'on' }, onlineOpts(
+      async () => { cloudCalled = true; },
+      async () => false,
+    ));
+    assert.equal(cloudCalled, true, 'an offline device must fall through to the cloud');
+    assert.equal(r.via, 'cloud');
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('names the reason, so the audit row does not read as an unexplained local failure', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => '' });
+  try {
+    const r = await dispatchCommand(sw, { action: 'on' }, onlineOpts(
+      async () => { throw new Error('cloud down'); },
+      async () => false,
+    ));
+    assert.equal(r.via, 'none');
+    assert.match(r.detail, /offline/i);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('still dispatches locally when the bridge reports the device online', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => '' });
+  try {
+    let cloudCalled = false;
+    const r = await dispatchCommand(sw, { action: 'on' }, onlineOpts(
+      async () => { cloudCalled = true; },
+      async () => true,
+    ));
+    assert.equal(r.ok, true);
+    assert.equal(r.via, 'local');
+    assert.equal(cloudCalled, false);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('an unknown online state does not block the local attempt', async () => {
+  // A bridge that cannot be asked is not evidence the device is dead. Failing closed here
+  // would route every command through the vendor the moment the readings endpoint hiccuped.
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => '' });
+  try {
+    const r = await dispatchCommand(sw, { action: 'on' }, onlineOpts(
+      async () => {},
+      async () => null,
+    ));
+    assert.equal(r.via, 'local');
+  } finally { globalThis.fetch = originalFetch; }
+});

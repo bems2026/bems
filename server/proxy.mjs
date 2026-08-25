@@ -86,6 +86,29 @@ function getTuyaClient() {
  */
 const CLOUD_DISPATCH = buildCloudDispatch(process.env);
 
+/**
+ * The bridge own view of whether a device is reachable, used to stop a local dispatch claiming
+ * success it cannot have had. Returns `true`/`false`, or `null` when the bridge could not be
+ * asked — see `dispatchCommand`, which treats `null` as "attempt local anyway" on purpose.
+ *
+ * Deliberately unmemoised. This is read on a user-initiated command, not in a loop, and the
+ * whole point is that it is current: a cached "online" from thirty seconds ago is the same
+ * fabrication the HTTP 2xx was.
+ */
+async function readDeviceOnline(device) {
+  try {
+    const res = await fetch(`http://${BRIDGE_HOST}:${BRIDGE_PORT}/api/readings/latest`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const rows = await res.json();
+    const row = Array.isArray(rows) ? rows.find((r) => r.device_id === device.id) : null;
+    return row ? row.online === true : null;
+  } catch {
+    return null;
+  }
+}
+
 const PROXY_PORT = Number(process.env.PROXY_PORT) || 8080;
 const BRIDGE_HOST = process.env.BRIDGE_HOST || '127.0.0.1';
 const BRIDGE_PORT = Number(process.env.BRIDGE_PORT) || 1880;
@@ -363,7 +386,13 @@ async function handleCommand(req, res, token) {
     },
     dispatchEnabled: HARDWARE_DISPATCH_ENABLED,
     dispatchClasses: DISPATCH_CLASSES,
-    dispatch: (d, c) => dispatchCommand(d, c, { bridgeHost: BRIDGE_HOST, bridgePort: BRIDGE_PORT, lightApiToken: LIGHT_API_TOKEN, cloud: CLOUD_DISPATCH }),
+    dispatch: (d, c) => dispatchCommand(d, c, {
+      bridgeHost: BRIDGE_HOST,
+      bridgePort: BRIDGE_PORT,
+      lightApiToken: LIGHT_API_TOKEN,
+      cloud: CLOUD_DISPATCH,
+      readOnline: readDeviceOnline,
+    }),
     insertAudit: async (row) => {
       try {
         const res = await sbCommands('', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(row) });

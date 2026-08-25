@@ -14,6 +14,7 @@ import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { hashBreakGlassPassword } from './breakGlass.mjs';
+import { DEVICE_REGISTRY } from '../shared/registry.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const MOCK_BRIDGE = join(ROOT, 'mock-bridge', 'server.mjs');
@@ -103,10 +104,23 @@ function startFakeSupabaseAuth() {
 function startFakeLightEndpoint() {
   return new Promise((resolve) => {
     const port = nextPort++;
-    const state = { requests: [], failNext: false, statusCode: null };
+    // `offline` names devices this bridge should report as unreachable. Empty means every
+    // device is online, which is what the dispatch tests below assume.
+    const state = { requests: [], healthReads: 0, offline: new Set(), failNext: false, statusCode: null };
     const server = http.createServer(async (req, res) => {
       let raw = '';
       for await (const chunk of req) raw += chunk;
+
+      // The proxy asks this before dispatching, to avoid claiming a success the relay never
+      // had (see dispatchCommand). Answered but NOT recorded in `requests`, which every test
+      // below reads as "what actually reached the hardware endpoint".
+      if (req.method === 'GET' && req.url === '/api/readings/latest') {
+        state.healthReads += 1;
+        const rows = DEVICE_REGISTRY.map((d) => ({ device_id: d.id, online: !state.offline.has(d.id) }));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify(rows));
+      }
+
       state.requests.push({
         method: req.method,
         url: req.url,
@@ -591,6 +605,36 @@ test('dispatch open + switch command: a real POST is made to /light/:id with cor
     assert.equal(lightState.requests[0].headers['x-auth-token'], 'test-light-token');
     assert.deepEqual(lightState.requests[0].body, { state: true });
     assert.equal(supabaseState.insertedCommands[0].status, 'dispatched');
+  } finally {
+    cleanup();
+  }
+});
+
+/**
+ * The end of the false-success bug, asserted at the HTTP surface.
+ *
+ * The Node-RED endpoint answers 2xx as soon as it ACCEPTS a message; the tuya node then fails
+ * asynchronously, after the response has gone. So a command to an unreachable device came back
+ * 'dispatched' while Node-RED logged `Device not connected. Can't send the SET commmand` —
+ * observed on the Pi 2026-08-25 against co1.
+ *
+ * Two things were wrong and both were silent: the operator was told a command worked when it
+ * had not, and because local never reported failure the vendor-cloud fallback was unreachable.
+ * RM-018 had been dead code the whole time, which is why nobody had ever seen it fire.
+ */
+test('a device the bridge reports offline is never sent a local command, nor audited as dispatched', async () => {
+  const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch();
+  try {
+    lightState.offline.add('l3');
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l3', action: 'on' }),
+    });
+    assert.equal(lightState.healthReads > 0, true, 'the proxy must ask before dispatching');
+    assert.equal(lightState.requests.length, 0, 'nothing may be sent to a device known to be unreachable');
+    assert.notEqual(res.status, 202, 'and the caller must not be told it was accepted');
+    assert.notEqual(supabaseState.insertedCommands[0].status, 'dispatched');
   } finally {
     cleanup();
   }
