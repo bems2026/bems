@@ -89,10 +89,10 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       devices as available — a wrong list that looks right, and the worst possible shape for
       this bug, because enrolment is the one screen where the list *is* the information.
       Fixed on the Pi, and now: the catch logs, the response carries `claimed_known`, and the
-      wizard states the uncertainty rather than rendering a confident count. **A new
-      `server/.env.example`** records the shape of that file so a rebuild cannot silently drop
-      a key again — the root `.env.example` had claimed these were deploy-script-only, which
-      stopped being true when the proxy started reading the flow.
+      wizard states the uncertainty rather than rendering a confident count.
+      **`server/.env.example` gained the Tuya and Node-RED admin sections it never had**, so
+      a rebuild cannot silently drop a key again — the root `.env.example` had described these
+      as deploy-script-only, which stopped being true when the proxy began reading the flow.
       `server/.env.example`, `server/proxy.mjs`, `src/lib/tuyaFleet.ts`,
       `src/components/devices/EnrollWizard.tsx`
 - [x] **EX-040b** In-page enrolment wizard — the Devices page's "+ Add device" is real. Picks a
