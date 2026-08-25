@@ -26,7 +26,8 @@
     "scheduler": "node server/scheduler.mjs",
     "backup": "node server/backup.mjs",
     "tuya:devices": "node server/tuya-devices.mjs",
-    "demand:profile": "node server/demand-profile.mjs"
+    "demand:profile": "node server/demand-profile.mjs",
+    "check:meters": "node server/check-meter-swap.mjs"
   },
   "dependencies": {
     "@fontsource-variable/manrope": "^5.3.0",
