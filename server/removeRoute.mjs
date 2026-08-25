@@ -13,14 +13,18 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { createAdminClient, loadDotEnv } from '../node-red-bridge/nodeRedAdmin.mjs';
+import { createAdminClient } from '../node-red-bridge/nodeRedAdmin.mjs';
 import { DEVICE_REGISTRY } from '../shared/registry.mjs';
 import { removeDevice } from './removeService.mjs';
 import { parseEnrolled } from './enrollRoute.mjs';
 
+// Environment is NOT loaded here, deliberately. This module is imported by `proxy.mjs`, and a
+// top-level `loadDotEnv` made that import load every secret in `server/.env` into the process —
+// including TUYA_ACCESS_SECRET, and including in tests that had set up a deployment with no
+// credentials at all. Entrypoints own the environment: the systemd unit supplies it via
+// EnvironmentFile, and the CLIs load it themselves. See server/envHygiene.test.mjs.
+
 const HERE = dirname(fileURLToPath(import.meta.url));
-loadDotEnv(join(HERE, '..'));
-loadDotEnv(HERE);
 
 const ENROLLED_PATH = join(HERE, '..', 'shared', 'registry.enrolled.mjs');
 

@@ -73,14 +73,6 @@ All four queued features are written, tested and pushed. **Two** still need one 
    regression guard) is the one that keeps paying: three AA failures were found by hand and
    nothing prevents a fourth.
 
-### Also found 2026-08-25 evening
-
-- **RM-022** — importing `enrollRoute.mjs` or `removeRoute.mjs` loads every secret in
-  `server/.env` into `process.env` as an import side effect. It also makes **5 of 295 server
-  tests fail on the Pi and pass on a workstation** — the tests that build an *unconfigured*
-  deployment get the real one. Pre-existing at a clean `HEAD`, not a regression. The Pi is where
-  the brief says to run the suite before deploying, so this trains you to ignore five red tests.
-
 ### The standing hazard
 
 **RM-013** (devices leave the network and rejoin) is the root cause behind RM-020, RM-021,
@@ -815,9 +807,18 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 ### Testing & tooling
 
-- [x] **EX-120** 494 frontend tests (vitest) — `src/**/*.test.ts(x)`
-- [x] **EX-121** 189 bridge/contract tests, including assertions that the generated flow contains no write nodes and no MQTT — `test/`
-- [x] **EX-122** 174 server tests against real spawned processes and hand-rolled fake HTTP servers, no mocking library — `server/*.test.mjs`
+- [x] **EX-120** 593 frontend tests (vitest) — `src/**/*.test.ts(x)`
+- [x] **EX-121** 331 bridge/contract tests, including assertions that the generated flow contains no write nodes and no MQTT — `test/`
+- [x] **EX-122** 299 server tests against real spawned processes and hand-rolled fake HTTP servers, no mocking library — `server/*.test.mjs`
+- [x] **EX-105** Environment hygiene is checked, not trusted. A module that is *imported* must
+      not reconfigure the process: `server/envHygiene.test.mjs` imports each route module in a
+      clean child process and asserts it added no keys to `process.env`, and separately greps
+      for a module-scope `loadDotEnv`. **Both halves are needed.** The behavioural one is asleep
+      on any checkout without a `server/.env` — `loadDotEnv` is a silent no-op there, so it
+      passes vacuously on precisely the machines where the bug does no harm, and would have
+      caught RM-022 nowhere. The source-level half fails anywhere.
+      This is the same shape as EX-091: the mistake is invisible to types, survives a green
+      suite, and the only reliable guard reads the source — `server/envHygiene.test.mjs`
 - [x] **EX-126** Migration rehearsal kept rather than discarded: every phase file applied in order against a real PostgreSQL 16 in a throwaway container, with the Supabase-provided symbols stubbed, then all six functions driven against seeded data. The guard tests below check intent; this checks that Postgres will actually run the file — `supabase/rehearse.sh`
 - [x] **EX-123** Schema guard tests asserting RLS shape per migration — `test/device-config-schema.test.mjs`, `test/phase8-anomalies-schema.test.mjs`, `test/phase9-history-schema.test.mjs`, `test/phase10-archive-schema.test.mjs`, `test/phase11-totals-retention-schema.test.mjs`, `test/phase12-monthly-reports-schema.test.mjs`
 - [x] **EX-125** First tests against the proxy's WebSocket relay and against a bridge that hangs rather than refuses — `server/proxy.test.mjs`
@@ -1025,11 +1026,31 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       serving nothing locally — neither the broadcast nor the port. Leave them alone for several
       hours, or until one next flaps, then try the single clean attempt described above.
 
-- [ ] **RM-022** Importing a route module loads every secret in `server/.env` into the process.
-      *Acceptance:* `npm run test:server` is green **on the Pi**, and importing a route module
-      has no environment side effect.
-      `server/enrollRoute.mjs` and `server/removeRoute.mjs` both call `loadDotEnv(...)` at module
-      top level, so merely `import`ing one populates `process.env` with `TUYA_ACCESS_SECRET`,
+- [x] **RM-022** ~~Importing a route module loads every secret in `server/.env` into the
+      process.~~ **Done 2026-08-25.** `npm run test:server` is now **299/299 on the Pi** — it
+      was 290/295 there and fully green on a workstation, which is the shape of the bug.
+      *Fix:* deleted the module-scope `loadDotEnv` from `server/enrollRoute.mjs` and
+      `server/removeRoute.mjs`. Nothing replaced it and nothing needed to: the systemd unit
+      already carries `EnvironmentFile=…/server/.env` (verified in the running process — five of
+      five key variables present after a restart), and the two CLIs
+      (`node-red-bridge/enroll-device.mjs`, `remove-device.mjs`) already load it themselves.
+      The route modules read `process.env` lazily inside their handlers, so nothing observed the
+      value at import time anyway — the call was pure side effect.
+      *Guard:* `server/envHygiene.test.mjs`, in two halves on purpose. A behavioural half imports
+      each route module in a clean child process and asserts it added no environment keys; a
+      source half asserts no route module calls `loadDotEnv` at module scope. The behavioural
+      half alone would be **asleep exactly where it matters least** — on a checkout with no
+      `server/.env`, `loadDotEnv` is a silent no-op and the assertion passes vacuously. A third
+      test pins the deployment assumption the fix rests on: if the unit ever loses its
+      `EnvironmentFile`, the proxy starts with no credentials and fails as "the vendor cloud
+      could not be reached", a wrong diagnosis this project has chased before.
+      All three were confirmed to fail before the fix and pass after.
+      *Verified beyond the suite:* proxy restarted and serving, `/api/tuya/devices`,
+      `/api/enroll` and `/api/remove` all still gated at 401 rather than crashing, zero errors in
+      the journal, and both CLIs still reach the vendor cloud —
+      `server/enrollRoute.mjs`, `server/removeRoute.mjs`, `server/envHygiene.test.mjs`
+      *What it was.* `server/enrollRoute.mjs` and `server/removeRoute.mjs` both called
+      `loadDotEnv(...)` at module top level, so merely `import`ing one populated `process.env` with `TUYA_ACCESS_SECRET`,
       `SUPABASE_SERVICE_ROLE_KEY`, `BREAK_GLASS_PASSWORD_HASH`, `HARDWARE_DISPATCH_ENABLED` and
       the rest. `server/proxy.mjs` imports both, so this fires on every proxy start and in every
       test that spawns one. Demonstrated by importing `enrollRoute.mjs` alone and diffing
