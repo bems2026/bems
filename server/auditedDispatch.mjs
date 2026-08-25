@@ -98,7 +98,28 @@ export async function auditedDispatch({
 
   let statusRecorded = true;
   if (inserted.id) {
-    const updated = await updateAudit(inserted.id, { status, note: finalNote });
+    // `via` as a column, not only inside the note above. Prose is not queryable, and "which
+    // devices have needed the cloud fallback this week" is the question that spots a device
+    // going bad before it goes dark. Left unset for a dry run, which never reaches here: NULL
+    // means "no path attempted", honestly different from 'none', which claims both were tried.
+    // See supabase/phase18_command_via.sql.
+    let updated = await updateAudit(inserted.id, { status, note: finalNote, via: result.via ?? null });
+
+    // `supabase/phase18_command_via.sql` is applied by hand, so there is a window where this
+    // code is deployed and the column is not there. PostgREST rejects an UPDATE naming an
+    // unknown column, which would fail the outcome patch for EVERY command and leave rows stuck
+    // at STATUS_IN_FLIGHT — the audit trail degrading quietly, in order to add a nicety. So
+    // retry once without it: status and note are what matter, and `via` starts working by
+    // itself once the migration lands. Order-independent beats a deployment note that has to be
+    // read at exactly the right moment.
+    //
+    // Narrowly matched on purpose. A genuine outage must still surface as an unrecorded
+    // outcome rather than being masked by a retry that drops a field and calls it success.
+    if (!updated.ok && /column .*via|via.* does not exist/i.test(updated.detail ?? '')) {
+      log(`command ${inserted.id}: the commands table has no 'via' column yet (apply supabase/phase18_command_via.sql); recording the outcome without it`);
+      updated = await updateAudit(inserted.id, { status, note: finalNote });
+    }
+
     if (!updated.ok) {
       statusRecorded = false;
       log(`command ${inserted.id} dispatched but its outcome could not be recorded (row stays '${STATUS_IN_FLIGHT}'): ${updated.detail}`);
@@ -111,6 +132,11 @@ export async function auditedDispatch({
   return {
     ok: result.ok,
     status,
+    // Returned as well as recorded, so the caller can put it on the ack. A command that only
+    // landed through the cloud succeeded — the operator sees a normal success — while meaning
+    // the device stopped answering on the LAN. Without this the only place that shows is a
+    // database column nobody has open.
+    via: result.via ?? null,
     auditId: inserted.id ?? null,
     auditFailure: null,
     dispatchFailure: result.ok ? null : (result.detail ?? 'dispatch failed'),

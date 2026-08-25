@@ -301,6 +301,36 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       right before the privilege is granted, and there is now a second route that needs no
       privilege at all: Claude runs on the Pi (`docs/pi-session-brief.md`) and is authorised
       to restart services there. Revisit once the alert has been observed firing correctly.
+- [x] **EX-101** How a command reached the hardware is now recorded and shown.
+      `dispatchCommand` has always returned `via` — local, cloud or none — but it was folded
+      into the audit row free-text `note` and nowhere else. That made the most operationally
+      useful signal in the table unqueryable: you could not ask *which devices have needed
+      the cloud fallback this week*, which is the question that identifies a device going bad
+      **before** it goes dark.
+      **Why it matters more than it looks:** a cloud-recovered command SUCCEEDS. The relay
+      moves, the operator sees an ordinary confirmation — and the device has stopped
+      answering on the LAN. Nothing distinguished that from a healthy command.
+      Three places, one fact: `supabase/phase18_command_via.sql` adds the column (nullable,
+      no backfill — a row written earlier genuinely does not know its path, and NULL says so
+      where a guess would not; also distinct from `none`, which positively claims both paths
+      were tried and both failed); the ack carries `via` so the page can react; and the alerts
+      bell raises a row naming the device. The CHECK is narrow where `status` two columns over
+      is deliberately free text — `via` is a closed set defined by the dispatch code, so a
+      value outside it means the two have drifted, which is the thing worth catching. A test
+      reads the literals out of `dispatchLight.mjs` rather than restating them.
+      The recovery is held in `commandStore`, not the session command log, because a store
+      must not import upwards from `components/control` — and because the bell already reads
+      stores and owns acknowledgement, which is where a fault belongs.
+      **Deployment order deliberately does not matter.** The migration is applied by hand, so
+      there is a window where the code is live and the column is not — and PostgREST rejects
+      an UPDATE naming an unknown column, which would have failed the outcome patch for EVERY
+      command and left rows stuck at `dispatching`: the audit trail degrading quietly in order
+      to add a nicety. The patch retries once without `via`, matched narrowly so a genuine
+      outage still surfaces as an unrecorded outcome instead of being masked by a retry that
+      drops a field and calls it success. A runbook note would have had to be read at exactly
+      the right moment; this does not.
+      `supabase/phase18_command_via.sql`, `server/auditedDispatch.mjs`, `server/proxy.mjs`,
+      `src/stores/commandStore.ts`, `src/components/layout/AlertsPopover.tsx`
 - [x] **EX-040b** In-page enrolment wizard — the Devices page's "+ Add device" is real. Picks a
       vendor device the flow does not already poll, takes an id/class/name/room, previews, then
       enrols.

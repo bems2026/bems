@@ -136,6 +136,14 @@ export interface CommandAck {
   confirmed: false;
   confirmation: 'none';
   note: string;
+  /**
+   * Which path the dispatch actually took. `cloud` means the device stopped answering on the
+   * LAN and the vendor fallback moved the relay instead — a success the operator would
+   * otherwise read as unremarkable, and the earliest warning this system has that a device is
+   * going bad. Null for a dry run, where no path was attempted, and absent from an older
+   * bridge that predates it.
+   */
+  via?: 'local' | 'cloud' | 'none' | null;
 }
 
 // ---------------------------------------------------------------------------

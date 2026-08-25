@@ -443,7 +443,11 @@ async function handleCommand(req, res, token) {
   }
 
   res.writeHead(ACCEPTED_STATUS, { 'Content-Type': 'application/json', ...CORS_HEADERS });
-  res.end(JSON.stringify(ack));
+  // `via` rides on the ack so the page can say HOW the command landed. A cloud-recovered
+  // command is a success the operator would otherwise read as unremarkable, while it means the
+  // device stopped answering locally — the earliest warning this system has that a device is
+  // going bad. Null for a dry run, where no path was attempted.
+  res.end(JSON.stringify({ ...ack, via: outcome.via ?? null }));
 }
 
 const server = http.createServer(async (req, res) => {

@@ -3,6 +3,7 @@ import { render, screen, cleanup, fireEvent, within } from '@testing-library/rea
 import { AlertsPopover } from './AlertsPopover';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useAnomaliesStore } from '@/stores/anomaliesStore';
+import { useCommandStore } from '@/stores/commandStore';
 import type { Device } from '@/lib/types';
 
 // The bell reads fleet connectivity through this hook; the real one talks to Supabase.
@@ -38,6 +39,7 @@ afterEach(() => {
   useDeviceStore.setState({ devices: [], latestReadings: {}, totals: null, history: {} });
   useAnomaliesStore.setState({ rows: [], status: 'idle' });
   connectivity.rows = {};
+  useCommandStore.setState({ pending: {}, cloudRecoveries: {} });
 });
 
 describe('AlertsPopover — merged staleness + anomaly sources', () => {
@@ -133,5 +135,41 @@ describe('AlertsPopover fleet drop', () => {
     const row = screen.getByText(/3 devices dropped together/).closest('li') as HTMLElement;
     fireEvent.click(within(row).getByRole('button', { name: /Ack/i }));
     expect(screen.queryByText(/dropped together/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The cloud-fallback row. A command that only landed through the vendor cloud succeeded — the
+ * relay moved, the operator saw a normal confirmation — while meaning the device has stopped
+ * answering on the LAN. Before this it appeared only in a database column nobody has open.
+ */
+describe('AlertsPopover cloud fallback', () => {
+  it('raises a row naming the device that answered only through the cloud', () => {
+    useDeviceStore.setState({ devices: [outlet] });
+    useCommandStore.setState({ cloudRecoveries: { co3: Date.now() } });
+    render(<AlertsPopover />);
+    fireEvent.click(screen.getByRole('button', { name: /Alerts/ }));
+    expect(screen.getByText(/Outlet 3 answered only through the vendor cloud/)).toBeInTheDocument();
+    expect(screen.getByText(/did not respond on the local network/)).toBeInTheDocument();
+  });
+
+  it('says nothing when every command took the local path', () => {
+    useDeviceStore.setState({ devices: [outlet] });
+    useCommandStore.setState({ cloudRecoveries: {} });
+    render(<AlertsPopover />);
+    expect(screen.queryByText(/vendor cloud/)).not.toBeInTheDocument();
+  });
+
+  it('keys its ack separately from the device own watchdog row', () => {
+    // Both rows can be about co3 at once. Sharing an ack key would make dismissing one
+    // silently dismiss the other — and they say different things.
+    useDeviceStore.setState({ devices: [outlet], latestReadings: {} }); // no reading -> stale
+    useCommandStore.setState({ cloudRecoveries: { co3: Date.now() } });
+    render(<AlertsPopover />);
+    fireEvent.click(screen.getByRole('button', { name: /Alerts/ }));
+    const cloudRow = screen.getByText(/answered only through the vendor cloud/).closest('li') as HTMLElement;
+    fireEvent.click(within(cloudRow).getByRole('button', { name: /Ack/i }));
+    expect(screen.queryByText(/vendor cloud/)).not.toBeInTheDocument();
+    expect(screen.getByText('Outlet 3 in COMM FAULT')).toBeInTheDocument();
   });
 });

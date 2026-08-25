@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, AlertTriangle, X } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useAnomaliesStore } from '@/stores/anomaliesStore';
+import { useCommandStore } from '@/stores/commandStore';
 import { isReadingStale } from '@/lib/staleness';
 import { latestAnomalyPerDevice, isAnomalyCurrent } from '@/lib/anomalies';
 import { useNowTick } from '@/lib/useNowTick';
@@ -16,7 +17,7 @@ interface AlertItem {
   title: string;
   body: string;
   meta: string;
-  kind: 'watchdog' | 'anomaly' | 'fleet';
+  kind: 'watchdog' | 'anomaly' | 'fleet' | 'cloud';
 }
 
 /**
@@ -39,6 +40,7 @@ export function AlertsPopover() {
   const latestReadings = useDeviceStore((s) => s.latestReadings);
   const anomalyRows = useAnomaliesStore((s) => s.rows);
   const { rows: connectivity } = useDeviceConnectivity(24);
+  const cloudRecoveries = useCommandStore((s) => s.cloudRecoveries);
   const [open, setOpen] = useState(false);
   const [acked, setAcked] = useState<Set<string>>(new Set());
   const ref = useRef<HTMLDivElement>(null);
@@ -123,9 +125,33 @@ export function AlertsPopover() {
     ];
   }, [connectivity]);
 
+  /**
+   * A command that only landed through the vendor cloud. It SUCCEEDED — the relay moved and the
+   * operator saw a normal confirmation — while meaning the device has stopped answering on the
+   * LAN. That is the earliest warning this system has that a device is going bad, and until now
+   * it appeared only in a database column nobody has open.
+   *
+   * Not time-limited: a session is short, and a device that needed the cloud an hour ago still
+   * needs attention. Acking it is how it goes away.
+   */
+  const cloudItems: AlertItem[] = useMemo(
+    () =>
+      Object.keys(cloudRecoveries).map((deviceId) => {
+        const device = devices.find((d) => d.id === deviceId);
+        return {
+          deviceId: `cloud:${deviceId}`,
+          title: `${device?.display_name ?? deviceId} answered only through the vendor cloud`,
+          body: 'The command worked, but the device did not respond on the local network — it was reached over the internet instead. That is how a device looks shortly before it stops responding altogether.',
+          meta: `${deviceId} · cloud fallback`,
+          kind: 'fleet' as const,
+        };
+      }),
+    [cloudRecoveries, devices],
+  );
+
   const allItems = useMemo(
-    () => [...fleetItems, ...staleItems, ...anomalyItems],
-    [fleetItems, staleItems, anomalyItems],
+    () => [...fleetItems, ...cloudItems, ...staleItems, ...anomalyItems],
+    [fleetItems, cloudItems, staleItems, anomalyItems],
   );
   const visible = allItems.filter((item) => !acked.has(item.deviceId));
 
@@ -163,7 +189,7 @@ export function AlertsPopover() {
                     <p className="alerts-popover__title">
                       {/* A fleet drop earns the triangle for the same reason an anomaly does:
                           both need a judgement, where a single COMM FAULT is just a fact. */}
-                      {item.kind === 'anomaly' || item.kind === 'fleet' ? <AlertTriangle size={12} aria-hidden="true" /> : <Bell size={12} aria-hidden="true" />}
+                      {item.kind === 'watchdog' ? <Bell size={12} aria-hidden="true" /> : <AlertTriangle size={12} aria-hidden="true" />}
                       {item.title}
                     </p>
                     <p className="alerts-popover__body">{item.body}</p>

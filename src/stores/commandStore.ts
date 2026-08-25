@@ -49,6 +49,16 @@ function describeFailure(err: unknown): string {
 
 interface CommandState {
   pending: Record<string, PendingCommand>;
+  /**
+   * device id -> when a command for it last succeeded ONLY through the vendor cloud.
+   *
+   * A cloud recovery is a success the operator reads as unremarkable, while meaning the device
+   * has stopped answering on the LAN — the earliest warning this system has that a device is
+   * going bad. Kept here rather than in the session command log because a store must not
+   * import upwards from `components/control`, and because the alerts bell already reads
+   * stores and owns acknowledgement.
+   */
+  cloudRecoveries: Record<string, number>;
   send: (deviceId: string, socket: SocketIndex | undefined, desired: SwitchState, targetC?: number) => Promise<void>;
   /** Runs after `ingestReadings` on every live frame — reconciles pending commands against
    * what the feed actually reports. */
@@ -66,6 +76,7 @@ interface CommandState {
  */
 export const useCommandStore = create<CommandState>((set, get) => ({
   pending: {},
+  cloudRecoveries: {},
 
   send: async (deviceId, socket, desired, targetC) => {
     const key = targetKey(deviceId, socket);
@@ -81,7 +92,12 @@ export const useCommandStore = create<CommandState>((set, get) => ({
     }));
 
     try {
-      await sendCommand({ device_id: deviceId, socket, action: desired, command_id, ...(targetC === undefined ? {} : { target_c: targetC }) });
+      const ack = await sendCommand({ device_id: deviceId, socket, action: desired, command_id, ...(targetC === undefined ? {} : { target_c: targetC }) });
+      // Only 'cloud' is recorded. 'local' is the ordinary case and would be noise; null is a
+      // dry run, where no path was attempted at all; a missing field is an older bridge.
+      if (ack?.via === 'cloud') {
+        set((s) => ({ cloudRecoveries: { ...s.cloudRecoveries, [deviceId]: Date.now() } }));
+      }
       // A newer command for this same target superseded us while this one was in flight —
       // let that one own the pending entry instead of clobbering it with a stale ack.
       if (get().pending[key]?.command_id !== command_id) return;

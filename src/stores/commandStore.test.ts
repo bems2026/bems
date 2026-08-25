@@ -12,7 +12,7 @@ vi.mock('@/lib/bridgeClient', async (importOriginal) => {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  useCommandStore.setState({ pending: {} });
+  useCommandStore.setState({ pending: {}, cloudRecoveries: {} });
   useDeviceStore.setState({ devices: [], latestReadings: {}, totals: null, history: {} });
 });
 
@@ -157,5 +157,51 @@ describe('useCommandStore.dismiss', () => {
     });
     useCommandStore.getState().dismiss('co3:1');
     expect(useCommandStore.getState().pending['co3:1']).toBeUndefined();
+  });
+});
+
+/**
+ * Cloud-recovered commands are remembered, because they are the earliest warning available.
+ *
+ * A command that only landed through the vendor cloud SUCCEEDED — the relay moved and the
+ * operator sees a normal confirmation — while meaning the device has stopped answering on the
+ * LAN. On 2026-08-25 that fallback was found never to have worked at all, and the local path
+ * had been reporting false success on top of it; now that both are fixed, a cloud recovery is
+ * a real signal and the only place it appeared was a database column nobody has open.
+ *
+ * Kept here rather than in the session command log because the log lives under
+ * `components/control` and a store must not import upwards from it — and because the alerts
+ * bell, which already reads stores and owns acknowledgement, is where a fault belongs.
+ */
+describe('commandStore cloud recoveries', () => {
+  const ack = (via: CommandAck['via']): CommandAck => ({
+    command_id: 'c1', device_id: 'co3', socket: 1, action: 'on', target: 'CO3_1',
+    accepted_at: new Date().toISOString(), confirmed: false, confirmation: 'none', note: '', via,
+  });
+
+  it('records a device whose command only landed through the cloud', async () => {
+    vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack('cloud'));
+    await useCommandStore.getState().send('co3', 1, 'on');
+    expect(useCommandStore.getState().cloudRecoveries.co3).toBeGreaterThan(0);
+  });
+
+  it('records nothing when the local path worked — the normal case must stay quiet', async () => {
+    vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack('local'));
+    await useCommandStore.getState().send('co3', 1, 'on');
+    expect(useCommandStore.getState().cloudRecoveries.co3).toBeUndefined();
+  });
+
+  it('records nothing for a dry run, where no path was attempted', async () => {
+    vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack(null));
+    await useCommandStore.getState().send('co3', 1, 'on');
+    expect(useCommandStore.getState().cloudRecoveries.co3).toBeUndefined();
+  });
+
+  it('tolerates an older bridge whose ack has no via field at all', async () => {
+    const older = { ...ack('local') } as CommandAck;
+    delete (older as { via?: unknown }).via;
+    vi.mocked(bridgeClient.sendCommand).mockResolvedValue(older);
+    await useCommandStore.getState().send('co3', 1, 'on');
+    expect(useCommandStore.getState().cloudRecoveries.co3).toBeUndefined();
   });
 });
