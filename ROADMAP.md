@@ -331,6 +331,26 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       the right moment; this does not.
       `supabase/phase18_command_via.sql`, `server/auditedDispatch.mjs`, `server/proxy.mjs`,
       `src/stores/commandStore.ts`, `src/components/layout/AlertsPopover.tsx`
+- [x] **EX-102** (FI-010) The 24h chart stops drawing a device that was not reporting.
+      Every meter last known wattage is carried forward into each sample — that is what "last
+      known reading" means — so a device offline all day filled the chart with a confident
+      flat line. The 7d/30d charts lost that blindness earlier and the aircon ONLINE flag lost
+      it on 2026-08-25; this is the same fix one layer down, where the samples are written.
+      **One line in each of two places, because both halves have to agree.** The bridge ring
+      buffer records `online` on each point, *conditionally* — a point from a bridge that
+      never reported it has no flag, and that is unknown, not false. `pointValue` then
+      suppresses a point only when the flag is explicitly `false`. Assuming the absent case
+      either way would fabricate exactly what this set out to stop: assume online and the flat
+      line returns; assume offline and real history is erased in the name of honesty.
+      Fixed in `pointValue` rather than per chart because that is the single place a point
+      becomes a plotted number, and every consumer already reads `undefined` as a gap.
+      The contract tests were confirmed to fail with the generator change neutered.
+      `node-red-bridge/build-flow.mjs`, `src/components/analytics/chartParams.ts`,
+      `src/lib/types.ts`, `test/contract.test.mjs`
+
+      **Needs a flow deploy to take effect** — the ring buffer lives in the generated flow, so
+      `build:flow` plus `deploy:pi --force --apply`. Until then no point carries the flag and
+      the chart behaves exactly as before, which is the correct degradation rather than a bug.
 - [x] **EX-040b** In-page enrolment wizard — the Devices page's "+ Add device" is real. Picks a
       vendor device the flow does not already poll, takes an id/class/name/room, previews, then
       enrols.
@@ -1143,7 +1163,7 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 ### Robustness
 - ~~**FI-013** (S) The Outlet tab never polls its devices.~~ **Done 2026-08-25** — EX-038b.
 - **FI-009** (S) Narrow the three remaining whole-map store selectors — `FloorPlanView`, `AlertsPopover`, `EnergyBreakdownCard`. Left alone in the Phase 9 pass because each needs value-level rather than reference-level comparison to gain anything, and FloorPlanView genuinely reads every device.
-- **FI-010** (M) The 24h chart has the same offline-blindness the 7d/30d charts just lost: the bridge's ring buffer and `HistoryPoint` carry no `online` field, so a device offline for a day still draws its frozen last wattage. Fixing it means regenerating and redeploying the live Node-RED flow — a layer-1 change on load-bearing hardware, so it needs explicit approval, not a quiet follow-up.
+- ~~**FI-010** (M) The 24h chart has the same offline-blindness the 7d/30d charts just lost.~~ **Done 2026-08-25** — EX-102. The ring buffer records `online` per sample and `pointValue` suppresses a point marked offline, so an unreporting device leaves a gap rather than a flat line. Needs a flow deploy to take effect.
 - **FI-011** (S) Push delivery for the monthly report, once FI-005's channel exists. Reports
   are deliberately pull-only today — email or Google Sheets sync would put an SMTP credential
   or a service-account key on a deployment whose repository is public, to solve a problem the

@@ -213,6 +213,12 @@ for (const r of rows) {
   const p = { ts: r.ts, power_w: r.power_w };
   if (typeof r.voltage === 'number') p.voltage = r.voltage;
   if (typeof r.current === 'number') p.current = r.current;
+  // Whether the device was actually reporting when this sample was taken (FI-010). Every
+  // meter's last known wattage is carried forward into each sample, so without this a device
+  // offline all day drew a confident flat line for hardware that was not reporting — the same
+  // dishonesty already fixed for the 7d/30d charts. Written only when it is a real boolean, so
+  // points from a bridge that never reported it stay unknown rather than being assumed online.
+  if (typeof r.online === 'boolean') p.online = r.online;
   buf.push(p);
   if (buf.length > CAP) buf.splice(0, buf.length - CAP);
   flow.set(key, buf);

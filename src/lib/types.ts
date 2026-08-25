@@ -92,6 +92,15 @@ export interface HistoryPoint {
   power_w: number;
   voltage?: number;
   current?: number;
+  /**
+   * Whether the device was actually reporting when this sample was taken (FI-010).
+   *
+   * Every meter last known wattage is carried forward into each sample, so without this a
+   * device offline all day drew a confident flat line. Optional because points buffered before
+   * the bridge recorded it have no value here — and that is unknown, not false. `pointValue`
+   * suppresses a point only when it is explicitly `false`.
+   */
+  online?: boolean;
 }
 
 export interface HistoryResponse {

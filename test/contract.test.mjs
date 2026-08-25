@@ -589,3 +589,36 @@ test('a setpoint on anything other than the ACU is rejected rather than ignored'
   assert.equal(r.ok, false);
   assert.equal(r.code, 'target_c_not_applicable');
 });
+
+/**
+ * FI-010 — the history ring records whether the device was actually reporting.
+ *
+ * Every meter's last known wattage is carried forward into each sample (that is the whole
+ * point of "last known reading"), so a device offline all day still filled the 24h chart with
+ * a confident flat line. The 7d/30d charts lost that blindness earlier; this is the same fix
+ * one layer down, where the samples are written.
+ *
+ * The generated function is checked for behaviour rather than exact text: that it records the
+ * flag, and that it records it CONDITIONALLY. An unconditional write would stamp `online:
+ * undefined` onto points from a bridge that never reported it, turning "unknown" into a value
+ * — and `pointValue` only suppresses on an explicit `false`, so the two halves have to agree.
+ */
+test('the history ring records `online` on each sample', () => {
+  const ring = flow.find((n) => n.name === 'Append to history ring');
+  assert.ok(ring, 'the ring buffer node must exist');
+  assert.match(ring.func, /p\.online = r\.online/);
+});
+
+test('it records `online` only when the reading actually carried a boolean', () => {
+  // "Unknown" and "offline" are different claims. Points buffered before this change have no
+  // flag at all, and assuming them online would fabricate exactly what FI-010 set out to stop.
+  const ring = flow.find((n) => n.name === 'Append to history ring');
+  assert.match(ring.func, /typeof r\.online === 'boolean'/);
+});
+
+test('the ring still omits rather than zeroes the optional readings', () => {
+  // The rule this file has followed since voltage/current were added. Restated here because
+  // adding a fourth field is exactly when someone reaches for a default.
+  const ring = flow.find((n) => n.name === 'Append to history ring');
+  assert.equal(/p\.(voltage|current|online) = 0/.test(ring.func), false);
+});
