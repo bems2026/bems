@@ -3,7 +3,7 @@
  * Compares Tuya's cloud view of every device against the bridge's local view, and optionally
  * audits the flow's local keys against the cloud's.
  *
- *     node server/tuya-devices.mjs [--bridge=<host>] [--keys] [--verify-keys]
+ *     node server/tuya-devices.mjs [--bridge=<host>] [--keys] [--verify-keys] [--macs]
  *
  * WHY: when a device is unreachable on the LAN, nothing else here can tell "the device is off"
  * from "the device is fine and the network is in the way". The cloud reaches devices over the
@@ -18,6 +18,10 @@
  *                                      Tuya. Harmless here; local control is what this system
  *                                      uses.
  *
+ * `--macs` adds the third view, which splits the second case above. A device can be offline to
+ * Tuya because its *uplink* died while it is still associated to the local AP — and that device
+ * needs a config change, not the power-cycle the cloud view implies. See server/macPresence.mjs.
+ *
  * READ-ONLY. Makes no writes to the cloud, the flow, or the database.
  *
  * SECRETS: local keys are fetched only with `--keys`, and even then only their length is
@@ -26,11 +30,13 @@
  */
 
 import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { loadDotEnv } from '../node-red-bridge/nodeRedAdmin.mjs';
 import { createTuyaClient, TUYA_HOSTS, probeTuyaHost } from './tuyaCloud.mjs';
 import { auditKeys, auditIsClean, KEY_STATUS } from './keyAudit.mjs';
+import { joinMacPresence, parseNeighbours, reachableButDark, PRESENCE } from './macPresence.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 loadDotEnv(join(HERE, '..'));
@@ -42,6 +48,7 @@ const arg = (name, fallback) => {
 };
 const WANT_KEYS = process.argv.includes('--keys');
 const VERIFY_KEYS = process.argv.includes('--verify-keys');
+const WANT_MACS = process.argv.includes('--macs');
 const BRIDGE = arg('bridge', '127.0.0.1');
 const REGION = (process.env.TUYA_REGION ?? 'us').toLowerCase();
 
@@ -166,6 +173,64 @@ if (nodes.length && local) {
   }
   console.log('\nRe-run this a few minutes apart: a device whose cloud state changes between runs is');
   console.log('flapping at the network level, which is RM-013 and is not fixable from this side.');
+}
+
+/**
+ * MAC presence. Answers "is it off the network, or on the network but undiscoverable?" — the
+ * question the cloud view alone cannot close, and the one that decides whether a dark device
+ * needs somebody at the office.
+ *
+ * Runs only on the Pi: it reads the Pi's own neighbour table, so it is meaningless anywhere else.
+ */
+if (WANT_MACS) {
+  console.log('\nResolving MAC addresses against this host\'s ARP table...');
+  const factoryInfos = [];
+  // Tuya caps the batch; chunk rather than assume the fleet stays small.
+  const ids = cloud.map((d) => d.id);
+  for (let i = 0; i < ids.length; i += 20) {
+    const batch = ids.slice(i, i + 20).join(',');
+    try {
+      const res = await client.call('GET', `/v1.0/iot-03/devices/factory-infos?device_ids=${batch}`);
+      if (Array.isArray(res)) factoryInfos.push(...res);
+    } catch (e) {
+      console.error(`  factory-infos batch failed: ${e.message.slice(0, 80)}`);
+    }
+  }
+
+  let neighbours = [];
+  try {
+    neighbours = parseNeighbours(execFileSync('ip', ['neigh'], { encoding: 'utf8' }));
+  } catch (e) {
+    console.error(`  Could not read the ARP table (${e.message.slice(0, 60)}). Are you on the Pi?`);
+  }
+
+  const rows = joinMacPresence({ cloudDevices: cloud, factoryInfos, neighbours });
+  console.log('');
+  console.log('  ' + 'device'.padEnd(24) + 'cloud'.padEnd(9) + 'on this segment');
+  for (const r of rows) {
+    const where = r.presence === PRESENCE.ON_SEGMENT ? `yes (${r.arpState.toLowerCase()})` : r.presence;
+    console.log('  ' + String(r.name).slice(0, 23).padEnd(24) + (r.cloudOnline ? 'ONLINE' : 'offline').padEnd(9) + where);
+  }
+
+  const actionable = reachableButDark(rows);
+  const gone = rows.filter((r) => !r.cloudOnline && r.presence === PRESENCE.ABSENT);
+  console.log('');
+  if (actionable.length) {
+    console.log(`${actionable.length} device(s) are dark to Tuya but STILL ON THIS SEGMENT:`);
+    console.log(`  ${actionable.map((r) => r.name).join(', ')}`);
+    console.log('  They answered ARP, so layer 2 works. They are not discoverable — the bridge finds');
+    console.log('  devices only by their UDP broadcast, and these have stopped broadcasting. A');
+    console.log('  power-cycle is the wrong remedy: give the node a static deviceIp, which skips');
+    console.log('  discovery entirely (tuyapi find() short-circuits when id and ip are both set).');
+  }
+  if (gone.length) {
+    console.log(`${gone.length} device(s) are dark to Tuya AND absent from this segment:`);
+    console.log(`  ${gone.map((r) => r.name).join(', ')}`);
+    console.log('  No ARP entry, so they are not associated to the AP. Nothing here can reach them;');
+    console.log('  this is the case that genuinely needs someone at the office.');
+  }
+  if (!actionable.length && !gone.length) console.log('No dark devices to explain.');
+  console.log('\nMAC and address detail is deliberately not printed — the split above is the finding.');
 }
 
 /**

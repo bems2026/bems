@@ -1,10 +1,12 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-25 (UTC)
-**Audited at commit:** `c08a826`
+**Last audited:** 2026-08-25 (UTC), re-audited same day from the Pi itself
+**Audited at commit:** `80d8395`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
-discovery broadcasts.
+discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
+discovery ports, the cloud's per-device MAC joined against the Pi's ARP table, and the live flow
+read back through the admin API.
 The Phase 10-13 entries below were added from a workstation with no database access — see
 §5 Q8 for exactly what that leaves unverified.
 
@@ -23,9 +25,18 @@ now" does not require reading all of it. Everything here is expanded below under
 
 | Item | Why it is stuck |
 |---|---|
-| **RM-020** Power-cycle `co1`–`co6` | Unreachable locally **and** through the Tuya cloud. A Node-RED restart was tried and did not recover them, unlike `l6`. No software path exists. |
+| **RM-020** Power-cycle `co5`–`co6` | Absent from the segment entirely — no ARP entry, so not associated to the AP. Nothing here can reach them. **Narrowed from `co1`–`co6` on 2026-08-25 evening:** `co1`–`co4` are still on the segment and are RM-021, not this. |
 | **RM-007** Kiosk sign-in | Needs one interactive login at the physical screen. |
 | **RM-016** IR Blaster + Outside Temp | Re-pairing needs the devices and the Smart Life account. Quiesced meanwhile, so they cost nothing but still cannot report. |
+
+### Ready to work on — no visit needed
+
+- **RM-021** — some of `co1`–`co4` are dark to the bridge but **still associated to the 2.4 GHz
+  segment** (they answer ARP). They have stopped broadcasting discovery, which is the only way
+  the bridge's `find()` locates a device, so a Node-RED restart cannot help — a static
+  `deviceIp` on the node skips discovery entirely. **Run `npm run tuya:macs` for the current
+  membership; it moved twice within 90 minutes.** Blocked on proving a local session can still
+  be established — see the entry.
 
 ### Waiting on elapsed time, not on work
 
@@ -41,15 +52,14 @@ now" does not require reading all of it. Everything here is expanded below under
 
 ### Built 2026-08-25 — needs applying / deploying
 
-All four queued features are written, tested and pushed. Three need one action each before
-they do anything on site:
+All four queued features are written, tested and pushed. **Two** still need one action each:
 
 | Feature | Outstanding action |
 |---|---|
 | **EX-100** fleet-drop alert | None — live. |
 | **EX-101** dispatch `via` | Apply `supabase/phase18_command_via.sql` by hand. The code tolerates its absence (it retries the outcome patch without the column), so this is not urgent — but until it runs, the path is not recorded. |
 | **EX-102** 24h chart honesty | Needs `build:flow` + `deploy:pi --force --apply` on the Pi. Until then no history point carries `online` and the chart behaves as before. |
-| **EX-103** out-of-dashboard alerts | Set `NTFY_TOPIC` in `server/.env` and restart `ibems-ingest`. Unset is a supported state; the feature is simply inert. |
+| **EX-103** out-of-dashboard alerts | **Done 2026-08-25 20:47** — the operator set `NTFY_TOPIC` and restarted `ibems-ingest` ten seconds later. Verified live in the running process's environment, not inferred from the log: `createNotifier`'s unconfigured branch is deliberately silent, so an absent log line is not evidence either way. |
 
 ### Next to build
 
@@ -63,11 +73,22 @@ they do anything on site:
    regression guard) is the one that keeps paying: three AA failures were found by hand and
    nothing prevents a fourth.
 
+### Also found 2026-08-25 evening
+
+- **RM-022** — importing `enrollRoute.mjs` or `removeRoute.mjs` loads every secret in
+  `server/.env` into `process.env` as an import side effect. It also makes **5 of 295 server
+  tests fail on the Pi and pass on a workstation** — the tests that build an *unconfigured*
+  deployment get the real one. Pre-existing at a clean `HEAD`, not a regression. The Pi is where
+  the brief says to run the suite before deploying, so this trains you to ignore five red tests.
+
 ### The standing hazard
 
-**RM-013** (devices leave the network and rejoin) is the root cause behind RM-020, RM-018
-and much of RM-012. It is not closed and may not be closeable from this side — see its entry
-for what was measured and what was ruled out.
+**RM-013** (devices leave the network and rejoin) is the root cause behind RM-020, RM-021,
+RM-018 and much of RM-012. It is not closed and may not be closeable from this side — see its
+entry for what was measured and what was ruled out. Evidence from 2026-08-25 evening: the six
+outlets did **not** drop together — they fell away one at a time across the whole day, and one
+of them flapped cloud-online and back inside a single eight-minute window. Whatever is left of
+RM-013 after the channel pin is gradual and per-device, not fleet-wide.
 
 ---
 
@@ -555,6 +576,25 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       Local keys are fetched only with `--keys` and even then only their length is printed —
       the values exist to populate a registry, not to be read off a terminal that may be pasted
       into an issue — `server/tuya-devices.mjs`
+- [x] **EX-104** `npm run tuya:macs` — the third view, which closes what the cloud view leaves
+      open. EX-025b tells "the device is off" from "the Pi cannot reach it", but it cannot split
+      the first case, because a device can lose its *uplink* to Tuya while remaining perfectly
+      well associated to the local AP. This joins Tuya's per-device MAC
+      (`/v1.0/iot-03/devices/factory-infos`) against the Pi's own `ip neigh`: a resolved MAC
+      means the device answered an ARP request, so layer 2 works whatever ICMP, UDP discovery or
+      the cloud say — the reasoning `CLAUDE.md` already records for ruling out client isolation,
+      applied per device. **The MAC is the only sound join key**: the cloud's `ip` field is the
+      WAN egress address as of last contact, stale for exactly the devices in question and never
+      mappable to a LAN address.
+      It touches **no device and opens no connection**, which is the point — probing these
+      directly costs their single local connection slot, and doing that is what wedged four of
+      them on 2026-08-25.
+      On first run it split RM-020's six power-cycle candidates into four that were still on the
+      segment and two that were genuinely gone. Unresolved ARP lines (`FAILED`, `INCOMPLETE`)
+      are deliberately **not** counted as presence — that inversion would reverse the entire
+      conclusion, and the Pi's table carried such a line at the time; there is a test for it, and
+      it was confirmed to fail when the guard is removed —
+      `server/macPresence.mjs`, `server/macPresence.test.mjs`, `server/tuya-devices.mjs`
 - [x] **EX-029b** An offline device no longer displays readings. `co5` rendered `OFFLINE`
       beside `230.4 V / 2.23 A / 513.9 W`. This **reverses EX-039's own rule** the day after it
       shipped: age alone was the test, on the reasoning that a device which dropped a second
@@ -905,8 +945,23 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       without writing anything. `server/schemaProbe.mjs` (EX-031b) now encodes both halves of
       that method so the next check does not depend on remembering it.
 
-- [ ] **RM-020** Six of the seven convenience outlets are off the network entirely.
-      *Acceptance:* `co1`–`co6` answer locally again, and stay answering for an hour.
+- [ ] **RM-020** Two of the seven convenience outlets are off the network entirely.
+      *Acceptance:* `co5`–`co6` answer locally again, and stay answering for an hour.
+      **NARROWED 2026-08-25 evening, from six devices to two.** The claim below that all six had
+      "lost both their inbound local path and their outbound cloud connection" was half right.
+      Tuya's `/v1.0/iot-03/devices/factory-infos` returns each device's MAC; matched against the
+      Pi's own `ip neigh`, four of the six — `co1`–`co4` — **still resolve**, meaning they
+      answered an ARP request and are associated to the AP. Only `co5` and `co6` have no entry
+      at all. Same symptom at the bridge, opposite remedies: this entry is now the two that
+      genuinely need a person, and `co1`–`co4` moved to **RM-021**.
+      The method touches no device and needs no local connection, which matters because probing
+      these directly costs their single local connection slot — `npm run tuya:macs`
+      (`server/macPresence.mjs`). `co7` was used as the positive control: its MAC resolves to
+      the entry its working node uses.
+      *The distinction this corrects is the expensive one:* "off the network" sends someone to
+      the office; "on the network but not discoverable" is a config change. The cloud view alone
+      cannot tell them apart, because a device can lose its *uplink* to Tuya while remaining
+      perfectly well associated locally — which is exactly what these four did.
       **NEEDS SOMEONE AT THE OFFICE — power-cycle them.** Measured 2026-08-25: `co1`–`co6`
       read `online: false` **both** locally and in the Tuya cloud, `CO1` logged no successful
       connect in 40 minutes, and each was producing ~27 `find() timed out` entries per five
@@ -922,6 +977,79 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       test run against `co1`: `co3` was never commanded and dropped identically.
       *Do not close this by restarting anything.* If they return without a power-cycle, that
       is new information and RM-013 needs it.
+
+- [ ] **RM-021** `co1`–`co4` are on the segment but no longer discoverable.
+      *Acceptance:* all four report `online: true` to the bridge and hold it for an hour.
+      **No site visit needed — this is the half of RM-020 that has a software path.** All four
+      answer ARP, so layer 2 works. What they have stopped doing is broadcasting their Tuya
+      discovery datagram, and `find()` is the only way the bridge locates a device. Measured by
+      a 40 s passive listen on the discovery ports: exactly 11 broadcasters, which is precisely
+      the 12 online logical devices (the dual-channel meter is two logical readers of one
+      physical box). None of `co1`–`co6` broadcast at all.
+      **The fix the node already supports:** `deviceIp` is a documented property on every
+      `tuya-smart-device` node and is **empty on all 19**. It is passed straight into tuyapi
+      (`node_modules/node-red-contrib-tuya-smart-device/src/tuya-smart-device.js`), and tuyapi's
+      `find()` returns immediately when both id and ip are set (`tuyapi/index.js`, the
+      `isValidString(this.device.id) && isValidString(this.device.ip)` short-circuit) — going
+      straight to a TCP connect and skipping the broadcast these four no longer send.
+      **NOT YET PROVEN, and the gap is honest:** all four had their local port open and stable
+      across three probe passes spanning 20 minutes. A key-matching sweep was then run against
+      them — up to 18 handshake attempts per address. **These devices accept one local
+      connection at a time**, so if the first attempt took the slot the rest tested nothing, and
+      the sweep's "no key matched" result was discarded as unsound. Since that sweep all four
+      have refused the port for over half an hour while still answering ARP. Whether a local
+      session can still be established is therefore **open**, and it is the gate on this entry.
+      *Ruled out:* a rotated local key. All 17 keys the cloud can vouch for match the flow
+      (`npm run tuya:devices -- --verify-keys`).
+      *Next step:* after a cooling-off period, **one** connect attempt per device with the
+      correct key, `co7` first as a positive control. No sweeps. If they refuse a clean single
+      attempt, this folds back into RM-020 and needs the visit after all.
+      *If it succeeds:* the addresses must **not** be committed — this repo is public and
+      `live-flow-baseline.json` would be the natural but wrong home for them. Commit the
+      mechanism instead: resolve MAC → ARP → `deviceIp` at run time, which is also correct
+      across DHCP changes. A DHCP reservation on the AP is the durable version and is an
+      operator action.
+      **Membership of this entry moves — watch it, do not memorise it.** Over 90 minutes on the
+      evening of 2026-08-25 the set went `co1 co2 co3 co4` → `co3 co4`: `co2`'s ARP entry
+      expired and it left the segment (becoming RM-020), while `co1` flapped cloud-online,
+      offline and online again. Re-run `npm run tuya:macs` before acting; a list written down is
+      stale within the hour.
+      **A Node-RED restart cannot fix this, and that is measured, not assumed.** The reflex this
+      project rightly has — restart before suspecting hardware, which recovered `l6` — does not
+      apply, because `find()` can only locate a device that broadcasts. Two independent 40 s
+      listens 90 minutes apart heard exactly 11 broadcasters both times, and none of `co1`–`co4`
+      was among them, including while `co1` was cloud-ONLINE. Restarting would re-enter the same
+      timeout loop.
+      **Current blocker:** their local port has refused connections for 90+ minutes while three
+      of the four still answer ARP. So they are associated to Wi-Fi but their Tuya layer is
+      serving nothing locally — neither the broadcast nor the port. Leave them alone for several
+      hours, or until one next flaps, then try the single clean attempt described above.
+
+- [ ] **RM-022** Importing a route module loads every secret in `server/.env` into the process.
+      *Acceptance:* `npm run test:server` is green **on the Pi**, and importing a route module
+      has no environment side effect.
+      `server/enrollRoute.mjs` and `server/removeRoute.mjs` both call `loadDotEnv(...)` at module
+      top level, so merely `import`ing one populates `process.env` with `TUYA_ACCESS_SECRET`,
+      `SUPABASE_SERVICE_ROLE_KEY`, `BREAK_GLASS_PASSWORD_HASH`, `HARDWARE_DISPATCH_ENABLED` and
+      the rest. `server/proxy.mjs` imports both, so this fires on every proxy start and in every
+      test that spawns one. Demonstrated by importing `enrollRoute.mjs` alone and diffing
+      `process.env` before and after — five secrets appear, with no function called.
+      **Two consequences, and the second is the one that will cost time.**
+      *Credential reach:* `CLAUDE.md` names `TUYA_ACCESS_SECRET` the most sensitive value in this
+      system, ahead of the service-role key, because it reaches hardware directly and no RLS
+      scopes it. An import should not be what loads it.
+      *A suite that cannot pass where it matters:* **5 of 295 server tests fail on the Pi and
+      pass on a workstation** — the tests that construct an unconfigured deployment
+      (`/api/tuya/devices` → 501, `HARDWARE_DISPATCH_ENABLED` false by default, the gate-closed
+      dispatch pair) get the Pi's *real* configuration instead of the empty one they set up.
+      Confirmed pre-existing at a clean `HEAD`, so it is not a regression from this session.
+      This is worse than a plain failure: the Pi is exactly where `docs/pi-session-brief.md`
+      says to run the suite before deploying, so it trains you to accept five red tests, and the
+      next real regression hides among them. This project already has "a green test suite is not
+      proof" written down; this is the mirror image, and it is louder.
+      *Fix direction:* load `.env` in the entrypoints (`proxy.mjs`, `ingest.mjs`, `scheduler.mjs`
+      and the CLIs, which already do it) and never in an imported route module. Then assert the
+      absence: a test that imports a route module and checks `process.env` is unchanged.
 
 - [ ] **RM-013** Devices leave the 2.4 GHz network and rejoin.
       *Acceptance:* the AP holds one channel, and the announcing-host count stays at the full
