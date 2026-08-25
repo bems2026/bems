@@ -1021,10 +1021,25 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       listens 90 minutes apart heard exactly 11 broadcasters both times, and none of `co1`–`co4`
       was among them, including while `co1` was cloud-ONLINE. Restarting would re-enter the same
       timeout loop.
-      **Current blocker:** their local port has refused connections for 90+ minutes while three
-      of the four still answer ARP. So they are associated to Wi-Fi but their Tuya layer is
-      serving nothing locally — neither the broadcast nor the port. Leave them alone for several
-      hours, or until one next flaps, then try the single clean attempt described above.
+      **`co3` CAME BACK ON ITS OWN at ~22:45 on 2026-08-25, with no power-cycle, no restart and
+      no config change.** RM-020 asked for exactly this to be recorded if it happened. It
+      resumed broadcasting (the bridge connected to it six times in the following forty minutes)
+      and its local port reopened at the same time. Fleet went 12/21 → 13/21.
+      *This revises the session's own conclusion.* The four had their local port open for the
+      first 20 minutes, then shut immediately after a key-matching sweep was run against them,
+      which looked like the sweep having occupied their single connection slot. `co3` recovering
+      spontaneously — untouched for over an hour — points instead at the port tracking the
+      device's overall network state: dormant device, no broadcast and no port; awake device,
+      both. **The sweep was probably not the cause.** It was still the wrong thing to run, but
+      it should not be recorded as the explanation.
+      **What this means for the remedy:** these devices cycle back by themselves, so "dark" is
+      not a terminal state and the churn is bidirectional. A static `deviceIp` is still the
+      right fix — it would have held `co3` through the dormant window instead of losing it for
+      hours — but the urgency is lower than a permanently dark device implies.
+      **Current blocker on the remaining ones:** `co1` and `co4` still refuse the local port
+      while answering ARP; `co2` has left the segment altogether. Wait for one to wake as `co3`
+      did, then take the single clean attempt described above — a device that is awake is one
+      that can actually be tested.
 
 - [x] **RM-022** ~~Importing a route module loads every secret in `server/.env` into the
       process.~~ **Done 2026-08-25.** `npm run test:server` is now **299/299 on the Pi** — it
