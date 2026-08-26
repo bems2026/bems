@@ -904,7 +904,7 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 - [x] **EX-120** 593 frontend tests (vitest) — `src/**/*.test.ts(x)`
 - [x] **EX-121** 339 bridge/contract tests, including assertions that the generated flow contains no write nodes and no MQTT — `test/`
-- [x] **EX-122** 299 server tests against real spawned processes and hand-rolled fake HTTP servers, no mocking library — `server/*.test.mjs`
+- [x] **EX-122** 311 server tests against real spawned processes and hand-rolled fake HTTP servers, no mocking library — `server/*.test.mjs`
 - [x] **EX-105** Environment hygiene is checked, not trusted. A module that is *imported* must
       not reconfigure the process: `server/envHygiene.test.mjs` imports each route module in a
       clean child process and asserts it added no keys to `process.env`, and separately greps
@@ -914,6 +914,19 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       caught RM-022 nowhere. The source-level half fails anywhere.
       This is the same shape as EX-091: the mistake is invisible to types, survives a green
       suite, and the only reliable guard reads the source — `server/envHygiene.test.mjs`
+- [x] **EX-127** `npm run test:server` runs on Windows, not only on Linux.
+      Both EX-105 tests above spawned a child and handed it a bare absolute path as an ESM
+      specifier. On Linux that happens to work; on Windows `C:...` is read as a URL with
+      scheme `c:` and the import throws `ERR_UNSUPPORTED_ESM_URL_SCHEME`, so the suite ended
+      **309/311 on a workstation and 311/311 on the Pi**.
+      *Why that is worth fixing rather than tolerating:* it is RM-022's lesson pointing the
+      other way. RM-022 was two tests that passed on a workstation and failed on the Pi; this
+      was two that passed on the Pi and failed on a workstation. Either way the suite's answer
+      depends on where it ran, which teaches you to discount it — and these two in particular
+      guard `TUYA_ACCESS_SECRET`, the credential CLAUDE.md names as the most sensitive here.
+      A developer on Windows had two red tests they were expected to know were "just Windows".
+      The fix is `pathToFileURL(...).href`, which is the correct ESM specifier on **every**
+      platform rather than a Windows special-case — verified 311/311 on both — `server/envHygiene.test.mjs`
 - [x] **EX-126** Migration rehearsal kept rather than discarded: every phase file applied in order against a real PostgreSQL 16 in a throwaway container, with the Supabase-provided symbols stubbed, then all six functions driven against seeded data. The guard tests below check intent; this checks that Postgres will actually run the file — `supabase/rehearse.sh`
 - [x] **EX-123** Schema guard tests asserting RLS shape per migration — `test/device-config-schema.test.mjs`, `test/phase8-anomalies-schema.test.mjs`, `test/phase9-history-schema.test.mjs`, `test/phase10-archive-schema.test.mjs`, `test/phase11-totals-retention-schema.test.mjs`, `test/phase12-monthly-reports-schema.test.mjs`
 - [x] **EX-125** First tests against the proxy's WebSocket relay and against a bridge that hangs rather than refuses — `server/proxy.test.mjs`

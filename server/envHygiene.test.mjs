@@ -24,7 +24,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -40,7 +40,7 @@ const ROUTE_MODULES = ['enrollRoute.mjs', 'removeRoute.mjs'];
 function envKeysAddedByImporting(moduleFile) {
   const script = `
     const before = new Set(Object.keys(process.env));
-    await import(${JSON.stringify(join(HERE, moduleFile))});
+    await import(${JSON.stringify(pathToFileURL(join(HERE, moduleFile)).href)});
     console.log(JSON.stringify(Object.keys(process.env).filter((k) => !before.has(k))));
   `;
   const out = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
