@@ -1,0 +1,26 @@
+# systemd unit for server/wifi-prefer.mjs — returns the Pi to its preferred Wi-Fi network.
+#
+#     sudo cp server/ibems-wifi-prefer.service /etc/systemd/system/
+#     sudo cp server/ibems-wifi-prefer.timer   /etc/systemd/system/
+#     sudo systemctl daemon-reload
+#     sudo systemctl enable --now ibems-wifi-prefer.timer
+#
+# Runs as ROOT, unlike the other units here: changing an nmcli connection needs it. It is a
+# oneshot fired by the timer, not a daemon — there is nothing to keep running between checks.
+#
+# `touch /home/bems/.ibems-wifi-prefer.disabled` stops it without disabling the timer, for when
+# the Pi is deliberately parked on another network.
+
+[Unit]
+Description=iBEMS: return the Pi to the highest-priority Wi-Fi profile when it is back in range
+Wants=network-online.target NetworkManager.service
+After=network-online.target NetworkManager.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/bems/bems
+ExecStart=/usr/bin/node server/wifi-prefer.mjs --verbose
+SyslogIdentifier=ibems-wifi-prefer
+# Generous: a failed attempt plus a revert plus a last-resort sweep can legitimately take
+# minutes, and killing it half way is the one thing that could leave the Pi with no uplink.
+TimeoutStartSec=600

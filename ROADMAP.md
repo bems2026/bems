@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-25 (UTC), re-audited same day from the Pi itself
+**Last audited:** 2026-08-26 (UTC), from the Pi itself
 **Audited at commit:** `80d8395`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
@@ -25,18 +25,17 @@ now" does not require reading all of it. Everything here is expanded below under
 
 | Item | Why it is stuck |
 |---|---|
-| **RM-020** Power-cycle `co5`–`co6` | Absent from the segment entirely — no ARP entry, so not associated to the AP. Nothing here can reach them. **Narrowed from `co1`–`co6` on 2026-08-25 evening:** `co1`–`co4` are still on the segment and are RM-021, not this. |
+| **RM-020** Power-cycle `co4`–`co6` | Absent from the segment entirely — no ARP entry, so not associated to the AP. Nothing here can reach them. Was `co1`–`co6`; `co1`–`co3` came back on 2026-08-26 once the Pi was returned to the device network (RM-023). |
 | **RM-007** Kiosk sign-in | Needs one interactive login at the physical screen. |
 | **RM-016** IR Blaster + Outside Temp | Re-pairing needs the devices and the Smart Life account. Quiesced meanwhile, so they cost nothing but still cannot report. |
 
 ### Ready to work on — no visit needed
 
-- **RM-021** — some of `co1`–`co4` are dark to the bridge but **still associated to the 2.4 GHz
-  segment** (they answer ARP). They have stopped broadcasting discovery, which is the only way
-  the bridge's `find()` locates a device, so a Node-RED restart cannot help — a static
-  `deviceIp` on the node skips discovery entirely. **Run `npm run tuya:macs` for the current
-  membership; it moved twice within 90 minutes.** Blocked on proving a local session can still
-  be established — see the entry.
+- **RM-021** — **currently empty.** No device is in the "on the segment but undiscoverable"
+  state as of 2026-08-26 09:30; `co1`–`co3` recovered and `co4`–`co6` are absent outright, which
+  is RM-020. The condition was real and is worth keeping written down, because
+  `npm run tuya:macs` now detects it in one command. Re-run that for current membership rather
+  than trusting this line.
 
 ### Waiting on elapsed time, not on work
 
@@ -72,6 +71,15 @@ All four queued features are written, tested and pushed. **Two** still need one 
 3. **FI-006 / FI-008 / FI-009** — the small consistency and guard items. FI-008 (a contrast
    regression guard) is the one that keeps paying: three AA failures were found by hand and
    nothing prevents a fourth.
+
+### Found 2026-08-26 — open
+
+- **RM-024** — a tuya session whose peer vanished keeps reporting `online: true` with **frozen**
+  readings, and because `buildLatest.mjs` synthesizes `ts = now`, the staleness watchdog cannot
+  fire on it. During the RM-023 outage the dashboard showed three meters live, with wattage,
+  while nothing at all was reachable. Not fixed.
+- **RM-025** — the scheduler tests fail intermittently on a **loaded** Pi and pass on an idle
+  one, a different test each time. Pre-existing; measured, not guessed. Not fixed.
 
 ### The standing hazard
 
@@ -784,6 +792,29 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-068** Dead-flow pruning: 426 -> 307 nodes, removing the legacy `/ui` dashboard, debug sinks and the MQTT twin. Closed an unauthenticated MQTT path that could switch real lights with no audit row and no dispatch gate — `node-red-bridge/cleanupPlan.mjs`, `node-red-bridge/prune-dead-flow.mjs`
 - [x] **EX-066** Mock bridge implementing the same contract with fault injection (`--cmd-fail`, `--cmd-drop`, `--dispatch`) so every state is reachable without hardware — `mock-bridge/server.mjs`
 
+- [x] **EX-106** The Pi returns to its preferred Wi-Fi network by itself. A oneshot fired by a
+      15-minute timer: if the highest-priority saved profile is in range and the Pi is on
+      something else, it moves — and moves back if that does not work out.
+      **The safety contract is the feature**, because the operator is usually remote and a Pi
+      with no uplink cannot be recovered from a keyboard nobody is sitting at. It only ever
+      moves *towards* the preferred profile, never away; it will not leave a working connection
+      for one that is out of range or weak; a move counts as successful only if the Pi ends up
+      associated to the target **and** can reach the internet, and anything less is reverted to
+      whatever it was on before; if the revert also fails it tries every other saved profile
+      before giving up; and a failed attempt starts a two-hour backoff so a half-broken AP
+      cannot cause endless churn.
+      "Preferred" is **derived** from `autoconnect-priority`, not configured. The operator has
+      already expressed the preference by setting it, a second copy could disagree, and this
+      repository is public and should not carry the site's SSIDs.
+      Equal priorities are treated as *no* preference and refuse to move — otherwise two
+      equally-ranked profiles would swap the radio on every tick, forever.
+      The decision is pure and unit-tested (12 tests); each of the four guards above was
+      confirmed to fail the suite when removed, including the ordering that makes the log name
+      the real reason rather than hiding it behind the backoff.
+      `touch /home/bems/.ibems-wifi-prefer.disabled` stops it, for when the Pi is deliberately
+      parked elsewhere — `server/wifiPreference.mjs`, `server/wifi-prefer.mjs`,
+      `server/wifiPreference.test.mjs`, `server/ibems-wifi-prefer.service`, `.timer`
+
 ### Data & Supabase
 
 - [x] **EX-080** Base schema: devices, readings, building_totals, ingestion_health — `supabase/schema.sql`
@@ -946,8 +977,11 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       without writing anything. `server/schemaProbe.mjs` (EX-031b) now encodes both halves of
       that method so the next check does not depend on remembering it.
 
-- [ ] **RM-020** Two of the seven convenience outlets are off the network entirely.
-      *Acceptance:* `co5`–`co6` answer locally again, and stay answering for an hour.
+- [ ] **RM-020** Three of the seven convenience outlets are off the network entirely.
+      *Acceptance:* `co4`–`co6` answer locally again, and stay answering for an hour.
+      **Population as of 2026-08-26 09:30: `co4`, `co5`, `co6`.** It was six; `co1`–`co3` returned
+      once the Pi was moved back to the device network (RM-023), which is a reminder that
+      "unreachable" was partly the Pi's own fault and worth ruling out before anyone drives in.
       **NARROWED 2026-08-25 evening, from six devices to two.** The claim below that all six had
       "lost both their inbound local path and their outbound cloud connection" was half right.
       Tuya's `/v1.0/iot-03/devices/factory-infos` returns each device's MAC; matched against the
@@ -1036,10 +1070,16 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       not a terminal state and the churn is bidirectional. A static `deviceIp` is still the
       right fix — it would have held `co3` through the dormant window instead of losing it for
       hours — but the urgency is lower than a permanently dark device implies.
-      **Current blocker on the remaining ones:** `co1` and `co4` still refuse the local port
-      while answering ARP; `co2` has left the segment altogether. Wait for one to wake as `co3`
-      did, then take the single clean attempt described above — a device that is awake is one
-      that can actually be tested.
+      **RESOLVED WITHOUT THE REMEDY, 2026-08-26.** `co1`, `co2` and `co3` are all online and on
+      the segment; `co4`–`co6` are absent outright and are RM-020. Nothing is in this entry's
+      state right now, and the static `deviceIp` was never applied.
+      *What actually fixed it was RM-023* — returning the Pi to the device network. That is the
+      uncomfortable part worth keeping: a night was spent characterising these devices as
+      half-dead, and the AP outage the next morning reset them cleanly while stranding the Pi
+      on the wrong SSID. **Rule out the Pi's own network before diagnosing the fleet's.**
+      `npm run tuya:macs` answers that in one command and touches nothing.
+      Leave this entry open: the condition is real, it recurs, and the `deviceIp` remedy is
+      still the right one if a device sits on the segment and refuses to be discovered.
 
 - [x] **RM-022** ~~Importing a route module loads every secret in `server/.env` into the
       process.~~ **Done 2026-08-25.** `npm run test:server` is now **299/299 on the Pi** — it
@@ -1086,6 +1126,78 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       *Fix direction:* load `.env` in the entrypoints (`proxy.mjs`, `ingest.mjs`, `scheduler.mjs`
       and the CLIs, which already do it) and never in an imported route module. Then assert the
       absence: a test that imports a route module and checks `process.env` is unchanged.
+
+- [x] **RM-023** ~~The Pi falls back to the office SSID and never comes back.~~ **Fixed
+      2026-08-26** by EX-106.
+      **Observed, not theorised.** At 08:20:47 the device AP dropped the Pi's DHCP lease. At
+      08:21:03 NetworkManager failed the connection (`link timed out`, reason `ssid-not-found`)
+      and two seconds later auto-activated the general office SSID — which is 5 GHz. The device
+      AP was back on the air within the hour at full signal, and **the Pi stayed on the office
+      network anyway**. `autoconnect-priority` does not prevent this: it chooses among
+      candidates at activation time and never roams away from a connection that works. Left
+      alone it would have sat there indefinitely.
+      *Cost while it lasted:* every field device unreachable — a discovery listen on the office
+      subnet heard **zero** Tuya broadcasters — while the Pi kept internet, Tailscale and a
+      working dashboard. Exactly the failure `CLAUDE.md` describes, arriving on its own rather
+      than because anyone touched the config.
+      *Why the fallback was kept rather than removed:* it is what preserved remote access during
+      the outage. Deleting it would trade a recoverable problem for an unrecoverable one — a Pi
+      with no uplink and nobody on site. The fix is to leave the fallback automatically once the
+      preferred network returns, not to forbid it.
+      *Recovery, for the record:* moving the Pi back took the fleet from a true 0/21 to **15/21**
+      — the best reading in days. `co1`, `co2` and `co3` all returned, `co2` having been off the
+      segment entirely the night before. The AP outage appears to have helped the devices, which
+      re-associated cleanly on its return; the Pi was the only thing that did not.
+
+- [ ] **RM-024** A half-open tuya session reports `online: true` with frozen readings.
+      *Acceptance:* a device the Pi cannot actually reach reports `online: false` within one
+      poll interval, and the staleness watchdog can fire on it.
+      **Found 2026-08-26 while diagnosing RM-023, and it is the reason that took as long as it
+      did.** With the Pi on the wrong subnet and **no** device reachable, the bridge reported
+      three meters as `online: true` carrying plausible wattage. The values were frozen — byte
+      for byte identical across samples 25 seconds apart, for over half an hour:
+
+      ```
+      09:00:51  co_yellow=1214.4W/220.2V   arec_acu=595.5W/219.5V
+      09:01:41  co_yellow=1214.4W/220.2V   arec_acu=595.5W/219.5V
+      ```
+
+      Two independent faults stack, and either alone would have been caught:
+      1. The Pi's address changed out from under established TCP sessions, so no FIN was ever
+         sent. The tuya nodes still believe they are connected and nothing disproves it.
+      2. `shared/buildLatest.mjs` stamps `ts = now` unless the device reports its own time, so
+         **the timestamp is synthesized and the staleness watchdog can never fire** on these
+         rows. EX-029b already established that an offline device's timestamp is not evidence of
+         anything; this is the same fact biting from the other side, where the device is not
+         even marked offline.
+      *Why it matters more than a cosmetic bug:* this is a dashboard stating, confidently and
+      with units, that a building's circuits are drawing power it cannot actually observe. Every
+      other honesty guard in this project (EX-029b, EX-102, the `—` never-0 rule) exists to stop
+      exactly that, and they are all downstream of an `online` flag that was wrong.
+      *Fix direction:* do not infer liveness from socket state alone. Either require a reading
+      to have advanced within N poll intervals before reporting `online`, or have the tuya nodes
+      apply a TCP keepalive short enough to notice a dead peer. The second is the real fix; the
+      first is the cheap guard and is testable without hardware.
+
+- [ ] **RM-025** `server/scheduler.test.mjs` fails intermittently when the Pi is busy.
+      *Acceptance:* the server suite passes repeatedly on a loaded Pi, or the scheduler tests
+      state the timing they depend on instead of assuming it.
+      **Measured 2026-08-26**, with load pushed to ~6-7 on 4 cores by running the suite back to
+      back. At low load: 299/299, repeatedly. At high load, roughly one run in two fails — and a
+      **different** test each time (`does not fire the same minute twice`, `a due schedule is NOT
+      dispatched when its audit row cannot be written`, `the audit row is attributed to whoever
+      saved the schedule`, `with the gate closed a due schedule is audited as dry_run`). Never a
+      test outside this file.
+      Confirmed **not** caused by adding a test file: an extra file of twelve trivial tests did
+      not reproduce it, and removing the new file did not prevent it. It is the load.
+      *Why it is worth an entry rather than a shrug:* this is RM-022's lesson again. A suite that
+      is green when the machine is idle and red when it is busy teaches you to re-run until it
+      passes, which is indistinguishable from ignoring it — and the Pi is busy exactly when
+      something is wrong and you most need the suite to mean something.
+      *Likely cause:* these tests spawn real processes and wait on wall-clock minute boundaries;
+      under load the process does not get scheduled inside the window they assume. Fix direction
+      is to inject the clock rather than to lengthen the timeouts, which only moves the load at
+      which it breaks.
 
 - [ ] **RM-013** Devices leave the 2.4 GHz network and rejoin.
       *Acceptance:* the AP holds one channel, and the announcing-host count stays at the full
