@@ -55,6 +55,7 @@ import { DEVICE_REGISTRY, TIMING } from '../shared/registry.mjs';
 import { dispatchCommand, DISPATCH_CLASSES } from './dispatchLight.mjs';
 import { createTuyaClient, TUYA_HOSTS } from './tuyaCloud.mjs';
 import { toPublicFleet } from './tuyaFleet.mjs';
+import { joinMacPresence, readNeighbours, toPublicPresence } from './macPresence.mjs';
 import { createAdminClient } from '../node-red-bridge/nodeRedAdmin.mjs';
 import { auditedDispatch } from './auditedDispatch.mjs';
 import { buildCloudDispatch } from './cloudDispatchConfig.mjs';
@@ -500,6 +501,35 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       // The upstream message can name the data centre and the account; log it, do not echo it.
       console.error(`[ibems-proxy] tuya fleet fetch failed: ${err.message}`);
+      return sendJson(res, 502, { error: 'tuya_unavailable' });
+    }
+  }
+  if (req.method === 'GET' && url.pathname === '/api/tuya/presence') {
+    // FI-015. Joins the cloud's per-device MAC against this host's ARP table, which is the one
+    // diagnostic that separates "off the network, someone must drive to the office" from "on
+    // the network but no longer discoverable, which is a config change". It existed only as
+    // `npm run tuya:macs` — correct, but reachable solely over SSH, and the split it reports
+    // moved twice inside an hour on 2026-08-26. A perishable answer that decides whether
+    // somebody makes a journey should not require a terminal.
+    const client = getTuyaClient();
+    if (!client) return sendJson(res, 501, { error: 'tuya_not_configured' });
+    try {
+      const devices = await client.listDevices();
+      const factoryInfos = await client.listFactoryInfos(devices.map((d) => d.id));
+      // Unlike /api/tuya/devices this reads the HOST's neighbour table, so it means nothing
+      // anywhere but the Pi. `readable` carries that: an empty table would otherwise be joined
+      // into "every device is absent", which is the strongest claim available made from the
+      // weakest evidence, and on screen would read as the whole fleet having left the network.
+      const { readable, neighbours, reason } = readNeighbours();
+      if (!readable) console.warn(`[ibems-proxy] /api/tuya/presence has no ARP view: ${reason}`);
+      const rows = joinMacPresence({ cloudDevices: devices, factoryInfos, neighbours });
+      return sendJson(res, 200, {
+        arp_readable: readable,
+        devices: toPublicPresence(rows, { arpReadable: readable }),
+      });
+    } catch (err) {
+      // The upstream message can name the data centre and the account; log it, do not echo it.
+      console.error(`[ibems-proxy] tuya presence fetch failed: ${err.message}`);
       return sendJson(res, 502, { error: 'tuya_unavailable' });
     }
   }

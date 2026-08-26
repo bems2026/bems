@@ -88,24 +88,19 @@ column landed all went **local**, with no cloud fallbacks.
 ### Build order — what to do next, largest value first
 
 1. **RM-006c tiers** — one operator decision, then auto-shed starts working. Nothing to build.
-2. **FI-015 (S)** — serve the on-segment/absent split (`npm run tuya:macs`) through the proxy
-   so the Devices page can show it. The single most useful diagnostic this project has is
-   currently SSH-only, and it is the one that decides whether someone drives to the office.
-   **Stronger than when this was written:** on 2026-08-26 the split moved twice inside one
-   hour. A diagnostic that perishable should not need an SSH session to read.
-3. **FI-008 (S)** — a contrast regression guard. Three AA failures were found by hand during
+2. **FI-008 (S)** — a contrast regression guard. Three AA failures were found by hand during
    one audit and nothing prevents a fourth.
-4. **FI-006 (S)** — wire `StaleDataBadge` into the views that still derive staleness inline.
+3. **FI-006 (S)** — wire `StaleDataBadge` into the views that still derive staleness inline.
    **Worth more since EX-107**: timestamps are now honest, so a staleness badge finally means
    something on metered devices instead of being permanently fresh.
-5. **EX-096 device removal, end to end** — never run against a real device, because nothing
+4. **EX-096 device removal, end to end** — never run against a real device, because nothing
    has been enrolled yet. The first enrolment is also the first real test of the `switch` path
    fixed in EX-094.
-6. **FI-011 (S)** — push the monthly report through the alert channel EX-103 already built.
-7. **FI-009 (S)** — narrow the three remaining whole-map store selectors.
-8. **RM-026 Deye** — as soon as the logger is on the network; see its entry for the decision
+5. **FI-011 (S)** — push the monthly report through the alert channel EX-103 already built.
+6. **FI-009 (S)** — narrow the three remaining whole-map store selectors.
+7. **RM-026 Deye** — as soon as the logger is on the network; see its entry for the decision
    between the two integration shapes. Re-verified absent 2026-08-26 evening.
-9. **FI-002 / FI-003 (L)** — setup wizard and packaging for a second site. Only worth starting
+8. **FI-002 / FI-003 (L)** — setup wizard and packaging for a second site. Only worth starting
    once the first site is boring.
 
 **Deliberately not doing:** the one-click bridge restart deferred from EX-100. It needs a
@@ -902,9 +897,9 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 ### Testing & tooling
 
-- [x] **EX-120** 593 frontend tests (vitest) — `src/**/*.test.ts(x)`
+- [x] **EX-120** 603 frontend tests (vitest) — `src/**/*.test.ts(x)`
 - [x] **EX-121** 339 bridge/contract tests, including assertions that the generated flow contains no write nodes and no MQTT — `test/`
-- [x] **EX-122** 311 server tests against real spawned processes and hand-rolled fake HTTP servers, no mocking library — `server/*.test.mjs`
+- [x] **EX-122** 318 server tests against real spawned processes and hand-rolled fake HTTP servers, no mocking library — `server/*.test.mjs`
 - [x] **EX-105** Environment hygiene is checked, not trusted. A module that is *imported* must
       not reconfigure the process: `server/envHygiene.test.mjs` imports each route module in a
       clean child process and asserts it added no keys to `process.env`, and separately greps
@@ -914,6 +909,48 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       caught RM-022 nowhere. The source-level half fails anywhere.
       This is the same shape as EX-091: the mistake is invisible to types, survives a green
       suite, and the only reliable guard reads the source — `server/envHygiene.test.mjs`
+- [x] **EX-128** (FI-015) The on-segment/absent split is served over HTTP, not only over SSH.
+      `GET /api/tuya/presence` joins the vendor cloud's per-device MAC against the host's own
+      ARP table — the join that separates **"off the network, somebody must drive to the
+      office"** from **"on the network but no longer discoverable"**, which is a config change.
+      It existed only as `npm run tuya:macs`. That was correct and completely unreachable
+      without a terminal, and the answer is perishable: the split moved **twice inside one hour**
+      on 2026-08-26, with one outlet going `stale` → `absent` between two runs twenty minutes
+      apart. A fact that decides whether somebody makes a journey should not cost an SSH session.
+      **`arp_readable` is the load-bearing part of the payload.** Unlike `/api/tuya/devices`,
+      this route reads the *host's* neighbour table, so it means nothing anywhere but the Pi —
+      and `joinMacPresence` fed an empty table marks **every device absent**, which is the
+      strongest claim this system makes, from no evidence, rendering on screen as the whole
+      fleet having left the network. So an unreadable table is reported as unreadable, and a
+      command that exits 0 with nothing to say counts as unreadable too: a host that is not on
+      the device segment answers exactly that way, and "I cannot see" must not render as "there
+      is nothing there". The frontend re-checks the flag rather than trusting the server to have
+      withheld `presence`, and reads a *missing* flag as false.
+      **MAC and address never reach the browser.** The join needs both; the page needs neither,
+      and together they are a map of the building's network — `tuya-devices.mjs` already
+      refuses to print them, and a screenshot of a dashboard travels further than a terminal
+      does. `toPublicPresence` copies fields in by allowlist, and a test asserts the real
+      payload contains no MAC-shaped and no address-shaped string.
+      **Shipped as a conditional note, NOT the per-device column FI-015 asked for, and that is
+      the honest limit.** The reply is keyed by vendor device; the registry carries no vendor id
+      — `shared/registry.mjs` says so outright, because `mtr_co_yellow` and `mtr_lo_yellow`
+      are two logical meters on one physical box. Joining on display name would look right and
+      be wrong for precisely the devices hardest to reason about, and EX-028b records this
+      project making that exact mistake once already and getting a confident, empty verdict for
+      it. So the vendor's names are reported as the vendor's, unjoined and labelled as such.
+      Carrying the vendor id into the registry is FI-001, and it is what the column needs first.
+      The note renders **only when it has something to say**, following the same rule as the
+      unstable count in the page header — and EX-028b removed a card from this very page for
+      restating what the table already showed. This only ever says what the table cannot.
+      *Two tests in this change passed while guarding nothing, and were caught by neutering the
+      code rather than by review.* One drove `presenceSplit` with `presence: null`, so its
+      groups came out empty whether or not the guard existed. Two more asserted a component
+      renders nothing using `waitFor`, which is satisfied by the first render — before the
+      request returns, when it renders nothing anyway. **Every "expect nothing" assertion needs
+      the subject settled first**, or it answers before the question is asked.
+      `server/proxy.mjs`, `server/macPresence.mjs`, `server/tuyaCloud.mjs`,
+      `src/lib/devicePresence.ts`, `src/hooks/useDevicePresence.ts`,
+      `src/components/devices/SegmentPresenceNote.tsx`
 - [x] **EX-127** `npm run test:server` runs on Windows, not only on Linux.
       Both EX-105 tests above spawned a child and handed it a bare absolute path as an ESM
       specifier. On Linux that happens to work; on Windows `C:...` is read as a URL with
@@ -1692,13 +1729,10 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
   staying inside RLS, Auth and the existing backups. See `docs/adr-001-timeseries-store.md`,
   which names this as the successor to reach for rather than a second datastore.
 - ~~**FI-005** (S) An out-of-dashboard alert channel.~~ **Done 2026-08-25** — EX-103. Edge-triggered fleet alarm in the ingest daemon, delivered over ntfy (no account, no credential in a public repo). Set `NTFY_TOPIC` to enable; unset is a supported state.
-- **FI-015** (S) Serve the on-segment/absent split through the proxy so the Devices page can
-  show it. `npm run tuya:macs` joins Tuya's per-device MAC against the Pi's ARP table and is the
-  single most useful diagnostic this project has — it is what decides whether someone drives to
-  the office — and it is currently reachable only over SSH. The server half already exists in
-  `server/macPresence.mjs`; this is an endpoint plus a column. Note the endpoint must read the
-  Pi's own neighbour table, so unlike `/api/tuya/devices` it is meaningless anywhere but the Pi
-  and should say so rather than returning a confident empty answer.
+- ~~**FI-015** (S) Serve the on-segment/absent split through the proxy so the Devices page can
+  show it.~~ **Done 2026-08-26** — EX-128. Shipped as an endpoint plus a *conditional note*
+  rather than the per-device column this asked for; the column needs a join the registry cannot
+  currently make, which is FI-001. See EX-128.
 - **FI-006** (S) Wire `StaleDataBadge` into the remaining views that derive staleness inline, so freshness is announced consistently rather than re-implemented per card. *(Partly addressed 2026-08-21: every view now shares one wall-clock tick and one stale-dim constant per medium, but the badge itself is still not used everywhere.)*
 
 ### Accessibility

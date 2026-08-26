@@ -30,13 +30,12 @@
  */
 
 import fs from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { loadDotEnv } from '../node-red-bridge/nodeRedAdmin.mjs';
 import { createTuyaClient, TUYA_HOSTS, probeTuyaHost } from './tuyaCloud.mjs';
 import { auditKeys, auditIsClean, KEY_STATUS } from './keyAudit.mjs';
-import { joinMacPresence, parseNeighbours, reachableButDark, PRESENCE } from './macPresence.mjs';
+import { joinMacPresence, readNeighbours, reachableButDark, PRESENCE } from './macPresence.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 loadDotEnv(join(HERE, '..'));
@@ -184,25 +183,18 @@ if (nodes.length && local) {
  */
 if (WANT_MACS) {
   console.log('\nResolving MAC addresses against this host\'s ARP table...');
-  const factoryInfos = [];
-  // Tuya caps the batch; chunk rather than assume the fleet stays small.
-  const ids = cloud.map((d) => d.id);
-  for (let i = 0; i < ids.length; i += 20) {
-    const batch = ids.slice(i, i + 20).join(',');
-    try {
-      const res = await client.call('GET', `/v1.0/iot-03/devices/factory-infos?device_ids=${batch}`);
-      if (Array.isArray(res)) factoryInfos.push(...res);
-    } catch (e) {
-      console.error(`  factory-infos batch failed: ${e.message.slice(0, 80)}`);
-    }
+  // Batching and ARP reading both moved into shared modules when FI-015 gave the proxy the
+  // same job. One implementation, so the endpoint and this script cannot drift into giving
+  // different answers to the question that decides whether somebody drives to the office.
+  let factoryInfos = [];
+  try {
+    factoryInfos = await client.listFactoryInfos(cloud.map((d) => d.id));
+  } catch (e) {
+    console.error(`  factory-infos failed: ${e.message.slice(0, 80)}`);
   }
 
-  let neighbours = [];
-  try {
-    neighbours = parseNeighbours(execFileSync('ip', ['neigh'], { encoding: 'utf8' }));
-  } catch (e) {
-    console.error(`  Could not read the ARP table (${e.message.slice(0, 60)}). Are you on the Pi?`);
-  }
+  const { readable, neighbours, reason } = readNeighbours();
+  if (!readable) console.error(`  Could not read the ARP table (${String(reason).slice(0, 70)}). Are you on the Pi?`);
 
   const rows = joinMacPresence({ cloudDevices: cloud, factoryInfos, neighbours });
   console.log('');

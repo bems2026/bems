@@ -16,6 +16,7 @@ import { metaSummary, type DeviceConfig } from '@/lib/deviceConfig';
 import { DeviceMetaEditor } from './DeviceMetaEditor';
 import { EnrollWizard } from './EnrollWizard';
 import { RemoveDevicePanel } from './RemoveDevicePanel';
+import { SegmentPresenceNote } from './SegmentPresenceNote';
 import { ENROLLED_DEVICES } from '@shared/registry.enrolled.mjs';
 import type { Device, DeviceClass, Reading } from '@/lib/types';
 import { formatVolts, formatAmps, formatWithUnit } from '@/lib/format';
@@ -175,6 +176,7 @@ export function DevicesView() {
           </div>
         </div>
       </div>
+      <SegmentPresenceNote />
       <p className="devices-watchdog-note">
         Stale after 30s idle
         <InfoHint label="Watchdog and metadata details">

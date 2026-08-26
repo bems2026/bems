@@ -26,6 +26,8 @@
  * matters — probing the devices directly costs their single local connection slot.
  */
 
+import { execFileSync } from 'node:child_process';
+
 export const PRESENCE = {
   /** The Pi holds a resolved MAC for this device. It is associated to the segment. */
   ON_SEGMENT: 'on segment',
@@ -104,4 +106,54 @@ export function joinMacPresence({ cloudDevices = [], factoryInfos = [], neighbou
  */
 export function reachableButDark(rows) {
   return rows.filter((r) => !r.cloudOnline && r.presence === PRESENCE.ON_SEGMENT);
+}
+
+/**
+ * Reads this host's neighbour table, and says whether it managed to.
+ *
+ * WHY THE FLAG IS THE POINT: an empty neighbour list is not the same fact as an unreadable one,
+ * but `joinMacPresence` cannot tell them apart — fed nothing, it marks every device ABSENT,
+ * which is the strongest claim this module makes and would be served from the weakest evidence.
+ * On screen that reads as "the entire fleet has left the network". The CLI never had this
+ * problem because it only ever ran on the Pi; an HTTP endpoint can be called from anywhere.
+ *
+ * A command that exits 0 with nothing to say counts as unreadable for the same reason. A host
+ * that is not on the device segment answers exactly that way, and "I cannot see" must not be
+ * rendered as "there is nothing there".
+ */
+export function readNeighbours({ exec = () => execFileSync('ip', ['neigh'], { encoding: 'utf8' }) } = {}) {
+  let text;
+  try {
+    text = exec();
+  } catch (err) {
+    return { readable: false, neighbours: [], reason: err?.message ?? String(err) };
+  }
+  const neighbours = parseNeighbours(text);
+  if (!neighbours.length) {
+    return { readable: false, neighbours: [], reason: 'no neighbour entries — this host is not on the device segment' };
+  }
+  return { readable: true, neighbours, reason: null };
+}
+
+/**
+ * The presence rows, shaped for the browser.
+ *
+ * Two things are deliberately withheld. **`mac` and `ip` never leave the server**: the join
+ * needs them, the page does not, and together they are a map of the building's network —
+ * `tuya-devices.mjs` refuses to print them for the same reason, and a screenshot of a dashboard
+ * travels further than a terminal does. **`presence` is null rather than a guess** when the ARP
+ * table could not be read, so the page can say it does not know instead of implying absence.
+ *
+ * The cloud half is still served in that case: it is reached over the internet rather than the
+ * local subnet, so it remains true regardless of what this host can see, and withholding it
+ * would throw away the more portable of the two views.
+ */
+export function toPublicPresence(rows, { arpReadable } = {}) {
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    cloud_online: r.cloudOnline,
+    presence: arpReadable ? r.presence : null,
+    arp_state: arpReadable ? r.arpState : null,
+  }));
 }

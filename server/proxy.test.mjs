@@ -927,3 +927,38 @@ test('GET /api/tuya/devices reports 501 when the deployment has no Tuya credenti
     cleanup();
   }
 });
+
+// ---------------------------------------------------------------------------
+// GET /api/tuya/presence — FI-015, the on-segment/absent split over HTTP
+//
+// The join itself is tested in server/macPresence.test.mjs, where it can be driven with
+// fixtures. What belongs here is what only the running process decides: that the route is
+// behind the session gate, and that a deployment without credentials degrades the same way
+// /api/tuya/devices does rather than in a new way.
+// ---------------------------------------------------------------------------
+
+test('GET /api/tuya/presence requires a session, like every other data route', async () => {
+  // This one matters more than most: the reply names every device in the building and says
+  // which are reachable. That is a survey of the site, and it belongs behind the gate.
+  const { proxyUrl, cleanup } = await setup();
+  try {
+    const res = await fetch(`${proxyUrl}/api/tuya/presence`);
+    assert.equal(res.status, 401);
+  } finally {
+    cleanup();
+  }
+});
+
+test('GET /api/tuya/presence reports 501 when the deployment has no Tuya credentials', async () => {
+  // Same shape as /api/tuya/devices on purpose. The MAC join is worthless without the cloud
+  // half, so an uncredentialled deployment loses this endpoint too — and says so as a
+  // configuration state rather than an error.
+  const { proxyUrl, cleanup } = await setup();
+  try {
+    const res = await fetch(`${proxyUrl}/api/tuya/presence`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
+    assert.equal(res.status, 501);
+    assert.deepEqual(await res.json(), { error: 'tuya_not_configured' });
+  } finally {
+    cleanup();
+  }
+});

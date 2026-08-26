@@ -159,6 +159,29 @@ export function createTuyaClient({ accessId, accessSecret, host, fetchImpl = fet
       return call('GET', `/v1.0/devices/${encodeURIComponent(deviceId)}`);
     },
 
+    /**
+     * Per-device factory metadata, of which the MAC is the part anyone here wants. It is the
+     * only identifier the cloud and the Pi's ARP table both carry, so it is the join key that
+     * answers "is this device off the network, or on it and merely undiscoverable" — the
+     * question that decides whether somebody drives to the office.
+     *
+     * Chunked because Tuya caps the batch, and a fleet that outgrows one page would otherwise
+     * start silently returning fewer devices than were asked about, which reads as absence.
+     * A failing chunk is skipped rather than fatal: a partial MAC map still resolves the
+     * devices it covers, and the caller's own presence flag already distinguishes "no MAC for
+     * this device" from "this device is not on the segment".
+     */
+    async listFactoryInfos(deviceIds = [], { batchSize = 20 } = {}) {
+      await ensureToken();
+      const out = [];
+      for (let i = 0; i < deviceIds.length; i += batchSize) {
+        const batch = deviceIds.slice(i, i + batchSize).join(',');
+        const res = await call('GET', `/v1.0/iot-03/devices/factory-infos?device_ids=${batch}`);
+        if (Array.isArray(res)) out.push(...res);
+      }
+      return out;
+    },
+
     /** Exposed for tests and for callers that need a path this module does not wrap yet. */
     call,
     ensureToken,
