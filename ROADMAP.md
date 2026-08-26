@@ -31,10 +31,11 @@ The system is **healthy and honest**: 15/21 devices online, all five services up
 writing every minute, and the dashboard no longer reports readings it cannot actually observe.
 Three things stand between here and "finished":
 
-1. **Two outlets need a person at the office** (RM-020) — no software path exists. This was
-   three until the evening of 2026-08-26, when `co5` answered ARP again and moved to RM-021,
-   which is a config change rather than a drive. Membership moves hourly: re-measure, never
-   memorise.
+1. **Three outlets need a person at the office** (RM-020) — `co4`, `co5`, `co6`. The
+   software path was **built and tried on `co5` on 2026-08-26, and it did not work**: the
+   device answers ARP, accepted a correct static address, and then refused every TCP connection.
+   So all three need power. Membership still moves hourly — re-measure, never memorise — but the
+   cheap remedy has now been tested rather than assumed.
 2. **Auto-shed is built but inert** until someone says which loads may be shed first (RM-006c).
    This is the largest *finished* feature that does nothing yet, and it is one decision.
 3. **The solar inverter is not on the network** (RM-026) — the integration is stubbed and
@@ -46,7 +47,7 @@ Everything else is small, and the build order below is honest about size.
 
 | Item | Why it is stuck |
 |---|---|
-| **RM-020** Power-cycle `co4` and `co6` | Absent from the segment entirely — no ARP entry, so not associated to the AP. **Operator cannot do this during office hours** (stated 2026-08-26) and will say when they can. **Two, not three, as of 2026-08-26 evening:** `co5` answers ARP and is RM-021 (a config change, no drive). Was `co1`–`co6`; `co1`–`co3` came back once the Pi was returned to the device network (RM-023). `co4` itself moved `stale` → `absent` inside one session, so **re-run `npm run tuya:macs` before the trip** — the list moves, and it moved twice on the day this row was last rewritten. |
+| **RM-020** Power-cycle `co4`–`co6` | `co4` and `co6` are absent from the segment entirely — no ARP entry, so not associated to the AP. `co5` **is** on the segment and still needs power: the static-address remedy was tried on it 2026-08-26 and it refused every connection (RM-021). **Operator cannot do this during office hours** (stated 2026-08-26) and will say when they can. Was `co1`–`co6`; `co1`–`co3` came back once the Pi was returned to the device network (RM-023). `co4` moved `stale` → `absent` inside one session, so **re-run `npm run tuya:macs` before the trip** — the list moves, and it moved twice on the day this row was last rewritten. |
 | **RM-007** Kiosk sign-in | Needs one interactive login at the physical screen. `ibems-kiosk` is inactive. |
 | **RM-016** IR Blaster + Outside Temp | Re-pairing needs the devices and the Smart Life account. Quiesced meanwhile, so they cost nothing but still cannot report. |
 
@@ -898,7 +899,7 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 ### Testing & tooling
 
 - [x] **EX-120** 603 frontend tests (vitest) — `src/**/*.test.ts(x)`
-- [x] **EX-121** 339 bridge/contract tests, including assertions that the generated flow contains no write nodes and no MQTT — `test/`
+- [x] **EX-121** 348 bridge/contract tests, including assertions that the generated flow contains no write nodes and no MQTT — `test/`
 - [x] **EX-122** 318 server tests against real spawned processes and hand-rolled fake HTTP servers, no mocking library — `server/*.test.mjs`
 - [x] **EX-105** Environment hygiene is checked, not trusted. A module that is *imported* must
       not reconfigure the process: `server/envHygiene.test.mjs` imports each route module in a
@@ -909,10 +910,33 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       caught RM-022 nowhere. The source-level half fails anywhere.
       This is the same shape as EX-091: the mistake is invisible to types, survives a green
       suite, and the only reliable guard reads the source — `server/envHygiene.test.mjs`
+- [x] **EX-129** `npm run set-device-ip:pi` — the RM-021 remedy, as a reversible script.
+      Gives a `tuya-smart-device` node a static `deviceIp` so the bridge stops depending on a
+      discovery broadcast the device has stopped sending. Dry run by default, `--apply` to
+      write, `--undo` to clear, like every other script that touches the live flow.
+      **The address is resolved at run time** — vendor cloud MAC joined against this host's ARP
+      table — and never typed in or committed. That keeps the site's addressing out of a public
+      repository, and it is also the only correct version: a written-down address is wrong the
+      moment DHCP moves it, and a *stale* one is worse than none, because `find()` short-
+      circuits past discovery whenever id and ip are both set. The default target set is
+      computed, not hard-coded, because the membership moved twice inside one hour on 2026-08-26
+      and a list baked into a script would be wrong by the time it ran.
+      `validateDeviceIpPlan` holds the same invariants as `quiescePlan`: node count unchanged,
+      nothing added or removed, and the only permitted difference anywhere is `deviceIp` on an
+      explicitly named node. These live on the hand-built source tabs where `findTimeout` and
+      `tuyaVersion` are the only copy that exists.
+      **Its first real use returned a negative result — see RM-021.** The script is kept anyway:
+      it is free to try, it is the right first move on a dark-but-on-segment device, and having
+      run it is what turned "the remedy we have not tried yet" into a measurement.
+      `node-red-bridge/set-device-ip.mjs`, `node-red-bridge/deviceIpPlan.mjs`,
+      `test/device-ip-plan.test.mjs`
 - [x] **EX-128** (FI-015) The on-segment/absent split is served over HTTP, not only over SSH.
       `GET /api/tuya/presence` joins the vendor cloud's per-device MAC against the host's own
-      ARP table — the join that separates **"off the network, somebody must drive to the
-      office"** from **"on the network but no longer discoverable"**, which is a config change.
+      ARP table — the join that separates **"off the network"** from **"on the network but no
+      longer discoverable"**, which is worth a free config change before anybody drives to the
+      office. *Worth stating carefully, because this entry originally did not:* on-segment is
+      **not** a promise that no visit is needed. It says the cheap remedy is worth trying. See
+      RM-021, where trying it on `co5` proved the point by failing.
       It existed only as `npm run tuya:macs`. That was correct and completely unreachable
       without a terminal, and the answer is perishable: the split moved **twice inside one hour**
       on 2026-08-26, with one outlet going `stale` → `absent` between two runs twenty minutes
@@ -1091,11 +1115,16 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       without writing anything. `server/schemaProbe.mjs` (EX-031b) now encodes both halves of
       that method so the next check does not depend on remembering it.
 
-- [ ] **RM-020** Two of the seven convenience outlets are off the network entirely.
-      *Acceptance:* `co4` and `co6` answer locally again, and stay answering for an hour.
-      **Population as of 2026-08-26 evening: `co4` and `co6`.** `co5` left this entry —
-      it answers ARP, so it is associated to the AP and its remedy is RM-021's config change,
-      not a drive to the office.
+- [ ] **RM-020** Three of the seven convenience outlets need power cut and restored.
+      *Acceptance:* `co4`–`co6` answer locally again, and stay answering for an hour.
+      **Population as of 2026-08-26 evening: `co4`, `co5`, `co6` — but for two different
+      reasons, which is new.** `co4` and `co6` are absent from the segment outright: no ARP
+      entry, not associated to the AP. `co5` **is** associated and answers ARP, and still
+      belongs here, because RM-021's software remedy was actually tried on it and failed.
+      *This corrects an entry written earlier the same day*, which moved `co5` out of RM-020
+      on the strength of its ARP reply alone. The ARP evidence was right; the inference from it
+      was not. **Answering ARP proves the device's network layer is alive, not that a Tuya
+      session can be established** — see RM-021 for the measurement.
       **Watch how fast this moved, because it is the point of the entry.** Inside a single
       session on 2026-08-26, `tuya:macs` first reported `co4` and `co5` both on the segment
       and only `co6` absent; twenty minutes later `co4` had gone `stale` → `absent` while
@@ -1200,12 +1229,36 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       not a terminal state and the churn is bidirectional. A static `deviceIp` is still the
       right fix — it would have held `co3` through the dormant window instead of losing it for
       hours — but the urgency is lower than a permanently dark device implies.
-      **`co5` IS IN THIS STATE AS OF 2026-08-26 EVENING**, so the sentence below — written
-      that morning — no longer holds. It answers ARP (confirmed by forcing resolution and
-      watching it reach `REACHABLE`, against `co7` as a positive control) while reporting
-      `online: false` to the bridge: associated to the AP, not broadcasting, not discoverable.
-      That is precisely the condition this entry describes and the `deviceIp` remedy is the
-      one that fits it. `co4` and `co6` are absent from the segment and remain RM-020.
+      **THE REMEDY WAS FINALLY TRIED, ON `co5`, 2026-08-26 — AND IT DID NOT WORK.** This entry
+      had proposed `deviceIp` since 2026-08-25 without ever running it. It has now run.
+      `co5` qualified on every stated criterion: dark to the vendor cloud, `online: false` to
+      the bridge, and answering ARP (confirmed by forcing resolution and watching it reach
+      `REACHABLE`, with `co7` as a positive control). It was given a static address resolved
+      from ARP at run time. **The mechanism worked exactly as documented and bought nothing:**
+      the log shows `findDevice(): Found device, going to connect` — the tuyapi short-circuit
+      firing, discovery skipped — and then no connection, for six minutes. Zero successful
+      connects; 14 timeouts. The address was correct and useless.
+      **So the conclusion this entry was missing: ARP is not reachability.** ARP is answered by
+      the device's network layer. A Tuya session needs its application layer, and ADR-002
+      describes precisely the state where the second is gone while the first is healthy — an
+      ESP device with an exhausted socket table. `deviceIp` cures a device that has stopped
+      *broadcasting*; it does nothing for one that has stopped *listening*, and from the
+      bridge's side those look identical. **`co5` folds back into RM-020**, exactly as this
+      entry's own next-step said it should if a clean attempt was refused.
+      **The change was reverted, and the reason is worth keeping.** A static address is not
+      inert once it is wrong: `find()` short-circuits past discovery whenever id and ip are
+      both set, so after the power-cycle that `co5` actually needs, a stale address would send
+      every attempt to whatever now holds that lease — and the symptom would be the outlet
+      staying dark *after* someone drove to the office to fix it, which is the worst available
+      outcome. **A `deviceIp` is only as good as the moment it was resolved. Clear it or
+      re-resolve it after any power-cycle.** The live flow was confirmed byte-identical to its
+      pre-change backup afterwards, with all 19 nodes' `findTimeout` and `tuyaVersion` intact.
+      **The mechanism is committed even though the outcome was negative** — EX-129,
+      `npm run set-device-ip:pi`, dry-run by default and reversible. It resolves the address at
+      run time from cloud MAC joined against ARP, so no address is ever written into this public
+      repository and the value cannot go stale in a file. It is still the right first thing to
+      try on the next device that is dark-but-on-segment, because it is free; it is simply no
+      longer allowed to be described as a fix.
       *Earlier that same day:* **RESOLVED WITHOUT THE REMEDY, 2026-08-26 (morning).** `co1`,
       `co2` and `co3` are all online and on
       the segment; `co4`–`co6` were absent outright and were RM-020. Nothing was in this entry's

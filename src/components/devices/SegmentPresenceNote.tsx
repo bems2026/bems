@@ -49,13 +49,15 @@ export function SegmentPresenceNote() {
   return (
     <p className="devices-watchdog-note">
       {absent.length > 0 && <span>{names(absent)} off the network — needs a power-cycle on site. </span>}
-      {onSegment.length > 0 && <span>{names(onSegment)} still on the segment but not discoverable — a config change, no visit needed. </span>}
+      {onSegment.length > 0 && <span>{names(onSegment)} still on the segment but not discoverable — try a static address first, but it may still need power. </span>}
       <InfoHint label="How segment presence is determined">
         These are the vendor cloud's device names, not this table's — the two are deliberately not joined, because the registry
         carries no vendor id and one physical meter appears here as two logical devices. A device dark to the cloud that still
-        answers ARP is associated to the access point and has merely stopped broadcasting, so a static <code>deviceIp</code>
-        recovers it. One that answers nothing has left the network, and only power will bring it back. The split moves — it
-        changed twice within an hour on 2026-08-26 — so re-read it immediately before acting on it.
+        answers ARP is associated to the access point, so a static <code>deviceIp</code> is worth trying and costs nothing.
+        It is not a promise: answering ARP proves the device's network layer is alive, not its Tuya session, and on 2026-08-26
+        <code>CO5</code> did exactly that — took a correct address and then refused every connection, needing power after all.
+        A device that answers nothing has certainly left the network. The split moves, twice within an hour on that same day,
+        so re-read it immediately before acting on it.
       </InfoHint>
     </p>
   );

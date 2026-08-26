@@ -102,7 +102,16 @@ export function joinMacPresence({ cloudDevices = [], factoryInfos = [], neighbou
 
 /**
  * The rows worth acting on: dark to the cloud, yet demonstrably still on the segment. These are
- * the ones a power-cycle would be the wrong remedy for.
+ * the ones worth trying a static `deviceIp` on before sending anybody to the office.
+ *
+ * **Being on the segment is not the same as being reachable, and this list must not be read as
+ * "no power-cycle needed".** An earlier version of this comment said exactly that. Measured on
+ * `CO5` on 2026-08-26: it answered ARP throughout, took a correct static address, and then
+ * refused every TCP connection on the Tuya port for six minutes — `find()` short-circuited
+ * straight past discovery, as designed, and connected to nothing. ARP is answered by the
+ * device's network layer; the Tuya session needs its application layer, and ADR-002 describes
+ * exactly the state where the second is gone while the first is fine.
+ * So this list is "try the cheap remedy first", not "the cheap remedy will work".
  */
 export function reachableButDark(rows) {
   return rows.filter((r) => !r.cloudOnline && r.presence === PRESENCE.ON_SEGMENT);

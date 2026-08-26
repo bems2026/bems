@@ -211,9 +211,13 @@ if (WANT_MACS) {
     console.log(`${actionable.length} device(s) are dark to Tuya but STILL ON THIS SEGMENT:`);
     console.log(`  ${actionable.map((r) => r.name).join(', ')}`);
     console.log('  They answered ARP, so layer 2 works. They are not discoverable — the bridge finds');
-    console.log('  devices only by their UDP broadcast, and these have stopped broadcasting. A');
-    console.log('  power-cycle is the wrong remedy: give the node a static deviceIp, which skips');
-    console.log('  discovery entirely (tuyapi find() short-circuits when id and ip are both set).');
+    console.log('  devices only by their UDP broadcast, and these have stopped broadcasting.');
+    console.log('  WORTH TRYING FIRST, but it is not a guarantee: a static deviceIp skips discovery');
+    console.log('  entirely (tuyapi find() short-circuits when id and ip are both set), so it costs');
+    console.log('  nothing to attempt — npm run set-device-ip:pi.');
+    console.log('  ARP IS NOT REACHABILITY, though. Measured on CO5, 2026-08-26: it answered ARP');
+    console.log('  and still refused every TCP connection, so the address was correct and useless.');
+    console.log('  If it does not connect within a minute or two, this device needs power after all.');
   }
   if (gone.length) {
     console.log(`${gone.length} device(s) are dark to Tuya AND absent from this segment:`);
