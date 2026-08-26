@@ -214,6 +214,45 @@ Reports are **pull, not push**: read in-app and downloadable as CSV. There is no
 webhook delivery, deliberately — that would put an SMTP credential or an API key on a
 deployment whose repository is public, to solve a problem a download button already solves.
 
+## Phase 19/20 — site identity (RM-027)
+
+Until this phase nothing stored here recorded **which building it came from**. `dsm_thresholds`
+and `ingestion_health` were singletons — `check (id = 1)`, commented "One building, one Pi" —
+and `building_totals` was keyed by `ts` alone. Two deployments could not share a project, and
+neither could be told apart in an export.
+
+`sites` is the fix, and `shared/sites/<id>/site.mjs` is its counterpart in code:
+
+| Column | Why |
+|---|---|
+| `id` | A slug, not a uuid. It is also the directory name under `shared/sites/`, and appears in exports and log lines, so a human has to be able to match them up without a lookup. |
+| `display_name` | What the UI shows. |
+| `timezone` | IANA zone. Consumed by `generate_monthly_report`'s `p_tz`, which decides what counts as a day. |
+| `utc_offset_minutes` | The same fact as a plain number. **Deliberate duplication:** the payload transform is inlined into a Node-RED function node with no imports and no guaranteed full-ICU build, so it cannot resolve a zone name. `test/site-config.test.mjs` measures the zone at two instants six months apart and fails if the two disagree — which is what makes carrying it twice safe rather than merely convenient. A site in a DST-observing zone cannot describe itself honestly this way, and that test is where it finds out. |
+| `policy` | The operator's own rules, as jsonb rather than columns: they are the building's rules, not the schema's, and adding one must never require a migration. First entry is `acu_min_setpoint_c`. |
+
+**`acu_min_setpoint_c` is not the same fact as `ACU_MIN_C`** in `shared/commands.mjs`, and
+conflating them is the mistake this split exists to prevent. `ACU_MIN_C` is what the live flow's
+IR library has codes for — a hardware bound, identical at every site. The policy floor is what
+the building permits, and it can only ever narrow that range, never widen it: `validateCommand`
+checks the hardware bound first for exactly that reason.
+
+`site_id` is now `not null references sites(id)` on `dsm_thresholds`, `ingestion_health` and
+`building_totals`. The two singleton constraints are gone, replaced by `unique (site_id)` — the
+same guarantee scoped correctly rather than globally. Dropping the singleton *without* that
+replacement would have allowed a second row for the same site, and the app's
+`.eq('site_id', …).maybeSingle()` would have begun throwing.
+
+**`building_totals` keeps its `(ts)` primary key.** Widening it to `(site_id, ts)` is the correct
+end state for a shared project, but `roll_up_and_prune_building_totals` and
+`building_totals_hourly` were built against the current shape (Phase 11), and changing a primary
+key underneath working rollup functions does not belong in the same migration that introduces the
+column. Deferred to RM-030, which reopens aggregation anyway. Until then the constraint that
+actually holds is operational rather than declared: **one Pi writes this table.** That is true
+today and is worth knowing rather than assuming.
+
+Applied in order, `phase19` before `phase20` — the foreign keys target the first.
+
 ## Backups
 
 `server/backup.mjs` (`npm run backup`) exports the rows that cannot be reconstructed. It is

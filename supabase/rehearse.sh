@@ -96,13 +96,24 @@ select 'mtr_hist',
        (n < 60)
   from generate_series(0, 119) n;
 
-insert into building_totals (ts, energy_kwh_today, energy_kwh_week, energy_kwh_month,
+-- site_id is NOT NULL since phase20. The seed runs after every migration, so leaving it out
+-- fails here rather than at anything this rehearsal is trying to prove.
+insert into building_totals (ts, site_id, energy_kwh_today, energy_kwh_week, energy_kwh_month,
                              total_power_w, avg_voltage, phase_current_red,
                              phase_current_yellow, phase_current_blue)
 select timestamptz '2026-06-01 00:00:00+00' + (n || ' minutes')::interval,
+       'mmsu-nberic-care',
        n * 0.01, n * 0.02, n * 0.03, 500 + n, 220, 2.5, 2.0,
        null   -- no Blue-phase meter exists; this must survive as NULL, never become 0
   from generate_series(0, 119) n;
+
+-- A SECOND SITE, seeded only here. Nothing in production has one yet, and that is exactly why
+-- it belongs in the rehearsal: phase20 exists to make a second deployment possible, and the
+-- assertions below are the only place that claim is actually exercised rather than asserted
+-- about the text of a file.
+insert into sites (id, display_name, timezone, utc_offset_minutes)
+values ('rehearsal-second-site', 'A Second Building', 'Asia/Manila', 480)
+on conflict (id) do nothing;
 
 insert into anomalies (device_id, ts, value, baseline_mean, baseline_stddev, z_score,
                        iqr_lower, iqr_upper, method, sample_count)
@@ -213,6 +224,41 @@ begin
   -- rollup and the raw table together, which is the thing most likely to silently regress.
   select energy_kwh into v from monthly_building_reports where month = date '2026-06-01';
   assert v = 3.57, format('report: building energy should span the seam (3.57), got %s', v);
+
+  -- ---- site scoping (phase 19/20) ------------------------------------------------------
+  -- The whole point of RM-027: a second deployment can hold its own settings row. Before
+  -- phase20 this insert was refused by `check (id = 1)`, which is what made the system
+  -- single-building by construction rather than by choice.
+  insert into dsm_thresholds (id, site_id, max_total_kw)
+  values (2, 'rehearsal-second-site', 9.9);
+  select count(*) into n from dsm_thresholds;
+  assert n = 2, format('site scoping: two sites must be able to hold thresholds, got %s', n);
+
+  -- ...but still only ONE row per site. Dropping the singleton without replacing it would let
+  -- a duplicate appear, and the app's .eq(site_id).maybeSingle() would begin throwing.
+  begin
+    insert into dsm_thresholds (id, site_id, max_total_kw)
+    values (3, 'rehearsal-second-site', 1.1);
+    assert false, 'site scoping: a second row for the SAME site must be refused';
+  exception when unique_violation then
+    null;  -- expected
+  end;
+
+  -- The backfill reached every pre-existing row rather than only the ones the app writes.
+  select count(*) into n from building_totals where site_id is null;
+  assert n = 0, format('site scoping: %s building_totals rows were left unstamped', n);
+
+  select count(*) into n from building_totals where site_id = 'mmsu-nberic-care';
+  assert n = 120, format('site scoping: expected 120 stamped totals rows, got %s', n);
+
+  -- A site id that does not exist must be refused, or a typo silently orphans a row.
+  begin
+    insert into building_totals (ts, site_id, total_power_w)
+    values (timestamptz '2026-06-05 00:00:00+00', 'no-such-site', 1);
+    assert false, 'site scoping: an unknown site_id must be refused by the foreign key';
+  exception when foreign_key_violation then
+    null;  -- expected
+  end;
 
   raise notice 'all assertions passed';
 end $$;
