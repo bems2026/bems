@@ -72,11 +72,6 @@ All four queued features are written, tested and pushed. **One** still needs an 
    regression guard) is the one that keeps paying: three AA failures were found by hand and
    nothing prevents a fourth.
 
-### Found 2026-08-26 — open
-
-- **RM-025** — the scheduler tests fail intermittently on a **loaded** Pi and pass on an idle
-  one, a different test each time. Pre-existing; measured, not guessed. Not fixed.
-
 ### The standing hazard
 
 **RM-013** (devices leave the network and rejoin) is the root cause behind RM-020, RM-021,
@@ -1213,11 +1208,36 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       apply a TCP keepalive short enough to notice a dead peer. The second is the real fix; the
       first is the cheap guard and is testable without hardware.
 
-- [ ] **RM-025** `server/scheduler.test.mjs` fails intermittently when the Pi is busy.
-      *Acceptance:* the server suite passes repeatedly on a loaded Pi, or the scheduler tests
-      state the timing they depend on instead of assuming it.
-      **Measured 2026-08-26**, with load pushed to ~6-7 on 4 cores by running the suite back to
-      back. At low load: 299/299, repeatedly. At high load, roughly one run in two fails — and a
+- [x] **RM-025** ~~`server/scheduler.test.mjs` fails intermittently when the Pi is busy.~~
+      **Fixed 2026-08-26.** Verified against the acceptance criterion rather than by re-running
+      until green: with six CPU burners pushing load to **13.2 on 4 cores** — roughly double the
+      6-7 that used to break it — the server suite passed **311/311 three times consecutively**.
+      *Cause:* every test spawned the real daemon, slept a fixed 2500 ms, killed it and
+      asserted. Under load the daemon had not finished a cycle yet, so the assertion ran against
+      a process that had done nothing. Lengthening the sleep only moves the load at which it
+      breaks and makes every run pay for the worst case.
+      *Fix:* wait for the OUTCOME, not for a duration. Each test now states the condition it
+      actually cares about and stops the moment it holds; the timeout is a failure ceiling,
+      never a wait. The suite got **faster** as a result — this file went from ~42 s of pure
+      sleeping to 19 s.
+      *The part that needed a production change:* a test asserting that nothing happened cannot
+      poll for an outcome. The daemon now logs `first cycle complete` once, after its first
+      completed tick, which is the only load-independent way to tell "it ran and did nothing"
+      from "it had not got round to it yet". That line is worth having on the Pi regardless —
+      "started" and "actually running its loop" are different claims, and only the second means
+      a due schedule would have fired.
+      *A second race, also closed:* `dueNowRow` pins a schedule to the minute the ROW is built
+      in while the daemon judges due-ness by the minute its tick runs in. Built at HH:MM:59 the
+      two disagree. Tests that need a due-now row now wait for enough of the minute to remain.
+      **It also repaired a test that never tested its claim.** `does not fire the same minute
+      twice, even though it checks more often than once a minute` waited 4 s against a 15 s
+      loop, so exactly ONE tick ever ran and the guard was never exercised. Proven both ways:
+      with the guard deleted it passed under the old timing and fails under the new. The tick
+      interval is now tunable via `SCHEDULE_TICK_MS`, symmetric with the existing
+      `SCHEDULE_REFRESH_MS`, so the test drives a dozen cycles in a fraction of the old runtime.
+      `server/scheduler.mjs`, `server/scheduler.test.mjs`
+      *What it was.* Measured 2026-08-26, with load pushed to ~6-7 on 4 cores by running the
+      suite back to back. At low load: 299/299, repeatedly. At high load, roughly one run in two fails — and a
       **different** test each time (`does not fire the same minute twice`, `a due schedule is NOT
       dispatched when its audit row cannot be written`, `the audit row is attributed to whoever
       saved the schedule`, `with the gate closed a due schedule is audited as dry_run`). Never a

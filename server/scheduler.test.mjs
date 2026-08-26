@@ -88,6 +88,20 @@ function startFakeLight(latest = []) {
   });
 }
 
+/**
+ * Blocks until enough of the current wall-clock minute remains for a due-now schedule to
+ * survive it.
+ *
+ * `dueNowRow` pins the schedule to the minute the ROW is built in, while the daemon decides
+ * due-ness from the minute its own tick runs in. Build the row at HH:MM:59 on a loaded Pi and
+ * the daemon ticks in HH:MM+1 — the schedule is no longer due and the test fails for a reason
+ * that has nothing to do with the code under test.
+ */
+async function waitForRoomInMinute(needMs = 15_000) {
+  const msLeft = 60_000 - (Date.now() % 60_000);
+  if (msLeft < needMs) await new Promise((r) => setTimeout(r, msLeft + 250));
+}
+
 /** A schedule whose `on` time is the minute the test runs in, so it is due immediately. */
 function dueNowRow(over = {}) {
   const now = new Date();
@@ -97,7 +111,26 @@ function dueNowRow(over = {}) {
   return { device_id: 'l1', socket: null, rule: { on: hhmm, days: days.join('') }, enabled: true, updated_by: '11111111-1111-1111-1111-111111111111', ...over };
 }
 
-async function run(env, scheduleRow, waitMs = 2500, opts = {}) {
+/**
+ * Spawns the daemon and waits for an OUTCOME, not for a duration.
+ *
+ * WHY NOT A FIXED SLEEP: every test here used to spawn a real process, sleep 2500 ms, kill it
+ * and assert. That passes on an idle machine and fails on a busy one — measured 2026-08-26,
+ * roughly one full-suite run in two failed on the Pi under load, a different test each time,
+ * never one outside this file (RM-025). Lengthening the sleep only moves the load at which it
+ * breaks, and slows every run to pay for the worst case.
+ *
+ * So: poll for the condition the test actually cares about and stop the moment it holds. A
+ * test that expects nothing to happen waits instead for `first cycle complete`, which the
+ * daemon logs once it has genuinely run a tick — the only load-independent way to distinguish
+ * "it did nothing" from "it had not got round to it yet".
+ *
+ * `timeoutMs` is generous on purpose: it is a failure ceiling, never a wait. The fast path
+ * returns in tens of milliseconds.
+ */
+const CYCLE_DONE = /first cycle complete/;
+
+async function run(env, scheduleRow, until = CYCLE_DONE, opts = {}) {
   const sb = await startFakeSupabase(scheduleRow, opts.dsm, opts.deviceConfig, opts.failCommandInsert);
   const light = await startFakeLight(opts.latest);
   const child = spawn(process.execPath, [SCHEDULER], {
@@ -114,15 +147,34 @@ async function run(env, scheduleRow, waitMs = 2500, opts = {}) {
   let out = '';
   child.stdout.on('data', (c) => { out += c.toString(); });
   child.stderr.on('data', (c) => { out += c.toString(); });
-  await new Promise((r) => setTimeout(r, waitMs));
+
+  const snapshot = () => ({ commands: sb.state.commands, lightRequests: light.state.requests, out });
+  const holds = () => {
+    const s = snapshot();
+    return until instanceof RegExp ? until.test(s.out) : until(s);
+  };
+
+  const deadline = Date.now() + (opts.timeoutMs ?? 30_000);
+  while (Date.now() < deadline && !holds()) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  // Settle briefly so a follow-up write (the outcome PATCH after an insert) lands before the
+  // process is killed. Bounded and small: the condition above has already happened.
+  await new Promise((r) => setTimeout(r, opts.settleMs ?? 250));
+
+  const result = snapshot();
   child.kill();
   sb.close();
   light.close();
-  return { commands: sb.state.commands, lightRequests: light.state.requests, out };
+  if (!holds() && !opts.allowTimeout) {
+    throw new Error(`scheduler did not reach the expected state within ${opts.timeoutMs ?? 30_000}ms.\nDaemon output:\n${result.out}`);
+  }
+  return result;
 }
 
 test('with the gate closed a due schedule is audited as dry_run and never reaches the light', async () => {
-  const r = await run({}, dueNowRow());
+  await waitForRoomInMinute();
+  const r = await run({}, dueNowRow(), (s) => s.commands.length >= 1 && s.commands[0].status);
   assert.equal(r.lightRequests.length, 0, 'nothing may reach the hardware endpoint');
   assert.equal(r.commands.length, 1, 'but it must still be recorded');
   assert.equal(r.commands[0].status, 'dry_run');
@@ -132,12 +184,15 @@ test('with the gate closed a due schedule is audited as dry_run and never reache
 });
 
 test('the audit row is attributed to whoever saved the schedule', async () => {
-  const r = await run({}, dueNowRow());
+  await waitForRoomInMinute();
+  const r = await run({}, dueNowRow(), (s) => s.commands.length >= 1);
   assert.equal(r.commands[0].requested_by, '11111111-1111-1111-1111-111111111111');
 });
 
 test('with the gate open the command really reaches the light endpoint and is audited as dispatched', async () => {
-  const r = await run({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-token' }, dueNowRow());
+  await waitForRoomInMinute();
+  const r = await run({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-token' }, dueNowRow(),
+    (s) => s.lightRequests.length >= 1 && s.commands[0]?.status === 'dispatched');
   assert.equal(r.lightRequests.length, 1);
   assert.equal(r.lightRequests[0].url, '/light/1');
   assert.deepEqual(r.lightRequests[0].body, { state: true });
@@ -146,13 +201,13 @@ test('with the gate open the command really reaches the light endpoint and is au
 });
 
 test('a schedule that is not due fires nothing at all', async () => {
-  const r = await run({}, dueNowRow({ rule: { on: '03:17', days: '1111111' } }));
+  const r = await run({}, dueNowRow({ rule: { on: '03:17', days: '1111111' } }), CYCLE_DONE);
   assert.equal(r.commands.length, 0);
   assert.equal(r.lightRequests.length, 0);
 });
 
 test('a disarmed schedule fires nothing', async () => {
-  const r = await run({}, dueNowRow({ enabled: false }));
+  const r = await run({}, dueNowRow({ enabled: false }), CYCLE_DONE);
   assert.equal(r.commands.length, 0);
 });
 
@@ -160,7 +215,9 @@ test('an outlet schedule now fires too, routed to its wire target rather than a 
   // This previously asserted the opposite: outlets were skipped because they had no dispatch
   // path, and a dry_run row would have misreported a switch Node-RED really performed. The
   // flow has a /outlet/<target> endpoint now, so they are genuinely covered.
-  const r = await run({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-token' }, dueNowRow({ device_id: 'co1', socket: 1 }));
+  await waitForRoomInMinute();
+  const r = await run({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-token' }, dueNowRow({ device_id: 'co1', socket: 1 }),
+    (s) => s.lightRequests.length >= 1 && s.commands[0]?.status === 'dispatched');
   assert.equal(r.commands.length, 1);
   assert.equal(r.commands[0].device_id, 'co1');
   assert.equal(r.commands[0].status, 'dispatched');
@@ -168,14 +225,21 @@ test('an outlet schedule now fires too, routed to its wire target rather than a 
 });
 
 test('refuses to start with the gate open and no light token', async () => {
-  const r = await run({ HARDWARE_DISPATCH_ENABLED: 'true' }, dueNowRow(), 1200);
+  const r = await run({ HARDWARE_DISPATCH_ENABLED: 'true' }, dueNowRow(), /refusing to start/i);
   assert.match(r.out, /refusing to start/i);
   assert.equal(r.lightRequests.length, 0);
 });
 
 test('does not fire the same minute twice, even though it checks more often than once a minute', async () => {
-  const r = await run({}, dueNowRow(), 4000); // several 15s-loop iterations' worth of checks
-  assert.equal(r.commands.length, 1);
+  // This ran ONE tick before: the loop waits 15s between iterations and the test waited 4s, so
+  // the guard it is named after was never exercised. Driving the loop at 120ms and waiting for
+  // a dozen cycles makes the assertion mean what it says — and finishes sooner than the old
+  // version did.
+  await waitForRoomInMinute();
+  const seenCycles = (s) => (s.out.match(/first cycle complete/g) || []).length;
+  const r = await run({ SCHEDULE_TICK_MS: '120' }, dueNowRow(),
+    (s) => s.commands.length >= 1 && seenCycles(s) >= 1 && s.out.length > 0, { settleMs: 2000 });
+  assert.equal(r.commands.length, 1, 'a second tick in the same minute must not fire again');
 });
 
 
@@ -200,7 +264,7 @@ const SHED_USER = '33333333-3333-3333-3333-333333333333';
 const dsmOn = { max_phase_current: null, max_total_kw: 5, auto_shed: true, updated_by: SHED_USER };
 
 test('sheds the first tier when the building goes over its limit, audited as dry_run while the gate is closed', async () => {
-  const r = await run({}, null, 2500, {
+  const r = await run({}, null, (s) => s.commands.some((c) => c.source === 'dsm_autoshed' && c.status), {
     dsm: dsmOn,
     deviceConfig: [{ device_id: 'l1', load_shed_group: 'group_1' }, { device_id: 'l2', load_shed_group: 'group_2' }],
     latest: OVER,
@@ -216,7 +280,8 @@ test('sheds the first tier when the building goes over its limit, audited as dry
 });
 
 test('sheds for real through the light endpoint once the gate is open', async () => {
-  const r = await run({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-token' }, null, 2500, {
+  const r = await run({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-token' }, null,
+    (s) => s.lightRequests.length >= 1 && s.commands.some((c) => c.source === 'dsm_autoshed' && c.status === 'dispatched'), {
     dsm: dsmOn,
     deviceConfig: [{ device_id: 'l1', load_shed_group: 'group_1' }],
     latest: OVER,
@@ -227,7 +292,7 @@ test('sheds for real through the light endpoint once the gate is open', async ()
 });
 
 test('sheds nothing while the building is under its limit', async () => {
-  const r = await run({}, null, 2500, {
+  const r = await run({}, null, CYCLE_DONE, {
     dsm: dsmOn,
     deviceConfig: [{ device_id: 'l1', load_shed_group: 'group_1' }],
     latest: UNDER,
@@ -236,7 +301,7 @@ test('sheds nothing while the building is under its limit', async () => {
 });
 
 test('sheds nothing when auto-shed is switched off, even while over the limit', async () => {
-  const r = await run({}, null, 2500, {
+  const r = await run({}, null, /breach, no action taken/i, {
     dsm: { ...dsmOn, auto_shed: false },
     deviceConfig: [{ device_id: 'l1', load_shed_group: 'group_1' }],
     latest: OVER,
@@ -246,7 +311,7 @@ test('sheds nothing when auto-shed is switched off, even while over the limit', 
 });
 
 test('never sheds a Protected device', async () => {
-  const r = await run({}, null, 2500, {
+  const r = await run({}, null, CYCLE_DONE, {
     dsm: dsmOn,
     deviceConfig: [{ device_id: 'l1', load_shed_group: 'never' }],
     latest: OVER,
@@ -255,7 +320,7 @@ test('never sheds a Protected device', async () => {
 });
 
 test('never sheds a device with no tier assigned', async () => {
-  const r = await run({}, null, 2500, {
+  const r = await run({}, null, CYCLE_DONE, {
     dsm: dsmOn,
     deviceConfig: [{ device_id: 'l1', load_shed_group: null }],
     latest: OVER,
@@ -264,7 +329,7 @@ test('never sheds a device with no tier assigned', async () => {
 });
 
 test('sheds nothing when nobody is on record as having enabled it', async () => {
-  const r = await run({}, null, 2500, {
+  const r = await run({}, null, CYCLE_DONE, {
     dsm: { ...dsmOn, updated_by: null },
     deviceConfig: [{ device_id: 'l1', load_shed_group: 'group_1' }],
     latest: OVER,
@@ -277,10 +342,11 @@ test('a due schedule is NOT dispatched when its audit row cannot be written', as
   // failed audit insert, so an unattended scheduled command could move a real relay with
   // nothing in the audit trail. proxy.mjs already refused to proceed without a row; the
   // scheduler now refuses the same way, through the same shared helper.
+  await waitForRoomInMinute();
   const r = await run(
     { HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-token' },
     dueNowRow(),
-    2500,
+    /NOT fired — could not record the command/,
     { failCommandInsert: true }
   );
 
@@ -291,9 +357,11 @@ test('a due schedule is NOT dispatched when its audit row cannot be written', as
 test('the audit row is opened before dispatch, so an interrupted command still leaves a trace', async () => {
   // Even in the happy path the row must exist BEFORE the light is touched. Asserting the
   // final status alone could not tell record-first from record-after.
+  await waitForRoomInMinute();
   const r = await run(
     { HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-token' },
-    dueNowRow()
+    dueNowRow(),
+    (s) => s.lightRequests.length >= 1 && s.commands[0]?.status === 'dispatched',
   );
   assert.equal(r.commands.length, 1);
   assert.equal(r.commands[0].status, 'dispatched', 'the outcome is attached after dispatch');

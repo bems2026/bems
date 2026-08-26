@@ -37,6 +37,12 @@ const BRIDGE_PORT = Number(process.env.BRIDGE_PORT) || 1880;
 const HARDWARE_DISPATCH_ENABLED = process.env.HARDWARE_DISPATCH_ENABLED === 'true';
 const LIGHT_API_TOKEN = process.env.LIGHT_API_TOKEN || null;
 const REFRESH_MS = Number(process.env.SCHEDULE_REFRESH_MS) || 60_000;
+// Tunable for the same reason REFRESH_MS is: a test that has to wait out a real 15s loop
+// either takes minutes or, far worse, asserts after a single iteration and quietly stops
+// testing the thing it is named after. `does not fire the same minute twice` did exactly
+// that — at 15s a 4s test ran ONE tick, so the once-a-minute guard it exists to prove was
+// never exercised.
+const TICK_MS = Number(process.env.SCHEDULE_TICK_MS) || 15_000;
 
 if (!SUPABASE_URL || !SERVICE_KEY) {
   console.error('[ibems-scheduler] SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required — see server/.env.example');
@@ -231,7 +237,7 @@ async function shedTick() {
 async function main() {
   console.log(
     `[ibems-scheduler] starting — dispatch=${HARDWARE_DISPATCH_ENABLED ? 'OPEN' : 'closed'} ` +
-      `schedulable=${DISPATCHABLE_DEVICE_IDS.length} device(s) refresh=${REFRESH_MS}ms`,
+      `schedulable=${DISPATCHABLE_DEVICE_IDS.length} device(s) refresh=${REFRESH_MS}ms tick=${TICK_MS}ms`,
   );
   try {
     await refreshSchedules();
@@ -252,6 +258,7 @@ async function main() {
 
   // Checked every 15s rather than once a minute so a schedule is never missed because the
   // process started mid-minute or a tick ran long; `lastFiredMinute` keeps it to once each.
+  let announcedFirstCycle = false;
   const loop = async () => {
     if (stopping) return;
     try {
@@ -260,7 +267,16 @@ async function main() {
     } catch (err) {
       console.error('[ibems-scheduler] tick error:', String(err));
     }
-    if (!stopping) setTimeout(loop, 15_000);
+    // Once, on the first completed cycle. "Started" and "actually running its loop" are
+    // different claims, and only the second one means a due schedule would have fired — so
+    // this is the line to look for on the Pi when a schedule did not happen. It is also the
+    // only load-independent way to assert that a cycle ran and did NOTHING: waiting a fixed
+    // number of milliseconds and hoping is what made these tests fail on a busy Pi.
+    if (!announcedFirstCycle) {
+      announcedFirstCycle = true;
+      console.log('[ibems-scheduler] first cycle complete');
+    }
+    if (!stopping) setTimeout(loop, TICK_MS);
   };
   loop();
 }
