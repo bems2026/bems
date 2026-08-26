@@ -29,6 +29,25 @@ export function bool(v) {
 }
 
 /**
+ * How long a metered device may go with no evidence of a fresh report before `online` stops
+ * being believed, whatever the connection flag says.
+ *
+ * WHY THIS IS NEEDED AT ALL: `h` reports the tuya node's socket, and a socket whose peer
+ * vanished without sending a FIN stays "connected" indefinitely. On 2026-08-26 the Pi's own
+ * address changed out from under every established session (it had fallen back to a different
+ * SSID); three meters then reported `online: true` carrying byte-identical readings for over
+ * half an hour while nothing at all was reachable.
+ *
+ * WHY IT IS THIS LARGE: it must sit well clear of the slowest legitimate report. Measured on
+ * site the same day, an online outlet's arrival stamp lagged by up to 59 s, and the energy
+ * tab's sample buffers are drained on a five-minute cycle. Ten minutes is roughly ten times
+ * the slowest normal gap and still an order of magnitude inside the failure it exists to catch.
+ * Erring short is the dangerous direction: `online: false` removes a device from the building
+ * totals below, so a threshold that trips on a merely-late meter under-reports the building.
+ */
+export const STALE_READING_MS = 600000;
+
+/**
  * @param {object} snap  { energy:{meters,totals}, outlet:{meters,state}, switch:{state}, aircon:{state} }
  * @param {Array}  REG   device registry
  * @param {object} PHASE_MAP
@@ -68,8 +87,30 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs) {
         if (mb !== undefined) r.energy_kwh_month = Math.round((mb + e) * 1000) / 1000;
       }
       r.online = bool(src.h);
+
+      // When did this device last actually report? Two sources, preferring the source tab's
+      // own stamp:
+      //   `src.t`        the arrival time the tab records. Outlet meters carry one; the energy
+      //                  tab writes no timestamp of any kind, which is why the second exists.
+      //   `snap.arrivals` what the bridge itself last saw change for this meter — tracked from
+      //                  the tab's sample buffers, which grow on every message even when the
+      //                  measured values do not.
+      //
+      // ARRIVAL, NOT VALUE CHANGE. This distinction was measured rather than assumed, and the
+      // obvious version is wrong: `mtr_lo_yellow` and `mtr_co_yellow` are two channels of one
+      // physical meter, and over ten minutes the first sat byte-identical at 0 W while the
+      // second swung between 215 V and 229 V. The device was plainly reporting throughout, so
+      // treating "the numbers stopped moving" as death would have marked a healthy idle circuit
+      // offline and quietly subtracted it from the building totals.
       const t = num(src.t);
-      if (t !== undefined && t > 0) r.ts = iso8(t);
+      const seenAt = t !== undefined && t > 0 ? t : num((snap.arrivals || {})[d.ctx]);
+      if (seenAt !== undefined) {
+        // Report when the reading happened, not when it was served. `ts = now` on a device
+        // that has not reported is a fabrication, and it is what let the staleness watchdog
+        // sleep through the outage above — an always-fresh timestamp can never look old.
+        r.ts = iso8(seenAt);
+        if (nowMs - seenAt > STALE_READING_MS) r.online = false;
+      }
     } else if (d.class === 'switch') {
       // Switches have no `ctx` (no metering DPS), but a real per-switch connection signal
       // DOES exist — `global.lightStatus`, populated by the Lighting Logic Hub — it was

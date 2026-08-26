@@ -51,13 +51,13 @@ now" does not require reading all of it. Everything here is expanded below under
 
 ### Built 2026-08-25 — needs applying / deploying
 
-All four queued features are written, tested and pushed. **Two** still need one action each:
+All four queued features are written, tested and pushed. **One** still needs an action:
 
 | Feature | Outstanding action |
 |---|---|
 | **EX-100** fleet-drop alert | None — live. |
 | **EX-101** dispatch `via` | Apply `supabase/phase18_command_via.sql` by hand. The code tolerates its absence (it retries the outcome patch without the column), so this is not urgent — but until it runs, the path is not recorded. |
-| **EX-102** 24h chart honesty | Needs `build:flow` + `deploy:pi --force --apply` on the Pi. Until then no history point carries `online` and the chart behaves as before. |
+| **EX-102** 24h chart honesty | **Already live** — verified 2026-08-26 by reading the deployed `Append to history ring` node, which records `online`. This row claimed otherwise; it was stale, not wrong at the time. |
 | **EX-103** out-of-dashboard alerts | **Done 2026-08-25 20:47** — the operator set `NTFY_TOPIC` and restarted `ibems-ingest` ten seconds later. Verified live in the running process's environment, not inferred from the log: `createNotifier`'s unconfigured branch is deliberately silent, so an absent log line is not evidence either way. |
 
 ### Next to build
@@ -74,10 +74,6 @@ All four queued features are written, tested and pushed. **Two** still need one 
 
 ### Found 2026-08-26 — open
 
-- **RM-024** — a tuya session whose peer vanished keeps reporting `online: true` with **frozen**
-  readings, and because `buildLatest.mjs` synthesizes `ts = now`, the staleness watchdog cannot
-  fire on it. During the RM-023 outage the dashboard showed three meters live, with wattage,
-  while nothing at all was reachable. Not fixed.
 - **RM-025** — the scheduler tests fail intermittently on a **loaded** Pi and pass on an idle
   one, a different test each time. Pre-existing; measured, not guessed. Not fixed.
 
@@ -792,6 +788,24 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-068** Dead-flow pruning: 426 -> 307 nodes, removing the legacy `/ui` dashboard, debug sinks and the MQTT twin. Closed an unauthenticated MQTT path that could switch real lights with no audit row and no dispatch gate — `node-red-bridge/cleanupPlan.mjs`, `node-red-bridge/prune-dead-flow.mjs`
 - [x] **EX-066** Mock bridge implementing the same contract with fault injection (`--cmd-fail`, `--cmd-drop`, `--dispatch`) so every state is reachable without hardware — `mock-bridge/server.mjs`
 
+- [x] **EX-107** `online` requires evidence that the device actually reported, not just that a
+      socket is open. The tuya node's connection flag describes its own socket, and a socket
+      whose peer vanished without a FIN stays "connected" indefinitely — so `buildLatest` now
+      also derives when each metered device last reported, stamps `ts` with that rather than
+      `now`, and withdraws `online` past `STALE_READING_MS`. Stamping `ts = now` was what let
+      the frontend's staleness watchdog sleep through a total outage: an always-fresh timestamp
+      cannot look old.
+      **Arrival, not value change** — the distinction is the whole design, and the obvious
+      version would have made the dashboard under-report the building. A live meter on an idle
+      circuit repeats the same numbers indefinitely; keying on "the numbers stopped" marks it
+      dead and `online: false` removes it from the building totals. Two channels of one physical
+      meter proved it: one byte-identical at 0 W for ten minutes while the other swung 14 V.
+      So the signal is the tab's sample buffer, which fills on every message whether or not the
+      measurement moved. The outlet tab's own arrival stamp is preferred where it exists; the
+      energy tab writes none, hence the generated `Track meter arrivals` step.
+      Absent arrival information — a mock, or a flow predating the step — falls back to previous
+      behaviour rather than inventing offline, which is the safe direction and is tested —
+      `shared/buildLatest.mjs`, `node-red-bridge/build-flow.mjs`, `test/reading-freshness.test.mjs`
 - [x] **EX-106** The Pi returns to its preferred Wi-Fi network by itself. A oneshot fired by a
       15-minute timer: if the highest-priority saved profile is in range and the Pi is on
       something else, it moves — and moves back if that does not work out.
@@ -839,7 +853,7 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 ### Testing & tooling
 
 - [x] **EX-120** 593 frontend tests (vitest) — `src/**/*.test.ts(x)`
-- [x] **EX-121** 331 bridge/contract tests, including assertions that the generated flow contains no write nodes and no MQTT — `test/`
+- [x] **EX-121** 339 bridge/contract tests, including assertions that the generated flow contains no write nodes and no MQTT — `test/`
 - [x] **EX-122** 299 server tests against real spawned processes and hand-rolled fake HTTP servers, no mocking library — `server/*.test.mjs`
 - [x] **EX-105** Environment hygiene is checked, not trusted. A module that is *imported* must
       not reconfigure the process: `server/envHygiene.test.mjs` imports each route module in a
@@ -1149,11 +1163,31 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       segment entirely the night before. The AP outage appears to have helped the devices, which
       re-associated cleanly on its return; the Pi was the only thing that did not.
 
-- [ ] **RM-024** A half-open tuya session reports `online: true` with frozen readings.
-      *Acceptance:* a device the Pi cannot actually reach reports `online: false` within one
-      poll interval, and the staleness watchdog can fire on it.
-      **Found 2026-08-26 while diagnosing RM-023, and it is the reason that took as long as it
-      did.** With the Pi on the wrong subnet and **no** device reachable, the bridge reported
+- [x] **RM-024** ~~A half-open tuya session reports `online: true` with frozen readings.~~
+      **Fixed and deployed 2026-08-26.**
+      *The fix, in two halves.* `buildLatest` now derives when a metered device last actually
+      reported, and (a) stamps `ts` with that instead of `now`, which re-arms the staleness
+      watchdog that could previously never fire, and (b) drops `online` to false once that
+      exceeds `STALE_READING_MS`. The energy tab writes no timestamp of any kind, so a new
+      generated bridge step (`Track meter arrivals`) supplies one for those four meters; the
+      outlet tab's own stamp is preferred where it exists.
+      **The part that had to be measured, not reasoned.** The obvious rule — "the numbers
+      stopped moving, so it is dead" — is WRONG here, and shipping it would have subtracted
+      healthy circuits from the building totals. `mtr_lo_yellow` and `mtr_co_yellow` are two
+      channels of ONE physical meter: over ten minutes the first sat byte-identical at 0 W while
+      the second swung between 215 V and 229 V. Confirmed after deployment, where both read
+      arrival ages of 3-44 s: they are reporting, their values are simply constant. So the
+      signal is **arrival**, taken from the sample buffers that fill on every message regardless
+      of whether the measurement changed.
+      *Threshold* is ten minutes: measured, an online outlet's arrival stamp lagged up to 59 s
+      and the energy tab drains its buffers on a five-minute cycle. Erring short is the
+      dangerous direction — `online: false` removes a device from the totals.
+      *Verified live:* fleet held at 15/21 across the deploy with no meter falsely dropping out,
+      and timestamps now vary with real arrival instead of reading 0 s forever.
+      Each of the four guards was confirmed to fail the suite when neutered —
+      `shared/buildLatest.mjs`, `node-red-bridge/build-flow.mjs`, `test/reading-freshness.test.mjs`
+      *What it was, found 2026-08-26 while diagnosing RM-023 and the reason that took as long
+      as it did.* With the Pi on the wrong subnet and **no** device reachable, the bridge reported
       three meters as `online: true` carrying plausible wattage. The values were frozen — byte
       for byte identical across samples 25 seconds apart, for over half an hour:
 

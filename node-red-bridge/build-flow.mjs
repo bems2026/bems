@@ -97,7 +97,12 @@ const meters = {};
 for (const k of keys) {
   meters[k] = {
     v: flow.get(k + '_last_v'), c: flow.get(k + '_last_c'), p: flow.get(k + '_last_p'),
-    e: flow.get(k + '_energy'), h: flow.get(k + '_health')
+    e: flow.get(k + '_energy'), h: flow.get(k + '_health'),
+    // Sample-buffer depth. This tab appends one entry per message and drains the buffer on a
+    // five-minute cycle, so the number moves whenever the meter is reporting — including when
+    // the measured values do not, which is the case that matters. It is the ONLY arrival
+    // signal this tab exposes: unlike the outlet tab it writes no timestamp anywhere.
+    n: (flow.get(k + '_arr_v') || []).length
   };
 }
 msg.snapshot = msg.snapshot || {};
@@ -293,6 +298,39 @@ msg.snapshot = msg.snapshot || {};
 msg.snapshot.energyAcc = acc;
 return msg;`;
 
+/**
+ * Records WHEN each energy meter last showed evidence of reporting.
+ *
+ * The outlet tab stamps an arrival time per meter; the energy tab writes none, so without this
+ * `buildLatest` has nothing to distinguish "reporting a steady 0 W" from "the socket died and
+ * the last numbers are frozen in place". Both look identical in the context keys.
+ *
+ * The signature deliberately includes the sample-buffer depth, not just the measurements. A
+ * live meter on an idle circuit reports the same volts and watts indefinitely while its buffer
+ * keeps filling — measured on site, one channel of a two-channel meter sat byte-identical for
+ * ten minutes while the other swung 14 V on the same physical device. Keying on the values
+ * alone would have called that healthy channel dead.
+ *
+ * Stamping unseen meters with `now` on first run is deliberate: after a restart nothing has any
+ * history, and the safe reading of "no evidence yet" is not "offline".
+ */
+const TRACK_ARRIVALS = `
+const now = Date.now();
+const seen = flow.get('meter_arrivals') || {};
+const meters = ((msg.snapshot || {}).energy || {}).meters || {};
+for (const k of Object.keys(meters)) {
+  const m = meters[k] || {};
+  const sig = [m.n, m.v, m.c, m.p, m.e, m.h].join('|');
+  const prev = seen[k];
+  if (!prev || prev.sig !== sig) seen[k] = { sig: sig, at: now };
+}
+flow.set('meter_arrivals', seen);
+const arrivals = {};
+for (const k of Object.keys(seen)) arrivals[k] = seen[k].at;
+msg.snapshot = msg.snapshot || {};
+msg.snapshot.arrivals = arrivals;
+return msg;`;
+
 const WS_SERIALIZE = `
 msg.payload = JSON.stringify(msg.payload);
 return msg;`;
@@ -364,13 +402,16 @@ const readOut = linkOutReturn(BRIDGE_TAB, 1180, 200);
 const buildFn = fn(BRIDGE_TAB, 'Build latest readings', BUILD_LATEST.trim(), 990, 200, [[readOut.id]]);
 // Reads this tab's own energy accumulators into the snapshot, immediately before the build
 // step consumes it. Not a link call: the keys live on THIS tab, not a building tab.
-const cAcc = fn(BRIDGE_TAB, 'collect energy accumulators', COLLECT_ENERGY_ACC(METERED_IDS).trim(), 900, 260, [[buildFn.id]]);
+// Arrival tracking sits immediately before the build step and after every collector, because
+// it needs the energy meters already in the snapshot and buildLatest needs its output.
+const arrFn = fn(BRIDGE_TAB, 'Track meter arrivals', TRACK_ARRIVALS.trim(), 900, 320, [[buildFn.id]]);
+const cAcc = fn(BRIDGE_TAB, 'collect energy accumulators', COLLECT_ENERGY_ACC(METERED_IDS).trim(), 900, 260, [[arrFn.id]]);
 const cAir = linkCall(BRIDGE_TAB, 'collect aircon', collectorLinkIds.aircon, 820, 200, [[cAcc.id]]);
 const cSw = linkCall(BRIDGE_TAB, 'collect switch', collectorLinkIds.switch, 660, 200, [[cAir.id]]);
 const cOut = linkCall(BRIDGE_TAB, 'collect outlet', collectorLinkIds.outlet, 500, 200, [[cSw.id]]);
 const cEn = linkCall(BRIDGE_TAB, 'collect energy', collectorLinkIds.energy, 340, 200, [[cOut.id]]);
 const readIn = linkIn(BRIDGE_TAB, 'bridge/read-latest', 180, 200, [[cEn.id]]);
-nodes.push(readIn, cEn, cOut, cSw, cAir, cAcc, buildFn, readOut);
+nodes.push(readIn, cEn, cOut, cSw, cAir, cAcc, arrFn, buildFn, readOut);
 
 // --- GET /api/devices -------------------------------------------------------
 const devRes = httpRes(BRIDGE_TAB, 640, 320);
