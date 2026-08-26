@@ -1,7 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-26 (UTC), from the Pi itself
-**Audited at commit:** `80d8395`
+**Last audited:** 2026-08-26 (UTC), from the Pi itself — full triage rebuild
+**Audited at commit:** `999c7f4`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
 discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
@@ -21,65 +21,93 @@ The Phase 10-13 entries below were added from a workstation with no database acc
 This file is long because the reasoning is the point; this section exists so that "what
 now" does not require reading all of it. Everything here is expanded below under its own id.
 
+### The short version, 2026-08-26
+
+The system is **healthy and honest**: 15/21 devices online, all five services up, ingestion
+writing every minute, and the dashboard no longer reports readings it cannot actually observe.
+Three things stand between here and "finished":
+
+1. **Three outlets need a person at the office** (RM-020) — no software path exists.
+2. **Auto-shed is built but inert** until someone says which loads may be shed first (RM-006c).
+   This is the largest *finished* feature that does nothing yet, and it is one decision.
+3. **The solar inverter is not on the network** (RM-026) — the integration is stubbed and
+   cannot be tested until the logger joins the device SSID.
+
+Everything else is small, and the build order below is honest about size.
+
 ### Blocked on someone being at the office
 
 | Item | Why it is stuck |
 |---|---|
-| **RM-020** Power-cycle `co4`–`co6` | Absent from the segment entirely — no ARP entry, so not associated to the AP. Nothing here can reach them. Was `co1`–`co6`; `co1`–`co3` came back on 2026-08-26 once the Pi was returned to the device network (RM-023). |
-| **RM-007** Kiosk sign-in | Needs one interactive login at the physical screen. |
+| **RM-020** Power-cycle `co4`–`co6` | Absent from the segment entirely — no ARP entry, so not associated to the AP. **Operator cannot do this during office hours** (stated 2026-08-26) and will say when they can. Was `co1`–`co6`; `co1`–`co3` came back once the Pi was returned to the device network (RM-023), so **re-run `npm run tuya:macs` before the trip** — the list moves. |
+| **RM-007** Kiosk sign-in | Needs one interactive login at the physical screen. `ibems-kiosk` is inactive. |
 | **RM-016** IR Blaster + Outside Temp | Re-pairing needs the devices and the Smart Life account. Quiesced meanwhile, so they cost nothing but still cannot report. |
 
-### Ready to work on — no visit needed
+### Blocked on hardware that is not on the network
 
-- **RM-021** — **currently empty.** No device is in the "on the segment but undiscoverable"
-  state as of 2026-08-26 09:30; `co1`–`co3` recovered and `co4`–`co6` are absent outright, which
-  is RM-020. The condition was real and is worth keeping written down, because
-  `npm run tuya:macs` now detects it in one command. Re-run that for current membership rather
-  than trusting this line.
+| Item | Why it is stuck |
+|---|---|
+| **RM-026** Deye/Solarman inverter | The logger is **not on the device SSID**. Verified 2026-08-26: its configured address is the stick's own AP-mode default, which routes to the gateway and times out; a sweep of the device subnet found **no host listening on the Solarman port**; and a standard UDP logger discovery broadcast drew **no reply**. The Node-RED side is a stub — one config node and one register node, wired to nothing. Nothing can be built or tested until the stick is joined to the device SSID. |
+| **RM-005** ESP32 AC sniffer | Publishes nothing. The broker is running and the flow subscribes, but a five-minute listen on all topics saw **zero messages** — and this was on the correct 2.4 GHz network, so the old explanation ("the Pi was on 5 GHz") no longer covers it. The ESP32 itself is silent. |
 
 ### Waiting on elapsed time, not on work
 
 - **RM-012** — `l6` is reachable and controllable again; only its one-hour stability window
   is unproven.
 - **RM-004** — anomaly false-positive re-check needs about a week of continuous telemetry.
-- **RM-006d** — a restore has never been *performed*. Configured is not verified.
+- **RM-006d** — a restore has never been *performed*. Configured is not verified. Supabase
+  itself is reachable (checked 2026-08-26).
 
 ### Waiting on an operator decision
 
-- **RM-006c** — load-shed tiers. Thresholds are set; which loads shed first is a judgement
-  about the building, not a technical question.
+- **RM-006c** — **load-shed tiers.** Thresholds are set and the whole shed path is built,
+  tested and audited; it sheds nothing because no device has a tier. Which loads may drop
+  first is a judgement about the building, not a technical question. **Highest-value single
+  decision on this list.**
 
-### Built 2026-08-25 — needs applying / deploying
+### One migration still to apply by hand
 
-All four queued features are written, tested and pushed. **One** still needs an action:
+**`supabase/phase18_command_via.sql`** (EX-101). The code tolerates its absence — it retries
+the outcome patch without the column — so nothing is broken. But until it runs, *which devices
+needed the cloud fallback this week* cannot be asked, and that is the question that spots a
+device going bad before it goes dark.
 
-| Feature | Outstanding action |
-|---|---|
-| **EX-100** fleet-drop alert | None — live. |
-| **EX-101** dispatch `via` | Apply `supabase/phase18_command_via.sql` by hand. The code tolerates its absence (it retries the outcome patch without the column), so this is not urgent — but until it runs, the path is not recorded. |
-| **EX-102** 24h chart honesty | **Already live** — verified 2026-08-26 by reading the deployed `Append to history ring` node, which records `online`. This row claimed otherwise; it was stale, not wrong at the time. |
-| **EX-103** out-of-dashboard alerts | **Done 2026-08-25 20:47** — the operator set `NTFY_TOPIC` and restarted `ibems-ingest` ten seconds later. Verified live in the running process's environment, not inferred from the log: `createNotifier`'s unconfigured branch is deliberately silent, so an absent log line is not evidence either way. |
+### Build order — what to do next, largest value first
 
-### Next to build
+1. **Apply the one migration above.** Minutes, unblocks a real diagnostic.
+2. **RM-006c tiers** — one operator decision, then auto-shed starts working. Nothing to build.
+3. **FI-015 (S)** — serve the on-segment/absent split (`npm run tuya:macs`) through the proxy
+   so the Devices page can show it. The single most useful diagnostic this project has is
+   currently SSH-only, and it is the one that decides whether someone drives to the office.
+4. **FI-008 (S)** — a contrast regression guard. Three AA failures were found by hand during
+   one audit and nothing prevents a fourth.
+5. **FI-006 (S)** — wire `StaleDataBadge` into the views that still derive staleness inline.
+   **Worth more since EX-107**: timestamps are now honest, so a staleness badge finally means
+   something on metered devices instead of being permanently fresh.
+6. **EX-096 device removal, end to end** — never run against a real device, because nothing
+   has been enrolled yet. The first enrolment is also the first real test of the `switch` path
+   fixed in EX-094.
+7. **FI-011 (S)** — push the monthly report through the alert channel EX-103 already built.
+8. **FI-009 (S)** — narrow the three remaining whole-map store selectors.
+9. **RM-026 Deye** — as soon as the logger is on the network; see its entry for the decision
+   between the two integration shapes.
+10. **FI-002 / FI-003 (L)** — setup wizard and packaging for a second site. Only worth starting
+    once the first site is boring.
 
-1. **The one-click bridge restart** deferred from EX-100 — it needs a `sudoers` entry, and
-   the alert should be seen firing correctly first. Claude on the Pi can already restart
-   services without any new privilege, which may make this unnecessary.
-2. **Device removal end-to-end** (EX-096) has never run against a real device, because
-   nothing has been enrolled yet. The first enrolment is also the first real test of the
-   `switch` path fixed in EX-094.
-3. **FI-006 / FI-008 / FI-009** — the small consistency and guard items. FI-008 (a contrast
-   regression guard) is the one that keeps paying: three AA failures were found by hand and
-   nothing prevents a fourth.
+**Deliberately not doing:** the one-click bridge restart deferred from EX-100. It needs a
+`sudoers` entry that would let any authenticated app user bounce the bridge, and the two
+reasons to want it have both weakened — the fleet-drop alert now reports the drop, and the
+Wi-Fi fallback that caused the worst outage is corrected automatically by EX-106.
 
 ### The standing hazard
 
 **RM-013** (devices leave the network and rejoin) is the root cause behind RM-020, RM-021,
 RM-018 and much of RM-012. It is not closed and may not be closeable from this side — see its
-entry for what was measured and what was ruled out. Evidence from 2026-08-25 evening: the six
-outlets did **not** drop together — they fell away one at a time across the whole day, and one
-of them flapped cloud-online and back inside a single eight-minute window. Whatever is left of
-RM-013 after the channel pin is gradual and per-device, not fleet-wide.
+entry for what was measured and what was ruled out. Two pieces of evidence sharpen it:
+the six outlets did **not** drop together but fell away one at a time across a whole day; and
+on 2026-08-26 the access point dropped its DHCP lease outright, taking the Pi with it. So the
+hazard has two faces — devices leaving, and **the AP itself faltering** — and only the second
+now has a guard (EX-106).
 
 ---
 
@@ -1253,6 +1281,44 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       is to inject the clock rather than to lengthen the timeouts, which only moves the load at
       which it breaks.
 
+- [ ] **RM-026** Deye solar inverter: read generation into the same store as everything else.
+      *Acceptance:* inverter power and daily yield appear in `/api/readings/latest` and in
+      Supabase alongside the meters, on the same cadence, with the same honesty rules.
+      **VERIFIED STATE 2026-08-26 — the hardware is not on the network, so nothing can be
+      built yet.** Three independent checks, all negative:
+      the configured address is the logger stick's **AP-mode default**, which routes to the
+      gateway and times out; a sweep of the whole device subnet found **no host listening on the
+      Solarman TCP port**; and a standard UDP logger-discovery broadcast drew **no reply** (only
+      the Pi's own packet echoing back). ARP shows nothing on the segment but Tuya devices and
+      the router.
+      **What already exists**, and it is less than it looks: `node-red-contrib-solarman-devices`
+      is installed, and the live flow has a `Deye Solar Inverter` tab containing **one node** —
+      a `solarman-register` wired to nothing — plus a `solarman-device` config node holding the
+      serial number and that unreachable address. No data path, no context keys, no registry
+      entry, nothing in this repository. Treat it as a placeholder, not a partial build.
+      **The prerequisite is an operator action, not a coding task:** join the logger stick to
+      the device SSID (it is 2.4 GHz-only, like everything else here) and confirm it takes a
+      DHCP lease on that subnet. Until `npm run tuya:macs`-style evidence shows it present,
+      every integration shape below is untestable.
+      **Then choose the shape — the two are genuinely different, and the second is not obviously
+      better despite being what was asked for:**
+      *(a) Direct, in Node-RED.* Use the installed `solarman-devices` nodes to poll the logger
+      over its TCP port and write context keys the bridge collector already knows how to read.
+      Follows the existing pattern exactly — one more collector, one more registry entry, and
+      `buildLatest` treats it like any other meter, including the freshness rules from EX-107.
+      No new moving parts, no new failure mode, and it is the only shape where the inverter
+      appears in building totals without further work.
+      *(b) Via MQTT.* A separate poller publishes to the Mosquitto broker already running on the
+      Pi, and Node-RED subscribes. This is the shape the operator described. It adds a process
+      to supervise and a broker to depend on, and the broker's current record is not encouraging
+      — the only other thing that ever published to it (RM-005) has been silent for days and
+      nobody noticed, because nothing watches it. **If (b) is chosen, a liveness check on the
+      MQTT topic is part of the work, not an extra.**
+      *Recommendation: (a)*, unless the inverter must also be read by something other than
+      Node-RED — that is the one thing (b) buys that (a) does not.
+      **Do not put the serial number, the logger's address, or its password in this repository.**
+      They belong in `server/.env` or the Node-RED credential store, like every other secret.
+
 - [ ] **RM-013** Devices leave the 2.4 GHz network and rejoin.
       *Acceptance:* the AP holds one channel, and the announcing-host count stays at the full
       device count for an hour.
@@ -1547,6 +1613,13 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
   staying inside RLS, Auth and the existing backups. See `docs/adr-001-timeseries-store.md`,
   which names this as the successor to reach for rather than a second datastore.
 - ~~**FI-005** (S) An out-of-dashboard alert channel.~~ **Done 2026-08-25** — EX-103. Edge-triggered fleet alarm in the ingest daemon, delivered over ntfy (no account, no credential in a public repo). Set `NTFY_TOPIC` to enable; unset is a supported state.
+- **FI-015** (S) Serve the on-segment/absent split through the proxy so the Devices page can
+  show it. `npm run tuya:macs` joins Tuya's per-device MAC against the Pi's ARP table and is the
+  single most useful diagnostic this project has — it is what decides whether someone drives to
+  the office — and it is currently reachable only over SSH. The server half already exists in
+  `server/macPresence.mjs`; this is an endpoint plus a column. Note the endpoint must read the
+  Pi's own neighbour table, so unlike `/api/tuya/devices` it is meaningless anywhere but the Pi
+  and should say so rather than returning a confident empty answer.
 - **FI-006** (S) Wire `StaleDataBadge` into the remaining views that derive staleness inline, so freshness is announced consistently rather than re-implemented per card. *(Partly addressed 2026-08-21: every view now shares one wall-clock tick and one stale-dim constant per medium, but the badge itself is still not used everywhere.)*
 
 ### Accessibility
@@ -1564,7 +1637,7 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 | ~~1~~ | ~~"Stage 1 is view-only…"~~ | — | **Resolved.** `README.md`'s Rules section now says "Control exists, but hardware dispatch is gated" and describes the audit-row-first ordering accurately. |
 | ~~2~~ | ~~`package.json` `description` says "view-only"~~ | — | **Resolved.** It describes audited, gate-controlled dispatch. |
 | 3 | Architecture planning proposed MQTT + Home Assistant as the device layer | planning docs vs. `shared/registry.mjs` + `test/contract.test.mjs`, which asserts the generated flow contains no MQTT | **The code.** The simpler design was chosen deliberately; MQTT/HA was abandoned. |
-| 4 | Mosquitto is described as dropped, but the broker is installed and running on the Pi | planning docs vs. the live host | **Both, partially.** The bridge genuinely does not use MQTT; the broker is a survivor of the pre-Stage-1 flow. See RM-005. |
+| 4 | Mosquitto is described as dropped, but the broker is installed and running on the Pi | planning docs vs. the live host | **Both, partially — and now measurably idle.** The bridge genuinely does not use MQTT; the broker is still installed, running, and subscribed to by one flow node. As of 2026-08-26 it carries **no traffic at all**: five minutes on every topic, zero messages (§5 Q2). So it is not a second device layer, it is a dependency nothing currently feeds — which is the thing to weigh before RM-026 chooses to route the inverter through it. |
 | ~~5~~ | ~~`README.md` points at a Stage 1 plan path outside the repo~~ | — | **Resolved.** `README.md` now points at `ROADMAP.md` and the two in-repo docs. |
 
 ---
@@ -1579,10 +1652,13 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
    the second explains `mtr_co_yellow` dropping three days earlier than everything else. Both
    fixed — see RM-001.
 
-2. **Is the ESP32 still publishing its AC status?** (RM-005) Nothing arrived during a live
-   listen, but the ESP32 is a 2.4 GHz device and the site is on 5 GHz, so the outage fully
-   explains the silence. Answerable only once RM-001 is fixed. Everything else that used
-   Mosquitto has now been removed.
+2. ~~**Is the ESP32 still publishing its AC status?**~~ **Answered 2026-08-26: no.** The
+   previous answer excused the silence — the ESP32 is 2.4 GHz and the Pi was on 5 GHz, so the
+   outage explained it. That excuse is now gone: with the Pi back on the device SSID, a
+   five-minute subscription to **every** topic on the local broker saw zero messages. The broker
+   is running and the flow still subscribes to `nbric/ac/status`. So the ESP32 itself is silent,
+   and has been for days with nothing noticing — which is the more useful finding, because it
+   says any MQTT path here needs a liveness check to be trustworthy (see RM-026(b)).
 3. ~~**Was the light token ever exercised against real hardware?**~~ **Answered 2026-08-25.**
    The operator toggled `l6` from the Control page and the physical fixture responded, with
    three `POST /api/command` calls logged `-> OK` and Node-RED showing `Connected to device!`
