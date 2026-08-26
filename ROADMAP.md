@@ -1,7 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-26 (UTC), late — Track B opened: the replication refactor is now planned work, not an aspiration
-**Audited at commit:** `9fed49c`
+**Last audited:** 2026-08-26 (UTC), late — RM-027 built: the system knows which site it is, and two migrations wait on an operator
+**Audited at commit:** `10fce92`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
 discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
@@ -110,8 +110,12 @@ column landed all went **local**, with no cloud fallbacks.
 6. **FI-009 (S)** — narrow the three remaining whole-map store selectors.
 7. **RM-026 Deye** — as soon as the logger is on the network; see its entry for the decision
    between the two integration shapes. Re-verified absent 2026-08-26 evening.
-8. **RM-027 (M)** — the first step of **Track B**, below. Site identity: nothing in this system
-   knows which building it is, and one singleton table says so out loud.
+8. ~~**RM-027 (M)** — site identity.~~ **Code done 2026-08-26; two migrations wait on the
+   operator.** `supabase/phase19_sites.sql` then `supabase/phase20_site_scoping.sql`, in that
+   order, by hand in the SQL editor. **Rehearse first** — `supabase/rehearse.sh` needs Docker
+   or `psql`, and the workstation this was written on had neither. Nothing is deployed and
+   nothing is broken meanwhile: every code change so far defaults to today's behaviour.
+   Next after that is **RM-028**, the space tree.
 
 **Track B — replication (RM-027 – RM-034), added 2026-08-26.** Everything above is this site;
 Track B is every other site. It is listed after the small items because none of it is urgent,
@@ -1971,7 +1975,32 @@ later is configuration rather than a second migration.
 internet. EX-130 was built to guarantee it. Topology may live in Supabase; flow-critical wiring
 may not.
 
-- [ ] **RM-027** Site identity. Nothing in this system knows which building it is.
+- [ ] **RM-027** Site identity. Nothing in this system knew which building it was.
+      **BUILT 2026-08-26, NOT YET APPLIED.** Four commits: `3dea05d` the site module,
+      `aa1e053` the timezone, `fbc77bf` the policy floor, `10fce92` the two migrations.
+      *What is left is an operator action, not code:* apply `supabase/phase19_sites.sql`
+      then `supabase/phase20_site_scoping.sql`, in that order, by hand in the SQL editor.
+      **Rehearse first.** `supabase/rehearse.sh` now seeds a second site and asserts what
+      phase20 actually creates — two sites can hold thresholds, a duplicate for one site is
+      still refused, the backfill reached all 120 pre-existing rows, and an unknown
+      `site_id` is refused by the foreign key. **It has not been run**: this pass was
+      written on a workstation with no Docker and no `psql`, the same gap as §5 Q8. That is
+      the only unverified claim in this entry.
+      *Nothing is deployed and nothing is at risk meanwhile.* Every code change defaults to
+      the current behaviour — `iso8`'s offset defaults to 480 and `test/contract.test.mjs`
+      passes untouched, proven by neutering the default and watching it go red.
+      **The query changes are deliberately NOT done yet** and must not be: swapping
+      `.eq('id', 1)` for `.eq('site_id', …)` against a table with no such column is a
+      PostgREST 400, and it would take the Automation page and the scheduler down. That is
+      the second half of this entry, after the migrations are confirmed applied.
+      *Shipped and live already, because it needed no schema:* **the aircon can no longer be
+      commanded below 25 °C** — the university policy quoted in the funded plan, which the
+      code had contradicted since the setpoint feature was built. Verified over real HTTP:
+      18 returns `400 below_policy_floor`, 25 returns `202`. Closes §5 Q10.
+      `shared/sites/mmsu-nberic-care/site.mjs`, `shared/siteConfig.mjs`,
+      `supabase/phase19_sites.sql`, `supabase/phase20_site_scoping.sql`,
+      `src/components/control/setpointOptions.ts`
+      *Original statement of the problem, kept because it is what the migrations fix:*
       *Acceptance:* a second `sites` row can exist, this Pi writes only its own, and
       `npm run test:bridge` still asserts an identical `/api/readings/latest` shape.
       `supabase/schema.sql` makes `dsm_thresholds` a singleton — `check (id = 1)`, commented
@@ -1983,8 +2012,13 @@ may not.
       becomes a thin composer and keeps exporting `DEVICE_REGISTRY`, `PHASE_MAP`, `METERED`,
       `TIMING` and `publicDevices()`, so **every existing import keeps working** — that is what
       makes this mechanical rather than a rewrite.
-      *Also closes §5 Q8's open question about the report timezone*, which is currently a SQL
-      default nobody has checked against what the devices actually reset their daily counters on.
+      *Does NOT close §5 Q8's report-timezone question, and the plan for this phase was wrong
+      to say it would.* `generate_monthly_report`'s `p_tz` is already a parameter with a caller
+      that passes a value, so changing its SQL default would be churn rather than a fix. The
+      duplication that did need resolving — a hardcoded UTC offset in the bridge AND a zone in
+      the report — is now one value in `SITE` with a test asserting the two forms agree. Whether
+      that value matches what the devices actually reset their daily counters on is still
+      unverified, and still needs a month reconciled by hand.
       `shared/buildLatest.mjs`'s `iso8()` hardcodes a fixed UTC offset and gains a parameter,
       defaulting to today's value so nothing changes shape.
       *First concrete use, and worth doing on its own merits:* `shared/commands.mjs` sets
@@ -2193,7 +2227,12 @@ may not.
    sparse month cannot quote a bare total), but no report has been generated from real rows.
    Blocked on RM-009.
 
-10. **Is 16 °C an acceptable aircon setpoint here?** `shared/commands.mjs` sets `ACU_MIN_C = 16`
+10. ~~**Is 16 °C an acceptable aircon setpoint here?**~~ **Answered by building it,
+    2026-08-26.** The floor is 25, it lives in `SITE.policy`, and `validateCommand` enforces
+    it server-side — so a request that never went through the dashboard is refused too.
+    `ACU_MIN_C` was deliberately left at 16: that is what the IR library has codes for, a
+    hardware bound, and a policy may narrow it but never widen it. **If 25 is wrong, one
+    value in one file changes it.** Original question: `shared/commands.mjs` sets `ACU_MIN_C = 16`
     and validates it server-side, so the Control page can legitimately command it. The funded
     project plan's Key Features state the university's policy as **"not lower than 25 °C"**.
     Either the floor is wrong or the plan is describing an aspiration rather than a rule, and
