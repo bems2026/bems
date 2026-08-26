@@ -1,12 +1,16 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-26 (UTC), from the Pi itself — full triage rebuild
-**Audited at commit:** `999c7f4`
+**Last audited:** 2026-08-26 (UTC), evening — RM-026 re-verification and triage correction
+**Audited at commit:** `6849f1e`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
 discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
 discovery ports, the cloud's per-device MAC joined against the Pi's ARP table, and the live flow
 read back through the admin API.
+The 2026-08-26 evening pass ran from a **remote** session, with every network check executed on
+the Pi over the tailnet — ARP and a UDP broadcast mean nothing anywhere else. It re-verified
+RM-026 and corrected three §0 claims that had gone stale, two of them within the same day: see
+RM-026, RM-020 and EX-101.
 The Phase 10-13 entries below were added from a workstation with no database access — see
 §5 Q8 for exactly what that leaves unverified.
 
@@ -27,7 +31,10 @@ The system is **healthy and honest**: 15/21 devices online, all five services up
 writing every minute, and the dashboard no longer reports readings it cannot actually observe.
 Three things stand between here and "finished":
 
-1. **Three outlets need a person at the office** (RM-020) — no software path exists.
+1. **Two outlets need a person at the office** (RM-020) — no software path exists. This was
+   three until the evening of 2026-08-26, when `co5` answered ARP again and moved to RM-021,
+   which is a config change rather than a drive. Membership moves hourly: re-measure, never
+   memorise.
 2. **Auto-shed is built but inert** until someone says which loads may be shed first (RM-006c).
    This is the largest *finished* feature that does nothing yet, and it is one decision.
 3. **The solar inverter is not on the network** (RM-026) — the integration is stubbed and
@@ -39,7 +46,7 @@ Everything else is small, and the build order below is honest about size.
 
 | Item | Why it is stuck |
 |---|---|
-| **RM-020** Power-cycle `co4`–`co6` | Absent from the segment entirely — no ARP entry, so not associated to the AP. **Operator cannot do this during office hours** (stated 2026-08-26) and will say when they can. Was `co1`–`co6`; `co1`–`co3` came back once the Pi was returned to the device network (RM-023), so **re-run `npm run tuya:macs` before the trip** — the list moves. |
+| **RM-020** Power-cycle `co4` and `co6` | Absent from the segment entirely — no ARP entry, so not associated to the AP. **Operator cannot do this during office hours** (stated 2026-08-26) and will say when they can. **Two, not three, as of 2026-08-26 evening:** `co5` answers ARP and is RM-021 (a config change, no drive). Was `co1`–`co6`; `co1`–`co3` came back once the Pi was returned to the device network (RM-023). `co4` itself moved `stale` → `absent` inside one session, so **re-run `npm run tuya:macs` before the trip** — the list moves, and it moved twice on the day this row was last rewritten. |
 | **RM-007** Kiosk sign-in | Needs one interactive login at the physical screen. `ibems-kiosk` is inactive. |
 | **RM-016** IR Blaster + Outside Temp | Re-pairing needs the devices and the Smart Life account. Quiesced meanwhile, so they cost nothing but still cannot report. |
 
@@ -47,7 +54,7 @@ Everything else is small, and the build order below is honest about size.
 
 | Item | Why it is stuck |
 |---|---|
-| **RM-026** Deye/Solarman inverter | The logger is **not on the device SSID**. Verified 2026-08-26: its configured address is the stick's own AP-mode default, which routes to the gateway and times out; a sweep of the device subnet found **no host listening on the Solarman port**; and a standard UDP logger discovery broadcast drew **no reply**. The Node-RED side is a stub — one config node and one register node, wired to nothing. Nothing can be built or tested until the stick is joined to the device SSID. |
+| **RM-026** Deye/Solarman inverter | The logger is **not on the device SSID**. **Re-verified 2026-08-26 evening and still absent**, now with a census rather than a sweep: every neighbour MAC on the device subnet was diffed against the cloud's own device MACs, and **the only non-Tuya host on the segment is the router**. A UDP logger-discovery broadcast drew **no reply** (every datagram back was the Pi's own probe echoing). Its configured address is in the stick's own AP-mode subnet, which has no route from the Pi. The Node-RED side is a stub — one config node and one register node, wired to nothing — and no Solarman credentials exist, so the vendor-cloud route is not quietly available either. Nothing can be built or tested until the stick is joined to the device SSID. |
 | **RM-005** ESP32 AC sniffer | Publishes nothing. The broker is running and the flow subscribes, but a five-minute listen on all topics saw **zero messages** — and this was on the correct 2.4 GHz network, so the old explanation ("the Pi was on 5 GHz") no longer covers it. The ESP32 itself is silent. |
 
 ### Waiting on elapsed time, not on work
@@ -65,34 +72,41 @@ Everything else is small, and the build order below is honest about size.
   first is a judgement about the building, not a technical question. **Highest-value single
   decision on this list.**
 
-### One migration still to apply by hand
+### The migration that was outstanding is applied
 
-**`supabase/phase18_command_via.sql`** (EX-101). The code tolerates its absence — it retries
-the outcome patch without the column — so nothing is broken. But until it runs, *which devices
-needed the cloud fallback this week* cannot be asked, and that is the question that spots a
-device going bad before it goes dark.
+**`supabase/phase18_command_via.sql`** (EX-101) **has run.** This section previously said it
+was still to be applied by hand; that was stale. Checked 2026-08-26 evening: the `via` column
+exists, the migration's own `comment on column` text is served in the PostgREST OpenAPI
+description — which is what distinguishes "the file ran" from "a column appeared somehow" — and
+the newest command rows carry `via=local` while older ones are `NULL`, exactly as that
+comment predicts.
+
+So *which devices needed the cloud fallback this week* is now an answerable question, and the
+first answer is a reassuring one: of the commands on record, the three dispatched since the
+column landed all went **local**, with no cloud fallbacks.
 
 ### Build order — what to do next, largest value first
 
-1. **Apply the one migration above.** Minutes, unblocks a real diagnostic.
-2. **RM-006c tiers** — one operator decision, then auto-shed starts working. Nothing to build.
-3. **FI-015 (S)** — serve the on-segment/absent split (`npm run tuya:macs`) through the proxy
+1. **RM-006c tiers** — one operator decision, then auto-shed starts working. Nothing to build.
+2. **FI-015 (S)** — serve the on-segment/absent split (`npm run tuya:macs`) through the proxy
    so the Devices page can show it. The single most useful diagnostic this project has is
    currently SSH-only, and it is the one that decides whether someone drives to the office.
-4. **FI-008 (S)** — a contrast regression guard. Three AA failures were found by hand during
+   **Stronger than when this was written:** on 2026-08-26 the split moved twice inside one
+   hour. A diagnostic that perishable should not need an SSH session to read.
+3. **FI-008 (S)** — a contrast regression guard. Three AA failures were found by hand during
    one audit and nothing prevents a fourth.
-5. **FI-006 (S)** — wire `StaleDataBadge` into the views that still derive staleness inline.
+4. **FI-006 (S)** — wire `StaleDataBadge` into the views that still derive staleness inline.
    **Worth more since EX-107**: timestamps are now honest, so a staleness badge finally means
    something on metered devices instead of being permanently fresh.
-6. **EX-096 device removal, end to end** — never run against a real device, because nothing
+5. **EX-096 device removal, end to end** — never run against a real device, because nothing
    has been enrolled yet. The first enrolment is also the first real test of the `switch` path
    fixed in EX-094.
-7. **FI-011 (S)** — push the monthly report through the alert channel EX-103 already built.
-8. **FI-009 (S)** — narrow the three remaining whole-map store selectors.
-9. **RM-026 Deye** — as soon as the logger is on the network; see its entry for the decision
-   between the two integration shapes.
-10. **FI-002 / FI-003 (L)** — setup wizard and packaging for a second site. Only worth starting
-    once the first site is boring.
+6. **FI-011 (S)** — push the monthly report through the alert channel EX-103 already built.
+7. **FI-009 (S)** — narrow the three remaining whole-map store selectors.
+8. **RM-026 Deye** — as soon as the logger is on the network; see its entry for the decision
+   between the two integration shapes. Re-verified absent 2026-08-26 evening.
+9. **FI-002 / FI-003 (L)** — setup wizard and packaging for a second site. Only worth starting
+   once the first site is boring.
 
 **Deliberately not doing:** the one-click bridge restart deferred from EX-100. It needs a
 `sudoers` entry that would let any authenticated app user bounce the bridge, and the two
@@ -381,6 +395,19 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       outage still surfaces as an unrecorded outcome instead of being masked by a retry that
       drops a field and calls it success. A runbook note would have had to be read at exactly
       the right moment; this does not.
+      **THE MIGRATION HAS RUN — verified 2026-08-26 evening.** §0 carried it as outstanding
+      for longer than it actually was. Three pieces of evidence, because "the column exists" on
+      its own would not distinguish the file having run from a column arriving some other way:
+      the `via` column is present; the migration's own `comment on column` text is served
+      verbatim in the PostgREST OpenAPI description, and only that file writes it; and the
+      newest command rows carry `via=local` while everything older is `NULL`, which is
+      precisely the boundary the comment describes.
+      So the tolerate-a-missing-column retry above is now dead weight in the happy path. **Leave
+      it there** — it is the guard for a rebuilt database or a second site, which is exactly the
+      window it was written for, and it costs nothing until then.
+      *First reading of the diagnostic this unblocked:* every command dispatched since the
+      column landed went **local**, with no cloud fallbacks. Nothing to act on, which is the
+      answer you want from a health query.
       `supabase/phase18_command_via.sql`, `server/auditedDispatch.mjs`, `server/proxy.mjs`,
       `src/stores/commandStore.ts`, `src/components/layout/AlertsPopover.tsx`
 - [x] **EX-102** (FI-010) The 24h chart stops drawing a device that was not reporting.
@@ -1014,9 +1041,25 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       without writing anything. `server/schemaProbe.mjs` (EX-031b) now encodes both halves of
       that method so the next check does not depend on remembering it.
 
-- [ ] **RM-020** Three of the seven convenience outlets are off the network entirely.
-      *Acceptance:* `co4`–`co6` answer locally again, and stay answering for an hour.
-      **Population as of 2026-08-26 09:30: `co4`, `co5`, `co6`.** It was six; `co1`–`co3` returned
+- [ ] **RM-020** Two of the seven convenience outlets are off the network entirely.
+      *Acceptance:* `co4` and `co6` answer locally again, and stay answering for an hour.
+      **Population as of 2026-08-26 evening: `co4` and `co6`.** `co5` left this entry —
+      it answers ARP, so it is associated to the AP and its remedy is RM-021's config change,
+      not a drive to the office.
+      **Watch how fast this moved, because it is the point of the entry.** Inside a single
+      session on 2026-08-26, `tuya:macs` first reported `co4` and `co5` both on the segment
+      and only `co6` absent; twenty minutes later `co4` had gone `stale` → `absent` while
+      `co5` was still answering. Two runs, two different answers, no intervention. A list of
+      devices to power-cycle is a perishable good — **re-run `npm run tuya:macs` immediately
+      before the trip**, not the day before.
+      *Method note, since `STALE` is easy to misread:* an ARP entry in state `STALE` is a
+      cached one the kernel has not confirmed, so it is weaker evidence than `REACHABLE`. The
+      way to settle it is to force resolution and watch the transition. `co5` went to
+      `REACHABLE` and then decayed back to `STALE` — which is exactly what a device that is
+      associated but talking to nobody looks like — while `co7`, used as the positive control,
+      held `REACHABLE` throughout because the bridge is actively polling it. `STALE` here is
+      a symptom of being undiscoverable, not evidence of being gone.
+      **Prior population, 2026-08-26 09:30: `co4`, `co5`, `co6`.** It was six; `co1`–`co3` returned
       once the Pi was moved back to the device network (RM-023), which is a reminder that
       "unreachable" was partly the Pi's own fault and worth ruling out before anyone drives in.
       **NARROWED 2026-08-25 evening, from six devices to two.** The claim below that all six had
@@ -1107,9 +1150,16 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       not a terminal state and the churn is bidirectional. A static `deviceIp` is still the
       right fix — it would have held `co3` through the dormant window instead of losing it for
       hours — but the urgency is lower than a permanently dark device implies.
-      **RESOLVED WITHOUT THE REMEDY, 2026-08-26.** `co1`, `co2` and `co3` are all online and on
-      the segment; `co4`–`co6` are absent outright and are RM-020. Nothing is in this entry's
-      state right now, and the static `deviceIp` was never applied.
+      **`co5` IS IN THIS STATE AS OF 2026-08-26 EVENING**, so the sentence below — written
+      that morning — no longer holds. It answers ARP (confirmed by forcing resolution and
+      watching it reach `REACHABLE`, against `co7` as a positive control) while reporting
+      `online: false` to the bridge: associated to the AP, not broadcasting, not discoverable.
+      That is precisely the condition this entry describes and the `deviceIp` remedy is the
+      one that fits it. `co4` and `co6` are absent from the segment and remain RM-020.
+      *Earlier that same day:* **RESOLVED WITHOUT THE REMEDY, 2026-08-26 (morning).** `co1`,
+      `co2` and `co3` are all online and on
+      the segment; `co4`–`co6` were absent outright and were RM-020. Nothing was in this entry's
+      state at that moment, and the static `deviceIp` has still never been applied.
       *What actually fixed it was RM-023* — returning the Pi to the device network. That is the
       uncomfortable part worth keeping: a night was spent characterising these devices as
       half-dead, and the AP outage the next morning reset them cleanly while stranding the Pi
@@ -1285,12 +1335,28 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       *Acceptance:* inverter power and daily yield appear in `/api/readings/latest` and in
       Supabase alongside the meters, on the same cadence, with the same honesty rules.
       **VERIFIED STATE 2026-08-26 — the hardware is not on the network, so nothing can be
-      built yet.** Three independent checks, all negative:
-      the configured address is the logger stick's **AP-mode default**, which routes to the
-      gateway and times out; a sweep of the whole device subnet found **no host listening on the
-      Solarman TCP port**; and a standard UDP logger-discovery broadcast drew **no reply** (only
-      the Pi's own packet echoing back). ARP shows nothing on the segment but Tuya devices and
-      the router.
+      built yet.** Checks, all negative:
+      the configured address is in the logger stick's own **AP-mode subnet**, which has no route
+      from the Pi and times out at the gateway; a sweep of the whole device subnet found **no
+      host listening on the Solarman TCP port**; and a standard UDP logger-discovery broadcast
+      drew **no reply** (only the Pi's own packet echoing back). ARP shows nothing on the segment
+      but Tuya devices and the router.
+      *(An earlier version of this line said "AP-mode **default**". The address is in that
+      subnet but is not the vendor's default host — a small thing, but the difference between
+      "nobody ever configured it" and "it was configured while the stick was in AP mode".)*
+      **RE-VERIFIED 2026-08-26 evening, remotely, and still absent.** The re-check is worth
+      more than the first one because it replaced a sweep with a **census**: every neighbour on
+      the device subnet was forced to resolve, then each MAC was diffed against the cloud's own
+      per-device MAC list. **Exactly one host on the segment is not a Tuya device: the router.**
+      That is a stronger statement than "the Solarman port is closed" — it says there is no
+      unaccounted host for the logger to *be*. The UDP discovery broadcast was repeated to both
+      the subnet and global broadcast addresses; every datagram received was the Pi's own probe
+      echoing back, and there were **zero genuine replies**.
+      **Also checked, and worth recording because it closes a door somebody will otherwise try:
+      there are no Solarman credentials** in `.env` or `server/.env`. So the vendor-cloud
+      route is not quietly available as a way around the network problem — it would need
+      credentials the operator has not provided, and it would trade a local read for a
+      dependency on someone else's uptime.
       **What already exists**, and it is less than it looks: `node-red-contrib-solarman-devices`
       is installed, and the live flow has a `Deye Solar Inverter` tab containing **one node** —
       a `solarman-register` wired to nothing — plus a `solarman-device` config node holding the
