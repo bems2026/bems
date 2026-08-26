@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-26 (UTC), evening — offline command capability; RM-026 shape decided
+**Last audited:** 2026-08-26 (UTC), evening — offline command capability (both callers); RM-026 shape decided
 **Audited at commit:** `6849f1e`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
@@ -11,8 +11,8 @@ The 2026-08-26 evening pass ran from a **remote** session, with every network ch
 the Pi over the tailnet — ARP and a UDP broadcast mean nothing anywhere else. It re-verified
 RM-026 twice and corrected three §0 claims that had gone stale, two of them within the same
 day: see RM-026, RM-020 and EX-101. It also closed the gap in EX-130 — an internet outage had
-been removing control of a device fleet that is entirely local — and settled RM-026's
-integration shape.
+been removing control of a device fleet that is entirely local, for scheduled and auto-shed commands
+as well as manual ones — and settled RM-026's integration shape.
 The Phase 10-13 entries below were added from a workstation with no database access — see
 §5 Q8 for exactly what that leaves unverified.
 
@@ -911,7 +911,7 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 - [x] **EX-120** 607 frontend tests (vitest) — `src/**/*.test.ts(x)`
 - [x] **EX-121** 348 bridge/contract tests, including assertions that the generated flow contains no write nodes and no MQTT — `test/`
-- [x] **EX-122** 351 server tests against real spawned processes and hand-rolled fake HTTP servers, no mocking library — `server/*.test.mjs`
+- [x] **EX-122** 356 server tests against real spawned processes and hand-rolled fake HTTP servers, no mocking library — `server/*.test.mjs`
 - [x] **EX-105** Environment hygiene is checked, not trusted. A module that is *imported* must
       not reconfigure the process: `server/envHygiene.test.mjs` imports each route module in a
       clean child process and asserts it added no keys to `process.env`, and separately greps
@@ -975,8 +975,37 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       UI claim the stronger one.
       *Break-glass remains view-only* — the operator's decision, and a test pins it, because an
       outage is exactly the circumstance that could quietly promote it.
+      **BOTH CALLERS, NOT ONE.** The first version of this covered only the proxy, which left
+      `scheduler.mjs` — schedules and auto-shed — still unable to record and therefore skipping
+      every command during an outage. It failed *closed*, so nothing unsafe happened, but a
+      scheduled lights-off silently not running is a real cost in a building, and it recreated
+      exactly the asymmetry `auditedDispatch`'s own docblock exists to prevent: one safety
+      contract, two callers, different behaviour. The scheduler is worth covering precisely
+      because it keeps working through an outage — its schedules and thresholds are held in
+      memory and only *refreshed* from Supabase, so it goes on evaluating with nothing to
+      record against.
+      **One buffer file per writing process.** Both processes amend their own entry after
+      dispatch, which is a read-modify-write; `writeBuffer` rewrites the whole file, so two
+      processes sharing one would let a concurrent reader see a partial file and let the loser
+      of the interleaving discard the other's rows. Separate files remove the race outright
+      rather than narrowing it, and cost nothing — `ingest.mjs` drains a list. The backlog
+      reported to the UI sums both, because "the audit trail is behind" is one fact about the
+      system.
+      **A test leaked a fabricated command into the production queue, and that is now guarded.**
+      While these tests were being written, a full-suite run left a fake `l1` command in
+      `server/data/command-audit-buffer-scheduler.ndjson` — a row `ingest.mjs` would have
+      uploaded into the **real** audit trail on its next tick, attributed to a test user. The
+      cause is instructive rather than careless: the harness closes its fake Supabase while a
+      command is in flight, and a socket dying mid-request is indistinguishable from a real
+      outage, so it buffered exactly as designed. Every spawn in both harnesses now redirects
+      its state under `os.tmpdir()`, and `server/testStatePaths.test.mjs` reads the source to
+      keep it that way. *Source-level because the behavioural version cannot be written:* the
+      leak depends on a teardown race that does not reproduce on demand — deleting the fix and
+      re-running the file produced nothing. The guard found a third unredirected spawn site on
+      its first run.
       `server/jwtVerify.mjs`, `server/jwksCache.mjs`, `server/auditQueue.mjs`,
-      `server/proxy.mjs`, `server/ingest.mjs`,
+      `server/proxy.mjs`, `server/ingest.mjs`, `server/scheduler.mjs`,
+      `server/testStatePaths.test.mjs`,
       `src/components/control/AuditBacklogNote.tsx`, `src/stores/capabilitiesStore.ts`
 - [x] **EX-129** `npm run set-device-ip:pi` — the RM-021 remedy, as a reversible script.
       Gives a `tuya-smart-device` node a static `deviceIp` so the bridge stops depending on a

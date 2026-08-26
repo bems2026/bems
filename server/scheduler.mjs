@@ -29,6 +29,9 @@ import { dueCommands } from './schedulePlan.mjs';
 import { planShed } from './shedPlan.mjs';
 import { dispatchCommand, DISPATCH_CLASSES } from './dispatchLight.mjs';
 import { auditedDispatch } from './auditedDispatch.mjs';
+import { createBufferedAudit } from './auditQueue.mjs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -111,35 +114,77 @@ async function fetchLatest() {
   return { totals, readings };
 }
 
+/**
+ * Its OWN buffer file, not the proxy's.
+ *
+ * Both processes record commands, and both amend an entry after dispatch with the outcome —
+ * a read-modify-write. Two processes doing that to one file is a genuine race: `writeBuffer`
+ * rewrites the whole file, so a concurrent reader can see a partial one, and the loser of the
+ * interleaving silently discards the other's rows. One file per writer removes the race
+ * outright rather than narrowing it, and costs nothing: `ingest.mjs` drains a list.
+ */
+const COMMAND_BUFFER_PATH =
+  process.env.SCHEDULER_AUDIT_BUFFER_PATH ||
+  join(dirname(fileURLToPath(import.meta.url)), 'data', 'command-audit-buffer-scheduler.ndjson');
+
 /** Insert one `commands` row, asking PostgREST for the id back so the outcome can be
  * attached to it once dispatch has been attempted. */
-async function insertAudit(row) {
-  const res = await sb('commands', {
-    method: 'POST',
-    headers: { Prefer: 'return=representation' },
-    body: JSON.stringify({ ...row, accepted_at: new Date().toISOString(), confirmed: false, confirmation: 'none', target: null }),
-  });
+async function insertAuditRemote(row) {
+  let res;
+  try {
+    res = await sb('commands', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ ...row, accepted_at: new Date().toISOString(), confirmed: false, confirmation: 'none', target: null }),
+    });
+  } catch (err) {
+    // No answer was obtained. Only this may be buffered — see auditQueue.mjs. A status code
+    // below is Supabase ANSWERING, and an answer of "no" stays a refusal even out here where
+    // this daemon writes with the service-role key and RLS does not apply to it.
+    return { ok: false, unreachable: true, detail: String(err) };
+  }
   if (!res.ok) return { ok: false, detail: `HTTP ${res.status} ${await res.text().catch(() => '')}` };
   const body = await res.json().catch(() => null);
   return { ok: true, id: Array.isArray(body) ? body[0]?.id : body?.id };
 }
 
-async function updateAudit(id, patch) {
-  const res = await sb(`commands?id=eq.${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    // `return=representation` so the affected-row count can be checked: PostgREST reports a
-    // policy-blocked UPDATE as a success with an empty result, the trap 2e4c0c2 fixed on
-    // the schedule-save path. This daemon writes with the service-role key so RLS does not
-    // apply to it, but "the write reported 200 and changed nothing" is not a failure mode
-    // worth leaving detectable in only one of the two callers.
-    headers: { Prefer: 'return=representation' },
-    body: JSON.stringify(patch),
-  });
+async function updateAuditRemote(id, patch) {
+  let res;
+  try {
+    res = await sb(`commands?id=eq.${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      // `return=representation` so the affected-row count can be checked: PostgREST reports a
+      // policy-blocked UPDATE as a success with an empty result, the trap 2e4c0c2 fixed on
+      // the schedule-save path. This daemon writes with the service-role key so RLS does not
+      // apply to it, but "the write reported 200 and changed nothing" is not a failure mode
+      // worth leaving detectable in only one of the two callers.
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify(patch),
+    });
+  } catch (err) {
+    return { ok: false, unreachable: true, detail: String(err) };
+  }
   if (!res.ok) return { ok: false, detail: `HTTP ${res.status} ${await res.text().catch(() => '')}` };
   const rows = await res.json().catch(() => null);
   if (!Array.isArray(rows) || rows.length === 0) return { ok: false, detail: 'update affected no rows' };
   return { ok: true };
 }
+
+/**
+ * The unattended half of EX-130. Schedules and DSM thresholds are held in memory and refreshed
+ * periodically, so this daemon keeps evaluating through an internet outage — it simply could
+ * not RECORD, and record-then-act therefore skipped every command. A scheduled lights-off
+ * silently not happening is a real cost in a building, and it was inconsistent with the manual
+ * path, which is the asymmetry auditedDispatch's own docblock exists to prevent.
+ *
+ * Same rules as the proxy: a refusal still refuses, only an outage is buffered, and nothing
+ * moves without a durable record first.
+ */
+const audit = createBufferedAudit({
+  bufferPath: COMMAND_BUFFER_PATH,
+  insert: insertAuditRemote,
+  update: updateAuditRemote,
+});
 
 async function fire(cmd, reasonNote) {
   const device = DEVICE_REGISTRY.find((d) => d.id === cmd.device_id);
@@ -164,8 +209,8 @@ async function fire(cmd, reasonNote) {
     dispatchEnabled: HARDWARE_DISPATCH_ENABLED,
     dispatchClasses: DISPATCH_CLASSES,
     dispatch: (d, c) => dispatchCommand(d, c, { bridgeHost: BRIDGE_HOST, bridgePort: BRIDGE_PORT, lightApiToken: LIGHT_API_TOKEN }),
-    insertAudit,
-    updateAudit,
+    insertAudit: audit.insertAudit,
+    updateAudit: audit.updateAudit,
     log: (msg) => console.error(`[ibems-scheduler] ${msg}`),
   });
 

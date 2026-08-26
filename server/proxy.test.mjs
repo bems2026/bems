@@ -169,6 +169,20 @@ function spawnChild(script, env) {
 /** Spins up: fake Supabase auth + a real mock-bridge + the proxy pointed at both.
  * `proxyEnv` merges in extra env for the proxy child — used to toggle
  * `HARDWARE_DISPATCH_ENABLED` per test. */
+/**
+ * Per-test locations for everything the proxy persists. The defaults live in `server/data/`,
+ * which on the Pi is the live outage queue and the live key cache — a test must never write
+ * there.
+ */
+function tempStatePaths() {
+  const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-proxy-state-'));
+  return {
+    COMMAND_AUDIT_BUFFER_PATH: join(dir, 'command-audit-buffer.ndjson'),
+    SCHEDULER_AUDIT_BUFFER_PATH: join(dir, 'command-audit-buffer-scheduler.ndjson'),
+    JWKS_CACHE_PATH: join(dir, 'jwks.json'),
+  };
+}
+
 async function setup(proxyEnv = {}) {
   const fakeAuth = await startFakeSupabaseAuth();
   const bridgePort = nextPort++;
@@ -195,6 +209,9 @@ async function setup(proxyEnv = {}) {
     SUPABASE_URL: fakeAuth.url,
     VITE_SUPABASE_ANON_KEY: 'dummy-anon-key',
     BREAK_GLASS_PASSWORD_HASH: BREAK_GLASS_HASH,
+    // Never the defaults — see the note in scheduler.test.mjs. A buffered row written to
+    // `server/data/` is a fabricated command queued for upload into the real audit trail.
+    ...tempStatePaths(),
     ...proxyEnv,
   });
 
@@ -229,6 +246,9 @@ async function setupDispatch(proxyEnv = {}) {
     BREAK_GLASS_PASSWORD_HASH: BREAK_GLASS_HASH,
     HARDWARE_DISPATCH_ENABLED: 'true',
     LIGHT_API_TOKEN: 'test-light-token',
+    // This harness is the one that actually dispatches, so it is the one most likely to
+    // buffer a row. See tempStatePaths.
+    ...tempStatePaths(),
     ...proxyEnv,
   });
   return {
@@ -762,6 +782,7 @@ test('the proxy refuses to start with HARDWARE_DISPATCH_ENABLED=true and no LIGH
         VITE_SUPABASE_ANON_KEY: 'dummy-anon-key',
         HARDWARE_DISPATCH_ENABLED: 'true',
         LIGHT_API_TOKEN: '',
+        ...tempStatePaths(),
       }).then((child) => {
         leakedChild = child;
         return child;
@@ -807,6 +828,7 @@ test('a bridge that accepts and then hangs is given up on, rather than held open
     BRIDGE_TIMEOUT_MS: '600',
     SUPABASE_URL: fakeAuth.url,
     VITE_SUPABASE_ANON_KEY: 'dummy-anon-key',
+    ...tempStatePaths(),
   });
   try {
     const started = Date.now();
@@ -834,6 +856,7 @@ test('a 502 does not leak the raw upstream error to the caller', async () => {
     BRIDGE_PORT: String(nextPort++), // nothing listening: connection refused
     SUPABASE_URL: fakeAuth.url,
     VITE_SUPABASE_ANON_KEY: 'dummy-anon-key',
+    ...tempStatePaths(),
   });
   try {
     const res = await fetch(`http://localhost:${proxyPort}/api/devices`, {

@@ -53,7 +53,10 @@ const BUFFER_PATH = process.env.INGEST_BUFFER_PATH || path.join(__dirname, 'data
  * assumes a single writer would put audit rows at risk of being dropped by a concurrent
  * rewrite. See auditQueue.mjs — these are the rows that say a relay moved.
  */
-const COMMAND_BUFFER_PATH = process.env.COMMAND_AUDIT_BUFFER_PATH || path.join(__dirname, 'data', 'command-audit-buffer.ndjson');
+const COMMAND_BUFFER_PATHS = [
+  process.env.COMMAND_AUDIT_BUFFER_PATH || path.join(__dirname, 'data', 'command-audit-buffer.ndjson'),
+  process.env.SCHEDULER_AUDIT_BUFFER_PATH || path.join(__dirname, 'data', 'command-audit-buffer-scheduler.ndjson'),
+];
 const RETENTION_DAYS = Number(process.env.INGEST_RETENTION_DAYS) || DEFAULT_RETENTION_DAYS;
 
 /**
@@ -152,26 +155,31 @@ async function flushBuffer() {
  * row must not stop telemetry being written.
  */
 async function drainCommandAudit() {
-  const taken = takeBufferedCommands(COMMAND_BUFFER_PATH);
-  if (taken.entries.length === 0) return;
+  // One file per writing process — the proxy and the scheduler each amend their own entries
+  // after dispatch, and two processes read-modify-writing one file would race. Draining a
+  // list is what makes that separation free. See auditQueue.mjs.
+  for (const bufferPath of COMMAND_BUFFER_PATHS) {
+    const taken = takeBufferedCommands(bufferPath);
+    if (taken.entries.length === 0) continue;
 
-  const remaining = [];
-  let uploaded = 0;
-  for (let i = 0; i < taken.entries.length; i++) {
-    const entry = taken.entries[i];
-    try {
-      await supabase.upsert(entry.table, entry.rows, entry.onConflict ? { onConflict: entry.onConflict } : undefined);
-      uploaded++;
-    } catch {
-      // Stop at the first failure and keep the rest in order, matching flushBuffer. Retrying
-      // the tail now would reorder the audit trail around a stuck row.
-      remaining.push(...taken.entries.slice(i));
-      break;
+    const remaining = [];
+    let uploaded = 0;
+    for (let i = 0; i < taken.entries.length; i++) {
+      const entry = taken.entries[i];
+      try {
+        await supabase.upsert(entry.table, entry.rows, entry.onConflict ? { onConflict: entry.onConflict } : undefined);
+        uploaded++;
+      } catch {
+        // Stop at the first failure and keep the rest in order, matching flushBuffer. Retrying
+        // the tail now would reorder the audit trail around a stuck row.
+        remaining.push(...taken.entries.slice(i));
+        break;
+      }
     }
-  }
-  restoreUndrained(COMMAND_BUFFER_PATH, taken, remaining);
-  if (uploaded) {
-    console.log(`[ibems-ingest] uploaded ${uploaded} command audit row(s) recorded during an outage${remaining.length ? `, ${remaining.length} still pending` : ''}`);
+    restoreUndrained(bufferPath, taken, remaining);
+    if (uploaded) {
+      console.log(`[ibems-ingest] uploaded ${uploaded} command audit row(s) recorded during an outage${remaining.length ? `, ${remaining.length} still pending` : ''}`);
+    }
   }
 }
 

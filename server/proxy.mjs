@@ -146,6 +146,12 @@ const JWKS_ISSUER = SUPABASE_URL ? `${SUPABASE_URL}/auth/v1` : null;
 const JWKS_CACHE_PATH = process.env.JWKS_CACHE_PATH || join(dirname(fileURLToPath(import.meta.url)), 'data', 'jwks.json');
 const JWKS_REFRESH_MS = 6 * 60 * 60 * 1000; // 6h — signing keys rotate rarely
 const COMMAND_BUFFER_PATH = process.env.COMMAND_AUDIT_BUFFER_PATH || join(dirname(fileURLToPath(import.meta.url)), 'data', 'command-audit-buffer.ndjson');
+/**
+ * The scheduler records to its own file (one writer per file — see auditQueue.mjs), but the
+ * backlog reported to the UI has to cover both. "The audit trail is behind" is one fact about
+ * the system, and a scheduled command waiting to upload is exactly as behind as a manual one.
+ */
+const SCHEDULER_BUFFER_PATH = process.env.SCHEDULER_AUDIT_BUFFER_PATH || join(dirname(fileURLToPath(import.meta.url)), 'data', 'command-audit-buffer-scheduler.ndjson');
 
 const jwks = JWKS_URL ? createJwksCache({ url: JWKS_URL, cachePath: JWKS_CACHE_PATH }) : null;
 
@@ -606,7 +612,7 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, {
       hardware_dispatch_enabled: HARDWARE_DISPATCH_ENABLED,
       dispatch_classes: HARDWARE_DISPATCH_ENABLED ? DISPATCH_CLASSES : [],
-      audit_buffer_pending: bufferCount(COMMAND_BUFFER_PATH),
+      audit_buffer_pending: bufferCount(COMMAND_BUFFER_PATH) + bufferCount(SCHEDULER_BUFFER_PATH),
     });
   }
   if (req.method === 'POST' && url.pathname === '/api/enroll') {

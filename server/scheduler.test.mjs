@@ -4,6 +4,9 @@ import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
+import { readBuffer } from './ingestBuffer.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCHEDULER = join(HERE, 'scheduler.mjs');
@@ -18,7 +21,7 @@ let nextPort = 21400;
  * row's final state — a strictly stronger assertion than before, since it now proves the
  * whole record -> dispatch -> record-outcome sequence rather than just the opening insert.
  */
-function startFakeSupabase(scheduleRow, dsm = { max_phase_current: null, max_total_kw: null, auto_shed: false, updated_by: null }, deviceConfig = [], failCommandInsert = false) {
+function startFakeSupabase(scheduleRow, dsm = { max_phase_current: null, max_total_kw: null, auto_shed: false, updated_by: null }, deviceConfig = [], failCommandInsert = false, dropCommandWrites = false) {
   return new Promise((resolve) => {
     const port = nextPort++;
     const state = { commands: [] };
@@ -36,6 +39,14 @@ function startFakeSupabase(scheduleRow, dsm = { max_phase_current: null, max_tot
       if (req.url.startsWith('/rest/v1/device_config')) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify(deviceConfig));
+      }
+      if (req.url.startsWith('/rest/v1/commands')) {
+        // An OUTAGE, not a refusal: hang up the socket so `fetch` throws with no status at
+        // all. Distinct from failCommandInsert's 503, which is Supabase answering, and the
+        // difference decides whether the command may be buffered or must be refused.
+        // Scoped to the commands routes so schedules and thresholds still load — a daemon
+        // that never got its config would not reach the interesting code path.
+        if (dropCommandWrites) return req.socket.destroy();
       }
       if (req.url.startsWith('/rest/v1/commands') && req.method === 'POST') {
         if (failCommandInsert) {
@@ -131,7 +142,7 @@ function dueNowRow(over = {}) {
 const CYCLE_DONE = /first cycle complete/;
 
 async function run(env, scheduleRow, until = CYCLE_DONE, opts = {}) {
-  const sb = await startFakeSupabase(scheduleRow, opts.dsm, opts.deviceConfig, opts.failCommandInsert);
+  const sb = await startFakeSupabase(scheduleRow, opts.dsm, opts.deviceConfig, opts.failCommandInsert, opts.dropCommandWrites);
   const light = await startFakeLight(opts.latest);
   const child = spawn(process.execPath, [SCHEDULER], {
     env: {
@@ -140,6 +151,13 @@ async function run(env, scheduleRow, until = CYCLE_DONE, opts = {}) {
       SUPABASE_SERVICE_ROLE_KEY: 'test-service-key',
       BRIDGE_HOST: '127.0.0.1',
       BRIDGE_PORT: String(light.port),
+      // ALWAYS redirected, never left at the default. A test that buffers a command row to
+      // `server/data/` writes into the REAL outage queue, and `ingest.mjs` would then upload
+      // a fabricated command into the production audit trail. That is not hypothetical: it
+      // happened while this test file was being written, and `run()` closing the fake
+      // Supabase mid-command is enough to trigger it, because a socket dying mid-request is
+      // exactly the outage condition that buffers.
+      SCHEDULER_AUDIT_BUFFER_PATH: join(fs.mkdtempSync(join(os.tmpdir(), 'ibems-sched-buf-')), 'audit.ndjson'),
       ...env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -366,4 +384,62 @@ test('the audit row is opened before dispatch, so an interrupted command still l
   assert.equal(r.commands.length, 1);
   assert.equal(r.commands[0].status, 'dispatched', 'the outcome is attached after dispatch');
   assert.equal(r.lightRequests.length, 1);
+});
+
+test('a due schedule STILL fires when Supabase is unreachable, recorded to the local buffer', async () => {
+  // The unattended half of EX-130. Schedules live in memory and are refreshed periodically, so
+  // this daemon keeps evaluating right through an internet outage — it simply could not
+  // RECORD, and record-then-act therefore skipped every command. A scheduled lights-off
+  // silently not happening is a real cost in a building, and it left the two callers of
+  // auditedDispatch behaving differently in an outage, which is the asymmetry that helper's
+  // own docblock exists to prevent.
+  //
+  // Note the contrast with the test above: that one returns 503 and must still REFUSE, because
+  // a status code is Supabase answering. This one hangs up the socket, which is an outage.
+  const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-sched-'));
+  const bufferPath = join(dir, 'scheduler-audit.ndjson');
+  await waitForRoomInMinute();
+  const r = await run(
+    {
+      HARDWARE_DISPATCH_ENABLED: 'true',
+      LIGHT_API_TOKEN: 'test-token',
+      SCHEDULER_AUDIT_BUFFER_PATH: bufferPath,
+    },
+    dueNowRow(),
+    (s) => s.lightRequests.length >= 1,
+    { dropCommandWrites: true },
+  );
+
+  assert.equal(r.lightRequests.length, 1, 'the schedule must still reach the hardware');
+  assert.equal(r.commands.length, 0, 'and Supabase must have received nothing, since it was down');
+
+  const rows = readBuffer(bufferPath).map((e) => e.rows[0]);
+  assert.equal(rows.length, 1, 'the command has to be recorded durably, or it must not fire');
+  assert.equal(rows[0].device_id, dueNowRow().device_id);
+  assert.equal(rows[0].status, 'dispatched', 'the outcome is amended into the buffered row');
+});
+
+test('the scheduler buffers to its OWN file, never the proxy\'s', async () => {
+  // Both processes amend their entries after dispatch, which is a read-modify-write. Two
+  // processes doing that to one file race: writeBuffer rewrites the whole thing, so a
+  // concurrent reader can see a partial file and the loser silently discards the other's rows.
+  // One file per writer removes the race rather than narrowing it.
+  const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-sched-'));
+  const schedulerPath = join(dir, 'scheduler-audit.ndjson');
+  const proxyPath = join(dir, 'proxy-audit.ndjson');
+  await waitForRoomInMinute();
+  await run(
+    {
+      HARDWARE_DISPATCH_ENABLED: 'true',
+      LIGHT_API_TOKEN: 'test-token',
+      SCHEDULER_AUDIT_BUFFER_PATH: schedulerPath,
+      COMMAND_AUDIT_BUFFER_PATH: proxyPath,
+    },
+    dueNowRow(),
+    (s) => s.lightRequests.length >= 1,
+    { dropCommandWrites: true },
+  );
+
+  assert.equal(readBuffer(schedulerPath).length, 1);
+  assert.equal(readBuffer(proxyPath).length, 0, "the proxy's buffer must be untouched");
 });
