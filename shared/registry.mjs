@@ -52,6 +52,13 @@ export const DPS_MAPS = {
 import { ENROLLED_DEVICES } from './registry.enrolled.mjs';
 
 /**
+ * Re-exported so a consumer that already imports the registry does not need a second import
+ * for the site that registry belongs to. `shared/siteConfig.mjs` stays the single definition —
+ * this is a pointer, not a copy.
+ */
+export { SITE } from './siteConfig.mjs';
+
+/**
  * The devices this system was built around, hand-written and stable.
  * Enrolled devices are appended below — see `registry.enrolled.mjs`.
  */
