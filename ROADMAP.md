@@ -1,7 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-26 (UTC), evening — offline commands, broker lockdown, RM-026 shape decided
-**Audited at commit:** `ebb4c02`
+**Last audited:** 2026-08-26 (UTC), late — Track B opened: the replication refactor is now planned work, not an aspiration
+**Audited at commit:** `9fed49c`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
 discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
@@ -15,6 +15,13 @@ been removing control of a device fleet that is entirely local, for scheduled an
 as well as manual ones — and settled RM-026's integration shape.
 The Phase 10-13 entries below were added from a workstation with no database access — see
 §5 Q8 for exactly what that leaves unverified.
+The 2026-08-26 late pass was a **planning** pass, not a measurement one: no live check was
+re-run, so nothing above its date should be re-dated on its authority. It added §2's **Track B**
+(RM-027 – RM-034), the replication refactor, after an audit of what the codebase assumes about
+being one building in one room. It also renumbered four entries — the Auth & security block
+held a second EX-100 – EX-103, colliding with the alerts/command/chart/notification entries of
+the same numbers, and is now EX-108 – EX-111. Every cross-reference in this file pointed at the
+other four and none needed changing.
 
 > This repository is **public**. No tokens, keys, passwords, hostnames, IP addresses, or
 > Supabase project identifiers may appear in this file. Where a deployment detail matters,
@@ -103,8 +110,22 @@ column landed all went **local**, with no cloud fallbacks.
 6. **FI-009 (S)** — narrow the three remaining whole-map store selectors.
 7. **RM-026 Deye** — as soon as the logger is on the network; see its entry for the decision
    between the two integration shapes. Re-verified absent 2026-08-26 evening.
-8. **FI-002 / FI-003 (L)** — setup wizard and packaging for a second site. Only worth starting
-   once the first site is boring.
+8. **RM-027 (M)** — the first step of **Track B**, below. Site identity: nothing in this system
+   knows which building it is, and one singleton table says so out loud.
+
+**Track B — replication (RM-027 – RM-034), added 2026-08-26.** Everything above is this site;
+Track B is every other site. It is listed after the small items because none of it is urgent,
+and **before** it would once have been, because the argument that held it back has weakened.
+
+That argument was "only worth starting once the first site is boring", and it was right when the
+first site was on fire. It is now the wrong test: most of what remains here is blocked on a
+person being at the office, on hardware joining a network, or on a week of elapsed time — none of
+which is unblocked by waiting. Track B is the largest thing that can be worked on *while* those
+resolve. It is also Milestone 6 of the funded project, due June 2027, and it is the deliverable
+the whole thing was funded to produce.
+
+FI-002 and FI-003 have not been dropped; they are RM-033, and they are last in the track because
+they need the four schema steps before them to mean anything.
 
 **Deliberately not doing:** the one-click bridge restart deferred from EX-100. It needs a
 `sudoers` entry that would let any authenticated app user bounce the bridge, and the two
@@ -902,10 +923,10 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 ### Auth & security
 
-- [x] **EX-100** Supabase Auth with a login screen; the proxy verifies the caller's own token — `src/components/auth/LoginPage.tsx`, `server/proxy.mjs`
-- [x] **EX-101** Command audit rows attributed to the real signed-in user, inserted with the caller's token so RLS grants it — `server/proxy.mjs`
-- [x] **EX-102** Remote access over the tailnet, verified working from off-site
-- [x] **EX-103** Anon key only in the browser bundle; the service-role key is read solely by the ingestion daemon — `src/config/supabase.ts`, `server/.env.example`
+- [x] **EX-108** Supabase Auth with a login screen; the proxy verifies the caller's own token — `src/components/auth/LoginPage.tsx`, `server/proxy.mjs`
+- [x] **EX-109** Command audit rows attributed to the real signed-in user, inserted with the caller's token so RLS grants it — `server/proxy.mjs`
+- [x] **EX-110** Remote access over the tailnet, verified working from off-site
+- [x] **EX-111** Anon key only in the browser bundle; the service-role key is read solely by the ingestion daemon — `src/config/supabase.ts`, `server/.env.example`
 
 ### Testing & tooling
 
@@ -1926,6 +1947,139 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       **What is left is only the reboot test** — that the session survives a cold boot via
       lightdm autologin has still never actually been exercised.
 
+
+---
+
+### Track B — replication. Making the system adaptable to any site.
+
+Added 2026-08-26. Reasoning, and the two-tree model these all serve, in
+`ibems-architecture-upgrade_2.md` §4–§7 (one level up, outside this repo).
+
+**Why this exists.** The system works, and it works for exactly one room. The project's third
+funded component is a framework letting other institutions replicate it, and a framework that
+begins "open `shared/registry.mjs` and replace `co1..co7`" is not one. Seven specific couplings
+are named in the architecture doc's §4; each item below removes one or more of them.
+
+**The scope decision this reverses.** The 2026-08-10 architecture doc said "single-building
+deployment … not a multi-tenant campus system", and the project tracker's item 1.9 recorded
+"each building runs its own independent system". Each site still runs its own Pi and its own
+stack — that part stands. What changes is that every relationship inside it becomes structural
+rather than literal, and every row is stamped with the site it belongs to, so a shared cloud
+later is configuration rather than a second migration.
+
+**The property that constrains every item here:** the building must stay controllable with no
+internet. EX-130 was built to guarantee it. Topology may live in Supabase; flow-critical wiring
+may not.
+
+- [ ] **RM-027** Site identity. Nothing in this system knows which building it is.
+      *Acceptance:* a second `sites` row can exist, this Pi writes only its own, and
+      `npm run test:bridge` still asserts an identical `/api/readings/latest` shape.
+      `supabase/schema.sql` makes `dsm_thresholds` a singleton — `check (id = 1)`, commented
+      "One building, one Pi" — and `ingestion_health` the same. `building_totals` is keyed by
+      `ts` alone. No table carries a site id, so two deployments cannot share a project and
+      neither can be told apart in an export.
+      Adds a `sites` table (id, display name, timezone, UTC offset, a `policy` jsonb) and a
+      `shared/sites/<id>/` directory holding what varies per building. `shared/registry.mjs`
+      becomes a thin composer and keeps exporting `DEVICE_REGISTRY`, `PHASE_MAP`, `METERED`,
+      `TIMING` and `publicDevices()`, so **every existing import keeps working** — that is what
+      makes this mechanical rather than a rewrite.
+      *Also closes §5 Q8's open question about the report timezone*, which is currently a SQL
+      default nobody has checked against what the devices actually reset their daily counters on.
+      `shared/buildLatest.mjs`'s `iso8()` hardcodes a fixed UTC offset and gains a parameter,
+      defaulting to today's value so nothing changes shape.
+      *First concrete use, and worth doing on its own merits:* `shared/commands.mjs` sets
+      `ACU_MIN_C = 16`, while the university's own energy-efficiency policy — a Key Feature in
+      the funded project plan — is "not lower than 25 °C". A per-site policy floor validated in
+      `validateCommand` makes that a rule the system enforces rather than one the UI suggests.
+
+- [ ] **RM-028** The space tree. `room` is free text and there is no rooms table.
+      *Acceptance:* every device is placed in a node, and `knownRooms()` in
+      `src/lib/deviceConfig.ts` is replaced by a query over the tree.
+      `devices.room` is nullable text; `device_config.room` is text with the comment "this
+      building has no fixed room list". So an office, a lab and a floor cannot be grouped,
+      rolled up, or scoped — the exact three things a second site needs.
+      **One self-referencing `space_nodes` table with a `kind` column, not one table per level.**
+      A table per level is precisely what makes a hierarchy rigid: it fixes the depth at schema
+      time, so a site that is a single room and a site that is a campus cannot both fit.
+      Subtree reads go through a `security invoker` recursive-CTE RPC, matching the pattern
+      `readings_buckets` and `readings_archive` already established. **No `ltree` and no
+      materialized path** until one is measured to be needed — the same discipline
+      `docs/adr-001-timeseries-store.md` applies to reaching for a second datastore.
+      The editor reuses `DeviceMetaEditor.tsx`'s existing draft/save/diff machinery
+      (`effectiveConfig`, `isSameConfig`); nothing new is needed for the interaction.
+      *Keep `device_config.room`,* backfilled, as a denormalised label — the additive discipline
+      `supabase/phase7_device_config.sql`'s own header argues for.
+
+- [ ] **RM-029** The circuit tree. `PHASE_MAP` is a constant naming four specific meters.
+      *Acceptance:* `test/contract.test.mjs`'s phase-total assertions pass unchanged against a
+      derived map, and `phase_current.blue` is still `null` rather than `0` — the invariant
+      `node-red-bridge/verify.mjs` explicitly checks.
+      **This is a second tree, not a branch of the first, and conflating them is the mistake
+      this entry exists to avoid.** Where a device *is* and what it is *wired to* are
+      independent: a lighting circuit crosses rooms, and a room is fed by several circuits.
+      Today the first is free-text `room` and the second is free-text `branch_circuit`
+      (`'C.O Yellow'`), and neither can be traversed.
+      `buildLatest(snap, REG, PHASE_MAP, nowMs)` already takes the map as a parameter, so the
+      seam for deriving it exists and nothing downstream needs to change.
+
+- [ ] **RM-030** Scoped aggregation. "This lab's consumption" is currently unanswerable.
+      *Acceptance:* a node's total equals the sum of its descendants' devices, and an offline
+      device contributes `null` rather than a frozen figure.
+      A per-node totals RPC over `readings` joined through placement. **A new RPC, not a rewrite
+      of `building_totals`** — that table holds real data and RM-009's rollup functions depend
+      on its shape.
+      The honesty rule from RM-024 and EX-107 extends here unchanged and is the part most likely
+      to be got wrong: a node whose meters are all offline must report nothing, not zero.
+
+- [ ] **RM-031** The 2D floor plan renders from data, not from literals.
+      *Acceptance:* a site with no plan drawn renders its fleet grouped by tree node, and a site
+      with a plan renders it, with neither case hardcoding a device id.
+      `src/components/floorplan/FloorPlanView.tsx` pins `co1..co7` to fixed SVG coordinates in an
+      `OUTLET_LAYOUT` array, and derives lighting rows from a formula shared with the 3D scene.
+      Both become normalised per-device plan coordinates against a space node.
+      Placement reuses `editableLayout.ts`'s existing pure helpers (`clampToRoom`, `newItemId`),
+      which already solve exactly this problem for furniture.
+      *The empty state is the point:* grouped-by-node is honest and useful; a blank frame is not.
+
+- [ ] **RM-032** The 3D scene becomes a site-gated pack.
+      *Acceptance:* a site without a scene pack renders the 2D view and ships none of the
+      geometry.
+      `src/components/scene3d/` is ~83 KB describing one office — `geometry.ts`'s header says so
+      itself ("Spatial layout for the CARE office 3D scene"). It is good work and genuinely
+      site-specific; the fix is to load it through a dynamic `import()` gated on the site's
+      declared pack, not to generalise it.
+      *Worth doing regardless of replication:* three.js plus that geometry currently ships to
+      every viewer on every page load, including the kiosk Pi.
+      Generic, data-driven 3D is deliberately **not** in scope here and has no dependency on
+      anything above.
+
+- [ ] **RM-033** Site provisioning — FI-002 and FI-003, now buildable.
+      *Acceptance:* a second site is stood up from the guide by someone who did not build this,
+      without hand-editing a device id.
+      The day-one wizard (network and vendor-account linking) and the packaging track (install
+      script or card image, plus the physical-install guide for CT meters, relay modules and the
+      IR blaster). A `site:new` scaffolder for `shared/sites/<id>/`.
+      **This is Milestone 6, due June 2027**, and it is the deliverable the rest of Track B
+      exists to make writeable. It needs RM-027 through RM-030 to exist first.
+
+- [ ] **RM-034** There is no CI. Every test run is manual.
+      *Acceptance:* a push runs all three suites and a type-checked build, and a red suite is
+      visible without anyone remembering to look.
+      No `.github/` directory exists. Over 1,200 test declarations across three suites
+      (`npm test`, `npm run test:bridge`, `npm run test:server`) and a public repository, and
+      nothing runs them except a person who remembers to.
+      Also add the ROADMAP-drift warning that the original documentation prompt proposed and
+      nobody built: **warn, never block**, when a commit touches `src/` or `server/` without
+      touching `ROADMAP.md`. And a `LICENSE`, a repository description and topics — all three
+      are currently empty on a public repo.
+      *Two hazards to handle in the workflow rather than discover:* `test:server` spawns real
+      processes and binds ports, which a shared runner may not tolerate; and it writes under
+      `server/data/`, which `server/testStatePaths.test.mjs` guards on the Pi but which should
+      be confirmed on a clean checkout too.
+      *What CI will not do:* prove a fix works. This project has "a green test suite is not
+      proof" written down, twice earned. CI catches regressions; the live read-back stays
+      mandatory.
+
 ---
 
 ## 3. Future improvements (backlog)
@@ -1935,10 +2089,10 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
   EX-040b. Adding a device is now a form on the Devices page: pick the vendor device, name it,
   preview, enrol. The local key comes from the cloud, and both the registry entry and the flow
   nodes are written from one validated decision.
-- **FI-002** (M) Day-one setup wizard for a new building: network and vendor-account linking.
+- **FI-002** (M) Day-one setup wizard for a new building: network and vendor-account linking. **Promoted into RM-033** (2026-08-26) — it is no longer backlog, it is the last step of Track B, and it needs RM-027 – RM-030 first.
 
 ### Replication
-- **FI-003** (L) Packaging so a second site can be stood up without redoing the wiring by hand: install script or card image, plus a physical-install guide.
+- **FI-003** (L) Packaging so a second site can be stood up without redoing the wiring by hand: install script or card image, plus a physical-install guide. **Promoted into RM-033** (2026-08-26). Its blocker was never the packaging — it was that a "site" was not a thing the code had a name for. RM-027 gives it one.
 
 ### Robustness
 - ~~**FI-013** (S) The Outlet tab never polls its devices.~~ **Done 2026-08-25** — EX-038b.
@@ -1976,8 +2130,8 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 |---|---|---|---|
 | ~~1~~ | ~~"Stage 1 is view-only…"~~ | — | **Resolved.** `README.md`'s Rules section now says "Control exists, but hardware dispatch is gated" and describes the audit-row-first ordering accurately. |
 | ~~2~~ | ~~`package.json` `description` says "view-only"~~ | — | **Resolved.** It describes audited, gate-controlled dispatch. |
-| 3 | Architecture planning proposed MQTT + Home Assistant as the device layer | planning docs vs. `shared/registry.mjs` + `test/contract.test.mjs`, which asserts the generated flow contains no MQTT | **The code.** The simpler design was chosen deliberately; MQTT/HA was abandoned. |
-| 4 | Mosquitto is described as dropped, but the broker is installed and running on the Pi | planning docs vs. the live host | **Both, partially — and now measurably idle.** The bridge genuinely does not use MQTT; the broker is still installed, running, and subscribed to by one flow node. As of 2026-08-26 it carries **no traffic at all**: five minutes on every topic, zero messages (§5 Q2). So it is not a second device layer, it is a dependency nothing currently feeds — which is the thing to weigh before RM-026 chooses to route the inverter through it. |
+| ~~3~~ | ~~Architecture planning proposed MQTT + Home Assistant as the device layer~~ | — | **Resolved 2026-08-26 at the source.** The code was always right; the fix was to stop the planning doc from saying otherwise. `ibems-architecture-upgrade_2.md` (one level up, outside this repo) was rewritten: Home Assistant is now recorded as *not adopted*, MQTT as *not the device bus*, and both sit in a settled-decisions table so they are not re-proposed. It had been steering readers into planning around a component nobody was going to install. |
+| 4 | Mosquitto is described as dropped, but the broker is installed and running on the Pi | planning docs vs. the live host | **Both, partially — and now measurably idle.** The bridge genuinely does not use MQTT; the broker is still installed, running, and subscribed to by one flow node. As of 2026-08-26 it carries **no traffic at all**: five minutes on every topic, zero messages (§5 Q2). So it is not a second device layer, it is a dependency nothing currently feeds — which is the thing to weigh before RM-026 chooses to route the inverter through it. **RM-026 has since chosen it**, so the broker acquires its first real consumer — and a liveness check on that topic is part of that work, not an extra, precisely because nothing noticed the last publisher going silent. |
 | ~~5~~ | ~~`README.md` points at a Stage 1 plan path outside the repo~~ | — | **Resolved.** `README.md` now points at `ROADMAP.md` and the two in-repo docs. |
 
 ---
@@ -2031,7 +2185,31 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
    the report timezone default (`Asia/Manila`) matches what the Tuya devices actually reset
    their daily counters on. The last one is worth a deliberate check — the report's energy
    figures depend on it, and it is invisible until a month is reconciled by hand.
+   **RM-027 is where it gets fixed rather than merely checked:** the timezone is currently a
+   SQL default AND a hardcoded UTC offset in `shared/buildLatest.mjs`, two places that can
+   disagree with each other. It becomes one per-site value.
 9. **Has the Reports page been seen with real data?** The coverage logic, the CSV serializer
    and the page's honesty properties are unit-tested (`ReportsPage.test.tsx` asserts that a
    sparse month cannot quote a bare total), but no report has been generated from real rows.
    Blocked on RM-009.
+
+10. **Is 16 °C an acceptable aircon setpoint here?** `shared/commands.mjs` sets `ACU_MIN_C = 16`
+    and validates it server-side, so the Control page can legitimately command it. The funded
+    project plan's Key Features state the university's policy as **"not lower than 25 °C"**.
+    Either the floor is wrong or the plan is describing an aspiration rather than a rule, and
+    only the operator knows which. If it is a rule, RM-027's per-site policy is where it belongs
+    — a UI that merely hides the option is not enforcement, and this system's own convention is
+    that the bound lives beside the validator.
+
+11. **Is occupancy-sensing hardware actually being bought?** The plan's Key Features list
+    "lighting system controlled via motion sensors and timers". Timers exist. No occupancy or
+    motion member exists in `src/lib/types.ts`'s `DeviceClass` union, and no such device is
+    enrolled or visible in the vendor project. This is less a software gap than an unanswered
+    procurement question, and the answer decides whether it is a phase or a footnote.
+
+12. **Where is the baseline report?** Milestone 1 wants a "baseline energy dataset and
+    benchmarking summary", and its two open checklist items are the last ones in Activity 1.
+    `npm run demand:profile` computes the figures — it is what produced the DSM limits — but it
+    prints to a terminal and leaves nothing citable behind. The Reports page already has the CSV
+    serializer and the coverage-honesty logic this would need (EX-033, EX-034), so the gap is an
+    output, not a calculation.
