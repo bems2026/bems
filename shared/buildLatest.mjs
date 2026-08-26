@@ -11,12 +11,25 @@
  * the Pi. So keep this pure — no Node-RED APIs, no imports, no Node built-ins.
  */
 
-/** ISO 8601 at +08:00 regardless of the host's timezone setting. */
-export function iso8(ms) {
-  const d = new Date(Number(ms) + 8 * 3600 * 1000);
+/**
+ * ISO 8601 at a fixed UTC offset, regardless of the host's timezone setting.
+ *
+ * `offsetMinutes` defaults to 480 (+08:00) so that every caller predating RM-027 behaves
+ * exactly as before — including `test/contract.test.mjs`, which pins the wire format. The
+ * site's real value is threaded in by `node-red-bridge/build-flow.mjs`.
+ *
+ * A number of minutes rather than an IANA zone name because this function is inlined verbatim
+ * into a Node-RED function node, where a full-ICU build is not something to bet the building's
+ * timestamps on. `shared/sites/<id>/site.mjs` carries both and a test asserts they agree.
+ */
+export function iso8(ms, offsetMinutes = 480) {
+  const d = new Date(Number(ms) + offsetMinutes * 60000);
   const p = (n) => String(n).padStart(2, '0');
+  const sign = offsetMinutes < 0 ? '-' : '+';
+  const abs = Math.abs(offsetMinutes);
   return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate()) +
-    'T' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) + ':' + p(d.getUTCSeconds()) + '+08:00';
+    'T' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) + ':' + p(d.getUTCSeconds()) +
+    sign + p(Math.floor(abs / 60)) + ':' + p(abs % 60);
 }
 
 export function num(v) {
@@ -52,9 +65,10 @@ export const STALE_READING_MS = 600000;
  * @param {Array}  REG   device registry
  * @param {object} PHASE_MAP
  * @param {number} nowMs
+ * @param {number} [offsetMinutes] minutes east of UTC for the site; see iso8()
  * @returns {Array} one entry per device, plus a trailing `_totals` entry
  */
-export function buildLatest(snap, REG, PHASE_MAP, nowMs) {
+export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480) {
   const energy = snap.energy || { meters: {}, totals: {} };
   const outlet = snap.outlet || { meters: {}, state: {} };
   const lights = (snap.switch || {}).state || {};
@@ -63,7 +77,7 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs) {
   const out = [];
 
   for (const d of REG) {
-    const r = { device_id: d.id, ts: iso8(nowMs) };
+    const r = { device_id: d.id, ts: iso8(nowMs, offsetMinutes) };
 
     // --- metered devices ----------------------------------------------------
     if (d.ctx) {
@@ -108,7 +122,7 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs) {
         // Report when the reading happened, not when it was served. `ts = now` on a device
         // that has not reported is a fabrication, and it is what let the staleness watchdog
         // sleep through the outage above — an always-fresh timestamp can never look old.
-        r.ts = iso8(seenAt);
+        r.ts = iso8(seenAt, offsetMinutes);
         if (nowMs - seenAt > STALE_READING_MS) r.online = false;
       }
     } else if (d.class === 'switch') {
@@ -210,7 +224,7 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs) {
 
   out.push({
     device_id: '_totals',
-    ts: iso8(nowMs),
+    ts: iso8(nowMs, offsetMinutes),
     energy_kwh_today: today === undefined ? null : today,
     energy_kwh_week: week === undefined ? null : week,
     energy_kwh_month: month === undefined ? null : month,

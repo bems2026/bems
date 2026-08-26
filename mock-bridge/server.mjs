@@ -36,7 +36,7 @@
 
 import http from 'node:http';
 import crypto from 'node:crypto';
-import { DEVICE_REGISTRY, PHASE_MAP, TIMING, publicDevices } from '../shared/registry.mjs';
+import { DEVICE_REGISTRY, PHASE_MAP, TIMING, publicDevices, SITE } from '../shared/registry.mjs';
 import { buildLatest, iso8 } from '../shared/buildLatest.mjs';
 import { COMMAND_ROUTE, ACCEPTED_STATUS, validateCommand, buildAck } from '../shared/commands.mjs';
 import { CONTEXT_ROUTE, CONTEXT_ACCEPTED_STATUS, validateContextWrite, buildContextAck } from '../shared/context.mjs';
@@ -247,7 +247,9 @@ function snapshot() {
   };
 }
 
-const latest = () => buildLatest(snapshot(), DEVICE_REGISTRY, PHASE_MAP, Date.now());
+// The site's offset, same as the generated flow passes — the mock is contract-identical to
+// the real bridge by construction, and a timestamp is part of the contract.
+const latest = () => buildLatest(snapshot(), DEVICE_REGISTRY, PHASE_MAP, Date.now(), SITE.utc_offset_minutes);
 
 // ---------------------------------------------------------------------------
 // history ring buffer — same semantics as the Node-RED one
@@ -285,7 +287,7 @@ function sampleHistory() {
       // — a chart of A must look like a scaled chart of W, or the mock would be teaching
       // the UI a relationship the real meters don't have.
       const voltage = Math.round((224 + wobble(i % 23, ms, 3)) * 10) / 10;
-      buf.push({ ts: iso8(ms), power_w, voltage, current: Math.round((power_w / voltage) * 1000) / 1000 });
+      buf.push({ ts: iso8(ms, SITE.utc_offset_minutes), power_w, voltage, current: Math.round((power_w / voltage) * 1000) / 1000 });
     }
     hist.set(d.id, buf);
   }

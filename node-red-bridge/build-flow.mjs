@@ -34,7 +34,7 @@
 import { writeFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { DEVICE_REGISTRY, PHASE_MAP, TIMING, publicDevices } from '../shared/registry.mjs';
+import { DEVICE_REGISTRY, PHASE_MAP, TIMING, publicDevices, SITE } from '../shared/registry.mjs';
 
 /** Devices that report an energy counter — the only ones the accumulator has anything to
  * accumulate for. Derived from the registry, never hand-listed. */
@@ -156,7 +156,7 @@ ${BUILD_LATEST_SRC}
 const REG = ${JSON.stringify(DEVICE_REGISTRY)};
 const PHASE_MAP = ${JSON.stringify(PHASE_MAP)};
 
-msg.payload = buildLatest(msg.snapshot || {}, REG, PHASE_MAP, Date.now());
+msg.payload = buildLatest(msg.snapshot || {}, REG, PHASE_MAP, Date.now(), ${SITE.utc_offset_minutes});
 msg.headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
 return msg;`;
 
@@ -247,9 +247,9 @@ return null;`;
  */
 const ACCUMULATE_ENERGY = `
 const rows = Array.isArray(msg.payload) ? msg.payload : [];
-// Local +08:00 wall-clock, matching iso8()'s offset — a UTC day boundary would fold the
-// previous day in at 08:00 local, attributing 8 hours to the wrong day.
-const now = new Date(Date.now() + 8 * 3600 * 1000);
+// Local wall-clock at the site's own UTC offset, matching iso8() — a UTC day boundary would
+// fold the previous day in partway through the local morning, attributing hours to the wrong day.
+const now = new Date(Date.now() + ${SITE.utc_offset_minutes} * 60000);
 const y = now.getUTCFullYear();
 const dayKey = y + '-' + (now.getUTCMonth() + 1) + '-' + now.getUTCDate();
 const monthKey = y + '-' + (now.getUTCMonth() + 1);

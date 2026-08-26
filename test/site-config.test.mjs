@@ -13,6 +13,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SITE } from '../shared/siteConfig.mjs';
 import { SITE as VIA_REGISTRY, DEVICE_REGISTRY, PHASE_MAP, TIMING } from '../shared/registry.mjs';
+import { iso8, buildLatest } from '../shared/buildLatest.mjs';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 test('the active site declares every field a deployment needs', () => {
   assert.equal(typeof SITE.id, 'string');
@@ -78,4 +84,40 @@ test('every existing registry export still works — this task changes nothing e
   assert.ok(DEVICE_REGISTRY.length >= 20, 'the built-in fleet is still there');
   assert.deepEqual(Object.keys(PHASE_MAP).sort(), ['blue', 'red', 'yellow']);
   assert.equal(typeof TIMING.WS_PUSH_MS, 'number');
+});
+
+// ---------------------------------------------------------------------------
+// RM-027 Task 2 — the bridge stops hardcoding this building's timezone.
+// ---------------------------------------------------------------------------
+
+test('iso8 defaults to +08:00, so every caller predating RM-027 is unaffected', () => {
+  assert.equal(iso8(0), '1970-01-01T08:00:00+08:00');
+});
+
+test('iso8 renders the offset it is given, sign and padding included', () => {
+  assert.equal(iso8(0, 0), '1970-01-01T00:00:00+00:00');
+  assert.equal(iso8(0, 330), '1970-01-01T05:30:00+05:30'); // a half-hour zone
+  assert.equal(iso8(0, -300), '1969-12-31T19:00:00-05:00'); // west of UTC
+});
+
+test('buildLatest stamps rows with the offset it is given', () => {
+  const reg = [{ id: 'x', class: 'switch', state_key: 'L1' }];
+  const rows = buildLatest({}, reg, { red: [], yellow: [], blue: [] }, 0, 0);
+  assert.ok(rows[0].ts.endsWith('+00:00'), `device row: got ${rows[0].ts}`);
+  assert.ok(rows.at(-1).ts.endsWith('+00:00'), `_totals row: got ${rows.at(-1).ts}`);
+});
+
+test('buildLatest imports nothing — it is inlined into a Node-RED function node', () => {
+  const src = readFileSync(join(ROOT, 'shared', 'buildLatest.mjs'), 'utf8');
+  assert.equal(/^\s*import\s/m.test(src), false, 'an import here breaks the live bridge');
+});
+
+test('the generated flow carries the site offset, not a hardcoded eight hours', () => {
+  const flow = readFileSync(join(ROOT, 'node-red-bridge', 'bridge-flow.json'), 'utf8');
+  assert.equal(
+    /8\s*\*\s*3600\s*\*\s*1000/.test(flow),
+    false,
+    'a literal 8-hour offset survived generation — regenerate with npm run build:flow',
+  );
+  assert.ok(flow.includes(String(SITE.utc_offset_minutes)), 'the site offset must reach the flow');
 });
