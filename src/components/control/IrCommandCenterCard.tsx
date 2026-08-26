@@ -10,15 +10,16 @@ import { InfoHint } from '@/components/ui/InfoHint';
 import { SimulatedBadge } from './SimulatedBadge';
 import { useControlLog } from './controlLog';
 import { formatWithUnit } from '@/lib/format';
+import { setpointOptions, seedSetpoint } from './setpointOptions';
+import { SITE } from '@shared/registry.mjs';
 
 const ACU_ID = 'acu_main';
 
-/** Exactly the whole degrees the live flow's IR library holds codes for — anything outside
- * this resolves to no code at all, so offering it would be offering a no-op. Mirrors
- * ACU_MIN_C/ACU_MAX_C in shared/commands.mjs, which rejects the same values server-side. */
-const SETPOINTS = Array.from({ length: 15 }, (_, i) => 16 + i);
-/** What the retired dashboard switch sent, so an untouched selector behaves as before. */
-const DEFAULT_SETPOINT_C = 25;
+/** The degrees this SITE may command: the IR library's range, narrowed by the building's own
+ * policy floor. Derived in `setpointOptions.ts`, which is where the reasoning lives and which
+ * is tested separately — `validateCommand` refuses the same values server-side, and that is
+ * the enforcement; this only stops the selector offering a guaranteed 400. */
+const SETPOINTS = setpointOptions(SITE.policy.acu_min_setpoint_c);
 
 /**
  * The one real air conditioner in the registry — v4's mockup shows two (CARE + AREC), but
@@ -38,9 +39,7 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
   // Seeded from the ACU's last known setpoint when there is one, so the control opens showing
   // where the room actually is rather than a fixed guess.
   const [setpointC, setSetpointC] = useState<number>(() =>
-    typeof reading?.setpoint_c === 'number' && SETPOINTS.includes(Math.round(reading.setpoint_c))
-      ? Math.round(reading.setpoint_c)
-      : DEFAULT_SETPOINT_C,
+    seedSetpoint(reading?.setpoint_c, SITE.policy.acu_min_setpoint_c),
   );
 
   const view = controlView(reading, pending);

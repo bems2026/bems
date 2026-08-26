@@ -367,7 +367,8 @@ function handleCommand(req, res) {
   readJsonBody(req, (err, body) => {
     if (err) return send(res, err.status, { error: err.error, code: err.code });
 
-    const v = validateCommand(body, DEVICE_REGISTRY);
+    // Same site policy the proxy applies — the mock refuses what the real path refuses.
+    const v = validateCommand(body, DEVICE_REGISTRY, SITE.policy);
     if (!v.ok) return send(res, v.status, { error: v.error, code: v.code });
 
     const cmd = { ...v.cmd, command_id: v.cmd.command_id || crypto.randomUUID() };

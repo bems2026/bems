@@ -52,7 +52,7 @@ import { URL, fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { verifyBreakGlassPassword } from './breakGlass.mjs';
 import { validateCommand, buildAck, ACCEPTED_STATUS } from '../shared/commands.mjs';
-import { DEVICE_REGISTRY, TIMING } from '../shared/registry.mjs';
+import { DEVICE_REGISTRY, TIMING, SITE } from '../shared/registry.mjs';
 import { dispatchCommand, DISPATCH_CLASSES } from './dispatchLight.mjs';
 import { createTuyaClient, TUYA_HOSTS } from './tuyaCloud.mjs';
 import { toPublicFleet } from './tuyaFleet.mjs';
@@ -391,7 +391,9 @@ async function handleCommand(req, res, token) {
   }
 
   const body = await readJsonBody(req);
-  const validated = validateCommand(body, DEVICE_REGISTRY);
+  // SITE.policy carries this building's own bounds — e.g. the minimum aircon setpoint the
+  // operator permits, which is narrower than what the IR library can physically send.
+  const validated = validateCommand(body, DEVICE_REGISTRY, SITE.policy);
   if (!validated.ok) {
     return sendJson(res, validated.status, { error: validated.error, code: validated.code });
   }

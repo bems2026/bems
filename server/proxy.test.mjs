@@ -710,12 +710,39 @@ test('dispatch open + ACU command: routed to /acu as an IR code, not a relay sta
     const res = await fetch(`${proxyUrl}/api/command`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ device_id: 'acu_main', action: 'on', target_c: 22 }),
+      // 26, not 22: this site's policy floor is 25 (RM-027). The assertion here is about
+      // ROUTING — that a setpoint becomes an IR code on /acu rather than a relay state — and
+      // any policy-legal value proves that equally well. The floor itself is asserted below.
+      body: JSON.stringify({ device_id: 'acu_main', action: 'on', target_c: 26 }),
     });
     assert.equal(res.status, 202);
     assert.equal(lightState.requests[0].url, '/acu');
-    assert.deepEqual(lightState.requests[0].body, { mode: '22' }, 'the setpoint becomes the IR library key');
+    assert.deepEqual(lightState.requests[0].body, { mode: '26' }, 'the setpoint becomes the IR library key');
     assert.equal(supabaseState.insertedCommands[0].status, 'dispatched');
+  } finally {
+    cleanup();
+  }
+});
+
+/**
+ * RM-027 — the site's setpoint floor is refused at the transport layer, not hidden in the UI.
+ *
+ * This is the end-to-end half of the pure-function tests in `contract.test.mjs`. It matters
+ * separately because the failure mode being prevented is a request that never went through the
+ * dashboard at all: a curl, a stale tab, or a scheduled rule written before the policy existed.
+ */
+test('an ACU setpoint below the site policy floor is refused, and nothing reaches the hardware', async () => {
+  const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch();
+  try {
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'acu_main', action: 'on', target_c: 18 }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal((await res.json()).code, 'below_policy_floor');
+    assert.equal(lightState.requests.length, 0, 'a refused command must not reach the bridge');
+    assert.equal(supabaseState.insertedCommands.length, 0, 'nor be recorded as an attempt');
   } finally {
     cleanup();
   }

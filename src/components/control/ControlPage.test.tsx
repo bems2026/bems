@@ -7,6 +7,9 @@ import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
 import { useControlLog } from './controlLog';
 import * as bridgeClient from '@/lib/bridgeClient';
 import type { CommandAck, Device } from '@/lib/types';
+import { setpointOptions } from './setpointOptions';
+import { SITE, DEVICE_REGISTRY } from '@shared/registry.mjs';
+import { validateCommand } from '@shared/commands.mjs';
 
 vi.mock('@/lib/bridgeClient', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/bridgeClient')>();
@@ -218,24 +221,46 @@ describe('ControlPage', () => {
 // ---------------------------------------------------------------------------
 
 describe('ACU setpoint', () => {
-  it('offers exactly the degrees the IR library has codes for, and nothing outside them', () => {
+  it('offers the IR library range narrowed by this site policy floor, and nothing outside it', () => {
+    // RM-027: the ceiling is what the IR library has codes for, the floor is the operator's
+    // rule. Read from SITE rather than hardcoded, so a site with a different policy - or none -
+    // does not have to rewrite this test in order to add itself.
     useDeviceStore.setState({ devices: [acu()] });
     render(<ControlPage />);
     const select = screen.getByLabelText('SETPOINT') as HTMLSelectElement;
     const values = [...select.options].map((o) => Number(o.value));
-    expect(values[0]).toBe(16);
+    expect(values).toEqual(setpointOptions(SITE.policy.acu_min_setpoint_c));
     expect(values[values.length - 1]).toBe(30);
-    expect(values).toHaveLength(15);
+    expect(Math.min(...values)).toBeGreaterThanOrEqual(16);
+  });
+
+  it('offers nothing the server would refuse - every option survives validateCommand', () => {
+    // This is the whole reason for narrowing the list. A selectable option that comes back as
+    // a 400 reads as a bug rather than as a policy, so assert the two agree by construction
+    // rather than by both having been edited on the same day.
+    useDeviceStore.setState({ devices: [acu()] });
+    render(<ControlPage />);
+    const select = screen.getByLabelText('SETPOINT') as HTMLSelectElement;
+    for (const opt of [...select.options]) {
+      const r = validateCommand(
+        { device_id: 'acu_main', action: 'on', target_c: Number(opt.value) },
+        DEVICE_REGISTRY,
+        SITE.policy,
+      );
+      expect(r.ok, `setpoint ${opt.value} is offered but refused as ${r.code}`).toBe(true);
+    }
   });
 
   it('sends the chosen setpoint with the command', () => {
     vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack({ device_id: 'acu_main', target: 'AC_POWER' }));
     useDeviceStore.setState({ devices: [acu()] });
     render(<ControlPage />);
-    fireEvent.change(screen.getByLabelText('SETPOINT'), { target: { value: '19' } });
-    fireEvent.click(screen.getByRole('button', { name: /Send ON at 19/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Yes, send 19/ }));
-    expect(bridgeClient.sendCommand).toHaveBeenCalledWith(expect.objectContaining({ device_id: 'acu_main', action: 'on', target_c: 19 }));
+    // 27, not 19: this site's policy floor is 25, so 19 is no longer offered. The assertion
+    // is that the CHOSEN value reaches the command, which any offered value proves equally.
+    fireEvent.change(screen.getByLabelText('SETPOINT'), { target: { value: '27' } });
+    fireEvent.click(screen.getByRole('button', { name: /Send ON at 27/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Yes, send 27/ }));
+    expect(bridgeClient.sendCommand).toHaveBeenCalledWith(expect.objectContaining({ device_id: 'acu_main', action: 'on', target_c: 27 }));
   });
 
   it('sends no setpoint with an off command — off is a code of its own, not a temperature', () => {
@@ -260,9 +285,23 @@ describe('ACU setpoint', () => {
   it('opens at the ACU\'s last known setpoint rather than a fixed guess', () => {
     useDeviceStore.setState({
       devices: [acu()],
+      latestReadings: { acu_main: { device_id: 'acu_main', ts: new Date().toISOString(), online: true, state: 'on', setpoint_c: 27 } },
+    });
+    render(<ControlPage />);
+    expect((screen.getByLabelText('SETPOINT') as HTMLSelectElement).value).toBe('27');
+  });
+
+  it('does not open at a last known setpoint the policy forbids', () => {
+    // RM-027, and a real state rather than a hypothetical: the unit can be sitting below the
+    // floor because someone used the physical remote, or because it was set before the policy
+    // existed. Seeding there would preselect a value the server refuses, so the operator's
+    // first click would fail for no visible reason.
+    useDeviceStore.setState({
+      devices: [acu()],
       latestReadings: { acu_main: { device_id: 'acu_main', ts: new Date().toISOString(), online: true, state: 'on', setpoint_c: 21 } },
     });
     render(<ControlPage />);
-    expect((screen.getByLabelText('SETPOINT') as HTMLSelectElement).value).toBe('21');
+    const value = Number((screen.getByLabelText('SETPOINT') as HTMLSelectElement).value);
+    expect(value).toBeGreaterThanOrEqual(SITE.policy.acu_min_setpoint_c ?? 16);
   });
 });

@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import { DEVICE_REGISTRY, PHASE_MAP, publicDevices } from '../shared/registry.mjs';
+import { DEVICE_REGISTRY, PHASE_MAP, publicDevices, SITE } from '../shared/registry.mjs';
 import { buildLatest } from '../shared/buildLatest.mjs';
 import { COMMAND_ROUTE, ACCEPTED_STATUS, validateCommand, buildAck } from '../shared/commands.mjs';
 import { CONTEXT_ROUTE, CONTEXT_ACCEPTED_STATUS, validateContextWrite, buildContextAck } from '../shared/context.mjs';
@@ -588,6 +588,74 @@ test('a setpoint on anything other than the ACU is rejected rather than ignored'
   const r = validateCommand({ device_id: 'l1', action: 'on', target_c: 24 }, DEVICE_REGISTRY);
   assert.equal(r.ok, false);
   assert.equal(r.code, 'target_c_not_applicable');
+});
+
+/**
+ * RM-027 — the site's own setpoint floor, layered on top of the hardware bound above.
+ *
+ * TWO DIFFERENT FACTS, and conflating them would be the bug. `ACU_MIN_C` is what the live
+ * flow's IR library actually has codes for — a hardware capability, identical at every site.
+ * The policy floor is what the building's operator permits, and here it comes from the
+ * university's energy-efficiency policy quoted in the funded project plan ("not lower than
+ * 25 degrees"). A different site has a different rule, or none.
+ *
+ * It is enforced HERE rather than by omitting options from a dropdown, because this function
+ * is what every dispatch path already goes through — manual, scheduled and auto-shed alike —
+ * and a UI that merely hides the option is not enforcement.
+ */
+test('the site policy floor refuses a setpoint the IR library would happily accept', () => {
+  const r = validateCommand(
+    { device_id: 'acu_main', action: 'on', target_c: 18 },
+    DEVICE_REGISTRY,
+    { acu_min_setpoint_c: 25 },
+  );
+  assert.equal(r.ok, false);
+  assert.equal(r.status, 400);
+  assert.equal(r.code, 'below_policy_floor');
+  assert.match(r.error, /25/);
+});
+
+test('a setpoint at the policy floor exactly is allowed — the bound is inclusive', () => {
+  const r = validateCommand(
+    { device_id: 'acu_main', action: 'on', target_c: 25 },
+    DEVICE_REGISTRY,
+    { acu_min_setpoint_c: 25 },
+  );
+  assert.equal(r.ok, true);
+});
+
+test('a site with no policy gets the hardware bound and nothing more', () => {
+  const r = validateCommand({ device_id: 'acu_main', action: 'on', target_c: 18 }, DEVICE_REGISTRY, {});
+  assert.equal(r.ok, true, 'an absent policy must not invent a floor');
+});
+
+test('omitting the policy argument entirely is the pre-RM-027 behaviour', () => {
+  const r = validateCommand({ device_id: 'acu_main', action: 'on', target_c: 16 }, DEVICE_REGISTRY);
+  assert.equal(r.ok, true);
+});
+
+test('a policy can narrow the hardware bound but never widen it', () => {
+  // A policy floor of 10 must not make 10 commandable: the IR library has no code to send.
+  const r = validateCommand(
+    { device_id: 'acu_main', action: 'on', target_c: 10 },
+    DEVICE_REGISTRY,
+    { acu_min_setpoint_c: 10 },
+  );
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'invalid_target_c', 'the hardware bound must be checked first');
+});
+
+test('the active site actually sets a floor, so this is not dead configuration', () => {
+  // Guards against the floor being silently dropped from the site module: the whole feature
+  // is worth nothing if the deployed site declares no policy.
+  assert.equal(typeof SITE.policy.acu_min_setpoint_c, 'number');
+  const r = validateCommand(
+    { device_id: 'acu_main', action: 'on', target_c: SITE.policy.acu_min_setpoint_c - 1 },
+    DEVICE_REGISTRY,
+    SITE.policy,
+  );
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'below_policy_floor');
 });
 
 /**

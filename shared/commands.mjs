@@ -66,7 +66,7 @@ export function resolveTarget(device, socket) {
  * `{command_id, device_id, socket, action, target}`; `command_id` is copied through
  * verbatim (including `undefined`) and is the caller's responsibility to fill in.
  */
-export function validateCommand(body, registry) {
+export function validateCommand(body, registry, policy = {}) {
   if (body === null || typeof body !== 'object' || Array.isArray(body)) {
     return { ok: false, status: 400, code: 'invalid_body', error: 'request body must be a JSON object' };
   }
@@ -112,6 +112,31 @@ export function validateCommand(body, registry) {
         status: 400,
         code: 'invalid_target_c',
         error: `target_c must be a whole number between ${ACU_MIN_C} and ${ACU_MAX_C}`,
+      };
+    }
+
+    /**
+     * The site's own floor, layered on top of the hardware bound above.
+     *
+     * TWO DIFFERENT FACTS. `ACU_MIN_C` is what the IR library has codes for and is identical
+     * everywhere; this is what the building permits, and here it comes from the university's
+     * energy-efficiency policy. A site with no such rule omits it and gets the hardware bound.
+     *
+     * Checked SECOND on purpose, so a policy can only ever narrow the range. A site that set a
+     * floor below `ACU_MIN_C` is still refused by the check above, which is correct: there is
+     * no code to send.
+     *
+     * Enforced here rather than by omitting options from a dropdown, because this function is
+     * what every dispatch path goes through — manual, scheduled and auto-shed alike — and a UI
+     * that hides an option is not enforcement.
+     */
+    const floor = policy && policy.acu_min_setpoint_c;
+    if (typeof floor === 'number' && target_c < floor) {
+      return {
+        ok: false,
+        status: 400,
+        code: 'below_policy_floor',
+        error: `target_c must be at least ${floor} at this site`,
       };
     }
   }
