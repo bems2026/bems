@@ -1,7 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-26 (UTC), evening — offline command capability (both callers); RM-026 shape decided
-**Audited at commit:** `6849f1e`
+**Last audited:** 2026-08-26 (UTC), evening — offline commands, broker lockdown, RM-026 shape decided
+**Audited at commit:** `ebb4c02`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
 discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
@@ -58,7 +58,7 @@ Everything else is small, and the build order below is honest about size.
 | Item | Why it is stuck |
 |---|---|
 | **RM-026** Deye/Solarman inverter | The logger is **not on the device SSID**. Integration shape **decided: MQTT via a pre-built local bridge** — see the entry. **Re-verified twice on 2026-08-26 and still absent**, now with a census rather than a sweep: every neighbour MAC on the device subnet was diffed against the cloud's own device MACs, and **the only non-Tuya host on the segment is the router**. A UDP logger-discovery broadcast drew **no reply** (every datagram back was the Pi's own probe echoing). Its configured address is in the stick's own AP-mode subnet, which has no route from the Pi. The Node-RED side is a stub — one config node and one register node, wired to nothing — and no Solarman credentials exist, so the vendor-cloud route is not quietly available either. Nothing can be built or tested until the stick is joined to the device SSID. |
-| **RM-005** ESP32 AC sniffer | Publishes nothing. The broker is running and the flow subscribes, but a five-minute listen on all topics saw **zero messages** — and this was on the correct 2.4 GHz network, so the old explanation ("the Pi was on 5 GHz") no longer covers it. The ESP32 itself is silent. |
+| **RM-005** ESP32 AC sniffer | Publishes nothing. The broker is running and the flow subscribes, but a five-minute listen on all topics saw **zero messages** — and this was on the correct 2.4 GHz network, so the old explanation ("the Pi was on 5 GHz") no longer covers it. The ESP32 itself is silent. **Note since EX-131:** the broker is now loopback-only, so reviving this needs a LAN listener with a `password_file` as part of the work — it was never reachable *and* used, so nothing was taken away. |
 
 ### Waiting on elapsed time, not on work
 
@@ -921,6 +921,36 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       caught RM-022 nowhere. The source-level half fails anywhere.
       This is the same shape as EX-091: the mistake is invisible to types, survives a green
       suite, and the only reliable guard reads the source — `server/envHygiene.test.mjs`
+- [x] **EX-131** The MQTT broker no longer accepts anonymous connections from the device network.
+      It listened on **every interface** with `allow_anonymous true`, on 1883 and on a
+      websockets listener at 9001, sharing the 2.4 GHz segment with the field devices. Anything
+      associated to that SSID could read every topic and publish to any of them. That was
+      already wrong and was about to get worse: RM-026's chosen bridge can **write** to the
+      inverter.
+      **Bound to loopback rather than password-protected, and the evidence chose that.** Across
+      the retained logs the broker has seen **70 connections, every one on 1883 and every one
+      from loopback** — zero off-host, ever. Node-RED, its only real client, connects to
+      `localhost`. Credentials would have secured a door nobody uses, and would have required a
+      live flow write to carry them into the broker config node.
+      **Both loopback families.** `localhost` resolves to `::1` on this host as well as
+      `127.0.0.1` and the logs show both in use, so a single `listener 1883 127.0.0.1` would
+      have silently locked out whichever the resolver happened to prefer. Validated on a spare
+      port before going near the live service, precisely because that failure would have looked
+      like a broker fault rather than a config one.
+      **The websockets listener is retired, not merely closed.** It was added for a
+      "browser-based digital twin" that was never built and had **never carried a connection** —
+      an open, anonymous listener on the device network with no consumer is pure attack surface.
+      **This configuration exists only on the Pi, and nothing in this repository declares it** —
+      the same shape as `findTimeout`/`tuyaVersion`, where a rebuild or a package upgrade
+      restores the permissive default with no diff and no alarm. Recorded in `CLAUDE.md`'s site
+      facts for that reason, with timestamped `.bak` files beside both config files.
+      *Verified after the change:* Node-RED reconnected within fifteen seconds under its
+      existing client id, the Pi's own LAN address refuses 1883, loopback still accepts, 9001 is
+      closed, and all six services stayed active with the fleet unchanged.
+      *Deliberately left anonymous on loopback:* only processes on the Pi can reach it now, and
+      anything with local execution there has far better options than the broker. Adding
+      credentials would have bought little and cost a flow write.
+      `/etc/mosquitto/mosquitto.conf`, `/etc/mosquitto/conf.d/bems.conf` (both on the Pi only)
 - [x] **EX-130** An internet outage no longer removes control of the building.
       **THE GAP, WHICH WAS NOT WHERE ANYONE WOULD LOOK FOR IT.** The Tuya fleet is local: the
       devices sit on the Pi's own L2 segment, answer local keys, and dispatch has always
@@ -1615,13 +1645,15 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       broker becomes a dependency. Worth it, given 1 and 2.
       **The Pi is ready: Docker 29.7.2 (aarch64), Mosquitto active on 1883, ~5.5 GB RAM free.**
       **TWO THINGS TO SETTLE BEFORE THE BRIDGE IS INTRODUCED, one of them security:**
-      - **Mosquitto currently runs `allow_anonymous true` on both 1883 and 9001**, on the
-        device network. The bridge can **write** to the inverter — active power regulation,
-        battery parameters, time-of-use — behind its `DEYE_FEATURE_*` flags. An anonymous
-        broker plus a write-enabled bridge means anything associated to that SSID could
-        command the inverter. **Keep every write feature off, and lock the broker down first.**
-        This is a live-service config change and deserves its own decision; it is recorded here
-        rather than done quietly.
+      - **DONE 2026-08-26 — the broker is locked down (EX-131).** It ran `allow_anonymous true`
+        on 1883 and 9001 across every interface, on the device network, while the bridge is able
+        to **write** to the inverter (active power regulation, battery parameters, time-of-use)
+        behind its `DEYE_FEATURE_*` flags — so anything on that SSID could have commanded the
+        inverter. It is now loopback-only. **Two consequences for this work:** keep every
+        `DEYE_FEATURE_*` write flag **off**, and **run the container with host networking**,
+        because a container on a default bridge network can no longer reach the broker. If a
+        non-host network is genuinely needed, add a listener bound to the LAN address *with a
+        `password_file`* — do not widen the loopback listener.
       - The broker still carries **zero traffic** (re-checked 2026-08-26), so no MQTT path in
         this system has ever been proven end to end. The first thing the bridge does is also
         the first real test of Node-RED's subscriber.

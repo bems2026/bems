@@ -109,6 +109,22 @@ npm run build:flow       # regenerate the flow after editing shared/
   them is a rotation, not an offset, and it lives in exactly one place
   (`schedulePlan.appDayIndex`). Getting it wrong yields a schedule that looks healthy and
   switches the office lights on the wrong day.
+- **Mosquitto listens on loopback only, and that is deliberate — do not widen it.** Until
+  2026-08-26 it listened on every interface with anonymous access, on the same 2.4 GHz segment
+  as the field devices, so anything associated to that SSID could read every topic and publish
+  to any of them. It is now bound to `127.0.0.1` and `::1` (both families: `localhost`
+  resolves to either on this host, and a single listener silently locks out whichever the
+  resolver prefers). The never-used websockets listener is retired.
+  **This lives only in `/etc/mosquitto/` on the Pi — nothing in this repo declares it**, which
+  is the same shape of exposure as `findTimeout` above: a rebuild or a package upgrade
+  restores the permissive default with no diff and no alarm. Timestamped `.bak` files sit
+  beside both config files.
+  **The consequence for anything new that publishes:** a client that is not a process on the Pi
+  cannot reach the broker. **RM-026's Deye bridge must therefore run with host networking**, or
+  it needs a listener bound to the LAN address *with a `password_file`* — which is the correct
+  way to reopen it, and matters because that bridge can WRITE to the inverter. The same applies
+  to RM-005's ESP32 if it is ever revived. Widening the loopback listener back to `0.0.0.0` is
+  reinstating the problem, not configuring the feature.
 - **Auto-shed sheds, it never restores.** Switching load off unattended is recoverable by a
   person; switching it back on is not. Restoring is deliberately manual.
 - **Never change the Pi's Wi-Fi remotely.** A wrong SSID or credential loses the host with
