@@ -196,4 +196,10 @@ export interface Capabilities {
    * dispatches `switch` commands, so an open gate still leaves outlets and the ACU changing
    * nothing. See `components/control/dispatchScope.ts` for why the UI needs both. */
   dispatch_classes: string[];
+  /**
+   * Command audit rows written to the Pi's local buffer because Supabase was unreachable, and
+   * not yet uploaded. Non-zero means commands are still working — the device layer is local —
+   * but the audit trail is currently behind, which is a fact worth showing rather than hiding.
+   */
+  audit_buffer_pending?: number;
 }

@@ -5,6 +5,7 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore } from '@/stores/commandStore';
 import { useDevicesFor } from '@/hooks/useDevicesFor';
 import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
+import { AuditBacklogNote } from './AuditBacklogNote';
 import { ConfirmModal, type ConfirmTone } from '@/components/ui/ConfirmModal';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { LightingMatrixCard } from './LightingMatrixCard';
@@ -128,6 +129,8 @@ export function ControlPage() {
           </div>
         }
       />
+
+      <AuditBacklogNote />
 
       <div className="control-grid">
         <div className="control-grid__main">

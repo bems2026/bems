@@ -14,6 +14,12 @@ interface CapabilitiesState {
    * confirming that nothing dispatches. `components/control/dispatchScope.ts` treats both as
    * closed, but only one of them is a fact we were actually told. */
   dispatchClasses: string[] | null;
+  /**
+   * Command audit rows sitting in the Pi's local buffer because Supabase could not be
+   * reached. `null` until a proxy actually reports it — a proxy predating the field is
+   * unknown, not zero, for the same reason `dispatchClasses` distinguishes the two.
+   */
+  auditBufferPending: number | null;
   load: () => Promise<void>;
 }
 
@@ -26,6 +32,7 @@ interface CapabilitiesState {
 export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
   hardwareDispatchEnabled: null,
   dispatchClasses: null,
+  auditBufferPending: null,
 
   // Same retry-with-backoff shape as useLiveConnection.ts's device-catalogue fetch — a
   // failed load here must never get stuck reporting "unknown" forever just because one
@@ -34,7 +41,7 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
     retry.cancel();
     const attempt = async (): Promise<void> => {
       try {
-        const { hardware_dispatch_enabled, dispatch_classes } = await getCapabilities();
+        const { hardware_dispatch_enabled, dispatch_classes, audit_buffer_pending } = await getCapabilities();
         retry.succeeded();
         set({
           hardwareDispatchEnabled: hardware_dispatch_enabled,
@@ -42,6 +49,7 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
           // than [], for the same reason the initial value is null: absence of an answer is
           // not the same as an answer of "nothing".
           dispatchClasses: Array.isArray(dispatch_classes) ? dispatch_classes : null,
+          auditBufferPending: typeof audit_buffer_pending === 'number' ? audit_buffer_pending : null,
         });
       } catch {
         retry.retryAfterFailure(attempt);

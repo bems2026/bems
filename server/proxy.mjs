@@ -48,7 +48,8 @@
 import http from 'node:http';
 import net from 'node:net';
 import crypto from 'node:crypto';
-import { URL } from 'node:url';
+import { URL, fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { verifyBreakGlassPassword } from './breakGlass.mjs';
 import { validateCommand, buildAck, ACCEPTED_STATUS } from '../shared/commands.mjs';
 import { DEVICE_REGISTRY, TIMING } from '../shared/registry.mjs';
@@ -58,6 +59,10 @@ import { toPublicFleet } from './tuyaFleet.mjs';
 import { joinMacPresence, readNeighbours, toPublicPresence } from './macPresence.mjs';
 import { createAdminClient } from '../node-red-bridge/nodeRedAdmin.mjs';
 import { auditedDispatch } from './auditedDispatch.mjs';
+import { createJwksCache } from './jwksCache.mjs';
+import { verifyEs256Jwt } from './jwtVerify.mjs';
+import { createBufferedAudit } from './auditQueue.mjs';
+import { bufferCount } from './ingestBuffer.mjs';
 import { buildCloudDispatch } from './cloudDispatchConfig.mjs';
 import { handleEnroll } from './enrollRoute.mjs';
 import { handleRemove } from './removeRoute.mjs';
@@ -123,6 +128,27 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 const BREAK_GLASS_PASSWORD_HASH = process.env.BREAK_GLASS_PASSWORD_HASH;
 const SUPABASE_VERIFY_CACHE_MS = 60_000;
+
+/**
+ * OFFLINE OPERATION. The Tuya fleet is local — the devices sit on the Pi's own segment and
+ * answer local keys — so commanding them needs no internet whatsoever. Two things did need it
+ * anyway, and between them they reduced the offline command window to zero: this file verified
+ * every session by calling Supabase, and `auditedDispatch` wrote the audit row there before
+ * dispatching. A WAN outage therefore removed control of the whole building while the device
+ * layer sat there working.
+ *
+ * Neither safety property is being relaxed. Sessions are still verified and commands are still
+ * recorded before a relay moves; both simply gain an implementation that does not require a
+ * link to the internet. See jwtVerify.mjs and auditQueue.mjs for the limits of each.
+ */
+const JWKS_URL = SUPABASE_URL ? `${SUPABASE_URL}/auth/v1/.well-known/jwks.json` : null;
+const JWKS_ISSUER = SUPABASE_URL ? `${SUPABASE_URL}/auth/v1` : null;
+const JWKS_CACHE_PATH = process.env.JWKS_CACHE_PATH || join(dirname(fileURLToPath(import.meta.url)), 'data', 'jwks.json');
+const JWKS_REFRESH_MS = 6 * 60 * 60 * 1000; // 6h — signing keys rotate rarely
+const COMMAND_BUFFER_PATH = process.env.COMMAND_AUDIT_BUFFER_PATH || join(dirname(fileURLToPath(import.meta.url)), 'data', 'command-audit-buffer.ndjson');
+
+const jwks = JWKS_URL ? createJwksCache({ url: JWKS_URL, cachePath: JWKS_CACHE_PATH }) : null;
+
 const LOCAL_SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12h
 // Closed by default, mirroring node-red-bridge/deploy.mjs's --apply-only-with-explicit-
 // intent pattern. Phase 7 is the only phase allowed to flip this in a real deployment.
@@ -215,10 +241,25 @@ async function verifySupabaseSession(token) {
       result = { ok: true, userId: typeof body?.id === 'string' ? body.id : null };
     }
   } catch {
-    // Supabase unreachable — NOT the same fact as "invalid token". This proxy still
-    // denies the request either way (fail closed), but it's exactly the condition under
-    // which the frontend should offer the break-glass local-login path instead of just
-    // retrying the same request.
+    // Supabase unreachable — NOT the same fact as "invalid token", and the difference is now
+    // load-bearing rather than merely noted.
+    //
+    // NETWORK-FIRST, DELIBERATELY. The call above is authoritative and is the ONLY check that
+    // notices a session the user has since signed out of; local verification cannot see a
+    // revocation. So it stays the primary path and its answer is never second-guessed — a 401
+    // from Supabase lands in the `res.ok` branch above and is a refusal, not an outage.
+    //
+    // Only when the question could not be ASKED does the offline path apply: verify the
+    // token's ES256 signature against the cached JWKS. Strictly weaker, and used only when the
+    // alternative is losing control of a building full of devices that are all still reachable.
+    const local = jwks ? verifyEs256Jwt(token, jwks.keys(), { issuer: JWKS_ISSUER }) : { ok: false, reason: 'no jwks configured' };
+    if (local.ok) {
+      // Not cached: the cache exists to spare Supabase repeat questions, and this answer was
+      // reached without asking it. Caching would also outlive the outage and keep a stale
+      // verdict alive after the authoritative check became available again.
+      return { ok: true, userId: local.userId, offline: true };
+    }
+    console.error(`[ibems-proxy] Supabase unreachable and offline verification failed: ${local.reason}`);
     result = { ok: false, userId: null };
   }
   supabaseVerifyCache.set(token, { ...result, validUntil: Date.now() + SUPABASE_VERIFY_CACHE_MS });
@@ -369,6 +410,53 @@ async function handleCommand(req, res, token) {
   // will actually do cannot drift apart. The record-then-act ordering is shared with
   // scheduler.mjs via auditedDispatch, so the two paths cannot disagree about what a failed
   // audit insert means (they used to: this one refused, the scheduler carried on).
+  // The record-then-act contract is untouched: auditedDispatch still refuses to dispatch
+  // unless the command was recorded first. `createBufferedAudit` only changes where
+  // "recorded" is allowed to land when Supabase cannot be reached at all.
+  const remoteAudit = {
+    insert: async (row) => {
+      try {
+        const res = await sbCommands('', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(row) });
+        // A status code is Supabase ANSWERING. A 4xx means this caller may not write that row,
+        // which is a refusal and must stay one — see auditQueue.mjs on why laundering it into
+        // a local queue entry would be the dangerous mistake.
+        if (!res.ok) return { ok: false, detail: `HTTP ${res.status} ${await res.text().catch(() => '')}` };
+        const body = await res.json().catch(() => null);
+        return { ok: true, id: Array.isArray(body) ? body[0]?.id : body?.id };
+      } catch (err) {
+        // A throw is the transport failing: no answer was obtained. Only this may be buffered.
+        return { ok: false, unreachable: true, detail: String(err) };
+      }
+    },
+    update: async (id, patch) => {
+      try {
+        // `return=representation`, not `return=minimal`, so the affected-row count can be
+        // checked. PostgREST reports an RLS-blocked UPDATE as a success with an empty
+        // result — the exact trap 2e4c0c2 fixed on the schedule-save path, where a write
+        // that changed nothing reported "saved". An empty array here means the row was not
+        // updated, whatever the status code says.
+        const res = await sbCommands(`?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(patch) });
+        if (!res.ok) return { ok: false, detail: `HTTP ${res.status} ${await res.text().catch(() => '')}` };
+        const rows = await res.json().catch(() => null);
+        if (!Array.isArray(rows) || rows.length === 0) {
+          return { ok: false, detail: 'update affected no rows — check supabase/phase9_command_outcome.sql is applied' };
+        }
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, unreachable: true, detail: String(err) };
+      }
+    },
+  };
+
+  // The record-then-act contract is untouched: auditedDispatch still refuses to dispatch
+  // unless the command was recorded first. This only changes where "recorded" is allowed to
+  // land when Supabase cannot be reached at all.
+  const audit = createBufferedAudit({
+    bufferPath: COMMAND_BUFFER_PATH,
+    insert: remoteAudit.insert,
+    update: remoteAudit.update,
+  });
+
   const outcome = await auditedDispatch({
     device,
     cmd,
@@ -394,34 +482,8 @@ async function handleCommand(req, res, token) {
       cloud: CLOUD_DISPATCH,
       readOnline: readDeviceOnline,
     }),
-    insertAudit: async (row) => {
-      try {
-        const res = await sbCommands('', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(row) });
-        if (!res.ok) return { ok: false, detail: `HTTP ${res.status} ${await res.text().catch(() => '')}` };
-        const body = await res.json().catch(() => null);
-        return { ok: true, id: Array.isArray(body) ? body[0]?.id : body?.id };
-      } catch (err) {
-        return { ok: false, detail: String(err) };
-      }
-    },
-    updateAudit: async (id, patch) => {
-      try {
-        // `return=representation`, not `return=minimal`, so the affected-row count can be
-        // checked. PostgREST reports an RLS-blocked UPDATE as a success with an empty
-        // result — the exact trap 2e4c0c2 fixed on the schedule-save path, where a write
-        // that changed nothing reported "saved". An empty array here means the row was not
-        // updated, whatever the status code says.
-        const res = await sbCommands(`?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(patch) });
-        if (!res.ok) return { ok: false, detail: `HTTP ${res.status} ${await res.text().catch(() => '')}` };
-        const rows = await res.json().catch(() => null);
-        if (!Array.isArray(rows) || rows.length === 0) {
-          return { ok: false, detail: 'update affected no rows — check supabase/phase9_command_outcome.sql is applied' };
-        }
-        return { ok: true };
-      } catch (err) {
-        return { ok: false, detail: String(err) };
-      }
-    },
+    insertAudit: audit.insertAudit,
+    updateAudit: audit.updateAudit,
     log: (msg) => console.error(`[ibems-proxy] ${msg}`),
   });
 
@@ -537,9 +599,14 @@ const server = http.createServer(async (req, res) => {
     // dispatch_classes is what the gate means in practice, not just whether it is open:
     // with the gate closed nothing dispatches, so the list is empty. The frontend uses it to
     // say which controls are live rather than going silent the moment the gate opens.
+    // How many commands were recorded locally because Supabase could not be reached. A
+    // command accepted into the buffer is not the same fact as one recorded in the audit
+    // table, and the operator must not have to guess which they just did — this project's
+    // whole posture is that the UI never claims more than it can observe.
     return sendJson(res, 200, {
       hardware_dispatch_enabled: HARDWARE_DISPATCH_ENABLED,
       dispatch_classes: HARDWARE_DISPATCH_ENABLED ? DISPATCH_CLASSES : [],
+      audit_buffer_pending: bufferCount(COMMAND_BUFFER_PATH),
     });
   }
   if (req.method === 'POST' && url.pathname === '/api/enroll') {
@@ -598,6 +665,22 @@ server.on('upgrade', async (req, clientSocket, head) => {
 server.listen(PROXY_PORT, () => {
   console.log(`[ibems-proxy] listening on :${PROXY_PORT}, forwarding authorized requests to ${BRIDGE_HOST}:${BRIDGE_PORT}`);
 });
+
+/**
+ * Keep the offline verification keys current. Best-effort by design: a failure here is
+ * ordinary (it is exactly what an outage looks like) and must never stop the proxy serving.
+ * The keys already on disk stay valid, which is the entire point of persisting them.
+ */
+if (jwks) {
+  const refreshJwks = async () => {
+    const res = await jwks.refresh();
+    if (res.ok) console.log(`[ibems-proxy] offline session keys refreshed (${res.count})`);
+    else console.warn(`[ibems-proxy] could not refresh offline session keys (${res.detail}); using ${res.count} cached`);
+  };
+  refreshJwks();
+  // unref: this timer must not hold the process open at shutdown.
+  setInterval(refreshJwks, JWKS_REFRESH_MS).unref();
+}
 
 for (const sig of ['SIGTERM', 'SIGINT']) {
   process.on(sig, () => {

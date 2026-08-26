@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-26 (UTC), evening — RM-026 re-verification and triage correction
+**Last audited:** 2026-08-26 (UTC), evening — offline command capability; RM-026 shape decided
 **Audited at commit:** `6849f1e`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
@@ -9,8 +9,10 @@ discovery ports, the cloud's per-device MAC joined against the Pi's ARP table, a
 read back through the admin API.
 The 2026-08-26 evening pass ran from a **remote** session, with every network check executed on
 the Pi over the tailnet — ARP and a UDP broadcast mean nothing anywhere else. It re-verified
-RM-026 and corrected three §0 claims that had gone stale, two of them within the same day: see
-RM-026, RM-020 and EX-101.
+RM-026 twice and corrected three §0 claims that had gone stale, two of them within the same
+day: see RM-026, RM-020 and EX-101. It also closed the gap in EX-130 — an internet outage had
+been removing control of a device fleet that is entirely local — and settled RM-026's
+integration shape.
 The Phase 10-13 entries below were added from a workstation with no database access — see
 §5 Q8 for exactly what that leaves unverified.
 
@@ -55,7 +57,7 @@ Everything else is small, and the build order below is honest about size.
 
 | Item | Why it is stuck |
 |---|---|
-| **RM-026** Deye/Solarman inverter | The logger is **not on the device SSID**. **Re-verified 2026-08-26 evening and still absent**, now with a census rather than a sweep: every neighbour MAC on the device subnet was diffed against the cloud's own device MACs, and **the only non-Tuya host on the segment is the router**. A UDP logger-discovery broadcast drew **no reply** (every datagram back was the Pi's own probe echoing). Its configured address is in the stick's own AP-mode subnet, which has no route from the Pi. The Node-RED side is a stub — one config node and one register node, wired to nothing — and no Solarman credentials exist, so the vendor-cloud route is not quietly available either. Nothing can be built or tested until the stick is joined to the device SSID. |
+| **RM-026** Deye/Solarman inverter | The logger is **not on the device SSID**. Integration shape **decided: MQTT via a pre-built local bridge** — see the entry. **Re-verified twice on 2026-08-26 and still absent**, now with a census rather than a sweep: every neighbour MAC on the device subnet was diffed against the cloud's own device MACs, and **the only non-Tuya host on the segment is the router**. A UDP logger-discovery broadcast drew **no reply** (every datagram back was the Pi's own probe echoing). Its configured address is in the stick's own AP-mode subnet, which has no route from the Pi. The Node-RED side is a stub — one config node and one register node, wired to nothing — and no Solarman credentials exist, so the vendor-cloud route is not quietly available either. Nothing can be built or tested until the stick is joined to the device SSID. |
 | **RM-005** ESP32 AC sniffer | Publishes nothing. The broker is running and the flow subscribes, but a five-minute listen on all topics saw **zero messages** — and this was on the correct 2.4 GHz network, so the old explanation ("the Pi was on 5 GHz") no longer covers it. The ESP32 itself is silent. |
 
 ### Waiting on elapsed time, not on work
@@ -108,6 +110,15 @@ column landed all went **local**, with no cloud fallbacks.
 `sudoers` entry that would let any authenticated app user bounce the bridge, and the two
 reasons to want it have both weakened — the fleet-drop alert now reports the drop, and the
 Wi-Fi fallback that caused the worst outage is corrected automatically by EX-106.
+
+### Worth knowing about the system's reach
+
+**Local device control does not depend on the internet, and now neither does commanding it.**
+The Tuya fleet is on the Pi's own segment and answers local keys; dispatch has always preferred
+that path. Until 2026-08-26 the *audit* step did depend on the internet, which meant an outage
+removed every control in the building — see **EX-130**. Sessions are now verified offline
+against a cached public key and commands are recorded to a durable local buffer, with both
+safety properties intact. Break-glass sessions remain view-only.
 
 ### The standing hazard
 
@@ -898,9 +909,9 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 ### Testing & tooling
 
-- [x] **EX-120** 603 frontend tests (vitest) — `src/**/*.test.ts(x)`
+- [x] **EX-120** 607 frontend tests (vitest) — `src/**/*.test.ts(x)`
 - [x] **EX-121** 348 bridge/contract tests, including assertions that the generated flow contains no write nodes and no MQTT — `test/`
-- [x] **EX-122** 318 server tests against real spawned processes and hand-rolled fake HTTP servers, no mocking library — `server/*.test.mjs`
+- [x] **EX-122** 351 server tests against real spawned processes and hand-rolled fake HTTP servers, no mocking library — `server/*.test.mjs`
 - [x] **EX-105** Environment hygiene is checked, not trusted. A module that is *imported* must
       not reconfigure the process: `server/envHygiene.test.mjs` imports each route module in a
       clean child process and asserts it added no keys to `process.env`, and separately greps
@@ -910,6 +921,63 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       caught RM-022 nowhere. The source-level half fails anywhere.
       This is the same shape as EX-091: the mistake is invisible to types, survives a green
       suite, and the only reliable guard reads the source — `server/envHygiene.test.mjs`
+- [x] **EX-130** An internet outage no longer removes control of the building.
+      **THE GAP, WHICH WAS NOT WHERE ANYONE WOULD LOOK FOR IT.** The Tuya fleet is local: the
+      devices sit on the Pi's own L2 segment, answer local keys, and dispatch has always
+      preferred the local path with the vendor cloud as fallback. Commanding them needs no
+      internet at all. Two things needed it anyway — `handleCommand` verified every session by
+      calling `/auth/v1/user`, and `auditedDispatch` wrote the audit row to Supabase *before*
+      dispatching — and between them the effective offline command window was **zero**. A WAN
+      outage removed every control in the building while the device layer sat there working
+      perfectly. Break-glass sessions authenticate locally and last 12 h, but are view-only by
+      design, so they did not cover it either.
+      **NEITHER SAFETY PROPERTY WAS RELAXED.** Sessions are still verified, and a relay still
+      cannot move without the command being recorded first. What changed is that "recorded"
+      stopped meaning "recorded in Supabase" and started meaning "recorded durably somewhere we
+      control". `auditedDispatch`'s contract is untouched — the durability is supplied by
+      wrapping the injected `insertAudit`/`updateAudit`, not by editing the rule.
+      **The distinction the whole design turns on: a 4xx is an ANSWER, a throw is an outage.**
+      Supabase replying "this caller may not write that row" is an authorization decision and
+      still refuses; only a transport failure may be buffered. Laundering a refusal into a local
+      queue entry and then moving a relay on the strength of it is the one genuinely dangerous
+      mistake available here, and it is the first thing the tests pin.
+      **No new secret and no new dependency.** Access tokens are ES256 and the public key is
+      published at `/auth/v1/.well-known/jwks.json` — *measured, not assumed*; `node:crypto`
+      verifies ES256 natively. A shared JWT secret would have meant adding the most powerful
+      credential in the auth system to `server/.env`; a cached public key is not a secret at
+      all. The cache persists to disk, because a proxy restarted **during** an outage would
+      otherwise silently lose offline capability at the worst possible moment.
+      **Network-first, deliberately.** The remote check is authoritative and is the only one
+      that notices a session the user has since signed out of; local verification cannot see a
+      revocation. So it stays primary and its answers are never second-guessed — the offline
+      path applies only when the question could not be *asked*. That is strictly weaker, and it
+      is used only when the alternative is losing the building.
+      **`alg` is not negotiable.** The oldest JWT break is a verifier that reads the algorithm
+      out of the header and obeys: `none` accepts anything, and `HS256` lets an attacker HMAC
+      a token using the public key as the shared secret — public, by definition. This verifies
+      ES256 and nothing else, and a test forges both.
+      **Rotate, never truncate.** Two processes touch the buffer: the proxy appends, ingest
+      drains. Read-then-truncate would silently drop a row appended in between — a lost audit
+      row for a relay that really did move, which is precisely what the trail exists to prevent.
+      `rename(2)` is atomic, so a concurrent append lands in a fresh file. *Stated honestly:
+      that atomicity is not covered by a test.* An interleaving hook can only be placed where a
+      window exists, and the correct implementation has none — an attempt to add one passed
+      against a deliberately broken copy-then-truncate version, so the hook was removed rather
+      than left implying a guarantee it never gave.
+      **Replay needed no new mechanism.** The buffer entry shape matches the one `ingest.mjs`
+      already drains, `requested_by` travels *in the row* so attribution survives an upload
+      under service-role credentials, and the outcome is amended into the buffered entry before
+      it is ever sent — so one correct row replays, with no migration, despite `command_id`
+      carrying no unique constraint.
+      **The operator is told.** `/api/capabilities` reports the backlog and the Control page
+      says so when it is non-zero, silent otherwise. A command accepted into a local buffer is
+      not the same fact as one recorded in the audit table, and this project does not let the
+      UI claim the stronger one.
+      *Break-glass remains view-only* — the operator's decision, and a test pins it, because an
+      outage is exactly the circumstance that could quietly promote it.
+      `server/jwtVerify.mjs`, `server/jwksCache.mjs`, `server/auditQueue.mjs`,
+      `server/proxy.mjs`, `server/ingest.mjs`,
+      `src/components/control/AuditBacklogNote.tsx`, `src/stores/capabilitiesStore.ts`
 - [x] **EX-129** `npm run set-device-ip:pi` — the RM-021 remedy, as a reversible script.
       Gives a `tuya-smart-device` node a static `deviceIp` so the bridge stops depending on a
       discovery broadcast the device has stopped sending. Dry run by default, `--apply` to
@@ -962,7 +1030,15 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       be wrong for precisely the devices hardest to reason about, and EX-028b records this
       project making that exact mistake once already and getting a confident, empty verdict for
       it. So the vendor's names are reported as the vendor's, unjoined and labelled as such.
-      Carrying the vendor id into the registry is FI-001, and it is what the column needs first.
+      **CORRECTION, 2026-08-26 evening: "not soundly possible" was too strong.**
+      `server/cloudDispatchConfig.mjs` already carries the join — `vendorIdMapFrom` reads the
+      vendor id off each `tuya-smart-device` node in the live flow, and
+      `registryIdForNodeName` maps it to a registry id. Crucially it **fails closed**: strict
+      regexes for `Light Switch N` and `CON`, and `null` for everything else, so the meters
+      and the ACU — the ambiguous cases the paragraph above is really about — are refused
+      rather than guessed. That is not the display-name matching EX-028b warns against; it is
+      the opposite. A per-device column is therefore available **for the 14 commandable
+      devices**, with no claim made for the rest. Left as a follow-up rather than built here.
       The note renders **only when it has something to say**, following the same rule as the
       unstable count in the page header — and EX-028b removed a card from this very page for
       restating what the table already showed. This only ever says what the table cannot.
@@ -1483,8 +1559,43 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       — the only other thing that ever published to it (RM-005) has been silent for days and
       nobody noticed, because nothing watches it. **If (b) is chosen, a liveness check on the
       MQTT topic is part of the work, not an extra.**
-      *Recommendation: (a)*, unless the inverter must also be read by something other than
-      Node-RED — that is the one thing (b) buys that (a) does not.
+      **DECIDED 2026-08-26 evening: (b), MQTT — reversing the recommendation above.** The
+      entry recommended (a), and so did I when asked earlier the same day. The operator pushed
+      back with a specific proposal — a pre-built local Solarman-to-MQTT bridge — and the
+      evidence supports them rather than the entry. Four reasons, in order of weight:
+      1. **The register map is the hard part, and it is already solved.**
+         `kbialek/deye-inverter-mqtt` supports **`sun-5k-sg03lp1` by name**, across five
+         metric groups (`deye_sg03lp1`, `deye_hybrid_battery`, `deye_hybrid_bms`,
+         `deye_hybrid_timeofuse`, `settings`). Hand-modelling a hybrid inverter's battery,
+         BMS and time-of-use registers on the `solarman-devices` nodes is exactly the work
+         (a) was quietly assuming away.
+      2. **There is a model-specific quirk that would have cost a day.** This inverter times
+         out when asked for more than roughly 16 registers at once; the bridge exposes
+         `DEYE_LOGGER_MAX_REG_RANGE_LENGTH` for it. Under (a) that surfaces as intermittent
+         read failures, which read as a network fault — this project's most expensive failure
+         shape, and one it has now paid for several times.
+      3. **The liveness condition this entry attached to (b) is already met.** The bridge
+         publishes `status` and `logger_status` topics of its own, so the check is a
+         subscription rather than something to build. That was the main argument against (b).
+      4. **Port ambiguity becomes configuration rather than diagnosis.** The stick may speak
+         TCP on 8899, the AT protocol on 48899, or Modbus/TCP on 502 — newer SG03LP1 loggers
+         ship with **8899 closed** — and the bridge selects with `DEYE_LOGGER_PROTOCOL`.
+      *What (a) still had going for it, and what it costs to give up:* it is the only shape
+      where the inverter reaches building totals with no further work, and it adds no process
+      to supervise. Under (b) that plumbing is a subscriber plus a registry entry, and the
+      broker becomes a dependency. Worth it, given 1 and 2.
+      **The Pi is ready: Docker 29.7.2 (aarch64), Mosquitto active on 1883, ~5.5 GB RAM free.**
+      **TWO THINGS TO SETTLE BEFORE THE BRIDGE IS INTRODUCED, one of them security:**
+      - **Mosquitto currently runs `allow_anonymous true` on both 1883 and 9001**, on the
+        device network. The bridge can **write** to the inverter — active power regulation,
+        battery parameters, time-of-use — behind its `DEYE_FEATURE_*` flags. An anonymous
+        broker plus a write-enabled bridge means anything associated to that SSID could
+        command the inverter. **Keep every write feature off, and lock the broker down first.**
+        This is a live-service config change and deserves its own decision; it is recorded here
+        rather than done quietly.
+      - The broker still carries **zero traffic** (re-checked 2026-08-26), so no MQTT path in
+        this system has ever been proven end to end. The first thing the bridge does is also
+        the first real test of Node-RED's subscriber.
       **Do not put the serial number, the logger's address, or its password in this repository.**
       They belong in `server/.env` or the Node-RED credential store, like every other secret.
 

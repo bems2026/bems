@@ -23,6 +23,7 @@ import { TIMING, METERED } from '../shared/registry.mjs';
 import { shapeDeviceRows, shapeAnomalyRows } from './shapeRows.mjs';
 import { makeSupabaseClient } from './supabaseRest.mjs';
 import { appendToBuffer, readBuffer, writeBuffer, bufferCount } from './ingestBuffer.mjs';
+import { takeBufferedCommands, restoreUndrained } from './auditQueue.mjs';
 import { selectAnomalyCandidates, detectAnomaly, pushSample } from './anomalyStats.mjs';
 import { runIngestCycle, msUntilNextTick } from './ingestCycle.mjs';
 import {
@@ -45,6 +46,14 @@ const POLL_MS = Number(process.env.INGEST_POLL_MS) || TIMING.HISTORY_SAMPLE_MS;
 
 const DEVICE_SYNC_MS = Number(process.env.INGEST_DEVICE_SYNC_MS) || 5 * 60 * 1000;
 const BUFFER_PATH = process.env.INGEST_BUFFER_PATH || path.join(__dirname, 'data', 'ingest-buffer.ndjson');
+/**
+ * Command audit rows the proxy recorded locally because Supabase was unreachable. A SEPARATE
+ * file from the readings buffer above, deliberately: this one has two processes touching it
+ * (the proxy appends, this drains), and mixing it into a buffer whose read-modify-write
+ * assumes a single writer would put audit rows at risk of being dropped by a concurrent
+ * rewrite. See auditQueue.mjs — these are the rows that say a relay moved.
+ */
+const COMMAND_BUFFER_PATH = process.env.COMMAND_AUDIT_BUFFER_PATH || path.join(__dirname, 'data', 'command-audit-buffer.ndjson');
 const RETENTION_DAYS = Number(process.env.INGEST_RETENTION_DAYS) || DEFAULT_RETENTION_DAYS;
 
 /**
@@ -134,6 +143,38 @@ async function flushBuffer() {
   writeBuffer(BUFFER_PATH, []);
 }
 
+/**
+ * Uploads the command audit rows the proxy recorded during an outage.
+ *
+ * Claimed by rotation rather than read-then-truncate, so a command arriving mid-drain cannot
+ * be lost; anything that fails to upload is put straight back. Deliberately does NOT throw
+ * into the ingest cycle: readings and the audit backlog fail independently, and a stuck audit
+ * row must not stop telemetry being written.
+ */
+async function drainCommandAudit() {
+  const taken = takeBufferedCommands(COMMAND_BUFFER_PATH);
+  if (taken.entries.length === 0) return;
+
+  const remaining = [];
+  let uploaded = 0;
+  for (let i = 0; i < taken.entries.length; i++) {
+    const entry = taken.entries[i];
+    try {
+      await supabase.upsert(entry.table, entry.rows, entry.onConflict ? { onConflict: entry.onConflict } : undefined);
+      uploaded++;
+    } catch {
+      // Stop at the first failure and keep the rest in order, matching flushBuffer. Retrying
+      // the tail now would reorder the audit trail around a stuck row.
+      remaining.push(...taken.entries.slice(i));
+      break;
+    }
+  }
+  restoreUndrained(COMMAND_BUFFER_PATH, taken, remaining);
+  if (uploaded) {
+    console.log(`[ibems-ingest] uploaded ${uploaded} command audit row(s) recorded during an outage${remaining.length ? `, ${remaining.length} still pending` : ''}`);
+  }
+}
+
 async function writeOrBuffer(table, rows, onConflict) {
   if (rows.length === 0) return;
   try {
@@ -180,6 +221,10 @@ async function tick() {
       await notifier.notify(msg.title, msg.body, msg.priority);
     }
   }
+
+  // Independent of the ingest cycle above: a command audit row is evidence that a relay moved,
+  // so it must not be held hostage by a bridge outage that has nothing to do with it.
+  await drainCommandAudit().catch((err) => console.error(`[ibems-ingest] command audit drain failed: ${err?.message ?? err}`));
 
   const stamp = new Date().toISOString();
   if (result.ok) {

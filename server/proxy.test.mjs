@@ -13,7 +13,11 @@ import { spawn } from 'node:child_process';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import nodeCrypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
 import { hashBreakGlassPassword } from './breakGlass.mjs';
+import { readBuffer } from './ingestBuffer.mjs';
 import { DEVICE_REGISTRY } from '../shared/registry.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -372,7 +376,9 @@ test('GET /api/capabilities reflects HARDWARE_DISPATCH_ENABLED — false by defa
   try {
     const res = await fetch(`${proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: false, dispatch_classes: [] });
+    // deepEqual, not a subset match: this endpoint tells the UI what it is allowed to claim
+    // about hardware, so a field appearing unnoticed is exactly what should fail a test.
+    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: false, dispatch_classes: [], audit_buffer_pending: 0 });
   } finally {
     cleanup();
   }
@@ -382,7 +388,7 @@ test('GET /api/capabilities reports true once the gate is explicitly opened', as
   const { proxyUrl, cleanup } = await setup({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-light-token' });
   try {
     const res = await fetch(`${proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
-    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: true, dispatch_classes: ['switch', 'outlet_dual', 'acu_ir'] });
+    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: true, dispatch_classes: ['switch', 'outlet_dual', 'acu_ir'], audit_buffer_pending: 0 });
   } finally {
     cleanup();
   }
@@ -960,5 +966,154 @@ test('GET /api/tuya/presence reports 501 when the deployment has no Tuya credent
     assert.deepEqual(await res.json(), { error: 'tuya_not_configured' });
   } finally {
     cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Offline operation: the internet goes away, the building does not
+//
+// The Tuya fleet is local — same L2 segment, local keys — so commanding it needs no internet.
+// Two things needed it anyway (session verification, and the audit insert that gates dispatch),
+// which between them reduced the offline command window to zero. These drive the real proxy
+// process against a Supabase that genuinely refuses TCP, which is what an outage actually looks
+// like: `rejectCommandInserts` above returns a STATUS CODE, and a status code is an answer.
+// ---------------------------------------------------------------------------
+
+/** A port nothing is listening on, so `fetch` fails at the transport rather than replying. */
+async function deadPort() {
+  return new Promise((resolve) => {
+    const s = http.createServer();
+    s.listen(0, '127.0.0.1', () => {
+      const { port } = s.address();
+      s.close(() => resolve(port));
+    });
+  });
+}
+
+function makeSigningKey() {
+  const { publicKey, privateKey } = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  return { jwk: { ...publicKey.export({ format: 'jwk' }), kid: 'offline-kid', alg: 'ES256', use: 'sig' }, privateKey };
+}
+
+function mintToken(privateKey, issuer, { sub = 'user-offline', expIn = 3600 } = {}) {
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const input = `${enc({ alg: 'ES256', typ: 'JWT', kid: 'offline-kid' })}.${enc({ sub, iss: issuer, exp: Math.floor(Date.now() / 1000) + expIn })}`;
+  const sig = nodeCrypto.sign('sha256', Buffer.from(input), { key: privateKey, dsaEncoding: 'ieee-p1363' });
+  return `${input}.${sig.toString('base64url')}`;
+}
+
+/** Proxy pointed at an unreachable Supabase, with signing keys already cached — the real
+ * sequence: they were fetched while the link was up, and the link then went down. */
+async function setupOffline({ seedKeys = true, ...extraEnv } = {}) {
+  const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-offline-'));
+  const { jwk, privateKey } = makeSigningKey();
+  const jwksPath = join(dir, 'jwks.json');
+  if (seedKeys) fs.writeFileSync(jwksPath, JSON.stringify({ keys: [jwk] }));
+  const bufferPath = join(dir, 'command-audit-buffer.ndjson');
+
+  const supabaseUrl = `http://127.0.0.1:${await deadPort()}`;
+  const ctx = await setupDispatch({
+    SUPABASE_URL: supabaseUrl,
+    JWKS_CACHE_PATH: jwksPath,
+    COMMAND_AUDIT_BUFFER_PATH: bufferPath,
+    HARDWARE_DISPATCH_ENABLED: 'true',
+    LIGHT_API_TOKEN: 'test-light-token',
+    ...extraEnv,
+  });
+  return {
+    ...ctx,
+    token: mintToken(privateKey, `${supabaseUrl}/auth/v1`),
+    foreignToken: mintToken(makeSigningKey().privateKey, `${supabaseUrl}/auth/v1`),
+    bufferPath,
+    readBufferedRows: () => readBuffer(bufferPath).map((e) => e.rows[0]),
+  };
+}
+
+test('a real session still commands hardware while Supabase is unreachable', async () => {
+  // The whole point of the change. Before it, this returned 403: the session could not be
+  // verified and the audit row could not be written, so a WAN outage removed every control in
+  // the building while the devices themselves sat there perfectly reachable.
+  const ctx = await setupOffline();
+  try {
+    const res = await fetch(`${ctx.proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${ctx.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l1', action: 'off' }),
+    });
+    assert.equal(res.status, 202, await res.text());
+
+    const rows = ctx.readBufferedRows();
+    assert.equal(rows.length, 1, 'the command must be recorded durably, or it must not dispatch');
+    assert.equal(rows[0].device_id, 'l1');
+    assert.equal(rows[0].requested_by, 'user-offline', 'attribution has to survive the outage');
+    assert.equal(rows[0].status, 'dispatched', 'the outcome is written back into the buffered row');
+
+    // And the operator is told. A command accepted into the buffer is not the same fact as one
+    // recorded in the audit table, so the backlog has to be visible rather than inferred.
+    const caps = await fetch(`${ctx.proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${ctx.token}` } });
+    assert.equal((await caps.json()).audit_buffer_pending, 1);
+  } finally {
+    ctx.cleanup();
+  }
+});
+
+test('offline, a token signed by anyone else is refused', async () => {
+  // Offline verification is the only check running, so it is the entire boundary between the
+  // LAN and a relay. A self-signed token must not open it.
+  const ctx = await setupOffline();
+  try {
+    const res = await fetch(`${ctx.proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${ctx.foreignToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l1', action: 'off' }),
+    });
+    assert.equal(res.status, 401);
+    assert.deepEqual(ctx.readBufferedRows(), [], 'nothing may be recorded for a refused caller');
+  } finally {
+    ctx.cleanup();
+  }
+});
+
+test('offline with no cached keys, everything is refused rather than waved through', async () => {
+  // Fails closed. A fresh install that has never been online has no keys, and "no keys" must
+  // never collapse into "no checking".
+  const ctx = await setupOffline({ seedKeys: false });
+  try {
+    const res = await fetch(`${ctx.proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${ctx.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l1', action: 'off' }),
+    });
+    assert.equal(res.status, 401);
+    assert.deepEqual(ctx.readBufferedRows(), []);
+  } finally {
+    ctx.cleanup();
+  }
+});
+
+test('offline, a break-glass session is still view-only', async () => {
+  // The decision was real sessions only. Break-glass authenticates against a local password
+  // hash, so it works offline by construction — which is exactly why it needs an explicit
+  // check that the outage has not quietly promoted it to a command-capable session.
+  const ctx = await setupOffline();
+  try {
+    const login = await fetch(`${ctx.proxyUrl}/api/local-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: BREAK_GLASS_PASSWORD }),
+    });
+    assert.equal(login.status, 200, 'break-glass must still let someone in to LOOK');
+    const { token } = await login.json();
+
+    const res = await fetch(`${ctx.proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l1', action: 'off' }),
+    });
+    assert.equal(res.status, 403);
+    assert.equal((await res.json()).error, 'break_glass_cannot_command');
+    assert.deepEqual(ctx.readBufferedRows(), []);
+  } finally {
+    ctx.cleanup();
   }
 });
