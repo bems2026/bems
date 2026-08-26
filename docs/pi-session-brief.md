@@ -50,22 +50,29 @@ Decided by the operator, 2026-08-25.
 - `git add -A` in this repo. Enumerate paths. The repo is public.
 - Change the Pi's Wi-Fi. A wrong SSID loses the host and nobody may be on site.
 - Hand-edit `node-red-bridge/bridge-flow.json`. It is generated.
+- **Widen the MQTT broker back to all interfaces.** It is bound to loopback on purpose
+  (2026-08-26) — see the Broker row below. If something off-host genuinely needs to publish,
+  add a listener bound to the LAN address *with a `password_file`*; do not edit the loopback
+  listener to `0.0.0.0`, which is the state that was removed.
 
 ---
 
-## State as of 2026-08-25, with the evidence
+## State as of 2026-08-26, with the evidence
 
 Do not trust this section past its date — re-run the first-moves checks. It is here so you know
 what *was* true and what has already been ruled out.
 
 | | |
 |---|---|
-| Fleet | **12/21 online.** `co7` + all seven lights + all four meters. |
-| `co1`–`co6` | **Dead by both paths** — `online: false` locally *and* in the Tuya cloud. No successful connect for `CO1` in 40 minutes; ~27 `find() timed out` each per 5 min. **RM-020: needs a power-cycle, which needs someone at the office.** A restart was already tried and did nothing for them. |
+| Fleet | **15/21 online.** `co1`–`co3`, `co7`, all seven lights, all four meters. |
+| `co4`–`co6` | **All three need power cycling.** `co4` and `co6` are absent from the segment (no ARP entry). `co5` *is* on the segment and answers ARP — the static-`deviceIp` remedy was actually tried on it 2026-08-26 and it refused every TCP connection, so **ARP is not reachability** and it needs power too. **Re-run `npm run tuya:macs` immediately before the trip:** the split moved twice inside one hour on 2026-08-26. |
+| Broker | **Mosquitto is loopback-only since 2026-08-26** (`127.0.0.1` and `::1`), anonymous, and the websockets listener is retired. It previously listened on every interface with `allow_anonymous true` on the device segment. **This config lives only in `/etc/mosquitto/` — nothing in the repo declares it**, same exposure shape as `findTimeout`: a rebuild or package upgrade restores the permissive default silently. Timestamped `.bak` files sit beside both config files. Node-RED (the only client, on `localhost`) is unaffected; **anything off-host now gets `Connection refused`**, which is what RM-005's ESP32 would hit and what forces RM-026's bridge to use host networking. |
 | `l6` | Recovered. Was written up as an RF/hardware fault; a Node-RED restart reconnected it in two seconds and the operator then toggled the real fixture. Only its one-hour stability window is unproven (RM-012). |
 | IR Blaster, Outside Temp | Not in the Tuya cloud project, never connected. **Quiesced** (`disableAutoStart`), so they no longer retry every 10 s. `acu_main` and `sens_outside_temp` now honestly report `online: false`. Reversible with `quiesce:pi --undo`. |
 | Cloud dispatch fallback | **Works** — verified against `co1` at `{ok:true}` in 972 ms while it was locally unreachable. Covers all 14 commandable devices. |
-| Services | `nodered`, `ibems-proxy`, `ibems-dashboard`, `ibems-ingest`, `ibems-scheduler` — all active. |
+| `server/data/` | **Live state, not scratch.** `jwks.json` is the cached signing key that lets sessions be verified while the internet is down; `command-audit-buffer*.ndjson` is the outage queue of command audit rows waiting to reach Supabase (one file per writing process — the proxy and the scheduler). Files here with rows in them mean **Supabase was unreachable and `ibems-ingest` will drain them**, not that something is broken. Empty is the normal steady state. Do not delete them: each row is a relay that moved. |
+| Commands offline | **They work.** Since 2026-08-26 a real Supabase session is verified locally against the cached key, and the audit row is written to the buffer above before dispatch, so an internet outage no longer removes control of a fleet that is entirely local. Applies to manual, scheduled and auto-shed commands. Break-glass sessions stay **view-only**. The Control page shows the backlog when it is non-zero. |
+| Services | `nodered`, `mosquitto`, `ibems-proxy`, `ibems-dashboard`, `ibems-ingest`, `ibems-scheduler` — all active. |
 
 ---
 
@@ -127,6 +134,28 @@ will recur anywhere a queue is mistaken for a result.
 **A ping with no reply is not client isolation.** Windows drops ICMP by default. Use `ip neigh` —
 if ARP resolves the MAC, layer 2 works.
 
+**ARP is not reachability either.** Answering ARP proves the device's *network* layer is alive,
+not that a Tuya session can be established. `co5` answered ARP throughout 2026-08-26, accepted a
+correct static `deviceIp`, and then refused every TCP connection for six minutes — the address
+was correct and useless. ADR-002 describes exactly that state. So "on the segment" means *try the
+free remedy first*, not *no power-cycle needed*.
+
+**`localhost` is two addresses, and binding one of them silently locks out the other.** It
+resolves to `::1` on this host as well as `127.0.0.1`, and the broker's logs show both in use, so
+`listener 1883 127.0.0.1` alone would have cut off whichever the resolver happened to prefer that
+day — presenting as a broker fault rather than a config one. The live config binds both families.
+Validate any listener change on a spare port *before* it goes near the running service; a second
+`mosquitto -c` on an unused port costs nothing and answers the question outright.
+
+**A test can write into the live system's state.** `server/data/` holds the real command-audit
+outage queue and the cached signing keys. On 2026-08-26 a full `npm run test:server` left a
+fabricated `l1` command there — a row `ingest.mjs` would have uploaded into the **production**
+audit trail, attributed to a test user. The harness closes its fake Supabase mid-command, and a
+socket dying mid-request is indistinguishable from a real outage, so it buffered exactly as
+designed. Fixed and guarded by `server/testStatePaths.test.mjs`, but the shape is worth
+remembering: the brief tells you to run the suite on the Pi, so the suite must never write
+anywhere the daemons read.
+
 ---
 
 ## The commands that matter
@@ -141,6 +170,13 @@ npm run quiesce:pi -- --host=127.0.0.1 [--undo] [--apply]
 # Devices in and out of the registry + flow, from one validated decision
 npm run enroll:pi  -- --host=127.0.0.1 --list
 npm run remove:pi  -- --host=127.0.0.1 --list
+
+# Give a dark-but-on-segment device a static address (reversible with --undo).
+# Free to try; NOT a guarantee — see "ARP is not reachability" above.
+npm run set-device-ip:pi -- --host=127.0.0.1 [--undo] [--apply]
+
+# Broker: confirm it is still loopback-only. Two rows, both loopback, nothing on 0.0.0.0.
+ss -lnt | grep :1883
 
 # Suites
 npm test && npm run test:bridge && npm run test:server

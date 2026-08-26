@@ -943,7 +943,9 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       **This configuration exists only on the Pi, and nothing in this repository declares it** —
       the same shape as `findTimeout`/`tuyaVersion`, where a rebuild or a package upgrade
       restores the permissive default with no diff and no alarm. Recorded in `CLAUDE.md`'s site
-      facts for that reason, with timestamped `.bak` files beside both config files.
+      facts for that reason, and in `docs/pi-session-brief.md` — which is what a session
+      actually reads before touching the Pi — with timestamped `.bak` files beside both config
+      files.
       *Verified after the change:* Node-RED reconnected within fifteen seconds under its
       existing client id, the Pi's own LAN address refuses 1883, loopback still accepts, 9001 is
       closed, and all six services stayed active with the fleet unchanged.
