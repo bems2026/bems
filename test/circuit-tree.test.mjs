@@ -114,3 +114,40 @@ test('circuitPath terminates on a cycle instead of looping', () => {
   ];
   assert.ok(circuitPath(cyclic, 'a').length <= 34);
 });
+
+/**
+ * The link between the two files that name the same circuits.
+ *
+ * `branch_circuit` on a device is the circuit's NAME, typed into `registry.mjs` by hand. It
+ * already matches, and nothing enforced that — rename a circuit in one file and the other drifts
+ * silently, leaving the Control page and the 3D scene labelling devices with a branch that no
+ * longer exists.
+ *
+ * WHY THIS IS A CROSS-CHECK AND NOT A `circuit_id` COLUMN IN SUPABASE: the electrical tree is
+ * WIRING, and RM-027 settled where wiring lives. Rooms are operator-editable and change often, so
+ * the spatial tree went to Supabase. A panel changes when an electrician changes it — a deploy-
+ * level event, not an operator-level one — and putting it behind a network read would make the
+ * building totals depend on the internet, which is the property EX-130 exists to protect.
+ */
+test('every device names a branch circuit that actually exists in the panel', () => {
+  const names = new Set(CIRCUITS.map((c) => c.name));
+  for (const device of DEVICE_REGISTRY) {
+    if (!device.branch_circuit) continue;
+    assert.ok(
+      names.has(device.branch_circuit),
+      `${device.id} is on "${device.branch_circuit}", which is not a circuit in this site's panel`,
+    );
+  }
+});
+
+test('every metered circuit is named by the device that measures it, so the two agree both ways', () => {
+  const byId = new Map(DEVICE_REGISTRY.map((d) => [d.id, d]));
+  for (const circuit of meteredCircuits(CIRCUITS)) {
+    const meter = byId.get(circuit.meter_device_id);
+    assert.equal(
+      meter.branch_circuit,
+      circuit.name,
+      `${meter.id} says it is on "${meter.branch_circuit}" but measures the circuit named "${circuit.name}"`,
+    );
+  }
+});

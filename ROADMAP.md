@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-27 (UTC), late — RM-027 and RM-028 both done, applied and verified live
+**Last audited:** 2026-08-27 (UTC), late — RM-027, RM-028 and RM-029 done; Track B is half built
 **Audited at commit:** `10fce92`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
@@ -2124,7 +2124,33 @@ may not.
       *Keep `device_config.room`,* backfilled, as a denormalised label — the additive discipline
       `supabase/phase7_device_config.sql`'s own header argues for.
 
-- [ ] **RM-029** The circuit tree. `PHASE_MAP` is a constant naming four specific meters.
+- [x] **RM-029** ~~The circuit tree. `PHASE_MAP` is a constant naming four specific meters.~~
+      **DONE 2026-08-27 — acceptance met, and the strongest form of it.** `510daf2`.
+      `test/contract.test.mjs` passes **71/71 untouched** against the derived map, and the
+      regenerated `bridge-flow.json` is **byte-identical** — the derivation reproduces the old
+      constant exactly, list order included, so nothing downstream can tell the difference.
+      `phase_current.blue` is still `null`.
+      *`blue` stays an empty LIST, not a missing key.* `buildLatest` reads `PHASE_MAP.blue`
+      directly and the UI renders it as "not metered" rather than a real zero, so `derivePhaseMap`
+      emits all three phases whatever is wired to them — while the site's circuit file
+      deliberately contains no Blue row, because there is no such branch to describe.
+      *Two cross-checks this codebase had nowhere else, both neuter-verified:* every meter a
+      circuit names must be a real registry device — a typo would silently drop a branch from the
+      building total, giving a reading that looks plausible and is short by one circuit — and
+      every branch meter must be claimed by exactly one circuit, which catches the opposite
+      mistake. A third guard ties the two files that name the same circuits together, so renaming
+      one no longer drifts the other.
+      *One test was weak and is now not:* "the registry exports the derived map" passed against
+      the OLD hand-written constant, because `deepEqual` cannot tell a derivation from an
+      identical value. It now reads the source and fails if a meter id is still spelled out.
+      **DELIBERATELY NOT a `circuits` table in Supabase**, which this entry originally implied.
+      The electrical tree is **wiring**, and RM-027 already settled where wiring lives: rooms are
+      operator-editable and change often, so the spatial tree went to Supabase; a panel changes
+      when an electrician changes it, which is a deploy-level event. Putting it behind a network
+      read would make the building totals depend on the internet — the property `EX-130` exists
+      to protect. `branch_circuit` therefore stays a local name with a drift guard, rather than
+      becoming a denormalised label off a `circuit_id` column.
+      *Prior text:* The circuit tree. `PHASE_MAP` is a constant naming four specific meters.
       *Acceptance:* `test/contract.test.mjs`'s phase-total assertions pass unchanged against a
       derived map, and `phase_current.blue` is still `null` rather than `0` — the invariant
       `node-red-bridge/verify.mjs` explicitly checks.
