@@ -13,6 +13,7 @@ import { CHART_PARAMS, CHART_PARAM_ORDER, formatParamValue, type ChartParam } fr
 import { SourceCard } from './SourceCard';
 import { EnergySection } from './EnergySection';
 import { UntrackedLoadCard } from './UntrackedLoadCard';
+import { SpaceTotalsCard } from './SpaceTotalsCard';
 import type { Device, Reading } from '@/lib/types';
 import { formatNumber } from '@/lib/format';
 import { measured } from '@/lib/staleness';
@@ -271,6 +272,10 @@ export function AnalyticsPage() {
       ))}
 
       <UntrackedLoadCard branchIds={branchIds} outletIds={outletIds} range={range} />
+
+      {/* RM-030. Follows the page's range but asks a different question of a different
+          source — spaces rather than device groups — so it owns its own selection. */}
+      <SpaceTotalsCard range={range} />
     </>
   );
 }

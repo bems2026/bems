@@ -5733,3 +5733,80 @@ fieldset.device-meta-editor__field > legend {
   color: var(--muted-2);
   line-height: 1.4;
 }
+
+/* ---------------------------------------------------------------------------
+   By-space totals — RM-030. Borrows the Analytics card language rather than
+   inventing a second one. Tokens only; no new colour values (CLAUDE.md).
+   --------------------------------------------------------------------------- */
+.space-totals-card__head {
+  margin-bottom: var(--sp-3);
+}
+.space-totals-card__note {
+  margin: 0;
+  padding: var(--sp-3);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-inner);
+  color: var(--muted-2);
+  font-size: var(--fs-sm);
+}
+.space-totals-card__error {
+  margin: var(--sp-3) 0 0;
+  padding: var(--sp-3);
+  border-radius: var(--r-inner);
+  background: var(--bad-soft);
+  color: var(--bad);
+  font-size: var(--fs-sm);
+}
+.space-totals-card__field {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--muted-2);
+  margin-bottom: 4px;
+}
+.space-totals-card__select {
+  width: 100%;
+  max-width: 420px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  padding: 8px 10px;
+  font: 500 var(--fs-sm) inherit;
+  /* 44px on phones, matching the page's own touch-target rule for primary controls. */
+  min-height: 40px;
+}
+.space-totals-card__figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-5);
+  margin-top: var(--sp-4);
+}
+.space-totals-card__figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.space-totals-card__value {
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.space-totals-card__unit {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--muted-2);
+}
+.space-totals-card__meta {
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+  line-height: 1.5;
+}
+@media (max-width: 480px) {
+  .space-totals-card__select {
+    max-width: none;
+    min-height: 44px;
+  }
+}
