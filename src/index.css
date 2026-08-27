@@ -5569,3 +5569,159 @@ fieldset.device-meta-editor__field > legend {
   line-height: 1.5;
   color: var(--muted-2);
 }
+
+/* ---------------------------------------------------------------------------
+   Spaces panel — RM-028. Sits alongside DeviceMetaEditor on the Devices page and
+   borrows its head/close/field treatment rather than inventing a second panel
+   language. Tokens only; no new colour values (see CLAUDE.md).
+   --------------------------------------------------------------------------- */
+.space-tree-panel {
+  margin-bottom: var(--sp-4);
+}
+.space-tree-panel__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+.space-tree-panel__heading {
+  margin: 0;
+}
+.space-tree-panel__heading:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+.space-tree-panel__close {
+  border: 1px solid var(--border);
+  background: var(--bg-surface-2);
+  color: var(--muted-2);
+  border-radius: var(--r-sm);
+  padding: 6px 12px;
+  font: 600 var(--fs-xs-lg) inherit;
+  cursor: pointer;
+  flex: none;
+}
+.space-tree-panel__lede {
+  margin: 0 0 var(--sp-4);
+  font-size: var(--fs-sm);
+  color: var(--muted-2);
+}
+.space-tree-panel__error {
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-3);
+  border-radius: var(--r-inner);
+  background: var(--bad-soft);
+  color: var(--bad);
+  font-size: var(--fs-sm);
+}
+.space-tree-panel__empty {
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-3);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-inner);
+  color: var(--muted-2);
+  font-size: var(--fs-sm);
+}
+.space-tree-panel__tree,
+.space-tree-panel__children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.space-tree-panel__row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  min-height: 36px;
+}
+.space-tree-panel__row:hover {
+  background: var(--bg-surface-2);
+}
+.space-tree-panel__name {
+  font-weight: 600;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.space-tree-panel__kind {
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+  /* Pushes the two action buttons to the right edge without a spacer element. */
+  margin-right: auto;
+}
+.space-tree-panel__row button {
+  border: 1px solid var(--border);
+  background: var(--bg-surface-2);
+  color: var(--muted-2);
+  border-radius: var(--r-sm);
+  /* 28px, not 44: these sit inside a dense list on a desktop kiosk, and the page's
+     own 44px rule applies to primary controls rather than per-row affordances. */
+  min-width: 28px;
+  min-height: 28px;
+  font: 600 var(--fs-xs-lg) inherit;
+  cursor: pointer;
+  flex: none;
+}
+.space-tree-panel__row button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.space-tree-panel__actions {
+  margin-top: var(--sp-3);
+}
+.space-tree-panel__add-root,
+.space-tree-panel__form button {
+  border: 1px solid var(--border);
+  background: var(--bg-surface-2);
+  color: var(--text);
+  border-radius: var(--r-sm);
+  padding: 8px 14px;
+  font: 600 var(--fs-xs-lg) inherit;
+  cursor: pointer;
+}
+.space-tree-panel__add-root:disabled,
+.space-tree-panel__form button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.space-tree-panel__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+}
+.space-tree-panel__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--muted-2);
+  min-width: 0;
+}
+.space-tree-panel__field input,
+.space-tree-panel__field select {
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  padding: 8px 10px;
+  font: 500 var(--fs-sm) inherit;
+  min-width: 0;
+}
+@media (max-width: 480px) {
+  .space-tree-panel__form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .space-tree-panel__form button {
+    min-height: 44px;
+  }
+}

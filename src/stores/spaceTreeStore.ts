@@ -24,6 +24,15 @@ import type { SpaceNode } from '@/lib/spaceTree';
 
 interface SpaceTreeState {
   nodes: SpaceNode[];
+  /**
+   * Whether writes are possible at all — i.e. whether Supabase is configured.
+   *
+   * Separate from `error` because it is a permanent property of the deployment, not a failure:
+   * local dev against `npm run mock` has no Supabase and never will, and a panel that offers
+   * Add there is promising something it cannot do. Found in a browser, not by a test — the unit
+   * tests mock the client as present, so this path was invisible to them.
+   */
+  canEdit: boolean;
   status: 'idle' | 'loading' | 'ready';
   /** A write is in flight. Separate from `status` so the tree stays visible while it saves. */
   mutating: boolean;
@@ -60,6 +69,7 @@ function subtreeIds(nodes: readonly SpaceNode[], root: string): Set<string> {
 
 export const useSpaceTreeStore = create<SpaceTreeState>((set, get) => ({
   nodes: [],
+  canEdit: supabase !== null,
   status: 'idle',
   mutating: false,
   error: null,
@@ -90,6 +100,10 @@ export const useSpaceTreeStore = create<SpaceTreeState>((set, get) => ({
   /** Validated locally first, so the common mistakes cost no round trip and read as sentences
    * rather than Postgres error codes. The constraints remain the authority. */
   add: async (node) => {
+    if (!supabase) {
+      set({ error: 'Supabase is not configured for this deployment, so spaces cannot be edited here.' });
+      return;
+    }
     const check = validateNewNode(node, get().nodes);
     if (!check.ok) {
       set({ error: check.error });
@@ -97,7 +111,7 @@ export const useSpaceTreeStore = create<SpaceTreeState>((set, get) => ({
     }
     set({ mutating: true, error: null });
     try {
-      const actorUserId = (await supabase!.auth.getSession()).data.session?.user.id ?? null;
+      const actorUserId = (await supabase.auth.getSession()).data.session?.user.id ?? null;
       const created = await insertSpaceNode(node, actorUserId);
       set((s) => ({ nodes: [...s.nodes, created], mutating: false }));
     } catch (err) {
@@ -109,9 +123,13 @@ export const useSpaceTreeStore = create<SpaceTreeState>((set, get) => ({
    * that did not happen — and `renameSpaceNode` exists partly because PostgREST reports an RLS
    * miss as a plain 200, so "no error" is not the same as "it was written". */
   rename: async (id, name) => {
+    if (!supabase) {
+      set({ error: 'Supabase is not configured for this deployment, so spaces cannot be edited here.' });
+      return;
+    }
     set({ mutating: true, error: null });
     try {
-      const actorUserId = (await supabase!.auth.getSession()).data.session?.user.id ?? null;
+      const actorUserId = (await supabase.auth.getSession()).data.session?.user.id ?? null;
       await renameSpaceNode(id, name, actorUserId);
       set((s) => ({
         nodes: s.nodes.map((n) => (n.id === id ? { ...n, name: name.trim() } : n)),
@@ -130,6 +148,10 @@ export const useSpaceTreeStore = create<SpaceTreeState>((set, get) => ({
    * longer exist. Matching the database's rule is what keeps the two honest between fetches.
    */
   remove: async (id) => {
+    if (!supabase) {
+      set({ error: 'Supabase is not configured for this deployment, so spaces cannot be edited here.' });
+      return;
+    }
     set({ mutating: true, error: null });
     try {
       await deleteSpaceNode(id);

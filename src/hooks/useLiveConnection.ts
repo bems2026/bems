@@ -6,6 +6,7 @@ import { useCommandStore } from '@/stores/commandStore';
 import { useContextStore } from '@/stores/contextStore';
 import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
 import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
+import { useSpaceTreeStore } from '@/stores/spaceTreeStore';
 import { useAnomaliesStore } from '@/stores/anomaliesStore';
 
 /**
@@ -63,6 +64,11 @@ export function useLiveConnection(): void {
     // than lazily on the popover's first open — same "load once at the root" reasoning as
     // every other store above. Keeps polling itself afterward (see anomaliesStore.ts).
     void useAnomaliesStore.getState().load();
+
+    // The spatial tree (RM-028). Loaded here for the same reason as deviceConfigStore: a
+    // device's placement is a label any page could adopt, and a second load path would be a
+    // second thing to keep correct. Cheap — tens of rows, once.
+    void useSpaceTreeStore.getState().load();
 
     const disconnect = connectLive({
       onData: (rows) => {

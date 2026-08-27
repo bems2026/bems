@@ -16,6 +16,7 @@ import { metaSummary, type DeviceConfig } from '@/lib/deviceConfig';
 import { DeviceMetaEditor } from './DeviceMetaEditor';
 import { EnrollWizard } from './EnrollWizard';
 import { RemoveDevicePanel } from './RemoveDevicePanel';
+import { SpaceTreePanel } from './SpaceTreePanel';
 import { SegmentPresenceNote } from './SegmentPresenceNote';
 import { ENROLLED_DEVICES } from '@shared/registry.enrolled.mjs';
 import type { Device, DeviceClass, Reading } from '@/lib/types';
@@ -65,6 +66,7 @@ export function DevicesView() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [enrolling, setEnrolling] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [editingSpaces, setEditingSpaces] = useState(false);
   const removingDevice = removingId ? (devices.find((d) => d.id === removingId) ?? null) : null;
   // Only enrolled devices can be removed. The built-in ones are hand-written in registry.mjs,
   // and no button is shown for them at all — a disabled control invites a click and then
@@ -119,6 +121,13 @@ export function DevicesView() {
             <button
               type="button"
               className="devices-add-btn"
+              onClick={() => setEditingSpaces(true)}
+            >
+              Spaces
+            </button>
+            <button
+              type="button"
+              className="devices-add-btn"
               onClick={() => setEnrolling(true)}
             >
               + Add device
@@ -128,6 +137,7 @@ export function DevicesView() {
       />
 
       {editingDevice && <DeviceMetaEditor device={editingDevice} onClose={() => setEditingId(null)} />}
+      {editingSpaces && <SpaceTreePanel onClose={() => setEditingSpaces(false)} />}
       {enrolling && <EnrollWizard onClose={() => setEnrolling(false)} />}
       {removingDevice && (
         <RemoveDevicePanel

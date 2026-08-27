@@ -116,6 +116,10 @@ describe('spaceTreeStore', () => {
     expect(useSpaceTreeStore.getState().nodes).toEqual([]);
   });
 
+  it('reports that editing is possible when Supabase is configured', () => {
+    expect(useSpaceTreeStore.getState().canEdit).toBe(true);
+  });
+
   it('descendantCount reports the blast radius before a delete is confirmed', async () => {
     fetchSpaceNodes.mockResolvedValue(nodes);
     await useSpaceTreeStore.getState().load();
