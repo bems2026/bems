@@ -85,7 +85,7 @@ test('nothing that holds data is dropped, and the rollups keep the shape they we
   assert.equal(/drop\s+(table|column)/i.test(sql), false);
   assert.equal(/building_totals_pkey/i.test(sql), false, 'widening the PK belongs to a phase that tests it');
   assert.equal(/roll_up_and_prune/i.test(sql), false, 'the rollup functions are untouched');
-  assert.equal(/delete\s+from/i.test(sql), false);
+  assert.equal(/\bdelete\s+from\b/i.test(sql), false);
 });
 
 test('the transitional site_id defaults are dropped, now that every writer is explicit', () => {

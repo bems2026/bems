@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-27 (UTC), late — RM-027, RM-028 and RM-029 done; Track B is half built
+**Last audited:** 2026-08-27 (UTC), late — RM-027 to RM-029 done; RM-030's data layer built and rehearsed
 **Audited at commit:** `10fce92`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
@@ -2163,6 +2163,30 @@ may not.
       seam for deriving it exists and nothing downstream needs to change.
 
 - [ ] **RM-030** Scoped aggregation. "This lab's consumption" is currently unanswerable.
+      **DATA LAYER DONE 2026-08-27, NOT YET APPLIED; the Analytics scope selector is what is
+      left.** `3e57c79` migration and rehearsal, plus the client reader.
+      *Acceptance is met and exercised, not asserted.* The rehearsal seeds a window holding two
+      observed samples (100 W, 300 W) and two OFFLINE rows carrying a frozen 999. If offline rows
+      counted, the average would be 599.5 and the peak 999 — both plausible, both never measured.
+      A floor's total includes its rooms; the window is half-open; and an unobserved scope
+      reports **NULL, not 0**, pinned for two separate reasons (a room with no devices, and a
+      room whose devices were all offline). **Neuter-checked:** coalescing the aggregates to 0
+      fails with *"an empty room must report NULL power, got 0"*.
+      *`phase20`'s transitional `site_id` defaults are retired here*, as that file said this phase
+      would. They let phase20 land on a running system whose daemons predated Task 6 and they
+      worked; Task 6 shipped, so the net is holding nothing up, and in a shared project a default
+      would silently attribute a second Pi's rows to this site — wrong data recorded confidently
+      is worse than a write that fails loudly. The columns stay NOT NULL. This inverted a
+      rehearsal assertion rather than deleting it: it used to prove a writer with no `site_id`
+      succeeded, and now proves such a writer is refused.
+      **The `building_totals` primary key is deliberately NOT widened**, which phase20 floated for
+      this phase on the reasoning that RM-030 would be touching the rollups anyway. It is not —
+      `node_totals` is a new read path over `readings`. Changing a primary key underneath working
+      rollup functions, for no benefit this phase can demonstrate, belongs to a phase that has a
+      reason to test it.
+      **What is left:** apply `supabase/phase22_node_totals.sql`, then the Analytics scope
+      selector. The selector is worth little until a tree exists — `space_nodes` is empty on the
+      live project — so the honest order is tree first, UI second.
       *Acceptance:* a node's total equals the sum of its descendants' devices, and an offline
       device contributes `null` rather than a frozen figure.
       A per-node totals RPC over `readings` joined through placement. **A new RPC, not a rewrite
