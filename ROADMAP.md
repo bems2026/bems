@@ -2407,6 +2407,10 @@ may not.
       - the throwaway sites were **deleted, not committed**. A fabricated building in the repo
         would read as a real one; a worked example belongs in the guide.
 
+      - **`docs/replication.md`** — the software half of the framework, written as a transcript
+        of the run above rather than as a design. Its "What this does not cover" table is the
+        point: a replication framework quiet about its gaps is worse than a short one.
+
       **What is left, and it needs decisions more than code:**
       - the day-one wizard (FI-002) — network join and vendor-account linking;
       - the packaging track (FI-003) — install script *or* card image, which is a support

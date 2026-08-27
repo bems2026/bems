@@ -6,6 +6,10 @@ Node-RED bridge to Tuya hardware, Node.js daemons, and Supabase for storage.
 **This repository is public.** Never commit tokens, keys, passwords, hostnames, IP
 addresses, or Supabase project identifiers — in code, in docs, or in commit messages.
 
+> **Standing this up for another building? `docs/replication.md`** is the software half of the
+> replication framework (Milestone 6), written as a transcript of a run that worked rather than a
+> design — including a table of what it does not cover.
+
 > **Running on the Pi itself? Read `docs/pi-session-brief.md` first.** It carries the current
 > fleet state, what you may do without asking, the first-moves checks, and the traps this
 > project has already paid for. Working *on* this project and working *on the Pi* are different
