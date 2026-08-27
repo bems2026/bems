@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-27 (UTC) — RM-027 rehearsed on the Pi; the migrations are safe to apply and wait on an operator
+**Last audited:** 2026-08-27 (UTC), evening — RM-027 is DONE: migrations applied, code deployed, verified live
 **Audited at commit:** `10fce92`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
@@ -110,12 +110,8 @@ column landed all went **local**, with no cloud fallbacks.
 6. **FI-009 (S)** — narrow the three remaining whole-map store selectors.
 7. **RM-026 Deye** — as soon as the logger is on the network; see its entry for the decision
    between the two integration shapes. Re-verified absent 2026-08-26 evening.
-8. ~~**RM-027 (M)** — site identity.~~ **Code done 2026-08-26; two migrations wait on the
-   operator.** `supabase/phase19_sites.sql` then `supabase/phase20_site_scoping.sql`, in that
-   order, by hand in the SQL editor. **Rehearse first** — `supabase/rehearse.sh` needs Docker
-   or `psql`, and the workstation this was written on had neither. Nothing is deployed and
-   nothing is broken meanwhile: every code change so far defaults to today's behaviour.
-   Next after that is **RM-028**, the space tree.
+8. ~~**RM-027 (M)** — site identity.~~ **DONE 2026-08-27**: applied, deployed, verified live.
+   Next in Track B is **RM-028**, the space tree.
 
 **Track B — replication (RM-027 – RM-034), added 2026-08-26.** Everything above is this site;
 Track B is every other site. It is listed after the small items because none of it is urgent,
@@ -1975,8 +1971,37 @@ later is configuration rather than a second migration.
 internet. EX-130 was built to guarantee it. Topology may live in Supabase; flow-critical wiring
 may not.
 
-- [ ] **RM-027** Site identity. Nothing in this system knew which building it was.
-      **BUILT 2026-08-26, NOT YET APPLIED.** Four commits: `3dea05d` the site module,
+- [x] **RM-027** ~~Site identity. Nothing in this system knew which building it was.~~
+      **DONE 2026-08-27 — applied, deployed and verified against the live system.**
+      Both migrations are in (`sites` plus `site_id` on the three tables that had none,
+      probed read-only: 4/4 present, the seeded row matching `shared/sites/<id>/site.mjs`
+      field for field). The Pi is at `bbf4993`; **399 bridge and 359 server tests pass ON
+      THE PI**, which is the RM-022 acceptance and not the same claim as passing on a
+      workstation. `verify:pi` 5/5 with `phase_current.blue` still null.
+      *The evidence that the transitional default worked, which is the part worth keeping:*
+      rows written by the OLD deployed code — which sends no `site_id` — came back stamped
+      `mmsu-nberic-care` in production. That is the ordering hazard the rehearsal caught,
+      demonstrated harmless on live data rather than argued about.
+      *The riskiest change verified itself.* The scheduler's site-scoped read of
+      `dsm_thresholds` would have failed **silently** if it returned nothing — schedules and
+      auto-shed would simply never fire. It logged `loaded 4 schedule row(s); auto-shed off,
+      0 device(s) assigned a shed tier`, which is RM-006c's real state, so it read the real
+      row and not an empty set.
+      *Incidentally observed:* the fleet went **8/20 to 15/20 across the deploy** — the seven
+      light switches returned on their own. They had been offline to the vendor cloud as well
+      as to the bridge earlier the same day, which is RM-013 doing what RM-013 does; the
+      recovery is the access point's, not this deploy's, and is recorded so it is not
+      mistaken for one.
+      **One thing deliberately NOT verified live:** the 25 degree ACU policy floor. It is
+      covered end to end by `server/proxy.test.mjs` against a real spawned proxy, and a
+      refused command provably reaches neither the bridge nor the audit table — but
+      exercising it in production means POSTing a command to a real building, and
+      `docs/pi-session-brief.md` says to ask first every time.
+      **The flow was not redeployed, and does not need to be.** Task 2 changed the generated
+      flow's offset from `8 * 3600 * 1000` to `480 * 60000` — the same number of
+      milliseconds. The live flow's behaviour is byte-identical, so a `deploy:pi --force`
+      would buy nothing and is a flow write, which needs asking.
+      *Prior state:* **BUILT 2026-08-26, NOT YET APPLIED.** Four commits: `3dea05d` the site module,
       `aa1e053` the timezone, `fbc77bf` the policy floor, `10fce92` the two migrations.
       *What is left is an operator action, not code:* apply `supabase/phase19_sites.sql`
       then `supabase/phase20_site_scoping.sql`, in that order, by hand in the SQL editor.
