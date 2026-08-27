@@ -1,0 +1,112 @@
+# Continuous integration — RM-034.
+#
+# WHY THIS EXISTS: this repository carries over 1,400 automated checks across three suites, is
+# public, and until now nothing ran them except a person who remembered to. A regression's first
+# reader was whoever next deployed to the Pi.
+#
+# WHAT IT WILL NOT DO: prove a fix works. `docs/pi-session-brief.md` records "a green test suite
+# is not proof", twice earned — a fix has shipped green and changed nothing, more than once here.
+# CI catches regressions; reading the live system back stays mandatory.
+
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# A second push supersedes the first; nothing here is worth queueing.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      # NOT one version. The Pi runs Node 22 and development happens on 24, which nothing in
+      # this repository declared until RM-034 measured it. Running both is what makes that
+      # divergence visible instead of latent — RM-022 is the scar: five server tests passed on a
+      # workstation and failed on the Pi, and the suite was green in the only place anyone looked.
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+    name: node ${{ matrix.node }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      # `ci`, not `install`: the lockfile is the input, and a job that silently resolves a
+      # different tree is testing something other than what deploys.
+      - run: npm ci
+
+      - run: npm run lint
+
+      # `tsc -b` catches what vitest's type-stripping misses — the project's own note in
+      # CLAUDE.md, and the reason build is a separate check rather than implied by the tests.
+      - run: npm run build
+
+      - run: npm test
+
+      - run: npm run test:bridge
+
+      # Spawns real processes, binds ports, and writes under `server/data/`. It runs here with
+      # NO `server/.env`, which is the configuration several of these tests actually want —
+      # RM-022 is the case where the Pi's real credentials leaked into tests that had set up an
+      # empty deployment, and five of them failed there while passing on a workstation.
+      - run: npm run test:server
+
+      # `server/data/` holds the live command-audit outage queue on the Pi. On 2026-08-26 a full
+      # test:server run left a fabricated command there — a row the ingest daemon would have
+      # uploaded into the PRODUCTION audit trail. `server/testStatePaths.test.mjs` guards it;
+      # this asserts the guard held, because the failure is invisible until it is not.
+      - name: the suites left no state behind
+        run: |
+          if [ -n "$(find server/data -type f -print -quit 2>/dev/null)" ]; then
+            echo "::error::test:server wrote into server/data/ — see RM-022 and testStatePaths.test.mjs"
+            ls -la server/data
+            exit 1
+          fi
+          echo "server/data is clean"
+
+  # WARN, NEVER BLOCK. CLAUDE.md makes updating ROADMAP.md non-negotiable, and a convention with
+  # no reminder decays. But a failing check here would train people to bypass it for a typo fix,
+  # which is worse than the drift it prevents — so this is a nudge with no teeth, deliberately.
+  roadmap-drift:
+    runs-on: ubuntu-latest
+    name: roadmap reminder
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: did the code change without the roadmap
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+          else
+            base="${{ github.event.before }}"
+          fi
+          # A first push to a branch has no usable base; nothing to compare, so say so and stop.
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            echo "no comparable base — skipping"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$base" HEAD || true)"
+          code="$(echo "$changed" | grep -E '^(src|server|shared|node-red-bridge|supabase)/' || true)"
+          roadmap="$(echo "$changed" | grep -E '^ROADMAP\.md$' || true)"
+          if [ -n "$code" ] && [ -z "$roadmap" ]; then
+            echo "::warning::Code changed but ROADMAP.md did not. CLAUDE.md makes that update non-negotiable — see the maintenance rule."
+            echo "$code"
+          else
+            echo "nothing to remind about"
+          fi
