@@ -5810,3 +5810,23 @@ fieldset.device-meta-editor__field > legend {
     min-height: 44px;
   }
 }
+
+/* RM-032: the hero when this site has no scene pack. Occupies the same space the model would,
+   so the Overview grid does not reflow — a collapsed card reads as a layout bug. */
+.spatial-view--none {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+  padding: var(--sp-5);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-inner);
+}
+.spatial-view__note {
+  margin: 0;
+  max-width: 46ch;
+  text-align: center;
+  color: var(--muted-2);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
