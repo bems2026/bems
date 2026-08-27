@@ -18,7 +18,17 @@
 -- datastore: reach for it when something is measured to be slow, not before.
 --
 -- Apply once, by hand, in the Supabase SQL editor. Rehearse with supabase/rehearse.sh first.
--- Every statement is guarded, so a re-run is safe.
+--
+-- RE-RUNNING IS SAFE, and as of 2026-08-27 that is true rather than merely asserted. This header
+-- previously claimed "every statement is guarded" while four `create policy` statements had no
+-- guard at all — PostgreSQL has no `create policy if not exists`. The operator hit `42710` on a
+-- re-run, and because the SQL editor stops at the first error and those policies sit ABOVE the
+-- `revoke ... from anon` further down, the re-run aborted before reaching the security fix it
+-- was being run for. The file appeared to have been re-applied and had not been.
+--
+-- A false claim of idempotency is worse than an honest warning, because it is acted on. Each
+-- policy is now dropped before it is created, and `test/migration-idempotency.test.mjs` fails
+-- any migration that makes this claim without earning it.
 
 -- =============================================================================
 -- space_nodes — the tree itself.
@@ -72,12 +82,16 @@ alter table space_nodes enable row level security;
 -- DELETE is granted here and is NOT granted on device_config, and the difference is real:
 -- clearing device metadata is a write of NULLs, whereas removing a room is a genuine deletion.
 -- No anon policy — phase5 dropped every one of those and none comes back.
+drop policy if exists space_nodes_select_authenticated on space_nodes;
 create policy space_nodes_select_authenticated on space_nodes
   for select using (auth.role() = 'authenticated');
+drop policy if exists space_nodes_insert_authenticated on space_nodes;
 create policy space_nodes_insert_authenticated on space_nodes
   for insert with check (auth.role() = 'authenticated');
+drop policy if exists space_nodes_update_authenticated on space_nodes;
 create policy space_nodes_update_authenticated on space_nodes
   for update using (auth.role() = 'authenticated');
+drop policy if exists space_nodes_delete_authenticated on space_nodes;
 create policy space_nodes_delete_authenticated on space_nodes
   for delete using (auth.role() = 'authenticated');
 

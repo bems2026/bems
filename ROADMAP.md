@@ -2087,9 +2087,24 @@ may not.
       *`room` is kept, not dropped* — the label a site shows before a tree exists, and the
       fallback when a placement points at a node the client no longer holds. `placementLabel`
       decides that precedence once and checks the node **resolves** rather than that an id is set.
-      *Still open, and small:* `space_subtree` remains callable by `anon` on the live project —
-      the fix is committed but `phase21` has not been re-run. Nothing leaks (security invoker,
-      RLS returns anon zero rows); it is the defence-in-depth the file claims.
+      *Still open, and small:* `space_subtree` remains callable by `anon` on the live project.
+      **The re-run was attempted 2026-08-27 and failed — because of a defect in my own file.**
+      `phase21`'s header claimed "every statement is guarded, so a re-run is safe". It was not:
+      PostgreSQL has no `create policy if not exists`, so the re-run raised `42710`, and because
+      the SQL editor stops at the first error and those policies sit ABOVE the
+      `revoke ... from anon`, it aborted before reaching the fix it was being run for. The file
+      looked re-applied and was not. **A false claim of idempotency is worse than an honest
+      warning, because it is acted on.**
+      Both `phase19` and `phase21` now drop each policy before creating it, and applying either
+      file twice into a populated database exits 0 — proven in a container, not asserted.
+      `phase19`'s header had the same flaw in a subtler form: it promised a safe re-run and then
+      admitted in the next sentence that `create policy` would error.
+      `test/migration-idempotency.test.mjs` now fails any migration that makes this claim without
+      earning it. It deliberately does NOT require every file to be idempotent — most here are
+      not and say so, which is fine — only that a file must not promise the opposite of what it
+      does. **Nothing leaks meanwhile**: `space_subtree` is `security invoker` and RLS returns
+      `anon` zero rows. `node_totals`, whose revoke did run, correctly refuses `anon` with
+      `42501` — which is also the evidence that naming the role is the right fix.
       *Prior state:* SCHEMA AND LIBRARY DONE 2026-08-27; NOT YET APPLIED, NO UI YET. `ec4a63f` the
       migration, `f10ab56` the tree library and Supabase layer.
       *Rehearsed on the Pi, exit 0*, with the tree exercised rather than pattern-matched:

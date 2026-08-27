@@ -10,9 +10,14 @@
 -- configuration change rather than a second migration against tables holding real data.
 --
 -- Apply once, by hand, in the Supabase SQL editor — there is no migration runner in this repo,
--- same convention as every phase file before it. Re-running is safe: the table create is
--- guarded and the seed is `on conflict do nothing`. Re-running `create policy` will error;
--- drop the policy first if you need to re-apply.
+-- same convention as every phase file before it. **Re-running is genuinely safe**: the table
+-- create is guarded, the seed is `on conflict do nothing`, and each policy is dropped before it
+-- is created.
+--
+-- That last clause was added 2026-08-27. This header used to promise a safe re-run and then
+-- admit, in the very next sentence, that `create policy` would error — a contradiction a reader
+-- resolves in whichever direction costs them time. `test/migration-idempotency.test.mjs` now
+-- holds any file making this claim to it.
 --
 -- Apply BEFORE supabase/phase20_site_scoping.sql, whose foreign keys target this table.
 
@@ -54,6 +59,7 @@ alter table sites enable row level security;
 -- insert/update policy is granted to `authenticated` on purpose: a signed-in user should not be
 -- able to retarget a whole deployment. No anon policy; phase 5 dropped every one of those and
 -- none comes back.
+drop policy if exists sites_select_authenticated on sites;
 create policy sites_select_authenticated on sites
   for select using (auth.role() = 'authenticated');
 
