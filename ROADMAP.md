@@ -1,7 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-27 (UTC), late — RM-027 to RM-030, RM-032 and RM-034 done; RM-031 and RM-033 remain
-**Audited at commit:** `10fce92`
+**Last audited:** 2026-08-27 (UTC), late — RM-027 to RM-030, RM-032 and RM-034 done; RM-031 built and awaiting one operator step; RM-033 remains
+**Audited at commit:** `6872af2`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
 discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
@@ -33,6 +33,22 @@ other four and none needed changing.
 
 This file is long because the reasoning is the point; this section exists so that "what
 now" does not require reading all of it. Everything here is expanded below under its own id.
+
+### Do this first, 2026-08-27
+
+**Apply `supabase/phase23_plan_coords.sql` in the Supabase SQL editor, and do not update the Pi
+until it is applied.** RM-031 is built and its client reads two new columns; PostgREST answers a
+`select` naming an absent column with a 400, so on a project without phase23 the whole of
+`device_config` fails to load — rooms, categories and load-shed tiers with it. The Pi pulls only
+when somebody pulls it (no timer; checked 2026-08-27), so the order is entirely in hand: apply,
+then update. The file was rehearsed against PostgreSQL 16, neuter-checked, and applied twice in
+one run to earn its re-run claim.
+
+**And the thing that would unlock the most is still not code: build a tree.** `space_nodes` is
+empty on the live project. Devices → Spaces, add a building and a room, place a few devices —
+and RM-028's tree, RM-030's by-space totals and RM-031's plan all start showing real numbers at
+once. It is also the only check on the `authenticated` SELECT policy that cannot be made from a
+service-role probe.
 
 ### The short version, 2026-08-26
 
@@ -99,7 +115,10 @@ column landed all went **local**, with no cloud fallbacks.
 
 1. **RM-006c tiers** — one operator decision, then auto-shed starts working. Nothing to build.
 2. **FI-008 (S)** — a contrast regression guard. Three AA failures were found by hand during
-   one audit and nothing prevents a fourth.
+   one audit and nothing prevents a fourth. **Still open, and now half-covered:** EX-132 added
+   `test/design-tokens.test.mjs`, which catches a token that does not exist — the cheaper
+   mistake, and the one that had already shipped five times. It cannot catch a token that
+   exists and is unreadable on its background; that still needs a browser.
 3. **FI-006 (S)** — wire `StaleDataBadge` into the views that still derive staleness inline.
    **Worth more since EX-107**: timestamps are now honest, so a staleness badge finally means
    something on metered devices instead of being permanently fresh.
@@ -1060,6 +1079,28 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       `server/proxy.mjs`, `server/ingest.mjs`, `server/scheduler.mjs`,
       `server/testStatePaths.test.mjs`,
       `src/components/control/AuditBacklogNote.tsx`, `src/stores/capabilitiesStore.ts`
+- [x] **EX-132** A stylesheet token that never existed, in five shipped declarations — and a
+      guard so it cannot happen a sixth time. `91f94d5`, `test/design-tokens.test.mjs`.
+      `var(--text)` was used in RM-028's and RM-030's CSS. **There is no `--text` in this
+      project**; the text colour is `--txt`. An undefined custom property is not an error — CSS
+      drops the declaration and the element inherits whatever colour is in scope.
+      **Measured, not inferred:** `.space-tree-panel__name` rendered at **1.14:1** in dark mode,
+      `rgb(30,41,59)` on `rgba(30,30,30,.75)`. The space tree's node names — the labels of the
+      feature itself — were very nearly invisible. The same applied to the tree's form inputs,
+      the by-space `<select>`, and `.space-totals-card__value`: the average-power figure. They
+      now measure **13.61:1**.
+      **Nothing in the pipeline could have caught it.** `tsc` does not read stylesheets; vitest
+      renders in jsdom, which computes no cascade worth checking; the contrast guard FI-008
+      proposed was never built. It took reading computed colours out of a real browser in both
+      themes — which is what CLAUDE.md's "check contrast in BOTH themes" is asking for.
+      The guard is narrower than FI-008 and complements it rather than closing it: it fails any
+      `var(--token)` without a fallback naming a token `src/index.css` does not define, across
+      every `.ts`/`.tsx`/`.css` file. **It is not a contrast checker** — a token that exists can
+      still be unreadable on a given background, and only a browser can measure that.
+      **Neuter-checked:** reintroduce `var(--text)` anywhere and the test fails naming it.
+      *Method note worth keeping:* a contrast reading taken straight after a theme toggle is
+      unreliable — the card surface cross-fades, and a stale glass value produced two false
+      alarms before I noticed. Measure on a clean load in each theme.
 - [x] **EX-129** `npm run set-device-ip:pi` — the RM-021 remedy, as a reversible script.
       Gives a `tuya-smart-device` node a static `deviceIp` so the bridge stops depending on a
       discovery broadcast the device has stopped sending. Dry run by default, `--apply` to
@@ -2222,15 +2263,56 @@ may not.
       The honesty rule from RM-024 and EX-107 extends here unchanged and is the part most likely
       to be got wrong: a node whose meters are all offline must report nothing, not zero.
 
-- [ ] **RM-031** The 2D floor plan renders from data, not from literals.
-      *Acceptance:* a site with no plan drawn renders its fleet grouped by tree node, and a site
-      with a plan renders it, with neither case hardcoding a device id.
-      `src/components/floorplan/FloorPlanView.tsx` pins `co1..co7` to fixed SVG coordinates in an
-      `OUTLET_LAYOUT` array, and derives lighting rows from a formula shared with the 3D scene.
-      Both become normalised per-device plan coordinates against a space node.
-      Placement reuses `editableLayout.ts`'s existing pure helpers (`clampToRoom`, `newItemId`),
-      which already solve exactly this problem for furniture.
-      *The empty state is the point:* grouped-by-node is honest and useful; a blank frame is not.
+- [ ] **RM-031** ~~The 2D floor plan renders from data, not from literals.~~
+      **BUILT 2026-08-27. ONE OPERATOR STEP REMAINS: apply `supabase/phase23_plan_coords.sql`.**
+      `7e2903d` migration and rehearsal, `834cd7a` model and store, `1ac5e45` the view,
+      `6872af2` styles. Left unticked deliberately — the schema is not live yet, and this file
+      does not tick a feature the database cannot serve.
+      **DO NOT UPDATE THE PI BEFORE THAT MIGRATION IS APPLIED.** `fetchDeviceConfigs` now selects
+      `plan_x,plan_y`; PostgREST answers a `select` naming an absent column with a 400, so on a
+      project without phase23 the whole of `device_config` fails to load — rooms, categories and
+      load-shed tiers with it. The Pi pulls only when somebody pulls it (no timer, checked), so
+      the order is: apply, then update.
+      *Acceptance is met, in both halves:* a site with no plan drawn renders its fleet grouped by
+      tree node — placed and unplaced, nothing omitted — and a site with a plan renders it. No
+      device id, room name or coordinate appears anywhere in `src/components/spatial/`.
+      **A room's plan draws the devices in that room and no others**, which is the correctness
+      rule the phase turns on. Coordinates are normalised against ONE node, so a device in a
+      child room carries a position measured against the child's frame; drawing it in the
+      parent's frame would put it somewhere nobody chose — and the drawing would look surveyed.
+      Descendants are counted and named, not drawn.
+      **The frame is square because nothing here has measured a room.** Inventing proportions
+      would assert a fact nobody established. `space_nodes.attrs` can carry real dimensions when
+      somebody measures them, and a 0..1 position converts into them without being re-entered.
+      **The database owns the move, the client owns validity.** phase23's trigger clears a
+      position when a device changes room: carried over, it would place the device at a spot
+      nobody chose in a room it has never been in, drawn as confidently as a surveyed one — and
+      the device editor's whole-row upsert produces exactly that payload. *The rehearsal changed
+      the rule:* clearing on every move also cleared the write that places and positions in one
+      statement, which is what an import or a provisioning script looks like. The two differ in
+      one observable way — a carried-over payload has not changed the coordinates.
+      **Neuter-checked** with the trigger commented out: *"a move must clear the position, got
+      0.25/0.75"* — the stale position, in the new room. **Re-run safety earned, not asserted:**
+      the file applied twice in one run, exit 0.
+      *The whole-row upsert is the other trap, and it has its own test.* A device is dragged into
+      place; a week later somebody edits its notes; the editor sends every column. A row builder
+      that did not carry the position would null it, from a screen that never mentions the plan.
+      **Placement is click-to-place, not drag — a deliberate deviation from what this entry used
+      to say.** A drag needs pointer capture, behaves differently under touch, and is unreachable
+      from a keyboard, so building it would have meant building this path anyway as the
+      accessible one. Arm a device and click where it goes, or select a pin and type its position.
+      `editableLayout.ts`'s `clampToRoom` was **not** reused as this entry proposed: it clamps
+      metres against `geometry.ts`'s `ROOM`, so importing it would have pulled the CARE-specific
+      module back into the generic plan — the exact coupling this phase exists to cut.
+      *Verified in a real browser against real layout*, because the click maths is what jsdom
+      cannot check: 15%/85% of a measured 520×520 frame put the marker centre at (253, 880)
+      against (253, 881) predicted; a click at 25%/75% recorded `{x: 0.25, y: 0.7506}`, the
+      0.0006 being the integer pixel aimed at and the proof that rounding works; clicking a pin
+      selects it and records no placement; at 375px the frame shrinks to 278×278 with no
+      horizontal overflow; and the Overview fallback renders the plan with **`threeChunksFetched:
+      0`**, so RM-032's property survives.
+      **`FloorPlanView` is not deleted and not changed.** It remains correct where it is — the
+      `care` pack's own WebGL-unavailable fallback, inside the site it was surveyed for.
 
 - [x] **RM-032** ~~The 3D scene becomes a site-gated pack.~~
       **DONE 2026-08-27.** `3edca87`. `SpatialView` loads a pack only when the site declares one.
