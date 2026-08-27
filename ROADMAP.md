@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-27 (UTC), evening — RM-027 is DONE: migrations applied, code deployed, verified live
+**Last audited:** 2026-08-27 (UTC), evening — RM-027 done and live; RM-028's schema and library built and rehearsed
 **Audited at commit:** `10fce92`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
@@ -2072,6 +2072,25 @@ may not.
 - [ ] **RM-028** The space tree. `room` is free text and there is no rooms table.
       *Acceptance:* every device is placed in a node, and `knownRooms()` in
       `src/lib/deviceConfig.ts` is replaced by a query over the tree.
+      **SCHEMA AND LIBRARY DONE 2026-08-27; NOT YET APPLIED, NO UI YET.** `ec4a63f` the
+      migration, `f10ab56` the tree library and Supabase layer.
+      *Rehearsed on the Pi, exit 0*, with the tree exercised rather than pattern-matched:
+      subtree depths, a subtree re-based to a mid-tree node, four kinds coexisting, a
+      case-insensitive duplicate sibling refused, a parent delete cascading to its subtree,
+      and a placement surviving that delete as NULL rather than being cascaded away.
+      *The cycle guard is the one worth knowing about.* `parent_id` is user-editable and
+      nothing prevents A -> B -> A; an unbounded recursive CTE against a cycle does not
+      raise, it runs until something gives out. The walk is capped at 32 and the rehearsal
+      builds a real cycle and asserts it stops at **exactly** that depth — reaching the cap
+      is what proves the cap stopped it, since `UNION ALL` gives a cycle nothing to
+      deduplicate it. Pinned that way because the neuter-check for this guard is a hang
+      rather than a red test. The client carries its own cap for the same reason in a
+      different place: the database's protects the database, not a browser building a tree
+      from rows.
+      **What is left:** apply `supabase/phase21_space_tree.sql`, then the tree editor UI,
+      then switch `DeviceMetaEditor`'s room datalist over. `knownRooms()` is deliberately
+      still in use — with no editor there is no way to create a node, so cutting now would
+      trade real suggestions for an empty list.
       `devices.room` is nullable text; `device_config.room` is text with the comment "this
       building has no fixed room list". So an office, a lab and a floor cannot be grouped,
       rolled up, or scoped — the exact three things a second site needs.
