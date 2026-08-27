@@ -2087,24 +2087,26 @@ may not.
       *`room` is kept, not dropped* — the label a site shows before a tree exists, and the
       fallback when a placement points at a node the client no longer holds. `placementLabel`
       decides that precedence once and checks the node **resolves** rather than that an id is set.
-      *Still open, and small:* `space_subtree` remains callable by `anon` on the live project.
-      **The re-run was attempted 2026-08-27 and failed — because of a defect in my own file.**
-      `phase21`'s header claimed "every statement is guarded, so a re-run is safe". It was not:
-      PostgreSQL has no `create policy if not exists`, so the re-run raised `42710`, and because
-      the SQL editor stops at the first error and those policies sit ABOVE the
-      `revoke ... from anon`, it aborted before reaching the fix it was being run for. The file
-      looked re-applied and was not. **A false claim of idempotency is worse than an honest
-      warning, because it is acted on.**
-      Both `phase19` and `phase21` now drop each policy before creating it, and applying either
-      file twice into a populated database exits 0 — proven in a container, not asserted.
-      `phase19`'s header had the same flaw in a subtler form: it promised a safe re-run and then
-      admitted in the next sentence that `create policy` would error.
-      `test/migration-idempotency.test.mjs` now fails any migration that makes this claim without
-      earning it. It deliberately does NOT require every file to be idempotent — most here are
-      not and say so, which is fine — only that a file must not promise the opposite of what it
-      does. **Nothing leaks meanwhile**: `space_subtree` is `security invoker` and RLS returns
-      `anon` zero rows. `node_totals`, whose revoke did run, correctly refuses `anon` with
-      `42501` — which is also the evidence that naming the role is the right fix.
+      *CLOSED 2026-08-27.* `space_subtree` now refuses `anon` with `42501`, matching
+      `node_totals`. Getting there took two attempts and the second failure was mine:
+      **`phase21`'s header claimed "every statement is guarded, so a re-run is safe" and it was
+      not.** PostgreSQL has no `create policy if not exists`, so the re-run raised `42710`, and
+      because the SQL editor stops at the first error and those policies sit ABOVE the revoke,
+      it aborted before reaching the fix it was being run for. The file looked re-applied and was
+      not. **A false claim of idempotency is worse than an honest warning, because it is acted
+      on** — a warning makes you check, a promise makes you stop. Both `phase19` and `phase21`
+      now drop each policy before creating it, verified by applying each twice into a populated
+      database (exit 0, in a container), and `test/migration-idempotency.test.mjs` fails any
+      migration making that claim without earning it.
+      *Verified after the fix, both directions:* `anon` gets zero rows on select, `42501` on
+      insert, and cannot execute either RPC; a real insert round-trips through the service role
+      and `space_subtree` returns it; the probe row was cleaned up.
+      **One thing NOT verified, and it is worth stating rather than implying:** that
+      `authenticated` can still SELECT. The policies were dropped and recreated, and the service
+      role bypasses RLS, so nothing available from a script can answer it — minting a user token
+      is not something the probe can do. The decisive check is a signed-in operator adding a
+      space from the Devices page; if the recreated policy were missing, that write would fail
+      with `42501`.
       *Prior state:* SCHEMA AND LIBRARY DONE 2026-08-27; NOT YET APPLIED, NO UI YET. `ec4a63f` the
       migration, `f10ab56` the tree library and Supabase layer.
       *Rehearsed on the Pi, exit 0*, with the tree exercised rather than pattern-matched:
