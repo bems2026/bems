@@ -5811,22 +5811,257 @@ fieldset.device-meta-editor__field > legend {
   }
 }
 
-/* RM-032: the hero when this site has no scene pack. Occupies the same space the model would,
-   so the Overview grid does not reflow — a collapsed card reads as a layout bug. */
-.spatial-view--none {
+/* RM-032/RM-031: the hero when this site has no scene pack — the data-driven plan. Occupies the
+   same space the model would, so the Overview grid does not reflow; a collapsed card reads as a
+   layout bug. */
+.spatial-view--plan {
+  min-height: 220px;
+  padding: var(--sp-4);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-inner);
+  overflow: auto;
+}
+
+/* ---------------------------------------------------------------------------
+   The data-driven floor plan — RM-031. Tokens only; no new colour values
+   (CLAUDE.md), and checked in both themes.
+   --------------------------------------------------------------------------- */
+.space-plan__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.space-plan__head .card-title {
+  margin: 0;
+  flex: 1 1 auto;
+}
+.space-plan__field {
+  font-size: 0.8rem;
+  color: var(--muted-2);
+}
+.space-plan__select {
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--txt);
+  padding: 8px 10px;
+  font: 500 var(--fs-sm) inherit;
+  min-height: 40px;
+  max-width: 100%;
+}
+.space-plan__note {
+  margin: var(--sp-3) 0 0;
+  padding: var(--sp-3);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-inner);
+  color: var(--muted-2);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.space-plan__error {
+  margin: var(--sp-3) 0 0;
+  padding: var(--sp-3);
+  border-radius: var(--r-inner);
+  background: var(--bad-soft);
+  color: var(--bad);
+  font-size: var(--fs-sm);
+}
+
+/* The frame is SQUARE on purpose: nothing here has surveyed a room, so any other proportion
+   would assert a measurement nobody took. See `SpacePlanView.tsx`'s header. */
+.space-plan__frame {
+  position: relative;
+  aspect-ratio: 1;
+  width: 100%;
+  max-width: 520px;
+  margin: var(--sp-3) auto 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-inner);
+  background: var(--bg-inset);
+  background-image: linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  /* A tenth of the frame per cell — a reading aid for "about a quarter along", not a grid the
+     data snaps to. Positions stay continuous. */
+  background-size: 10% 10%;
+}
+.space-plan__frame-empty {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 220px;
-  padding: var(--sp-5);
-  border: 1px dashed var(--border);
-  border-radius: var(--r-inner);
-}
-.spatial-view__note {
   margin: 0;
-  max-width: 46ch;
+  padding: var(--sp-4);
   text-align: center;
   color: var(--muted-2);
   font-size: var(--fs-sm);
   line-height: 1.5;
+}
+.space-plan__pin {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 45%;
+  padding: 4px 8px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--bg-surface-2);
+  color: var(--txt);
+  font: 600 var(--fs-xs) inherit;
+  white-space: nowrap;
+  cursor: default;
+}
+button.space-plan__pin {
+  cursor: pointer;
+}
+.space-plan__pin--stale {
+  border-color: var(--border-strong);
+  color: var(--muted-2);
+}
+.space-plan__pin--selected {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.space-plan__pin-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.space-plan__selected {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-inner);
+  background: var(--bg-surface-2);
+}
+.space-plan__selected-name {
+  font-weight: 600;
+  font-size: var(--fs-sm);
+}
+.space-plan__hint {
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+}
+.space-plan__axis {
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+}
+.space-plan__axis-input {
+  width: 5.5ch;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--txt);
+  padding: 6px 8px;
+  font: 500 var(--fs-sm) inherit;
+  font-variant-numeric: tabular-nums;
+}
+.space-plan__btn {
+  border: 1px solid var(--border);
+  background: var(--bg-surface-2);
+  color: var(--muted-2);
+  border-radius: var(--r-sm);
+  padding: 6px 12px;
+  font: 600 var(--fs-xs-lg) inherit;
+  cursor: pointer;
+  min-height: 32px;
+}
+.space-plan__btn--small {
+  padding: 4px 10px;
+  min-height: 28px;
+}
+.space-plan__subhead {
+  margin: var(--sp-4) 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--txt);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.space-plan__groups,
+.space-plan__group,
+.space-plan__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.space-plan__group-open {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.space-plan__list-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  min-height: 32px;
+}
+.space-plan__list-item:hover {
+  background: var(--bg-surface-2);
+}
+.space-plan__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--good);
+  flex: none;
+}
+.space-plan__dot--stale {
+  background: var(--muted-2);
+}
+
+/* The editable plan as a Devices-page panel. Chrome only — the view is the feature. */
+.space-plan-panel {
+  margin-bottom: var(--sp-4);
+}
+.space-plan-panel__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+.space-plan-panel__head .card-title:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+.space-plan-panel__close {
+  border: 1px solid var(--border);
+  background: var(--bg-surface-2);
+  color: var(--muted-2);
+  border-radius: var(--r-sm);
+  padding: 6px 12px;
+  font: 600 var(--fs-xs-lg) inherit;
+  cursor: pointer;
+  flex: none;
+}
+.space-plan-panel__lede {
+  margin: 0 0 var(--sp-4);
+  font-size: var(--fs-sm);
+  color: var(--muted-2);
+  line-height: 1.5;
+}
+@media (max-width: 480px) {
+  .space-plan__select {
+    width: 100%;
+    min-height: 44px;
+  }
+  .space-plan__btn {
+    min-height: 40px;
+  }
 }
