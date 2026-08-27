@@ -1,7 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-27 (UTC), late — RM-027 to RM-030, RM-032 and RM-034 done; RM-031 built and awaiting one operator step; RM-033 remains
-**Audited at commit:** `6872af2`
+**Last audited:** 2026-08-28 (UTC) — RM-027 to RM-032 and RM-034 done; RM-033 remains
+**Audited at commit:** `0239669`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
 discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
@@ -34,17 +34,12 @@ other four and none needed changing.
 This file is long because the reasoning is the point; this section exists so that "what
 now" does not require reading all of it. Everything here is expanded below under its own id.
 
-### Do this first, 2026-08-27
+### Do this first, 2026-08-28
 
-**Apply `supabase/phase23_plan_coords.sql` in the Supabase SQL editor, and do not update the Pi
-until it is applied.** RM-031 is built and its client reads two new columns; PostgREST answers a
-`select` naming an absent column with a 400, so on a project without phase23 the whole of
-`device_config` fails to load — rooms, categories and load-shed tiers with it. The Pi pulls only
-when somebody pulls it (no timer; checked 2026-08-27), so the order is entirely in hand: apply,
-then update. The file was rehearsed against PostgreSQL 16, neuter-checked, and applied twice in
-one run to earn its re-run claim.
+**`phase23_plan_coords.sql` is applied and verified live** — see RM-031. The ordering hazard it
+carried is spent: `device_config` selects `plan_x,plan_y` and answers 200.
 
-**And the thing that would unlock the most is still not code: build a tree.** `space_nodes` is
+**The thing that would unlock the most is still not code: build a tree.** `space_nodes` is
 empty on the live project. Devices → Spaces, add a building and a room, place a few devices —
 and RM-028's tree, RM-030's by-space totals and RM-031's plan all start showing real numbers at
 once. It is also the only check on the `authenticated` SELECT policy that cannot be made from a
@@ -2263,16 +2258,30 @@ may not.
       The honesty rule from RM-024 and EX-107 extends here unchanged and is the part most likely
       to be got wrong: a node whose meters are all offline must report nothing, not zero.
 
-- [ ] **RM-031** ~~The 2D floor plan renders from data, not from literals.~~
-      **BUILT 2026-08-27. ONE OPERATOR STEP REMAINS: apply `supabase/phase23_plan_coords.sql`.**
+- [x] **RM-031** ~~The 2D floor plan renders from data, not from literals.~~
+      **DONE 2026-08-28 — applied and verified live, every constraint and the trigger.**
       `7e2903d` migration and rehearsal, `834cd7a` model and store, `1ac5e45` the view,
-      `6872af2` styles. Left unticked deliberately — the schema is not live yet, and this file
-      does not tick a feature the database cannot serve.
-      **DO NOT UPDATE THE PI BEFORE THAT MIGRATION IS APPLIED.** `fetchDeviceConfigs` now selects
-      `plan_x,plan_y`; PostgREST answers a `select` naming an absent column with a 400, so on a
-      project without phase23 the whole of `device_config` fails to load — rooms, categories and
-      load-shed tiers with it. The Pi pulls only when somebody pulls it (no timer, checked), so
-      the order is: apply, then update.
+      `6872af2` styles.
+      **Verified against the live project, 9 checks, and the probe restored itself.** Placing and
+      positioning in one statement keeps the position; each range constraint names itself
+      (`device_config_plan_x_range`, `_plan_y_range`, `_plan_both_axes`); a same-room write keeps
+      the position; **a move to another room clears it**; and deleting a room succeeds and clears
+      both placement and position — the case that makes the trigger necessary rather than tidy.
+      The device row used was captured first and came back **byte-identical, `updated_at` and
+      `updated_by` included**, and both throwaway nodes were removed.
+      *A read-only probe alone could not have done this.* Every device here is unplaced, and the
+      "a position needs a room" constraint is violated by any position on such a row — so it
+      masks the two range constraints, and a rejected write proves only that *some* check fired.
+      Isolating them needed a placed row; the trigger needed a successful update.
+      *Measured on the way, and now recorded in the code rather than guessed at:* PostgREST
+      returns these `numeric` columns as JSON **numbers**. `coercePlanCoord`'s string tolerance
+      stays — the encoding is decided elsewhere and `count(*)` already caught this project out —
+      but the comment no longer implies it is load-bearing.
+      *The ordering hazard is spent, and worth keeping in the record:* `fetchDeviceConfigs`
+      selects `plan_x,plan_y`, and before the migration that select answered **400 / `42703` /
+      "column device_config.plan_x does not exist"** — measured, not assumed. On a project
+      without phase23 the whole of `device_config` fails to load, rooms and load-shed tiers with
+      it. The Pi pulls only when somebody pulls it (no timer; checked), so the order was in hand.
       *Acceptance is met, in both halves:* a site with no plan drawn renders its fleet grouped by
       tree node — placed and unplaced, nothing omitted — and a site with a plan renders it. No
       device id, room name or coordinate appears anywhere in `src/components/spatial/`.
@@ -2411,6 +2420,23 @@ may not.
   show it.~~ **Done 2026-08-26** — EX-128. Shipped as an endpoint plus a *conditional note*
   rather than the per-device column this asked for; the column needs a join the registry cannot
   currently make, which is FI-001. See EX-128.
+- **FI-016** (S) The Control page's outlet plan still pins `co1..co7` to literal coordinates.
+  `src/components/control/OutletPlanCard.tsx` carries a third copy of the same survey, after
+  `FloorPlanView` and `scene3d/geometry.ts` — and unlike those two it is **not** inside a scene
+  pack, so it renders at every site. Found while closing RM-031, which built the replacement:
+  `SpacePlanView` already draws a space's devices from data. The swap is small but not trivial,
+  because the Control puck is an interaction (two commandable halves, pending state,
+  corroboration) and not just a marker, so it needs the pin to accept children rather than a
+  find-and-replace. *Until then, the honest statement is that the tree, the totals, the 2D plan
+  and the 3D scene no longer name this building, and the Control page and `BUILT_IN_DEVICES`
+  still do.*
+- **FI-017** (S) `BUILT_IN_DEVICES` never moved into the site directory. `shared/registry.mjs`
+  still holds this building's 21 devices inline, while `shared/sites/mmsu-nberic-care/` carries
+  its identity, policy and circuits. RM-027 planned the move and it was not needed to make the
+  rest of Track B work, so it was not done. A second site would edit the shared file — which is
+  precisely the thing RM-033 has to make unnecessary. Mechanical: `registry.mjs` already composes
+  `[...BUILT_IN_DEVICES, ...ENROLLED_DEVICES]`, so this is moving an array and changing one
+  import.
 - **FI-006** (S) Wire `StaleDataBadge` into the remaining views that derive staleness inline, so freshness is announced consistently rather than re-implemented per card. *(Partly addressed 2026-08-21: every view now shares one wall-clock tick and one stale-dim constant per medium, but the badge itself is still not used everywhere.)*
 
 ### Accessibility

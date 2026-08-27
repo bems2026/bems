@@ -19,8 +19,9 @@ interface DeviceConfigRow {
   space_node_id: string | null;
   /** `numeric` columns from phase23. Typed as `unknown` because PostgREST's JSON encoding of
    * `numeric` is not something this codebase gets to assume — `count(*)` already arrived here
-   * as a string once. `coercePlanCoord` accepts either and refuses anything else, and a
-   * deployment that has not applied phase23 yet simply has neither key. */
+   * as a string once. (Measured 2026-08-28: these come back as JSON numbers. The tolerance
+   * stays; the encoding is decided elsewhere.) `coercePlanCoord` accepts either and refuses
+   * anything else, and a deployment that has not applied phase23 yet simply has neither key. */
   plan_x?: unknown;
   plan_y?: unknown;
   functions: string[] | null;

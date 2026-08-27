@@ -49,10 +49,12 @@ function round(n: number): number {
 /**
  * One stored axis, or null if it is not a position.
  *
- * Strings are accepted because a Postgres `numeric` may arrive as one. That is not a guess:
- * `count(*)` already reached this codebase as a string and `rowToNodeTotals` carries the scar.
- * One branch here, versus a plan that renders every device as unplaced and looks like a
- * feature that was never wired up.
+ * Strings are accepted, and the measurement is worth recording rather than leaving the reader
+ * to guess. On 2026-08-28, against the live project, PostgREST returned `plan_x` as a JSON
+ * NUMBER (`0.25`), so the string branch is not load-bearing today. It stays because `count(*)`
+ * reached this codebase as a string and `rowToNodeTotals` carries that scar — the encoding of a
+ * number is a decision made somewhere else, and the cost of being wrong about it is a plan that
+ * renders every device as unplaced and looks like a feature nobody finished.
  *
  * `Number('')` is 0 and `Number([])` is 0 and `Number(true)` is 1, so the type is checked
  * before the value is — coercing first would accept three things that are not coordinates.

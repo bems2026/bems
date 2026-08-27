@@ -98,9 +98,10 @@ describe('plan position on the wire (RM-031)', () => {
   });
 
   it('reads a numeric column that arrived as a string', () => {
-    // Not hypothetical: `count(*)` reached this codebase as a string and `rowToNodeTotals`
-    // carries that scar. A silent null here would render every device as unplaced and look
-    // exactly like a feature nobody finished.
+    // MEASURED 2026-08-28: the live project returns `plan_x` as a JSON number, so this branch is
+    // not load-bearing today. It stays because `count(*)` reached this codebase as a string and
+    // `rowToNodeTotals` carries that scar — a silent null here would render every device as
+    // unplaced and look exactly like a feature nobody finished.
     expect(deviceConfigRowToModel(row({ plan_x: '0.25', plan_y: '0.75' }))).toMatchObject({ planX: 0.25, planY: 0.75 });
   });
 
