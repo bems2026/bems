@@ -2277,6 +2277,13 @@ may not.
       returns these `numeric` columns as JSON **numbers**. `coercePlanCoord`'s string tolerance
       stays — the encoding is decided elsewhere and `count(*)` already caught this project out —
       but the comment no longer implies it is load-bearing.
+      *Deployed and read back.* The Pi is at `43deda9`, rebuilt, and serving the new bundle
+      (`index-22jg6l4F.js`, confirmed against the served HTML). All three suites pass **on the
+      Pi** — 747 frontend, 466 bridge, 359 server — which RM-022 is the reason for checking.
+      The exact column list `fetchDeviceConfigs` sends answers **200** with the **anon** key
+      (empty array: `device_config` is `authenticated`-only, unchanged). That is the browser's
+      own path proven without a login; the app itself stops at the sign-in screen and fetches
+      nothing before auth, so the in-app path was not exercised and is not claimed.
       *The ordering hazard is spent, and worth keeping in the record:* `fetchDeviceConfigs`
       selects `plan_x,plan_y`, and before the migration that select answered **400 / `42703` /
       "column device_config.plan_x does not exist"** — measured, not assumed. On a project
@@ -2369,6 +2376,17 @@ may not.
       people to bypass it for a typo fix, which is worse than the drift it prevents.
       **What CI will not do is prove a fix works.** "A green test suite is not proof" is written
       down here, twice earned. It catches regressions; the live read-back stays mandatory.
+      **AND IT BUILDS A DIFFERENT BUNDLE FROM THE ONE THE PI SERVES — found 2026-08-28, nearly
+      reported as a regression.** The Pi's `index` chunk is **564.84 kB**; the same commit on a
+      workstation builds **337.29 kB**, with every other chunk byte-identical (same content
+      hashes). The cause is not the machine: `src/config/supabase.ts` reads
+      `import.meta.env.VITE_SUPABASE_*`, Vite substitutes those at build time, and with them
+      unset the ternary folds to `null` and rolldown drops `@supabase/supabase-js` entirely —
+      227 kB of it. Confirmed by grepping both bundles: `GoTrueClient` appears only in the Pi's.
+      *Two consequences worth having written down.* A bundle-size comparison across machines is
+      not like-for-like unless both carry the same `VITE_*` values — this one looked exactly like
+      a 227 kB regression. And **CI's runner has no Supabase env either**, so its build exercises
+      the null-client path and can never catch a regression in the configured one.
       *Acceptance:* a push runs all three suites and a type-checked build, and a red suite is
       visible without anyone remembering to look.
       No `.github/` directory exists. Over 1,200 test declarations across three suites
