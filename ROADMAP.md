@@ -1,7 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-28 (UTC) — RM-027 to RM-032 and RM-034 done; RM-033 remains
-**Audited at commit:** `0239669`
+**Last audited:** 2026-08-28 (UTC), later — RM-027 to RM-032 and RM-034 done; RM-033 part-built
+**Audited at commit:** `f1d0269`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
 discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
@@ -2345,18 +2345,76 @@ may not.
       wrong: the 2D plan pins `co1..co7` to literal coordinates, so at another site it would draw
       that site's devices into this site's room — worse than drawing nothing, because it looks
       right. Until RM-031 the honest answer is to say no view is configured, and why.
-      *Found on the way, and it is where RM-031 has to start:* `FloorPlanView` imports
+      *Found on the way, and it is where RM-031 had to start:* `FloorPlanView` imports
       `LIGHT_PLAN` from `scene3d/geometry.ts`, so the 2D plan and the 3D scene share a geometry
       module.
+      **IS IT FINISHED? Yes for what it claimed, and two things it did not do are recorded here
+      rather than left to be discovered** (asked and answered 2026-08-28).
+      *Done and verified:* a site without a pack downloads none of the 3D — measured in a
+      browser, `threeChunksFetched: 0` — and an unrecognised pack name degrades to the plan
+      rather than throwing. Since RM-031 that fallback is a real spatial view, not a notice.
+      *Not done, deliberately:* `src/components/scene3d/` was never moved to `src/scenes/care/`
+      as the phase plan proposed. The pack still sits among the shared components, which costs
+      nothing at runtime and is a rename away whenever it is worth doing.
+      *Not done, and this one has a consequence:* `SCENE_PACKS` in `SpatialView.tsx` is a literal
+      map, so a second site that WANTS a 3D pack must edit a shared file. A site with
+      `scene_pack: null` — every scaffolded site — needs no edit at all, which is why this did
+      not block RM-033. It is the same shape as FI-017 and belongs with the provisioning work.
 
 - [ ] **RM-033** Site provisioning — FI-002 and FI-003, now buildable.
-      *Acceptance:* a second site is stood up from the guide by someone who did not build this,
-      without hand-editing a device id.
-      The day-one wizard (network and vendor-account linking) and the packaging track (install
-      script or card image, plus the physical-install guide for CT meters, relay modules and the
-      IR blaster). A `site:new` scaffolder for `shared/sites/<id>/`.
-      **This is Milestone 6, due June 2027**, and it is the deliverable the rest of Track B
-      exists to make writeable. It needs RM-027 through RM-030 to exist first.
+      **PART-BUILT 2026-08-28.** `4fb431b` one-file ownership, `5e3b378` the scaffolder,
+      `f1d0269` the mock. **This is Milestone 6, due June 2027**; what remains is the packaging
+      and the written guide, which need decisions rather than code.
+      *Acceptance (unchanged):* a second site is stood up from the guide by someone who did not
+      build this, without hand-editing a device id.
+
+      **Done so far, and each of these was a real edit a second deployment would have had to
+      make:**
+      - **`shared/siteConfig.mjs` is now the ONLY module naming a site.** Its own header always
+        claimed "one line"; `shared/registry.mjs` also imported `CIRCUITS` straight from the site
+        directory, so it was two — and the one nobody would remember wires a new site to another
+        building's circuits. `PHASE_MAP` is derived from that tree, so a missed edit would not
+        fail. It would report the wrong phase totals, confidently.
+      - **FI-017 closed: `BUILT_IN_DEVICES` moved to `shared/sites/<id>/devices.mjs`.** Twenty-one
+        pieces of hardware on one building's walls lived in the file every deployment shares. The
+        CT circuit map and the two-logical-meters-on-one-box note went with them — that is
+        documentation OF THIS BUILDING, and leaving it shared is how the next site inherits
+        another building's wiring as fact. `DPS_MAPS` stayed: those describe Tuya firmware.
+      - **`npm run site:new <slug>`.** Scaffolds the directory; refuses to overwrite; validates
+        the slug *before* creating anything, because the slug is interpolated into a path.
+        **It does not activate the site** — repointing `siteConfig.mjs` would take a running
+        building offline, every device id stopping resolving, from a command that sounds
+        additive. It prints the three lines instead.
+      - The template asserts as little as possible: devices and circuits start **empty**, not
+        seeded with plausible examples, and the timezone starts at UTC — a placeholder that is
+        also true. An empty circuit tree derives to empty phase lists, so a new site reads "not
+        metered" rather than zero.
+
+      **What doing it found, which is why it was worth doing rather than describing.** The plan's
+      own end-to-end check — scaffold a site, point at it, run it — was carried out, and:
+      - the generated Node-RED flow **followed the site**: 2 devices instead of 20, and zero
+        references to `co1` or `l1`;
+      - **`npm run mock` crashed.** `TypeError: Cannot read properties of undefined (reading
+        'toFixed')`. The mock named CARE's four branch-meter context keys as literals and looped
+        `1..7` for outlets and lights. That is worse than an ordinary fixture bug: the mock is how
+        a second deployment is developed *before* it has hardware, which is exactly the position
+        another SUC is in. Fixed and covered — see `mock-bridge/fixturePlan.mjs`.
+      - the guard added an hour earlier **caught the next commit**: `site:new`'s usage example
+        read `mmsu-coe-annex`, and once that directory existed the test failed
+        `scripts/site-new.mjs names mmsu-coe-annex`. A usage string is indistinguishable from a
+        module wired to a site. It was also a plausible-sounding MMSU college that does not
+        exist, which is its own reason not to ship it.
+      - the throwaway sites were **deleted, not committed**. A fabricated building in the repo
+        would read as a real one; a worked example belongs in the guide.
+
+      **What is left, and it needs decisions more than code:**
+      - the day-one wizard (FI-002) — network join and vendor-account linking;
+      - the packaging track (FI-003) — install script *or* card image, which is a support
+        question, not a technical one;
+      - the physical-install guide for CT meters, relay modules and the IR blaster;
+      - the `sites` row itself: `phase19_sites.sql` seeds this site's id, so a second deployment
+        still edits SQL. Provisioning should take it from the site directory.
+      - FI-016, the Control page's outlet plan, which is the last screen naming `co1..co7`.
 
 - [x] **RM-034** ~~There is no CI. Every test run is manual.~~
       **DONE 2026-08-27 — green on the first run, both Node versions.** `dad1a26`,
@@ -2448,7 +2506,11 @@ may not.
   find-and-replace. *Until then, the honest statement is that the tree, the totals, the 2D plan
   and the 3D scene no longer name this building, and the Control page and `BUILT_IN_DEVICES`
   still do.*
-- **FI-017** (S) `BUILT_IN_DEVICES` never moved into the site directory. `shared/registry.mjs`
+- ~~**FI-017** (S) `BUILT_IN_DEVICES` never moved into the site directory.~~ **Done 2026-08-28**
+  — `4fb431b`, with a derived guard: `test/site-config.test.mjs` fails if any of this building's
+  device ids reappears in `shared/registry.mjs`, prose included. The generated flow came back
+  byte-identical, which is the check that mattered. Original entry follows.
+  ~~`BUILT_IN_DEVICES` never moved into the site directory.~~ `shared/registry.mjs`
   still holds this building's 21 devices inline, while `shared/sites/mmsu-nberic-care/` carries
   its identity, policy and circuits. RM-027 planned the move and it was not needed to make the
   rest of Track B work, so it was not done. A second site would edit the shared file — which is
