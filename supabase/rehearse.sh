@@ -139,6 +139,11 @@ declare
   base   timestamptz := date_trunc('hour', now()) - interval '2 hours';
   h0     timestamptz := timestamptz '2026-06-01 00:00:00+00';
   n int; n2 int; v numeric; rolled int; deleted int; ok boolean; site_of text;
+  n_bldg  uuid := gen_random_uuid();
+  n_floor uuid := gen_random_uuid();
+  n_room  uuid := gen_random_uuid();
+  n_desk  uuid := gen_random_uuid();
+  site_of_node uuid;
 begin
   -- ---- readings_buckets (phase 9) ------------------------------------------------------
   select power_w into v from readings_buckets('mtr_now', base, 3600) order by ts limit 1;
@@ -290,6 +295,73 @@ begin
   exception when foreign_key_violation then
     null;  -- expected
   end;
+
+  -- ---- the space tree (phase 21) --------------------------------------------------------
+  -- The point of RM-028 is a hierarchy that BENDS. These assertions are about the shape staying
+  -- open and about the two ways a self-referencing table can hurt you: a cycle, and a delete
+  -- taking more than it should.
+  insert into space_nodes (id, site_id, parent_id, kind, name)
+  values (n_bldg, 'mmsu-nberic-care', null,   'building', 'NBERIC'),
+         (n_floor, 'mmsu-nberic-care', n_bldg, 'floor',    'Ground'),
+         (n_room,  'mmsu-nberic-care', n_floor,'room',     'CARE Office'),
+         (n_desk,  'mmsu-nberic-care', n_room, 'sub_area', 'Desk Row A');
+
+  -- A subtree is the node plus everything beneath it, depth-annotated from the root asked for.
+  select count(*) into n from space_subtree(n_bldg);
+  assert n = 4, format('space tree: subtree of the building should be 4 nodes, got %s', n);
+
+  select depth into n from space_subtree(n_bldg) where id = n_desk;
+  assert n = 3, format('space tree: the sub-area is 3 levels under the building, got %s', n);
+
+  -- Asking from halfway down returns only that branch, re-based to depth 0. This is what makes
+  -- "this floor's devices" answerable without loading the whole site.
+  select count(*) into n from space_subtree(n_room);
+  assert n = 2, format('space tree: subtree of the room should be 2 nodes, got %s', n);
+
+  -- A DEPTH THAT IS NOT FIXED BY THE SCHEMA is the whole design decision. Four levels here;
+  -- a site that is one room is equally legal, and neither needed a migration.
+  select count(distinct kind) into n from space_subtree(n_bldg);
+  assert n = 4, format('space tree: four different kinds should coexist, got %s', n);
+
+  -- Two rooms called the same thing under one floor are indistinguishable in a picker.
+  begin
+    insert into space_nodes (site_id, parent_id, kind, name)
+    values ('mmsu-nberic-care', n_floor, 'room', 'care office');  -- differs only in case
+    assert false, 'space tree: a duplicate sibling name must be refused, case-insensitively';
+  exception when unique_violation then
+    null;  -- expected
+  end;
+
+  -- THE CYCLE GUARD, and it is the reason the RPC carries a depth limit at all. parent_id is
+  -- user-editable and nothing stops A -> B -> A. An unbounded recursive CTE against a cycle does
+  -- not raise — it runs until something gives out, which on the Pi means taking the database
+  -- with it. This assertion is really "does this terminate at all".
+  update space_nodes set parent_id = n_desk where id = n_bldg;
+  select count(*) into n from space_subtree(n_bldg);
+  assert n <= 200, format('space tree: a cycle must terminate, got %s rows', n);
+  -- ...and terminate BECAUSE of the depth cap, not by luck. The walk uses UNION ALL, so a cycle
+  -- has nothing to deduplicate it: reaching exactly the cap is the evidence that the limit is
+  -- what stopped it. Worth pinning, because the neuter-check for this guard is a hang rather
+  -- than a red test, and a hang is the one failure nobody wants to discover on the Pi.
+  select max(depth) into n from space_subtree(n_bldg);
+  assert n = 32, format('space tree: the cycle should stop at the depth cap, reached %s', n);
+  update space_nodes set parent_id = null where id = n_bldg;   -- put it back
+
+  -- Deleting a floor takes its rooms. The alternative is nodes stranded with a dangling parent,
+  -- invisible to every subtree query and impossible to find in the UI.
+  insert into device_config (device_id, space_node_id) values ('mtr_now', n_desk)
+    on conflict (device_id) do update set space_node_id = excluded.space_node_id;
+  delete from space_nodes where id = n_floor;
+  select count(*) into n from space_nodes where id in (n_room, n_desk);
+  assert n = 0, format('space tree: deleting a floor must take its subtree, %s survived', n);
+
+  -- ...but it must NOT take the device's metadata with it. A device outliving its room is
+  -- ordinary; rooms get restructured while the hardware stays screwed to the wall. Cascading
+  -- here would silently discard a load-shed tier somebody chose deliberately.
+  select count(*) into n from device_config where device_id = 'mtr_now';
+  assert n = 1, 'space tree: deleting a room must not delete the device metadata in it';
+  select space_node_id into site_of_node from device_config where device_id = 'mtr_now';
+  assert site_of_node is null, 'space tree: the placement should be cleared, not dangling';
 
   raise notice 'all assertions passed';
 end $$;
