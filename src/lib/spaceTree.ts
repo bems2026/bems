@@ -156,3 +156,28 @@ export function knownSpaceLabels(nodes: readonly SpaceNode[]): string[] {
     .map((option) => option.path)
     .sort((a, b) => a.localeCompare(b));
 }
+
+/**
+ * Ids of `root` and everything beneath it.
+ *
+ * Lived in `spaceTreeStore` until RM-031 needed it too — a store is not where a pure tree walk
+ * belongs, and two copies of a depth-guarded traversal is exactly how the two would drift.
+ *
+ * Depth-guarded for the same reason everything else here is: `parent_id` is user-editable and a
+ * cycle would otherwise loop forever. The bound is the node count rather than `MAX_TREE_DEPTH`
+ * because this widens a set rather than descending, and it stops as soon as a pass adds nothing.
+ */
+export function subtreeIds(nodes: readonly SpaceNode[], root: string): Set<string> {
+  const ids = new Set<string>([root]);
+  for (let pass = 0; pass < nodes.length; pass++) {
+    let grew = false;
+    for (const node of nodes) {
+      if (node.parent_id && ids.has(node.parent_id) && !ids.has(node.id)) {
+        ids.add(node.id);
+        grew = true;
+      }
+    }
+    if (!grew) break;
+  }
+  return ids;
+}

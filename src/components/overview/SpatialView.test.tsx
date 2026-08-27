@@ -44,12 +44,22 @@ describe('SpatialView', () => {
     expect(screen.queryByTestId('office-scene')).not.toBeInTheDocument();
   });
 
-  it('says why there is nothing to see, rather than leaving an empty frame', () => {
-    // A blank hero is indistinguishable from a scene that failed to load. Naming the reason is
-    // what tells an operator at a new site that this is expected rather than broken.
+  it('falls back to the data-driven plan, which belongs to no particular building', () => {
+    // RM-031. This used to be a notice saying no view was configured, because the only plan in
+    // the codebase was one office's. `SpacePlanView` reads the site's own tree and positions, so
+    // a site with no scene pack gets a real spatial view rather than an apology.
+    scene.pack = null;
+    const { container } = render(<SpatialView />);
+    expect(container.querySelector('.space-plan')).not.toBeNull();
+  });
+
+  it('still says something when the plan has nothing to draw either', () => {
+    // A blank hero is indistinguishable from a view that failed to load. With no tree built, the
+    // plan says so and says where to build one — which is what tells an operator at a new site
+    // that this is expected rather than broken.
     scene.pack = null;
     render(<SpatialView />);
-    expect(screen.getByText(/no 3d view/i)).toBeInTheDocument();
+    expect(screen.getByText(/no spaces defined/i)).toBeInTheDocument();
   });
 
   it('does not fall back to the 2D floor plan, which is also built for one office', () => {
@@ -62,11 +72,11 @@ describe('SpatialView', () => {
   });
 
   it('ignores a pack name this build does not carry', () => {
-    // A site directory naming a pack that was never built must degrade to "no view" rather than
+    // A site directory naming a pack that was never built must degrade to the plan rather than
     // throwing on a dynamic import that cannot resolve.
     scene.pack = 'some-other-building';
-    render(<SpatialView />);
+    const { container } = render(<SpatialView />);
     expect(screen.queryByTestId('office-scene')).not.toBeInTheDocument();
-    expect(screen.getByText(/no 3d view/i)).toBeInTheDocument();
+    expect(container.querySelector('.space-plan')).not.toBeNull();
   });
 });

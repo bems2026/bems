@@ -20,7 +20,7 @@ import {
   validateNewNode,
   type NewNode,
 } from '@/lib/supabaseSpaceTree';
-import type { SpaceNode } from '@/lib/spaceTree';
+import { subtreeIds, type SpaceNode } from '@/lib/spaceTree';
 
 interface SpaceTreeState {
   nodes: SpaceNode[];
@@ -49,23 +49,6 @@ interface SpaceTreeState {
 }
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
-
-/** Ids of `root` and everything beneath it. Depth-guarded for the same reason `spaceTree.ts` is:
- * `parent_id` is user-editable and a cycle would otherwise loop here. */
-function subtreeIds(nodes: readonly SpaceNode[], root: string): Set<string> {
-  const ids = new Set<string>([root]);
-  for (let pass = 0; pass < nodes.length; pass++) {
-    let grew = false;
-    for (const node of nodes) {
-      if (node.parent_id && ids.has(node.parent_id) && !ids.has(node.id)) {
-        ids.add(node.id);
-        grew = true;
-      }
-    }
-    if (!grew) break;
-  }
-  return ids;
-}
 
 export const useSpaceTreeStore = create<SpaceTreeState>((set, get) => ({
   nodes: [],

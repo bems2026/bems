@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { SpacePlanView } from '@/components/spatial/SpacePlanView';
 import { SITE } from '@shared/siteConfig.mjs';
 
 /**
@@ -19,9 +20,15 @@ import { SITE } from '@shared/siteConfig.mjs';
  * WHY THE FALLBACK IS NOT `FloorPlanView`, which would be the obvious choice: the 2D plan pins
  * `co1..co7` to literal SVG coordinates, so it is CARE-specific in exactly the same way. At
  * another site it would draw that site's devices into this site's room — worse than drawing
- * nothing, because it looks right. Until RM-031 makes the plan data-driven, the honest answer is
- * to say no view is configured. (`OfficeScene3D` still uses `FloorPlanView` as its own
+ * nothing, because it looks right. (`OfficeScene3D` still uses `FloorPlanView` as its own
  * WebGL-unavailable fallback, which is a capability check within one site and stays correct.)
+ *
+ * IT IS `SpacePlanView` INSTEAD — RM-031. When this file shipped, the fallback was a notice
+ * saying no view was configured, because the only plan in the codebase belonged to one office.
+ * There is now a plan that names no device and no room, so a site without a scene pack gets a
+ * real spatial view: its own tree, its own positions, and — before anyone has positioned
+ * anything — its fleet grouped by the space each device is in, which is honest and useful in a
+ * way a blank frame is not.
  */
 
 /** Packs this build actually carries. A site naming something else degrades to "no view" rather
@@ -36,11 +43,8 @@ export function SpatialView() {
 
   if (!Scene) {
     return (
-      <div className="spatial-view spatial-view--none">
-        <p className="spatial-view__note">
-          No 3D view is configured for this site. The model is built per building; until one
-          exists here, device status is on the Devices and Control pages.
-        </p>
+      <div className="spatial-view spatial-view--plan">
+        <SpacePlanView />
       </div>
     );
   }
