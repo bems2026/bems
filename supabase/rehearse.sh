@@ -144,6 +144,10 @@ declare
   n_room  uuid := gen_random_uuid();
   n_desk  uuid := gen_random_uuid();
   site_of_node uuid;
+  n3 int; v2 numeric;
+  t_floor uuid := gen_random_uuid();
+  t_lab   uuid := gen_random_uuid();
+  t_empty uuid := gen_random_uuid();
 begin
   -- ---- readings_buckets (phase 9) ------------------------------------------------------
   select power_w into v from readings_buckets('mtr_now', base, 3600) order by ts limit 1;
@@ -263,29 +267,31 @@ begin
   assert n = n2, format('site scoping: %s of %s totals rows are not stamped to this site', n - n2, n);
   assert n > 0, 'site scoping: no totals rows survived, so this assertion proved nothing';
 
-  -- THE ORDERING GUARANTEE, exercised rather than asserted in prose.
-  -- These two inserts are shaped exactly like the ones the daemons ALREADY RUNNING on the Pi
-  -- send — no site_id at all. They must succeed and be stamped by the column default, because
-  -- this file gets applied by hand against a live system whose code has not been redeployed
-  -- yet. If this ever fails, applying the migration takes ingestion down within 60 seconds.
-  insert into building_totals (ts, total_power_w)
-  values (timestamptz '2026-06-09 00:00:00+00', 42);
-  select site_id into strict site_of
-    from building_totals where ts = timestamptz '2026-06-09 00:00:00+00';
-  assert site_of = 'mmsu-nberic-care',
-    format('site scoping: a pre-Task-6 totals insert was stamped %L, not the default', site_of);
+  -- WHAT THE ORDERING GUARANTEE BECAME. Until phase22 this block asserted the opposite: that a
+  -- writer sending NO site_id still succeeded, stamped by phase20's transitional default. That
+  -- was the entire safety argument for applying phase20 by hand to a running system whose
+  -- daemons predated RM-027's Task 6, and the rehearsal proved it before it mattered.
+  --
+  -- Task 6 shipped, phase22 drops the default, and the property is now deliberately false. The
+  -- invariant worth pinning has inverted: a writer that forgets its site is REFUSED rather than
+  -- silently attributed to whichever site happened to be the default. In a shared project that
+  -- silent attribution is the worse failure — wrong data recorded confidently beats a write that
+  -- fails loudly, and only one of the two gets noticed.
+  begin
+    insert into building_totals (ts, total_power_w)
+    values (timestamptz '2026-06-09 00:00:00+00', 42);
+    assert false, 'site scoping: a totals write with no site_id must be refused once the default is gone';
+  exception when not_null_violation then
+    null;  -- expected
+  end;
 
-  -- id 1, not an arbitrary one: `updateHealth` in `server/ingest.mjs` upserts the singleton row
-  -- and nothing else, so a test that invents a new id proves something the system never does —
-  -- and trips `unique (site_id)`, because with a default only one row per site can exist. That
-  -- constraint pair is correct; the first version of this assertion simply modelled the wrong
-  -- writer.
-  insert into ingestion_health (id, buffered_row_count)
-  values (1, 0)
-  on conflict (id) do update set buffered_row_count = excluded.buffered_row_count;
+  -- The singleton health row keeps its site through an upsert that does not mention one: the
+  -- row already carries it from phase20's backfill, and ON CONFLICT DO UPDATE touches only the
+  -- columns it names. Worth asserting because `updateHealth` writes exactly this shape.
+  update ingestion_health set buffered_row_count = 0 where id = 1;
   select site_id into strict site_of from ingestion_health where id = 1;
   assert site_of = 'mmsu-nberic-care',
-    format('site scoping: a pre-Task-6 health upsert was stamped %L, not the default', site_of);
+    format('site scoping: the health row lost its site through an update, now %L', site_of);
 
   -- A site id that does not exist must be refused, or a typo silently orphans a row.
   begin
@@ -362,6 +368,70 @@ begin
   assert n = 1, 'space tree: deleting a room must not delete the device metadata in it';
   select space_node_id into site_of_node from device_config where device_id = 'mtr_now';
   assert site_of_node is null, 'space tree: the placement should be cleared, not dangling';
+
+  -- ---- node_totals (phase 22) -----------------------------------------------------------
+  -- The arithmetic is the easy half. These assertions are mostly about the honesty rule: a
+  -- meter that stops reporting keeps its last value in `readings`, so anything that averages
+  -- offline rows charts a frozen figure as though it were measured (RM-024, EX-107).
+  insert into space_nodes (id, site_id, parent_id, kind, name)
+  values (t_floor, 'mmsu-nberic-care', null,    'floor', 'Totals Floor'),
+         (t_lab,   'mmsu-nberic-care', t_floor, 'room',  'Totals Lab'),
+         (t_empty, 'mmsu-nberic-care', t_floor, 'room',  'Totals Empty Room');
+
+  insert into device_config (device_id, space_node_id) values ('mtr_now', t_lab)
+    on conflict (device_id) do update set space_node_id = excluded.space_node_id;
+
+  -- Four samples in one minute: two observed at 100 and 300, two OFFLINE carrying a frozen 999.
+  -- If offline rows counted, the average would be 599.5 and the peak 999 — both plausible, both
+  -- never measured. That is the exact failure this rule exists to prevent.
+  insert into readings (device_id, ts, power_w, online) values
+    ('mtr_now', h0 + interval '400 minutes', 100, true),
+    ('mtr_now', h0 + interval '401 minutes', 300, true),
+    ('mtr_now', h0 + interval '402 minutes', 999, false),
+    ('mtr_now', h0 + interval '403 minutes', 999, false);
+
+  select avg_power_w, peak_power_w, sample_count, online_sample_count, device_count
+    into v, v2, n, n2, n3
+    from node_totals(t_lab, h0 + interval '399 minutes', h0 + interval '410 minutes');
+  assert v = 200, format('node_totals: average must ignore offline rows, got %s', v);
+  assert v2 = 300, format('node_totals: peak must ignore the frozen 999, got %s', v2);
+  assert n = 4,  format('node_totals: all 4 rows should be counted as considered, got %s', n);
+  assert n2 = 2, format('node_totals: only 2 were observed, got %s', n2);
+  assert n3 = 1, format('node_totals: one device is placed in the lab, got %s', n3);
+
+  -- A FLOOR MUST INCLUDE ITS ROOMS. A subtree walk that stopped at the node clicked would read
+  -- zero at every site that has floors, and would look like a working feature.
+  select avg_power_w into v from node_totals(t_floor, h0 + interval '399 minutes', h0 + interval '410 minutes');
+  assert v = 200, format('node_totals: a floor must include its rooms, got %s', v);
+
+  -- THE SINGLE MOST IMPORTANT ASSERTION IN THIS BLOCK. A room with no devices, and a window
+  -- with no observed samples, must report NULL — not 0. `sum()` over no rows is already NULL in
+  -- Postgres; a coalesce anywhere in that function would turn "we saw nothing" into "it drew
+  -- nothing", which is the never-zero rule violated at a new layer.
+  select avg_power_w, peak_power_w, device_count into v, v2, n3
+    from node_totals(t_empty, h0 + interval '399 minutes', h0 + interval '410 minutes');
+  assert v is null,  format('node_totals: an empty room must report NULL power, got %s', v);
+  assert v2 is null, format('node_totals: an empty room must report NULL peak, got %s', v2);
+  assert n3 = 0,     format('node_totals: an empty room has no devices, got %s', n3);
+
+  -- ...and a room WITH a device but no observed samples in the window is the same answer for a
+  -- different reason. Worth separating: this is the "everything went offline" case, and it must
+  -- not be distinguishable from zero draw by accident.
+  select avg_power_w, online_sample_count into v, n2
+    from node_totals(t_lab, h0 + interval '402 minutes', h0 + interval '404 minutes');
+  assert n2 = 0, format('node_totals: that window holds only offline rows, got %s observed', n2);
+  assert v is null, format('node_totals: all-offline must report NULL, not 0, got %s', v);
+
+  -- The window is half-open: `since` inclusive, `until` exclusive. Asserted because an
+  -- off-by-one here double-counts the boundary sample in adjacent windows.
+  select sample_count into n from node_totals(t_lab, h0 + interval '400 minutes', h0 + interval '401 minutes');
+  assert n = 1, format('node_totals: a one-minute window holds exactly its start sample, got %s', n);
+
+  -- Deleting the room clears the placement (phase21, on delete set null), so the device stops
+  -- being counted anywhere rather than lingering in a subtree that no longer exists.
+  delete from space_nodes where id = t_floor;
+  select device_count into n3 from node_totals(t_lab, h0 + interval '399 minutes', h0 + interval '410 minutes');
+  assert n3 = 0, format('node_totals: a deleted subtree counts nothing, got %s', n3);
 
   raise notice 'all assertions passed';
 end $$;
