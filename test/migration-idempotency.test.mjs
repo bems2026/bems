@@ -13,6 +13,13 @@
  * and say so — `phase19_sites.sql` and `schema.sql` both warn that re-running errors on
  * `create policy` and to drop first. That convention is fine. What is not fine is a file
  * promising the opposite of what it does.
+ *
+ * TRIGGERS HAVE THE SAME GAP AND WERE ADDED HERE BEFORE THEY COULD BECOME THE SAME SCAR.
+ * PostgreSQL has no `create trigger if not exists` either, so `phase23_plan_coords.sql` — the
+ * first file in this project to define one — would have failed a re-run in precisely the way
+ * phase21 did, with precisely the same misleading header. `create or replace function`,
+ * `add column if not exists` and `drop constraint if exists` all guard themselves; these two
+ * statements are the ones that do not, which is why they are the two this file counts.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -36,16 +43,25 @@ for (const file of FILES) {
   const raw = readFileSync(join(DIR, file), 'utf8');
   const header = raw.slice(0, raw.search(/^\s*(create|alter|insert|revoke|grant|do)\b/im) + 1 || 4000);
   const sql = raw.replace(/^\s*--.*$/gm, '');
-  const creates = (sql.match(/^\s*create policy\s+(\S+)/gim) ?? []).length;
-  const guarded = (sql.match(/^\s*drop policy if exists/gim) ?? []).length;
+
+  /** The two statement kinds PostgreSQL gives no `IF NOT EXISTS` form. Counted per kind rather
+   * than summed, so a file that guards two policies and no trigger cannot pass on the total. */
+  const UNGUARDABLE = [
+    { kind: 'policy', create: /^\s*create policy\s+\S+/gim, drop: /^\s*drop policy if exists/gim },
+    { kind: 'trigger', create: /^\s*create trigger\s+\S+/gim, drop: /^\s*drop trigger if exists/gim },
+  ];
 
   test(`${file}: an idempotency claim in the header is true`, () => {
     if (!CLAIMS_RERUN_SAFE.test(header)) return; // Silent or warning — nothing to hold it to.
-    assert.equal(
-      creates <= guarded,
-      true,
-      `${file} says a re-run is safe but creates ${creates} policies and guards ${guarded}. ` +
-        '`create policy` has no IF NOT EXISTS — drop first, or stop claiming it.',
-    );
+    for (const { kind, create, drop } of UNGUARDABLE) {
+      const creates = (sql.match(create) ?? []).length;
+      const guarded = (sql.match(drop) ?? []).length;
+      assert.equal(
+        creates <= guarded,
+        true,
+        `${file} says a re-run is safe but creates ${creates} ${kind}s and guards ${guarded}. ` +
+          `\`create ${kind}\` has no IF NOT EXISTS — drop first, or stop claiming it.`,
+      );
+    }
   });
 }

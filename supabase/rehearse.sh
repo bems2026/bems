@@ -148,6 +148,8 @@ declare
   t_floor uuid := gen_random_uuid();
   t_lab   uuid := gen_random_uuid();
   t_empty uuid := gen_random_uuid();
+  p_room  uuid := gen_random_uuid();
+  p_other uuid := gen_random_uuid();
 begin
   -- ---- readings_buckets (phase 9) ------------------------------------------------------
   select power_w into v from readings_buckets('mtr_now', base, 3600) order by ts limit 1;
@@ -432,6 +434,81 @@ begin
   delete from space_nodes where id = t_floor;
   select device_count into n3 from node_totals(t_lab, h0 + interval '399 minutes', h0 + interval '410 minutes');
   assert n3 = 0, format('node_totals: a deleted subtree counts nothing, got %s', n3);
+
+
+  -- ---- plan coordinates (phase 23) -------------------------------------------------------
+  -- The arithmetic here is trivial; every assertion is about a plan that would still LOOK like
+  -- a plan while being wrong. Half a placement, a coordinate outside the frame, or a position
+  -- carried into a room the device has never been in all render as confidently as a surveyed
+  -- one — which is why they are rejected in the database rather than checked in the renderer.
+  insert into space_nodes (id, site_id, parent_id, kind, name)
+  values (p_room,  'mmsu-nberic-care', null, 'room', 'Plan Room'),
+         (p_other, 'mmsu-nberic-care', null, 'room', 'Plan Room Two');
+
+  insert into device_config (device_id, space_node_id, plan_x, plan_y) values ('mtr_now', p_room, 0.25, 0.75)
+    on conflict (device_id) do update
+      set space_node_id = excluded.space_node_id, plan_x = excluded.plan_x, plan_y = excluded.plan_y;
+
+  select plan_x, plan_y into v, v2 from device_config where device_id = 'mtr_now';
+  assert v = 0.25 and v2 = 0.75, format('plan coords: expected 0.25/0.75 to survive the write, got %s/%s', v, v2);
+
+  -- Half a placement: the renderer would have to invent the missing axis, and whatever it
+  -- invented would look exactly as deliberate as a position somebody chose.
+  ok := true;
+  begin
+    update device_config set plan_y = null where device_id = 'mtr_now';
+    ok := false;
+  exception when check_violation then null; end;
+  assert ok, 'plan coords: one axis without the other must be rejected';
+
+  -- Outside 0..1 is not a position in this room.
+  ok := true;
+  begin
+    update device_config set plan_x = 1.5 where device_id = 'mtr_now';
+    ok := false;
+  exception when check_violation then null; end;
+  assert ok, 'plan coords: a coordinate outside the frame must be rejected';
+
+  -- A position with no room to be a position in.
+  ok := true;
+  begin
+    insert into device_config (device_id, space_node_id, plan_x, plan_y) values ('mtr_hist', null, 0.5, 0.5);
+    ok := false;
+  exception when check_violation then null; end;
+  assert ok, 'plan coords: coordinates without a space node must be rejected';
+
+  -- THE QUIET ONE. Moving a device to another room must discard where it was in the old one.
+  -- Carried over, it would appear in the new room at a spot nobody chose, drawn with exactly
+  -- the same confidence as a position an operator dragged it to. This is the shape the device
+  -- editor's whole-row upsert actually produces: every column resent, including the position
+  -- surveyed for the room being left.
+  update device_config set space_node_id = p_other where device_id = 'mtr_now';
+  select plan_x, plan_y into v, v2 from device_config where device_id = 'mtr_now';
+  assert v is null and v2 is null, format('plan coords: a move must clear the position, got %s/%s', v, v2);
+
+  -- ...but a move that CHOOSES a position for the new room keeps it. Placing a device and
+  -- positioning it in one statement is what an import and a provisioning script both look like,
+  -- and the first rehearsal of this file caught the trigger clearing exactly that. The two
+  -- cases differ in one observable way: a carried-over payload has not changed the coordinates.
+  update device_config set space_node_id = p_room, plan_x = 0.4, plan_y = 0.6 where device_id = 'mtr_now';
+  select space_node_id, plan_x, plan_y into site_of_node, v, v2 from device_config where device_id = 'mtr_now';
+  assert site_of_node = p_room, 'plan coords: the move itself should have happened';
+  assert v = 0.4 and v2 = 0.6, format('plan coords: a move that sets its own position must keep it, got %s/%s', v, v2);
+
+  -- ...and a write that does NOT move the device must keep them, or dragging a pin would clear
+  -- the very thing it just set. The trigger fires on every update; only a move may act.
+  update device_config set space_node_id = p_room, plan_x = 0.1, plan_y = 0.2 where device_id = 'mtr_now';
+  select plan_x, plan_y into v, v2 from device_config where device_id = 'mtr_now';
+  assert v = 0.1 and v2 = 0.2, format('plan coords: a same-room write must keep the position, got %s/%s', v, v2);
+
+  -- Deleting the room is a move too — phase21's `on delete set null` performs an UPDATE. This
+  -- is the case that makes the trigger necessary rather than merely tidy: without it, the
+  -- "coordinates need a node" constraint would reject that update and the room could not be
+  -- deleted at all.
+  delete from space_nodes where id = p_room;
+  select space_node_id, plan_x, plan_y into site_of_node, v, v2 from device_config where device_id = 'mtr_now';
+  assert site_of_node is null, 'plan coords: deleting the room should clear the placement';
+  assert v is null and v2 is null, format('plan coords: deleting the room must clear the position too, got %s/%s', v, v2);
 
   raise notice 'all assertions passed';
 end $$;
