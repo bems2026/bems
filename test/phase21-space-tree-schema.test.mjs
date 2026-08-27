@@ -127,3 +127,23 @@ test('nothing that holds data is dropped', () => {
 test('no statement is left unterminated, which a hand-applied file cannot recover from', () => {
   assert.equal(sql.trim().endsWith(';'), true);
 });
+
+/**
+ * Added 2026-08-27 after the live anon probe caught what the rehearsal structurally cannot.
+ *
+ * `revoke ... from public` removes only the PUBLIC grant. Measured against the real project:
+ * with just that, `anon` could still call `space_subtree` (HTTP 200), while `readings_buckets`
+ * correctly answered 404. No data leaked — the function is `security invoker` and RLS returns
+ * anon zero rows — but the file's own comment claimed a defence it was not providing, and a
+ * false comment is worse than an absent one.
+ *
+ * A bare PostgreSQL has none of Supabase's default privileges, so `supabase/rehearse.sh` will
+ * never reproduce this. Naming the role explicitly is correct whatever granted it.
+ */
+test('EXECUTE is revoked from anon by name, not only from public', () => {
+  assert.match(
+    sql,
+    /revoke execute on function public\.space_subtree\(uuid\) from [^;]*\banon\b/i,
+    'revoking from public alone does not remove a direct grant to anon',
+  );
+});

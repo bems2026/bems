@@ -123,7 +123,19 @@ $$;
 -- Postgres grants EXECUTE on a new function to PUBLIC by default, which includes `anon`. RLS
 -- would still block the rows, but defence in depth: revoke first, then grant only to
 -- authenticated. The order matters — granting before revoking undoes the grant.
-revoke execute on function public.space_subtree(uuid) from public;
+-- `from public, anon` rather than `from public` alone. MEASURED against the live project on
+-- 2026-08-27: with only the public revoke, `anon` could still call this (HTTP 200), while
+-- `readings_buckets` — same pattern, same file shape — correctly answered 404. Revoking from
+-- PUBLIC does not remove a grant held directly by a role, and Supabase manages these roles
+-- itself, so naming `anon` is the only version that is correct whatever granted it.
+--
+-- Nothing leaked: the function is `security invoker` and RLS returns `anon` zero rows either
+-- way. This is the defence-in-depth the comment above already claimed, actually delivered.
+--
+-- `supabase/rehearse.sh` cannot catch this and never will — a bare PostgreSQL has none of
+-- Supabase's default privileges, so the rehearsal proves migrations APPLY and functions BEHAVE,
+-- and says nothing about who ends up holding EXECUTE. Only a probe against the real project can.
+revoke execute on function public.space_subtree(uuid) from public, anon;
 grant  execute on function public.space_subtree(uuid) to authenticated;
 
 -- =============================================================================
