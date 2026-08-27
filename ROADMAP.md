@@ -2210,10 +2210,17 @@ may not.
       geometry.
       `src/components/scene3d/` is ~83 KB describing one office — `geometry.ts`'s header says so
       itself ("Spatial layout for the CARE office 3D scene"). It is good work and genuinely
-      site-specific; the fix is to load it through a dynamic `import()` gated on the site's
-      declared pack, not to generalise it.
-      *Worth doing regardless of replication:* three.js plus that geometry currently ships to
-      every viewer on every page load, including the kiosk Pi.
+      site-specific; the fix is to gate it on the site's declared pack, not to generalise it.
+      **CORRECTION, 2026-08-27.** This entry previously claimed the scene "ships to every viewer
+      on every page load", and used that as a second justification. **That was wrong and was not
+      checked before it was written.** `SpatialView.tsx` has always loaded `OfficeScene3D`
+      through `React.lazy()`, and `vite.config.ts` already splits `three` into its own chunk.
+      What is true is narrower: `OverviewPage` always mounts the hero and Overview is the default
+      route, so nearly every viewer does fetch that chunk — the deferral buys a faster first
+      paint, not a smaller transfer.
+      *So the real benefit is for the SECOND site, not this one:* a site with no scene pack would
+      skip ~560 KB it can never use. That is a replication argument, which is the only argument
+      this entry needed.
       Generic, data-driven 3D is deliberately **not** in scope here and has no dependency on
       anything above.
 
