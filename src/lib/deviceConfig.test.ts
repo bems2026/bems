@@ -173,3 +173,38 @@ describe('space placement', () => {
     expect(placementLabel(dev({ room: null }), cfg(), NODES)).toBe('');
   });
 });
+
+describe('plan position (RM-031)', () => {
+  it('starts unplaced within its room', () => {
+    expect(emptyDeviceConfig('co1')).toMatchObject({ planX: null, planY: null });
+  });
+
+  it('keeps a position through a normalise', () => {
+    expect(normalizeDeviceConfig(cfg({ spaceNodeId: 'lab', planX: 0.25, planY: 0.75 }))).toMatchObject({ planX: 0.25, planY: 0.75 });
+  });
+
+  it('drops a position that has no room to be a position in', () => {
+    // phase23's third invariant, applied before the write rather than after the 400. "Three
+    // quarters of the way down" means nothing without naming what it is three quarters down.
+    expect(normalizeDeviceConfig(cfg({ spaceNodeId: null, planX: 0.25, planY: 0.75 }))).toMatchObject({ planX: null, planY: null });
+  });
+
+  it('drops half a position rather than sending it to the CHECK constraint', () => {
+    expect(normalizeDeviceConfig(cfg({ spaceNodeId: 'lab', planX: 0.25, planY: null }))).toMatchObject({ planX: null, planY: null });
+  });
+
+  it('drops a coordinate outside the frame', () => {
+    expect(normalizeDeviceConfig(cfg({ spaceNodeId: 'lab', planX: 1.4, planY: 0.5 }))).toMatchObject({ planX: null, planY: null });
+  });
+
+  it('counts a moved pin as an edit', () => {
+    // Otherwise the editor reports no unsaved change and the Save button stays disabled after a
+    // drag — the change is real and invisible, which is the worst combination.
+    expect(isSameConfig(cfg({ planX: 0.2, planY: 0.2 }), cfg({ planX: 0.9, planY: 0.2 }))).toBe(false);
+    expect(isSameConfig(cfg({ planX: 0.2, planY: 0.2 }), cfg({ planX: 0.2, planY: 0.2 }))).toBe(true);
+  });
+
+  it('counts placing a previously unplaced device as an edit', () => {
+    expect(isSameConfig(cfg(), cfg({ planX: 0.2, planY: 0.2 }))).toBe(false);
+  });
+});

@@ -3,6 +3,7 @@ import { supabase } from '@/config/supabase';
 import { fetchDeviceConfigs, writeDeviceConfig } from '@/lib/supabaseDeviceConfig';
 import { coerceFunctions, type DeviceFunction } from '@/lib/deviceFunctions';
 import { coerceCategory, coerceLoadShedGroup, effectiveConfig, emptyDeviceConfig, isSameConfig, normalizeDeviceConfig, type DeviceConfig, type DeviceConfigField } from '@/lib/deviceConfig';
+import type { PlanPoint } from '@/lib/planLayout';
 import { createRetrySchedule } from './retrySchedule';
 
 const retry = createRetrySchedule();
@@ -35,6 +36,21 @@ interface DeviceConfigState {
    * making every existing caller carry a union it never uses.
    */
   setDraftFunctions: (deviceId: string, functions: DeviceFunction[] | null) => void;
+  /**
+   * Where the device sits on its space's plan — RM-031. Its own action for the same reason
+   * `functions` has one: a point is neither text nor a single-select, and widening
+   * `setDraftField`'s value type would make every existing caller carry a union it never uses.
+   */
+  setDraftPosition: (deviceId: string, point: PlanPoint | null) => void;
+  /**
+   * Stage a position and write it in one step.
+   *
+   * SAVED ON DROP, NOT BEHIND A SAVE BUTTON, and that is a deliberate difference from every
+   * other field here. Releasing a pin IS the confirmation — a plan still showing the pin where
+   * it was dropped while the change sits unsaved is displaying a position the database does not
+   * have, which is the same class of lie as a frozen power reading.
+   */
+  placeOnPlan: (deviceId: string, point: PlanPoint | null) => Promise<void>;
   save: (deviceId: string) => Promise<void>;
 }
 
@@ -103,6 +119,23 @@ export const useDeviceConfigStore = create<DeviceConfigState>((set, get) => ({
       const base = effectiveConfig(s.draft, s.saved, deviceId);
       return { draft: { ...s.draft, [deviceId]: { ...base, functions: coerceFunctions(functions) } } };
     }),
+
+  setDraftPosition: (deviceId, point) =>
+    set((s) => {
+      // Built on the effective config, never on a blank one: the write is a whole-row upsert,
+      // so placing a pin from an empty base would erase the notes, category and shed tier of
+      // the very device being dragged.
+      const base = effectiveConfig(s.draft, s.saved, deviceId);
+      return { draft: { ...s.draft, [deviceId]: { ...base, planX: point?.x ?? null, planY: point?.y ?? null } } };
+    }),
+
+  placeOnPlan: async (deviceId, point) => {
+    get().setDraftPosition(deviceId, point);
+    // `save` does the rest, including the case worth naming: a device with no space node
+    // normalises the position straight back out (phase23's third invariant, applied in
+    // `normalizeDeviceConfig`), so the draft matches what is saved and no write is attempted.
+    await get().save(deviceId);
+  },
 
   save: async (deviceId) => {
     const { draft, saved } = get();

@@ -12,10 +12,17 @@
 import { supabase } from '@/config/supabase';
 import { coerceFunctions } from './deviceFunctions';
 import { coerceCategory, coerceLoadShedGroup, normalizeDeviceConfig, type DeviceConfig } from './deviceConfig';
+import { coercePlanCoord } from './planLayout';
 
 interface DeviceConfigRow {
   device_id: string;
   space_node_id: string | null;
+  /** `numeric` columns from phase23. Typed as `unknown` because PostgREST's JSON encoding of
+   * `numeric` is not something this codebase gets to assume — `count(*)` already arrived here
+   * as a string once. `coercePlanCoord` accepts either and refuses anything else, and a
+   * deployment that has not applied phase23 yet simply has neither key. */
+  plan_x?: unknown;
+  plan_y?: unknown;
   functions: string[] | null;
   room: string | null;
   category: string | null;
@@ -28,6 +35,8 @@ interface DeviceConfigRow {
 interface DeviceConfigWriteRow {
   device_id: string;
   space_node_id: string | null;
+  plan_x: number | null;
+  plan_y: number | null;
   functions: string[] | null;
   room: string | null;
   category: string | null;
@@ -54,6 +63,8 @@ export function deviceConfigRowToModel(row: DeviceConfigRow): DeviceConfig {
   return {
     deviceId: row.device_id,
     spaceNodeId: row.space_node_id,
+    planX: coercePlanCoord(row.plan_x),
+    planY: coercePlanCoord(row.plan_y),
     room: row.room,
     category: coerceCategory(row.category),
     loadShedGroup: coerceLoadShedGroup(row.load_shed_group),
@@ -82,6 +93,11 @@ export function deviceConfigToRow(config: DeviceConfig, actorUserId: string | nu
     device_id: normalized.deviceId,
     functions: normalized.functions,
     space_node_id: normalized.spaceNodeId,
+    // Carried on every write because this is a WHOLE-ROW upsert. A row builder that omitted the
+    // position would null it on any unrelated edit — a notes change erasing a placement, with
+    // no error and from a screen that never mentioned the plan.
+    plan_x: normalized.planX,
+    plan_y: normalized.planY,
     room: normalized.room,
     category: normalized.category,
     load_shed_group: normalized.loadShedGroup,
@@ -94,7 +110,7 @@ export function deviceConfigToRow(config: DeviceConfig, actorUserId: string | nu
 /** Everything `deviceConfigStore.load()` needs, keyed by device id. */
 export async function fetchDeviceConfigs(): Promise<Record<string, DeviceConfig>> {
   const client = requireSupabase();
-  const { data, error } = await client.from('device_config').select('device_id,space_node_id,room,category,load_shed_group,display_name_override,notes,functions');
+  const { data, error } = await client.from('device_config').select('device_id,space_node_id,plan_x,plan_y,room,category,load_shed_group,display_name_override,notes,functions');
   if (error) throw new Error(`Supabase device_config fetch failed: ${error.message}`);
   return deviceConfigsToMap(data ?? []);
 }

@@ -15,6 +15,7 @@ import type { DeviceFunction } from './deviceFunctions';
 import { coerceFunctions } from './deviceFunctions';
 import type { Device } from './types';
 import { pathLabel, type SpaceNode } from './spaceTree';
+import { planPointOf } from './planLayout';
 
 export type DeviceCategory = 'lighting' | 'aircon' | 'outlet' | 'branch_circuit' | 'sensor' | 'critical' | 'other';
 export type LoadShedGroup = 'group_1' | 'group_2' | 'group_3' | 'never';
@@ -29,6 +30,15 @@ export interface DeviceConfig {
    * no longer has. `placementLabel` decides the precedence once, so no call site re-derives it.
    */
   spaceNodeId: string | null;
+  /**
+   * Where this device sits INSIDE that node — normalised 0..1, RM-031. Null means placed in a
+   * room but not yet positioned on its plan, which is a different state from unplaced entirely
+   * and is why these are not folded into `spaceNodeId`.
+   *
+   * Both or neither, always. `planLayout.ts` decides that once; nothing else re-derives it.
+   */
+  planX: number | null;
+  planY: number | null;
   room: string | null;
   category: DeviceCategory | null;
   loadShedGroup: LoadShedGroup | null;
@@ -67,7 +77,7 @@ const CATEGORY_LABEL = Object.fromEntries(CATEGORY_OPTIONS.map((o) => [o.value, 
 const LOAD_SHED_SHORT: Record<LoadShedGroup, string> = { group_1: 'Shed 1', group_2: 'Shed 2', group_3: 'Shed 3', never: 'Protected' };
 
 export function emptyDeviceConfig(deviceId: string): DeviceConfig {
-  return { deviceId, spaceNodeId: null, room: null, category: null, loadShedGroup: null, displayNameOverride: null, notes: null, functions: null };
+  return { deviceId, spaceNodeId: null, planX: null, planY: null, room: null, category: null, loadShedGroup: null, displayNameOverride: null, notes: null, functions: null };
 }
 
 /** Unknown values become null rather than throwing or passing through. The only ways one can
@@ -92,11 +102,26 @@ export function normalizeDeviceConfig(config: DeviceConfig): DeviceConfig {
     const t = (v ?? '').trim();
     return t === '' ? null : t;
   };
+  const spaceNodeId = text(config.spaceNodeId);
+  /**
+   * A position is dropped unless it is complete, in range, AND has a room to be a position in —
+   * phase23's three invariants, applied before the write rather than after the 400 comes back.
+   * The database is the backstop, not the first line: a rejected upsert surfaces as a raw
+   * Postgres constraint name, which tells an operator nothing they can act on.
+   *
+   * Note what is NOT decided here: whether a MOVE should discard the old room's coordinates.
+   * That needs the previous row, which this function does not have, so the trigger in phase23
+   * owns it. Client owns validity, database owns the move.
+   */
+  const point = spaceNodeId === null ? null : planPointOf(config);
+
   return {
     deviceId: config.deviceId,
     // A cleared <select> yields '', which must become null: "unplaced" and "placed at the empty
     // string" are not two states, and '' would fail the foreign key on write.
-    spaceNodeId: text(config.spaceNodeId),
+    spaceNodeId,
+    planX: point?.x ?? null,
+    planY: point?.y ?? null,
     room: text(config.room),
     category: coerceCategory(config.category),
     loadShedGroup: coerceLoadShedGroup(config.loadShedGroup),
@@ -119,6 +144,8 @@ function sameFunctions(a: DeviceFunction[] | null, b: DeviceFunction[] | null): 
 export function isSameConfig(a: DeviceConfig, b: DeviceConfig): boolean {
   return (
     a.spaceNodeId === b.spaceNodeId &&
+    a.planX === b.planX &&
+    a.planY === b.planY &&
     a.room === b.room &&
     a.category === b.category &&
     a.loadShedGroup === b.loadShedGroup &&
