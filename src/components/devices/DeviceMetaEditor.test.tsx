@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { DeviceMetaEditor } from './DeviceMetaEditor';
 import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
+import { useSpaceTreeStore } from '@/stores/spaceTreeStore';
 import * as supabaseDeviceConfig from '@/lib/supabaseDeviceConfig';
 import { emptyDeviceConfig } from '@/lib/deviceConfig';
 import type { Device } from '@/lib/types';
@@ -21,9 +22,53 @@ afterEach(() => {
   vi.mocked(supabaseDeviceConfig.fetchDeviceConfigs).mockReset();
   vi.mocked(supabaseDeviceConfig.writeDeviceConfig).mockReset();
   useDeviceConfigStore.setState({ saved: {}, draft: {}, status: 'idle', saveStatus: 'idle', saveError: null, lastSave: null });
+  useSpaceTreeStore.setState({ nodes: [], status: 'idle', mutating: false, error: null });
 });
 
 describe('DeviceMetaEditor', () => {
+  /**
+   * RM-028 — a device is placed in the space tree, not described by a typed string.
+   *
+   * `Room` stays as the free-text fallback for a site whose tree has not been built yet, which
+   * is why both fields exist here rather than one replacing the other.
+   */
+  describe('space placement', () => {
+    const seedTree = () =>
+      useSpaceTreeStore.setState({
+        nodes: [
+          { id: 'b', site_id: 's', parent_id: null, kind: 'building', name: 'NBERIC', sort_order: 0, attrs: {} },
+          { id: 'r', site_id: 's', parent_id: 'b', kind: 'room', name: 'CARE Office', sort_order: 0, attrs: {} },
+        ],
+        status: 'ready',
+        canEdit: true,
+      });
+
+    it('offers every node by full path, so two rooms with one name stay distinguishable', () => {
+      seedTree();
+      render(<DeviceMetaEditor device={outlet()} onClose={vi.fn()} />);
+      const select = screen.getByLabelText('Space');
+      expect([...select.querySelectorAll('option')].map((o) => o.textContent)).toEqual([
+        'Not placed',
+        'NBERIC',
+        'NBERIC / CARE Office',
+      ]);
+    });
+
+    it('staging a placement enables Save', () => {
+      seedTree();
+      render(<DeviceMetaEditor device={outlet()} onClose={vi.fn()} />);
+      fireEvent.change(screen.getByLabelText('Space'), { target: { value: 'r' } });
+      expect(screen.getByRole('button', { name: 'Save metadata' })).toBeEnabled();
+    });
+
+    it('says so when there is no tree yet, rather than showing an empty picker', () => {
+      useSpaceTreeStore.setState({ nodes: [], status: 'ready', canEdit: true });
+      render(<DeviceMetaEditor device={outlet()} onClose={vi.fn()} />);
+      expect(screen.getByLabelText('Space')).toBeDisabled();
+      expect(screen.getByText(/no spaces defined/i)).toBeInTheDocument();
+    });
+  });
+
   it('pre-fills fields from the saved config and focuses the heading', () => {
     useDeviceConfigStore.setState({ saved: { co1: { ...emptyDeviceConfig('co1'), room: 'CARE Office', category: 'outlet' } } });
     render(<DeviceMetaEditor device={outlet()} onClose={vi.fn()} />);

@@ -4,7 +4,9 @@ import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { FUNCTION_OPTIONS, functionsOf, DEFAULT_FUNCTIONS, type DeviceFunction } from '@/lib/deviceFunctions';
 import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
-import { CATEGORY_OPTIONS, LOAD_SHED_OPTIONS, effectiveConfig, knownRooms, type DeviceConfigField } from '@/lib/deviceConfig';
+import { CATEGORY_OPTIONS, LOAD_SHED_OPTIONS, effectiveConfig, recordedRoomLabels, type DeviceConfigField } from '@/lib/deviceConfig';
+import { useSpaceTreeStore } from '@/stores/spaceTreeStore';
+import { flattenForPicker, knownSpaceLabels } from '@/lib/spaceTree';
 import type { Device } from '@/lib/types';
 
 interface DeviceMetaEditorProps {
@@ -32,11 +34,21 @@ export function DeviceMetaEditor({ device, onClose }: DeviceMetaEditorProps) {
   const saveError = useDeviceConfigStore((s) => s.saveError);
 
   const config = effectiveConfig(draft, saved, device.id);
-  const rooms = knownRooms(saved);
+  // RM-028: the suggestions come from the declared tree, not from strings other devices happen
+  // to carry. `knownRooms` could only ever offer places already in use, so a room with nothing
+  // in it yet was unofferable and a typo became a permanent second room.
+  const spaceNodes = useSpaceTreeStore((s) => s.nodes);
+  const spaceOptions = flattenForPicker(spaceNodes);
+  // Tree first, then anything already typed. The second half is transitional and exists so the
+  // cut-over does not remove every existing suggestion at a site whose tree is not built yet —
+  // see `recordedRoomLabels`. Deduped, because a path and a typed string can coincide.
+  const rooms = Array.from(new Set([...knownSpaceLabels(spaceNodes), ...recordedRoomLabels(saved)]));
   const hasDraft = draft[device.id] !== undefined;
 
   const headingRef = useRef<HTMLHeadingElement>(null);
   const roomListId = useId();
+  const spaceId = useId();
+  const spaceHintId = useId();
   const { ask, modalProps } = useConfirm();
 
   // Focus moves to the panel's own heading on open/device-switch — the non-trapping half of
@@ -92,6 +104,37 @@ export function DeviceMetaEditor({ device, onClose }: DeviceMetaEditorProps) {
       </div>
 
       <div className="device-meta-editor__grid">
+        {/* htmlFor rather than the wrapping <label> the other fields use, deliberately: the
+            hint below is a DESCRIPTION, and inside a label it would be folded into the select's
+            accessible name — a screen reader would announce the field as "Space No spaces
+            defined yet...". aria-describedby keeps the name "Space" and the hint separate. */}
+        <div className="device-meta-editor__field">
+          <label htmlFor={spaceId}>Space</label>
+          {/* Disabled rather than hidden when the tree is empty: a picker with one useless
+              option looks broken, and hiding the field entirely hides the capability. */}
+          <select
+            id={spaceId}
+            value={config.spaceNodeId ?? ''}
+            disabled={spaceOptions.length === 0}
+            aria-describedby={spaceOptions.length === 0 ? spaceHintId : undefined}
+            onChange={(e) => field('spaceNodeId', e.target.value)}
+          >
+            <option value="">Not placed</option>
+            {spaceOptions.map((o) => (
+              // Full path, not the bare name — two rooms called "Lab" on different floors are
+              // normal, which is why the unique index is per-sibling rather than per-site.
+              <option key={o.id} value={o.id}>
+                {o.path}
+              </option>
+            ))}
+          </select>
+          {spaceOptions.length === 0 && (
+            <span id={spaceHintId} className="device-meta-editor__hint">
+              No spaces defined yet — add them from Spaces on this page.
+            </span>
+          )}
+        </div>
+
         <label className="device-meta-editor__field">
           <span>Room</span>
           <input type="text" list={roomListId} value={config.room ?? ''} placeholder={device.room ?? 'Not recorded'} onChange={(e) => field('room', e.target.value)} />

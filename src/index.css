@@ -5725,3 +5725,11 @@ fieldset.device-meta-editor__field > legend {
     min-height: 44px;
   }
 }
+
+/* RM-028: the description under the Space picker. A hint, not a label — it is wired with
+   aria-describedby so it does not become part of the select's accessible name. */
+.device-meta-editor__hint {
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+  line-height: 1.4;
+}

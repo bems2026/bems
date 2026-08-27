@@ -85,7 +85,12 @@ export const useDeviceConfigStore = create<DeviceConfigState>((set, get) => ({
     set((s) => {
       const base = effectiveConfig(s.draft, s.saved, deviceId);
       const next: DeviceConfig =
-        field === 'category'
+        // Same reasoning as category/loadShedGroup below: a <select> only ever offers valid
+        // options, and '' — "Not placed" — must resolve to null right away. Left as '' it would
+        // read as an edit against an already-unplaced device, and would fail the foreign key.
+        field === 'spaceNodeId'
+          ? { ...base, spaceNodeId: value === '' ? null : value }
+          : field === 'category'
           ? { ...base, category: coerceCategory(value) }
           : field === 'loadShedGroup'
             ? { ...base, loadShedGroup: coerceLoadShedGroup(value) }

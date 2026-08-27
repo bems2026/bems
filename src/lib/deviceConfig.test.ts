@@ -9,7 +9,8 @@ import {
   resolveRoom,
   effectiveConfig,
   metaSummary,
-  knownRooms,
+  placementLabel,
+  recordedRoomLabels,
   type DeviceConfig,
 } from './deviceConfig';
 import type { Device } from './types';
@@ -115,8 +116,60 @@ describe('metaSummary', () => {
   });
 });
 
-describe('knownRooms', () => {
-  it('lists each recorded room once, sorted, ignoring devices with none', () => {
-    expect(knownRooms({ co1: cfg({ room: 'Lab 2' }), l1: cfg({ room: 'CARE Office' }), l2: cfg({ room: 'Lab 2' }), l3: cfg() })).toEqual(['CARE Office', 'Lab 2']);
+/**
+ * RM-028 — placement in the space tree replaces the free-text room.
+ *
+ * `room` is KEPT rather than dropped: it is the label a site still shows before anyone has
+ * built a tree, and dropping a column holding real operator input is not reversible by
+ * re-running a migration. What changes is precedence — the tree wins where it says anything.
+ */
+describe('recordedRoomLabels', () => {
+  it('still lists the rooms operators have already typed', () => {
+    // TRANSITIONAL, and the reason it survives the cut to the tree: the live site has room text
+    // in device_config and no tree yet, so sourcing the datalist from the tree alone would take
+    // away every existing suggestion during exactly the window they are needed.
+    expect(recordedRoomLabels({ co1: cfg({ room: 'Lab 2' }), l1: cfg({ room: 'CARE Office' }), l2: cfg({ room: 'Lab 2' }), l3: cfg() }))
+      .toEqual(['CARE Office', 'Lab 2']);
+  });
+
+  it('is empty once nobody has typed one', () => {
+    expect(recordedRoomLabels({ l3: cfg() })).toEqual([]);
+  });
+});
+
+describe('space placement', () => {
+  const NODES = [
+    { id: 'b', site_id: 's', parent_id: null, kind: 'building' as const, name: 'NBERIC', sort_order: 0, attrs: {} },
+    { id: 'r', site_id: 's', parent_id: 'b', kind: 'room' as const, name: 'CARE Office', sort_order: 0, attrs: {} },
+  ];
+
+  it('a fresh config is unplaced', () => {
+    expect(emptyDeviceConfig('co1').spaceNodeId).toBeNull();
+  });
+
+  it('placement counts as an edit, so the Save button appears for it', () => {
+    expect(isSameConfig(cfg(), cfg({ spaceNodeId: 'r' }))).toBe(false);
+  });
+
+  it('an empty string from a cleared <select> normalises to null, not to ""', () => {
+    expect(normalizeDeviceConfig(cfg({ spaceNodeId: '' })).spaceNodeId).toBeNull();
+  });
+
+  it('the tree path wins over the typed room when a device is placed', () => {
+    expect(placementLabel(dev(), cfg({ spaceNodeId: 'r', room: 'Old Text' }), NODES)).toBe('NBERIC / CARE Office');
+  });
+
+  it('falls back to the typed room when the device is not placed', () => {
+    expect(placementLabel(dev(), cfg({ room: 'Lab 2' }), NODES)).toBe('Lab 2');
+  });
+
+  it('falls back to the typed room when the node is gone, rather than showing nothing', () => {
+    // on delete set null clears the placement server-side, but a stale draft or an in-flight
+    // delete can leave an id pointing at a node this client no longer has.
+    expect(placementLabel(dev(), cfg({ spaceNodeId: 'vanished', room: 'Lab 2' }), NODES)).toBe('Lab 2');
+  });
+
+  it('is empty when neither is recorded, so a caller can render nothing at all', () => {
+    expect(placementLabel(dev({ room: null }), cfg(), NODES)).toBe('');
   });
 });

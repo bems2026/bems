@@ -14,12 +14,21 @@
 import type { DeviceFunction } from './deviceFunctions';
 import { coerceFunctions } from './deviceFunctions';
 import type { Device } from './types';
+import { pathLabel, type SpaceNode } from './spaceTree';
 
 export type DeviceCategory = 'lighting' | 'aircon' | 'outlet' | 'branch_circuit' | 'sensor' | 'critical' | 'other';
 export type LoadShedGroup = 'group_1' | 'group_2' | 'group_3' | 'never';
 
 export interface DeviceConfig {
   deviceId: string;
+  /**
+   * Where this device sits in the space tree (RM-028), or null if unplaced.
+   *
+   * `room` below is NOT superseded by this — it is kept as the label a site still shows before
+   * anyone has built a tree, and as the fallback when a placement points at a node this client
+   * no longer has. `placementLabel` decides the precedence once, so no call site re-derives it.
+   */
+  spaceNodeId: string | null;
   room: string | null;
   category: DeviceCategory | null;
   loadShedGroup: LoadShedGroup | null;
@@ -29,7 +38,7 @@ export interface DeviceConfig {
   functions: DeviceFunction[] | null;
 }
 
-export type DeviceConfigField = 'room' | 'category' | 'loadShedGroup' | 'displayNameOverride' | 'notes' | 'functions';
+export type DeviceConfigField = 'spaceNodeId' | 'room' | 'category' | 'loadShedGroup' | 'displayNameOverride' | 'notes' | 'functions';
 
 /** The `value`s are exactly what supabase/phase7_device_config.sql's CHECK constraint
  * accepts — the option list and the constraint are one fact in two places, and this comment
@@ -58,7 +67,7 @@ const CATEGORY_LABEL = Object.fromEntries(CATEGORY_OPTIONS.map((o) => [o.value, 
 const LOAD_SHED_SHORT: Record<LoadShedGroup, string> = { group_1: 'Shed 1', group_2: 'Shed 2', group_3: 'Shed 3', never: 'Protected' };
 
 export function emptyDeviceConfig(deviceId: string): DeviceConfig {
-  return { deviceId, room: null, category: null, loadShedGroup: null, displayNameOverride: null, notes: null, functions: null };
+  return { deviceId, spaceNodeId: null, room: null, category: null, loadShedGroup: null, displayNameOverride: null, notes: null, functions: null };
 }
 
 /** Unknown values become null rather than throwing or passing through. The only ways one can
@@ -85,6 +94,9 @@ export function normalizeDeviceConfig(config: DeviceConfig): DeviceConfig {
   };
   return {
     deviceId: config.deviceId,
+    // A cleared <select> yields '', which must become null: "unplaced" and "placed at the empty
+    // string" are not two states, and '' would fail the foreign key on write.
+    spaceNodeId: text(config.spaceNodeId),
     room: text(config.room),
     category: coerceCategory(config.category),
     loadShedGroup: coerceLoadShedGroup(config.loadShedGroup),
@@ -106,6 +118,7 @@ function sameFunctions(a: DeviceFunction[] | null, b: DeviceFunction[] | null): 
 
 export function isSameConfig(a: DeviceConfig, b: DeviceConfig): boolean {
   return (
+    a.spaceNodeId === b.spaceNodeId &&
     a.room === b.room &&
     a.category === b.category &&
     a.loadShedGroup === b.loadShedGroup &&
@@ -146,12 +159,47 @@ export function metaSummary(config: DeviceConfig | undefined): string {
   return parts.join(' · ');
 }
 
-/** Every distinct recorded room, sorted — feeds a future room filter/autocomplete without
- * requiring a fixed room list anywhere in the schema. */
-export function knownRooms(saved: Record<string, DeviceConfig>): string[] {
+/**
+ * Rooms operators have already typed, deduplicated and sorted.
+ *
+ * TRANSITIONAL. This is the old `knownRooms()` under a name that admits what it is: a list
+ * inferred from strings other devices happen to carry, which can only ever offer places already
+ * in use. The declared tree (`knownSpaceLabels`) is the replacement.
+ *
+ * It survives the cut because deleting it would have been a regression in exactly the window it
+ * matters: a live site has `device_config.room` text and no tree yet, so sourcing suggestions
+ * from the tree alone takes away every existing one until somebody finishes building the tree.
+ * The editor offers both, tree first. Retire this once sites are placed.
+ */
+export function recordedRoomLabels(saved: Record<string, DeviceConfig>): string[] {
   const rooms = new Set<string>();
   for (const config of Object.values(saved)) {
     if (config.room) rooms.add(config.room);
   }
   return Array.from(rooms).sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * The one place that decides how a device's location is described — RM-028.
+ *
+ * Precedence, and each step exists for a reason:
+ *   1. the space tree, when the device is placed AND that node is known here;
+ *   2. the operator's typed `room`, which is what a site shows before a tree exists;
+ *   3. the registry's own `room`, always null today;
+ *   4. nothing, rendered as nothing rather than as an em-dash.
+ *
+ * Step 1 checks the node RESOLVES, not merely that an id is set. `on delete set null` clears a
+ * placement server-side, but a stale draft or a delete racing this render can leave an id
+ * pointing at a node this client no longer holds — and falling through to the typed room is
+ * strictly better than showing an empty label for a device that has one.
+ *
+ * This replaces `knownRooms()`, which derived the room list from whatever strings operators had
+ * already typed. That could only ever offer places already in use, so a room with nothing in it
+ * yet was unofferable and a typo became a permanent second room. The tree is declared, not
+ * inferred, which is the whole point of RM-028 — see `knownSpaceLabels` in `spaceTree.ts`.
+ */
+export function placementLabel(device: Device, config: DeviceConfig | undefined, nodes: readonly SpaceNode[]): string {
+  const fromTree = pathLabel(nodes, config?.spaceNodeId);
+  if (fromTree) return fromTree;
+  return config?.room ?? device.room ?? '';
 }

@@ -6,6 +6,7 @@ describe('deviceConfigRowToModel', () => {
     expect(
       deviceConfigRowToModel({
         device_id: 'co1', functions: null,
+        space_node_id: null,
         room: 'CARE Office',
         category: 'outlet',
         load_shed_group: 'never',
@@ -14,6 +15,7 @@ describe('deviceConfigRowToModel', () => {
       }),
     ).toEqual({
       deviceId: 'co1', functions: null,
+      spaceNodeId: null,
       room: 'CARE Office',
       category: 'outlet',
       loadShedGroup: 'never',
@@ -26,6 +28,7 @@ describe('deviceConfigRowToModel', () => {
     expect(
       deviceConfigRowToModel({
         device_id: 'co1', functions: null,
+        space_node_id: null,
         room: null,
         category: 'submarine',
         load_shed_group: 'group_9',
@@ -39,8 +42,10 @@ describe('deviceConfigRowToModel', () => {
 describe('deviceConfigsToMap', () => {
   it('keys the array by device id', () => {
     const map = deviceConfigsToMap([
-      { device_id: 'co1', functions: null, room: 'Lab', category: null, load_shed_group: null, display_name_override: null, notes: null },
-      { device_id: 'l1', functions: null, room: null, category: null, load_shed_group: null, display_name_override: null, notes: null },
+      { device_id: 'co1', functions: null,
+        space_node_id: null, room: 'Lab', category: null, load_shed_group: null, display_name_override: null, notes: null },
+      { device_id: 'l1', functions: null,
+        space_node_id: null, room: null, category: null, load_shed_group: null, display_name_override: null, notes: null },
     ]);
     expect(Object.keys(map).sort()).toEqual(['co1', 'l1']);
     expect(map.co1.room).toBe('Lab');
@@ -55,11 +60,13 @@ describe('deviceConfigToRow', () => {
   it('builds the upsert row, normalizing text and stamping the actor', () => {
     expect(
       deviceConfigToRow(
-        { deviceId: 'co1', functions: null, room: '  CARE Office  ', category: 'outlet', loadShedGroup: 'never', displayNameOverride: null, notes: '' },
+        { deviceId: 'co1', functions: null,
+      spaceNodeId: null, room: '  CARE Office  ', category: 'outlet', loadShedGroup: 'never', displayNameOverride: null, notes: '' },
         'user-1',
       ),
     ).toEqual({
       device_id: 'co1', functions: null,
+        space_node_id: null,
       room: 'CARE Office',
       category: 'outlet',
       load_shed_group: 'never',
@@ -70,6 +77,7 @@ describe('deviceConfigToRow', () => {
   });
 
   it('allows a null actor — break-glass sessions never reach this far, but the type must not lie', () => {
-    expect(deviceConfigToRow({ deviceId: 'l1', functions: null, room: null, category: null, loadShedGroup: null, displayNameOverride: null, notes: null }, null).updated_by).toBeNull();
+    expect(deviceConfigToRow({ deviceId: 'l1', functions: null,
+      spaceNodeId: null, room: null, category: null, loadShedGroup: null, displayNameOverride: null, notes: null }, null).updated_by).toBeNull();
   });
 });

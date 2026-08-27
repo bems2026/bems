@@ -15,6 +15,7 @@ import { coerceCategory, coerceLoadShedGroup, normalizeDeviceConfig, type Device
 
 interface DeviceConfigRow {
   device_id: string;
+  space_node_id: string | null;
   functions: string[] | null;
   room: string | null;
   category: string | null;
@@ -26,6 +27,7 @@ interface DeviceConfigRow {
 /** What gets sent on a write — `updated_by` in, `device_id` as the PK the upsert targets. */
 interface DeviceConfigWriteRow {
   device_id: string;
+  space_node_id: string | null;
   functions: string[] | null;
   room: string | null;
   category: string | null;
@@ -51,6 +53,7 @@ function requireSupabase() {
 export function deviceConfigRowToModel(row: DeviceConfigRow): DeviceConfig {
   return {
     deviceId: row.device_id,
+    spaceNodeId: row.space_node_id,
     room: row.room,
     category: coerceCategory(row.category),
     loadShedGroup: coerceLoadShedGroup(row.load_shed_group),
@@ -78,6 +81,7 @@ export function deviceConfigToRow(config: DeviceConfig, actorUserId: string | nu
   return {
     device_id: normalized.deviceId,
     functions: normalized.functions,
+    space_node_id: normalized.spaceNodeId,
     room: normalized.room,
     category: normalized.category,
     load_shed_group: normalized.loadShedGroup,
@@ -90,7 +94,7 @@ export function deviceConfigToRow(config: DeviceConfig, actorUserId: string | nu
 /** Everything `deviceConfigStore.load()` needs, keyed by device id. */
 export async function fetchDeviceConfigs(): Promise<Record<string, DeviceConfig>> {
   const client = requireSupabase();
-  const { data, error } = await client.from('device_config').select('device_id,room,category,load_shed_group,display_name_override,notes,functions');
+  const { data, error } = await client.from('device_config').select('device_id,space_node_id,room,category,load_shed_group,display_name_override,notes,functions');
   if (error) throw new Error(`Supabase device_config fetch failed: ${error.message}`);
   return deviceConfigsToMap(data ?? []);
 }
