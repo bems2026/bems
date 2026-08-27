@@ -81,3 +81,41 @@ test('no statement is left unterminated, which a hand-applied file cannot recove
   assert.ok(statements.length >= 12, `expected the full set of statements, saw ${statements.length}`);
   assert.equal(sql.trim().endsWith(';'), true, 'the file must end on a terminated statement');
 });
+
+/**
+ * The deployment-ordering guard, added after the rehearsal caught this on 2026-08-27.
+ *
+ * `site_id` is NOT NULL. Without a DEFAULT, applying this migration to the live project
+ * instantly breaks the ingest daemon already running there: `server/ingestCycle.mjs` writes
+ * `building_totals` every 60 s and `updateHealth` upserts `ingestion_health`, and neither
+ * sends a `site_id` until RM-027's Task 6 ships. The failure would be immediate, total, and
+ * would look like a Supabase outage rather than a migration.
+ *
+ * A default removes the ordering constraint entirely — old code and new code both work, in
+ * either order — which is the only reason this migration is safe to apply by hand against a
+ * running system.
+ */
+test('every NOT NULL site_id carries a DEFAULT, or applying this breaks the running ingest daemon', () => {
+  for (const t of SCOPED) {
+    assert.match(
+      sql,
+      new RegExp(`alter table ${t} alter column site_id set default '[a-z0-9-]+'`, 'i'),
+      `${t}: a NOT NULL column with no default breaks every writer that predates Task 6`,
+    );
+  }
+});
+
+test('the default is set BEFORE not-null, so no window exists where a write would fail', () => {
+  for (const t of SCOPED) {
+    const def = sql.search(new RegExp(`alter table ${t} alter column site_id set default`, 'i'));
+    const notnull = sql.search(new RegExp(`alter table ${t} alter column site_id set not null`, 'i'));
+    assert.ok(def >= 0 && notnull >= 0, `${t}: both statements must be present`);
+    assert.ok(def < notnull, `${t}: the default has to be in place first`);
+  }
+});
+
+test('the default names the same site the sites table seeds, so the FK cannot reject it', () => {
+  const seeded = readFileSync(join(ROOT, 'supabase', 'phase19_sites.sql'), 'utf8');
+  const def = sql.match(/alter column site_id set default '([a-z0-9-]+)'/i)[1];
+  assert.ok(seeded.includes(`'${def}'`), `phase19 must seed the site '${def}' that phase20 defaults to`);
+});

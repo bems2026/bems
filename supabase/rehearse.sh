@@ -138,7 +138,7 @@ do $$
 declare
   base   timestamptz := date_trunc('hour', now()) - interval '2 hours';
   h0     timestamptz := timestamptz '2026-06-01 00:00:00+00';
-  n int; v numeric; rolled int; deleted int; ok boolean;
+  n int; n2 int; v numeric; rolled int; deleted int; ok boolean; site_of text;
 begin
   -- ---- readings_buckets (phase 9) ------------------------------------------------------
   select power_w into v from readings_buckets('mtr_now', base, 3600) order by ts limit 1;
@@ -248,8 +248,39 @@ begin
   select count(*) into n from building_totals where site_id is null;
   assert n = 0, format('site scoping: %s building_totals rows were left unstamped', n);
 
-  select count(*) into n from building_totals where site_id = 'mmsu-nberic-care';
-  assert n = 120, format('site scoping: expected 120 stamped totals rows, got %s', n);
+  -- NOT 120, and the reason is worth keeping: the seed inserts 120 minutes of totals, but the
+  -- rollup exercised above already folded hour 0 into `building_totals_hourly` and PRUNED those
+  -- 60 raw rows. Asserting 120 here couples this check to the retention behaviour of an
+  -- unrelated earlier step, which is exactly how it failed on 2026-08-27. Compare against the
+  -- table's own count instead, so this stays true whatever the rollup does.
+  select count(*) into n from building_totals;
+  select count(*) into n2 from building_totals where site_id = 'mmsu-nberic-care';
+  assert n = n2, format('site scoping: %s of %s totals rows are not stamped to this site', n - n2, n);
+  assert n > 0, 'site scoping: no totals rows survived, so this assertion proved nothing';
+
+  -- THE ORDERING GUARANTEE, exercised rather than asserted in prose.
+  -- These two inserts are shaped exactly like the ones the daemons ALREADY RUNNING on the Pi
+  -- send — no site_id at all. They must succeed and be stamped by the column default, because
+  -- this file gets applied by hand against a live system whose code has not been redeployed
+  -- yet. If this ever fails, applying the migration takes ingestion down within 60 seconds.
+  insert into building_totals (ts, total_power_w)
+  values (timestamptz '2026-06-09 00:00:00+00', 42);
+  select site_id into strict site_of
+    from building_totals where ts = timestamptz '2026-06-09 00:00:00+00';
+  assert site_of = 'mmsu-nberic-care',
+    format('site scoping: a pre-Task-6 totals insert was stamped %L, not the default', site_of);
+
+  -- id 1, not an arbitrary one: `updateHealth` in `server/ingest.mjs` upserts the singleton row
+  -- and nothing else, so a test that invents a new id proves something the system never does —
+  -- and trips `unique (site_id)`, because with a default only one row per site can exist. That
+  -- constraint pair is correct; the first version of this assertion simply modelled the wrong
+  -- writer.
+  insert into ingestion_health (id, buffered_row_count)
+  values (1, 0)
+  on conflict (id) do update set buffered_row_count = excluded.buffered_row_count;
+  select site_id into strict site_of from ingestion_health where id = 1;
+  assert site_of = 'mmsu-nberic-care',
+    format('site scoping: a pre-Task-6 health upsert was stamped %L, not the default', site_of);
 
   -- A site id that does not exist must be refused, or a typo silently orphans a row.
   begin

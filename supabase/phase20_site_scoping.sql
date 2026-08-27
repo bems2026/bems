@@ -15,6 +15,18 @@
 -- constraint, and RM-009 records that the rehearsal caught two real defects the last time it
 -- was skipped-then-run.
 --
+-- WHY EACH site_id CARRIES A DEFAULT, and when to remove it.
+-- Found by `supabase/rehearse.sh` on 2026-08-27, before this reached the live project.
+-- `site_id` is NOT NULL, and the daemons already running on the Pi do not send one:
+-- `server/ingestCycle.mjs` writes `building_totals` every 60 s and `updateHealth` upserts
+-- `ingestion_health`. Without a default, applying this file would break every write inside a
+-- minute, and it would present as a Supabase outage rather than as a migration.
+-- The default removes the ordering constraint completely: old code and new code both work, and
+-- the migration and the code deploy can happen in either order.
+-- TRANSITIONAL. Drop it in RM-030, once every writer sends `site_id` explicitly — in a shared
+-- project a default would silently mis-stamp rows from a Pi that forgot to send one, which is a
+-- worse failure than the one it prevents here.
+--
 -- Apply once, by hand, in the Supabase SQL editor. Every statement is guarded, so a re-run is
 -- safe.
 
@@ -27,6 +39,7 @@
 -- ---------------------------------------------------------------------------
 alter table dsm_thresholds add column if not exists site_id text references sites(id);
 update dsm_thresholds set site_id = 'mmsu-nberic-care' where site_id is null;
+alter table dsm_thresholds alter column site_id set default 'mmsu-nberic-care';
 alter table dsm_thresholds alter column site_id set not null;
 
 alter table dsm_thresholds drop constraint if exists dsm_thresholds_singleton;
@@ -44,6 +57,7 @@ alter table dsm_thresholds add constraint dsm_thresholds_one_per_site unique (si
 -- ---------------------------------------------------------------------------
 alter table ingestion_health add column if not exists site_id text references sites(id);
 update ingestion_health set site_id = 'mmsu-nberic-care' where site_id is null;
+alter table ingestion_health alter column site_id set default 'mmsu-nberic-care';
 alter table ingestion_health alter column site_id set not null;
 
 alter table ingestion_health drop constraint if exists ingestion_health_singleton;
@@ -65,6 +79,7 @@ alter table ingestion_health add constraint ingestion_health_one_per_site unique
 -- ---------------------------------------------------------------------------
 alter table building_totals add column if not exists site_id text references sites(id);
 update building_totals set site_id = 'mmsu-nberic-care' where site_id is null;
+alter table building_totals alter column site_id set default 'mmsu-nberic-care';
 alter table building_totals alter column site_id set not null;
 
 -- Every read of this table filters by site once there is more than one, and `ts desc` matches
