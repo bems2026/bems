@@ -58,6 +58,11 @@ import { ENROLLED_DEVICES } from './registry.enrolled.mjs';
  */
 export { SITE } from './siteConfig.mjs';
 
+/** This site's electrical tree (RM-029), and the derivation `PHASE_MAP` is built from. */
+import { derivePhaseMap } from './circuits.mjs';
+import { CIRCUITS } from './sites/mmsu-nberic-care/circuits.mjs';
+export { CIRCUITS };
+
 /**
  * The devices this system was built around, hand-written and stable.
  * Enrolled devices are appended below — see `registry.enrolled.mjs`.
@@ -174,17 +179,18 @@ const BUILT_IN_DEVICES = [
 export const DEVICE_REGISTRY = [...BUILT_IN_DEVICES, ...ENROLLED_DEVICES];
 
 /**
- * Phase assignment, mirroring `Calculate 3-Phase Totals` in the live flow:
- *   Red    = lo_red + arec
- *   Yellow = co_yellow + lo_yellow
- *   Blue   = hardcoded 0 — no Blue-phase meter is installed.
- * The UI must render Blue as "not metered", never as a real zero reading.
+ * Phase assignment, DERIVED from this site's electrical tree rather than declared here — RM-029.
+ *
+ * It used to be a constant naming four specific meters, mirroring `Calculate 3-Phase Totals` in
+ * the live flow — and it was the most direct statement in this codebase that this building's
+ * panel is the only panel that will ever exist. The shape is unchanged, and
+ * `test/circuit-tree.test.mjs` asserts the derivation reproduces the old constant meter for
+ * meter; what changed is that a second site describes its own panel instead of editing this line.
+ *
+ * `blue` is still an EMPTY LIST, not a missing key — no Blue-phase meter is installed, and the UI
+ * must render that as "not metered", never as a real zero reading.
  */
-export const PHASE_MAP = {
-  red: ['mtr_lo_red', 'mtr_arec_acu'],
-  yellow: ['mtr_co_yellow', 'mtr_lo_yellow'],
-  blue: [],
-};
+export const PHASE_MAP = derivePhaseMap(CIRCUITS);
 
 /** Timing constants. Derived from the live flow's actual tick rates — see docs/bridge-contract.md. */
 export const TIMING = {
