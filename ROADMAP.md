@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-27 (UTC), late — RM-027 to RM-030 and RM-034 done and live; RM-031/032/033 remain
+**Last audited:** 2026-08-27 (UTC), late — RM-027 to RM-030, RM-032 and RM-034 done; RM-031 and RM-033 remain
 **Audited at commit:** `10fce92`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
@@ -2232,24 +2232,24 @@ may not.
       which already solve exactly this problem for furniture.
       *The empty state is the point:* grouped-by-node is honest and useful; a blank frame is not.
 
-- [ ] **RM-032** The 3D scene becomes a site-gated pack.
-      *Acceptance:* a site without a scene pack renders the 2D view and ships none of the
-      geometry.
-      `src/components/scene3d/` is ~83 KB describing one office — `geometry.ts`'s header says so
-      itself ("Spatial layout for the CARE office 3D scene"). It is good work and genuinely
-      site-specific; the fix is to gate it on the site's declared pack, not to generalise it.
-      **CORRECTION, 2026-08-27.** This entry previously claimed the scene "ships to every viewer
-      on every page load", and used that as a second justification. **That was wrong and was not
-      checked before it was written.** `SpatialView.tsx` has always loaded `OfficeScene3D`
-      through `React.lazy()`, and `vite.config.ts` already splits `three` into its own chunk.
-      What is true is narrower: `OverviewPage` always mounts the hero and Overview is the default
-      route, so nearly every viewer does fetch that chunk — the deferral buys a faster first
-      paint, not a smaller transfer.
-      *So the real benefit is for the SECOND site, not this one:* a site with no scene pack would
-      skip ~560 KB it can never use. That is a replication argument, which is the only argument
-      this entry needed.
-      Generic, data-driven 3D is deliberately **not** in scope here and has no dependency on
-      anything above.
+- [x] **RM-032** ~~The 3D scene becomes a site-gated pack.~~
+      **DONE 2026-08-27.** `3edca87`. `SpatialView` loads a pack only when the site declares one.
+      *Verified both ways in a browser*, because the claim is about what the network does: with
+      the pack declared the canvas renders and `three` is fetched; with it null the notice renders
+      and **`threeChunksFetched` is 0** — measured from `performance.getEntriesByType`, not
+      inferred.
+      *Stated precisely rather than overclaimed:* the chunk is still **built** — the dynamic
+      import is in the module graph and the entry references it as a lazy target, confirmed in a
+      production build with the pack nulled. What a site without a pack avoids is **downloading**
+      it, which is the cost that matters. Removing it from the build too would mean the site
+      directory owning the import, a larger restructure than this phase needs.
+      **The fallback is deliberately NOT `FloorPlanView`**, which is the obvious choice and is
+      wrong: the 2D plan pins `co1..co7` to literal coordinates, so at another site it would draw
+      that site's devices into this site's room — worse than drawing nothing, because it looks
+      right. Until RM-031 the honest answer is to say no view is configured, and why.
+      *Found on the way, and it is where RM-031 has to start:* `FloorPlanView` imports
+      `LIGHT_PLAN` from `scene3d/geometry.ts`, so the 2D plan and the 3D scene share a geometry
+      module.
 
 - [ ] **RM-033** Site provisioning — FI-002 and FI-003, now buildable.
       *Acceptance:* a second site is stood up from the guide by someone who did not build this,
