@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-27 (UTC), late — RM-027 to RM-029 done; RM-030's data layer built and rehearsed
+**Last audited:** 2026-08-27 (UTC), late — RM-027 to RM-029 and RM-034 done; RM-030's data layer built and rehearsed
 **Audited at commit:** `10fce92`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
@@ -2233,7 +2233,24 @@ may not.
       **This is Milestone 6, due June 2027**, and it is the deliverable the rest of Track B
       exists to make writeable. It needs RM-027 through RM-030 to exist first.
 
-- [ ] **RM-034** There is no CI. Every test run is manual.
+- [x] **RM-034** ~~There is no CI. Every test run is manual.~~
+      **DONE 2026-08-27 — green on the first run, both Node versions.** `dad1a26`,
+      `.github/workflows/ci.yml`. Lint, type-checked build, and all three suites on push and PR.
+      **The Node versions did not match and nothing said so.** The Pi runs **22**, this
+      workstation runs **24**, and no `engines` field declared either. That is RM-022's shape
+      exactly — five server tests once passed on a workstation and failed on the Pi, green in the
+      only place anyone looked. CI runs **both** rather than picking one, so the divergence is
+      visible instead of latent, and `package.json` now declares the range CI proves.
+      *It runs with no `server/.env`*, which is the configuration several of those tests actually
+      want. Verified before writing the workflow — the local `.env` was moved aside and all four
+      suites run clean — rather than discovered on a first red build.
+      *A step asserts `server/data/` is empty afterwards.* That directory holds the live
+      command-audit outage queue on the Pi, and a full `test:server` run once left a fabricated
+      command there. `server/testStatePaths.test.mjs` guards it; this checks the guard held.
+      *The roadmap reminder warns and never blocks*, deliberately: a failing check would train
+      people to bypass it for a typo fix, which is worse than the drift it prevents.
+      **What CI will not do is prove a fix works.** "A green test suite is not proof" is written
+      down here, twice earned. It catches regressions; the live read-back stays mandatory.
       *Acceptance:* a push runs all three suites and a type-checked build, and a red suite is
       visible without anyone remembering to look.
       No `.github/` directory exists. Over 1,200 test declarations across three suites
