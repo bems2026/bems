@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-27 (UTC), late — RM-027 to RM-029 and RM-034 done; RM-030's data layer built and rehearsed
+**Last audited:** 2026-08-27 (UTC), late — RM-027 to RM-030 and RM-034 done and live; RM-031/032/033 remain
 **Audited at commit:** `10fce92`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
@@ -2179,9 +2179,19 @@ may not.
       `buildLatest(snap, REG, PHASE_MAP, nowMs)` already takes the map as a parameter, so the
       seam for deriving it exists and nothing downstream needs to change.
 
-- [ ] **RM-030** Scoped aggregation. "This lab's consumption" is currently unanswerable.
-      **DATA LAYER DONE 2026-08-27, NOT YET APPLIED; the Analytics scope selector is what is
-      left.** `3e57c79` migration and rehearsal, plus the client reader.
+- [x] **RM-030** ~~Scoped aggregation. "This lab's consumption" is currently unanswerable.~~
+      **DONE 2026-08-27 — applied and verified live, end to end.** `3e57c79` migration and
+      rehearsal, `cc8f644` the client reader, `875c930` the Analytics card.
+      *Probed against the live project:* `node_totals` is callable, and an unobserved scope
+      returns NULL power rather than 0 **on real data**, not only in the rehearsal.
+      *The card is where the honesty rule could last have been broken* — it renders through
+      `formatNumber`, which owns the missing-is-a-dash rule, and never shows a dash without
+      its reason beside it. Partial coverage is stated for the reason the Reports page states
+      it: a number alone cannot tell a quiet room from an unplugged one.
+      *It asks nothing until a space is chosen.* Defaulting to the first node would answer a
+      question nobody asked, and on a site with several buildings the first is arbitrary.
+      **It is useful only once a tree exists**, and `space_nodes` is still empty on the live
+      project — the card says so and points at the Spaces panel rather than rendering blank.
       *Acceptance is met and exercised, not asserted.* The rehearsal seeds a window holding two
       observed samples (100 W, 300 W) and two OFFLINE rows carrying a frozen 999. If offline rows
       counted, the average would be 599.5 and the peak 999 — both plausible, both never measured.
