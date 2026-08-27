@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-26 (UTC), late — RM-027 built: the system knows which site it is, and two migrations wait on an operator
+**Last audited:** 2026-08-27 (UTC) — RM-027 rehearsed on the Pi; the migrations are safe to apply and wait on an operator
 **Audited at commit:** `10fce92`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
@@ -1980,12 +1980,30 @@ may not.
       `aa1e053` the timezone, `fbc77bf` the policy floor, `10fce92` the two migrations.
       *What is left is an operator action, not code:* apply `supabase/phase19_sites.sql`
       then `supabase/phase20_site_scoping.sql`, in that order, by hand in the SQL editor.
-      **Rehearse first.** `supabase/rehearse.sh` now seeds a second site and asserts what
-      phase20 actually creates — two sites can hold thresholds, a duplicate for one site is
-      still refused, the backfill reached all 120 pre-existing rows, and an unknown
-      `site_id` is refused by the foreign key. **It has not been run**: this pass was
-      written on a workstation with no Docker and no `psql`, the same gap as §5 Q8. That is
-      the only unverified claim in this entry.
+      **REHEARSED 2026-08-27 on the Pi, and it caught a defect that would have taken
+      ingestion down.** `supabase/rehearse.sh` applied schema.sql and all nineteen phase
+      files in order against PostgreSQL 16 in a throwaway container, then drove every
+      function against seeded data. It failed twice before it passed.
+      *The real one, and the reason this entry no longer says the migrations are safe to
+      apply in any order:* `site_id` was NOT NULL **with no default**, and the daemons
+      already running on the Pi do not send one — `ingestCycle.mjs` writes `building_totals`
+      every 60 s and `updateHealth` upserts `ingestion_health`. Applying phase20 would have
+      begun refusing every one of those writes within a minute, presenting as a Supabase
+      outage rather than as a migration. **This plan had the ordering backwards in writing**
+      ("Tasks 1-5 are safe to ship immediately; Task 6 goes after the migration"); without a
+      default there is no safe order, only a choice of which side breaks. Each `site_id` now
+      carries a transitional default, so the migration and the code deploy are
+      order-independent — see the file's own header for when RM-030 removes it.
+      The guarantee is **exercised, not asserted in prose**: the rehearsal performs the two
+      inserts shaped exactly as the deployed daemons send them, with no `site_id`, and
+      asserts each comes back stamped.
+      *The harness one:* an assertion expected 120 `building_totals` rows and got 60,
+      because the rollup exercised earlier in the same run had already folded hour 0 into
+      `building_totals_hourly` and pruned those rows. The migration was fine; the check was
+      coupled to an unrelated step's retention behaviour, and now compares against the
+      table's own count. Same shape as the two harness defects RM-009's rehearsal found —
+      which is now three for three, and the argument for never skipping it.
+      `e186060`
       *Nothing is deployed and nothing is at risk meanwhile.* Every code change defaults to
       the current behaviour — `iso8`'s offset defaults to 480 and `test/contract.test.mjs`
       passes untouched, proven by neutering the default and watching it go red.
