@@ -19,6 +19,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { splitLatestPayload, shapeDeviceRows, shapeAnomalyRows } from './shapeRows.mjs';
+import { SITE } from '../shared/registry.mjs';
 import { appendToBuffer, readBuffer, writeBuffer, bufferCount } from './ingestBuffer.mjs';
 
 test('splitLatestPayload separates per-device readings from the _totals row', () => {
@@ -41,6 +42,9 @@ test('splitLatestPayload separates per-device readings from the _totals row', ()
 
   assert.deepEqual(totals, {
     ts: '2026-08-16T09:00:00+08:00',
+    // RM-027: the row names its own site rather than leaning on phase20's column default. The
+    // default is transitional and RM-030 drops it; this is what makes that drop a no-op.
+    site_id: SITE.id,
     energy_kwh_today: 12.41, energy_kwh_week: 61.88, energy_kwh_month: 204.3,
     total_power_w: 2951, avg_voltage: 223.1,
     phase_current_red: 6.1, phase_current_yellow: 4.9, phase_current_blue: null,

@@ -12,6 +12,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runIngestCycle } from './ingestCycle.mjs';
+import { readFileSync } from 'node:fs';
+import { SITE } from '../shared/registry.mjs';
 
 const LATEST = [
   { device_id: 'mtr_co_yellow', ts: 't1', voltage: 231.4, current: 6.5, power_w: 746.5, energy_kwh_today: 0, online: true },
@@ -161,4 +163,25 @@ test('a tick that overran its period waits for the next boundary, not zero', asy
     const d = msUntilNextTick(60_000, offset);
     assert.ok(d > 0 && d <= 60_000, `${offset} -> ${d}`);
   }
+});
+
+/**
+ * RM-027 Task 6 — every writer names its own site instead of relying on the column default.
+ *
+ * The default added in phase20 exists so the migration and this deploy could happen in either
+ * order; it is transitional, and RM-030 removes it. These assertions are what make removing it
+ * safe: once the writers are explicit, dropping the default is a no-op rather than an outage.
+ */
+test('the building_totals row names the site it came from', async () => {
+  const { io, calls } = harness();
+  await runIngestCycle(io);
+  const write = calls.writes.find((w) => w.table === 'building_totals');
+  assert.equal(write.rows[0].site_id, SITE.id);
+});
+
+test('the site is taken from the site module, not spelled out a second time here', () => {
+  // A literal would be a second place to edit when a site is stood up, and the two would
+  // drift silently — which is the whole failure mode RM-027 exists to remove.
+  const src = readFileSync(new URL('./ingestCycle.mjs', import.meta.url), 'utf8');
+  assert.equal(/site_id:\s*'[a-z0-9-]+'/.test(src), false, 'site_id must not be a literal');
 });

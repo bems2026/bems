@@ -5,6 +5,7 @@
  * `docs/bridge-contract.md`'s field names — never a rename. No I/O here; kept pure so it's
  * cheap to test without a live bridge or Supabase project (see `ingest.test.mjs`).
  */
+import { SITE } from '../shared/registry.mjs';
 
 /**
  * Splits `GET /api/readings/latest`'s response (per-device rows + the `_totals`
@@ -21,6 +22,12 @@ export function splitLatestPayload(latest) {
     if (entry.device_id === '_totals') {
       totals = {
         ts: entry.ts,
+        // RM-027. `building_totals.site_id` carries a column default so that phase20 could be
+        // applied to a running system whose code did not yet send one — see the migration's own
+        // header. Naming it here is what lets RM-030 drop that default without an outage: a
+        // default is a safety net for old writers, not a substitute for a writer knowing where
+        // its data came from.
+        site_id: SITE.id,
         energy_kwh_today: entry.energy_kwh_today ?? null,
         energy_kwh_week: entry.energy_kwh_week ?? null,
         energy_kwh_month: entry.energy_kwh_month ?? null,

@@ -19,7 +19,7 @@
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TIMING, METERED } from '../shared/registry.mjs';
+import { TIMING, METERED, SITE } from '../shared/registry.mjs';
 import { shapeDeviceRows, shapeAnomalyRows } from './shapeRows.mjs';
 import { makeSupabaseClient } from './supabaseRest.mjs';
 import { appendToBuffer, readBuffer, writeBuffer, bufferCount } from './ingestBuffer.mjs';
@@ -196,6 +196,12 @@ async function writeOrBuffer(table, rows, onConflict) {
 async function updateHealth(ok, lastError = null) {
   const row = {
     id: 1,
+    // RM-027. phase20 gives this column a default so the migration could land on a running
+    // system, but a writer that knows its own site is what lets RM-030 drop that default.
+    // `onConflict` stays `id`: this table is a singleton per database, and `unique (site_id)`
+    // means only one row can exist per site anyway — changing the key here would buy nothing
+    // and is RM-030's business, alongside the primary key it defers.
+    site_id: SITE.id,
     buffered_row_count: bufferCount(BUFFER_PATH),
     last_error: ok ? null : lastError,
   };

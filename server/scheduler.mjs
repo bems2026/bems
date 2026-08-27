@@ -24,7 +24,7 @@
  *     node server/scheduler.mjs
  */
 
-import { DEVICE_REGISTRY } from '../shared/registry.mjs';
+import { DEVICE_REGISTRY, SITE } from '../shared/registry.mjs';
 import { dueCommands } from './schedulePlan.mjs';
 import { planShed } from './shedPlan.mjs';
 import { dispatchCommand, DISPATCH_CLASSES } from './dispatchLight.mjs';
@@ -88,7 +88,9 @@ async function refreshSchedules() {
  * same cadence as schedules so a change made in the app takes effect without a restart. */
 async function refreshDsmConfig() {
   const [tRes, cRes] = await Promise.all([
-    sb('dsm_thresholds?select=max_phase_current,max_total_kw,auto_shed,updated_by&id=eq.1'),
+    // RM-027: by site, not by the id=1 the singleton constraint used to guarantee. That
+    // constraint is gone; `unique (site_id)` replaced it, and this is the matching read.
+    sb(`dsm_thresholds?select=max_phase_current,max_total_kw,auto_shed,updated_by&site_id=eq.${SITE.id}`),
     sb('device_config?select=device_id,load_shed_group'),
   ]);
   if (!tRes.ok) throw new Error(`dsm_thresholds fetch failed: HTTP ${tRes.status}`);

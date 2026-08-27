@@ -15,6 +15,7 @@
 import { supabase } from '@/config/supabase';
 import { scheduleKey } from '@/components/automation/automationMath';
 import type { ContextMap } from './types';
+import { SITE } from '@shared/siteConfig.mjs';
 
 const MAX_PHASE_KEY = 'global.dsm.max_phase_a';
 const MAX_TOTAL_KEY = 'global.dsm.max_total_kw';
@@ -119,7 +120,7 @@ export async function fetchScheduleContext(): Promise<ContextMap> {
   const client = requireSupabase();
   const [schedules, thresholds] = await Promise.all([
     client.from('schedules').select('device_id,rule,enabled').is('socket', null),
-    client.from('dsm_thresholds').select('max_phase_current,max_total_kw,auto_shed,care_acu_trigger_c').eq('id', 1).maybeSingle(),
+    client.from('dsm_thresholds').select('max_phase_current,max_total_kw,auto_shed,care_acu_trigger_c').eq('site_id', SITE.id).maybeSingle(),
   ]);
   if (schedules.error) throw new Error(`Supabase schedules fetch failed: ${schedules.error.message}`);
   if (thresholds.error) throw new Error(`Supabase dsm_thresholds fetch failed: ${thresholds.error.message}`);
@@ -170,11 +171,16 @@ export async function writeScheduleContext(pending: ContextMap, merged: ContextM
     const { data, error } = await client
       .from('dsm_thresholds')
       .update(dsmRowFrom(merged, actorUserId))
-      .eq('id', 1)
-      .select('id');
+      // RM-027: by site, not by the id=1 that `check (id = 1)` used to guarantee. phase20
+      // dropped that constraint and replaced it with `unique (site_id)`, so this is the write
+      // that matches it.
+      .eq('site_id', SITE.id)
+      .select('site_id');
     if (error) throw new Error(`Supabase dsm_thresholds write failed: ${error.message}`);
     if ((data?.length ?? 0) !== 1) {
-      throw new Error('Supabase dsm_thresholds write matched no row — check that you\'re signed in with a real Supabase session, not a break-glass one.');
+      throw new Error(
+        `Supabase dsm_thresholds write matched no row for site ${SITE.id}. Check that you are signed in with a real Supabase session rather than a break-glass one, and that supabase/phase19_sites.sql and phase20_site_scoping.sql have both been applied.`,
+      );
     }
   }
 }
