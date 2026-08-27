@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-27 (UTC), evening — RM-027 done and live; RM-028's schema and library built and rehearsed
+**Last audited:** 2026-08-27 (UTC), late — RM-027 and RM-028 both done, applied and verified live
 **Audited at commit:** `10fce92`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
@@ -2069,10 +2069,28 @@ may not.
       the funded project plan — is "not lower than 25 °C". A per-site policy floor validated in
       `validateCommand` makes that a rule the system enforces rather than one the UI suggests.
 
-- [ ] **RM-028** The space tree. `room` is free text and there is no rooms table.
-      *Acceptance:* every device is placed in a node, and `knownRooms()` in
-      `src/lib/deviceConfig.ts` is replaced by a query over the tree.
-      **SCHEMA AND LIBRARY DONE 2026-08-27; NOT YET APPLIED, NO UI YET.** `ec4a63f` the
+- [x] **RM-028** ~~The space tree. `room` is free text and there is no rooms table.~~
+      **DONE 2026-08-27 — acceptance met.** Devices are placed in a node from the Devices page,
+      and `knownRooms()` no longer exists: the room list is a query over a declared tree.
+      `ec4a63f` migration, `f10ab56` library, `347fb12` the anon revoke, `1c76b41` store,
+      `a92c2ec` the Spaces panel, `1018bc5` the placement cut-over. **Applied to the live
+      project and probed 5/5.**
+      *Two bugs found by driving the page, neither reachable from the tests.* The Add button was
+      enabled with Supabase unconfigured and produced a raw `Cannot read properties of null
+      (reading 'auth')` — the store guarded `load()` and then used `supabase!` in every mutation,
+      an assertion the unconfigured path falsifies, and the tests mock the client as present so
+      they never could have caught it. And sourcing the room datalist from the tree alone
+      **emptied it**: this site has `device_config.room` text and no tree yet, so the cut-over
+      would have removed every existing suggestion during exactly the window they are needed.
+      `knownRooms` survives as `recordedRoomLabels`, renamed to admit what it is and marked for
+      retirement once sites are placed.
+      *`room` is kept, not dropped* — the label a site shows before a tree exists, and the
+      fallback when a placement points at a node the client no longer holds. `placementLabel`
+      decides that precedence once and checks the node **resolves** rather than that an id is set.
+      *Still open, and small:* `space_subtree` remains callable by `anon` on the live project —
+      the fix is committed but `phase21` has not been re-run. Nothing leaks (security invoker,
+      RLS returns anon zero rows); it is the defence-in-depth the file claims.
+      *Prior state:* SCHEMA AND LIBRARY DONE 2026-08-27; NOT YET APPLIED, NO UI YET. `ec4a63f` the
       migration, `f10ab56` the tree library and Supabase layer.
       *Rehearsed on the Pi, exit 0*, with the tree exercised rather than pattern-matched:
       subtree depths, a subtree re-based to a mid-tree node, four kinds coexisting, a
