@@ -8,7 +8,12 @@ import tailwindcss from '@tailwindcss/vite';
 // by default — see docs/bridge-contract.md §Deployment. Proxying /api and /ws through
 // the dev server sidesteps that entirely without touching bridge config. Override the
 // target for a session via `VITE_BRIDGE_PROXY_TARGET=http://<pi-ip>:1880 npm run dev`.
-const BRIDGE_PROXY_TARGET = process.env.VITE_BRIDGE_PROXY_TARGET ?? 'http://localhost:1880';
+// 127.0.0.1, not `localhost`. THE SAME TRAP THIS PROJECT ALREADY PAID FOR ON THE BROKER
+// (docs/pi-session-brief.md: "localhost is two addresses, and binding one of them silently
+// locks out the other"). `npm run mock` binds IPv4 only; Node resolves `localhost` to ::1
+// first on Windows, so the dev proxy answered 502 while curl to 127.0.0.1 returned 200 —
+// which reads as a broken app rather than a name-resolution mismatch. Measured 2026-08-27.
+const BRIDGE_PROXY_TARGET = process.env.VITE_BRIDGE_PROXY_TARGET ?? 'http://127.0.0.1:1880';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
