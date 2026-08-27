@@ -37,6 +37,7 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { DEVICE_REGISTRY, PHASE_MAP, TIMING, publicDevices, SITE } from '../shared/registry.mjs';
+import { fixturePlan } from './fixturePlan.mjs';
 import { buildLatest, iso8 } from '../shared/buildLatest.mjs';
 import { COMMAND_ROUTE, ACCEPTED_STATUS, validateCommand, buildAck } from '../shared/commands.mjs';
 import { CONTEXT_ROUTE, CONTEXT_ACCEPTED_STATUS, validateContextWrite, buildContextAck } from '../shared/context.mjs';
@@ -66,6 +67,17 @@ const CMD_DROP = val('cmd-drop', '');
 const started = Date.now();
 const energyAcc = {}; // ctx -> kWh, monotonic
 for (const d of DEVICE_REGISTRY) if (d.ctx) energyAcc[d.ctx] = 0;
+
+/**
+ * What this site actually has, derived rather than assumed — RM-033.
+ *
+ * This file used to name the CARE office's four branch-meter context keys as literals and loop
+ * `1..7` for outlets and lights, so it could serve exactly one building. Against a scaffolded
+ * second site it crashed on `energyAcc[ctx].toFixed(4)` for a key no device declared — and the
+ * mock is precisely how a second deployment is developed before it has any hardware.
+ * See `mock-bridge/fixturePlan.mjs`.
+ */
+const PLAN = fixturePlan(DEVICE_REGISTRY);
 // Building baselines are derived from the per-device ones further down (see
 // `seedBuildingBaselines`), not hardcoded: a mock whose building week total didn't roughly
 // equal the sum of its own branches would look like an app bug rather than a fixture.
@@ -83,7 +95,15 @@ function occupancy() {
   return 0.9;
 }
 
-/** Steady-state power band per device, in watts: [idle, peak]. */
+/**
+ * Steady-state power band per device, in watts: [idle, peak].
+ *
+ * FIXTURE FLAVOUR, NOT A CLAIM ABOUT ANY BUILDING — and the distinction is why these keys can
+ * stay named after the CARE office while everything structural above is derived. `power()` falls
+ * back to `[5, 100]` for a context this table has never heard of, so another site simulates
+ * plausibly without an entry. What could NOT stay hardcoded was which devices exist and which
+ * are branch meters: getting that wrong is a crash, not a duller graph.
+ */
 const BAND = {
   co1: [12, 210], co2: [8, 190], co3: [10, 420], co4: [15, 180],
   co5: [20, 140], co6: [6, 160], co7: [11, 230],
@@ -121,9 +141,8 @@ for (const d of DEVICE_REGISTRY) {
  * different sources and can legitimately drift apart; in the mock they're kept consistent
  * so a discrepancy on screen means a real bug, not a fixture artefact. */
 (function seedBuildingBaselines() {
-  const BRANCH_CTX = ['co_yel', 'lo_red', 'arec', 'lo_yel2'];
   for (const d of DEVICE_REGISTRY) {
-    if (!d.ctx || !BRANCH_CTX.includes(d.ctx)) continue;
+    if (!d.ctx || !PLAN.branchCtx.includes(d.ctx)) continue;
     totals.week += energyBaseline[d.id].weekBase;
     totals.month += energyBaseline[d.id].monthBase;
   }
@@ -193,7 +212,7 @@ function snapshot() {
   };
 
   const energyMeters = {};
-  ['co_yel', 'lo_red', 'arec', 'lo_yel2'].forEach((k, i) => { energyMeters[k] = mk(k, i, false); });
+  PLAN.branchCtx.forEach((k, i) => { energyMeters[k] = mk(k, i, false); });
 
   // Relay state first, then the meter that depends on it: an outlet with both sockets
   // commanded off draws (simulated) zero, one socket on draws about half, both on draws
@@ -201,30 +220,41 @@ function snapshot() {
   // same occupancy-driven baseline as before.
   const status = {};
   const gateByOutlet = {};
-  for (let i = 1; i <= 7; i++) {
-    const s1 = pinned(`CO${i}_1`, occ > 0.3);
-    const s2 = pinned(`CO${i}_2`, occ > 0.3 && (i + Math.floor(tick / 30)) % 3 !== 0);
-    status[`CO${i}_1`] = s1;
-    status[`CO${i}_2`] = s2;
-    gateByOutlet[`co${i}`] = (s1 ? 0.5 : 0) + (s2 ? 0.5 : 0);
-  }
+  // Each outlet names its own socket keys, so the fixture reads them rather than rebuilding
+  // `CO${i}_1` — which only ever spelled one building's.
+  PLAN.outlets.forEach((d, idx) => {
+    const i = idx + 1;
+    const [k1, k2] = d.sockets;
+    const s1 = pinned(k1, occ > 0.3);
+    const s2 = pinned(k2, occ > 0.3 && (i + Math.floor(tick / 30)) % 3 !== 0);
+    status[k1] = s1;
+    status[k2] = s2;
+    gateByOutlet[d.ctx] = (s1 ? 0.5 : 0) + (s2 ? 0.5 : 0);
+  });
   lastGate = gateByOutlet;
 
   const outletMeters = {};
-  for (let i = 1; i <= 7; i++) outletMeters[`co${i}`] = mk(`co${i}`, i + 10, true, gateByOutlet[`co${i}`]);
+  PLAN.outlets.forEach((d, idx) => { outletMeters[d.ctx] = mk(d.ctx, idx + 11, true, gateByOutlet[d.ctx]); });
 
   const lights = {};
   const lightHealth = {};
-  for (let i = 1; i <= 7; i++) {
-    lights[`L${i}`] = pinned(`L${i}`, occ > 0.3 && i !== 7);
+  PLAN.switches.forEach((d, idx) => {
+    const i = idx + 1;
+    lights[d.state_key] = pinned(d.state_key, occ > 0.3 && i !== PLAN.switches.length);
     // Mirrors global.lightStatus's real shape (id/conn/on/lastSeen) closely enough for
     // buildLatest.mjs's purposes — only `conn` is actually read. `--stale=lN` simulates
     // that light's connection dropping, same lever `--stale=coN` gives metered devices.
-    lightHealth[i] = { id: i, conn: `l${i}` === STALE_ID ? 'DISCONNECTED' : 'CONNECTED', on: lights[`L${i}`], lastSeen: new Date(t).toISOString() };
-  }
+    //
+    // Keyed by `state_key` minus its first character, because that is the mapping
+    // `buildLatest.mjs` performs when it reads this back (`health[d.state_key.slice(1)]`).
+    // The convention belongs to the live flow's `global.lightStatus`, not to this fixture —
+    // spelling it here rather than assuming `L${i}` is what lets another site's keys work.
+    const key = d.state_key.slice(1);
+    lightHealth[key] = { id: key, conn: d.id === STALE_ID ? 'DISCONNECTED' : 'CONNECTED', on: lights[d.state_key], lastSeen: new Date(t).toISOString() };
+  });
 
   totals.today = Object.entries(energyAcc)
-    .filter(([k]) => ['co_yel', 'lo_red', 'arec', 'lo_yel2'].includes(k))
+    .filter(([k]) => PLAN.branchCtx.includes(k))
     .reduce((a, [, v]) => a + v, 0);
 
   return {
@@ -558,7 +588,9 @@ server.listen(PORT, () => {
   console.log(`iBEMS mock bridge  http://localhost:${PORT}`);
   console.log(`  GET  /api/devices              ${DEVICE_REGISTRY.length} devices`);
   console.log(`  GET  /api/readings/latest      ${DEVICE_REGISTRY.length + 1} rows (incl. _totals)`);
-  console.log(`  GET  /api/readings/history     ?device_id=co3&range=24h`);
+  // The example names a device this site actually has. It used to say `co3` — one building's
+  // outlet, printed at every other building's first run, where copying it returns nothing.
+  console.log(`  GET  /api/readings/history     ?device_id=${PLAN.outlets[0]?.id ?? DEVICE_REGISTRY[0]?.id ?? '<device>'}&range=24h`);
   console.log(`  POST ${COMMAND_ROUTE}                mock-only device control (Stage 2)`);
   console.log(`  GET  ${CONTEXT_ROUTE}                mock-only Node-RED context store (Stage 2)`);
   console.log(`  POST ${CONTEXT_ROUTE}                write schedule/trigger/DSM keys (Stage 2)`);
