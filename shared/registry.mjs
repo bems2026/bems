@@ -58,117 +58,23 @@ import { ENROLLED_DEVICES } from './registry.enrolled.mjs';
  */
 export { SITE } from './siteConfig.mjs';
 
-/** This site's electrical tree (RM-029), and the derivation `PHASE_MAP` is built from. */
+/** This site's electrical tree (RM-029), and the derivation `PHASE_MAP` is built from.
+ *
+ * Through `siteConfig.mjs`, not straight from the site directory: that file is the ONE place
+ * naming which building this deployment is, and this module used to name it a second time. */
 import { derivePhaseMap } from './circuits.mjs';
-import { CIRCUITS } from './sites/mmsu-nberic-care/circuits.mjs';
+import { CIRCUITS } from './siteConfig.mjs';
 export { CIRCUITS };
 
 /**
- * The devices this system was built around, hand-written and stable.
- * Enrolled devices are appended below — see `registry.enrolled.mjs`.
+ * This site's own hardware, through the one pointer - RM-033 / FI-017.
+ *
+ * The list itself lives in `shared/sites/<id>/devices.mjs`, because 21 pieces of hardware on one
+ * building's walls are not a fact every deployment shares. What stays here is the composition,
+ * which every deployment does.
  */
-const BUILT_IN_DEVICES = [
-  // --- Convenience outlets: dual-socket, self-metering (DPS type_b) ------------
-  ...[1, 2, 3, 4, 5, 6, 7].map((n) => ({
-    id: `co${n}`,
-    display_name: `Outlet ${n}`,
-    class: /** @type {DeviceClass} */ ('outlet_dual'),
-    room: null,
-    dps_map: 'type_b',
-    ctx: `co${n}`,
-    sockets: [`CO${n}_1`, `CO${n}_2`],
-    branch_circuit: 'C.O Yellow',
-    status: 'active',
-  })),
-
-  // --- Lighting circuits: relay only, no metering -----------------------------
-  ...[1, 2, 3, 4, 5, 6, 7].map((n) => ({
-    id: `l${n}`,
-    display_name: `Light Switch ${n}`,
-    class: /** @type {DeviceClass} */ ('switch'),
-    room: null,
-    dps_map: null,
-    ctx: null,
-    state_key: `L${n}`, // key within flow context `bems_lights_state`
-    branch_circuit: 'L.O Red',
-    status: 'active',
-  })),
-
-  // --- CT branch meters on the CHNT sub-panel ---------------------------------
-  {
-    id: 'mtr_co_yellow',
-    display_name: 'C.O Yellow',
-    class: 'meter',
-    room: null,
-    dps_map: 'type_a',
-    ctx: 'co_yel',
-    branch_circuit: 'C.O Yellow',
-    description: 'Convenience outlets branch',
-    phase: 'yellow',
-    status: 'active',
-  },
-  {
-    id: 'mtr_lo_red',
-    display_name: 'L.O Red',
-    class: 'meter',
-    room: null,
-    dps_map: 'type_a',
-    ctx: 'lo_red',
-    branch_circuit: 'L.O Red',
-    description: "The room's lighting circuits",
-    phase: 'red',
-    status: 'active',
-  },
-  {
-    id: 'mtr_arec_acu',
-    display_name: 'AREC ACU',
-    class: 'meter',
-    room: null,
-    dps_map: 'type_a',
-    ctx: 'arec',
-    branch_circuit: 'ACU',
-    description: 'Indoor ACU',
-    phase: 'red',
-    status: 'active',
-  },
-  {
-    id: 'mtr_lo_yellow',
-    display_name: 'L.O Yellow',
-    class: 'meter',
-    room: null,
-    dps_map: 'type_c',
-    ctx: 'lo_yel2',
-    branch_circuit: 'L.O Yellow',
-    description: 'Outdoor ACU (separate unit, right side outside the room)',
-    phase: 'yellow',
-    status: 'active',
-  },
-
-  // --- Aircon, IR-controlled (never power-cut; compressor safety) -------------
-  {
-    id: 'acu_main',
-    display_name: 'Aircon',
-    class: 'acu_ir',
-    room: null,
-    dps_map: null,
-    ctx: null,
-    state_ctx: 'ac_dash_state', // { power, setTemp, roomTemp, humidity, outTemp }
-    status: 'active',
-  },
-
-  // --- Ambient sensor ---------------------------------------------------------
-  {
-    id: 'sens_outside_temp',
-    display_name: 'Outside Temp',
-    class: 'sensor_temp_humidity',
-    room: null,
-    dps_map: null,
-    ctx: null,
-    state_ctx: 'ac_dash_state',
-    state_field: 'outTemp',
-    status: 'active',
-  },
-];
+import { BUILT_IN_DEVICES } from './siteConfig.mjs';
+export { BUILT_IN_DEVICES };
 
 /**
  * Everything the system knows about. Built-in devices come first so that enrolling one cannot

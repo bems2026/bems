@@ -14,9 +14,9 @@ import assert from 'node:assert/strict';
 import { SITE } from '../shared/siteConfig.mjs';
 import { SITE as VIA_REGISTRY, DEVICE_REGISTRY, PHASE_MAP, TIMING } from '../shared/registry.mjs';
 import { iso8, buildLatest } from '../shared/buildLatest.mjs';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -120,4 +120,92 @@ test('the generated flow carries the site offset, not a hardcoded eight hours', 
     'a literal 8-hour offset survived generation — regenerate with npm run build:flow',
   );
   assert.ok(flow.includes(String(SITE.utc_offset_minutes)), 'the site offset must reach the flow');
+});
+
+/**
+ * RM-033. `shared/siteConfig.mjs` says, in its own header, that standing up another building is
+ * "add a sibling directory under `shared/sites/`, then change the path below." That has to be
+ * literally true, or a second deployment is a hunt rather than an edit — and a missed one is a
+ * site quietly wired to another building's circuits.
+ *
+ * The allowed names are derived from `shared/sites/` rather than hardcoded, so a site added
+ * tomorrow is covered without touching this file.
+ */
+test('exactly one module names the site directory, which is what makes it one line', () => {
+  const root = ROOT;
+  const siteDirs = readdirSync(join(root, 'shared', 'sites'), { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name);
+  assert.ok(siteDirs.length > 0, 'expected at least one site directory');
+
+  /** Where a site name legitimately appears: the one pointer, and the site's own files. */
+  const allowed = (rel) => rel === 'shared/siteConfig.mjs' || rel.startsWith('shared/sites/');
+
+  const walk = (dir, out = []) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name.startsWith('.')) continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full, out);
+      // Production modules only. Tests, fixtures and migrations name sites as DATA, which is a
+      // different thing from a module wiring itself to one.
+      else if (/\.(mjs|ts|tsx)$/.test(entry.name) && !/\.test\./.test(entry.name)) out.push(full);
+    }
+    return out;
+  };
+
+  const offenders = [];
+  for (const dir of ['shared', 'src', 'server', 'node-red-bridge', 'scripts']) {
+    let files;
+    try { files = walk(join(root, dir)); } catch { continue; }
+    for (const file of files) {
+      const rel = relative(root, file).split(sep).join('/');
+      if (allowed(rel)) continue;
+      const text = readFileSync(file, 'utf8');
+      for (const name of siteDirs) {
+        if (text.includes(name)) offenders.push(`${rel} names ${name}`);
+      }
+    }
+  }
+
+  assert.deepEqual(
+    offenders,
+    [],
+    'Only shared/siteConfig.mjs may name a site directory. Re-export what you need through it, ' +
+      'so a second deployment stays one edit.',
+  );
+});
+
+/**
+ * RM-033 / FI-017. The device list is the most site-specific thing in this codebase - 21 pieces
+ * of hardware screwed to one building's walls - and it lived inline in `shared/registry.mjs`,
+ * the file every deployment shares. A second site would have edited it.
+ *
+ * Asserted twice, because the two failures look different. The behavioural half proves the
+ * composition still works; the source half proves nothing was left behind in the shared file,
+ * which is the part that would rot quietly.
+ */
+test('the site owns its own device list, and the registry composes it', async () => {
+  const site = await import('../shared/siteConfig.mjs');
+  assert.ok(Array.isArray(site.BUILT_IN_DEVICES), 'siteConfig must re-export the site device list');
+  assert.ok(site.BUILT_IN_DEVICES.length > 0, 'a site with no devices is not a site');
+  // Built-ins first and in order: several places key off position implicitly (the generated
+  // flow's node order, the analytics colour cycle), so this is not merely a set comparison.
+  assert.deepEqual(
+    DEVICE_REGISTRY.slice(0, site.BUILT_IN_DEVICES.length),
+    site.BUILT_IN_DEVICES,
+    'DEVICE_REGISTRY must start with exactly the site own devices, in order',
+  );
+});
+
+test('the shared registry names none of this building hardware', async () => {
+  // Including in prose. The CT circuit map and the two-logical-meters-on-one-box note are
+  // documentation OF THIS BUILDING; leaving them in the shared file is how the next site
+  // inherits another building wiring as fact.
+  //
+  // Device ids are slugs, so a plain word-boundary match needs no escaping - and if one ever
+  // stops being a slug, `the id is a slug` above fails first and says so.
+  const site = await import('../shared/siteConfig.mjs');
+  const source = readFileSync(join(ROOT, 'shared', 'registry.mjs'), 'utf8');
+  const found = site.BUILT_IN_DEVICES.map((d) => d.id).filter((id) => new RegExp(String.raw`` + id + String.raw``).test(source));
+  assert.deepEqual(found, [], 'shared/registry.mjs still names these devices - move them to the site directory');
 });
