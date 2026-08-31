@@ -9,8 +9,9 @@ addresses, or Supabase project identifiers — in code, in docs, or in commit me
 > **Standing this up for another building? `docs/replication.md`** is the software half of the
 > replication framework (Milestone 6), written as a transcript of a run that worked rather than a
 > design — including a table of what it does not cover. `scripts/install.sh` does the machine
-> setup (dry run by default; `scripts/rehearse-install.sh` exercises that dry run in a container
-> on a machine with nothing installed, but its **apply** path is still untested), and
+> setup (dry run by default; `scripts/rehearse-install.sh [--apply]` rehearses **both** paths in
+> a container on a machine with nothing installed — 21 steps, no failures, artifacts read back —
+> with `systemctl` stubbed, so whether the services actually come up is still untested), and
 > `docs/physical-install.md` is the
 > hardware guide, currently a template with its gaps marked rather than hidden.
 > **`npm run preflight` is the day-one check** — credentials, database, vendor account, the local

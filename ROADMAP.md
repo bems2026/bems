@@ -2,10 +2,20 @@
 
 **Last audited:** 2026-08-31 (UTC) — RM-027 to RM-032 and RM-034 done; RM-033 part-built
 **Audited at commit:** `b31caa2`
-**Landed since that audit, not re-audited:** RM-006c's tier editor (`9f7848d`) and FI-018's
-baseline report. Both were verified on their own terms — suites, neutered guards, and for
-RM-006c a live read-back — but the file below has not been re-read against the tree since
-`b31caa2`, and saying which is which is cheaper than an audit that did not happen.
+**Landed since that audit, not re-audited:** a long session on 2026-08-31 — RM-006c's tier
+editor, FI-018 (baseline report), FI-008 (contrast guard), FI-006 (totals expiry), FI-007 (badge
+contrast), FI-002 (`npm run preflight`), RM-033's `npm run site:sql`, and the installer rehearsal
+including its apply path. Each was verified on its own terms: suites on the workstation and the
+Pi, CI, neutered guards, and a live read-back where one was possible. **The file below has not
+been re-read against the tree since `b31caa2`**, so entries older than that date carry the
+authority of that audit and no more. Saying which is which is cheaper than an audit that did not
+happen.
+
+> **PICKING THIS UP FRESH? Read §0 first, then this paragraph.** Every unticked item below is
+> blocked on something outside the code: a person at the office, hardware that is not on the
+> network, an operator decision, or elapsed time. There is no unblocked coding task left in
+> Track B. The one remaining code item anywhere is FI-009, and its own entry explains why it was
+> left alone. Do not go looking for work in the code; the useful work now is on the building.
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
 discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
@@ -37,6 +47,58 @@ other four and none needed changing.
 
 This file is long because the reasoning is the point; this section exists so that "what
 now" does not require reading all of it. Everything here is expanded below under its own id.
+
+### Everything outstanding, 2026-08-31 — the handoff list
+
+Grouped by what each one waits on, because none of them wait on code. Ids link to the entries
+below, which carry the evidence.
+
+**A person has to be at the CARE office**
+- **RM-020** — `co4`, `co5`, `co6` need power cut and restored. The software remedy was built and
+  tried on `co5` and did not work: the device answers ARP, accepts a static address, then refuses
+  every TCP connection.
+- **RM-021 / RM-012 / RM-013 / RM-018** — devices that need a physical look or a network rejoin.
+- **RM-016** — re-pair the IR blaster and the outdoor temperature sensor. Both report
+  `online: false` and neither is in the Tuya cloud project. **Their registry `status` still says
+  `active`, which claims more than is true.**
+- **RM-007** — sign in once on the office kiosk, then power-cycle it to learn whether it comes
+  back signed in.
+- **RM-033** — `docs/physical-install.md`'s **twelve `〔FILL IN〕` gaps**. Photographs, part
+  numbers, breaker way numbers, and institutional answers. **None can be filled by inference**;
+  taking the file to the office as a checklist is the intended use.
+
+**An operator decision or action, remotely**
+- **RM-006c — arm auto-shed.** Tiers are assigned. Two conditions gate it and **one action fixes
+  both**: open Automation *signed in*, turn auto-shed on, and save. Setting the flag in the
+  database alone arms nothing, because the shed actor comes from `dsm_thresholds.updated_by`,
+  which is null. Read that entry before flipping it — `group_1` is the lighting, ~16 W of a 919 W
+  demand against a 2.21 kW ceiling.
+- **Build the space tree.** `space_nodes` is **0 rows** and no device is placed. This is still the
+  single highest-leverage thing available: RM-028's tree, RM-030's by-space totals and RM-031's
+  plan all start showing real numbers at once, and it is the only check on the `authenticated`
+  SELECT policy that a service-role probe cannot make.
+- **RM-026** — join the Deye logger to the device SSID. Nothing can be built or tested until then,
+  and this one is **contractual**: Milestone 3, due January 2027.
+- **RM-006d** — perform a restore. A backup that has never been restored is not a backup.
+- **Repository description and topics** — the description is set; **only 2 of 12 topics landed**.
+  `gh` returns 404 because the CLI account has push but not admin. Owner account, web UI.
+- **The funder workbook** — `iBEMS-General-Project-Plan.xlsx` was reconciled 2026-08-26 and has
+  drifted. `ibems-tracker.html` was brought current on 2026-08-31; the workbook was deliberately
+  left alone. Five specific changes are listed in the session notes, the first being that
+  Checklist item 16 reads as though aircon control works today while item 7 says the IR needs
+  re-pairing.
+
+**Elapsed time**
+- **RM-004** — re-check anomaly detection for false positives once a week of continuous telemetry
+  exists.
+- **FI-012** — partition `readings` *if* growth ever outgrows the prune. Conditional; not due.
+- **FI-011** — push delivery for the monthly report, once a notification channel is configured.
+
+**Code, and deliberately not done**
+- **FI-009** is the only unblocked coding task in the file. Its own entry explains why it was left:
+  each of the three selectors needs value-level rather than reference-level comparison to gain
+  anything, and `FloorPlanView` genuinely reads every device. Filtering inside a zustand selector
+  is also a documented loop hazard here. Low value, real risk.
 
 ### Do this first, 2026-08-28
 
@@ -2249,7 +2311,55 @@ may not.
       rather than a red test. The client carries its own cap for the same reason in a
       different place: the database's protects the database, not a browser building a tree
       from rows.
-      **The installer's dry run is now rehearsed on a bare machine, 2026-08-31** —
+      **THE APPLY PATH HAS NOW BEEN RUN, 2026-08-31 — `scripts/rehearse-install.sh --apply`.**
+      This entry said for days that it never had been, because there has only ever been one Pi and
+      running it there would reinstall a working building. A container removes that objection.
+      Five runs, each one finding something the previous one hid. Final state: **21 steps, zero
+      failures**, on a machine with nothing on it.
+      *Confirmed by reading the artifacts back, not by trusting the installer's report:* Node 22
+      from NodeSource (`v22.23.2`), `npm ci`, a clean `tsc -b && vite build` producing
+      `dist/index.html`, `serve` at `/usr/bin/serve`, the Node-RED official installer **and** the
+      Tuya contrib node (both of which this file had guessed would refuse to run off a Pi), the
+      loopback-only mosquitto config **byte-exact** — `listener 1883 127.0.0.1` / `::1`, the one
+      line here that is a security property rather than a convenience — `server/.env` at mode
+      `600`, and all four units installed with `User`, `Group`, `WorkingDirectory` and
+      `EnvironmentFile` rewritten for a different account and checkout.
+      **`systemctl` is a recording stub and that is stated everywhere it could mislead.** A
+      container has no systemd, so the real installer aborts at step 5 and steps 6-8 — the ones
+      that create `server/.env` and rewrite the units — never ran at all. The stub logs each call
+      and returns 0; every call it swallowed is printed under a heading saying none of them
+      happened. Nothing was enabled, nothing started, no unit validated by systemd. What the log
+      does prove is the documented intent: mosquitto and four units enabled, **only** the
+      dashboard started.
+
+      **What five runs found, none of which reading the script had produced:**
+      1. **`act()` discarded the output of every failing command.** A failed step printed four
+         words and nothing else — at the one moment an operator needs the error. Found because
+         the build broke and the run would not say why. Now captures and tails 20 lines.
+      2. **Preflight checked that `sudo` works, not that the user is in the `sudo` group.** The
+         Node-RED installer tests group membership and exits regardless of how sudo is configured,
+         so a machine granted sudo through a `sudoers.d` rule passes preflight and fails at step 4
+         — after the packages and the build are already installed. Now checked, with the `usermod`
+         line, as a warning rather than a FAIL.
+      3. **Two units in `server/` are neither installed nor mentioned.** Both exclusions are
+         correct — `ibems-kiosk.service` is a `--user` unit needing a graphical session, and
+         `ibems-wifi-prefer.service` is Wi-Fi, which this script never touches — but a second
+         deployment had no way to learn the kiosk unit exists. Now named in the closing notes.
+      4. **The closing notes still told the reader to hand-edit two migration files**, advice
+         corrected elsewhere the same day. A message nobody reads on a provisioned machine is
+         exactly where stale advice survives.
+      5. **Two of the five findings were in the harness, and both mattered.** The first version
+         copied an allow-list of files it judged the installer needed and omitted
+         `tsconfig.app.json`, producing a build failure the installer had nothing to do with — a
+         harness that omits a file reports a defect in the thing it is testing. And its summary
+         counted the raw log, where `FAIL` is wrapped in a colour escape and `did` is not, so it
+         matched every success and no failure and printed **"0 reported FAIL"** onto a screen with
+         a FAIL visible on it. *The harness being wrong about the `sudo` group is also what
+         surfaced finding 2* — had the container matched a Pi exactly on the first try, that gap
+         would still be waiting for a real institution at step 4.
+      *Still not exercised, and the guide still says so:* whether the services actually run.
+
+      **The installer's dry run is also rehearsed on a bare machine, 2026-08-31** —
       `scripts/rehearse-install.sh`, a throwaway Debian container, the pattern `supabase/rehearse.sh`
       established for migrations. **`install.sh` had only ever run on one computer: the Pi that
       already had every package installed.** So every "already satisfied" branch was taken and not
