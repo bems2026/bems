@@ -75,9 +75,9 @@ if (JSON_OUT) {
 const secs = (ms) => (ms === null ? '     —' : `${Math.round(ms / 1000)}`.padStart(5) + 's');
 
 console.log('LOCAL DEVICE SESSIONS — observed, nothing sent\n');
-console.log('  device                class            last report   verdict');
+console.log('  device                class                 last report   verdict');
 for (const d of report.devices) {
-  console.log(`  ${d.deviceId.padEnd(21)} ${d.class.padEnd(16)} ${secs(d.lastReportMs)}   ${d.local}`);
+  console.log(`  ${d.deviceId.padEnd(21)} ${d.class.padEnd(21)} ${secs(d.lastReportMs)}   ${d.local}`);
 }
 
 console.log('\nFLOW-DECLARED SESSION SETTINGS');
@@ -88,11 +88,18 @@ for (const n of report.nodes) {
 }
 
 const s = report.summary;
-console.log(`\n${s.live}/${s.devices} devices reporting over the local protocol within ${LOCAL_SILENT_MS / 1000}s.`);
+// The headline is live + live-unmeasured, because both are healthy on the local network and
+// quoting only the confirmed half reads as a fleet in trouble when it is not. The split is on
+// the next line, because "confirmed by a recent report" and "healthy but unmeasurable" are
+// genuinely different strengths of evidence and collapsing them would be the fabrication this
+// probe exists to avoid.
+const healthy = s.live + s.liveUnmeasured;
+console.log(`\n${healthy}/${s.devices} devices healthy on the local network.`);
 if (s.liveUnmeasured) {
-  console.log(`  ${s.liveUnmeasured} more are healthy but carry no arrival stamp of their own (switches, the ACU, the`);
-  console.log('  outdoor probe) — the bridge synthesizes their timestamp, so their age proves nothing and');
-  console.log('  is not counted as evidence either way.');
+  console.log(`  ${s.live} confirmed by a report arriving within ${LOCAL_SILENT_MS / 1000}s over the local protocol.`);
+  console.log(`  ${s.liveUnmeasured} carry no arrival stamp of their own (switches, the ACU, the outdoor probe) — the`);
+  console.log('  bridge synthesizes their timestamp, so their age is not evidence either way and their');
+  console.log('  health comes from a real connection signal instead.');
 }
 if (s.silent) console.log(`  ${s.silent} present but silent — reachable as far as the flow knows, not reporting.`);
 if (s.down) console.log(`  ${s.down} down. Restart Node-RED before suspecting hardware — see docs/pi-session-brief.md.`);
