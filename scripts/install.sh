@@ -65,7 +65,21 @@ did()  { printf '  did    %s\n' "$1"; }
 act() {
   local what="$1"; shift
   if [ "$APPLY" -eq 1 ]; then
-    "$@" >/dev/null 2>&1 && did "$what" || { bad "$what"; return 1; }
+    local log; log="$(mktemp)"
+    if "$@" >"$log" 2>&1; then
+      did "$what"
+      rm -f "$log"
+    else
+      bad "$what"
+      # Show why. This used to discard the output entirely, so a failing step told the operator
+      # only that it had failed — at the one moment they need the error most, standing in an
+      # unfamiliar building. Found by rehearsing the apply path in a container: the build broke
+      # and the run reported four words about it. Tail rather than all of it, because a failing
+      # npm install can be thousands of lines and the end is the part that says why.
+      sed -e 's/^/         /' "$log" | tail -20
+      rm -f "$log"
+      return 1
+    fi
   else
     plan "$what"
   fi

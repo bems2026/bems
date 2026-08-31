@@ -55,12 +55,21 @@ echo
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-# Copy only what install.sh reads. node_modules is deliberately excluded: its ABSENCE is one of
-# the branches that has never been exercised, and copying a populated one would skip it again.
+# Everything except a short exclude list — NOT an allow-list of the files install.sh "needs".
+#
+# The first version was an allow-list and it produced a false failure on the first apply run:
+# `tsconfig.json` is a project-references stub pointing at `tsconfig.app.json` and
+# `tsconfig.node.json`, only the stub was copied, and `npm run build` failed for a reason the
+# installer had nothing to do with. A harness that omits a file reports a defect in the thing
+# it is testing, which is worse than not testing it.
+#
+# node_modules and dist stay excluded on purpose: their ABSENCE is the branch that has never been
+# exercised, and copying either would skip it again.
 mkdir -p "$WORK/repo"
 tar -C "$HERE" \
-  --exclude=node_modules --exclude=.git --exclude=dist --exclude=reports \
-  -cf - package.json package-lock.json scripts server shared src test index.html vite.config.ts tsconfig.json 2>/dev/null \
+  --exclude=./node_modules --exclude=./.git --exclude=./dist --exclude=./reports \
+  --exclude=./server/.env --exclude=./.env --exclude=./.env.local \
+  -cf - . 2>/dev/null \
   | tar -C "$WORK/repo" -xf - || { red "could not stage the checkout"; exit 1; }
 
 # server/.env must NOT travel into the container — it holds the live credentials, and install.sh
@@ -132,10 +141,21 @@ if grep -q 'Preflight failed' "$WORK/out.txt"; then
 elif [ "$MODE" = apply ]; then
   # Count what the installer itself reported, rather than trusting an exit code that a failing
   # systemctl would dominate.
-  did="$(grep -c '  did    ' "$WORK/out.txt" || true)"
-  bad_n="$(grep -c '  FAIL  ' "$WORK/out.txt" || true)"
-  printf '%s step(s) performed, %s reported FAIL (systemctl accounts for some — check which).\n' "$did" "$bad_n"
-  grep '  FAIL  ' "$WORK/out.txt" || true
+  #
+  # Strip the colour codes FIRST. The first version counted the raw log, where `FAIL` is wrapped
+  # in an escape sequence and `did` is not — so it matched every success and no failure, and
+  # printed "0 reported FAIL" onto a screen with a FAIL visible on it. A summary that cannot see
+  # failures is worse than no summary.
+  plain="$WORK/plain.txt"
+  sed -e 's/\x1b\[[0-9;]*m//g' "$WORK/out.txt" > "$plain"
+  did="$(grep -c '^  did ' "$plain" || true)"
+  bad_n="$(grep -c '^  FAIL ' "$plain" || true)"
+  printf '%s step(s) performed, %s reported FAIL.\n' "$did" "$bad_n"
+  if [ "$bad_n" -gt 0 ]; then
+    echo "  the failures were:"
+    grep '^  FAIL ' "$plain" | sed -e 's/^/  /'
+    echo "  systemctl failures are expected here; anything else is a real finding."
+  fi
 else
   grn "The dry run completed on a machine with nothing installed."
 fi
