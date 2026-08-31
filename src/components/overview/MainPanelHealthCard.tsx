@@ -2,6 +2,7 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { Activity } from 'lucide-react';
 import { MetricValue } from '@/components/ui/MetricValue';
 import { phaseBalance } from './mainPanelHealth';
+import { measured } from '@/lib/staleness';
 
 const PHASE_MAX_A = 30; // bar full-scale, matching v4's own 30A reference
 
@@ -13,7 +14,18 @@ const PHASE_MAX_A = 30; // bar full-scale, matching v4's own 30A reference
 export function MainPanelHealthCard() {
   const totals = useDeviceStore((s) => s.totals);
   const phase = totals?.phase_current;
-  const health = phaseBalance(phase?.red ?? null, phase?.yellow ?? null);
+
+  /**
+   * Past five minutes a reading is a memory, not a measurement — `staleness.ts`'s rule, applied
+   * here because this card says more than a number. `BALANCED` and "Red and Yellow are within a
+   * comfortable range of each other" are claims about the building's electrical state *now*, and
+   * a ten-minute-old row cannot support either. Expiring the inputs retires the sentence with
+   * them, rather than leaving a confident conclusion drawn from data the card would not print.
+   */
+  const volts = measured(totals?.avg_voltage ?? null, totals);
+  const red = measured(phase?.red ?? null, totals) ?? null;
+  const yellow = measured(phase?.yellow ?? null, totals) ?? null;
+  const health = phaseBalance(red, yellow);
 
   return (
     <div className="card">
@@ -31,13 +43,13 @@ export function MainPanelHealthCard() {
       <div className="panel-health-body">
         <div className="voltage-ring">
           <span className="voltage-ring__value">
-            <MetricValue value={totals?.avg_voltage} digits={0} size="sm" />
+            <MetricValue value={volts} digits={0} size="sm" />
           </span>
           <span className="voltage-ring__label">VOLTS</span>
         </div>
         <div className="phase-bars">
-          <PhaseRow label="Red" amps={phase?.red ?? null} color="var(--red-bright)" />
-          <PhaseRow label="Yellow" amps={phase?.yellow ?? null} color="var(--accent)" />
+          <PhaseRow label="Red" amps={red} color="var(--red-bright)" />
+          <PhaseRow label="Yellow" amps={yellow} color="var(--accent)" />
           <div className="phase-bar-row">
             <span className="phase-bar-name">Blue</span>
             <span className="phase-bar-notmetered">Not metered</span>

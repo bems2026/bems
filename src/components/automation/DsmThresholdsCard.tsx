@@ -1,10 +1,25 @@
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useContextStore } from '@/stores/contextStore';
 import { readDsmThresholds, maxPhaseNow, totalKwNow } from '@/lib/dsm';
+import { isReadingExpired } from '@/lib/staleness';
 
 const MAX_PHASE_KEY = 'global.dsm.max_phase_a';
 const MAX_TOTAL_KEY = 'global.dsm.max_total_kw';
 const AUTO_SHED_KEY = 'global.dsm.auto_shed';
+
+const STATUS_LABEL = {
+  breached: 'BREACHED',
+  ok: 'OK',
+  'no-limit': 'NO LIMIT SET',
+  'no-reading': 'NO READING',
+} as const;
+
+const STATUS_CLASS = {
+  breached: 'automation-dsm-field__breach',
+  ok: 'automation-dsm-field__ok',
+  'no-limit': 'automation-dsm-field__unknown',
+  'no-reading': 'automation-dsm-field__unknown',
+} as const;
 
 /** These thresholds no longer drive an Overview banner (removed per the bento-grid
  * revision — DSM breach is not in the current Overview design), but stay configurable and
@@ -19,11 +34,35 @@ export function DsmThresholdsCard() {
 
   const effective = (key: string) => draft[key] ?? saved[key] ?? '';
   const thresholds = readDsmThresholds({ ...saved, ...draft });
-  const phaseNow = maxPhaseNow(totals);
-  const kwNow = totalKwNow(totals);
 
-  const phaseBreached = thresholds.maxPhaseA !== null && phaseNow !== null && phaseNow > thresholds.maxPhaseA;
-  const powerBreached = thresholds.maxTotalKw !== null && kwNow !== null && kwNow > thresholds.maxTotalKw;
+  /**
+   * A reading past its expiry is not evidence of anything — `staleness.ts`'s rule, and it matters
+   * more here than anywhere else in the app. This is the page where someone decides whether to
+   * arm a mechanism that cuts power to a working building unattended, and the two things it can
+   * get wrong are symmetrical: a breach flagged from a ten-minute-old row is a false alarm, and
+   * `OK` from that same row is a false all-clear. Both are claims about *now*.
+   */
+  const live = isReadingExpired(totals) ? null : totals;
+  const phaseNow = maxPhaseNow(live);
+  const kwNow = totalKwNow(live);
+
+  /**
+   * Four states, not two. `OK` was standing in for three different situations: within the limit,
+   * no limit configured, and no reading to judge. Only the first is reassuring, and a green word
+   * carries reassurance whichever one produced it.
+   *
+   * The two absences are kept apart because they are fixed by different people doing different
+   * things — one is a missing threshold on this very form, the other is a bridge that has stopped
+   * reporting. Conflating them was caught by looking at the page: the live readout said
+   * `13.9 A max phase` while the status beside it said NO READING.
+   */
+  const status = (limit: number | null, now: number | null): 'breached' | 'ok' | 'no-limit' | 'no-reading' => {
+    if (now === null) return 'no-reading';
+    if (limit === null) return 'no-limit';
+    return now > limit ? 'breached' : 'ok';
+  };
+  const phaseStatus = status(thresholds.maxPhaseA, phaseNow);
+  const powerStatus = status(thresholds.maxTotalKw, kwNow);
   const autoShedDraftValue = effective(AUTO_SHED_KEY) === 'true';
 
   return (
@@ -37,7 +76,7 @@ export function DsmThresholdsCard() {
       <ThresholdField
         id="dsm-max-phase"
         label="MAX PHASE CURRENT (A)"
-        breached={phaseBreached}
+        status={phaseStatus}
         value={effective(MAX_PHASE_KEY)}
         step={0.1}
         onChange={(v) => setDraft(MAX_PHASE_KEY, v)}
@@ -45,7 +84,7 @@ export function DsmThresholdsCard() {
       <ThresholdField
         id="dsm-max-total"
         label="MAX TOTAL DRAW (kW)"
-        breached={powerBreached}
+        status={powerStatus}
         value={effective(MAX_TOTAL_KEY)}
         step={0.01}
         onChange={(v) => setDraft(MAX_TOTAL_KEY, v)}
@@ -95,14 +134,14 @@ export function DsmThresholdsCard() {
 function ThresholdField({
   id,
   label,
-  breached,
+  status,
   value,
   step,
   onChange,
 }: {
   id: string;
   label: string;
-  breached: boolean;
+  status: 'breached' | 'ok' | 'no-limit' | 'no-reading';
   value: string;
   step: number;
   onChange: (value: string) => void;
@@ -111,7 +150,7 @@ function ThresholdField({
     <div className="automation-dsm-field">
       <div className="automation-dsm-field__head">
         <label htmlFor={id}>{label}</label>
-        <span className={breached ? 'automation-dsm-field__breach' : 'automation-dsm-field__ok'}>{breached ? 'BREACHED' : 'OK'}</span>
+        <span className={STATUS_CLASS[status]}>{STATUS_LABEL[status]}</span>
       </div>
       <input
         id={id}

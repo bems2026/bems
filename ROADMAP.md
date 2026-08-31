@@ -182,7 +182,10 @@ column landed all went **local**, with no cloud fallbacks.
    The tiers are editable — see the Load shedding editor on the Devices page.
 2. ~~**FI-008 (S)** — a contrast regression guard.~~ **Done 2026-08-31**, and it found a real
    latent AA failure on its first run. See its entry.
-3. **FI-006 (S)** — wire `StaleDataBadge` into the views that still derive staleness inline.
+3. ~~**FI-006 (S)** — wire `StaleDataBadge` into the views that still derive staleness inline.~~
+   **Done 2026-08-31.** It was not a badge problem: four components read `_totals` and none
+   applied the expiry rule, so the Overview's headline kW and the DSM breach flag were both
+   drawn from whatever row was last in the store. See its entry.
    **Worth more since EX-107**: timestamps are now honest, so a staleness badge finally means
    something on metered devices instead of being permanently fresh.
 4. **EX-096 device removal, end to end** — never run against a real device, because nothing
@@ -2776,7 +2779,44 @@ may not.
   precisely the thing RM-033 has to make unnecessary. Mechanical: `registry.mjs` already composes
   `[...BUILT_IN_DEVICES, ...ENROLLED_DEVICES]`, so this is moving an array and changing one
   import.
-- **FI-006** (S) Wire `StaleDataBadge` into the remaining views that derive staleness inline, so freshness is announced consistently rather than re-implemented per card. *(Partly addressed 2026-08-21: every view now shares one wall-clock tick and one stale-dim constant per medium, but the badge itself is still not used everywhere.)*
+- ~~**FI-006** (S) Wire `StaleDataBadge` into the remaining views that derive staleness inline.~~
+  **Done 2026-08-31**, and it turned out not to be about the badge. 16 tests across
+  `LiveDemandCard`, `MainPanelHealthCard` and `DsmThresholdsCard`.
+  **Four components read `s.totals`; none applied the expiry rule that Analytics and Devices
+  both use.** So `measured()` — written for the `co5` incident, where an outlet rendered
+  `230.4 V / 2.23 A / 514 W` beside an OFFLINE badge — was never reaching the building's own
+  figures. The feed goes quiet, the store keeps the last row, and the largest number on the
+  dashboard carries on reading like a measurement. Now the demand figure, the three energy
+  counters, the voltage and both phase currents go to `—` past five minutes.
+  *The worst of it was not a number.* `MainPanelHealthCard` printed **BALANCED** and "Red and
+  Yellow are within a comfortable range of each other" — a claim about the building's electrical
+  state *right now* — from whatever row happened to be in the store. Expiring the inputs retires
+  the sentence and the pill with them, and the phase bars no longer draw a width for a value the
+  card will not print. A full bar beside an em dash is the same lie in a different medium.
+  *`DsmThresholdsCard` is where it mattered most*, because it is the page where someone decides
+  whether to arm a mechanism that cuts power to a working building unattended. Its two errors are
+  symmetrical: a **BREACHED** flag from a ten-minute-old row is a false alarm, and **OK** from
+  that same row is a false all-clear. There are now four states rather than two — `OK` had been
+  standing in for three different situations, and a green word carries reassurance whichever one
+  produced it.
+  **The fourth was found by looking at the page, not by a test.** With the card rendering against
+  the mock, the readout said `Live: 13.9 A max phase` beside a status of **NO READING** — the
+  reading was there; the *threshold* was unset. Two absences with two different fixes, one a
+  missing number on that very form and the other a bridge that has stopped reporting, so they get
+  two words: **NO LIMIT SET** and **NO READING**, both muted rather than green. The unit tests
+  had agreed with the conflation because they only ever set thresholds.
+  **The badge itself was the wrong instrument and is deliberately not used.** `LiveDemandCard`
+  already carries a LIVE/STALE/RECONNECTING pill; adding a second "stale" flag beside it would
+  have put two freshness indicators in one card. The pill was reporting only the *link* — messages
+  were arriving, so it said LIVE while the totals row underneath had stopped advancing. Those are
+  different facts and the one a reader looking at "1.23 kW" needs is the second, so the pill now
+  answers both and is a live region, which it was not: a span that silently swaps its text
+  announces nothing, and a figure going stale is the most important state change on a monitoring
+  dashboard.
+  *`FloorPlanView` was left alone on purpose.* It already dims per-device via SVG opacity, and
+  `StaleDataBadge` renders a `div` — it cannot wrap SVG. Announcing staleness on the plan needs a
+  different mechanism and is not this item.
+  *Neuter-verified:* forcing `isReadingExpired` to `false` failed 8 of the 16.
 
 ### Accessibility
 - **FI-007** (S) `--good` on `--good-soft` measures 4.45:1 against the page background (4.99 on a card). It passes everywhere it currently renders, but will fail the first time a green badge is placed directly on the page. The same page-versus-card split already required `--warn-on-page`.

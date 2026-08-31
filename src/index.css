@@ -4519,6 +4519,11 @@ body::before {
 .automation-dsm-field__ok {
   color: var(--good);
 }
+/* Neither breached nor OK: no live reading to judge against, or no threshold set. Muted rather
+ * than green, because a green word is read as reassurance and nothing here was measured. */
+.automation-dsm-field__unknown {
+  color: var(--muted-2);
+}
 .automation-number-input {
   width: 100%;
   padding: 10px 12px;
