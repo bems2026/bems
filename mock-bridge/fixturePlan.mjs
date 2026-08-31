@@ -47,3 +47,29 @@ export function fixturePlan(registry) {
 
   return { outlets, switches, branchCtx, meteredCtx };
 }
+
+/**
+ * The building's own energy total, or `undefined` when there is nothing to total.
+ *
+ * A BUILDING WITH NO METERS HAS NOT USED 0 kWh — it has used an unknown amount, and those are
+ * different claims. Found on a freshly scaffolded site: Live Demand read "—", voltage read "—",
+ * the Blue phase read "not metered", and the three energy tiles read `0.00 kWh`. `buildLatest`
+ * was doing the right thing; the zero was manufactured one layer earlier by a `reduce(..., 0)`
+ * over an empty list, and `buildLatest` faithfully passed it on. Returning `undefined` here is
+ * what makes it render as `—` instead.
+ *
+ * A meter that HAS been read and read zero still returns 0. That distinction — no meter, versus
+ * a meter reading nothing — is the whole point, and it is RM-024's rule at the layer that seeds
+ * the figure rather than the layer that renders it.
+ */
+export function branchEnergyTotal(energyAcc, branchCtx) {
+  if (!Array.isArray(branchCtx) || branchCtx.length === 0) return undefined;
+  let sum = 0;
+  for (const ctx of branchCtx) {
+    const v = energyAcc?.[ctx];
+    // A branch with no accumulator entry contributes nothing rather than NaN, which would
+    // poison the whole total and render as a blank that looks like a rendering fault.
+    if (typeof v === 'number' && Number.isFinite(v)) sum += v;
+  }
+  return sum;
+}

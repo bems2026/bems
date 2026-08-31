@@ -37,7 +37,7 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { DEVICE_REGISTRY, PHASE_MAP, TIMING, publicDevices, SITE } from '../shared/registry.mjs';
-import { fixturePlan } from './fixturePlan.mjs';
+import { fixturePlan, branchEnergyTotal } from './fixturePlan.mjs';
 import { buildLatest, iso8 } from '../shared/buildLatest.mjs';
 import { COMMAND_ROUTE, ACCEPTED_STATUS, validateCommand, buildAck } from '../shared/commands.mjs';
 import { CONTEXT_ROUTE, CONTEXT_ACCEPTED_STATUS, validateContextWrite, buildContextAck } from '../shared/context.mjs';
@@ -253,12 +253,20 @@ function snapshot() {
     lightHealth[key] = { id: key, conn: d.id === STALE_ID ? 'DISCONNECTED' : 'CONNECTED', on: lights[d.state_key], lastSeen: new Date(t).toISOString() };
   });
 
-  totals.today = Object.entries(energyAcc)
-    .filter(([k]) => PLAN.branchCtx.includes(k))
-    .reduce((a, [, v]) => a + v, 0);
+  // `undefined` when this site has no branch meters at all, so `buildLatest` renders the
+  // building's energy as `—` rather than a zero nobody measured. See `branchEnergyTotal`.
+  totals.today = branchEnergyTotal(energyAcc, PLAN.branchCtx);
 
   return {
-    energy: { meters: energyMeters, totals: { today: totals.today, week: totals.week + totals.today, month: totals.month + totals.today } },
+    energy: {
+      meters: energyMeters,
+      // The week and month baselines are only meaningful on top of a real daily figure; with no
+      // meters they are absent too, rather than reporting a seeded baseline as a measurement.
+      totals:
+        totals.today === undefined
+          ? { today: undefined, week: undefined, month: undefined }
+          : { today: totals.today, week: totals.week + totals.today, month: totals.month + totals.today },
+    },
     // What the Node-RED `Accumulate energy` node maintains on the real bridge — completed
     // days only; buildLatest adds each device's live daily counter on top.
     energyAcc: energyBaseline,

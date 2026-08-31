@@ -20,7 +20,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fixturePlan } from '../mock-bridge/fixturePlan.mjs';
+import { fixturePlan, branchEnergyTotal } from '../mock-bridge/fixturePlan.mjs';
 import { DEVICE_REGISTRY } from '../shared/registry.mjs';
 
 /** A registry sharing no id, ctx or state key with the CARE office. */
@@ -79,3 +79,35 @@ test('every branch ctx is one the accumulator will actually hold', () => {
     }
   }
 });
+
+/**
+ * A BUILDING WITH NO METERS HAS NOT USED 0 kWh — it has used an unknown amount, and the two are
+ * different claims. Found on a freshly scaffolded site: Live Demand and voltage both correctly
+ * read "—", the Blue phase correctly read "not metered", and the energy tiles read
+ * `0.00 kWh` / `0.0 kWh` / `0.0 kWh`. A new operator's first look at their own building would
+ * have told them it consumed nothing.
+ *
+ * `buildLatest` already does the right thing — it renders an absent total as null and only a
+ * present one as a number. The zero was manufactured one layer earlier, by a `reduce(..., 0)`
+ * over an empty list. This is the same rule as RM-024 and EX-107, at the layer that seeds it.
+ */
+test('a site with no branch meters reports nothing, not zero', () => {
+  assert.equal(branchEnergyTotal({}, []), undefined);
+  // Even with accumulators present: if no circuit claims them as branch meters, nothing sums.
+  assert.equal(branchEnergyTotal({ some_ctx: 4.2 }, []), undefined);
+});
+
+test('a site with branch meters sums exactly those', () => {
+  assert.equal(branchEnergyTotal({ a: 1.5, b: 2.5, other: 99 }, ['a', 'b']), 4);
+});
+
+test('a branch meter that has accumulated nothing yet still counts as observed', () => {
+  // Zero is a real answer once there IS a meter — it has been read and it read zero. The
+  // distinction this whole test file exists for is "no meter" versus "a meter reading zero".
+  assert.equal(branchEnergyTotal({ a: 0 }, ['a']), 0);
+});
+
+test('a branch meter with no accumulator entry does not poison the sum with NaN', () => {
+  assert.equal(branchEnergyTotal({ a: 1 }, ['a', 'missing']), 1);
+});
+
