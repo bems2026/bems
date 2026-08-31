@@ -100,7 +100,10 @@ describe('ControlPage', () => {
     render(<ControlPage />);
     expect(screen.getByText('Outlet 1')).toBeInTheDocument();
     expect(screen.getByText('Light Switch 1')).toBeInTheDocument();
-    expect(screen.getByText('CARE ACU')).toBeInTheDocument();
+    // The device's OWN display name, not a label typed into the card. Until FI-016 the card
+    // rendered the literal "CARE ACU" while the registry called this device "Aircon" — the
+    // control was labelled with a name that disagreed with the thing it commands.
+    expect(screen.getByText(acu().display_name)).toBeInTheDocument();
   });
 
   it('a master action is gated behind a confirmation modal, not fired on the first click', () => {

@@ -1,17 +1,26 @@
 import { useDeviceStore } from '@/stores/deviceStore';
+import { primaryOfClass } from '@/lib/siteDevices';
 import { Thermometer } from 'lucide-react';
 import { MetricValue } from '@/components/ui/MetricValue';
 
 /**
  * v4's "Climate Diagnostics" ships a dashed "Outdoor (external API) — Not wired" row,
  * because its 2-sensor mockup has no real outdoor reading. This installation does:
- * `sens_outside_temp` is a real Tuya sensor, not an external API — so it renders as a
- * normal tile like the room sensor, and the dashed "not wired" placeholder is dropped
+ * the outdoor probe is a real Tuya sensor, not an external API — so it renders as a
+ * normal tile like the indoor one, and the dashed "not wired" placeholder is dropped
  * entirely rather than shown next to a reading that actually exists.
+ *
+ * BOTH DEVICES ARE FOUND BY CLASS, NOT BY ID — FI-016. This read `latestReadings['acu_main']`
+ * and `['sens_outside_temp']`, which are this building's names for "the aircon" and "the
+ * outdoor probe". At another site both tiles would have read `—` forever, and nothing on the
+ * screen would have said why.
  */
 export function ClimateDiagnosticsCard() {
-  const acu = useDeviceStore((s) => s.latestReadings['acu_main']);
-  const outside = useDeviceStore((s) => s.latestReadings['sens_outside_temp']);
+  const devices = useDeviceStore((s) => s.devices);
+  const acuId = primaryOfClass(devices, 'acu_ir')?.id;
+  const outsideId = primaryOfClass(devices, 'sensor_temp_humidity')?.id;
+  const acu = useDeviceStore((s) => (acuId ? s.latestReadings[acuId] : undefined));
+  const outside = useDeviceStore((s) => (outsideId ? s.latestReadings[outsideId] : undefined));
 
   return (
     <div className="card">

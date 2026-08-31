@@ -175,7 +175,7 @@ export function AutomationPage() {
           <p className="automation-schedules-sub">IR blaster rules driven by the paired climate sensor.</p>
           <div className="automation-trigger-card">
             <div className="automation-trigger-card__head">
-              <span>Transmit CARE ACU ON above</span>
+              <span>Transmit the aircon ON above</span>
               <span className="automation-trigger-card__value mono">{triggerValue}°C</span>
             </div>
             <input
@@ -186,7 +186,7 @@ export function AutomationPage() {
               value={triggerValue}
               onChange={(e) => setDraft(TRIGGER_KEY, e.target.value)}
               className="automation-trigger-card__slider"
-              aria-label="CARE ACU ambient trigger setpoint"
+              aria-label="Aircon ambient trigger setpoint"
             />
             <div className="automation-trigger-card__scale">
               <span>20 °C</span>

@@ -35,7 +35,7 @@ const MASTER_COPY: Record<MasterAction, { title: string; body: string; confirmLa
   },
   'ac-off': {
     title: 'Send AC off?',
-    body: 'This sends a single IR off command to the CARE ACU. It does not cut power to the unit — only a relay master would do that, and this app has none for the aircon by design.',
+    body: 'This sends a single IR off command to the aircon. It does not cut power to the unit — only a relay master would do that, and this app has none for the aircon by design.',
     confirmLabel: 'Send AC off',
     tone: 'blue',
   },
@@ -96,8 +96,14 @@ export function ControlPage() {
         log('RELAY', `${d.display_name} → off`);
       }
     } else {
-      send('acu_main', undefined, 'off');
-      log('IR', 'CARE ACU → off');
+      // By class and through `controlled`, like the two branches above — FI-016. This used to
+      // send to one building's aircon by id, which had a second consequence worth naming: it
+      // BYPASSED the page's own membership, so "AC off" could switch a unit the operator had
+      // deliberately configured off this page. The other two master actions never could.
+      for (const d of controlled.filter((d) => d.class === 'acu_ir')) {
+        send(d.id, undefined, 'off');
+        log('IR', `${d.display_name} → off`);
+      }
     }
     setConfirming(null);
   };

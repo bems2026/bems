@@ -1,17 +1,22 @@
+import { useMemo } from 'react';
 import { SlidersHorizontal, Snowflake, Lightbulb } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
+import { primaryOfClass, devicesOfClass } from '@/lib/siteDevices';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
 import { controlView } from '@/lib/socketView';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { CardLink } from '@/components/ui/CardLink';
 
-/** The one "quick toggle" light circuit shown here — L1, a real commandable device, not
- * the design's unlabelled sample row. Any one would do; this is simply the first of the
- * seven lighting circuits. Was L1 + L2 — trimmed to one row so this card (and the bottom
- * bento row it's stretched to match, per `.overview-trio` in index.css) reads shorter;
- * the full 7-circuit list is one click away via this card's header link regardless. */
-const QUICK_TOGGLE_IDS = ['l1'];
+/** How many lighting circuits get a quick-toggle row here. Was `['l1']` — one building's name
+ * for "the first lighting circuit", which is what this always meant (the old comment said so:
+ * "any one would do"). Now it takes the first by class, so a site whose circuits are called
+ * something else still gets a row, and a site with none gets none. FI-016.
+ *
+ * One rather than seven so this card (and the bottom bento row it is stretched to match, per
+ * `.overview-trio` in index.css) reads shorter; the full list is one click away via the header
+ * link regardless. */
+const QUICK_TOGGLE_COUNT = 1;
 
 /**
  * v4's "Master Quick Actions" — same control path Control (M3) uses: `commandStore.send`,
@@ -25,10 +30,18 @@ const QUICK_TOGGLE_IDS = ['l1'];
  */
 export function MasterQuickActionsCard() {
   const send = useCommandStore((s) => s.send);
-  const acuReading = useDeviceStore((s) => s.latestReadings['acu_main']);
-  const acuPending = useCommandStore((s) => s.pending[targetKey('acu_main')]);
+  const acu = useDeviceStore((s) => primaryOfClass(s.devices, 'acu_ir'));
+  const acuId = acu?.id ?? '';
+  const acuReading = useDeviceStore((s) => (acuId ? s.latestReadings[acuId] : undefined));
+  const acuPending = useCommandStore((s) => (acuId ? s.pending[targetKey(acuId)] : undefined));
   const acuView = controlView(acuReading, acuPending);
   const acuBusy = acuView.kind === 'pending';
+  // Selected raw, then narrowed in a memo — NOT filtered inside the zustand selector. A
+  // selector returning a freshly-allocated array on every call fails React 19's
+  // `useSyncExternalStore` cache check ("getSnapshot should be cached") and can loop.
+  // `LightingMatrixCard` carries the same note; the first draft of this change ignored it.
+  const allDevices = useDeviceStore((s) => s.devices);
+  const quickToggles = useMemo(() => devicesOfClass(allDevices, 'switch').slice(0, QUICK_TOGGLE_COUNT), [allDevices]);
   const { ask, modalProps } = useConfirm();
 
   // Gated like Control's own IR sends (`IrCommandCenterCard`) — this is the same command,
@@ -37,11 +50,11 @@ export function MasterQuickActionsCard() {
     ask(
       {
         title: `Send AC ${action === 'on' ? 'ON' : 'OFF'}?`,
-        body: `This sends a single IR ${action} command to the CARE ACU. Nothing reads the blaster back, so there is no way to confirm it was received — only that this app sent it.`,
+        body: `This sends a single IR ${action} command to ${acu?.display_name ?? 'the aircon'}. Nothing reads the blaster back, so there is no way to confirm it was received — only that this app sent it.`,
         confirmLabel: `Yes, send ${action.toUpperCase()}`,
         tone: action === 'on' ? 'blue' : 'accent',
       },
-      () => send('acu_main', undefined, action),
+      () => { if (acuId) send(acuId, undefined, action); },
     );
 
   return (
@@ -59,7 +72,7 @@ export function MasterQuickActionsCard() {
           <Snowflake size={16} />
         </span>
         <div className="quick-row__body">
-          <p className="quick-row__name">CARE ACU</p>
+          <p className="quick-row__name">{acu?.display_name ?? "Aircon"}</p>
           <p className="quick-row__sub">IR · {acuView.kind === 'unknown' ? 'no reading yet' : `commanded ${acuView.value === 'on' ? 'on' : 'off'}`}</p>
         </div>
         <div className="quick-row__actions">
@@ -72,8 +85,8 @@ export function MasterQuickActionsCard() {
         </div>
       </div>
 
-      {QUICK_TOGGLE_IDS.map((id) => (
-        <QuickToggleRow key={id} deviceId={id} />
+      {quickToggles.map((d) => (
+        <QuickToggleRow key={d.id} deviceId={d.id} />
       ))}
       <ConfirmModal {...modalProps} />
     </div>

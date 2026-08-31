@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Snowflake } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
+import { primaryOfClass } from '@/lib/siteDevices';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
 import { controlView } from '@/lib/socketView';
 import { isReadingStale } from '@/lib/staleness';
@@ -13,7 +14,10 @@ import { formatWithUnit } from '@/lib/format';
 import { setpointOptions, seedSetpoint } from './setpointOptions';
 import { SITE } from '@shared/registry.mjs';
 
-const ACU_ID = 'acu_main';
+/** The site's aircon, found by capability rather than by this building's name for it — FI-016.
+ * `null` at a site with no IR-commandable unit, which the card renders as "no aircon" rather
+ * than offering a control that would send to nothing. */
+const useAcu = () => useDeviceStore((s) => primaryOfClass(s.devices, 'acu_ir'));
 
 /** The degrees this SITE may command: the IR library's range, narrowed by the building's own
  * policy floor. Derived in `setpointOptions.ts`, which is where the reasoning lives and which
@@ -22,16 +26,19 @@ const ACU_ID = 'acu_main';
 const SETPOINTS = setpointOptions(SITE.policy.acu_min_setpoint_c);
 
 /**
- * The one real air conditioner in the registry — v4's mockup shows two (CARE + AREC), but
- * the registry only has `acu_main`; `mtr_arec_acu` is a branch *meter* for the ACU circuit,
- * not a second IR-commandable unit (see the Phase M plan's data-model table). Send-only,
- * never a toggle: an IR blast is a one-shot command, and the compressor is never power-cut
- * from here (§0.3 of the design's own spec).
+ * The site's IR-commandable air conditioner. v4's mockup shows two, but a branch *meter* on an
+ * ACU circuit is not a second commandable unit — only devices of class `acu_ir` are. Send-only,
+ * never a toggle: an IR blast is a one-shot command, and the compressor is never power-cut from
+ * here (§0.3 of the design's own spec).
+ *
+ * FI-016: this used to name one building's aircon by id, so at any other site the card would
+ * have rendered dashes and sent commands into nothing.
  */
 export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean }) {
-  const device = useDeviceStore((s) => s.devices.find((d) => d.id === ACU_ID));
-  const reading = useDeviceStore((s) => s.latestReadings[ACU_ID]);
-  const pending = useCommandStore((s) => s.pending[targetKey(ACU_ID)]);
+  const device = useAcu();
+  const acuId = device?.id ?? '';
+  const reading = useDeviceStore((s) => (acuId ? s.latestReadings[acuId] : undefined));
+  const pending = useCommandStore((s) => (acuId ? s.pending[targetKey(acuId)] : undefined));
   const send = useCommandStore((s) => s.send);
   const log = useControlLog((s) => s.log);
   const lastIr = useControlLog((s) => s.entries.find((e) => e.tag === 'IR'));
@@ -53,9 +60,13 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
   const on = !unknown && view.value === 'on';
 
   const dispatch = (action: 'on' | 'off') => {
-    send(ACU_ID, undefined, action, action === 'on' ? setpointC : undefined);
-    log('IR', `CARE ACU → ${action === 'on' ? `on ${setpointC}°C` : 'off'}`);
+    if (!acuId) return; // no aircon at this site; the control is not rendered, but the guard is cheap
+    send(acuId, undefined, action, action === 'on' ? setpointC : undefined);
+    log('IR', `${device?.display_name ?? 'Aircon'} → ${action === 'on' ? `on ${setpointC}°C` : 'off'}`);
   };
+
+  /** What to call it on screen. The registry's own display name, never this building's. */
+  const name = device?.display_name ?? 'Aircon';
 
   const askDispatch = (action: 'on' | 'off') =>
     ask(
@@ -63,8 +74,8 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
         title: action === 'on' ? `Send AC on at ${setpointC}°C?` : 'Send AC off?',
         body:
           action === 'on'
-            ? `This emits a single IR command setting the CARE ACU to ${setpointC}°C. It does not cut power to the unit.`
-            : 'This emits a single IR off command to the CARE ACU. It does not cut power to the unit.',
+            ? `This emits a single IR command setting ${name} to ${setpointC}°C. It does not cut power to the unit.`
+            : `This emits a single IR off command to ${name}. It does not cut power to the unit.`,
         confirmLabel: action === 'on' ? `Yes, send ${setpointC}°C` : 'Yes, send OFF',
         tone: 'blue',
       },
@@ -83,8 +94,8 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
       <div className="control-ir-unit">
         <div className="control-ir-unit__head">
           <div>
-            <b className="control-ir-unit__name">CARE ACU</b>
-            <div className="control-ir-unit__meta">{device?.id ?? ACU_ID}</div>
+            <b className="control-ir-unit__name">{name}</b>
+            <div className="control-ir-unit__meta">{device?.id ?? '—'}</div>
           </div>
           <span className={`badge${on ? ' badge--good' : ''}`}>{unknown ? 'no reading yet' : stale ? 'stale' : busy ? 'switching…' : on ? 'on' : 'off'}</span>
         </div>
