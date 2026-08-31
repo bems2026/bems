@@ -131,3 +131,32 @@ test('a null in the dataset is an empty cell, not a zero', () => {
   const csv = renderDataset([at('2026-08-01T00:00:00Z', 500, null)], OFF);
   assert.match(csv.trim().split('\n')[1], /,500,$/);
 });
+
+test('a day with no readings at all still gets a row, rather than vanishing from the table', () => {
+  // Found by reading a real report back: 2026-08-18 was simply absent between the 17th and the
+  // 19th. Every other honesty rule here renders a gap as an em dash; a missing row is the one
+  // way a gap renders as nothing at all, and a reader scanning dates will not notice it.
+  const days = dailyEnergy(
+    [at('2026-08-01T01:00:00Z', 400, 2), at('2026-08-04T01:00:00Z', 400, 3)],
+    OFF,
+  );
+  assert.deepEqual(days.map((d) => d.date), ['2026-08-01', '2026-08-02', '2026-08-03', '2026-08-04']);
+  const blank = days[1];
+  assert.equal(blank.samples, 0);
+  assert.equal(blank.kwh, null);
+  assert.equal(blank.peakW, null);
+  assert.match(blank.note, /nothing observed/i);
+});
+
+test('filled-in blank days do not count towards the three needed for a baseline', () => {
+  // Otherwise a single reading either side of a fortnight's outage would promote itself to a
+  // benchmark by counting the days nobody watched.
+  const md = renderReport({
+    rows: [at('2026-08-01T01:00:00Z', 400, 2), at('2026-08-04T01:00:00Z', 400, 3)],
+    offsetMinutes: OFF,
+    siteName: 'CARE Office',
+    timezone: 'Asia/Manila',
+    generatedMs: 0,
+  });
+  assert.match(md, /not a baseline/i);
+});

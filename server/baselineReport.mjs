@@ -135,9 +135,34 @@ export function dailyEnergy(rows, offsetMinutes) {
     if (kwh != null && (day.kwh == null || kwh > day.kwh)) day.kwh = kwh;
   }
 
+  // A day nobody observed must still occupy a row. Every other rule in this file renders a gap
+  // as an em dash; an absent row is the one way a gap renders as *nothing at all*, and a reader
+  // scanning a column of dates does not notice the one that is missing. Found by reading a real
+  // report back — 2026-08-18 sat between the 17th and the 19th and simply was not there.
+  const known = [...byDate.keys()].sort();
+  if (known.length > 1) {
+    const last = Date.parse(`${known[known.length - 1]}T00:00:00Z`);
+    for (let t = Date.parse(`${known[0]}T00:00:00Z`); t <= last; t += 86400_000) {
+      const date = new Date(t).toISOString().slice(0, 10);
+      if (!byDate.has(date)) byDate.set(date, { date, samples: 0, kwh: null, first: null, last: null, power: [] });
+    }
+  }
+
   return [...byDate.values()]
     .sort((a, b) => (a.date < b.date ? -1 : 1))
     .map((day) => {
+      if (!day.samples) {
+        return {
+          date: day.date,
+          kwh: null,
+          samples: 0,
+          firstSeen: '—',
+          lastSeen: '—',
+          partial: true,
+          peakW: null,
+          note: 'nothing observed — no usable total was recorded on this day',
+        };
+      }
       const startsLate = day.first.slice(11) > '00:30';
       const endsEarly = day.last.slice(11) < '23:30';
       const partial = startsLate || endsEarly;
@@ -213,8 +238,12 @@ export function renderReport({ rows = [], offsetMinutes = 0, siteName = 'this si
   const days = dailyEnergy(rows, offsetMinutes);
   const hours = hourProfile(rows, offsetMinutes);
   const power = summarize(rows.map(powerOf));
-  const fullDays = days.filter((d) => !d.partial);
-  const thin = cov.observed < BASELINE_MIN_SAMPLES || days.length < BASELINE_MIN_DAYS;
+  // Days are counted by what was watched, not by what the table spans. `days` now includes the
+  // blank rows filled in above, and letting those count would let one reading either side of a
+  // fortnight's outage promote itself to a benchmark on the strength of the days nobody saw.
+  const observedDays = days.filter((d) => d.samples > 0);
+  const fullDays = observedDays.filter((d) => !d.partial);
+  const thin = cov.observed < BASELINE_MIN_SAMPLES || observedDays.length < BASELINE_MIN_DAYS;
 
   const out = [...head];
 
@@ -222,7 +251,7 @@ export function renderReport({ rows = [], offsetMinutes = 0, siteName = 'this si
     out.push(
       '## This is not a baseline yet',
       '',
-      `It covers ${cov.observed} reading(s) across ${days.length} building-day(s). A benchmark needs at`,
+      `It covers ${cov.observed} reading(s) across ${observedDays.length} building-day(s). A benchmark needs at`,
       `least ${BASELINE_MIN_SAMPLES} readings across ${BASELINE_MIN_DAYS} days before it can separate a weekday from a`,
       'weekend, and the weekend is most of the distance between a building’s peak and its floor.',
       'The figures below are real, and they are a sample. Cite them as one.',
@@ -242,7 +271,7 @@ export function renderReport({ rows = [], offsetMinutes = 0, siteName = 'this si
     `| Readings a gapless window would hold | ${cov.expected} |`,
     `| Coverage | ${pctOf(cov.pct)} |`,
     `| Longest single gap | ${cov.longestGapMinutes == null ? '—' : `${f(cov.longestGapMinutes, 0)} min`} |`,
-    `| Building-days observed | ${days.length} (${fullDays.length} of them complete) |`,
+    `| Building-days observed | ${observedDays.length} (${fullDays.length} of them complete) |`,
     '',
     '## Demand',
     '',
