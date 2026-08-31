@@ -2249,6 +2249,28 @@ may not.
       rather than a red test. The client carries its own cap for the same reason in a
       different place: the database's protects the database, not a browser building a tree
       from rows.
+      **The installer's dry run is now rehearsed on a bare machine, 2026-08-31** —
+      `scripts/rehearse-install.sh`, a throwaway Debian container, the pattern `supabase/rehearse.sh`
+      established for migrations. **`install.sh` had only ever run on one computer: the Pi that
+      already had every package installed.** So every "already satisfied" branch was taken and not
+      one of the "would install" branches had ever been exercised — which is exactly the half a
+      second institution runs. The rehearsal took the other path for the first time: `warn node
+      not installed`, then the NodeSource, npm, Node-RED, mosquitto, `server/.env` and unit-rewrite
+      plans, all the way through. It completed clean.
+      *The repo is copied in, not mounted*, so a bug that wrote to the checkout could not reach
+      the host's; `node_modules` is excluded because its **absence** is one of the untested
+      branches, and `server/.env` is stripped both because it holds live credentials and because
+      the script branches on whether it exists.
+      *What it cannot exercise is printed at the end rather than counted as passing:* `systemctl`
+      needs a PID 1 a container does not have, the Node-RED installer checks for Pi hardware, and
+      **`--apply` still has never been run**. That remains true and is stated in three places.
+      **Running it found a defect immediately, which is the point.** The script's own closing
+      instructions still told the reader that `phase19_sites.sql` and `phase20_site_scoping.sql`
+      "name a site id you will need to change" — advice this session had already corrected
+      elsewhere: apply both unedited, then `npm run site:sql`. A closing message nobody reads on a
+      provisioned machine is exactly where stale advice survives. It now also points at
+      `npm run preflight` in its verify step.
+
       **What is left:** apply `supabase/phase21_space_tree.sql`, then the tree editor UI,
       then switch `DeviceMetaEditor`'s room datalist over. `knownRooms()` is deliberately
       still in use — with no editor there is no way to create a node, so cutting now would

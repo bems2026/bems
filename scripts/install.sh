@@ -269,14 +269,18 @@ cat <<EOF
   3. YOUR SITE. npm run site:new -- <your-building-slug>, then follow docs/replication.md.
      Until you do, this deployment describes somebody else's building.
 
-  4. DATABASE. Create a Supabase project and apply supabase/*.sql in filename order.
-     phase19_sites.sql and phase20_site_scoping.sql name a site id you will need to change.
+  4. DATABASE. Create a Supabase project and apply supabase/*.sql in filename order, UNEDITED.
+     Both files name this project's original site id, and neither needs changing: phase20's
+     backfill matches nothing on a fresh database and the defaults it sets are dropped again by
+     phase22. Then add your own row with: npm run site:sql  (it prints one statement; it
+     executes nothing).
 
   5. THE FLOW. npm run build:flow, back up ~/.node-red/flows.json, then npm run deploy:pi.
      Deploying a flow is not scripted here on purpose — it writes to a live file.
 
-  6. VERIFY. npm run verify:pi, and read the live system back. A green test suite is not proof;
-     this project has that written down twice, both times earned.
+  6. VERIFY. npm run preflight — credentials, database, vendor account, the radio segment, the
+     bridge, the services — then npm run verify:pi, and read the live system back. A green test
+     suite is not proof; this project has that written down twice, both times earned.
 EOF
 
 if [ "$APPLY" -eq 0 ]; then
