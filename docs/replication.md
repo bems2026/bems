@@ -193,6 +193,32 @@ Two consequences worth being clear-eyed about:
 
 ---
 
+## 11. Check the deployment before believing it
+
+```bash
+npm run preflight
+```
+
+Everything above describes a building. This asks whether *this machine* can reach one:
+credentials present and non-empty, the database answering, a `sites` row for this id, the vendor
+account authenticating against a real business call, devices audibly broadcasting on the local
+segment, the bridge serving a fleet, the services running.
+
+It writes nothing and changes nothing. Every failure prints the next step for a person to take.
+
+**Read "unchecked" as a failure, because it is one.** A check that could not be run is never
+reported as fine — an unchecked required item leaves the deployment not-ready and the command
+exits non-zero. Run on a laptop it reports four errors and one unchecked, which is the honest
+answer for a laptop.
+
+The one to expect first: **no device broadcasts heard**. The field devices are 2.4 GHz-only and
+the host must share that segment with client isolation off. On a 5 GHz SSID everything else in
+this list passes — internet, database, vendor account, remote access — while no device is
+reachable, and the symptom looks exactly like a software fault.
+
+Measured on the CARE deployment, 2026-08-31: ten checks green, fourteen devices heard on the
+segment, one warning that fifteen of twenty-one radios were up.
+
 ## What this does not cover
 
 Stated plainly, because a replication framework that is quiet about its gaps is worse than a
@@ -202,7 +228,7 @@ short one.
 |---|---|
 | **Physical installation** — CT clamps on a live panel, relay modules, the IR blaster | [`physical-install.md`](./physical-install.md) is a **template with 12 marked gaps**, not a finished guide: the structure and the traps are written, the photographs, part numbers and torque figures are not. Nothing in it has been reviewed by an electrician. |
 | **Packaging** | Decided and built: `scripts/install.sh`, dry-run by default. **Its apply path has never been run end to end** — there has only ever been one Pi — so the first real install is also its first test. Run the check first and read the plan. |
-| **Day-one network setup** — joining the Pi and the devices to a 2.4 GHz segment, linking the vendor account | Partly written down in `CLAUDE.md`'s site facts, not yet a procedure. |
+| ~~Day-one network setup~~ | **Covered** — `npm run preflight` checks credentials, the database, the vendor account, the local radio segment, the bridge and the services, and reports what it could *not* check rather than passing it. It does not perform the network join: it tells you whether one worked. |
 | **A second building's `sites` row** | Step 8 above: still a hand-edit of two migration files. |
 | **A 3D scene pack** | Site-specific by nature. A site with `scene_pack: null` gets the data-driven floor plan, which is the intended default. |
 | **The Control page's outlet plan** | Still pins one building's outlet positions (`ROADMAP.md` FI-016). Every other screen is data-driven. |

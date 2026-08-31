@@ -2534,8 +2534,30 @@ may not.
         The same exposure CLAUDE.md records for `findTimeout` and mosquitto: a host-only fact a
         rebuild loses with no diff. Verified byte-identical to the live unit.
 
+      **FI-002 landed 2026-08-31 — `npm run preflight`, 12 tests.** `docs/replication.md` named
+      this as its own biggest gap: *"Day-one network setup … partly written down in `CLAUDE.md`'s
+      site facts, not yet a procedure."* It is now a command. It answers a different question from
+      `site:check`: that one reads the site *directory* offline and asks whether a description of a
+      building is coherent; this reads the *deployment* and asks whether this machine can see the
+      building — credentials, database, vendor account, radio segment, bridge, services. A site can
+      be perfectly coherent on a machine that will never reach a device.
+      *The rule it exists to enforce:* **a check that could not be run is never reported as fine.**
+      An unchecked required item leaves the deployment not-ready, because a green light nobody
+      earned is what someone standing in an unfamiliar building will believe. Run on a workstation
+      it reports four errors and one unchecked, which is the correct answer there.
+      *It writes nothing* — no credential created, no flow deployed, no Wi-Fi touched — and
+      **prints no secret**: the observation shape carries `set`/`empty`/`absent` and never a value,
+      with a test that passes values in to prove they cannot reach the output. An **empty**
+      credential counts as missing, since `.env.example` ships every key with an empty value and a
+      copied-but-unedited file has all the right names and none of the answers. A check whose
+      prerequisite already failed is **skipped**, not counted as a second error — a wall of red
+      teaches people to skip the tool.
+      *Hearing no device broadcasts names the 2.4 GHz trap outright*, this project's most expensive
+      misdiagnosis. A bind failure on the discovery port reports **unchecked** rather than silence:
+      Node-RED's own tuya nodes may hold that port, and calling it "no devices" would accuse the
+      network of a fault it does not have.
+
       **What is left:**
-      - the day-one wizard (FI-002) — network join and vendor-account linking;
       - filling in `physical-install.md`'s twelve gaps, which needs a site visit;
       - the `sites` row itself: `phase19_sites.sql` seeds this site's id, so a second deployment
         still edits SQL. Provisioning should take it from the site directory.

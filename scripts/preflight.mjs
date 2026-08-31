@@ -257,7 +257,12 @@ if (process.argv[1] && process.argv[1].endsWith('preflight.mjs')) {
   const { join } = await import('node:path');
   const { createSocket } = await import('node:dgram');
   const { execFileSync } = await import('node:child_process');
-  const { SITE, BUILT_IN_DEVICES } = await import('../shared/siteConfig.mjs');
+  const { SITE } = await import('../shared/siteConfig.mjs');
+  // DEVICE_REGISTRY, not BUILT_IN_DEVICES: the registry is `[...built-in, ...enrolled]`, and a
+  // deployment that has added hardware through the enrolment wizard would otherwise be measured
+  // against a fleet that stops at whatever the site directory was scaffolded with. Measured on
+  // the live Pi: 20 built-in, 21 in the registry, and the check reported "15 of 20".
+  const { DEVICE_REGISTRY } = await import('../shared/registry.mjs');
 
   const ROOT = join(import.meta.dirname, '..');
   const seconds = Number(process.argv.find((a) => a.startsWith('--listen='))?.slice(9) ?? 8);
@@ -366,7 +371,7 @@ if (process.argv[1] && process.argv[1].endsWith('preflight.mjs')) {
   if (network.distinctDevices !== null) network.distinctDevices = sources.size;
 
   // --- the bridge ----------------------------------------------------------
-  const bridge = { reachable: null, deviceCount: null, expectedCount: BUILT_IN_DEVICES.length };
+  const bridge = { reachable: null, deviceCount: null, expectedCount: DEVICE_REGISTRY.length };
   try {
     const res = await fetch('http://127.0.0.1:1880/api/readings/latest', { signal: AbortSignal.timeout(10_000) });
     bridge.reachable = res.ok;

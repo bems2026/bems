@@ -11,6 +11,10 @@ addresses, or Supabase project identifiers — in code, in docs, or in commit me
 > design — including a table of what it does not cover. `scripts/install.sh` does the machine
 > setup (dry run by default; its apply path is untested), and `docs/physical-install.md` is the
 > hardware guide, currently a template with its gaps marked rather than hidden.
+> **`npm run preflight` is the day-one check** — credentials, database, vendor account, the local
+> radio segment, the bridge, the services — and it reports what it could not check rather than
+> passing it. `npm run site:check` is its offline sibling: that one reads the site *directory*,
+> this one reads the *deployment*.
 
 > **Running on the Pi itself? Read `docs/pi-session-brief.md` first.** It carries the current
 > fleet state, what you may do without asking, the first-moves checks, and the traps this
