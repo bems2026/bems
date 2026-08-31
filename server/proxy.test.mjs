@@ -666,7 +666,7 @@ test('a device the bridge reports offline is never sent a local command, nor aud
   }
 });
 
-test('dispatch open + switch + downstream failure: 502 hardware_dispatch_failed, audit row says failed not dispatched', async () => {
+test('dispatch open + switch + downstream failure: 502 bridge_rejected, audit row says failed not dispatched', async () => {
   const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch();
   try {
     lightState.failNext = true;
@@ -678,9 +678,41 @@ test('dispatch open + switch + downstream failure: 502 hardware_dispatch_failed,
     });
     assert.equal(res.status, 502);
     const body = await res.json();
-    assert.equal(body.error, 'hardware_dispatch_failed');
+    // The bridge ANSWERED and refused. Distinct from not being reachable at all, because the
+    // remedies differ: this one is a token or a route, that one is Node-RED being down.
+    assert.equal(body.error, 'bridge_rejected');
+    assert.equal(body.code, 'bridge_rejected');
     assert.equal(supabaseState.insertedCommands.length, 1);
     assert.equal(supabaseState.insertedCommands[0].status, 'failed');
+  } finally {
+    cleanup();
+  }
+});
+
+/**
+ * The misreading this exists to prevent, and the reason it is worth a test of its own.
+ *
+ * Both of the failures above and this one used to answer `hardware_dispatch_failed`, which the
+ * app rendered as "The bridge did not accept the command (502)." So a fact about ONE SOCKET —
+ * with a remedy at that socket — arrived looking like a building-wide outage. A physical test on
+ * 2026-08-31 reported it as "bridge not reachable" while the bridge was serving readings the
+ * whole time, and the diagnosis went the wrong way for a fortnight.
+ */
+test('a device the bridge reports offline says so by name, rather than blaming the bridge', async () => {
+  const { proxyUrl, lightState, cleanup } = await setupDispatch();
+  try {
+    lightState.offline.add('l3');
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l3', action: 'on' }),
+    });
+    assert.equal(res.status, 502);
+    const body = await res.json();
+    assert.equal(body.code, 'device_offline');
+    assert.match(body.detail, /this device/i);
+    // No host, port or upstream body: this response crosses into a browser.
+    assert.doesNotMatch(JSON.stringify(body), /127\.0\.0\.1|localhost|:\d{4}\b/);
   } finally {
     cleanup();
   }

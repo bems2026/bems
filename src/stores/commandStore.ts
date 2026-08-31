@@ -34,15 +34,41 @@ function newCommandId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-/** Readable reason for a rejected command — distinguishes "this app sent something the
- * bridge doesn't understand" (a 400/404 validation rejection — a bug in this UI, not a
- * device problem) from "the bridge said no" (a 5xx-class rejection), without surfacing raw
- * `code` strings like `invalid_socket` to the user. */
+/**
+ * Readable reason for a rejected command.
+ *
+ * WHAT WAS WRONG WITH THE PREVIOUS VERSION. It branched on `err.status` alone and ignored the
+ * `code` the proxy already sent, so every 502 rendered as "The bridge did not accept the command
+ * (502)." A refusal meaning "the bridge has no connection to THIS DEVICE" — a fact about one
+ * socket, with a remedy at that socket — was therefore indistinguishable from the bridge being
+ * down. A physical test on 2026-08-31 reported it as "bridge not reachable" while the bridge was
+ * serving readings throughout, and the diagnosis went the wrong way for a fortnight.
+ *
+ * Naming the failure is the entire value of the message. A sentence that describes the wrong
+ * subsystem is worse than no sentence, because it gets acted on.
+ *
+ * These are the proxy's own codes (`server/proxy.mjs`'s `handleCommand`), which come in turn
+ * from `dispatchCommand`'s `reason`. Codes that are diagnostics rather than device facts —
+ * `invalid_socket` and friends from the 400/404 validation path — are still summarised rather
+ * than shown raw: those are bugs in this UI, and the operator can do nothing with the string.
+ */
+const FAILURE_COPY: Record<string, string> = {
+  device_offline: 'This device is offline — the bridge has no connection to it, so the command could not reach it. It was still logged.',
+  bridge_unreachable: 'The bridge could not be reached, so the command was not delivered. It was still logged.',
+  bridge_rejected: 'The bridge refused the command. It was logged; check the bridge token and the flow.',
+  no_dispatch_route: 'This deployment cannot command a device of this kind.',
+  audit_log_unreachable: 'Nothing was sent: the audit trail could not be written, and this system will not move a relay it cannot record.',
+  break_glass_cannot_command: 'Local sign-in is view-only. Sign in with your account to send commands.',
+};
+
 function describeFailure(err: unknown): string {
   if (err instanceof BridgeFetchError) {
+    if (err.code && FAILURE_COPY[err.code]) return FAILURE_COPY[err.code];
     const misconfigured = err.status === 400 || err.status === 404;
     if (misconfigured) return 'This control is misconfigured — the bridge rejected it.';
-    return `The bridge did not accept the command (${err.status ?? 'no response'}).`;
+    // No code, or one this build has not heard of. Say only what is actually known — that the
+    // command was refused — rather than naming a subsystem on no evidence.
+    return `The command was not accepted (${err.status ?? 'no response'}).`;
   }
   return 'The command could not be sent.';
 }

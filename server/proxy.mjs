@@ -507,9 +507,47 @@ async function handleCommand(req, res, token) {
   // capture) before this refusal, so the record survives even though the caller gets an
   // error rather than the ack.
   if (outcome.dispatchFailure) {
+    // One code per failure MODE, not one code for "dispatch failed".
+    //
+    // Every one of these used to answer `hardware_dispatch_failed`, which the app rendered as
+    // "The bridge did not accept the command (502)." So "the bridge reports THIS DEVICE
+    // offline" — a fact about one socket, with a remedy at that socket — was indistinguishable
+    // from the bridge being down. A physical test on 2026-08-31 reported exactly that
+    // misreading as "bridge not reachable", while the bridge was serving readings throughout,
+    // and it sent the diagnosis in the wrong direction for a fortnight.
+    //
+    // `detail` stays generic and names no host, port or upstream body: this response crosses
+    // into a browser. The specifics are in the audit row and the journal.
+    const FAILURE = {
+      device_offline: {
+        code: 'device_offline',
+        detail: 'The bridge has no connection to this device, so the command could not reach it. The command was logged.',
+      },
+      bridge_unreachable: {
+        code: 'bridge_unreachable',
+        detail: 'The bridge could not be reached, so the command was not delivered. The command was logged.',
+      },
+      bridge_rejected: {
+        code: 'bridge_rejected',
+        detail: 'The bridge refused the command. The command was logged.',
+      },
+      no_route: {
+        code: 'no_dispatch_route',
+        detail: 'This deployment has no way to command a device of this kind. The command was logged.',
+      },
+    };
+    const mapped = FAILURE[outcome.dispatchReason] ?? {
+      code: 'hardware_dispatch_failed',
+      detail: 'The command was validated and logged, but the device did not actually respond — refusing to report it as accepted.',
+    };
     return sendJson(res, 502, {
-      error: 'hardware_dispatch_failed',
-      detail: 'The command was validated and logged, but the light did not actually respond — refusing to report it as accepted.',
+      error: mapped.code,
+      code: mapped.code,
+      detail: mapped.detail,
+      // Which paths were tried. `none` means local AND the vendor cloud both failed, which is a
+      // different situation from a deployment with no cloud configured at all — and the two
+      // read identically without this.
+      via: outcome.via ?? null,
     });
   }
 

@@ -52,6 +52,53 @@ describe('useCommandStore.send', () => {
     expect(p.error).toMatch(/misconfigured/);
   });
 
+  /**
+   * The message must name the thing that actually failed.
+   *
+   * Every 502 used to read "The bridge did not accept the command (502)", so a device the
+   * bridge could not reach was reported as the bridge itself failing — the misreading behind a
+   * "bridge not reachable" fault report on 2026-08-31, raised while the bridge was serving
+   * readings the whole time. A sentence naming the wrong subsystem is worse than none, because
+   * it gets acted on.
+   */
+  it('names the offline device rather than blaming the bridge', async () => {
+    vi.mocked(bridgeClient.sendCommand).mockRejectedValue(new BridgeFetchError('HTTP 502: device_offline', 502, 'device_offline'));
+    await useCommandStore.getState().send('co5', 1, 'on');
+    const p = useCommandStore.getState().pending['co5:1'];
+    expect(p.error).toMatch(/this device is offline/i);
+    expect(p.error).not.toMatch(/the bridge did not accept/i);
+  });
+
+  it('says the bridge is unreachable only when the bridge really is', async () => {
+    vi.mocked(bridgeClient.sendCommand).mockRejectedValue(new BridgeFetchError('HTTP 502: bridge_unreachable', 502, 'bridge_unreachable'));
+    await useCommandStore.getState().send('l1', undefined, 'on');
+    expect(useCommandStore.getState().pending['l1'].error).toMatch(/bridge could not be reached/i);
+  });
+
+  it('says nothing was sent when the audit trail could not be written', async () => {
+    // The record-then-act refusal. "Failed" alone would leave an operator wondering whether a
+    // relay moved; this is the one failure where it definitely did not.
+    vi.mocked(bridgeClient.sendCommand).mockRejectedValue(new BridgeFetchError('HTTP 502: audit_log_unreachable', 502, 'audit_log_unreachable'));
+    await useCommandStore.getState().send('l1', undefined, 'on');
+    expect(useCommandStore.getState().pending['l1'].error).toMatch(/nothing was sent/i);
+  });
+
+  it('tells a break-glass user why their command was refused, instead of implying a fault', async () => {
+    vi.mocked(bridgeClient.sendCommand).mockRejectedValue(new BridgeFetchError('HTTP 403: break_glass_cannot_command', 403, 'break_glass_cannot_command'));
+    await useCommandStore.getState().send('l1', undefined, 'on');
+    expect(useCommandStore.getState().pending['l1'].error).toMatch(/view-only/i);
+  });
+
+  it('claims nothing about which subsystem failed when the bridge sent no code', async () => {
+    // An older proxy, or a code this build has not heard of. Naming the bridge here would be a
+    // guess, and guessing is what produced the fortnight-long misdiagnosis.
+    vi.mocked(bridgeClient.sendCommand).mockRejectedValue(new BridgeFetchError('HTTP 502', 502));
+    await useCommandStore.getState().send('l1', undefined, 'on');
+    const message = useCommandStore.getState().pending['l1'].error ?? '';
+    expect(message).toMatch(/not accepted/i);
+    expect(message).not.toMatch(/bridge|device/i);
+  });
+
   it('a network-level failure (not a BridgeFetchError) gets a generic message', async () => {
     vi.mocked(bridgeClient.sendCommand).mockRejectedValue(new Error('network down'));
     await useCommandStore.getState().send('l1', undefined, 'on');

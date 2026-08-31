@@ -50,7 +50,8 @@ export const STATUS_IN_FLIGHT = 'dispatching';
  * }} args
  * @returns {Promise<{
  *   ok: boolean, status: string, auditId: string|null,
- *   auditFailure: string|null, dispatchFailure: string|null, statusRecorded: boolean
+ *   auditFailure: string|null, dispatchFailure: string|null, dispatchReason: string|null,
+ *   statusRecorded: boolean
  * }>}
  */
 export async function auditedDispatch({
@@ -77,12 +78,13 @@ export async function auditedDispatch({
       auditId: null,
       auditFailure: inserted.detail ?? 'audit insert failed',
       dispatchFailure: null,
+      dispatchReason: null,
       statusRecorded: false,
     };
   }
 
   if (!willDispatch) {
-    return { ok: true, status: 'dry_run', auditId: inserted.id ?? null, auditFailure: null, dispatchFailure: null, statusRecorded: true };
+    return { ok: true, status: 'dry_run', auditId: inserted.id ?? null, auditFailure: null, dispatchFailure: null, dispatchReason: null, statusRecorded: true };
   }
 
   const result = await dispatch(device, cmd);
@@ -140,6 +142,11 @@ export async function auditedDispatch({
     auditId: inserted.id ?? null,
     auditFailure: null,
     dispatchFailure: result.ok ? null : (result.detail ?? 'dispatch failed'),
+    // The machine-readable half of the same failure — see dispatchLight.mjs's `dispatchCommand`.
+    // `dispatchFailure` above is prose for the audit note and the log; this is what the proxy
+    // turns into a response code, so the app can say "this device is offline" instead of
+    // "the bridge did not accept the command".
+    dispatchReason: result.ok ? null : (result.reason ?? null),
     statusRecorded,
   };
 }

@@ -216,3 +216,77 @@ test('an unknown online state does not block the local attempt', async () => {
     assert.equal(r.via, 'local');
   } finally { globalThis.fetch = originalFetch; }
 });
+
+// ---------------------------------------------------------------------------
+// A machine-readable reason, so the app can say WHICH thing failed.
+//
+// WHY: every dispatch failure reached the browser as one 502 `hardware_dispatch_failed`, and
+// `describeFailure` rendered it as "The bridge did not accept the command (502)." So a refusal
+// meaning "the bridge reports THIS DEVICE offline" — a per-device fact, with a per-device
+// remedy — read as a bridge-wide outage. That is what a physical test on 2026-08-31 reported as
+// "bridge not reachable" while the bridge was serving readings the whole time.
+//
+// A `reason` code rather than a parsed `detail` string: the proxy matching on prose written for
+// a human is the coupling this file's own header refuses elsewhere, and prose is what changes.
+// ---------------------------------------------------------------------------
+
+test('a device the bridge reports offline is named as that, not as a bridge failure', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => '' });
+  try {
+    const r = await dispatchCommand(sw, { action: 'on' }, onlineOpts(
+      async () => { throw new Error('cloud down'); },
+      async () => false,
+    ));
+    assert.equal(r.reason, 'device_offline');
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('an unreachable bridge endpoint is named as that', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('ECONNREFUSED'); };
+  try {
+    const r = await dispatchCommand(sw, { action: 'on' }, { bridgeHost: 'h', bridgePort: 1, lightApiToken: 't' });
+    assert.equal(r.reason, 'bridge_unreachable');
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('a bridge that answers with an error status is named separately from one that cannot be reached', async () => {
+  // Different remedies. A 500 from the flow is a flow problem; a refused connection is Node-RED
+  // being down or the wrong host. Collapsing them sends people to the wrong place.
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: false, status: 500, text: async () => 'boom' });
+  try {
+    const r = await dispatchCommand(sw, { action: 'on' }, { bridgeHost: 'h', bridgePort: 1, lightApiToken: 't' });
+    assert.equal(r.reason, 'bridge_rejected');
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('a class with no dispatch route is named as that rather than as a transport failure', async () => {
+  const r = await dispatchCommand({ id: 'x', class: 'meter' }, { action: 'on' }, { bridgeHost: 'h', bridgePort: 1, lightApiToken: 't' });
+  assert.equal(r.reason, 'no_route');
+});
+
+test('a successful dispatch carries no reason at all', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => '' });
+  try {
+    const r = await dispatchCommand(sw, { action: 'on' }, { bridgeHost: 'h', bridgePort: 1, lightApiToken: 't' });
+    assert.equal(r.ok, true);
+    assert.equal(r.reason, undefined);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('when both paths fail the LOCAL reason is the one reported, because it is the actionable one', async () => {
+  // The cloud is a fallback for a device that has stopped answering locally. If both fail, what
+  // the operator needs to know is why the LAN path failed — the cloud detail rides along in
+  // `detail`, which already carries both.
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('ECONNREFUSED'); };
+  try {
+    const r = await dispatchCommand(sw, { action: 'on' }, bridgeOpts(async () => { throw new Error('cloud down'); }));
+    assert.equal(r.via, 'none');
+    assert.equal(r.reason, 'bridge_unreachable');
+    assert.match(r.detail, /cloud/i);
+  } finally { globalThis.fetch = originalFetch; }
+});

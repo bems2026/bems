@@ -75,7 +75,7 @@ export function routeFor(device, cmd) {
  */
 async function dispatchLocal(device, cmd, { bridgeHost, bridgePort, lightApiToken }) {
   const route = routeFor(device, cmd);
-  if (!route) return { ok: false, detail: `no dispatch route for device class ${device.class}` };
+  if (!route) return { ok: false, reason: 'no_route', detail: `no dispatch route for device class ${device.class}` };
 
   let res;
   try {
@@ -86,11 +86,14 @@ async function dispatchLocal(device, cmd, { bridgeHost, bridgePort, lightApiToke
       signal: AbortSignal.timeout(LIGHT_DISPATCH_TIMEOUT_MS),
     });
   } catch (err) {
-    return { ok: false, detail: `bridge endpoint unreachable: ${String(err)}` };
+    return { ok: false, reason: 'bridge_unreachable', detail: `bridge endpoint unreachable: ${String(err)}` };
   }
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    return { ok: false, detail: `bridge endpoint returned HTTP ${res.status}: ${body}` };
+    // Separate from `bridge_unreachable` because the remedies are different: an error status is
+    // the flow rejecting the message (a bad token, a route that no longer exists), while a
+    // refused connection is Node-RED being down or the wrong host entirely.
+    return { ok: false, reason: 'bridge_rejected', detail: `bridge endpoint returned HTTP ${res.status}: ${body}` };
   }
   return { ok: true };
 }
@@ -108,7 +111,20 @@ async function dispatchLocal(device, cmd, { bridgeHost, bridgePort, lightApiToke
  * command that only succeeded through the cloud is evidence the device needs attention, and
  * collapsing that into a bare `dispatched` would hide the one signal worth having.
  *
- * Returns `{ok, via, detail}` — never throws.
+ * A failure also carries `reason`, one of:
+ *   `device_offline`      the bridge says it has no connection to THIS device
+ *   `bridge_unreachable`  the bridge endpoint could not be reached at all
+ *   `bridge_rejected`     the bridge answered with an error status
+ *   `no_route`            this device class has no dispatch route
+ *
+ * A code rather than a `detail` string for the caller to parse. Every one of these reached the
+ * browser as a single 502 `hardware_dispatch_failed`, which `describeFailure` rendered as "The
+ * bridge did not accept the command" — so "co5 is offline", a per-device fact with a per-device
+ * remedy, was indistinguishable from the bridge being down. That is what a physical test on
+ * 2026-08-31 reported as "bridge not reachable" while the bridge was serving readings
+ * throughout. Prose is written for humans and changes when the wording improves; a code does not.
+ *
+ * Returns `{ok, via, reason?, detail?}` — never throws.
  */
 export async function dispatchCommand(device, cmd, opts) {
   // A 2xx from the bridge is NOT proof the relay moved. The Node-RED endpoint answers as soon
@@ -126,7 +142,7 @@ export async function dispatchCommand(device, cmd, opts) {
   // every command through the vendor.
   const online = opts?.readOnline ? await opts.readOnline(device).catch(() => null) : null;
   const local = online === false
-    ? { ok: false, detail: 'the bridge reports this device offline, so a local SET cannot reach it' }
+    ? { ok: false, reason: 'device_offline', detail: 'the bridge reports this device offline, so a local SET cannot reach it' }
     : await dispatchLocal(device, cmd, opts);
   if (local.ok) return { ok: true, via: 'local' };
 
@@ -136,9 +152,14 @@ export async function dispatchCommand(device, cmd, opts) {
 
   const cloud = await dispatchViaCloud(device, cmd, opts.cloud);
   if (cloud.ok) return { ok: true, via: 'cloud', detail: `local failed (${local.detail}); recovered via cloud` };
-  // Both failed. Carry both reasons — which one is the real story depends on the device, and
+  // Both failed. Carry both details — which one is the real story depends on the device, and
   // discarding either would make the audit row unactionable.
-  return { ok: false, via: 'none', detail: `local: ${local.detail} | cloud: ${cloud.detail}` };
+  //
+  // The REASON, though, is the local one. The cloud is a fallback for a device that has stopped
+  // answering on the LAN, so what an operator needs told is why the LAN path failed; the cloud
+  // half is a second opinion and rides along in `detail`. Reporting the cloud's reason here
+  // would put a vendor's problem in front of a building problem.
+  return { ok: false, via: 'none', reason: local.reason, detail: `local: ${local.detail} | cloud: ${cloud.detail}` };
 }
 
 /** @deprecated Kept as the old name so nothing silently breaks; use dispatchCommand. */
