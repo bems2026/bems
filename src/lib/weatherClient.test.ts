@@ -49,22 +49,26 @@ describe('getWeather', () => {
    * `Date.parse('2026-08-12T00:00')` is local, so a bare date would land on the wrong
    * calendar day for any browser behind UTC and mislabel the whole daily strip.
    */
-  it('parses bare daily dates as local midnight, not UTC', async () => {
-    vi.setSystemTime(new Date('2026-08-12T22:10:00'));
+  it('parses bare daily dates as midnight in the SITE zone, not UTC and not the reader clock', async () => {
+    // Renamed and re-anchored. It said "local midnight" and asserted with `getHours()`, both of
+    // which describe the READER's clock — which is the bug, not the contract. Now stated as an
+    // absolute instant so the assertion means the same on a +08 workstation and a UTC runner.
+    vi.setSystemTime(new Date('2026-08-12T14:10:00Z')); // 22:10 in Manila
     mockFetch(RESPONSE);
     const w = await getWeather();
-    const first = new Date(w.daily[0].t);
-    expect(first.getHours()).toBe(0);
-    expect(first.getDate()).toBe(12);
+    expect(new Date(w.daily[0].t).toISOString()).toBe('2026-08-11T16:00:00.000Z'); // 2026-08-12T00:00+08
   });
 
   it('drops hours already in the past so the strip starts at now', async () => {
-    vi.setSystemTime(new Date('2026-08-12T23:30:00'));
+    // 23:30 in Manila. Written as an instant rather than a bare local string: the bare form
+    // shifted with the runner, so this test and the parser moved together and the bug they
+    // shared stayed invisible.
+    vi.setSystemTime(new Date('2026-08-12T15:30:00Z'));
     mockFetch(RESPONSE);
     const w = await getWeather();
-    // 22:00 is more than an hour old at 23:30; 23:00 and 00:00 survive.
+    // 22:00 site time is more than an hour old at 23:30; 23:00 and 00:00 survive.
     expect(w.hourly).toHaveLength(2);
-    expect(new Date(w.hourly[0].t).getHours()).toBe(23);
+    expect(new Date(w.hourly[0].t).toISOString()).toBe('2026-08-12T15:00:00.000Z'); // 23:00+08
   });
 
   it('rejects a response with no current conditions rather than returning zeroes', async () => {
@@ -128,5 +132,44 @@ describe('WMO code mapping', () => {
     expect(weatherGlyph(61)).toBe('rain');
     expect(weatherGlyph(80)).toBe('rain');
     expect(weatherGlyph(2)).toBe('partly');
+  });
+});
+
+describe('forecast times belong to the building, not the reader', () => {
+  /**
+   * Open-Meteo returns times in the timezone the request asked for — this site's — with no
+   * offset suffix (`2026-08-12T22:00`). `Date.parse` of such a string uses the RUNTIME's zone,
+   * so every hour and day label was shifted by the difference between the reader's clock and the
+   * building's. Measured: a viewer in New York produced labels 12 hours out.
+   *
+   * The kiosk in the room was correct only by coincidence — it runs in the building's zone, and
+   * `weatherClient.ts`'s own header used to state that coincidence as an assumption.
+   *
+   * Asserted against ABSOLUTE instants so the assertion is the same on any runner. That matters
+   * here more than usual: the workstation is +08 and CI is UTC, and a test written in local time
+   * would pass in one and not the other — which is exactly RM-022's scar.
+   */
+  it('parses an hour as the site timezone, whatever the reader is in', async () => {
+    vi.setSystemTime(new Date('2026-08-12T13:00:00Z')); // 21:00 in Manila, before the first slot
+    mockFetch(RESPONSE);
+    const w = await getWeather();
+    // 2026-08-12T22:00 in Asia/Manila (+08) is 14:00Z. Not 22:00Z, and not 22:00 wherever the
+    // reader happens to be sitting.
+    expect(new Date(w.hourly[0].t).toISOString()).toBe('2026-08-12T14:00:00.000Z');
+  });
+
+  it('parses a bare date as midnight in the site timezone', async () => {
+    vi.setSystemTime(new Date('2026-08-12T13:00:00Z'));
+    mockFetch(RESPONSE);
+    const w = await getWeather();
+    expect(new Date(w.daily[0].t).toISOString()).toBe('2026-08-11T16:00:00.000Z'); // 2026-08-12T00:00+08
+  });
+
+  it('parses sunrise and sunset the same way', async () => {
+    vi.setSystemTime(new Date('2026-08-12T13:00:00Z'));
+    mockFetch(RESPONSE);
+    const w = await getWeather();
+    expect(new Date(w.sunrise!).toISOString()).toBe('2026-08-11T21:39:00.000Z'); // 05:39+08
+    expect(new Date(w.sunset!).toISOString()).toBe('2026-08-12T10:14:00.000Z'); // 18:14+08
   });
 });

@@ -1,4 +1,5 @@
 import { WEATHER_API_URL, WEATHER_CONFIGURED, WEATHER_LAT, WEATHER_LON, WEATHER_TZ } from '@/config/weather';
+import { SITE } from '@shared/siteConfig.mjs';
 
 /**
  * Open-Meteo forecast fetch. Deliberately narrow: this returns exactly the fields the two
@@ -48,17 +49,31 @@ interface RawResponse {
 }
 
 /**
- * Open-Meteo returns times in the requested timezone with no offset suffix
- * (`2026-08-12T22:15`), and dates bare (`2026-08-12`). `Date.parse` treats the first as
- * LOCAL but the second as UTC — a spec quirk that would shift every daily label by the
- * browser's offset. Appending a midnight component forces both down the local path.
+ * Open-Meteo returns times in the requested timezone — this SITE's — with no offset suffix
+ * (`2026-08-12T22:15`), and dates bare (`2026-08-12`). `Date.parse` treats the first as LOCAL
+ * and the second as UTC, a spec quirk that alone would shift every daily label.
  *
- * That leaves one deliberate assumption: the display device runs in the site's own
- * timezone. True for this kiosk (Batac City, +08) and already assumed app-wide — the bridge
- * stamps +08:00 and every formatter here uses en-PH.
+ * THE ASSUMPTION THIS RESTED ON IS NOW GONE, and to its credit the old comment stated it rather
+ * than hiding it: "the display device runs in the site's own timezone". True of the kiosk in the
+ * room, false of everybody else. Measured 2026-08-31: a reader in New York produced hour labels
+ * **twelve hours out** — a forecast about the building, timestamped in the reader's day. The
+ * kiosk was correct by coincidence, which is why this survived.
+ *
+ * The site's own offset is appended instead, so the instant is absolute and identical for every
+ * reader. `SITE.utc_offset_minutes` exists for exactly this kind of place — somewhere a zone
+ * NAME cannot be used — and `npm run site:check` rejects a DST zone, which no fixed offset can
+ * describe honestly.
  */
+function siteOffsetSuffix(): string {
+  const total = SITE.utc_offset_minutes as number;
+  const sign = total < 0 ? '-' : '+';
+  const abs = Math.abs(total);
+  return `${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
+}
+
 function parseSiteTime(raw: string): number {
-  return Date.parse(raw.length === 10 ? `${raw}T00:00` : raw);
+  const withTime = raw.length === 10 ? `${raw}T00:00` : raw;
+  return Date.parse(`${withTime}${siteOffsetSuffix()}`);
 }
 
 /**

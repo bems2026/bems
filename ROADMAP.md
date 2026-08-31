@@ -1,7 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
 **Last audited:** 2026-08-31 (UTC) — RM-027 to RM-032 and RM-034 done; RM-033 part-built
-**Audited at commit:** `8c0d596`
+**Audited at commit:** `ee025af`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
 discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
@@ -2469,6 +2469,20 @@ may not.
       - the `sites` row itself: `phase19_sites.sql` seeds this site's id, so a second deployment
         still edits SQL. Provisioning should take it from the site directory.
       - FI-016, the Control page's outlet plan, which is the last screen naming `co1..co7`.
+
+      **A third, one layer under the clock.** `weatherClient.ts`'s `parseSiteTime` parsed
+      Open-Meteo's timestamps — which come back in the SITE's zone with no offset suffix — as the
+      READER's local time. Measured: a reader in New York produced hour labels **twelve hours
+      out**, a forecast about the building timestamped in their own day. To its credit the old
+      comment stated the assumption rather than hiding it ("the display device runs in the site's
+      own timezone"); it was true of the kiosk and false of everyone else, which is why it
+      survived. The site's own `utc_offset_minutes` is appended now.
+      **Two of the existing tests were timezone-dependent and could not have caught it** — they
+      set the clock with a bare local string, so the test and the parser shifted together and the
+      shared bug stayed invisible. Both are re-anchored to absolute instants. *Verified in five
+      zones* (UTC, Manila, New York, London, Auckland): 13/13 in each. **Neuter-checked:** remove
+      the offset and five tests fail under UTC while all thirteen still pass on a +08 workstation
+      — which is the RM-022 shape exactly, and the reason this was checked in more than one zone.
 
       **Two more found by looking rather than reasoning, 2026-08-31.** Both were in the same
       place: the building's *location* was not a declared site fact, so shared code invented one.
