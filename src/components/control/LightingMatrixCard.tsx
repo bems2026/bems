@@ -158,7 +158,11 @@ function LightRow({ device, cells }: { device: Device; cells?: { x: number; y: n
       {cells && cells.length > 0 && (
         <span
           className="control-light-plan__label"
-          style={{ left: `${cells[cells.length - 1].x * 100 + 8}%`, top: `${cells[0].y * 100}%` }}
+          // 8.125, not 8. The old code offset this label by 26 units of a 320-wide viewBox, and
+          // 26/320 is 8.125 percentage points. Rounding it shifted the label by 0.125% of the
+          // plan — half a pixel, invisible, and a number that had quietly stopped meaning what
+          // it meant. Exact costs nothing more to write than approximately right.
+          style={{ left: `${cells[cells.length - 1].x * 100 + 8.125}%`, top: `${cells[0].y * 100}%` }}
         >
           {device.id.toUpperCase()}
         </span>
