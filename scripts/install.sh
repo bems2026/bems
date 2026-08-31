@@ -32,9 +32,16 @@
 #   * IT DOES NOT DEPLOY THE NODE-RED FLOW. That writes to a live flow file and wants a backup
 #     taken first; `npm run deploy:pi` owns it, and it is on the manual list.
 #
-# TESTED: the check path, on a running Pi (2026-08-31). THE APPLY PATH HAS NEVER BEEN RUN END TO
-# END on a fresh machine — there has not been a second Pi to run it on. Treat the first real
-# install as the test, run the check first, and read the plan.
+# TESTED, and where the line falls (2026-08-31):
+#   * the check path, on a running Pi and on a bare Debian container.
+#   * the APPLY path, in a throwaway container — `scripts/rehearse-install.sh --apply`. 21 steps,
+#     no failures, with the artifacts read back rather than trusted: Node 22, a clean build,
+#     Node-RED and the Tuya node, the loopback-only broker config byte-exact, server/.env at 600,
+#     and all four units rewritten for a different account and checkout.
+#   * BUT `systemctl` WAS A STUB THERE. Nothing was enabled, nothing was started, and no unit was
+#     ever validated by systemd. THIS HAS NEVER BEEN RUN END TO END ON A REAL MACHINE, so whether
+#     the services actually come up is still unknown. Treat the first real install as that test,
+#     run the check first, and read the plan.
 
 set -euo pipefail
 

@@ -113,8 +113,16 @@ test('every systemd unit it installs exists in this repository', () => {
   }
 });
 
-test('it says plainly that the apply path has never been run', () => {
+test('it says plainly where the testing stops', () => {
   // The honest limit, in the file itself rather than only in a commit message nobody will read
   // while holding a Raspberry Pi.
-  assert.match(src, /NEVER BEEN RUN END TO\s*#?\s*END/i, 'the header must state that the apply path is untested');
+  //
+  // The claim this guards has been sharpened rather than dropped. The apply path HAS now been run
+  // — in a container, 21 steps, artifacts read back. What has never happened is a run on a real
+  // machine, because `systemctl` was stubbed and no unit was ever validated by systemd. Asserting
+  // the old blanket "never been run" would now be false; asserting nothing would let the file
+  // quietly start implying the services are known to come up. So the guard moved to the part that
+  // is still true.
+  assert.match(src, /NEVER BEEN RUN END TO\s*#?\s*END ON A REAL MACHINE/i, 'the header must state that no real machine has been installed');
+  assert.match(src, /systemctl.{0,40}STUB/is, 'the header must say systemd was never exercised');
 });

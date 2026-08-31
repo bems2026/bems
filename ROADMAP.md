@@ -2689,9 +2689,12 @@ may not.
         default; every change goes through one `act()` so the plan cannot diverge from the run,
         and a test enforces that no `sudo` escapes it. It refuses to touch Wi-Fi, refuses to open
         the broker past loopback, writes no secrets and does not deploy the flow — each for a
-        reason this project has already paid for. **Its apply path has never been run end to
-        end**, because there has only ever been one Pi; the file says so and a test keeps it
-        saying so.
+        reason this project has already paid for. **Its apply path has since been rehearsed in a
+        container** — see the apply-path entry above — but **has never been run end to end on a
+        real machine**, because `systemctl` was stubbed there and no unit was ever validated by
+        systemd. The file says exactly that and a test keeps it saying so; the guard was sharpened
+        rather than dropped, because the blanket claim had become false while the useful half of
+        it stayed true.
       - **`docs/physical-install.md` — a template with 12 marked gaps**, not a finished guide.
         Structure, the commissioning checklist and every trap are written; photographs, part
         numbers and torque figures are marked `〔FILL IN〕` rather than invented. Nothing in it
