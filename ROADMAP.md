@@ -2691,6 +2691,24 @@ may not.
   *Output is gitignored.* Dated artifacts belong with the submission; a repository accumulating
   stale copies is how the wrong quarter gets cited.
 
+      **Reading the first real report back found two things the tests had not.** `b6701e7` and
+      the commit carrying this entry. This is the project's own rule — a green suite is not proof — earning itself
+      again, on a run over **11,629 readings, 56.1% coverage, longest gap 5,731 minutes**:
+      - **A day nobody watched left no row at all.** 2026-08-18 sat between the 17th and the 19th
+        and was simply absent, as were the 21st to the 23rd — the four dark days of the outage
+        that ended on the 24th. Every other rule in this file renders a gap as an em dash; an
+        absent row renders it as *nothing*, and a reader scanning a column of dates does not
+        notice the date that is not there. That is the quietest possible way to lose an outage
+        from a document that goes to the university. Blank days are now filled across the
+        observed span, and **counted separately**: the three-day floor counts days that were
+        actually watched, so one reading either side of a fortnight's outage cannot promote
+        itself to a benchmark on the strength of the days nobody saw.
+      - **The blank rows then rendered `—–—`** in the observed-hours column — a range from
+        nothing to nothing, which reads as a typo rather than as absence.
+      *The figures themselves corroborate.* 2026-08-29 and 08-30 come in at 1.54 and 1.26 kWh
+      against 21.83 on the 27th: that is a Saturday and a Sunday, and it is exactly the
+      weekday/weekend separation the three-day minimum exists to protect.
+
 ### Robustness
 - ~~**FI-013** (S) The Outlet tab never polls its devices.~~ **Done 2026-08-25** — EX-038b.
 - **FI-009** (S) Narrow the three remaining whole-map store selectors — `FloorPlanView`, `AlertsPopover`, `EnergyBreakdownCard`. Left alone in the Phase 9 pass because each needs value-level rather than reference-level comparison to gain anything, and FloorPlanView genuinely reads every device.

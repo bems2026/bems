@@ -160,3 +160,16 @@ test('filled-in blank days do not count towards the three needed for a baseline'
   });
   assert.match(md, /not a baseline/i);
 });
+
+test('a blank day s observed-hours cell is one dash, not a range between two of them', () => {
+  const md = renderReport({
+    rows: [at('2026-08-01T01:00:00Z', 400, 2), at('2026-08-03T01:00:00Z', 400, 3)],
+    offsetMinutes: OFF,
+    siteName: 'CARE Office',
+    timezone: 'Asia/Manila',
+    generatedMs: 0,
+  });
+  const row = md.split('\n').find((l) => l.startsWith('| 2026-08-02 |'));
+  assert.ok(row, 'the blank day must still have a row');
+  assert.doesNotMatch(row, /—–—/, 'a range from nothing to nothing reads as a typo, not as absence');
+});

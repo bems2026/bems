@@ -293,7 +293,9 @@ export function renderReport({ rows = [], offsetMinutes = 0, siteName = 'this si
     '',
     '| Date | kWh | Peak W | Samples | Observed | Note |',
     '|---|---|---|---|---|---|',
-    ...days.map((d) => `| ${d.date} | ${d.kwh == null ? '—' : f(d.kwh, 2)} | ${f(d.peakW, 0)} | ${d.samples} | ${d.firstSeen}–${d.lastSeen} | ${d.note} |`),
+    // A blank day's hours are one dash, not a range between two of them: "—–—" reads as a typo
+    // rather than as absence, and a cell a reader has to decode is a cell they will skip.
+    ...days.map((d) => `| ${d.date} | ${d.kwh == null ? '—' : f(d.kwh, 2)} | ${f(d.peakW, 0)} | ${d.samples} | ${d.samples ? `${d.firstSeen}–${d.lastSeen}` : '—'} | ${d.note} |`),
     '',
     '## Demand by hour of the building’s day',
     '',
