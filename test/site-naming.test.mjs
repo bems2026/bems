@@ -104,8 +104,18 @@ test('the weather module carries no building location of its own', () => {
   // forecast for somewhere else, presented as being about the reader's building, is the same
   // class of thing as a power reading nobody took. The building declares where it is now.
   const src = stripComments(readFileSync(join(ROOT, 'src', 'config', 'weather.ts'), 'utf8'));
-  assert.equal(/WEATHER_(LAT|LON)[^;]*\d+\.\d+/.test(src), false, 'a coordinate literal is a building baked into shared code');
-  assert.equal(/WEATHER_PLACE[^;]*['"][A-Za-z]/.test(src), false, 'a place-name literal is a building baked into shared code');
+  const coord = /WEATHER_(LAT|LON)\b[^;]*\b\d+\.\d+/;
+  const place = /WEATHER_PLACE\b[^;]*['"][A-Za-z]/;
+
+  // BOTH MATCHERS PROVE THEY CAN FIRE FIRST. These two were written through a shell heredoc that
+  // turned `\b` into a literal BACKSPACE (0x08), so neither could ever match and both assertions
+  // below were trivially true — a guard against the exact bug it was written for, silently
+  // asserting nothing. eslint caught the control character in CI; nothing caught the vacuity.
+  assert.match('export const WEATHER_LAT = num(env, 18.0553);', coord, 'the coordinate matcher is broken');
+  assert.match("export const WEATHER_PLACE = env || 'Batac City';", place, 'the place matcher is broken');
+
+  assert.equal(coord.test(src), false, 'a coordinate literal is a building baked into shared code');
+  assert.equal(place.test(src), false, 'a place-name literal is a building baked into shared code');
 });
 
 test('the Overview clock shows the building time, not the reader time', () => {

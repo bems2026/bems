@@ -206,6 +206,15 @@ test('the shared registry names none of this building hardware', async () => {
   // stops being a slug, `the id is a slug` above fails first and says so.
   const site = await import('../shared/siteConfig.mjs');
   const source = readFileSync(join(ROOT, 'shared', 'registry.mjs'), 'utf8');
-  const found = site.BUILT_IN_DEVICES.map((d) => d.id).filter((id) => new RegExp(String.raw`` + id + String.raw``).test(source));
-  assert.deepEqual(found, [], 'shared/registry.mjs still names these devices - move them to the site directory');
+  const names = (text) => site.BUILT_IN_DEVICES.map((d) => d.id).filter((id) => new RegExp(`\\b${id}\\b`).test(text));
+
+  // THE GUARD PROVES IT CAN FIRE BEFORE IT IS BELIEVED, and this is not decoration. The matcher
+  // above was written through a shell heredoc that turned `\b` into a literal BACKSPACE (0x08),
+  // so the regex could never match anything and this test passed while asserting nothing. A
+  // guard that cannot fail is worse than no guard, because it is counted as coverage.
+  const firstId = site.BUILT_IN_DEVICES[0].id;
+  assert.deepEqual(names(`a line mentioning ${firstId} here`), [firstId], 'the matcher itself is broken');
+  assert.deepEqual(names(`a line mentioning ${firstId}x here`), [], 'the matcher must respect word boundaries');
+
+  assert.deepEqual(names(source), [], 'shared/registry.mjs still names these devices - move them to the site directory');
 });

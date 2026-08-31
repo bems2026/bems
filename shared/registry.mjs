@@ -12,19 +12,12 @@
  * registry can never drift between the mock and the real bridge:
  *     npm run build:flow
  *
- * ---------------------------------------------------------------------------
- * CT circuit map (confirmed on site — the only documentation of this that exists,
- * transcribed from the comment block at Original.html:1697-1705):
+ * The CT circuit map - which meter watches which circuit - lives with the hardware it
+ * describes, in `shared/sites/<id>/devices.mjs`. It was COPIED there in `4fb431b` and left
+ * here as well, which is what this file's own guard found the moment that guard started
+ * working. The Tuya device id that sat in it went too: a hardware identifier for one
+ * building does not belong in the file every deployment shares, least of all a public one.
  *
- *   L.O red     -> the room's lighting circuits
- *   L.O yellow  -> OUTDOOR ACU (separate unit, right side outside the room)
- *   C.O yellow  -> convenience outlets
- *   ACU meter   -> indoor ACU
- *
- * `mtr_co_yellow` and `mtr_lo_yellow` are two logical meters on ONE physical
- * device (Tuya id eb3b887b3d0f0561fcbgzb) reading different DPS ranges, which is
- * why device identity here is the logical meter id, never the Tuya device id.
- * ---------------------------------------------------------------------------
  *
  * DPS families, confirmed against the live Unified Parser functions:
  *   type_a = 105/106/107      (power/current/voltage; no energy DPS)
