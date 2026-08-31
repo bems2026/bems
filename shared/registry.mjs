@@ -84,14 +84,6 @@ import { BUILT_IN_DEVICES } from './siteConfig.mjs';
 export { BUILT_IN_DEVICES };
 
 /**
- * Everything the system knows about. Built-in devices come first so that enrolling one cannot
- * reorder the list every existing test and generated flow was written against — several places
- * key off position implicitly (the flow's node order, the analytics colour cycle), and a
- * reordering would be a silent, wide-reaching change for no benefit.
- */
-export const DEVICE_REGISTRY = [...BUILT_IN_DEVICES, ...ENROLLED_DEVICES];
-
-/**
  * Phase assignment, DERIVED from this site's electrical tree rather than declared here — RM-029.
  *
  * It used to be a constant naming four specific meters, mirroring `Calculate 3-Phase Totals` in
@@ -123,6 +115,75 @@ export const TIMING = {
   // in flight when the ack lands, so one cycle of tolerance isn't enough headroom.
   COMMAND_CONFIRM_MS: 6000,
 };
+
+/**
+ * How long a reading of each device class may go without advancing before it stops being
+ * treated as fresh.
+ *
+ * WHY THIS IS PER CLASS. It was `TIMING.STALE_AFTER_MS` — one 30 s number for every device —
+ * while the classes report on cadences an order of magnitude apart. Measured on the Pi
+ * 2026-09-01 (119 samples over 240 s of `/api/readings/latest`), the maximum age a healthy
+ * device reached was:
+ *
+ *   every live outlet       59.9 s   `outletPollPlan` polls them at 60 s; nothing else asks
+ *   the near-idle branch    59.7 s   a lightly-loaded circuit's arrival buffer only grows
+ *              meter                 about once a minute, so it sets this number — not the
+ *                                    three busier meters, which ticked at 2.6 s
+ *   switches, ACU, sensors   1.0 s   no `ctx`, so `buildLatest` stamps `ts = now`
+ *
+ * Against a 30 s budget, every outlet and one meter were therefore flagged "stale" for roughly
+ * half of every minute while Node-RED reported them connected throughout. That is not a display
+ * nit: `isReadingStale` has fifteen call sites, so the same sawtooth drove the Devices table
+ * between LIVE and STALE, raised and cleared a COMM FAULT in the alerts bell once a minute per
+ * outlet, dimmed the 3D scene, and — worst — made `commandStore.reconcile` report a relay that
+ * had actually moved as "the device did not report the new state".
+ *
+ * THE NUMBERS ARE 2.5x THE MEASURED CADENCE, not the measurement itself: a budget equal to the
+ * poll leaves no room for one missed reply or a slow tick, which is the same off-by-one that
+ * produced the sawtooth.
+ *
+ * The three synthesized-timestamp classes keep the original 30 s deliberately. `ts = now` can
+ * never look old, so no budget can fire for them — and a longer one would imply a freshness
+ * guarantee this bridge does not actually make. Their `online` flag comes from a real health
+ * signal (`lightStatus` for switches, a real measurement for the ACU), which is what does the
+ * work there. See `docs/bridge-contract.md`.
+ *
+ * A device may override its class in `shared/sites/<id>/devices.mjs` — another building's
+ * outlets may be polled at a different rate, and the override belongs beside the hardware it
+ * describes rather than in the file every deployment shares.
+ */
+export const STALE_AFTER_MS_BY_CLASS = {
+  outlet_dual: 150000, // 2.5x outletPollPlan.POLL_INTERVAL_S; guarded in reading-freshness.test.mjs
+  meter: 150000, // clears the slowest measured meter arrival (59.7 s) with the same margin
+  switch: TIMING.STALE_AFTER_MS,
+  acu_ir: TIMING.STALE_AFTER_MS,
+  sensor_temp_humidity: TIMING.STALE_AFTER_MS,
+};
+
+/**
+ * The staleness budget for one device: its own override, else its class's, else the original
+ * global default — which is what an enrolled device of a class this build has never heard of
+ * gets, rather than `undefined` silently disabling the watchdog for it.
+ */
+export function staleAfterMsFor(device) {
+  if (typeof device?.stale_after_ms === 'number') return device.stale_after_ms;
+  return STALE_AFTER_MS_BY_CLASS[device?.class] ?? TIMING.STALE_AFTER_MS;
+}
+
+/**
+ * Everything the system knows about. Built-in devices come first so that enrolling one cannot
+ * reorder the list every existing test and generated flow was written against — several places
+ * key off position implicitly (the flow's node order, the analytics colour cycle), and a
+ * reordering would be a silent, wide-reaching change for no benefit.
+ *
+ * Deliberately NOT decorated with derived fields — `test/site-config.test.mjs` asserts this list
+ * begins byte-identical to the site's own `BUILT_IN_DEVICES`, which is what proves the shared
+ * file only ever COMPOSES this building's hardware rather than describing it. A first version of
+ * the staleness work mapped `stale_after_ms` onto every entry here and that guard caught it.
+ * The budget is threaded into `buildLatest` as a table instead (see `STALE_AFTER_MS_BY_CLASS`),
+ * which leaves a per-device override on the site's own entry working exactly the same.
+ */
+export const DEVICE_REGISTRY = [...BUILT_IN_DEVICES, ...ENROLLED_DEVICES];
 
 /** Devices that report voltage/current/power — i.e. everything with a `ctx` prefix. */
 export const METERED = DEVICE_REGISTRY.filter((d) => d.ctx);

@@ -34,7 +34,7 @@
 import { writeFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { DEVICE_REGISTRY, PHASE_MAP, TIMING, publicDevices, SITE } from '../shared/registry.mjs';
+import { DEVICE_REGISTRY, PHASE_MAP, STALE_AFTER_MS_BY_CLASS, TIMING, publicDevices, SITE } from '../shared/registry.mjs';
 
 /** Devices that report an energy counter — the only ones the accumulator has anything to
  * accumulate for. Derived from the registry, never hand-listed. */
@@ -155,8 +155,9 @@ ${BUILD_LATEST_SRC}
 
 const REG = ${JSON.stringify(DEVICE_REGISTRY)};
 const PHASE_MAP = ${JSON.stringify(PHASE_MAP)};
+const STALE_AFTER_MS_BY_CLASS = ${JSON.stringify(STALE_AFTER_MS_BY_CLASS)};
 
-msg.payload = buildLatest(msg.snapshot || {}, REG, PHASE_MAP, Date.now(), ${SITE.utc_offset_minutes});
+msg.payload = buildLatest(msg.snapshot || {}, REG, PHASE_MAP, Date.now(), ${SITE.utc_offset_minutes}, STALE_AFTER_MS_BY_CLASS);
 msg.headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
 return msg;`;
 

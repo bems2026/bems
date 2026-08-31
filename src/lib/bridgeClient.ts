@@ -124,10 +124,20 @@ export function nextPollDelayMs(consecutiveFailures: number): number {
   return Math.min(TIMING.POLL_FALLBACK_MS * 2 ** exponent, TIMING.BACKOFF_CAP_MS);
 }
 
-/** A device (or the whole feed) is stale once 30s have passed since its last update. */
-export function isStale(lastUpdateMs: number | null, nowMs: number = Date.now()): boolean {
+/**
+ * Stale once `budgetMs` has passed since the last update, defaulting to 30s.
+ *
+ * The default is the right number for the two callers that pass no budget — `TopNav` and
+ * `LiveDemandCard`, which measure how long since the BRIDGE last said anything at all. That is
+ * link health, and the link pushes every 2s, so 30s of silence really is a fault.
+ *
+ * A single device's freshness is a different fact and is not that number: an outlet is polled
+ * once a minute by design, so it reaches ~60s of age routinely. `staleness.ts` passes the
+ * device's own budget, which the bridge sends on the reading. See `Reading.stale_after_ms`.
+ */
+export function isStale(lastUpdateMs: number | null, nowMs: number = Date.now(), budgetMs: number = TIMING.STALE_AFTER_MS): boolean {
   if (lastUpdateMs === null) return true;
-  return nowMs - lastUpdateMs > TIMING.STALE_AFTER_MS;
+  return nowMs - lastUpdateMs > budgetMs;
 }
 
 // ---------------------------------------------------------------------------

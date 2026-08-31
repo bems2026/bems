@@ -66,9 +66,14 @@ export const STALE_READING_MS = 600000;
  * @param {object} PHASE_MAP
  * @param {number} nowMs
  * @param {number} [offsetMinutes] minutes east of UTC for the site; see iso8()
+ * @param {object} [staleAfterMsByClass] device class -> staleness budget in ms; threaded in
+ *        rather than imported, exactly like `offsetMinutes`, because this file is inlined
+ *        verbatim into a Node-RED function node and may not import anything. The authority is
+ *        `shared/registry.mjs`'s `STALE_AFTER_MS_BY_CLASS`; `{}` reproduces the pre-2026-09-01
+ *        behaviour, where every consumer fell back to one global 30 s.
  * @returns {Array} one entry per device, plus a trailing `_totals` entry
  */
-export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480) {
+export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, staleAfterMsByClass = {}) {
   const energy = snap.energy || { meters: {}, totals: {} };
   const outlet = snap.outlet || { meters: {}, state: {} };
   const lights = (snap.switch || {}).state || {};
@@ -78,6 +83,20 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480) {
 
   for (const d of REG) {
     const r = { device_id: d.id, ts: iso8(nowMs, offsetMinutes) };
+
+    // How long this device's reading may go without advancing before the frontend should stop
+    // calling it fresh. Carried on the wire rather than re-derived in `src/`, because the
+    // cadence is a fact about the BRIDGE — it owns the 60 s outlet poller, so it is the only
+    // party that knows an outlet cannot report faster than that. A second copy of the table in
+    // the frontend would be free to disagree with the thing it describes, which is precisely
+    // what one global 30 s did.
+    //
+    // A device's own value wins over its class, so a site can declare one differently in
+    // `shared/sites/<id>/devices.mjs` without restating the class defaults. Omitted entirely
+    // when neither is known, which is what makes an older frontend and an older bridge both
+    // fall back to the single 30 s default unchanged.
+    const staleAfter = typeof d.stale_after_ms === 'number' ? d.stale_after_ms : staleAfterMsByClass[d.class];
+    if (typeof staleAfter === 'number') r.stale_after_ms = staleAfter;
 
     // --- metered devices ----------------------------------------------------
     if (d.ctx) {

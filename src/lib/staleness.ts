@@ -4,14 +4,36 @@ import type { Reading, Totals } from './types';
 /**
  * A device (or the `_totals` row) is stale for two independent reasons, either of which
  * dims it: the bridge explicitly reports it unhealthy (`online: false`), or its own `ts`
- * hasn't advanced in 30s even though the feed still calls it online — an outlet whose
- * `_last_time` context key stopped updating while its `_health` flag lagged behind, for
- * instance. `_totals` has no `online` field, so only the timestamp check applies to it.
+ * hasn't advanced within the budget the bridge sent for it even though the feed still calls
+ * it online — an outlet whose `_last_time` context key stopped updating while its `_health`
+ * flag lagged behind, for instance. `_totals` has no `online` field, so only the timestamp
+ * check applies to it.
+ *
+ * THE BUDGET IS PER DEVICE, and this used to be one global 30s. That was the bug behind
+ * "the outlet keeps flipping between stale and live while Node-RED says it is connected":
+ * `node-red-bridge/outletPollPlan.mjs` polls an outlet every 60s and nothing else asks it
+ * anything, so a perfectly healthy outlet's reading reaches ~60s of age once a minute, every
+ * minute. Measured on the Pi 2026-09-01 over 240s: the four live outlets and `mtr_lo_red` all
+ * peaked at 59.9s. Half of every minute, every one of them was called stale.
+ *
+ * It is worth being precise about why that mattered, because "a badge flickers" undersells it.
+ * This function has fifteen call sites. The same sawtooth flipped the Devices table between
+ * LIVE and STALE, raised and cleared a COMM FAULT in the alerts bell once a minute per outlet
+ * (which trains an operator to ignore the bell), desaturated devices in the 3D scene — and
+ * `commandStore.reconcile` gates its success path on this function, so a command that had
+ * genuinely switched a relay was reported as "the device did not report the new state" roughly
+ * half the time.
+ *
+ * `online: false` still wins over any budget. That is the bridge saying it has no connection
+ * to the device at all, and a longer budget must never launder a refusal into freshness.
  */
 export function isReadingStale(reading: Reading | Totals | null | undefined, nowMs: number = Date.now()): boolean {
   if (!reading) return true;
   if ('online' in reading && reading.online === false) return true;
-  return isStale(Date.parse(reading.ts), nowMs);
+  // `_totals` carries no budget, and neither does a bridge predating the field — both fall
+  // back to `isStale`'s own 30s default, which is what they were measured against before.
+  const budget = 'stale_after_ms' in reading ? reading.stale_after_ms : undefined;
+  return isStale(Date.parse(reading.ts), nowMs, budget);
 }
 
 /**

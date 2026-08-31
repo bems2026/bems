@@ -27,6 +27,38 @@ describe('isReadingStale', () => {
     expect(isReadingStale(r, now)).toBe(true);
   });
 
+  /**
+   * The reported bug, as a test. Outlets are polled every 60 s by the bridge
+   * (`node-red-bridge/outletPollPlan.mjs`), so a healthy outlet's timestamp reaches ~60 s of
+   * age once a minute, every minute. Under one global 30 s budget that made every outlet read
+   * "stale" for half of each minute while Node-RED reported it connected throughout — and the
+   * flapping reached the Devices table, the alerts bell, the 3D scene and, worst, command
+   * reconciliation. The budget now travels on the row from `shared/registry.mjs`.
+   */
+  it('honours the budget the bridge sent for this device, so a 55s-old outlet reading is not stale', () => {
+    const betweenPolls = new Date(now - 55_000).toISOString();
+    const r: Reading = { device_id: 'co3', ts: betweenPolls, online: true, state: 'on', stale_after_ms: 150_000 };
+    expect(isReadingStale(r, now)).toBe(false);
+  });
+
+  it('still goes stale once even its own budget is exceeded', () => {
+    const r: Reading = { device_id: 'co3', ts: new Date(now - 151_000).toISOString(), online: true, state: 'on', stale_after_ms: 150_000 };
+    expect(isReadingStale(r, now)).toBe(true);
+  });
+
+  it('a longer budget never excuses an offline device — that is a refusal, not lateness', () => {
+    // The safety property. `online: false` is the bridge saying it has no connection at all,
+    // and no amount of budget may launder that into "fresh".
+    const r: Reading = { device_id: 'co3', ts: fresh, online: false, state: 'off', stale_after_ms: 150_000 };
+    expect(isReadingStale(r, now)).toBe(true);
+  });
+
+  it('falls back to the 30s default when the bridge sent no budget', () => {
+    // An older bridge, or the `_totals` row, which is not a device and has no cadence.
+    const r: Reading = { device_id: 'co3', ts: old, online: true, state: 'on' };
+    expect(isReadingStale(r, now)).toBe(true);
+  });
+
   it('checks only the timestamp for the _totals row, which has no online field', () => {
     const freshTotals: Totals = {
       device_id: '_totals',

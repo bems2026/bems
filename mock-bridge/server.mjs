@@ -32,11 +32,16 @@
  *                         really reaching hardware (e.g. `--dispatch=switch` reproduces the
  *                         real Pi's lights-only state). Default: none, i.e. gate closed.
  *   --cmd-drop=<id|all> that command never responds at all (exercises the client's abort)
+ *   --poll-cadence=<s> metered devices report only every <s> seconds, instead of continuously.
+ *                      Reproduces the real bridge, where nothing asks an outlet anything except
+ *                      `outletPollPlan`'s 60 s poller — so `--poll-cadence=60` is the live Pi's
+ *                      actual behaviour, and the state a fault report describes as "the outlet
+ *                      keeps flipping between stale and live". Default 0 = always fresh.
  */
 
 import http from 'node:http';
 import crypto from 'node:crypto';
-import { DEVICE_REGISTRY, PHASE_MAP, TIMING, publicDevices, SITE } from '../shared/registry.mjs';
+import { DEVICE_REGISTRY, PHASE_MAP, STALE_AFTER_MS_BY_CLASS, TIMING, publicDevices, SITE } from '../shared/registry.mjs';
 import { fixturePlan, branchEnergyTotal } from './fixturePlan.mjs';
 import { buildLatest, iso8 } from '../shared/buildLatest.mjs';
 import { COMMAND_ROUTE, ACCEPTED_STATUS, validateCommand, buildAck } from '../shared/commands.mjs';
@@ -60,6 +65,11 @@ const CMD_FAIL = val('cmd-fail', '');
 // above: make a state that needs hardware reachable without hardware.
 const DISPATCH_CLASSES = val('dispatch', '') ? val('dispatch', '').split(',').filter(Boolean) : [];
 const CMD_DROP = val('cmd-drop', '');
+// How often a metered device is treated as having reported, in seconds. 0 (the default) keeps
+// the historical always-fresh behaviour. See `arrivalAt` below for why this is needed at all —
+// in short, the real bridge polls an outlet once a minute and the mock never did, so the mock
+// could not reproduce the staleness sawtooth that fault reports kept describing.
+const POLL_CADENCE_MS = Number(val('poll-cadence', 0)) * 1000;
 
 // ---------------------------------------------------------------------------
 // simulator — produces snapshots in the exact shape the Node-RED collectors emit
@@ -186,6 +196,27 @@ setInterval(() => {
   }
 }, 1000).unref?.();
 
+/**
+ * When a metered device last "reported", under `--poll-cadence`.
+ *
+ * WHY THIS EXISTS. Until 2026-09-01 the mock stamped `m.t = Date.now()` on every tick, so a
+ * mock outlet's timestamp was always one second old and the mock could not reproduce the single
+ * most-reported fault in this system: on the real bridge nothing asks an outlet anything except
+ * `outletPollPlan`'s 60 s poller, so a perfectly healthy outlet's reading routinely reaches ~60 s
+ * of age. Measured on the Pi 2026-09-01, four live outlets peaked at 59.9 s. Against the old
+ * global 30 s staleness budget that made every outlet read "stale" for half of every minute
+ * while Node-RED reported it connected throughout — and no amount of local testing could see it,
+ * because the mock was the one bridge in the system whose devices reported continuously.
+ *
+ * A fault the mock cannot produce is a fault that gets diagnosed on production hardware.
+ *
+ * Quantising to the cadence rather than adding jitter is deliberate: it makes the sawtooth
+ * exactly reproducible, so "it flips once a minute" is something you can watch rather than wait
+ * for. `--poll-cadence=0` (the default) keeps the old always-fresh behaviour, so every existing
+ * test and every other mock session is unchanged.
+ */
+const arrivalAt = (nowMs) => (POLL_CADENCE_MS > 0 ? Math.floor(nowMs / POLL_CADENCE_MS) * POLL_CADENCE_MS : nowMs);
+
 let tick = 0;
 function snapshot() {
   const t = Date.now();
@@ -207,7 +238,7 @@ function snapshot() {
       e: energyAcc[ctx].toFixed(4),
       h: !stale,
     };
-    if (withTime) m.t = stale ? started : t;
+    if (withTime) m.t = stale ? started : arrivalAt(t);
     return m;
   };
 
@@ -272,6 +303,13 @@ function snapshot() {
     energyAcc: energyBaseline,
     outlet: { meters: outletMeters, state: { status } },
     switch: { state: lights, health: lightHealth },
+    // What the real bridge's arrival tracker maintains for the energy tab, whose parsers write
+    // no timestamp of their own. Only emitted under `--poll-cadence`: without it the mock has
+    // always omitted this key entirely, and `buildLatest`'s "with no arrival information at all,
+    // behaviour is unchanged" rule then leaves every meter stamped `ts = now`, exactly as before.
+    ...(POLL_CADENCE_MS > 0
+      ? { arrivals: Object.fromEntries(PLAN.branchCtx.map((k) => [k, k === STALE_ID ? started : arrivalAt(t)])) }
+      : {}),
     // 1dp, matching what a Tuya temp/humidity DPS yields after its /10 scaling.
     aircon: {
       state: {
@@ -287,7 +325,7 @@ function snapshot() {
 
 // The site's offset, same as the generated flow passes — the mock is contract-identical to
 // the real bridge by construction, and a timestamp is part of the contract.
-const latest = () => buildLatest(snapshot(), DEVICE_REGISTRY, PHASE_MAP, Date.now(), SITE.utc_offset_minutes);
+const latest = () => buildLatest(snapshot(), DEVICE_REGISTRY, PHASE_MAP, Date.now(), SITE.utc_offset_minutes, STALE_AFTER_MS_BY_CLASS);
 
 // ---------------------------------------------------------------------------
 // history ring buffer — same semantics as the Node-RED one

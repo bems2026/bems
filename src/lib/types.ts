@@ -57,6 +57,21 @@ export interface Reading {
   humidity_pct?: number;
   /** `sensor_temp_humidity` only. */
   temp_c?: number;
+  /**
+   * How long this device's reading may go without advancing before it stops being fresh —
+   * decided by the bridge, in `shared/registry.mjs`'s `STALE_AFTER_MS_BY_CLASS`, and carried
+   * on the row so nothing in `src/` has to re-derive it.
+   *
+   * It is the bridge's number because the bridge owns the cadence: it runs the 60 s outlet
+   * poller, so it is the only party that knows an outlet cannot report faster than that. A
+   * copy of that table in the frontend would be free to disagree with the thing it describes,
+   * which is exactly what a single global 30 s did — every outlet read "stale" for half of
+   * every minute while Node-RED reported it connected.
+   *
+   * Absent on `_totals` (not a device) and on any bridge predating this field, where
+   * `isReadingStale` falls back to `TIMING.STALE_AFTER_MS` unchanged.
+   */
+  stale_after_ms?: number;
 }
 
 /**
