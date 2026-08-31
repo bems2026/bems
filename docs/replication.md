@@ -185,8 +185,8 @@ short one.
 
 | Not covered | Why |
 |---|---|
-| **Physical installation** — CT clamps on a live panel, relay modules, the IR blaster | Needs an electrician and a written procedure with photographs. Not written. |
-| **Packaging** — an install script, or a pre-built SD card image | Not a technical question but a support one: an image is easier to hand over and harder to keep current. Undecided. |
+| **Physical installation** — CT clamps on a live panel, relay modules, the IR blaster | [`physical-install.md`](./physical-install.md) is a **template with 12 marked gaps**, not a finished guide: the structure and the traps are written, the photographs, part numbers and torque figures are not. Nothing in it has been reviewed by an electrician. |
+| **Packaging** | Decided and built: `scripts/install.sh`, dry-run by default. **Its apply path has never been run end to end** — there has only ever been one Pi — so the first real install is also its first test. Run the check first and read the plan. |
 | **Day-one network setup** — joining the Pi and the devices to a 2.4 GHz segment, linking the vendor account | Partly written down in `CLAUDE.md`'s site facts, not yet a procedure. |
 | **A second building's `sites` row** | Step 8 above: still a hand-edit of two migration files. |
 | **A 3D scene pack** | Site-specific by nature. A site with `scene_pack: null` gets the data-driven floor plan, which is the intended default. |

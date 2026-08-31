@@ -1,7 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
 **Last audited:** 2026-08-31 (UTC) — RM-027 to RM-032 and RM-034 done; RM-033 part-built
-**Audited at commit:** `33591d9`
+**Audited at commit:** `fb96069`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
 discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
@@ -2442,11 +2442,30 @@ may not.
       is real and is listed as a gap: a new deployment has nothing that tells it its OWN site
       directory is coherent.
 
-      **What is left, and it needs decisions more than code:**
+      **Decided and built 2026-08-31, on your answers:**
+      - **`LICENSE` — MIT.** `9e85439`. The repo had been public from the start with none, which
+        made it unusable by the very institutions Milestone 6 exists to serve: "public" and
+        "reusable" are not the same thing. *The copyright holder line names the university and
+        needs confirming against the funding agreement* — that is a legal fact, not a code one.
+      - **`scripts/install.sh` (FI-003) — a script, not a card image.** `fb96069`. Dry run by
+        default; every change goes through one `act()` so the plan cannot diverge from the run,
+        and a test enforces that no `sudo` escapes it. It refuses to touch Wi-Fi, refuses to open
+        the broker past loopback, writes no secrets and does not deploy the flow — each for a
+        reason this project has already paid for. **Its apply path has never been run end to
+        end**, because there has only ever been one Pi; the file says so and a test keeps it
+        saying so.
+      - **`docs/physical-install.md` — a template with 12 marked gaps**, not a finished guide.
+        Structure, the commissioning checklist and every trap are written; photographs, part
+        numbers and torque figures are marked `〔FILL IN〕` rather than invented. Nothing in it
+        has been reviewed by an electrician and it says that first.
+      - **`server/ibems-dashboard.service`, captured.** The installer's dry run on the real Pi
+        reported the unit "not in the repo" — it had been running for weeks, declared nowhere.
+        The same exposure CLAUDE.md records for `findTimeout` and mosquitto: a host-only fact a
+        rebuild loses with no diff. Verified byte-identical to the live unit.
+
+      **What is left:**
       - the day-one wizard (FI-002) — network join and vendor-account linking;
-      - the packaging track (FI-003) — install script *or* card image, which is a support
-        question, not a technical one;
-      - the physical-install guide for CT meters, relay modules and the IR blaster;
+      - filling in `physical-install.md`'s twelve gaps, which needs a site visit;
       - the `sites` row itself: `phase19_sites.sql` seeds this site's id, so a second deployment
         still edits SQL. Provisioning should take it from the site directory.
       - FI-016, the Control page's outlet plan, which is the last screen naming `co1..co7`;

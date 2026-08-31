@@ -8,7 +8,9 @@ addresses, or Supabase project identifiers — in code, in docs, or in commit me
 
 > **Standing this up for another building? `docs/replication.md`** is the software half of the
 > replication framework (Milestone 6), written as a transcript of a run that worked rather than a
-> design — including a table of what it does not cover.
+> design — including a table of what it does not cover. `scripts/install.sh` does the machine
+> setup (dry run by default; its apply path is untested), and `docs/physical-install.md` is the
+> hardware guide, currently a template with its gaps marked rather than hidden.
 
 > **Running on the Pi itself? Read `docs/pi-session-brief.md` first.** It carries the current
 > fleet state, what you may do without asking, the first-moves checks, and the traps this
