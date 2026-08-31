@@ -125,27 +125,25 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, st
       // own stamp:
       //   `src.t`        the arrival time the tab records. Outlet meters carry one; the energy
       //                  tab writes no timestamp of any kind, which is why the second exists.
-      //   `snap.arrivals` what the bridge itself last saw CHANGE for this meter. The energy tab
-      //                  writes no timestamp of any kind, so `build-flow.mjs`'s
-      //                  `TRACK_ARRIVALS` compares a signature of `n|v|c|p|e|h` and stamps the
-      //                  time only when it differs.
+      //   `snap.arrivals` what the bridge itself last saw change for this meter — tracked by
+      //                  `node-red-bridge/arrivalTracker.mjs` from the energy tab's own SAMPLE
+      //                  BUFFER DEPTH (`<ctx>_arr_v`), which grows on every message even when
+      //                  the measured values do not. The energy tab writes no timestamp of any
+      //                  kind, which is why that indirection exists at all.
       //
-      // THIS COMMENT USED TO CLAIM THE OPPOSITE, and the claim was wrong about its own
-      // implementation. It said arrivals were "tracked from the tab's sample buffers, which grow
-      // on every message even when the measured values do not" — describing the safe design,
-      // beside code that implements the unsafe one. Measured on the Pi 2026-09-01: at 06:00 with
-      // the office empty, the two meters drawing power (18.1 W, 17.3 W) showed ages of 1.5 s
-      // while the two at 0 W showed 8.5 s and 25.5 s. The difference is the energy accumulator
-      // `e`, which only increments while power flows; at zero load only voltage wobble moves the
-      // signature at all.
+      // ARRIVAL, NOT VALUE CHANGE. This distinction was measured rather than assumed, and the
+      // obvious version is wrong: `mtr_lo_yellow` and `mtr_co_yellow` are two channels of one
+      // physical meter, and over ten minutes the first sat byte-identical at 0 W while the
+      // second swung between 215 V and 229 V. The device was plainly reporting throughout, so
+      // treating "the numbers stopped moving" as death would have marked a healthy idle circuit
+      // offline and quietly subtracted it from the building totals.
       //
-      // WHY IT MOSTLY DOES NOT BITE, and where it would: `STALE_READING_MS` is ten minutes, and
-      // mains voltage on this site wobbles enough to change `v` well inside that. A genuinely
-      // idle circuit on an unusually stable supply is the case that would cross it, and the
-      // consequence is the one this whole file exists to prevent — a healthy circuit marked
-      // offline and silently subtracted from the building totals. Recorded as ROADMAP FI-021
-      // rather than changed here: fixing it means giving the energy tab a real arrival stamp,
-      // which is a flow change and wants its own measurement.
+      // The energy ACCUMULATOR was removed from that signature on 2026-09-01 (ROADMAP EX-141).
+      // It is integrated on a timer rather than on arrival — measured: `co_yel_energy` moved
+      // three times across fourteen seconds in which no message arrived at all — so including it
+      // let a meter drawing power fake its own freshness, and would have kept a meter that DIED
+      // while loaded looking fresh indefinitely. `STALE_READING_MS` below is the backstop for a
+      // health flag that lies, so it must not depend on anything the same failure would move.
       const t = num(src.t);
       const seenAt = t !== undefined && t > 0 ? t : num((snap.arrivals || {})[d.ctx]);
       if (seenAt !== undefined) {

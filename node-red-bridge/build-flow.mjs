@@ -35,6 +35,7 @@ import { writeFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { DEVICE_REGISTRY, PHASE_MAP, STALE_AFTER_MS_BY_CLASS, TIMING, publicDevices, SITE } from '../shared/registry.mjs';
+import { TRACK_ARRIVALS_SRC } from './arrivalTracker.mjs';
 
 /** Devices that report an energy counter — the only ones the accumulator has anything to
  * accumulate for. Derived from the registry, never hand-listed. */
@@ -302,35 +303,12 @@ return msg;`;
 /**
  * Records WHEN each energy meter last showed evidence of reporting.
  *
- * The outlet tab stamps an arrival time per meter; the energy tab writes none, so without this
- * `buildLatest` has nothing to distinguish "reporting a steady 0 W" from "the socket died and
- * the last numbers are frozen in place". Both look identical in the context keys.
- *
- * The signature deliberately includes the sample-buffer depth, not just the measurements. A
- * live meter on an idle circuit reports the same volts and watts indefinitely while its buffer
- * keeps filling — measured on site, one channel of a two-channel meter sat byte-identical for
- * ten minutes while the other swung 14 V on the same physical device. Keying on the values
- * alone would have called that healthy channel dead.
- *
- * Stamping unseen meters with `now` on first run is deliberate: after a restart nothing has any
- * history, and the safe reading of "no evidence yet" is not "offline".
+ * Moved to `arrivalTracker.mjs` so it can be EXECUTED by a test rather than only inspected —
+ * what ships is a source string injected into a Node-RED function node, and the correction it
+ * carries (excluding the timer-integrated energy field) is exactly the kind that a
+ * pattern-matching test would wave through. Its reasoning lives with it there.
  */
-const TRACK_ARRIVALS = `
-const now = Date.now();
-const seen = flow.get('meter_arrivals') || {};
-const meters = ((msg.snapshot || {}).energy || {}).meters || {};
-for (const k of Object.keys(meters)) {
-  const m = meters[k] || {};
-  const sig = [m.n, m.v, m.c, m.p, m.e, m.h].join('|');
-  const prev = seen[k];
-  if (!prev || prev.sig !== sig) seen[k] = { sig: sig, at: now };
-}
-flow.set('meter_arrivals', seen);
-const arrivals = {};
-for (const k of Object.keys(seen)) arrivals[k] = seen[k].at;
-msg.snapshot = msg.snapshot || {};
-msg.snapshot.arrivals = arrivals;
-return msg;`;
+const TRACK_ARRIVALS = TRACK_ARRIVALS_SRC;
 
 const WS_SERIALIZE = `
 msg.payload = JSON.stringify(msg.payload);

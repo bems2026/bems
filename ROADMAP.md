@@ -1383,6 +1383,85 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       reported silent forever. The plan now **upgrades** an existing poller rather than reporting
       "already present, nothing to do", which would have silently declined to fix the thing it
       was run for. *Not yet applied; needs a flow write* — `node-red-bridge/outletPollPlan.mjs`
+- [x] **EX-141** **A meter's freshness could be faked by its own frozen wattage** — and the first
+      diagnosis of this was wrong, which is worth recording alongside the fix.
+      `TRACK_ARRIVALS` stamps an arrival when a signature of the meter's collector fields
+      differs from last poll. **The first write-up claimed that signature had no arrival signal
+      at all and keyed purely on value change.** That was wrong: the energy collector exposes
+      `n`, the tab's sample-buffer depth, which grows on every message, and it was in the
+      signature all along — the collector's own comment says exactly that. Measuring the buffer
+      instead of reasoning about it settled it: over 43 s, `lo_red` went 2→3 and `arec` 4→5, so
+      the meters were reporting roughly once a minute and the tracker was following them.
+      **The real defect was narrower and worse.** The signature also contained `e`, the energy
+      accumulator — which is integrated **on a timer**, not on arrival. Measured on the Pi
+      2026-09-01: across fourteen seconds in which `co_yel_arr_v` stayed at length 1, no message
+      at all, `co_yel_energy` moved `0.14347 → 0.14351 → 0.14355`. So a meter drawing power
+      registered an "arrival" every couple of seconds while really reporting about once a minute
+      — and a meter that **died while loaded** would keep registering arrivals from its own
+      frozen wattage, indefinitely.
+      That matters because `STALE_READING_MS` exists as the BACKSTOP for a health flag that
+      lies, and until the same day **three metered channels could not report a disconnect at
+      all** (EX-139). Both the primary signal and its backstop were compromised at once, and the
+      backstop was compromised *by* the primary signal: the accumulator is gated on the health
+      flag, so `e` only freezes when health is already correct. A backstop must not depend on the
+      thing it is backing up.
+      `e` is dropped from the signature; `n`, `v`, `c`, `p`, `h` stay, all of which move only
+      when a message arrives. Extracted to `node-red-bridge/arrivalTracker.mjs` so the source
+      string that ships into the Node-RED function node is **executed** by its tests rather than
+      pattern-matched — a correction this subtle is exactly what a regex test waves through —
+      `node-red-bridge/arrivalTracker.mjs`, `test/arrival-tracker.test.mjs`
+      *Requires a flow deploy to take effect.*
+- [x] **EX-142** **A frozen reading could still reach a chart, three ways** — the Analytics
+      "Metered vs total" card was plotting **513.9 W that did not exist**. `co5` has been off the
+      network for weeks and its history holds 60 consecutive points, every one `online: false`,
+      every one carrying that frozen value from before it dropped; the whole building draws about
+      35 W. So the outlet line sat roughly fifteen times the building's real demand — far *above*
+      the panel total it is meant to sit under — and `Math.max(0, total - metered)` clamped the
+      resulting negative to "0.00 kW untracked now", the most reassuring possible rendering of a
+      figure that was not computable at all.
+      FI-010/EX-102 had added an `online` flag per point and made `pointValue` return `undefined`
+      for an offline one; `pointValue`'s own comment calls itself "the one place a point becomes
+      a plotted number". **Three callers never went through it.** `sumHistories` added `power_w`
+      straight, so every summed line — the Overview energy flow chart too — included each offline
+      contributor's frozen value. `downsampleTrend` rebuilt each bucket as `{ts, power_w}` and
+      dropped the flag, which defeated EX-102 downstream **only for series longer than
+      `maxPoints`** — so 1h and 6h behaved while 24h and the archive ranges, the ones an energy
+      claim is read off, quietly plotted memories as measurements. `trendStats` summed every
+      point while promising its numbers "stay accurate to the actual readings".
+      Neither alternative to a gap was available: summing the frozen value fabricates a reading,
+      substituting zero fabricates a different one — it asserts the circuit drew nothing when the
+      truth is nobody knows. A dip in a summed line is indistinguishable from the building using
+      less, which is the misreading that costs something: an energy saving that was a
+      disconnection. A bucket is offline only when NO sample in it was online, and a pair's two
+      sides are suppressed independently — an offline outlet must not blank a panel total that is
+      perfectly well known — `src/components/overview/totalPowerSeries.ts`,
+      `src/components/trends/chartSummary.ts`, `src/components/analytics/analyticsMath.ts`
+- [x] **EX-143** **Every popover opened off the edge of the screen.** Measured before any change,
+      on the Overview page alone: at 1265 px the weather hint ran **81 px past the right edge**;
+      at 375 px **four of five hints** ran 26–61 px off; the alerts bell rendered at
+      **`left: -17px`**, so the first 17 px of every alert row was unreachable — and off the LEFT
+      edge is the worse direction, because nothing can scroll to it.
+      Three controls had three independently written copies of the same `mousedown`-outside +
+      `Escape` dismissal and the same CSS-only positioning, and the same bug in all three.
+      **The causes differed in a way that matters:** the ⓘ was 260 px anchored `left: 0` to a
+      24 px button — too wide for where it started; the alerts panel was 320 px anchored
+      `right: 0`, which *fits* a 375 px screen and overflowed anyway because `right: 0` is
+      measured from the bell's own 44 px wrapper, whose right edge sits at x=303. Capping the
+      width fixed the first and did nothing for the second. Only clamping against the real
+      viewport fixes both.
+      **`position: fixed` alone is not enough here, and the reason is easy to miss:** `.card` and
+      `.top-nav` both carry `backdrop-filter`, which makes them containing blocks for
+      fixed-position descendants — so a fixed popover inside either is measured against the card
+      or the nav, which is the bug rather than the fix. Portaling to `<body>` is what makes the
+      viewport the frame of reference, and it also escapes the cards' overflow clipping.
+      `placePopover` is pure and tested at 23 cases because jsdom reports every rect as 0×0, so a
+      component test of the arithmetic would assert nothing. It slides rather than flips
+      alignment, caps height so long content scrolls inside, and prefers overflowing right over
+      left when a viewport cannot fit both margins.
+      *Verified in a browser, not only in jsdom:* 30 popovers across six pages at 320×568, 18 at
+      375×812 and 1440×900, and 16 at 380×360 with anchors pinned to the top and bottom of the
+      viewport to force the flip and the height cap. **None outside the viewport** —
+      `src/components/ui/popoverPlacement.ts`, `src/components/ui/useAnchoredPopover.ts`
 - [x] **EX-129** `npm run set-device-ip:pi` — the RM-021 remedy, as a reversible script.
       Gives a `tuya-smart-device` node a static `deviceIp` so the bridge stops depending on a
       discovery broadcast the device has stopped sending. Dry run by default, `--apply` to
@@ -3076,23 +3155,11 @@ may not.
       weekday/weekend separation the three-day minimum exists to protect.
 
 ### Robustness
-- **FI-021** (M) **Meter arrival tracking is value-change, not arrival — and its own comment
-  said otherwise.** `build-flow.mjs`'s `TRACK_ARRIVALS` stamps a meter's arrival time only when
-  a signature of `n|v|c|p|e|h` differs from the previous one. `shared/buildLatest.mjs`'s header
-  claimed the opposite — "tracked from the tab's sample buffers, which grow on every message
-  even when the measured values do not" — describing the safe design beside code implementing
-  the unsafe one. The comment is corrected; the behaviour is not.
-  **Measured on the Pi 2026-09-01, and it is visible in ordinary operation.** At 06:00 with the
-  office empty, the two meters drawing power (18.1 W, 17.3 W) showed reading ages of **1.5 s**,
-  while the two at 0 W showed **8.5 s and 25.5 s**. Over a 240 s window the idle pair peaked at
-  ~60 s against the busy pair's 2.2 s. The difference is the energy accumulator `e`, which only
-  increments while power flows; at zero load only mains voltage wobble moves the signature.
-  **Why it mostly does not bite:** `STALE_READING_MS` is ten minutes and the supply here wobbles
-  enough to change `v` well inside that. The case that would cross it is a genuinely idle
-  circuit on an unusually stable supply — and the consequence is precisely what EX-107 was built
-  to prevent: a healthy circuit marked `online: false` and silently subtracted from the building
-  totals. The fix is to give the energy tab a real arrival stamp the way the outlet tab already
-  has (`<ctx>_last_time`), which is a flow change and wants its own measurement first.
+- ~~**FI-021** (M) Meter arrival tracking.~~ **Done 2026-09-01 — EX-141.** The entry that stood
+  here was **wrong about the mechanism**, and the correction is the more useful record: it
+  claimed the tracker keyed on value change and had no arrival signal, when the energy
+  collector's sample-buffer depth `n` was in the signature all along and does move per message.
+  What was actually wrong was narrower and worse. See EX-141.
 - **FI-019** (M) **The bridge listens on every interface, including the device segment.**
   Found 2026-09-01: `ss -lnt` on the Pi shows Node-RED on `0.0.0.0:1880`, so anything associated
   to the 2.4 GHz device SSID can reach it. `GET /api/readings/latest` and `/api/devices` take no
