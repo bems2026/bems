@@ -210,7 +210,11 @@ async function fire(cmd, reasonNote) {
     },
     dispatchEnabled: HARDWARE_DISPATCH_ENABLED,
     dispatchClasses: DISPATCH_CLASSES,
-    dispatch: (d, c) => dispatchCommand(d, c, { bridgeHost: BRIDGE_HOST, bridgePort: BRIDGE_PORT, lightApiToken: LIGHT_API_TOKEN }),
+    // No `cloud` opt: scheduled and auto-shed commands have always been local-only in practice,
+    // because this daemon never built a vendor client. The policy is passed anyway so the
+    // failure detail says WHY there was no fallback, rather than leaving the reader to infer it
+    // from a missing credential.
+    dispatch: (d, c) => dispatchCommand(d, c, { bridgeHost: BRIDGE_HOST, bridgePort: BRIDGE_PORT, lightApiToken: LIGHT_API_TOKEN, policy: SITE.policy?.dispatch ?? 'local-first' }),
     insertAudit: audit.insertAudit,
     updateAudit: audit.updateAudit,
     log: (msg) => console.error(`[ibems-scheduler] ${msg}`),

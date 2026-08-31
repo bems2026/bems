@@ -146,6 +146,14 @@ export async function dispatchCommand(device, cmd, opts) {
     : await dispatchLocal(device, cmd, opts);
   if (local.ok) return { ok: true, via: 'local' };
 
+  // A site may forbid the fallback outright. Distinct from having no cloud configured, and the
+  // difference matters to whoever reads the failure: one is a decision to revisit, the other is
+  // a credential to go and set. Local was always primary here, but only because the code
+  // happened to order it that way — this is the site saying so, and being held to it.
+  if (opts?.policy === 'local-only') {
+    return { ...local, via: 'local', detail: `${local.detail} (this site is local-only, so no vendor fallback was attempted)` };
+  }
+
   // No cloud configured is the ordinary case, not an error: report the local failure as-is
   // rather than appending a second one about a path nobody asked for.
   if (!opts?.cloud?.client) return { ...local, via: 'local' };

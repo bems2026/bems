@@ -9,7 +9,7 @@
  * so it has to be safe in all three.
  */
 
-/** @typedef {{ acu_min_setpoint_c: number|null }} SitePolicy */
+/** @typedef {{ acu_min_setpoint_c: number|null, dispatch: 'local-first'|'local-only' }} SitePolicy */
 
 export const SITE = Object.freeze({
   id: 'mmsu-nberic-care',
@@ -72,5 +72,32 @@ export const SITE = Object.freeze({
      * to null and gets the hardware bound alone.
      */
     acu_min_setpoint_c: 25,
+
+    /**
+     * Which dispatch paths this building permits.
+     *
+     * `local-first` — try the LAN, fall back to the vendor cloud only after a local failure.
+     * `local-only`  — the LAN or nothing.
+     *
+     * THIS SITE IS `local-first`, AND THAT IS ALREADY WHAT HAPPENS. The Tuya fleet sits on the
+     * Pi's own 2.4 GHz segment and answers its local keys, so commanding it needs no internet
+     * whatsoever; `server/dispatchLight.mjs` has always tried that path first and only reached
+     * the cloud after it failed. Verified on the live fleet 2026-09-01: of 19 flow nodes, 16
+     * held a local session, and the three that did not were offline to Tuya's own cloud too —
+     * genuinely off the network rather than unreachable locally.
+     *
+     * So why declare it. Until now local-first was a property of the code rather than a
+     * decision on record, and the fallback was enabled purely because credentials happened to
+     * exist in `server/.env`. A building that wants no vendor in its control path at all had no
+     * way to say so and no way to prove it afterwards. `local-only` is not a new dispatch path
+     * — it is the ability to REFUSE the fallback, which is a different guarantee from never
+     * having configured it.
+     *
+     * Before setting `local-only`, read `docs/adr-002-device-recovery-path.md`: the fallback
+     * exists for one real failure this fleet has, where a device's inbound socket table is
+     * exhausted so it stops answering locally while its outbound cloud connection stays
+     * healthy. Removing the fallback means that state is recovered by walking to a breaker.
+     */
+    dispatch: 'local-first',
   }),
 });

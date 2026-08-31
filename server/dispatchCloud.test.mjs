@@ -290,3 +290,62 @@ test('when both paths fail the LOCAL reason is the one reported, because it is t
     assert.match(r.detail, /cloud/i);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+// ---------------------------------------------------------------------------
+// The dispatch policy — `local-first` (the default, and the behaviour that already existed)
+// versus `local-only`.
+//
+// WHY DECLARE SOMETHING THAT IS ALREADY TRUE. Local has always been primary here: the Tuya
+// fleet sits on the Pi's own 2.4 GHz segment and answers its local keys, and the cloud is only
+// reached after a local failure. But that was a property of the code rather than a decision on
+// record, and it was on purely because credentials happened to exist in the environment. A site
+// that wants a building control system with no vendor in the path at all had no way to say so,
+// and no way to prove it afterwards.
+//
+// `local-only` is not a new dispatch path. It is the ability to refuse the fallback, which is a
+// different kind of guarantee from not having configured it.
+// ---------------------------------------------------------------------------
+
+test('local-first is the default, so an unset policy behaves exactly as before', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: false, status: 500, text: async () => '' });
+  try {
+    let cloudCalled = false;
+    const r = await dispatchCommand(sw, { action: 'on' }, bridgeOpts(async () => { cloudCalled = true; }));
+    assert.equal(cloudCalled, true, 'the fallback must still fire when no policy is declared');
+    assert.equal(r.via, 'cloud');
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('local-only never reaches the vendor, even with a working cloud client configured', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: false, status: 500, text: async () => '' });
+  try {
+    let cloudCalled = false;
+    const r = await dispatchCommand(sw, { action: 'on' }, { ...bridgeOpts(async () => { cloudCalled = true; }), policy: 'local-only' });
+    assert.equal(cloudCalled, false, 'a configured client must not be a licence to use it');
+    assert.equal(r.ok, false);
+    assert.equal(r.via, 'local');
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('local-only says the fallback was refused, not that it was absent', async () => {
+  // The two are different facts and an operator acts on them differently: one is a decision to
+  // revisit, the other is a credential to go and set.
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: false, status: 500, text: async () => '' });
+  try {
+    const r = await dispatchCommand(sw, { action: 'on' }, { ...bridgeOpts(async () => {}), policy: 'local-only' });
+    assert.match(r.detail, /local-only/i);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('local-only still succeeds locally — it removes a fallback, not a capability', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => '' });
+  try {
+    const r = await dispatchCommand(sw, { action: 'on' }, { ...bridgeOpts(async () => {}), policy: 'local-only' });
+    assert.equal(r.ok, true);
+    assert.equal(r.via, 'local');
+  } finally { globalThis.fetch = originalFetch; }
+});

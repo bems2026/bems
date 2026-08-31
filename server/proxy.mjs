@@ -93,6 +93,16 @@ function getTuyaClient() {
 const CLOUD_DISPATCH = buildCloudDispatch(process.env);
 
 /**
+ * Which dispatch paths this building permits — see `shared/sites/<id>/site.mjs`.
+ *
+ * Defaulted here rather than assumed present, so a site directory written before this field
+ * existed keeps behaving exactly as it did. `local-first` IS the historical behaviour: the fleet
+ * is on the Pi's own segment and answers local keys, and the cloud has only ever been reached
+ * after a local failure.
+ */
+const DISPATCH_POLICY = SITE.policy?.dispatch ?? 'local-first';
+
+/**
  * The bridge own view of whether a device is reachable, used to stop a local dispatch claiming
  * success it cannot have had. Returns `true`/`false`, or `null` when the bridge could not be
  * asked — see `dispatchCommand`, which treats `null` as "attempt local anyway" on purpose.
@@ -488,6 +498,10 @@ async function handleCommand(req, res, token) {
       bridgePort: BRIDGE_PORT,
       lightApiToken: LIGHT_API_TOKEN,
       cloud: CLOUD_DISPATCH,
+      // The site's own answer to "may a vendor be in this building's control path at all".
+      // `local-first` (the default) is what this code has always done; `local-only` makes the
+      // refusal explicit rather than relying on nobody having set the credentials.
+      policy: DISPATCH_POLICY,
       readOnline: readDeviceOnline,
     }),
     insertAudit: audit.insertAudit,
@@ -653,6 +667,12 @@ const server = http.createServer(async (req, res) => {
       hardware_dispatch_enabled: HARDWARE_DISPATCH_ENABLED,
       dispatch_classes: HARDWARE_DISPATCH_ENABLED ? DISPATCH_CLASSES : [],
       audit_buffer_pending: bufferCount(COMMAND_BUFFER_PATH) + bufferCount(SCHEDULER_BUFFER_PATH),
+      // The site's declared policy, plus whether a vendor fallback is actually configured on
+      // this deployment. Both, because they answer different questions and the page needs the
+      // pair to say anything true: `local-first` with no credentials set behaves identically to
+      // `local-only` today and is a completely different promise about tomorrow.
+      dispatch_policy: DISPATCH_POLICY,
+      cloud_fallback_configured: Boolean(CLOUD_DISPATCH?.client),
     });
   }
   if (req.method === 'POST' && url.pathname === '/api/enroll') {

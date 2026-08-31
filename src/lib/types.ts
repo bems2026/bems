@@ -217,4 +217,18 @@ export interface Capabilities {
    * but the audit trail is currently behind, which is a fact worth showing rather than hiding.
    */
   audit_buffer_pending?: number;
+  /**
+   * Which dispatch paths this site permits — `local-first` or `local-only`. Declared in
+   * `shared/sites/<id>/site.mjs`. Optional: a proxy predating the field says nothing, which is
+   * not the same as saying `local-first`.
+   */
+  dispatch_policy?: string;
+  /**
+   * Whether a vendor-cloud fallback is actually configured on this deployment.
+   *
+   * Carried beside the policy because the two answer different questions and neither is
+   * sufficient alone: `local-first` with no credentials set behaves identically to
+   * `local-only` today, and is a completely different promise about tomorrow.
+   */
+  cloud_fallback_configured?: boolean;
 }

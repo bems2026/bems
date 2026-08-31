@@ -20,6 +20,17 @@ interface CapabilitiesState {
    * unknown, not zero, for the same reason `dispatchClasses` distinguishes the two.
    */
   auditBufferPending: number | null;
+  /**
+   * Which dispatch paths this site permits (`local-first` / `local-only`), and whether a
+   * vendor-cloud fallback is actually configured on this deployment.
+   *
+   * Both `null` until a proxy that reports them answers — a proxy predating the fields says
+   * nothing, which is not the same as saying `local-first`. Kept as a pair because neither is
+   * sufficient alone: `local-first` with no credentials set behaves identically to
+   * `local-only` today and is a completely different promise about tomorrow.
+   */
+  dispatchPolicy: string | null;
+  cloudFallbackConfigured: boolean | null;
   load: () => Promise<void>;
 }
 
@@ -33,6 +44,8 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
   hardwareDispatchEnabled: null,
   dispatchClasses: null,
   auditBufferPending: null,
+  dispatchPolicy: null,
+  cloudFallbackConfigured: null,
 
   // Same retry-with-backoff shape as useLiveConnection.ts's device-catalogue fetch — a
   // failed load here must never get stuck reporting "unknown" forever just because one
@@ -41,7 +54,7 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
     retry.cancel();
     const attempt = async (): Promise<void> => {
       try {
-        const { hardware_dispatch_enabled, dispatch_classes, audit_buffer_pending } = await getCapabilities();
+        const { hardware_dispatch_enabled, dispatch_classes, audit_buffer_pending, dispatch_policy, cloud_fallback_configured } = await getCapabilities();
         retry.succeeded();
         set({
           hardwareDispatchEnabled: hardware_dispatch_enabled,
@@ -50,6 +63,8 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
           // not the same as an answer of "nothing".
           dispatchClasses: Array.isArray(dispatch_classes) ? dispatch_classes : null,
           auditBufferPending: typeof audit_buffer_pending === 'number' ? audit_buffer_pending : null,
+          dispatchPolicy: typeof dispatch_policy === 'string' ? dispatch_policy : null,
+          cloudFallbackConfigured: typeof cloud_fallback_configured === 'boolean' ? cloud_fallback_configured : null,
         });
       } catch {
         retry.retryAfterFailure(attempt);
