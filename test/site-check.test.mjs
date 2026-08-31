@@ -208,3 +208,31 @@ test('the frontend type union and the runtime class list are the same five thing
     'src/lib/types.ts and shared/registry.mjs disagree about what a device class is',
   );
 });
+
+// ---------------------------------------------------------------------------
+// Where the building is
+// ---------------------------------------------------------------------------
+
+test('a site with no location passes, and is told what it loses', () => {
+  // Null is legitimate — `site:new` writes it. What must not happen is the previous behaviour:
+  // falling back to the CARE office's coordinates, so a new deployment showed Batac City's
+  // weather labelled as its own.
+  const r = run({ site: site({ location: null }) });
+  assert.deepEqual(r.errors, []);
+  assert.ok(codes(r).warnings.includes('no_location'));
+});
+
+test('a half-described location is an error, because half a coordinate is not a place', () => {
+  assert.ok(codes(run({ site: site({ location: { place: 'Somewhere', lat: 12.3 } }) })).errors.includes('location_invalid'));
+});
+
+test('coordinates outside the earth are an error', () => {
+  assert.ok(codes(run({ site: site({ location: { place: 'X', lat: 99, lon: 0 } }) })).errors.includes('location_invalid'));
+  assert.ok(codes(run({ site: site({ location: { place: 'X', lat: 0, lon: 200 } }) })).errors.includes('location_invalid'));
+});
+
+test('a complete location passes', () => {
+  const r = run({ site: site({ location: { place: 'Batac City', lat: 18.0553, lon: 120.5646 } }) });
+  assert.deepEqual(r.errors, []);
+  assert.equal(codes(r).warnings.includes('no_location'), false);
+});

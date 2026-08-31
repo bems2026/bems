@@ -78,9 +78,17 @@ function Clock() {
 
   return (
     <div className="page-header-right">
-      <div className="page-clock">{now.toLocaleTimeString('en-PH', { hour12: false })}</div>
+      {/* THE BUILDING'S CLOCK, NOT THE VIEWER'S. Neither call passed a `timeZone`, so this
+          rendered whatever time the reader's own machine was in — beside the building's place
+          name. Measured 2026-08-31: a viewer in New York saw 00:20 while the building read
+          12:20, presented as the building's own. A kiosk in the room was right by coincidence.
+          The locale stays the reader's (formatting is presentation); the instant is the
+          building's (that is a fact about the building). The place label is dropped rather than
+          defaulted when a site has not set a location. */}
+      <div className="page-clock">{now.toLocaleTimeString(undefined, { hour12: false, timeZone: SITE.timezone })}</div>
       <div className="page-date">
-        {now.toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric' })} · {WEATHER_PLACE}
+        {now.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: SITE.timezone })}
+        {WEATHER_PLACE ? ` · ${WEATHER_PLACE}` : ''}
       </div>
     </div>
   );

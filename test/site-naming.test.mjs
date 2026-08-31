@@ -97,3 +97,25 @@ test('the weather module does not carry a second copy of the site timezone', () 
     'WEATHER_TZ is a string literal — take it from SITE.timezone',
   );
 });
+
+test('the weather module carries no building location of its own', () => {
+  // These were this module's own defaults — one office's coordinates and city — so a deployment
+  // that had not set `VITE_WEATHER_*` showed THAT office's weather labelled as its own. A
+  // forecast for somewhere else, presented as being about the reader's building, is the same
+  // class of thing as a power reading nobody took. The building declares where it is now.
+  const src = stripComments(readFileSync(join(ROOT, 'src', 'config', 'weather.ts'), 'utf8'));
+  assert.equal(/WEATHER_(LAT|LON)[^;]*\d+\.\d+/.test(src), false, 'a coordinate literal is a building baked into shared code');
+  assert.equal(/WEATHER_PLACE[^;]*['"][A-Za-z]/.test(src), false, 'a place-name literal is a building baked into shared code');
+});
+
+test('the Overview clock shows the building time, not the reader time', () => {
+  // Without a `timeZone`, `toLocaleTimeString` renders the READER's clock — and it sat beside
+  // the building's place name. Measured: a viewer in New York saw 00:20 while the building read
+  // 12:20. A kiosk in the room was correct only by coincidence.
+  const src = stripComments(readFileSync(join(ROOT, 'src', 'components', 'overview', 'OverviewPage.tsx'), 'utf8'));
+  const calls = src.match(/toLocale(Time|Date)String\([^)]*\)/g) ?? [];
+  assert.ok(calls.length > 0, 'expected the clock to format a time');
+  for (const call of calls) {
+    assert.match(call, /timeZone:\s*SITE\.timezone/, `${call} does not pin the site timezone`);
+  }
+});

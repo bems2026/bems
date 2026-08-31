@@ -77,6 +77,27 @@ export function checkSite({ slug, site, devices, circuits }) {
   if (site.scene_pack !== null && typeof site.scene_pack !== 'string') {
     err('scene_pack_invalid', 'scene_pack must be a pack name or null');
   }
+  // Where the building is. Null is legitimate; a half-described one is not, and neither is a
+  // coordinate off the earth. This exists because `src/config/weather.ts` used to fall back to
+  // the CARE office's own coordinates, so an unlocated deployment showed somebody else's city's
+  // weather labelled as its own.
+  if (site.location != null) {
+    const l = site.location;
+    const bad =
+      typeof l !== 'object' ||
+      typeof l.place !== 'string' ||
+      l.place.trim() === '' ||
+      !Number.isFinite(l.lat) ||
+      !Number.isFinite(l.lon) ||
+      l.lat < -90 || l.lat > 90 ||
+      l.lon < -180 || l.lon > 180;
+    if (bad) {
+      err('location_invalid', 'location must be { place, lat, lon } with lat in -90..90 and lon in -180..180, or null');
+    }
+  } else {
+    warn('no_location', 'no location set — the weather card will say it is unconfigured rather than borrow another city');
+  }
+
   if (!site.policy || typeof site.policy !== 'object') {
     err('policy_missing', 'policy must be an object, even if every rule in it is null');
   } else if (site.policy.acu_min_setpoint_c !== null && typeof site.policy.acu_min_setpoint_c !== 'number') {

@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
+import { WEATHER_CONFIGURED } from '@/config/weather';
 import { getWeather, type WeatherNow } from '@/lib/weatherClient';
 
 /** 10 minutes. Open-Meteo updates roughly hourly, so polling faster only burns a public
  * API's goodwill for data that hasn't changed. */
 const REFRESH_MS = 600_000;
 
-export type WeatherStatus = 'loading' | 'ready' | 'error';
+/** `unconfigured` is its own state, not an error: a site that has not said where it is has
+ * nothing to report, which is a different thing from a forecast this app failed to fetch. */
+export type WeatherStatus = 'loading' | 'ready' | 'error' | 'unconfigured';
 
 /**
  * Self-fetching weather, same shape as `useAnalyticsHistory`: fetch on mount, refetch on an
@@ -18,9 +21,12 @@ export type WeatherStatus = 'loading' | 'ready' | 'error';
  */
 export function useWeather(): { weather: WeatherNow | null; status: WeatherStatus } {
   const [weather, setWeather] = useState<WeatherNow | null>(null);
-  const [status, setStatus] = useState<WeatherStatus>('loading');
+  const [status, setStatus] = useState<WeatherStatus>(WEATHER_CONFIGURED ? 'loading' : 'unconfigured');
 
   useEffect(() => {
+    // No location, no request. Polling every ten minutes for a building whose coordinates nobody
+    // has entered would be a request that can only ever fail.
+    if (!WEATHER_CONFIGURED) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;

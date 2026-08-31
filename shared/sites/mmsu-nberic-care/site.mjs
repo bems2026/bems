@@ -39,6 +39,27 @@ export const SITE = Object.freeze({
    */
   scene_pack: 'care',
 
+  /**
+   * Where this building is — RM-033.
+   *
+   * WHY IT MOVED HERE. `src/config/weather.ts` held these coordinates as its own defaults, so a
+   * deployment that had not set `VITE_WEATHER_*` showed **this** office's weather labelled as
+   * its own — a measurement about somewhere else, presented as being about the reader's
+   * building. Null is now the honest answer for a site nobody has located, and the weather card
+   * says so instead of borrowing a city.
+   *
+   * `place` is what the UI names beside the reading, so the reader can never mistake an outdoor
+   * forecast for one of the building's own sensors.
+   *
+   * Environment variables still override, for a deployment whose weather station is sensibly
+   * somewhere other than the building itself.
+   */
+  location: Object.freeze({
+    place: 'Batac City',
+    lat: 18.0553,
+    lon: 120.5646,
+  }),
+
   /** @type {SitePolicy} Operating rules for this building. */
   policy: Object.freeze({
     /**

@@ -30,13 +30,24 @@ export function WeatherStatusCard() {
           <WeatherIcon code={weather?.code ?? 3} isDay={weather?.isDay ?? true} size={14} className="title-icon" />
           Weather Status
           <InfoHint label="Where this weather comes from">
-            Open-Meteo forecast for {WEATHER_PLACE}, refreshed every 10 minutes. Outdoor site weather, not a building sensor — the office's own outdoor probe and the ACU's room
-            temperature are separate readings on the Climate Diagnostic card.
+            {WEATHER_PLACE ? `Open-Meteo forecast for ${WEATHER_PLACE}` : 'Open-Meteo forecast'}, refreshed every 10 minutes. Outdoor site weather, not a
+            building sensor — this building's own outdoor probe and the ACU's room temperature are
+            separate readings on the Climate Diagnostic card.
           </InfoHint>
         </h3>
       </div>
 
-      {status === 'loading' && !weather ? (
+      {status === 'unconfigured' ? (
+        // Its own state, not an error. "We could not reach the forecast service" and "nobody has
+        // said where this building is" are different facts, and only one of them is fixable by
+        // waiting. This used to be unreachable because the module fell back to the CARE office's
+        // coordinates, so an unlocated deployment showed that city's weather as its own.
+        <p className="section-placeholder">
+          No location set for this site, so there is no local forecast. Add one to
+          <code> shared/sites/&lt;slug&gt;/site.mjs</code>, or set <code>VITE_WEATHER_LAT</code>
+          and <code>VITE_WEATHER_LON</code>.
+        </p>
+      ) : status === 'loading' && !weather ? (
         <Skeleton height="100%" />
       ) : !weather ? (
         <p className="section-placeholder">Weather unavailable — no connection to the forecast service.</p>
@@ -52,7 +63,7 @@ export function WeatherStatusCard() {
               </p>
             </div>
             <p className="weather-hero__feels">
-              Feels like {Math.round(weather.apparentC)}° · {WEATHER_PLACE}
+              Feels like {Math.round(weather.apparentC)}°{WEATHER_PLACE ? ` · ${WEATHER_PLACE}` : ''}
             </p>
           </div>
 

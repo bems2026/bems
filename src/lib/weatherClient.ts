@@ -1,4 +1,4 @@
-import { WEATHER_API_URL, WEATHER_LAT, WEATHER_LON, WEATHER_TZ } from '@/config/weather';
+import { WEATHER_API_URL, WEATHER_CONFIGURED, WEATHER_LAT, WEATHER_LON, WEATHER_TZ } from '@/config/weather';
 
 /**
  * Open-Meteo forecast fetch. Deliberately narrow: this returns exactly the fields the two
@@ -73,6 +73,12 @@ function parseSiteTime(raw: string): number {
 const FETCH_TIMEOUT_MS = 10_000;
 
 export async function getWeather(signal?: AbortSignal): Promise<WeatherNow> {
+  // Refused before the URL is built, not after. `WEATHER_LAT` is `number | null` since the
+  // location became a site fact, and a null interpolates into a template literal as the STRING
+  // "null" — TypeScript is perfectly happy with that, and Open-Meteo would answer something.
+  // An unlocated deployment must make no request at all rather than a plausible wrong one.
+  if (!WEATHER_CONFIGURED) throw new Error('weather is not configured: this site declares no location');
+
   const url =
     `${WEATHER_API_URL}?latitude=${WEATHER_LAT}&longitude=${WEATHER_LON}` +
     `&current=${CURRENT_FIELDS}` +

@@ -1,7 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
 **Last audited:** 2026-08-31 (UTC) — RM-027 to RM-032 and RM-034 done; RM-033 part-built
-**Audited at commit:** `cff3bc0`
+**Audited at commit:** `8c0d596`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
 discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
@@ -2469,6 +2469,25 @@ may not.
       - the `sites` row itself: `phase19_sites.sql` seeds this site's id, so a second deployment
         still edits SQL. Provisioning should take it from the site directory.
       - FI-016, the Control page's outlet plan, which is the last screen naming `co1..co7`.
+
+      **Two more found by looking rather than reasoning, 2026-08-31.** Both were in the same
+      place: the building's *location* was not a declared site fact, so shared code invented one.
+      - **The Overview clock showed the READER's time under the BUILDING's place name.** Neither
+        `toLocaleTimeString` nor `toLocaleDateString` passed a `timeZone`. Measured: a viewer in
+        New York saw `00:20` while the building read `12:20`, presented as the building's. The
+        kiosk in the room was right only by coincidence, which is why nobody noticed. Verified in
+        a browser reporting `Asia/Shanghai`: the page now shows `05:29` for a site declaring UTC
+        while the browser's own clock reads `13:29`.
+      - **An unlocated deployment showed the CARE office's weather as its own.**
+        `src/config/weather.ts` held these coordinates as its own defaults, so any site that had
+        not set `VITE_WEATHER_*` got Batac City's forecast under its own name — a measurement
+        about somewhere else, presented as being about the reader's building. `site-naming`'s
+        guard could not catch it: "batac" is derivable from neither the site id nor its display
+        name.
+      *`SITE.location` now carries it* (`place`, `lat`, `lon`, or null), env vars still override,
+      and there is **no fallback**. An unlocated site renders its own state and **makes no
+      forecast request at all** — verified: `forecastRequestsMade: 0`, and no mention of Batac
+      anywhere on the page. `site:check` validates the shape and warns when it is null.
 
       **`npm run site:check` — the conformance check, built 2026-08-31.** The suites in this repo
       are this building's regression suite; this is the one a second deployment runs against its

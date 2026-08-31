@@ -75,6 +75,14 @@ export const SITE = Object.freeze({
    */
   scene_pack: null,
 
+  /**
+   * TODO: where this building is, or leave null.
+   *
+   * Null is a working state: the weather card says it has no location rather than showing some
+   * other city's forecast as yours. Fill it in and the Overview names your own place.
+   */
+  location: null,
+
   /** @type {SitePolicy} Operating rules for this building. */
   policy: Object.freeze({
     /**
