@@ -2,6 +2,10 @@
 
 **Last audited:** 2026-08-31 (UTC) — RM-027 to RM-032 and RM-034 done; RM-033 part-built
 **Audited at commit:** `b31caa2`
+**Landed since that audit, not re-audited:** RM-006c's tier editor (`9f7848d`) and FI-018's
+baseline report. Both were verified on their own terms — suites, neutered guards, and for
+RM-006c a live read-back — but the file below has not been re-read against the tree since
+`b31caa2`, and saying which is which is cheaper than an audit that did not happen.
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
 discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
@@ -2656,6 +2660,36 @@ may not.
 
 ### Replication
 - **FI-003** (L) Packaging so a second site can be stood up without redoing the wiring by hand: install script or card image, plus a physical-install guide. **Promoted into RM-033** (2026-08-26). Its blocker was never the packaging — it was that a "site" was not a thing the code had a name for. RM-027 gives it one.
+
+### Reporting
+- ~~**FI-018** (S) The baseline numbers exist and no artifact carries them.~~ **Done 2026-08-31**
+  — `server/baselineReport.mjs` (pure), `server/baseline-report.mjs` (fetch and write),
+  `npm run baseline:report`, 13 tests. **Milestone 1 asks for "a baseline energy dataset and
+  benchmarking summary"; `demand:profile` computed the statistics and printed them to a terminal
+  nobody keeps.** An artifact is a different deliverable from a statistic: it has a date on it,
+  it can be compared against next quarter, and it can be handed to someone who was not in the
+  room. Both halves are written together — the CSV is the exact input to the Markdown beside it,
+  so the pair cannot drift and a reader can check the summary rather than take it.
+  *This is `RM-024` / `EX-107` applied to a document rather than a dashboard*, and a document is
+  where overstating is easiest, because a table looks finished whatever went into it. Coverage is
+  stated **before** any figure it qualifies, and includes the longest single gap — 80% coverage is
+  a healthy month with a few restarts or three weeks up and a week dark, and only the gap tells
+  them apart. An hour nobody observed renders `—`, never `0`. A day the meters missed half of is
+  marked *partial* with the hours it actually saw, so its kWh reads as a floor rather than a
+  total. A window under 1000 readings or 3 building-days heads itself **"This is not a baseline
+  yet"** rather than producing a table that looks like the real thing — three days because two
+  cannot separate a weekday from a weekend, and the weekend is most of the distance between a
+  building's peak and its floor.
+  *Energy is read from the meters' own daily counter, not integrated from power samples.*
+  Integrating across a gap invents the energy used during an outage, and those are precisely the
+  hours least like the ones either side of them.
+  *Both guards were neutered and confirmed to fail* — removing the timezone shift broke four
+  tests, and forcing the thin-sample check off broke the fifth.
+  *The report also states what it does not say*: it is not normalised by floor area or occupancy,
+  because neither is recorded and a kWh/m² figure from an assumed area would be the most quotable
+  number in the document and the least true.
+  *Output is gitignored.* Dated artifacts belong with the submission; a repository accumulating
+  stale copies is how the wrong quarter gets cited.
 
 ### Robustness
 - ~~**FI-013** (S) The Outlet tab never polls its devices.~~ **Done 2026-08-25** — EX-038b.

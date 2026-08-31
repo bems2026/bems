@@ -17,3 +17,7 @@ server/data/
 server/.env.*
 # ...but the checked-in template is the whole point of having one.
 !server/.env.example
+
+# Generated baseline reports (Milestone 1 artifacts). Dated copies belong with the
+# submission, not in the repository, where the wrong quarter would eventually get cited.
+reports/
