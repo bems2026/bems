@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 import { useDeviceStore } from '@/stores/deviceStore';
-import { isReadingStale } from '@/lib/staleness';
+import { isReadingStale, staleWindowLabel } from '@/lib/staleness';
 import { useNowTick } from '@/lib/useNowTick';
 
 interface StaleDataBadgeProps {
@@ -13,8 +13,12 @@ interface StaleDataBadgeProps {
 }
 
 /**
- * Dims its children once the underlying reading is stale — 30s with no update, or the
- * bridge explicitly reporting the device offline. Self-contained on purpose: drop it
+ * Dims its children once the underlying reading is stale — either no update within the budget
+ * the bridge sent for that device (`Reading.stale_after_ms`; 30s for a switch, 2.5 minutes for
+ * an outlet, which is polled once a minute), or the bridge explicitly reporting the device
+ * offline. The window is quoted in the accessible label rather than hardcoded: it used to say
+ * "30 seconds" for every device, which explained the badge by misdescribing it and taught the
+ * reader to distrust the flag rather than the device. Self-contained on purpose: drop it
  * around any per-device or building-level display and it subscribes to the right slice
  * of `deviceStore` itself, per the Stage 1 plan's "applied per-device wherever a reading
  * is shown."
@@ -47,7 +51,7 @@ export function StaleDataBadge({ deviceId, label, children, className }: StaleDa
     <div className={`stale-wrap${stale ? ' stale-wrap--stale' : ''}${className ? ` ${className}` : ''}`}>
       {children}
       {stale && (
-        <span className="stale-flag" role="status" aria-live="polite" aria-label={`${subject}: no reading in the last 30 seconds`}>
+        <span className="stale-flag" role="status" aria-live="polite" aria-label={`${subject}: no reading in the last ${staleWindowLabel(reading)}`}>
           stale
         </span>
       )}

@@ -3,7 +3,7 @@ import { Lightbulb } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
 import { controlView, isCommandable } from '@/lib/socketView';
-import { isReadingStale } from '@/lib/staleness';
+import { isReadingStale, staleWindowLabel } from '@/lib/staleness';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { useControlLog } from './controlLog';
@@ -150,7 +150,7 @@ function LightRow({ device, cells }: { device: Device; cells?: { x: number; y: n
             className={`control-lamp${on ? ' control-lamp--on' : ''}${at ? '' : ' control-lamp--inline'}`}
             style={at ? { left: `${at.x * 100}%`, top: `${at.y * 100}%` } : undefined}
             disabled={busy || !isCommandable(reading)}
-            title={isPrimary && stale ? `${device.display_name}: stale — no reading in the last 30 seconds` : undefined}
+            title={isPrimary && stale ? `${device.display_name}: stale — no reading in the last ${staleWindowLabel(reading)}` : undefined}
             onClick={toggle}
           />
         );

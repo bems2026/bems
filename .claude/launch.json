@@ -2,6 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "ibems-mock",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "mock", "--", "--poll-cadence=60", "--dispatch=switch,outlet_dual,acu_ir"],
+      "port": 1880
+    },
+    {
       "name": "ibems-dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],

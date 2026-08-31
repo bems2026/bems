@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isReadingStale, isReadingExpired, measured } from './staleness';
+import { isReadingStale, isReadingExpired, measured, staleWindowLabel, staleWindowMs } from './staleness';
 import type { Reading, Totals } from './types';
 
 const now = 1_786_000_000_000;
@@ -140,5 +140,31 @@ describe('measured', () => {
   it('withholds a zero just as readily as a number — a stale 0 W is the exact reading that looks idle', () => {
     const r: Reading = { device_id: 'co1', ts: minutes(15), online: true, power_w: 0, state: 'off' };
     expect(measured(r.power_w, r, now)).toBeUndefined();
+  });
+});
+
+/**
+ * The copy that quotes the window must quote the RIGHT window.
+ *
+ * Six places said "30 seconds" — true of a switch, wrong by a factor of five for an outlet, and
+ * therefore a sentence that explained the badge by misdescribing it. A tooltip reading "no
+ * reading in the last 30 seconds" beside a device the bridge polls once a minute teaches the
+ * reader to distrust the flag rather than the device.
+ */
+describe('staleWindowLabel', () => {
+  it('quotes the budget the bridge actually sent for this device', () => {
+    const outlet: Reading = { device_id: 'co1', ts: fresh, online: true, state: 'on', stale_after_ms: 150_000 };
+    expect(staleWindowLabel(outlet)).toBe('2.5 minutes');
+  });
+
+  it('stays in seconds while that reads naturally', () => {
+    const light: Reading = { device_id: 'l1', ts: fresh, online: true, state: 'on', stale_after_ms: 30_000 };
+    expect(staleWindowLabel(light)).toBe('30 seconds');
+  });
+
+  it('falls back to the 30s default for a row carrying no budget', () => {
+    const legacy: Reading = { device_id: 'l1', ts: fresh, online: true, state: 'on' };
+    expect(staleWindowLabel(legacy)).toBe('30 seconds');
+    expect(staleWindowMs(legacy)).toBe(30_000);
   });
 });

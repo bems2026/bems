@@ -534,7 +534,17 @@ const server = http.createServer((req, res) => {
     // on without a Pi — it changes only what this endpoint claims, never what the mock does
     // with a command, which has no hardware path either way.
     case '/api/capabilities':
-      return send(res, 200, { hardware_dispatch_enabled: DISPATCH_CLASSES.length > 0, dispatch_classes: DISPATCH_CLASSES });
+      return send(res, 200, {
+        hardware_dispatch_enabled: DISPATCH_CLASSES.length > 0,
+        dispatch_classes: DISPATCH_CLASSES,
+        // Contract parity with server/proxy.mjs. The policy is the site's own declaration and
+        // is readable here exactly as it is there; `cloud_fallback_configured` is always false
+        // because this process has no vendor credentials and never will — which is a true
+        // answer, not a stub, and is the one state that makes the Control page say "no vendor
+        // fallback is configured on this deployment" so a developer can actually see it.
+        dispatch_policy: SITE.policy?.dispatch ?? 'local-first',
+        cloud_fallback_configured: false,
+      });
 
     case '/api/readings/latest':
       return send(res, 200, latest());

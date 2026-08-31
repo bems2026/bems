@@ -1,4 +1,5 @@
 import { isStale } from './bridgeClient';
+import { TIMING } from './timing';
 import type { Reading, Totals } from './types';
 
 /**
@@ -34,6 +35,31 @@ export function isReadingStale(reading: Reading | Totals | null | undefined, now
   // back to `isStale`'s own 30s default, which is what they were measured against before.
   const budget = 'stale_after_ms' in reading ? reading.stale_after_ms : undefined;
   return isStale(Date.parse(reading.ts), nowMs, budget);
+}
+
+/**
+ * The staleness budget that actually applies to a reading, in ms.
+ *
+ * Exported because several places quote the window in their own copy, and every one of them
+ * used to say "30 seconds" — which was true of a switch, wrong by a factor of five for an
+ * outlet, and therefore a sentence that explained a badge by misdescribing it. A tooltip that
+ * says "no reading in the last 30 seconds" beside a device the bridge polls once a minute
+ * teaches the reader to distrust the badge, not the device.
+ */
+export function staleWindowMs(reading: Reading | Totals | null | undefined): number {
+  const declared = reading && 'stale_after_ms' in reading ? reading.stale_after_ms : undefined;
+  return typeof declared === 'number' ? declared : TIMING.STALE_AFTER_MS;
+}
+
+/**
+ * That window as words, for copy. Seconds while it reads naturally, minutes once it does not —
+ * "150 seconds" is a number a reader has to convert, and this appears in a tooltip.
+ */
+export function staleWindowLabel(reading: Reading | Totals | null | undefined): string {
+  const ms = staleWindowMs(reading);
+  if (ms < 90_000) return `${Math.round(ms / 1000)} seconds`;
+  const minutes = Math.round(ms / 6000) / 10;
+  return `${minutes} minute${minutes === 1 ? '' : 's'}`;
 }
 
 /**

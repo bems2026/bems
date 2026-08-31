@@ -3,7 +3,7 @@ import { Bell, AlertTriangle, X } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useAnomaliesStore } from '@/stores/anomaliesStore';
 import { useCommandStore } from '@/stores/commandStore';
-import { isReadingStale } from '@/lib/staleness';
+import { isReadingStale, staleWindowLabel } from '@/lib/staleness';
 import { latestAnomalyPerDevice, isAnomalyCurrent } from '@/lib/anomalies';
 import { useNowTick } from '@/lib/useNowTick';
 import { useDeviceConnectivity } from '@/hooks/useDeviceConnectivity';
@@ -21,8 +21,8 @@ interface AlertItem {
 }
 
 /**
- * The nav's alerts bell — fed by real device staleness (per `isReadingStale`, the same 30s
- * rule `StaleDataBadge`/`DevicesView` use) and, as of architecture plan Phase 8, real
+ * The nav's alerts bell — fed by real device staleness (per `isReadingStale`, the same
+ * per-device rule `StaleDataBadge`/`DevicesView` use) and, as of architecture plan Phase 8, real
  * rolling-window power anomalies (`useAnomaliesStore`, server-computed in
  * `server/ingest.mjs`). Both sources reduce to the same `AlertItem` shape and the same
  * per-device-id ack Set below — no new branching in render or the ack handler.
@@ -72,7 +72,7 @@ export function AlertsPopover() {
         .map((d) => ({
           deviceId: d.id,
           title: `${d.display_name} in COMM FAULT`,
-          body: 'No reading in the last 30 seconds.',
+          body: `No reading in the last ${staleWindowLabel(latestReadings[d.id])}.`,
           meta: `${d.id} · watchdog`,
           kind: 'watchdog' as const,
         })),

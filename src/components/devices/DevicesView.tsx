@@ -209,9 +209,12 @@ export function DevicesView() {
       </div>
       <SegmentPresenceNote />
       <p className="devices-watchdog-note">
-        Stale after 30s idle
+        Stale after its own reporting window
         <InfoHint label="Watchdog and metadata details">
-          A device is flagged stale once its reading hasn't advanced in 30 seconds, or the bridge reports it offline outright — see <code>isReadingStale</code>. Room,
+          A device is flagged stale once its reading hasn't advanced within its own reporting window, or the bridge reports it offline outright — see <code>isReadingStale</code>.
+          That window is the bridge's own number and differs by device: 30 seconds for a light switch, 2.5 minutes for an outlet or a branch meter, which the bridge polls
+          once a minute rather than continuously. One global 30 seconds used to be applied to all of them, so every outlet read stale for half of every minute while it was
+          working perfectly. Room,
           category, load-shed group, and notes are recorded per device via each row's Edit button, not read from the live flow — the bridge itself still reports every
           device's <code>room</code> as unset.
         </InfoHint>

@@ -32,7 +32,11 @@ export function DeviceStatusCountsCard() {
       <CountRow label="Reporting" value={`${online}/${total}`} color="var(--green-bright)" />
       <CountRow label="Lights on" value={`${lightsOn}/${lights.length}`} color="var(--accent)" />
       <CountRow label="Outlets on" value={`${outletsOn}/${outlets.length}`} color="var(--blue-bright)" />
-      <p className="status-counts-footnote">Stale threshold: no reading in the last 30 seconds.</p>
+      {/* Not a single number any more: the threshold is the bridge's own per-device budget
+          (`Reading.stale_after_ms`), because an outlet is polled once a minute while a switch
+          reports continuously. Quoting "30 seconds" here described one class and misdescribed
+          the rest. */}
+      <p className="status-counts-footnote">Stale threshold: no reading within a device&apos;s own reporting window, or the bridge reporting it offline.</p>
     </div>
   );
 }
