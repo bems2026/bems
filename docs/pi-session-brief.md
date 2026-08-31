@@ -21,6 +21,19 @@ ordinary local commands.
 **So: do not propose SSH, and do not hand a command back to the operator that you can run.** The
 authority section below says which those are.
 
+> **Amended 2026-09-01.** A remote session from the Windows workstation over the tailnet did the
+> whole of that list unaided: `systemctl restart`, three live flow writes (`deploy:pi --force
+> --apply`, `fix-health:pi --apply`, `poll-outlets:pi --apply`), a `git pull`, `npm run build`,
+> all three suites on the Pi, and a real relay dispatch. So the sandbox limitation above is no
+> longer the constraint it was, and a remote session should NOT assume it must hand these back.
+>
+> What has not changed is the *authority* boundary below — a flow write still needs asking, from
+> either place — nor the value of being on the Pi, which is the journal, the network and
+> `flows.json` being local rather than a round trip away. Two traps are specific to the remote
+> case: paths are the **Pi's** (`/home/bems/bems`, not the workstation checkout), and a
+> multi-line search/replace written on Windows will not match a CRLF file, which fails silently
+> and looks like a no-op rather than an error.
+
 ---
 
 ## Your authority here
