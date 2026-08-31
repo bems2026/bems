@@ -49,8 +49,15 @@ if (plan.unchanged) {
   process.exit(0);
 }
 
+const isUpgrade = (plan.upgraded ?? []).length > 0;
+
 console.log('=== PLAN ===');
-console.log(`  add 2 nodes: an inject every ${POLL_INTERVAL_S}s and a function sending { operation: 'GET' }`);
+if (isUpgrade) {
+  console.log('  upgrade the existing poll function: one output per outlet, skipping any the');
+  console.log('  parser has flagged disconnected. Adds no nodes and touches nothing else.');
+} else {
+  console.log(`  add 2 nodes: an inject every ${POLL_INTERVAL_S}s and a function sending { operation: 'GET' }`);
+}
 console.log(`  polling ${plan.targets.length} outlet(s): ${plan.targets.join(', ')}`);
 console.log(`\nResulting flow size: ${flows.length} -> ${plan.flows.length} nodes.\n`);
 
@@ -61,9 +68,10 @@ if (problems.length) {
   console.error('\nABORT: the plan violates an invariant. Nothing was written.');
   process.exit(1);
 }
-console.log('  OK  exactly 2 nodes added');
-console.log('  OK  no existing node modified or removed');
-console.log('  OK  every outlet is reached by the poller');
+console.log(isUpgrade ? '  OK  no nodes added; only the poll function changed' : '  OK  exactly 2 nodes added');
+console.log('  OK  no other existing node modified or removed');
+console.log('  OK  every outlet has its own output and is reached by the poller');
+console.log('  OK  every outlet health key is consulted, so a disconnected one is skipped');
 console.log('  OK  no dangling wires');
 
 if (!APPLY) {

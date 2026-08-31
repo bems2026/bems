@@ -39,6 +39,7 @@
     "collapse-sessions:pi": "node node-red-bridge/collapse-sessions.mjs",
     "poll-outlets:pi": "node node-red-bridge/poll-outlets.mjs",
     "local-probe:pi": "node node-red-bridge/local-probe.mjs",
+    "fix-health:pi": "node node-red-bridge/fix-health-wiring.mjs",
     "enroll:pi": "node node-red-bridge/enroll-device.mjs",
     "remove:pi": "node node-red-bridge/remove-device.mjs",
     "quiesce:pi": "node node-red-bridge/quiesce-dead-nodes.mjs",
