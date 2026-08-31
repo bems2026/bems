@@ -179,13 +179,20 @@ column landed all went **local**, with no cloud fallbacks.
 
 ### Build order — what to do next, largest value first
 
-1. **RM-006c: `auto_shed` is still `false`.** The tiers were assigned on 2026-08-31 — all 14
-   shed-capable devices, lights as `group_1` and the outlets split across `group_2`/`group_3` —
-   so the classification gap is closed. The flag on the Automation page is now the only thing
-   between a built feature and a working one. Worth knowing before flipping it: `group_1` is the
-   lighting, measured at ~16 W of a 919 W office-hours demand against a 2.21 kW ceiling, so the
-   first shed step is the most visible action available and close to the least effective one.
-   The tiers are editable — see the Load shedding editor on the Devices page.
+1. **RM-006c: the tiers are assigned; two things still gate auto-shed, and they share one fix.**
+   All 14 shed-capable devices were classified on 2026-08-31 — lights as `group_1`, outlets split
+   across `group_2`/`group_3` — so the classification gap is closed. What remains is **not just
+   the `auto_shed` flag**: `server/scheduler.mjs` takes its shed actor from
+   `dsm_thresholds.updated_by`, and `planShed` returns idle without one. That column is **null on
+   the live row**, because the thresholds were written as the service role. So setting `auto_shed`
+   directly in the database would arm nothing.
+   **Both are fixed by the same action: open the Automation page signed in, turn auto-shed on, and
+   save.** That stamps `updated_by` with a real user and sets the flag in one write. This is a
+   property to rely on rather than a bug — a load-shed row is the last one anyone would want
+   traced to an invented user.
+   *Worth knowing before flipping it:* `group_1` is the lighting, ~16 W of a 919 W office-hours
+   demand against a 2.21 kW ceiling, so the first shed step is the most visible action available
+   and close to the least effective one. The tiers are editable on the Devices page.
 2. ~~**FI-008 (S)** — a contrast regression guard.~~ **Done 2026-08-31**, and it found a real
    latent AA failure on its first run. See its entry.
 3. ~~**FI-006 (S)** — wire `StaleDataBadge` into the views that still derive staleness inline.~~
@@ -2036,10 +2043,17 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       dashboard while nothing switches on its own, which is the monitoring value with none of
       the risk. Both are editable on the Automation page; the operator expects to revise them,
       since the peak depends on what happens to be connected and tested at the time.
-      **Tiers deliberately unassigned.** Auto-shed can reach switches, outlets and the aircon
-      now that `DISPATCH_CLASSES` covers all three and the gate is open, and it never restores —
-      so which circuits the building may lose unattended is a facility decision, made in the
-      Devices page's Edit dialog rather than inferred from data.
+      **Tiers are now assigned — measured 2026-08-31.** All 14 shed-capable devices carry one:
+      `l1`-`l7` in `group_1`, `co1`/`co4`/`co5` in `group_2`, `co2`/`co3`/`co6`/`co7` in
+      `group_3`, written between 17:28 and 17:29 site time through the RM-006c editor. The
+      classification gap this entry was opened for is closed.
+      *Worth knowing before the flag is flipped:* `group_1` is the lighting, measured at ~16 W of
+      a 919 W office-hours demand against a 2.21 kW ceiling, so the first shed step is the most
+      visible action available and close to the least effective one. That is the operator's call
+      and the tiers are editable; it is recorded here because nothing on screen says it.
+      Auto-shed can reach switches, outlets and the aircon now that `DISPATCH_CLASSES` covers all
+      three and the gate is open, and it never restores — so which circuits the building may lose
+      unattended stays a facility decision, made in the Devices page rather than inferred.
       *Attribution is what actually arms this, and it is worth knowing before the toggle is
       flipped.* The write above went in as the service role, so `updated_by` is null — and
       `planShed` returns idle without an actor (`commands.requested_by` is NOT NULL, and a
