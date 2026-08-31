@@ -13,6 +13,7 @@
     "build:flow": "node node-red-bridge/build-flow.mjs",
     "site:new": "node scripts/site-new.mjs",
     "site:check": "node scripts/site-check.mjs",
+    "preflight": "node scripts/preflight.mjs",
     "mock": "node mock-bridge/server.mjs",
     "mock:stop": "node mock-bridge/stop.mjs",
     "verify:pi": "node node-red-bridge/verify.mjs",
