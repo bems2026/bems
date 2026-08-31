@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, RotateCw, Pause, Home, LayoutPanelTop, Pencil, Armchair, Table2, GlassWater, ShelvingUnit, Sofa, Redo2, Copy, ClipboardPaste, Trash2, Save, RotateCcw, Upload, Download } from 'lucide-react';
 import { OfficeScene, type PickResult } from './officeScene';
-import { FloorPlanView } from '@/components/floorplan/FloorPlanView';
+import { FloorPlanView } from '@/components/scene3d/FloorPlanView';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useShallow } from 'zustand/react/shallow';
 import { Card } from '@/components/ui/Card';

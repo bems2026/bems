@@ -8,27 +8,8 @@ import { StaleDataBadge } from '@/components/common/StaleDataBadge';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { useControlLog } from './controlLog';
-import { PlanShell } from './PlanShell';
-import { VB_W, VB_H, pct } from './planGeometry';
+import { useControlPlan } from './useControlPlan';
 import type { Device, SocketIndex } from '@/lib/types';
-
-/**
- * Same 7 outlet positions `FloorPlanView.tsx` uses (its own comment explains the source:
- * the live `Outlet Floor Plan (Status Only)` `ui_template`'s fixed `coords` array, index
- * i-1 -> device `co{i}`). Duplicated rather than imported because `geometry.ts`'s exported
- * `OUTLET_FIXTURES` gives the 3D scene's *wall-snapped* mount point, not this original
- * plan-space position — the two diverge for any outlet not flush against the wall the
- * snap picked, so a 2D plan wanting the actual surveyed pin needs the raw coordinates.
- */
-const OUTLET_LAYOUT: { id: string; x: number; y: number }[] = [
-  { id: 'co1', x: 25, y: 470 },
-  { id: 'co2', x: 50, y: 515 },
-  { id: 'co3', x: 285, y: 470 },
-  { id: 'co4', x: 25, y: 370 },
-  { id: 'co5', x: 65, y: 115 },
-  { id: 'co6', x: 235, y: 115 },
-  { id: 'co7', x: 285, y: 190 },
-];
 
 export function OutletPlanCard() {
   const devices = useDeviceStore((s) => s.devices);
@@ -36,7 +17,8 @@ export function OutletPlanCard() {
   const log = useControlLog((s) => s.log);
   const { ask, modalProps } = useConfirm();
   const outlets = devices.filter((d) => d.class === 'outlet_dual');
-  const outletById = new Map(outlets.map((d) => [d.id, d]));
+  const plan = useControlPlan();
+  const unplaced = outlets.filter((d) => !plan?.OUTLET_POSITIONS[d.id]);
 
   const allOn = () => {
     for (const d of outlets) {
@@ -66,14 +48,38 @@ export function OutletPlanCard() {
         <Plug size={12} className="title-icon" aria-hidden="true" />
         CONVENIENCE OUTLETS · CO1-CO7
       </div>
-      <div className="control-outlet-plan">
-        <PlanShell />
-        {OUTLET_LAYOUT.map(({ id, x, y }) => {
-          const device = outletById.get(id);
-          if (!device) return null;
-          return <OutletPin key={id} device={device} left={pct(x, VB_W)} top={pct(y, VB_H)} />;
-        })}
-      </div>
+      {plan ? (
+        <div className="control-outlet-plan">
+          <plan.PlanShell />
+          {outlets.map((device) => {
+            const at = plan.OUTLET_POSITIONS[device.id];
+            // An outlet the pack has no position for is NOT drawn at a guessed spot — it drops
+            // to the list below, where it is still fully commandable. A pin somewhere nobody
+            // surveyed looks exactly as deliberate as one that was.
+            if (!at) return null;
+            return <OutletPin key={device.id} device={device} left={`${at.x * 100}%`} top={`${at.y * 100}%`} />;
+          })}
+        </div>
+      ) : null}
+
+      {/* NO DUPLICATE CONTROLS. This page already carries `OutletsListCard`, which lists every
+          outlet with the same switches — so a site without a drawn plan gets a sentence saying
+          where to look, not a second copy of the controls two cards down. The first draft of
+          this fallback did duplicate them, and the page's own tests caught it by finding two of
+          everything. */}
+      {!plan && (
+        <p className="control-plan-panel__note">
+          No plan is drawn for this site. Every outlet is in the list below, with the same
+          controls.
+        </p>
+      )}
+      {plan && unplaced.length > 0 && (
+        <p className="control-plan-panel__note">
+          {unplaced.length} outlet{unplaced.length === 1 ? '' : 's'} not placed on this plan —
+          {' '}
+          {unplaced.map((d) => d.display_name).join(', ')}. They are in the list below.
+        </p>
+      )}
       <div className="control-plan-panel__actions">
         <button type="button" className="control-plan-btn" onClick={askAllOn}>
           All outlets on
@@ -87,7 +93,7 @@ export function OutletPlanCard() {
   );
 }
 
-function OutletPin({ device, left, top }: { device: Device; left: string; top: string }) {
+function OutletPin({ device, left, top }: { device: Device; left?: string; top?: string }) {
   const reading = useDeviceStore((s) => s.latestReadings[device.id]);
   const pendingMap = useCommandStore((s) => s.pending);
   const send = useCommandStore((s) => s.send);
@@ -111,7 +117,7 @@ function OutletPin({ device, left, top }: { device: Device; left: string; top: s
   };
 
   return (
-    <div className="control-outlet-pin" style={{ left, top }}>
+    <div className={left ? 'control-outlet-pin' : 'control-outlet-pin control-outlet-pin--inline'} style={left ? { left, top } : undefined}>
       <StaleDataBadge deviceId={device.id} label={device.display_name}>
         <div className="control-outlet-pin__id">{device.id.toUpperCase()}</div>
         <div className="control-outlet-pin__puck" role="group" aria-label={`${device.display_name} sockets`}>

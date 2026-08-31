@@ -6065,3 +6065,18 @@ button.space-plan__pin {
     min-height: 40px;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Control plan fallback — FI-016. A deployment with no drawn plan gets a
+   sentence pointing at the lists this page already carries, not a second copy
+   of the controls.
+   --------------------------------------------------------------------------- */
+.control-plan-panel__note {
+  margin: var(--sp-3) 0 0;
+  padding: var(--sp-3);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-inner);
+  color: var(--muted-2);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}

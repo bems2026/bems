@@ -192,14 +192,17 @@ describe('ControlPage', () => {
     await waitFor(() => expect(screen.getByText('IR')).toBeInTheDocument());
   });
 
-  it('the outlet plan\'s DP1/DP2 puck toggles a single socket directly — ungated, like every other single-device control', () => {
+  it('the outlet plan\'s DP1/DP2 puck toggles a single socket directly — ungated, like every other single-device control', async () => {
     vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack({ device_id: 'co1', socket: 1, action: 'on' }));
     useDeviceStore.setState({
       devices: [outlet(1)],
       latestReadings: { co1: { device_id: 'co1', ts: new Date().toISOString(), online: true, state: 'off', socket_states: { 1: 'off', 2: 'off' } } },
     });
     render(<ControlPage />);
-    fireEvent.click(screen.getByRole('button', { name: 'Outlet 1 DP1' }));
+    // AWAITED, because the plan is now a lazily-imported pack (FI-016): the puck exists once
+    // this site's pack resolves, and at a site with no pack it never does — the same outlet is
+    // then commanded from `OutletsListCard`, which this file covers separately.
+    fireEvent.click(await screen.findByRole('button', { name: 'Outlet 1 DP1' }));
     expect(bridgeClient.sendCommand).toHaveBeenCalledWith(expect.objectContaining({ device_id: 'co1', socket: 1, action: 'on' }));
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });

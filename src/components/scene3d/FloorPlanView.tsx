@@ -2,8 +2,17 @@ import type { ReactNode } from 'react';
 import { Lightbulb, Plug, type LucideIcon } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { isReadingStale } from '@/lib/staleness';
-import { LIGHT_PLAN } from '@/components/scene3d/geometry';
+import { LIGHT_PLAN } from './geometry';
 import type { Reading } from '@/lib/types';
+
+/**
+ * MOVED INTO THE PACK 2026-08-31 — FI-016. This was `src/components/floorplan/`, a name that
+ * reads as generic, while the file pins `co1..co7` to coordinates surveyed in one room. It
+ * belongs beside the 3D scene that describes the same room and loads under the same gate.
+ *
+ * `OfficeScene3D` still uses it as its WebGL-unavailable fallback — a capability check WITHIN
+ * one site, which stays correct. What a site with no pack gets is `SpacePlanView`.
+ */
 
 /**
  * How far a stale element dims on the 2D plan. Not shared with the 3D scene's 0.4: that one

@@ -7,9 +7,7 @@ import { isReadingStale } from '@/lib/staleness';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { useControlLog } from './controlLog';
-import { PlanShell } from './PlanShell';
-import { VB_W, VB_H, pct } from './planGeometry';
-import { LIGHT_PLAN } from '@/components/scene3d/geometry';
+import { useControlPlan } from './useControlPlan';
 import type { Device } from '@/lib/types';
 
 /**
@@ -32,7 +30,8 @@ function useLightSwitches(): Device[] {
  */
 export function LightingMatrixCard() {
   const lights = useLightSwitches();
-  const lightById = useMemo(() => new Map(lights.map((d) => [d.id, d])), [lights]);
+  const plan = useControlPlan();
+  const unplaced = useMemo(() => lights.filter((d) => !plan?.LIGHT_POSITIONS[d.id]), [lights, plan]);
   const send = useCommandStore((s) => s.send);
   const log = useControlLog((s) => s.log);
   const { ask, modalProps } = useConfirm();
@@ -63,14 +62,34 @@ export function LightingMatrixCard() {
         <Lightbulb size={12} className="title-icon" aria-hidden="true" />
         CEILING LUMINAIRES · L1-L7
       </div>
-      <div className="control-outlet-plan">
-        <PlanShell />
-        {LIGHT_PLAN.ROWS.map((row) => {
-          const device = lightById.get(`l${row}`);
-          if (!device) return null;
-          return <LightRow key={device.id} row={row} device={device} />;
-        })}
-      </div>
+      {plan ? (
+        <div className="control-outlet-plan">
+          <plan.PlanShell />
+          {lights.map((device) => {
+            const cells = plan.LIGHT_POSITIONS[device.id];
+            // A circuit the pack does not place drops to the list below rather than being drawn
+            // at a guessed ceiling position, where it would look surveyed.
+            if (!cells) return null;
+            return <LightRow key={device.id} device={device} cells={cells} />;
+          })}
+        </div>
+      ) : null}
+
+      {/* `SwitchesListCard` on this same page already lists every circuit with the same switch,
+          so a site without a plan gets a sentence rather than a second set of controls. */}
+      {!plan && (
+        <p className="control-plan-panel__note">
+          No plan is drawn for this site. Every lighting circuit is in the list below, with the
+          same controls.
+        </p>
+      )}
+      {plan && unplaced.length > 0 && (
+        <p className="control-plan-panel__note">
+          {unplaced.length} circuit{unplaced.length === 1 ? '' : 's'} not placed on this plan —
+          {' '}
+          {unplaced.map((d) => d.display_name).join(', ')}. They are in the list below.
+        </p>
+      )}
       <div className="control-plan-panel__actions">
         <button type="button" className="control-plan-btn" onClick={askAllOn}>
           All rows on
@@ -84,7 +103,7 @@ export function LightingMatrixCard() {
   );
 }
 
-function LightRow({ row, device }: { row: number; device: Device }) {
+function LightRow({ device, cells }: { device: Device; cells?: { x: number; y: number }[] }) {
   const reading = useDeviceStore((s) => s.latestReadings[device.id]);
   const pending = useCommandStore((s) => s.pending[targetKey(device.id)]);
   const send = useCommandStore((s) => s.send);
@@ -105,12 +124,13 @@ function LightRow({ row, device }: { row: number; device: Device }) {
     log('RELAY', `${device.display_name} → ${next}`);
   };
 
-  const rowPy = LIGHT_PLAN.rowPy(row);
+  // Without a plan this is one inline switch, not three ceiling cells: the three exist to show
+  // where the fixtures are, and there is nowhere to show.
+  const positions = cells ?? [null];
 
   return (
     <>
-      {LIGHT_PLAN.COLS.map((col) => {
-        const { px, py } = LIGHT_PLAN.center(row, col);
+      {positions.map((at, col) => {
         // Only the first fixture in the row is a real, keyboard-reachable switch — the
         // other two are the same relay, so a second/third Tab stop for one action would
         // just be redundant. All 3 stay independently clickable for the mouse/touch case
@@ -125,17 +145,24 @@ function LightRow({ row, device }: { row: number; device: Device }) {
             aria-label={isPrimary ? device.display_name : undefined}
             aria-hidden={isPrimary ? undefined : true}
             tabIndex={isPrimary ? 0 : -1}
-            className={`control-lamp${on ? ' control-lamp--on' : ''}`}
-            style={{ left: pct(px, VB_W), top: pct(py, VB_H) }}
+            className={`control-lamp${on ? ' control-lamp--on' : ''}${at ? '' : ' control-lamp--inline'}`}
+            style={at ? { left: `${at.x * 100}%`, top: `${at.y * 100}%` } : undefined}
             disabled={busy || !isCommandable(reading)}
             title={isPrimary && stale ? `${device.display_name}: stale — no reading in the last 30 seconds` : undefined}
             onClick={toggle}
           />
         );
       })}
-      <span className="control-light-plan__label" style={{ left: pct(LIGHT_PLAN.colPx(2) + 26, VB_W), top: pct(rowPy, VB_H) }}>
-        {device.id.toUpperCase()}
-      </span>
+      {/* The row's own label sits beside its rightmost fixture. With no plan there is no
+          rightmost fixture, and the list already carries the device's name. */}
+      {cells && cells.length > 0 && (
+        <span
+          className="control-light-plan__label"
+          style={{ left: `${cells[cells.length - 1].x * 100 + 8}%`, top: `${cells[0].y * 100}%` }}
+        >
+          {device.id.toUpperCase()}
+        </span>
+      )}
     </>
   );
 }

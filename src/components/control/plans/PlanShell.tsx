@@ -1,5 +1,5 @@
 import { PLAN } from '@/components/scene3d/geometry';
-import { VB_W, VB_H, pct, DOORWAY_HALF_PX } from './planGeometry';
+import { VB_W, VB_H, pct, DOORWAY_HALF_PX } from '../planGeometry';
 
 /**
  * The room shell both Control plans draw: outline, the two glazed partition panels, and the

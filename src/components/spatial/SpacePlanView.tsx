@@ -1,7 +1,7 @@
 /**
  * The floor plan, drawn from data — RM-031.
  *
- * WHAT THIS REPLACES. `components/floorplan/FloorPlanView.tsx` is a fine plan of one office and
+ * WHAT THIS REPLACES. `components/scene3d/FloorPlanView.tsx` is a fine plan of one office and
  * is unusable anywhere else: it pins `co1`..`co7` to literal SVG coordinates surveyed in that
  * room. RM-032 refused to fall back to it for a site with no 3D pack, because at another site it
  * would draw that site's devices at this site's positions and look entirely correct doing it.

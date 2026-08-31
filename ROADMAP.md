@@ -1,7 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
 **Last audited:** 2026-08-31 (UTC) — RM-027 to RM-032 and RM-034 done; RM-033 part-built
-**Audited at commit:** `c9550b3`
+**Audited at commit:** `829874c`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
 discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
@@ -2662,7 +2662,30 @@ may not.
   show it.~~ **Done 2026-08-26** — EX-128. Shipped as an endpoint plus a *conditional note*
   rather than the per-device column this asked for; the column needs a join the registry cannot
   currently make, which is FI-001. See EX-128.
-- **FI-016** (S) The Control page's outlet plan still pins `co1..co7` to literal coordinates.
+- ~~**FI-016** (S) The Control page's outlet plan still pins `co1..co7` to literal coordinates.~~
+  **DONE 2026-08-31.** `25cc516` the lookups, this commit the packs. It was bigger than the
+  outlet plan: a guard written first (`test/device-ids-in-frontend.test.mjs`) measured **six**
+  files, and they were **two different problems**.
+  - **Four were singleton lookups by id** — `acu_main`, `sens_outside_temp`, `l1` — each really
+    asking "the aircon", "the outdoor probe", "a lighting circuit" and answering with this
+    building's name. At another site the climate tiles read `—` forever and the aircon buttons
+    sent into nothing, silently. Fixed by selecting on `class` (`src/lib/siteDevices.ts`).
+  - **Two were coordinate tables**, and they needed a pack rather than a lookup.
+    `LightingMatrixCard` had the same defect as the outlet plan via `LIGHT_PLAN`, and both drew
+    a room shell imported from the 3D pack's geometry — so **`partitionY` was measurably in the
+    main chunk**, shipping this building's room dimensions to every deployment.
+  **The Control plan is now a pack on RM-032's terms.** `src/components/control/plans/` loads
+  only when `SITE.scene_pack` names it; `FloorPlanView` moved into `scene3d/` for the same
+  reason, since it was a CARE plan in a directory named as though it were generic.
+  *Measured after:* `partitionY`, `co1` and `co7` are **0** in the main chunk, and the pack sits
+  in its own lazy chunks. With the pack nulled, **no pack chunk is fetched at all**.
+  *The fallback is a sentence, not a second set of controls.* The first draft listed every device
+  again — and the page's own tests caught it by finding two of everything, because
+  `SwitchesListCard` and `OutletsListCard` already carry them. A site with no plan gets a note
+  pointing at those lists; **23 controls remained reachable** with the pack off.
+  *Verified on the live control surface, not only in tests:* pins land at the same percentages as
+  the old `pct()` values (CO1 at 7.8125% = 25/320 exactly), 21 lamp cells and 7 row labels
+  render, and clicking a puck posts one command logged as `Outlet 1 DP1 → off`.
   `src/components/control/OutletPlanCard.tsx` carries a third copy of the same survey, after
   `FloorPlanView` and `scene3d/geometry.ts` — and unlike those two it is **not** inside a scene
   pack, so it renders at every site. Found while closing RM-031, which built the replacement:
