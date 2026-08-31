@@ -52,10 +52,10 @@ export const CIRCUITS = [
     id: 'arec_acu',
     parent_id: 'chnt_subpanel',
     kind: 'branch',
-    name: 'ACU',
+    name: 'CARE ACU',
     phase: 'red',
     meter_device_id: 'mtr_arec_acu',
-    description: 'Indoor ACU',
+    description: "The CARE ACU's own branch circuit — the indoor unit the IR blaster commands",
   },
 
   // --- Yellow phase --------------------------------------------------------

@@ -97,7 +97,7 @@ Everything else is small, and the build order below is honest about size.
   | circuit | avg | share |
   |---|---|---|
   | C.O Yellow (outlets) | 561 W | 61.0% |
-  | AREC ACU (aircon) | 305 W | 33.2% |
+  | CARE ACU (aircon) | 305 W | 33.2% |
   | L.O Yellow (outdoor ACU) | 36 W | 4.0% |
   | **L.O Red (lighting)** | **16 W** | **1.8%** |
 
@@ -116,6 +116,22 @@ Everything else is small, and the build order below is honest about size.
   - **A tier is PERMISSION, not size.** An outlet averaging 1 W may be 400 W the afternoon
     somebody plugs a kettle in. So tiers are still worth setting — but for what may be dropped,
     not for what is big today.
+
+  **Naming corrected 2026-08-31, and three things deliberately keep the old spelling.** The
+  branch meter's display name was `AREC ACU`; the operator confirms the IR-commanded aircon **is
+  the CARE ACU** and that it has its own branch circuit, so the display name and the circuit are
+  now `CARE ACU`. What did NOT change, each for a reason:
+  - **`mtr_arec_acu`**, the device id — every historical `readings` row is keyed by it, and a
+    rename orphans two months of real data;
+  - **`ctx: 'arec'`**, the flow-context prefix the live Node-RED source tabs write
+    (`arec_last_p`, `arec_energy`), which `build-flow.mjs` does not generate — renaming it stops
+    collection silently;
+  - **`TUYA_NODE_VERSIONS['AREC ACU']`**, keyed on the live tuya node's own `deviceName`. The
+    node on the Pi is still called `AREC ACU` (verified against `flows.json`), so renaming the
+    key would make `findSettingsDrift` report a node that exists as missing.
+  A display name costs nothing to correct; an identity costs the record. Whoever renames the
+  Node-RED node one day should change the third of these in the same breath, and leave the first
+  two alone forever.
 
   **Still the operator's call, and now a better-posed one.** What is needed is not a wattage
   ranking but an answer per device: *what is plugged into co1–co7, and which lighting circuits

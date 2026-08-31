@@ -86,14 +86,22 @@ export const BUILT_IN_DEVICES = [
     status: 'active',
   },
   {
+    // THE ID AND `ctx` KEEP THE `arec` SPELLING DELIBERATELY, and it is not an oversight.
+    // `mtr_arec_acu` is the key every historical `readings` row is stored under, and `arec` is
+    // the flow-context prefix the live Node-RED source tabs write (`arec_last_p`, `arec_energy`
+    // and the rest). Renaming either orphans two months of real data or silently stops the
+    // bridge collecting — a display name costs nothing to correct, an identity costs the record.
+    // The live tuya node is also named `AREC ACU`; `shared/tuyaNodeSettings.mjs` keys the
+    // protocol-version drift check on that, so it is a THIRD thing that must keep the old
+    // spelling until somebody renames the node on the Pi.
     id: 'mtr_arec_acu',
-    display_name: 'AREC ACU',
+    display_name: 'CARE ACU',
     class: 'meter',
     room: null,
     dps_map: 'type_a',
     ctx: 'arec',
-    branch_circuit: 'ACU',
-    description: 'Indoor ACU',
+    branch_circuit: 'CARE ACU',
+    description: "The CARE ACU's own branch — the indoor unit the IR blaster commands",
     phase: 'red',
     status: 'active',
   },
