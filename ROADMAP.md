@@ -1,7 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
 **Last audited:** 2026-08-31 (UTC) — RM-027 to RM-032 and RM-034 done; RM-033 part-built
-**Audited at commit:** `9c7d2e5`
+**Audited at commit:** `c9550b3`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
 discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
@@ -90,8 +90,38 @@ Everything else is small, and the build order below is honest about size.
 
 - **RM-006c** — **load-shed tiers.** Thresholds are set and the whole shed path is built,
   tested and audited; it sheds nothing because no device has a tier. Which loads may drop
-  first is a judgement about the building, not a technical question. **Highest-value single
-  decision on this list.**
+  first is a judgement about the building, not a technical question.
+  **MEASURED 2026-08-31, and it reframes the decision — `npm run shed:profile`.** Over 14 days
+  of office hours the building drew **919 W** of metered demand:
+
+  | circuit | avg | share |
+  |---|---|---|
+  | C.O Yellow (outlets) | 561 W | 61.0% |
+  | AREC ACU (aircon) | 305 W | 33.2% |
+  | L.O Yellow (outdoor ACU) | 36 W | 4.0% |
+  | **L.O Red (lighting)** | **16 W** | **1.8%** |
+
+  - **Everything a relay can switch comes to 29 W — 3.1% of demand.** Auto-shed cannot hold
+    this building under a threshold as it is currently instrumented, and planning should say so
+    rather than discover it.
+  - **The outlet branch draws 561 W and its seven switchable outlets account for 29 W**, so
+    **95% of that circuit is on ordinary sockets** and cannot be shed at all. That gap is the
+    untracked load the Analytics page already charts (EX-006); this is the first time it has
+    been quantified against what shedding can reach.
+  - **Lighting is 1.8%.** Shedding lights first — the intuitive order — takes the lights out of
+    an occupied office to save about 16 W. It should be the LAST tier, not the first.
+  - **The largest controllable load is the aircon at 33%, and it is not on a relay.** It is
+    reached by IR setpoint and mode, so it sits outside the shed tiers entirely and is a
+    separate lever (the funded plan's own policy floor, RM-027's `acu_min_setpoint_c`).
+  - **A tier is PERMISSION, not size.** An outlet averaging 1 W may be 400 W the afternoon
+    somebody plugs a kettle in. So tiers are still worth setting — but for what may be dropped,
+    not for what is big today.
+
+  **Still the operator's call, and now a better-posed one.** What is needed is not a wattage
+  ranking but an answer per device: *what is plugged into co1–co7, and which lighting circuits
+  serve areas with daylight?* Three of the seven outlets (`co4`–`co6`) have barely reported in
+  two weeks (RM-020), so their averages mean nothing and their tiers should be set on what they
+  feed rather than on what they have measured.
 
 ### The migration that was outstanding is applied
 

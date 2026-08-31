@@ -31,6 +31,7 @@
     "tuya:devices": "node server/tuya-devices.mjs",
     "tuya:macs": "node server/tuya-devices.mjs --macs",
     "demand:profile": "node server/demand-profile.mjs",
+    "shed:profile": "node server/shed-profile.mjs",
     "check:meters": "node server/check-meter-swap.mjs",
     "collapse-sessions:pi": "node node-red-bridge/collapse-sessions.mjs",
     "poll-outlets:pi": "node node-red-bridge/poll-outlets.mjs",
