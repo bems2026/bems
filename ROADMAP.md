@@ -2478,6 +2478,21 @@ may not.
       **PART-BUILT 2026-08-28.** `4fb431b` one-file ownership, `5e3b378` the scaffolder,
       `f1d0269` the mock. **This is Milestone 6, due June 2027**; what remains is the packaging
       and the written guide, which need decisions rather than code.
+      **One of the plan's end-to-end criteria is answered by construction, not by a run.** It
+      asked to "confirm the Pi never writes a row carrying the other site's id" — an observation
+      from a throwaway second site. The codebase gives something stronger: every site-scoped write
+      takes its value from `SITE.id` (`server/ingest.mjs`, `server/shapeRows.mjs`,
+      `server/scheduler.mjs`'s scoped read), `SITE` has exactly one import path, and
+      `test/site-config.test.mjs` fails any production module under `shared`, `src`, `server`,
+      `node-red-bridge` or `scripts` that names a site directory at all. A literal id cannot be
+      written because a literal id cannot be present. Checked 2026-08-31 by reading the guard's
+      own walk rather than assuming its reach.
+      *What that guarantee does not cover, for whenever the "shared cloud later" in the plan's
+      decision 1 arrives:* **device ids are not site-namespaced.** `co1` and `l1` are ids, not
+      paths, so two buildings in one Supabase project would collide on `devices.id` and
+      `readings.device_id`. Harmless under one-project-per-building, which is the current
+      architecture, and the first thing to fix if that ever changes.
+
       *Acceptance (unchanged):* a second site is stood up from the guide by someone who did not
       build this, without hand-editing a device id.
 
