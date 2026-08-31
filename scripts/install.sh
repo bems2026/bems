@@ -310,6 +310,14 @@ cat <<EOF
   6. VERIFY. npm run preflight — credentials, database, vendor account, the radio segment, the
      bridge, the services — then npm run verify:pi, and read the live system back. A green test
      suite is not proof; this project has that written down twice, both times earned.
+
+  7. TWO UNITS THIS SCRIPT DELIBERATELY DID NOT INSTALL, if you want them:
+     server/ibems-kiosk.service     — the on-site display. A --user unit, because it has to run
+                                      inside the logged-in graphical session; install it as that
+                                      user, not with sudo. See its own header.
+     server/ibems-wifi-prefer.service + .timer — returns the Pi to its preferred network. Not
+                                      installed here because this script never touches Wi-Fi.
+     Both carry their own instructions at the top of the file.
 EOF
 
 if [ "$APPLY" -eq 0 ]; then

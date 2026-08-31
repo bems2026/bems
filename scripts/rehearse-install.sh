@@ -124,7 +124,13 @@ STUB
   echo "-- mosquitto conf:"; cat /etc/mosquitto/conf.d/ibems.conf 2>&1 | head -5
   echo "-- server/.env perms:"; stat -c '%a %n' /home/rehearse/bems/server/.env 2>&1
   echo "-- units installed:"; ls -1 /etc/systemd/system/ibems-*.service 2>&1
-  echo "-- one unit, rewritten:"; grep -E '^(User|Group|WorkingDirectory|EnvironmentFile)=' /etc/systemd/system/ibems-dashboard.service 2>&1
+  # Read back a unit that CARRIES EnvironmentFile. The first version checked ibems-dashboard,
+  # which has none by design — it serves static files and needs no credentials — so the one
+  # substitution most likely to strand a second deployment was the one not being looked at.
+  echo "-- ibems-proxy.service, rewritten (this is the one that carries EnvironmentFile):"
+  grep -E '^(User|Group|WorkingDirectory|EnvironmentFile)=' /etc/systemd/system/ibems-proxy.service 2>&1
+  echo "-- ibems-dashboard.service (no EnvironmentFile by design):"
+  grep -E '^(User|Group|WorkingDirectory)=' /etc/systemd/system/ibems-dashboard.service 2>&1
   echo "-- dist built:"; ls -1 /home/rehearse/bems/dist/index.html 2>&1
   echo "-- systemctl calls the installer made (STUBBED — none of these really happened):"
   sed -e 's/^/     /' /tmp/systemctl-calls.log 2>&1
