@@ -2581,9 +2581,12 @@ may not.
 
       **What is left:**
       - filling in `physical-install.md`'s twelve gaps, which needs a site visit;
-      - `phase20_site_scoping.sql`'s three literal backfills — but they are a one-time
-        transitional fill of rows predating the site column, so a new deployment has no such rows
-        and skips them. Worth a note in the file rather than a change to it.
+      - nothing, for the `sites` row. `phase20_site_scoping.sql` still contains this building's
+        id, and **checked rather than assumed**: its three `update ... where site_id is null`
+        statements match nothing on a fresh database, and the three `set default` statements are
+        **dropped again by `phase22_node_totals.sql`**. Applied in filename order the pair is
+        self-correcting. An earlier draft of this entry said a new deployment should skip them,
+        which was worse advice than the truth — skipping `phase20` leaves the columns absent.
 
       **A sweep, after the third time.** Finding the same defect three times meant looking for
       the rest of it rather than fixing one more instance: **thirteen further `toLocale*String`

@@ -143,9 +143,12 @@ Paste what it prints into the SQL editor. It reads `shared/sites/<id>/site.mjs`,
 cannot drift from `SITE.id` — which is the pairing that matters, because every site-scoped write
 references it and nothing else reports an orphan. `npm run preflight` confirms the row landed.
 
-**`phase20_site_scoping.sql` still backfills three tables with a literal id** and does need
-editing for a new building — it is a one-time transitional backfill of rows that predate the
-site column, so a new deployment with no such rows can simply skip those three statements.
+**`phase20_site_scoping.sql` names this building's id too, and you should still apply it
+unedited.** Its three `update ... where site_id is null` statements match nothing on a fresh
+database, and the three `set default` statements it adds are **dropped again by
+`phase22_node_totals.sql`**. Applied in filename order the pair is self-correcting and leaves no
+default pointing at another building. Do not skip either file: skipping `phase20` leaves the
+`site_id` columns absent, and skipping `phase22` leaves the wrong default in place.
 
 ## 9. Build the space tree *(not executed for a new site)*
 
@@ -241,7 +244,7 @@ short one.
 | **Physical installation** — CT clamps on a live panel, relay modules, the IR blaster | [`physical-install.md`](./physical-install.md) is a **template with 12 marked gaps**, not a finished guide: the structure and the traps are written, the photographs, part numbers and torque figures are not. Nothing in it has been reviewed by an electrician. |
 | **Packaging** | Decided and built: `scripts/install.sh`, dry-run by default. **Its apply path has never been run end to end** — there has only ever been one Pi — so the first real install is also its first test. Run the check first and read the plan. |
 | ~~Day-one network setup~~ | **Covered** — `npm run preflight` checks credentials, the database, the vendor account, the local radio segment, the bridge and the services, and reports what it could *not* check rather than passing it. It does not perform the network join: it tells you whether one worked. |
-| ~~A second building's `sites` row~~ | **Covered** — `npm run site:sql` generates it from the site directory, idempotently, and prints rather than executes. `phase20_site_scoping.sql`'s transitional backfill is the remaining literal, and a new deployment skips it. |
+| ~~A second building's `sites` row~~ | **Covered** — `npm run site:sql` generates it from the site directory, idempotently, and prints rather than executes. `phase20_site_scoping.sql` still contains this building's id, but only in a backfill that matches nothing on a fresh database and a default that `phase22` drops again. |
 | **A 3D scene pack** | Site-specific by nature. A site with `scene_pack: null` gets the data-driven floor plan, which is the intended default. |
 | **The Control page's outlet plan** | Still pins one building's outlet positions (`ROADMAP.md` FI-016). Every other screen is data-driven. |
 | ~~A conformance suite for your own site~~ | **Built** — `npm run site:check`, step 10. |
