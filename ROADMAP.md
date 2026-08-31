@@ -173,12 +173,15 @@ column landed all went **local**, with no cloud fallbacks.
 
 ### Build order — what to do next, largest value first
 
-1. **RM-006c tiers** — one operator decision, then auto-shed starts working. Nothing to build.
-2. **FI-008 (S)** — a contrast regression guard. Three AA failures were found by hand during
-   one audit and nothing prevents a fourth. **Still open, and now half-covered:** EX-132 added
-   `test/design-tokens.test.mjs`, which catches a token that does not exist — the cheaper
-   mistake, and the one that had already shipped five times. It cannot catch a token that
-   exists and is unreadable on its background; that still needs a browser.
+1. **RM-006c: `auto_shed` is still `false`.** The tiers were assigned on 2026-08-31 — all 14
+   shed-capable devices, lights as `group_1` and the outlets split across `group_2`/`group_3` —
+   so the classification gap is closed. The flag on the Automation page is now the only thing
+   between a built feature and a working one. Worth knowing before flipping it: `group_1` is the
+   lighting, measured at ~16 W of a 919 W office-hours demand against a 2.21 kW ceiling, so the
+   first shed step is the most visible action available and close to the least effective one.
+   The tiers are editable — see the Load shedding editor on the Devices page.
+2. ~~**FI-008 (S)** — a contrast regression guard.~~ **Done 2026-08-31**, and it found a real
+   latent AA failure on its first run. See its entry.
 3. **FI-006 (S)** — wire `StaleDataBadge` into the views that still derive staleness inline.
    **Worth more since EX-107**: timestamps are now honest, so a staleness badge finally means
    something on metered devices instead of being permanently fresh.
@@ -2779,7 +2782,36 @@ may not.
 - **FI-007** (S) `--good` on `--good-soft` measures 4.45:1 against the page background (4.99 on a card). It passes everywhere it currently renders, but will fail the first time a green badge is placed directly on the page. The same page-versus-card split already required `--warn-on-page`.
 
 ### Developer experience
-- **FI-008** (S) A contrast regression guard. Three separate AA failures were found by measuring during this audit; nothing currently prevents a fourth.
+- ~~**FI-008** (S) A contrast regression guard.~~ **Done 2026-08-31** — `test/contrast.test.mjs`,
+  8 tests. Every text token measured against every surface that carries text, in **both themes**:
+  8 × 8 × 2 = 128 pairs, held to WCAG AA 4.5:1. The palette cannot know what size type a token
+  will be used at, so it is held to the normal-text bar rather than the 3:1 large-text one.
+  **It found a real one on its first run.** Dark `--red` was `#e06155`, verified at 4.8:1 against
+  `--bg-surface` and never against `--bg-surface-2` — where it measures **4.33:1**, under AA, on
+  a surface twenty-odd rules use. Nothing rendered red text there yet, which is exactly the
+  FI-007 pattern this file exists to get ahead of: passes everywhere it currently appears, fails
+  the first time it is placed somewhere new. Raised to `#e6675b` (4.65:1 there, 5.13:1 on
+  `--bg-surface`) — six per channel, below a visible difference and above the bar.
+  *Confirmed in a real browser, not only in the file:* `getComputedStyle` on the live dark
+  cascade returns `#e6675b` and the same two ratios to the hundredth.
+  **Deliberately measures pairs the app does not compose today.** Checking only current
+  compositions would make this file agree with every latent hazard instead of finding them,
+  which is how `--red` survived.
+  *Two parsing traps, both paid for while writing it, both now documented in the file.* `:root`
+  also appears inside `@media (prefers-contrast: high)`, which redefines `--muted` and
+  `--muted-2`; folding that in made `--muted` measure identically to `--txt` — a wrong number
+  that looked entirely plausible. And a translucent token is not a colour until composited:
+  `--glass` over `--bg-page` resolves to `rgb(251,252,253)`, the exact figure `src/index.css`
+  documents for its own hand-verification, and a test asserts that agreement — which is what
+  ties this file's arithmetic to the palette's.
+  *The maths is self-tested* (black on white = 21:1, a colour on itself = 1:1, `#767676` on white
+  = 4.54:1) so a passing palette cannot mean a broken formula, and **both halves were neutered
+  and confirmed to fail** — the dark half by the real `--red` defect, the light half by a
+  synthetic `--muted-2`.
+  *What it does not do:* read the DOM. It measures the palette, not the page, so text on a
+  gradient or an inline colour is still only findable in a browser — which is what found the
+  1.14:1. `test/design-tokens.test.mjs` remains the cheaper guard beside it: that one catches a
+  token name that never existed, this one catches a name that exists and cannot be read.
 
 ---
 

@@ -308,7 +308,12 @@
   --green-bright: #3dbb8a; /* 7.7:1 */
   --green-soft: rgb(37 168 120 / 0.16);
 
-  --red: #e06155; /* 4.8:1 */
+  /* 5.0:1 on --bg-surface, 4.7:1 on --bg-surface-2. Was #e06155, verified at 4.8:1 against
+   * --bg-surface only; on --bg-surface-2 — a surface used by twenty-odd rules — it measured
+   * 4.33:1, under AA. Nothing rendered it there yet, which is the FI-007 pattern: a colour that
+   * passes everywhere it currently appears and fails the first time it is placed somewhere new.
+   * Raised by six per channel, which is below a visible difference and above the bar. */
+  --red: #e6675b;
   --red-bright: #e56f63; /* 6.1:1 */
   --red-soft: rgb(224 97 85 / 0.16);
 
