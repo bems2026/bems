@@ -138,6 +138,21 @@ npm run build:flow       # regenerate the flow after editing shared/
   way to reopen it, and matters because that bridge can WRITE to the inverter. The same applies
   to RM-005's ESP32 if it is ever revived. Widening the loopback listener back to `0.0.0.0` is
   reinstating the problem, not configuring the feature.
+- **Node-RED listens on loopback only, and that is deliberate — do not widen it.** Until
+  2026-09-01 `uiHost` was unset, so it bound every interface including the Pi's `wlan0`, which
+  *is* the dedicated 2.4 GHz device SSID. Node-RED serves the admin API **and every http-in
+  node** on that one port, so anything associated to that Wi-Fi could read `/api/devices` and
+  `/api/readings/latest` with no credential at all — measured, not inferred: both returned 200
+  with full data from another host. It is now `uiHost: "127.0.0.1"`.
+  This is the same exposure shape as the broker above, and **it lives only in
+  `~/.node-red/settings.js`, which nothing in this repo declares** — so a rebuild or a package
+  upgrade restores the permissive default with no diff and no alarm. `npm run preflight` checks
+  for it (`bridge_not_exposed`); a timestamped `.bak` sits beside the file.
+  **The consequence:** the Node-RED editor is no longer reachable across the network. Tunnel it —
+  `ssh -L 1880:127.0.0.1:1880 <host>` — rather than widening the listener, which is reinstating
+  the problem rather than configuring a feature. Every daemon already uses the *literal*
+  `127.0.0.1`; that matters, because binding one address of `localhost` silently locks out the
+  other, exactly as the broker taught.
 - **Auto-shed sheds, it never restores.** Switching load off unattended is recoverable by a
   person; switching it back on is not. Restoring is deliberately manual.
 - **Never change the Pi's Wi-Fi remotely.** A wrong SSID or credential loses the host with

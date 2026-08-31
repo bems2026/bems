@@ -67,6 +67,10 @@ Decided by the operator, 2026-08-25.
   (2026-08-26) — see the Broker row below. If something off-host genuinely needs to publish,
   add a listener bound to the LAN address *with a `password_file`*; do not edit the loopback
   listener to `0.0.0.0`, which is the state that was removed.
+- **Widen Node-RED's `uiHost` back to all interfaces.** Same reasoning, closed 2026-09-01: that
+  one port serves the admin API *and* every http-in node, so on all-interfaces it handed
+  `/api/devices` and `/api/readings/latest` to anything on the device SSID with no credential.
+  The editor is reached with `ssh -L 1880:127.0.0.1:1880 <host>`, not by rebinding it.
 
 ---
 

@@ -1462,6 +1462,32 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       375×812 and 1440×900, and 16 at 380×360 with anchors pinned to the top and bottom of the
       viewport to force the flip and the height cap. **None outside the viewport** —
       `src/components/ui/popoverPlacement.ts`, `src/components/ui/useAnchoredPopover.ts`
+- [x] **EX-144** **The bridge answered to the whole device Wi-Fi, with no credential.** Node-RED
+      serves the admin API **and every http-in node** on one port, and `uiHost` was unset — so it
+      bound every interface, including the Pi's `wlan0`, which *is* the dedicated 2.4 GHz SSID
+      the Tuya field devices sit on. **Measured rather than reasoned about:** fetching
+      `/api/devices` and `/api/readings/latest` from another host with no token returned **200
+      and the full device catalogue and live readings**. After the fix, connection refused.
+      Bound to loopback rather than firewalled, matching what this deployment already decided for
+      the MQTT broker (EX-131). No firewall tooling is installed here, so a rule would have added
+      an undeclared host dependency to solve what one line of config solves.
+      **Every consumer was inventoried first**, because this is a remote change to the one host
+      nobody is standing next to: `ibems-proxy`, `ibems-ingest` and `ibems-scheduler` all default
+      to the *literal* `127.0.0.1`; the kiosk talks to `:5183`; `tailscale serve` proxies to
+      `:5183` and `:8080` and never to 1880. The literal matters — binding one address of
+      `localhost` silently locks out the other, the trap already paid for on the broker.
+      **What it costs, stated rather than discovered later:** the Node-RED editor is no longer
+      reachable across the network. `ssh -L 1880:127.0.0.1:1880 <host>` reaches it without
+      widening anything, and the repo's scripts are already documented to run on the Pi with
+      `--host=127.0.0.1`.
+      **The check is the durable half.** `settings.js` is not in this repository, so a rebuild or
+      a package upgrade restores the permissive default with no diff and no alarm — the same
+      shape as `findTimeout` and the broker listener, both of which have already bitten this
+      project. `npm run preflight` now dials this machine's own non-loopback addresses and
+      reports what answers; verified live, it prints *"The bridge is not reachable off this
+      machine — bound to loopback"*. **WARN, not ERROR**: the deployment works either way, and
+      overstating it is how a real error further down the list gets skipped —
+      `scripts/preflight.mjs`, `test/preflight.test.mjs`, CLAUDE.md's site facts
 - [x] **EX-129** `npm run set-device-ip:pi` — the RM-021 remedy, as a reversible script.
       Gives a `tuya-smart-device` node a static `deviceIp` so the bridge stops depending on a
       discovery broadcast the device has stopped sending. Dry run by default, `--apply` to
@@ -3160,20 +3186,8 @@ may not.
   claimed the tracker keyed on value change and had no arrival signal, when the energy
   collector's sample-buffer depth `n` was in the signature all along and does move per message.
   What was actually wrong was narrower and worse. See EX-141.
-- **FI-019** (M) **The bridge listens on every interface, including the device segment.**
-  Found 2026-09-01: `ss -lnt` on the Pi shows Node-RED on `0.0.0.0:1880`, so anything associated
-  to the 2.4 GHz device SSID can reach it. `GET /api/readings/latest` and `/api/devices` take no
-  authentication there, and the control endpoints are guarded only by `LIGHT_API_TOKEN`, which
-  lives in the flow on the same host.
-  **This is the same exposure shape as the mosquitto listener closed on 2026-08-26** — a service
-  bound wide on the segment the field devices share — and that one was judged worth fixing.
-  Recorded rather than fixed in the same pass because it is *not* a one-line change: the office
-  kiosk, the Node-RED editor, and `src/config/bridge.ts`'s no-Supabase fallback all reach 1880,
-  and `server/proxy.mjs` is already on the same host so it would be unaffected. Binding
-  `uiHost` to loopback needs each of those checked first, and a wrong move here is a remote
-  change to the one host nobody is standing next to. See CLAUDE.md's note on the broker for the
-  precedent, including why widening a listener back is reinstating the problem rather than
-  configuring a feature.
+- ~~**FI-019** (M) The bridge listens on every interface, including the device segment.~~
+  **Done 2026-09-01 — EX-144.**
 - **FI-020** (S) **A switch's freshness is unmeasurable, and the UI cannot say so.**
   `buildLatest` stamps `ts = now` for any device with no `ctx`, so a switch's staleness watchdog
   can never fire — the same "an always-fresh timestamp cannot look old" failure the meters were
