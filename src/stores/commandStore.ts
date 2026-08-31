@@ -165,7 +165,21 @@ export const useCommandStore = create<CommandState>((set, get) => ({
         // only when the command genuinely never reached that state — correct to flag, but
         // NOT hardware confirmation the other branch's silence isn't either. See
         // relayCorroboration.ts for the one place a real measurement can corroborate this.
-        next[key] = { ...p, phase: 'failed', error: 'The device did not report the new state.' };
+        //
+        // Two different facts used to share one message. "The device did not report the new
+        // state" claims the device ANSWERED and contradicted the command — a claim only
+        // available when the reading actually postdates the command. When the row is older
+        // than `issuedAt`, nothing has been heard either way and the relay may well have
+        // moved; saying otherwise sends someone to check hardware that is fine. This is the
+        // ordinary case for a device polled once a minute, so it was not a rare wording nit.
+        const reportedSince = Date.parse(row.ts) >= p.issuedAt;
+        next[key] = {
+          ...p,
+          phase: 'failed',
+          error: reportedSince
+            ? 'The device did not report the new state.'
+            : 'The device has not reported since the command was sent, so whether it landed is unknown.',
+        };
         changed = true;
       }
 

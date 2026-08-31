@@ -3,7 +3,6 @@ import { Lightbulb } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
 import { controlView, isCommandable } from '@/lib/socketView';
-import { isReadingStale } from '@/lib/staleness';
 import { StaleDataBadge } from '@/components/common/StaleDataBadge';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { SimulatedBadge } from './SimulatedBadge';
@@ -44,11 +43,15 @@ function SwitchRow({ deviceId, name }: { deviceId: string; name: string }) {
 
   const busy = view.kind === 'pending';
   const unknown = view.kind === 'unknown';
-  const stale = isReadingStale(reading);
   const on = !unknown && view.value === 'on';
 
+  // Not `stale`. EX-017 removed staleness from `disabled=` on the reasoning that telemetry and
+  // dispatch travel in opposite directions, but left it in this handler — so the button rendered
+  // enabled and the click did nothing at all. A control that looks operable and silently is not
+  // is worse than a disabled one, which at least says so. `isCommandable` (online:false) is the
+  // real refusal and gates the button below.
   const toggle = () => {
-    if (busy || unknown || stale) return;
+    if (busy || unknown) return;
     const next = on ? 'off' : 'on';
     send(deviceId, undefined, next);
     log('RELAY', `${name} → ${next}`);

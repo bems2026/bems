@@ -168,6 +168,29 @@ describe('ControlPage', () => {
     expect(bridgeClient.sendCommand).not.toHaveBeenCalled();
   });
 
+  /**
+   * The other half of EX-017, finished. That change removed `stale` from `disabled=` on the
+   * reasoning that telemetry comes FROM a device while a command goes TO it — but it left
+   * `if (busy || unknown || stale) return;` in the click handlers of both light controls. The
+   * button therefore rendered enabled and the click did nothing, silently, which is worse than
+   * a disabled control: a disabled one at least says it will not work.
+   *
+   * Only `online: false` refuses, and it refuses at the button, where it is visible.
+   */
+  it('a switch the bridge still reports online can be toggled even when its reading has gone stale', () => {
+    vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack({ device_id: 'l1', target: 'L1', action: 'on' }));
+    useDeviceStore.setState({
+      devices: [light(1)],
+      latestReadings: { l1: { device_id: 'l1', ts: new Date(Date.now() - 120_000).toISOString(), online: true, state: 'off' } },
+    });
+    render(<ControlPage />);
+    const row = screen.getByText('Light Switch 1').closest('.control-list-row') as HTMLElement;
+    const toggle = within(row).getByRole('switch');
+    expect(toggle).not.toBeDisabled();
+    fireEvent.click(toggle);
+    expect(bridgeClient.sendCommand).toHaveBeenCalledWith(expect.objectContaining({ device_id: 'l1', action: 'on' }));
+  });
+
   it('a stale (offline) outlet socket cannot be toggled from the sockets list', () => {
     vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack());
     useDeviceStore.setState({

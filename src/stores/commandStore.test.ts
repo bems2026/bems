@@ -141,6 +141,80 @@ describe('useCommandStore.reconcile', () => {
     expect(useCommandStore.getState().pending['co3:1'].phase).toBe('confirming');
   });
 
+  /**
+   * The reported fault, as a test: switching an outlet worked, and the app said it had not.
+   *
+   * The bridge polls an outlet once a minute, so between polls its `ts` is routinely ~55s old
+   * while the Outlet Logic Hub has already echoed the commanded socket state within one WS push.
+   * The success path below requires the reading not be stale — so under the old global 30s
+   * budget, roughly half of all successful outlet commands missed it, waited out
+   * COMMAND_CONFIRM_MS, and were reported as "the device did not report the new state" on a
+   * relay that had physically moved.
+   *
+   * The staleness conjunct itself is right and stays: it is what stops a frozen echo from an
+   * offline device confirming a command that never landed (the test above). What was wrong was
+   * the budget it consulted.
+   */
+  it('confirms an outlet command when the feed echoes it, even though the meter timestamp is 55s old between polls', () => {
+    const issuedAt = 1_000_000;
+    useCommandStore.setState({
+      pending: { 'co3:1': { command_id: 'x', device_id: 'co3', socket: 1, desired: 'on', observedBefore: 'off', phase: 'confirming', issuedAt, ackedAt: issuedAt + 100, error: null } },
+    });
+    const now = issuedAt + 3000;
+    const betweenPolls: Reading = {
+      device_id: 'co3',
+      ts: new Date(now - 55_000).toISOString(),
+      online: true,
+      state: 'on',
+      socket_states: { 1: 'on', 2: 'off' },
+      stale_after_ms: 150_000,
+    };
+    useCommandStore.getState().reconcile([betweenPolls], now);
+    expect(useCommandStore.getState().pending['co3:1']).toBeUndefined();
+  });
+
+  it('distinguishes "the device disagreed" from "the device has not spoken since" instead of asserting the first', () => {
+    // Both used to render as "The device did not report the new state." — a claim that the
+    // device answered and contradicted the command. When the reading predates the command
+    // that claim is not available: nothing has been heard either way, and the relay may well
+    // have moved. Saying so is the difference between a fault report and a shrug.
+    const issuedAt = 1_000_000;
+    useCommandStore.setState({
+      pending: { 'co3:1': { command_id: 'x', device_id: 'co3', socket: 1, desired: 'on', observedBefore: 'off', phase: 'confirming', issuedAt, ackedAt: issuedAt + 100, error: null } },
+    });
+    const now = issuedAt + 100 + 6001; // the confirm window runs from ackedAt, not issuedAt
+    const olderThanTheCommand: Reading = {
+      device_id: 'co3',
+      ts: new Date(issuedAt - 1000).toISOString(),
+      online: true,
+      state: 'off',
+      socket_states: { 1: 'off', 2: 'off' },
+      stale_after_ms: 150_000,
+    };
+    useCommandStore.getState().reconcile([olderThanTheCommand], now);
+    const failed = useCommandStore.getState().pending['co3:1'];
+    expect(failed.phase).toBe('failed');
+    expect(failed.error).toMatch(/has not reported since/i);
+  });
+
+  it('still says the device disagreed when the reading genuinely postdates the command', () => {
+    const issuedAt = 1_000_000;
+    useCommandStore.setState({
+      pending: { 'co3:1': { command_id: 'x', device_id: 'co3', socket: 1, desired: 'on', observedBefore: 'off', phase: 'confirming', issuedAt, ackedAt: issuedAt + 100, error: null } },
+    });
+    const now = issuedAt + 100 + 6001; // the confirm window runs from ackedAt, not issuedAt
+    const answered: Reading = {
+      device_id: 'co3',
+      ts: new Date(issuedAt + 2000).toISOString(),
+      online: true,
+      state: 'off',
+      socket_states: { 1: 'off', 2: 'off' },
+      stale_after_ms: 150_000,
+    };
+    useCommandStore.getState().reconcile([answered], now);
+    expect(useCommandStore.getState().pending['co3:1'].error).toMatch(/did not report the new state/i);
+  });
+
   it('leaves a pending entry alone when its device is absent from this frame', () => {
     useCommandStore.setState({
       pending: { 'co3:1': { command_id: 'x', device_id: 'co3', socket: 1, desired: 'on', observedBefore: 'off', phase: 'confirming', issuedAt: 1000, ackedAt: 1100, error: null } },

@@ -117,8 +117,10 @@ function LightRow({ device, cells }: { device: Device; cells?: { x: number; y: n
   const stale = isReadingStale(reading);
   const on = (view.kind === 'idle' || view.kind === 'pending') && view.value === 'on';
 
+  // Not `stale` — see SwitchesListCard's `toggle`. The lamp is disabled by `isCommandable`
+  // below; gating the handler as well made a click on an enabled control do nothing silently.
   const toggle = () => {
-    if (busy || stale) return;
+    if (busy) return;
     const next = on ? 'off' : 'on';
     send(device.id, undefined, next);
     log('RELAY', `${device.display_name} → ${next}`);
