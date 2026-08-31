@@ -2563,11 +2563,27 @@ may not.
       Node-RED's own tuya nodes may hold that port, and calling it "no devices" would accuse the
       network of a fault it does not have.
 
+      **`npm run site:sql` closed the `sites` row, 2026-08-31 — 9 tests.** `phase19_sites.sql`
+      seeded one literal id, so a second institution had to hand-edit a migration; editing a
+      migration that has already run somewhere is how two databases stop agreeing about what has
+      been applied. The statement is now generated from `shared/sites/<id>/site.mjs`, so the id
+      cannot drift from `SITE.id` — the one pairing that matters, since every site-scoped write
+      references it and nothing else reports an orphan. **It prints and does not execute**, the
+      same line `install.sh`, `site:new` and `preflight` hold, and it is idempotent because an
+      operator unsure whether they ran it will run it again.
+      *Verified against production, not only against tests:* the generated statement reproduces
+      the live `sites` row field for field, policy jsonb included.
+      *Guarded:* the id is slug-validated before interpolation, apostrophes in a building name are
+      doubled (`St John''s Annex` is an ordinary name and an unescaped one ends the literal
+      mid-statement), an absent policy emits `'{}'::jsonb` rather than a null the column rejects,
+      and a site missing any required field throws rather than emitting SQL with `undefined` in
+      it — that statement would not fail, it would run and write nonsense.
+
       **What is left:**
       - filling in `physical-install.md`'s twelve gaps, which needs a site visit;
-      - the `sites` row itself: `phase19_sites.sql` seeds this site's id, so a second deployment
-        still edits SQL. Provisioning should take it from the site directory.
-      - FI-016, the Control page's outlet plan, which is the last screen naming `co1..co7`.
+      - `phase20_site_scoping.sql`'s three literal backfills — but they are a one-time
+        transitional fill of rows predating the site column, so a new deployment has no such rows
+        and skips them. Worth a note in the file rather than a change to it.
 
       **A sweep, after the third time.** Finding the same defect three times meant looking for
       the rest of it rather than fixing one more instance: **thirteen further `toLocale*String`

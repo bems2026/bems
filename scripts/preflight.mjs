@@ -146,7 +146,7 @@ export function assessDeployment(obs) {
         : database.siteRowFound === false
           ? `no sites row for "${siteId}"`
           : 'not checked',
-    `Insert one: the id must equal SITE.id exactly. docs/replication.md step 8 has the statement. Without it every site-scoped row is orphaned and nothing else reports the problem.`,
+    'Run `npm run site:sql` and paste what it prints — it builds the statement from this site’s own site.mjs, so the id cannot drift from SITE.id. Without the row every site-scoped write is orphaned and nothing else reports the problem.',
   );
 
   // --- vendor account ------------------------------------------------------
