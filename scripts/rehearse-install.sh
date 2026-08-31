@@ -88,6 +88,11 @@ apt-get install -y -qq sudo curl ca-certificates >/dev/null 2>&1
 useradd -m -s /bin/bash rehearse
 echo 'rehearse ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/rehearse
 chmod 0440 /etc/sudoers.d/rehearse
+# In the `sudo` GROUP as well, which is how a Raspberry Pi account is actually set up. The first
+# apply run had only the sudoers.d rule and step 4 failed with "User rehearse not in sudoers
+# group" — a real difference between the two, and the reason install.sh's preflight now checks
+# for the group rather than only for sudo working.
+usermod -aG sudo rehearse
 cp -r /staging /home/rehearse/bems
 chown -R rehearse:rehearse /home/rehearse/bems
 

@@ -111,6 +111,21 @@ else
   bad "no sudo. System packages and systemd units need it."
 fi
 
+# Membership in the `sudo` GROUP is a different fact from sudo working, and step 4 needs the
+# group specifically: the official Node-RED installer tests group membership and exits with
+# "User <name> not in sudoers group" regardless of whether sudo itself is configured. A machine
+# granted sudo through a /etc/sudoers.d rule therefore passes the check above and fails four
+# steps later, after the packages and the build have already been installed.
+#
+# Found by rehearsing the apply path in a container, where exactly that combination existed. A
+# warning rather than a FAIL: the account may legitimately be an administrator through another
+# group, and this script should not refuse to run on a machine it has only guessed about.
+if id -nG 2>/dev/null | tr ' ' '\n' | grep -qx sudo; then
+  ok "in the 'sudo' group (step 4's Node-RED installer requires it)"
+else
+  warn "not in the 'sudo' group. sudo working is not the same thing: the Node-RED installer in step 4 checks group membership and will exit. Add with: sudo usermod -aG sudo $RUN_USER, then log out and back in."
+fi
+
 if curl -fsS -m 10 https://registry.npmjs.org/ >/dev/null 2>&1; then
   ok "internet reachable (npm registry)"
 else
