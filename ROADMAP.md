@@ -3076,6 +3076,23 @@ may not.
       weekday/weekend separation the three-day minimum exists to protect.
 
 ### Robustness
+- **FI-021** (M) **Meter arrival tracking is value-change, not arrival — and its own comment
+  said otherwise.** `build-flow.mjs`'s `TRACK_ARRIVALS` stamps a meter's arrival time only when
+  a signature of `n|v|c|p|e|h` differs from the previous one. `shared/buildLatest.mjs`'s header
+  claimed the opposite — "tracked from the tab's sample buffers, which grow on every message
+  even when the measured values do not" — describing the safe design beside code implementing
+  the unsafe one. The comment is corrected; the behaviour is not.
+  **Measured on the Pi 2026-09-01, and it is visible in ordinary operation.** At 06:00 with the
+  office empty, the two meters drawing power (18.1 W, 17.3 W) showed reading ages of **1.5 s**,
+  while the two at 0 W showed **8.5 s and 25.5 s**. Over a 240 s window the idle pair peaked at
+  ~60 s against the busy pair's 2.2 s. The difference is the energy accumulator `e`, which only
+  increments while power flows; at zero load only mains voltage wobble moves the signature.
+  **Why it mostly does not bite:** `STALE_READING_MS` is ten minutes and the supply here wobbles
+  enough to change `v` well inside that. The case that would cross it is a genuinely idle
+  circuit on an unusually stable supply — and the consequence is precisely what EX-107 was built
+  to prevent: a healthy circuit marked `online: false` and silently subtracted from the building
+  totals. The fix is to give the energy tab a real arrival stamp the way the outlet tab already
+  has (`<ctx>_last_time`), which is a flow change and wants its own measurement first.
 - **FI-019** (M) **The bridge listens on every interface, including the device segment.**
   Found 2026-09-01: `ss -lnt` on the Pi shows Node-RED on `0.0.0.0:1880`, so anything associated
   to the 2.4 GHz device SSID can reach it. `GET /api/readings/latest` and `/api/devices` take no
