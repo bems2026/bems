@@ -51,8 +51,14 @@ service-role probe.
 
 ### The short version, 2026-08-26
 
-The system is **healthy and honest**: 15/21 devices online, all five services up, ingestion
+The system is **healthy and honest**: 15/20 devices online, all five services up, ingestion
 writing every minute, and the dashboard no longer reports readings it cannot actually observe.
+**A counting note, measured 2026-08-31.** The fleet is **20 devices**, not 21. The bridge's
+`/api/readings/latest` serves **21 rows** — the twentieth device plus the `_totals` pseudo-row —
+and the row count has been read as a device count in several places in this file. `15/21` above
+was that error and now reads `15/20`. Dated observations further down (`9/21 to 14/21`) are left
+as they were written; EX-076 and EX-085 already say `20 devices` and are the ones that were right.
+
 Three things stand between here and "finished":
 
 1. **Three outlets need a person at the office** (RM-020) — `co4`, `co5`, `co6`. The
@@ -2684,7 +2690,15 @@ may not.
   EX-040b. Adding a device is now a form on the Devices page: pick the vendor device, name it,
   preview, enrol. The local key comes from the cloud, and both the registry entry and the flow
   nodes are written from one validated decision.
-- **FI-002** (M) Day-one setup wizard for a new building: network and vendor-account linking. **Promoted into RM-033** (2026-08-26) — it is no longer backlog, it is the last step of Track B, and it needs RM-027 – RM-030 first.
+- ~~**FI-002** (M) Day-one setup wizard for a new building: network and vendor-account linking.~~
+  **Done 2026-08-31 as `npm run preflight`** — see RM-033. **It became a check, not a wizard, and
+  that was the finding.** A wizard implies collecting credentials, and the two that matter here
+  cannot be collected by this system: `TUYA_ACCESS_SECRET` reaches hardware directly with nothing
+  scoping it and must never be handled outside `server/`, and the network join is a Wi-Fi change
+  that `CLAUDE.md` forbids doing remotely — a wrong SSID loses the host with nobody on site to
+  recover it. What a second institution actually needs is not something to type into; it is a
+  straight answer to "did that work, and what is still wrong". So it reads, reports and exits,
+  and every failing line prints the next step for a person to take.
 
 ### Replication
 - **FI-003** (L) Packaging so a second site can be stood up without redoing the wiring by hand: install script or card image, plus a physical-install guide. **Promoted into RM-033** (2026-08-26). Its blocker was never the packaging — it was that a "site" was not a thing the code had a name for. RM-027 gives it one.

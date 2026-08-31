@@ -260,8 +260,12 @@ if (process.argv[1] && process.argv[1].endsWith('preflight.mjs')) {
   const { SITE } = await import('../shared/siteConfig.mjs');
   // DEVICE_REGISTRY, not BUILT_IN_DEVICES: the registry is `[...built-in, ...enrolled]`, and a
   // deployment that has added hardware through the enrolment wizard would otherwise be measured
-  // against a fleet that stops at whatever the site directory was scaffolded with. Measured on
-  // the live Pi: 20 built-in, 21 in the registry, and the check reported "15 of 20".
+  // against a fleet that stops at whatever the site directory was scaffolded with — excluding
+  // exactly the newest devices, which are the ones most likely to be misbehaving.
+  //
+  // On this deployment the two lists are currently identical at 20, because nothing has been
+  // enrolled since the site directory was written. The change is for the site where that is not
+  // true, and it is worth writing down that it fixes nothing measurable here today.
   const { DEVICE_REGISTRY } = await import('../shared/registry.mjs');
 
   const ROOT = join(import.meta.dirname, '..');
