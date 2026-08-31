@@ -42,8 +42,21 @@ const css = readFileSync(join(ROOT, 'src', 'index.css'), 'utf8');
  * know what size it will be used at, so the palette is held to the stricter bar. */
 const AA_NORMAL = 4.5;
 
-/** Text colours. Every one of these is used as `color:` somewhere in the stylesheet. */
-const TEXT_TOKENS = ['--txt', '--muted', '--muted-2', '--accent-text', '--blue', '--green', '--red', '--purple'];
+/**
+ * Text colours. Every one of these is used as `color:` somewhere in the stylesheet.
+ *
+ * `--good`/`--warn`/`--bad` were missed on the first pass and that mattered immediately: `--bad`
+ * is a *hand-copied duplicate* of `--red` carrying the comment `= --red`, so raising `--red` to
+ * clear AA left the copy behind at 4.33:1 — the fix and the bug living four lines apart. It has
+ * to stay a duplicate, because `scene3d/tokens.ts` mirrors it into a Three.js material and
+ * three.js cannot resolve `var()`; the equality its comment asserted is checked at the foot of
+ * this file instead.
+ *
+ * Deliberately absent: `--accent` (2.15:1 in light — the stylesheet ships `--accent-text` for
+ * exactly this reason) and `--faint`/`--faintest`, which are documented decoration-only. Adding
+ * them would not find a bug, it would record a rule the palette already states.
+ */
+const TEXT_TOKENS = ['--txt', '--muted', '--muted-2', '--accent-text', '--blue', '--green', '--red', '--purple', '--good', '--warn', '--bad'];
 
 /** Surfaces that carry text. `--bg-page` is deliberately absent: content sits on a card or a
  * glass panel, never directly on the page, and `--glass` over the page is the composite that
@@ -176,5 +189,17 @@ for (const [themeName, palette] of [['light', LIGHT], ['dark', DARK]]) {
       `Below ${AA_NORMAL}:1. These are palette-level, so they fail wherever the pair is composed — ` +
         'not only where it is composed today. Lighten the text token rather than narrowing this list.',
     );
+  });
+}
+
+/**
+ * `--bad` is a hand-copied duplicate of `--red` and has to stay one: `scene3d/tokens.ts` mirrors
+ * it into a Three.js material, and three.js cannot resolve `var()`. Its comment said `= --red`
+ * for both themes and the dark copy had silently drifted — raising `--red` to clear AA left the
+ * duplicate four lines away still failing. A comment cannot notice that; this can.
+ */
+for (const [themeName, palette] of [['light', LIGHT], ['dark', DARK]]) {
+  test(`${themeName}: --bad is still the same colour as --red, which its comment claims`, () => {
+    assert.deepEqual(parseColor(palette['--bad'], palette), parseColor(palette['--red'], palette));
   });
 }

@@ -2834,9 +2834,19 @@ may not.
   `--bg-surface`) — six per channel, below a visible difference and above the bar.
   *Confirmed in a real browser, not only in the file:* `getComputedStyle` on the live dark
   cascade returns `#e6675b` and the same two ratios to the hundredth.
+  **And the first fix was incomplete, which the widened guard then caught.** `--bad` is a
+  hand-copied duplicate of `--red` carrying the comment `= --red`; raising `--red` left the copy
+  four lines away still at 4.33:1. It has to stay a duplicate — `scene3d/tokens.ts` mirrors it
+  into a Three.js material and three.js cannot resolve `var()`, and the mirror's own drift guard
+  reads the first `--bad:` in the file — so `--good`/`--warn`/`--bad` joined the measured set and
+  the equality the comment merely asserted is now a test. A comment cannot notice a drift; a
+  duplicate that nothing checks is a bug with a delay on it.
   **Deliberately measures pairs the app does not compose today.** Checking only current
   compositions would make this file agree with every latent hazard instead of finding them,
   which is how `--red` survived.
+  *Deliberately not measured:* `--accent` (2.15:1 in light — the stylesheet ships `--accent-text`
+  for exactly this reason) and `--faint`/`--faintest`, which are documented decoration-only.
+  Asserting those would record a rule the palette already states rather than find anything.
   *Two parsing traps, both paid for while writing it, both now documented in the file.* `:root`
   also appears inside `@media (prefers-contrast: high)`, which redefines `--muted` and
   `--muted-2`; folding that in made `--muted` measure identically to `--txt` — a wrong number

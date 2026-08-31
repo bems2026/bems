@@ -161,7 +161,10 @@
      the page. Use it for warn-toned text sitting directly on --bg-page; the plain --warn is
      correct on a card. Dark needs no equivalent (7.31:1 there), so it aliases straight back. */
   --warn-on-page: #a34a08;
-  --bad: #b91c1c; /* = --red */
+  /* Must stay a literal: `scene3d/tokens.ts` mirrors this value for a Three.js material and
+   * cannot resolve `var()`. The equality with --red that its old comment only asserted is now
+   * checked by `test/contrast.test.mjs` instead — the dark copy had already drifted. */
+  --bad: #b91c1c;
   --bad-soft: var(--red-soft);
   --info: #3b82f6; /* = --blue-bright; PhaseBalance's Blue-phase swatch — decorative dot only */
 
@@ -315,7 +318,7 @@
    * Raised by six per channel, which is below a visible difference and above the bar. */
   --red: #e6675b;
   --red-bright: #e56f63; /* 6.1:1 */
-  --red-soft: rgb(224 97 85 / 0.16);
+  --red-soft: rgb(230 103 91 / 0.16);
 
   --purple: #a78bfa; /* 6.9:1 */
   --purple-bright: #c4b5fd; /* 10.2:1 */
@@ -331,8 +334,8 @@
      both themes — a token that exists in only one theme is the dark-mode bug this file's
      header warns about. */
   --warn-on-page: var(--warn);
-  --bad: #e06155; /* = --red */
-  --bad-soft: rgb(224 97 85 / 0.16);
+  --bad: #e6675b; /* = --red, enforced by test/contrast.test.mjs */
+  --bad-soft: var(--red-soft);
   --info: #6690e8; /* = --blue-bright */
 
   --shadow-card: 0 8px 32px rgb(0 0 0 / 0.4);
