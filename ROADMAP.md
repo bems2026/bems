@@ -2097,7 +2097,7 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       The doc's final section is the checklist that closes it. Note also that `auth.users` is
       not exported — restored into a new project, every `commands` row keeps its audit
       content but loses its attribution.
-- [ ] **RM-006c** Assign load-shed tiers. **Thresholds done 2026-08-24; tiers are the operator's.**
+- [ ] **RM-006c** Arm auto-shed. **Thresholds done 2026-08-24; tiers assigned 2026-08-31; what is left is one save from the Automation page — see below, the flag alone is not enough.**
       *Acceptance:* at least one device has a shed group, a threshold is set, and auto-shed is on.
       **Limits written, `auto_shed` deliberately left OFF:** `max_total_kw 2.21`,
       `max_phase_current 15.4` — 25% above a measured peak of 1,767.8 W / 12.30 A over 1,877
