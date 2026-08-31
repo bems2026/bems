@@ -38,8 +38,9 @@ export function buildChartRows(deviceIds: string[], historyByDevice: Record<stri
 
 export interface UntrackedPoint {
   ts: string;
-  total: number;
-  metered: number;
+  /** `undefined` where a contributing meter was offline — a gap, never a fabricated number. */
+  total: number | undefined;
+  metered: number | undefined;
 }
 
 /**
@@ -48,11 +49,16 @@ export interface UntrackedPoint {
  * `panelLine`/`meterArea`/`gapArea` computeds (see the Phase M plan §6.2: v4 computes this
  * shape but never renders it). Right-aligned to the shorter of the two, same defensive
  * reasoning as `totalPowerSeries.ts`'s `sumHistories`.
+ *
+ * Each side is read through `pointValue`, so a sum `sumHistories` marked offline arrives here as
+ * `undefined` and leaves a gap in that line. The two sides are suppressed INDEPENDENTLY: an
+ * offline outlet must not blank the panel total, which is still perfectly well known. Blanking
+ * both would hide a real measurement to report a missing one.
  */
 export function alignTotalAndMetered(total: HistoryPoint[], metered: HistoryPoint[]): UntrackedPoint[] {
   const length = Math.min(total.length, metered.length);
   if (length === 0) return [];
   const t = total.slice(total.length - length);
   const m = metered.slice(metered.length - length);
-  return t.map((p, i) => ({ ts: p.ts, total: p.power_w, metered: m[i].power_w }));
+  return t.map((p, i) => ({ ts: p.ts, total: pointValue(p, 'power'), metered: pointValue(m[i], 'power') }));
 }

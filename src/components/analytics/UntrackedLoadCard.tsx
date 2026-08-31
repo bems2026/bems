@@ -6,7 +6,8 @@ import { useDeviceStore, historyFor } from '@/stores/deviceStore';
 import { sumHistories } from '@/components/overview/totalPowerSeries';
 import { downsampleTrend } from '@/components/trends/chartSummary';
 import { InfoHint } from '@/components/ui/InfoHint';
-import { alignTotalAndMetered } from './analyticsMath';
+import { alignTotalAndMetered, type UntrackedPoint } from './analyticsMath';
+import { pointValue } from './chartParams';
 
 const MAX_POINTS = 120;
 
@@ -42,8 +43,13 @@ export function UntrackedLoadCard({ branchIds, outletIds, range }: { branchIds: 
     );
   }
 
-  const last = data[data.length - 1];
-  const gapKw = Math.max(0, (last.totalKw ?? 0) - (last.meteredKw ?? 0));
+  // The newest point where BOTH sides are known. `data[data.length - 1]` with `?? 0` said
+  // "0.00 kW untracked" whenever either side was missing — the most reassuring possible reading
+  // of a state where the figure is simply not computable. With `co5` frozen at 513.9 W the
+  // subtraction also went negative and `Math.max(0, …)` clamped it to the same 0.00, so the one
+  // number on this card was hiding the contradiction it existed to reveal.
+  const lastComplete = [...data].reverse().find((p) => p.totalKw !== undefined && p.meteredKw !== undefined);
+  const gapKw = lastComplete ? lastComplete.totalKw! - lastComplete.meteredKw! : undefined;
 
   return (
     <div className="card analytics-untracked-card">
@@ -55,12 +61,25 @@ export function UntrackedLoadCard({ branchIds, outletIds, range }: { branchIds: 
             <InfoHint label="What the gap between these lines is">The 7 outlets' own meters against the CHNT panel total — the gap is hardwired lighting, the ACU, and anything else off-outlet.</InfoHint>
           </h3>
         </div>
-        <span className="analytics-untracked-gap">{gapKw.toFixed(2)} kW untracked now</span>
+        <span className="analytics-untracked-gap">
+          {gapKw === undefined
+            ? 'not computable right now'
+            : gapKw < 0
+              // Negative is a real, informative state, not an error to clamp away: the outlets
+              // are metering more than their branch. It means a meter is mis-assigned or a
+              // reading is not what it claims, and it should be visible rather than smoothed.
+              ? `outlets exceed the panel by ${Math.abs(gapKw).toFixed(2)} kW`
+              : `${gapKw.toFixed(2)} kW untracked now`}
+        </span>
       </div>
       <div
         className={`chart-frame chart-frame--axes-visible${revealed ? ' chart-frame--revealed' : ''}`}
         role="img"
-        aria-label={`Panel total ${last.totalKw?.toFixed(2)} kW, outlet-metered ${last.meteredKw?.toFixed(2)} kW, gap ${gapKw.toFixed(2)} kW.`}
+        aria-label={
+          lastComplete
+            ? `Panel total ${lastComplete.totalKw!.toFixed(2)} kW, outlet-metered ${lastComplete.meteredKw!.toFixed(2)} kW, gap ${gapKw!.toFixed(2)} kW.`
+            : 'No point in this range has both a panel total and an outlet-metered figure, so the untracked load cannot be stated.'
+        }
         {...revealHandlers}
       >
         <ResponsiveContainer width="100%" height={360}>
@@ -100,16 +119,32 @@ export function UntrackedLoadCard({ branchIds, outletIds, range }: { branchIds: 
   );
 }
 
-function downsamplePaired(paired: { ts: string; total: number; metered: number }[], maxPoints: number) {
-  const asTotal = paired.map((p) => ({ ts: p.ts, power_w: p.total }));
-  const asMetered = paired.map((p) => ({ ts: p.ts, power_w: p.metered }));
-  const totalDown = downsampleTrend(asTotal, maxPoints);
-  const meteredDown = downsampleTrend(asMetered, maxPoints);
+/**
+ * Downsamples each side and converts to kW, carrying "not known" through as `undefined`.
+ *
+ * `downsampleTrend` averages a bucket, and an average that silently treats a missing value as 0
+ * would reintroduce exactly the fabrication the gap exists to avoid — so an unknown point is
+ * marked `online: false` on the way in and read back through `pointValue` on the way out, using
+ * the same suppression rule as every other chart rather than a second one invented here.
+ */
+function downsamplePaired(paired: UntrackedPoint[], maxPoints: number) {
+  const side = (pick: (p: UntrackedPoint) => number | undefined) =>
+    downsampleTrend(
+      paired.map((p) => {
+        const v = pick(p);
+        return v === undefined ? { ts: p.ts, power_w: 0, online: false } : { ts: p.ts, power_w: v, online: true };
+      }),
+      maxPoints,
+    );
+
+  const totalDown = side((p) => p.total);
+  const meteredDown = side((p) => p.metered);
   const length = Math.min(totalDown.length, meteredDown.length);
+  const kw = (v: number | undefined) => (v === undefined ? undefined : v / 1000);
   return Array.from({ length }, (_, i) => ({
     t: Date.parse(totalDown[i].ts),
-    totalKw: totalDown[i].power_w / 1000,
-    meteredKw: meteredDown[i].power_w / 1000,
+    totalKw: kw(pointValue(totalDown[i], 'power')),
+    meteredKw: kw(pointValue(meteredDown[i], 'power')),
   }));
 }
 

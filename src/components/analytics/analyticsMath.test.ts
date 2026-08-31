@@ -64,3 +64,35 @@ describe('alignTotalAndMetered', () => {
     expect(alignTotalAndMetered(series(3, () => 1), [])).toEqual([]);
   });
 });
+
+/**
+ * The gap between these two lines is the whole point of the card, so a fabricated value on
+ * either side corrupts the one number it exists to state.
+ *
+ * Measured on the Pi 2026-09-01: `co5` carried a frozen 513.9 W across 60 offline points while
+ * the building drew ~35 W, so the outlet sum sat far ABOVE the panel total it is meant to sit
+ * under.
+ */
+describe('alignTotalAndMetered and offline sums', () => {
+  const on = (ts: string, power_w: number) => ({ ts, power_w, online: true });
+  const off = (ts: string, power_w: number) => ({ ts, power_w, online: false });
+
+  it('yields a gap rather than a frozen number when a summed side was offline', () => {
+    const paired = alignTotalAndMetered([on('t0', 900)], [off('t0', 513.9)]);
+    expect(paired[0].total).toBe(900);
+    expect(paired[0].metered).toBeUndefined();
+  });
+
+  it('suppresses the two sides independently — an offline outlet must not blank the panel total', () => {
+    // Blanking both would hide a real measurement in order to report a missing one.
+    const paired = alignTotalAndMetered([on('t0', 900), on('t1', 910)], [off('t0', 513.9), on('t1', 20)]);
+    expect(paired.map((p) => p.total)).toEqual([900, 910]);
+    expect(paired.map((p) => p.metered)).toEqual([undefined, 20]);
+  });
+
+  it('keeps legacy points with no flag plotting', () => {
+    const paired = alignTotalAndMetered([{ ts: 't0', power_w: 900 }], [{ ts: 't0', power_w: 20 }]);
+    expect(paired[0].total).toBe(900);
+    expect(paired[0].metered).toBe(20);
+  });
+});
