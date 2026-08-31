@@ -1048,12 +1048,20 @@ body::before {
   color: var(--muted);
   background: var(--bg-inset);
 }
+/* Fixed and portaled to <body> — `left`/`top`/`max-width`/`max-height` all come from
+   `popoverPlacement.ts`, which is what keeps it inside the viewport. It was `position: absolute;
+   left: 0; width: 260px` anchored to a 24px button, which put it 81px off a 1265px screen and
+   26–61px off a 375px one (measured 2026-09-01).
+
+   `width` became `max-width` so a narrow viewport shrinks it instead of pushing it off; the
+   popover is still 260px wherever there is room. `overflow-y: auto` is what makes the height cap
+   mean something: content taller than the space available scrolls inside rather than off. */
 .info-hint__pop {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
+  position: fixed;
   z-index: 60;
-  width: 260px;
+  max-width: 260px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: var(--sp-3);
   background: var(--pop-bg);
   backdrop-filter: blur(16px);
@@ -1066,13 +1074,22 @@ body::before {
   line-height: 1.45;
 }
 
+/* Portaled to <body> and positioned by `useAnchoredPopover` — `left`, `top`, `max-width` and
+   `max-height` all arrive as inline style, which is what keeps it inside the viewport.
+
+   It was `position: absolute; right: 0; width: 320px`, anchored inside the bell's own 44px
+   wrapper. That wrapper's right edge sits at x=303 on a 375px screen, so the panel rendered at
+   `left: -17px` (measured 2026-09-01) and the first 17px of every alert row was unreachable. It
+   was never too wide for the screen — 320 fits 375 — it was anchored somewhere that made a
+   fitting width overflow anyway, which is why capping the width alone did not fix it.
+
+   `.top-nav` carries `backdrop-filter`, so `position: fixed` here would be measured against the
+   nav rather than the viewport. The portal is what makes `fixed` mean what it says. */
 .alerts-popover {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
+  position: fixed;
   width: 320px;
-  max-height: 420px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--pop-bg);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -4923,11 +4940,15 @@ body::before {
   border-color: var(--accent);
   color: var(--accent);
 }
+/* Portaled and positioned by `useAnchoredPopover`, exactly like `.alerts-popover` — same
+   reasoning, same mechanism. `min-width` alone would let a long email in `.account-menu__who`
+   grow the menu past the left edge of a narrow screen; the hook's `max-width` bounds it and the
+   text wraps instead. */
 .account-menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
+  position: fixed;
   min-width: 208px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 6px;
   background: var(--pop-bg);
   backdrop-filter: blur(16px);

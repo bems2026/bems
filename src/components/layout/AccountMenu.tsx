@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { CircleUserRound, FileText, LogOut, WifiOff } from 'lucide-react';
 import { ACCOUNT_ITEMS } from './navItems';
 import { useAuthStore } from '@/stores/authStore';
+import { useAnchoredPopover } from '@/components/ui/useAnchoredPopover';
 
 /**
  * The account menu in the nav's right-hand cluster, beside the alerts bell.
@@ -34,30 +36,13 @@ export function AccountMenu({ activeId }: { activeId: string }) {
   const email = useAuthStore((s) => s.email);
   const signOut = useAuthStore((s) => s.signOut);
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-
-  // Same dismissal contract as AlertsPopover: outside click and Escape, listeners attached
-  // only while open so a closed menu costs nothing.
-  useEffect(() => {
-    if (!open) return;
-    const onDocClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      setOpen(false);
-      // Escape returns focus to the trigger rather than dropping it on <body>, which would
-      // send the next Tab back to the top of the document.
-      triggerRef.current?.focus();
-    };
-    document.addEventListener('mousedown', onDocClick);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
+  const dismiss = useCallback(() => setOpen(false), []);
+  // Same dismissal contract as AlertsPopover — now literally the same code, through
+  // `useAnchoredPopover`, rather than a second copy of it. That hook also keeps the menu inside
+  // the viewport: `min-width: 208px` with a long email in `.account-menu__who` could grow it
+  // past the left edge of a narrow screen, and `right: 0` is measured from the trigger's own
+  // wrapper rather than from the window. Escape still returns focus to the trigger.
+  const { anchorRef, popRef, style } = useAnchoredPopover({ open, onDismiss: dismiss, preferredWidth: 208, align: 'end', fallbackHeight: 240 });
 
   const signedIn = mode !== null;
   const onAccountPage = ACCOUNT_ITEMS.some((item) => item.id === activeId);
@@ -70,9 +55,9 @@ export function AccountMenu({ activeId }: { activeId: string }) {
           LOCAL
         </span>
       )}
-      <div ref={ref} style={{ position: 'relative' }}>
+      <div style={{ position: 'relative' }}>
         <button
-          ref={triggerRef}
+          ref={anchorRef as React.RefObject<HTMLButtonElement>}
           type="button"
           className={`nav-icon-btn${onAccountPage ? ' nav-icon-btn--current' : ''}`}
           aria-label="Account"
@@ -86,8 +71,9 @@ export function AccountMenu({ activeId }: { activeId: string }) {
           <CircleUserRound size={16} aria-hidden="true" />
         </button>
 
-        {open && (
-          <div className="account-menu" role="menu" aria-label="Account">
+        {open &&
+          createPortal(
+          <div ref={popRef as React.RefObject<HTMLDivElement>} className="account-menu" role="menu" aria-label="Account" style={style}>
             {signedIn && (
               <div className="account-menu__who">
                 {mode === 'local' ? (
@@ -132,8 +118,9 @@ export function AccountMenu({ activeId }: { activeId: string }) {
                 Sign out
               </button>
             )}
-          </div>
-        )}
+          </div>,
+            document.body,
+          )}
       </div>
     </span>
   );

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Bell, AlertTriangle, X } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useAnomaliesStore } from '@/stores/anomaliesStore';
@@ -8,6 +9,7 @@ import { latestAnomalyPerDevice, isAnomalyCurrent } from '@/lib/anomalies';
 import { useNowTick } from '@/lib/useNowTick';
 import { useDeviceConnectivity } from '@/hooks/useDeviceConnectivity';
 import { fleetStuck, isFleetStuck } from '@/lib/deviceConnectivity';
+import { useAnchoredPopover } from '@/components/ui/useAnchoredPopover';
 
 /** One row in the bell — either source (staleness watchdog, anomaly detection) is shaped
  * into this before rendering, so the render/ack logic below only ever deals with one shape
@@ -43,27 +45,18 @@ export function AlertsPopover() {
   const cloudRecoveries = useCommandStore((s) => s.cloudRecoveries);
   const [open, setOpen] = useState(false);
   const [acked, setAcked] = useState<Set<string>>(new Set());
-  const ref = useRef<HTMLDivElement>(null);
+  const dismiss = useCallback(() => setOpen(false), []);
+  // Portaled and viewport-clamped, like every other popover in the app. It used to be
+  // `position: absolute; right: 0; width: 320px` inside the bell's own 44px wrapper — and that
+  // wrapper's right edge sits at x=303 on a 375px screen, so the panel rendered at
+  // `left: -17px` and the first 17px of every alert row was unreachable. It was not too wide
+  // for the screen; it was anchored somewhere that made a fitting width overflow anyway.
+  // `align: 'end'` keeps it opening inward from the nav, which is what it did on a wide screen.
+  const { anchorRef, popRef, style } = useAnchoredPopover({ open, onDismiss: dismiss, preferredWidth: 320, align: 'end', fallbackHeight: 420, preferredMaxHeight: 420 });
 
-  // Re-render once a second so a device crossing the 30s stale threshold appears without
+  // Re-render once a second so a device crossing its staleness budget appears without
   // waiting for its next store write — via the one shared app-wide tick.
   useNowTick();
-
-  useEffect(() => {
-    if (!open) return;
-    const onDocClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', onDocClick);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
 
   const staleItems: AlertItem[] = useMemo(
     () =>
@@ -156,8 +149,9 @@ export function AlertsPopover() {
   const visible = allItems.filter((item) => !acked.has(item.deviceId));
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
+    <div style={{ position: 'relative' }}>
       <button
+        ref={anchorRef as React.RefObject<HTMLButtonElement>}
         type="button"
         className="nav-icon-btn"
         aria-label={`Alerts${visible.length ? `, ${visible.length} unacknowledged` : ''}`}
@@ -171,8 +165,9 @@ export function AlertsPopover() {
           </span>
         )}
       </button>
-      {open && (
-        <div className="alerts-popover" role="dialog" aria-label="Alerts">
+      {open &&
+        createPortal(
+        <div ref={popRef as React.RefObject<HTMLDivElement>} className="alerts-popover" role="dialog" aria-label="Alerts" style={style}>
           <div className="alerts-popover__head">
             <span>Alerts</span>
             <button type="button" className="alerts-popover__close" onClick={() => setOpen(false)} aria-label="Close">
@@ -202,8 +197,9 @@ export function AlertsPopover() {
               ))}
             </ul>
           )}
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
     </div>
   );
 }
