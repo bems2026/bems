@@ -216,6 +216,36 @@ export function assessDeployment(obs) {
     'Fewer devices than the registry describes is ordinary — radios drop and come back. A restart of Node-RED reconnects nodes that have given up, and has taken this fleet from 9 to 14 in one step. Persistent absences are hardware.',
   );
 
+  /**
+   * The bridge must not be reachable from anywhere but this machine — ROADMAP FI-019.
+   *
+   * Node-RED serves the admin API AND every http-in node on one port, and its `uiHost` default
+   * is every interface. On this deployment that includes the dedicated 2.4 GHz SSID the field
+   * devices sit on, so anything associated to that Wi-Fi could read `/api/devices` and
+   * `/api/readings/latest` with no credential at all — verified by fetching both from another
+   * host on 2026-09-01, before it was closed.
+   *
+   * WHY IT IS CHECKED HERE RATHER THAN TRUSTED. `settings.js` is not in this repository, so a
+   * rebuild, a restore or a package upgrade restores the permissive default with **no diff and
+   * no alarm**. That is the same shape as the tuya nodes' `findTimeout` and the MQTT broker's
+   * listener, both of which this project has already been bitten by. A setting that lives only
+   * on a host needs something that notices when it goes away.
+   *
+   * WARN, not ERROR: the deployment genuinely works either way, and a day-one run on a machine
+   * that has not been hardened yet should not be told it is broken. It should be told this.
+   */
+  add(
+    'bridge_not_exposed',
+    'The bridge is not reachable off this machine',
+    bridge.lanExposed === false ? LEVELS.OK : bridge.lanExposed === true ? LEVELS.WARN : LEVELS.UNCHECKED,
+    bridge.lanExposed === false
+      ? 'bound to loopback'
+      : bridge.lanExposed === true
+        ? `answering on ${bridge.exposedOn ?? 'a non-loopback address'} with no credential`
+        : 'not checked',
+    'Set uiHost: "127.0.0.1" in ~/.node-red/settings.js and restart Node-RED. Every legitimate consumer is a process on this machine and already uses that literal address. The editor is then reached with an SSH tunnel — ssh -L 1880:127.0.0.1:1880 <host> — rather than by widening the listener back.',
+  );
+
   // --- services ------------------------------------------------------------
   const down = Object.entries(services).filter(([, state]) => state !== 'active');
   add(
@@ -257,6 +287,7 @@ if (process.argv[1] && process.argv[1].endsWith('preflight.mjs')) {
   const { join } = await import('node:path');
   const { createSocket } = await import('node:dgram');
   const { execFileSync } = await import('node:child_process');
+  const { networkInterfaces } = await import('node:os');
   const { SITE } = await import('../shared/siteConfig.mjs');
   // DEVICE_REGISTRY, not BUILT_IN_DEVICES: the registry is `[...built-in, ...enrolled]`, and a
   // deployment that has added hardware through the enrolment wizard would otherwise be measured
@@ -375,7 +406,7 @@ if (process.argv[1] && process.argv[1].endsWith('preflight.mjs')) {
   if (network.distinctDevices !== null) network.distinctDevices = sources.size;
 
   // --- the bridge ----------------------------------------------------------
-  const bridge = { reachable: null, deviceCount: null, expectedCount: DEVICE_REGISTRY.length };
+  const bridge = { reachable: null, deviceCount: null, expectedCount: DEVICE_REGISTRY.length, lanExposed: null, exposedOn: null };
   try {
     const res = await fetch('http://127.0.0.1:1880/api/readings/latest', { signal: AbortSignal.timeout(10_000) });
     bridge.reachable = res.ok;
@@ -386,6 +417,40 @@ if (process.argv[1] && process.argv[1].endsWith('preflight.mjs')) {
     }
   } catch {
     bridge.reachable = false;
+  }
+
+  /**
+   * Is the bridge answering on anything other than loopback? — FI-019.
+   *
+   * Asked by dialling this machine's OWN non-loopback addresses, which needs no second host and
+   * no privilege: if Node-RED is bound to every interface it answers on them, and if it is bound
+   * to 127.0.0.1 the connection is refused. That is the whole test.
+   *
+   * `null` when there is no non-loopback address to try — a machine with nothing but `lo` cannot
+   * be exposed, but neither has anything been observed, and this file's one rule is that a check
+   * which could not be run is never reported as fine.
+   */
+  const candidates = Object.values(networkInterfaces())
+    .flat()
+    .filter((i) => i && i.family === 'IPv4' && !i.internal)
+    .map((i) => i.address);
+  if (candidates.length > 0) {
+    bridge.lanExposed = false;
+    for (const address of candidates) {
+      try {
+        // A short timeout on purpose: a refused connection fails instantly, and anything that
+        // hangs is a filtered port rather than an open one. Waiting longer would only make a
+        // firewalled deployment slow to report the good news.
+        const res = await fetch(`http://${address}:1880/api/devices`, { signal: AbortSignal.timeout(3_000) });
+        if (res.ok) {
+          bridge.lanExposed = true;
+          bridge.exposedOn = address;
+          break;
+        }
+      } catch {
+        // Refused or timed out — not exposed on this address. Keep trying the others.
+      }
+    }
   }
 
   // --- services ------------------------------------------------------------

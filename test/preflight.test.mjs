@@ -17,7 +17,7 @@ const healthy = () => ({
   database: { reachable: true, siteRowFound: true },
   vendor: { authenticated: true, error: null },
   network: { distinctDevices: 6 },
-  bridge: { reachable: true, deviceCount: 6, expectedCount: 6 },
+  bridge: { reachable: true, deviceCount: 6, expectedCount: 6, lanExposed: false, exposedOn: null },
   services: { nodered: 'active', 'ibems-ingest': 'active' },
 });
 
@@ -141,4 +141,59 @@ test('the check list is stable and complete whatever the observations say', () =
   const empty = assessDeployment({ siteId: 'x', env: {}, database: {}, vendor: {}, network: {}, bridge: {}, services: {} }).checks.map((c) => c.id);
   assert.deepEqual(empty, full);
   assert.ok(full.length >= 8, `expected the full check list, got ${full.length}`);
+});
+
+/**
+ * FI-019 — the bridge must not answer to anything but this machine.
+ *
+ * Node-RED serves the admin API and every http-in node on one port, and its `uiHost` default is
+ * every interface. On this deployment that includes the dedicated 2.4 GHz SSID the field devices
+ * sit on, so anything associated to that Wi-Fi could read `/api/devices` and
+ * `/api/readings/latest` with no credential — verified by fetching both from another host on
+ * 2026-09-01, before it was closed.
+ *
+ * The check exists because `settings.js` is not in this repository. A rebuild, a restore or a
+ * package upgrade puts the permissive default back with no diff and no alarm — the same shape as
+ * the tuya nodes' `findTimeout` and the MQTT broker's listener, both of which this project has
+ * already been bitten by. A setting that lives only on a host needs something that notices when
+ * it goes away.
+ */
+test('a bridge answering on a non-loopback address is reported, not passed over', () => {
+  const obs = healthy();
+  obs.bridge.lanExposed = true;
+  obs.bridge.exposedOn = '192.168.2.190';
+  const r = assessDeployment(obs);
+  const check = find(r, 'bridge_not_exposed');
+  assert.equal(check.level, LEVELS.WARN);
+  assert.match(check.detail, /no credential/);
+});
+
+test('the exposure is a warning, not an error — the deployment does work either way', () => {
+  // A day-one run on a machine nobody has hardened yet should be told this, not told it is
+  // broken. Overstating it is how a real error further down the list gets skipped over.
+  const obs = healthy();
+  obs.bridge.lanExposed = true;
+  assert.equal(assessDeployment(obs).ready, true);
+});
+
+test('a loopback-bound bridge passes', () => {
+  const check = find(assessDeployment(healthy()), 'bridge_not_exposed');
+  assert.equal(check.level, LEVELS.OK);
+  assert.match(check.detail, /loopback/);
+});
+
+test('an unchecked exposure is unchecked, never assumed safe', () => {
+  // The file's one rule, applied here: a machine with no non-loopback address at all cannot be
+  // probed, and "could not look" must not render as "looked and it was fine".
+  const obs = healthy();
+  obs.bridge.lanExposed = null;
+  assert.equal(find(assessDeployment(obs), 'bridge_not_exposed').level, LEVELS.UNCHECKED);
+});
+
+test('the remedy names the SSH tunnel, so nobody closes it by widening it back', () => {
+  const obs = healthy();
+  obs.bridge.lanExposed = true;
+  const check = find(assessDeployment(obs), 'bridge_not_exposed');
+  assert.match(check.fix, /uiHost/);
+  assert.match(check.fix, /ssh -L/);
 });
