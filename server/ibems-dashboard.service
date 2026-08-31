@@ -1,0 +1,41 @@
+# systemd unit for the built dashboard, served as static files.
+#
+# CAPTURED FROM THE LIVE PI 2026-08-31, where it had been running since before this repository
+# existed and was declared nowhere in it. That is the same exposure `CLAUDE.md` already records
+# twice — `findTimeout` on the tuya nodes, and mosquitto's listener config: a fact that lives
+# only on the host, so a rebuild, a reimage or a restore loses it with no diff and no alarm.
+# Four of the five services were in the repo; this one was not.
+#
+#     sudo cp server/ibems-dashboard.service /etc/systemd/system/ibems-dashboard.service
+#     sudo systemctl daemon-reload
+#     sudo systemctl enable --now ibems-dashboard.service
+#
+# `scripts/install.sh` installs it along with the rest.
+#
+# Serves `dist/`, so it shows whatever `npm run build` last produced — restart is not required
+# after a rebuild, but is harmless and is what a deploy does anyway.
+#
+# `-s` (single) rewrites unknown paths to index.html, which the hash-router frontend needs for a
+# deep link to resolve rather than 404.
+#
+# NOTE FOR ANOTHER DEPLOYMENT: `User`, `Group` and `WorkingDirectory` below name this Pi's
+# account and checkout path. `scripts/install.sh` rewrites all three for the account it is run
+# as; if you are installing by hand, change them to match.
+
+[Unit]
+Description=iBEMS Dashboard (static build, served by "serve")
+Wants=network.target
+After=network.target
+
+[Service]
+Type=simple
+User=bems
+Group=bems
+WorkingDirectory=/home/bems/bems
+ExecStart=/usr/bin/serve -s dist -l 5183
+Restart=on-failure
+RestartSec=10
+SyslogIdentifier=ibems-dashboard
+
+[Install]
+WantedBy=multi-user.target
