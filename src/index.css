@@ -6080,3 +6080,151 @@ button.space-plan__pin {
   font-size: var(--fs-xs);
   line-height: 1.5;
 }
+
+/* ---------------------------------------------------------------------------
+   Load-shed tiers — RM-006c. Tokens only; checked in both themes.
+   --------------------------------------------------------------------------- */
+.shed-panel {
+  margin-bottom: var(--sp-4);
+}
+.shed-panel__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+.shed-panel__close {
+  border: 1px solid var(--border);
+  background: var(--bg-surface-2);
+  color: var(--muted-2);
+  border-radius: var(--r-sm);
+  padding: 6px 12px;
+  font: 600 var(--fs-xs-lg) inherit;
+  cursor: pointer;
+  flex: none;
+}
+.shed-panel__lede {
+  margin: 0 0 var(--sp-4);
+  font-size: var(--fs-sm);
+  color: var(--muted-2);
+  line-height: 1.5;
+}
+.shed-panel__error {
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-3);
+  border-radius: var(--r-inner);
+  background: var(--bad-soft);
+  color: var(--bad);
+  font-size: var(--fs-sm);
+}
+.shed-panel__warn {
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-inner);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.shed-panel__tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+.shed-panel__tally-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-inner);
+  background: var(--bg-surface-2);
+  min-width: 9rem;
+}
+.shed-panel__tally-count {
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  color: var(--txt);
+  font-variant-numeric: tabular-nums;
+}
+.shed-panel__tally-sub {
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+}
+.shed-panel__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+.shed-panel__table th {
+  text-align: left;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--muted-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 8px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.shed-panel__table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.shed-panel__name {
+  display: block;
+  font-weight: 600;
+  color: var(--txt);
+}
+.shed-panel__id {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+}
+.shed-panel__state {
+  display: inline-block;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--muted-2);
+}
+.shed-panel__state--on {
+  color: var(--good);
+}
+.shed-panel__inert {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+}
+.shed-panel__select {
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--txt);
+  padding: 6px 8px;
+  font: 500 var(--fs-sm) inherit;
+  min-height: 36px;
+  width: 100%;
+  max-width: 15rem;
+}
+.shed-panel__note,
+.shed-panel__excluded {
+  margin-top: var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--muted-2);
+  line-height: 1.5;
+}
+.shed-panel__excluded summary {
+  cursor: pointer;
+}
+.shed-panel__excluded ul {
+  margin: var(--sp-2) 0 0;
+  padding-left: 1.2rem;
+}
+@media (max-width: 640px) {
+  .shed-panel__select {
+    max-width: none;
+    min-height: 44px;
+  }
+}

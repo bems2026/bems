@@ -1,7 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
 **Last audited:** 2026-08-31 (UTC) — RM-027 to RM-032 and RM-034 done; RM-033 part-built
-**Audited at commit:** `829874c`
+**Audited at commit:** `b31caa2`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
 discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
@@ -69,7 +69,7 @@ Everything else is small, and the build order below is honest about size.
 |---|---|
 | **RM-020** Power-cycle `co4`–`co6` | `co4` and `co6` are absent from the segment entirely — no ARP entry, so not associated to the AP. `co5` **is** on the segment and still needs power: the static-address remedy was tried on it 2026-08-26 and it refused every connection (RM-021). **Operator cannot do this during office hours** (stated 2026-08-26) and will say when they can. Was `co1`–`co6`; `co1`–`co3` came back once the Pi was returned to the device network (RM-023). `co4` moved `stale` → `absent` inside one session, so **re-run `npm run tuya:macs` before the trip** — the list moves, and it moved twice on the day this row was last rewritten. |
 | **RM-007** Kiosk sign-in | Needs one interactive login at the physical screen. `ibems-kiosk` is inactive. |
-| **RM-016** IR Blaster + Outside Temp | Re-pairing needs the devices and the Smart Life account. Quiesced meanwhile, so they cost nothing but still cannot report. |
+| **RM-016** IR Blaster + Outside Temp | Re-pairing needs the devices and the Smart Life account. Quiesced meanwhile, so they cost nothing but still cannot report. **Confirmed by the operator 2026-08-31: neither has been set up.** Verified the same day against the live bridge — `acu_main` and `sens_outside_temp` both report `online: false` with no values, so the Climate card shows `—` and the IR card shows "no reading yet", which is the honest rendering. Their registry `status` is still `active`, which claims more than is true; worth revisiting when they are paired rather than churning it twice. |
 
 ### Blocked on hardware that is not on the network
 
@@ -132,6 +132,21 @@ Everything else is small, and the build order below is honest about size.
   A display name costs nothing to correct; an identity costs the record. Whoever renames the
   Node-RED node one day should change the third of these in the same breath, and leave the first
   two alone forever.
+
+  **AN EDITOR EXISTS NOW — Devices → Load shedding.** The tiers were settable only one device at
+  a time, in the per-device metadata panel, with no view of what they added up to; the decision
+  this entry calls "the highest-value single one" was one nobody could see the shape of.
+  `src/components/devices/LoadShedPanel.tsx` shows every relay-controlled device with its tier,
+  saves on choice, and — the part that matters — shows **all three conditions `shedPlan` actually
+  applies**, not just the tier: assigned, dispatchable, and currently on. An editor showing only
+  the first would let somebody tier a fleet that cannot be commanded and believe the building was
+  protected; `inertCount` names that gap out loud.
+  *It refuses to offer a tier for anything that cannot be shed, and says why instead.* The aircon
+  is the largest controllable load here and has no relay — leaving it silently out of the list
+  would read as an oversight, leaving it in would be a lie.
+  *`src/lib/shedTiers.ts` is pure and mirrors `server/shedPlan.mjs` rule for rule.* A UI showing a
+  different set from the thing that switches power would be worse than no UI, because it would be
+  believed.
 
   **Still the operator's call, and now a better-posed one.** What is needed is not a wattage
   ranking but an answer per device: *what is plugged into co1–co7, and which lighting circuits

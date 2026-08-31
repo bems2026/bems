@@ -121,7 +121,12 @@ export const BUILT_IN_DEVICES = [
   // --- Aircon, IR-controlled (never power-cut; compressor safety) -------------
   {
     id: 'acu_main',
-    display_name: 'Aircon',
+    // "CARE ACU IR" rather than "CARE ACU": this is the IR endpoint that COMMANDS the unit, and
+    // `mtr_arec_acu` is the branch meter that MEASURES it. Both describe the same air
+    // conditioner and neither is the other — naming them identically would put two rows called
+    // the same thing in every device list, one of which cannot be commanded and one of which
+    // cannot be read.
+    display_name: 'CARE ACU IR',
     class: 'acu_ir',
     room: null,
     dps_map: null,
