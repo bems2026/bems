@@ -198,8 +198,72 @@ for (const [themeName, palette] of [['light', LIGHT], ['dark', DARK]]) {
  * for both themes and the dark copy had silently drifted — raising `--red` to clear AA left the
  * duplicate four lines away still failing. A comment cannot notice that; this can.
  */
+/**
+ * `--good` and `--warn` are the same kind of duplicate, carrying the same kind of comment. They
+ * agree today; the `--bad` drift is the reason not to take that on trust.
+ */
+const DUPLICATES = [
+  ['--bad', '--red'],
+  ['--good', '--green'],
+  ['--warn', '--accent-text'],
+];
+
 for (const [themeName, palette] of [['light', LIGHT], ['dark', DARK]]) {
-  test(`${themeName}: --bad is still the same colour as --red, which its comment claims`, () => {
-    assert.deepEqual(parseColor(palette['--bad'], palette), parseColor(palette['--red'], palette));
+  for (const [copy, original] of DUPLICATES) {
+    test(`${themeName}: ${copy} is still the same colour as ${original}, which its comment claims`, () => {
+      assert.deepEqual(parseColor(palette[copy], palette), parseColor(palette[original], palette));
+    });
+  }
+}
+
+/**
+ * FI-007 — a semantic colour on its OWN tint, which is what a badge is.
+ *
+ * `.badge--good { background: var(--good-soft); color: var(--good); }`, and the same for warn and
+ * bad. The tint is translucent, so it composites onto whatever surface the badge sits on and
+ * pulls that surface *towards the text colour* — which is exactly the direction that destroys
+ * contrast. Every pair here loses between 0.4 and 1.5 against its plain-surface figure.
+ *
+ * FI-007 recorded one instance of this (`--good` at 4.45:1 on the page, 4.99 on a card) and read
+ * it as a hazard for later. Measuring the whole set showed it was already live in three of the
+ * four dark-theme semantics.
+ *
+ * The pairs are the palette's own contract — a `-soft` token exists to be the background for its
+ * matching text colour — so all of them are measured, not only the three the stylesheet composes
+ * in `.badge--*` today. That is the same reasoning as the surface matrix above.
+ */
+const TINT_PAIRS = [
+  ['--good', '--good-soft'],
+  ['--warn', '--warn-soft'],
+  ['--bad', '--bad-soft'],
+  ['--blue', '--blue-soft'],
+  ['--green', '--green-soft'],
+  ['--red', '--red-soft'],
+  ['--accent-text', '--accent-soft'],
+];
+
+for (const [themeName, palette] of [['light', LIGHT], ['dark', DARK]]) {
+  const page = parseColor(palette['--bg-page'], palette);
+
+  test(`${themeName}: a badge's text clears AA on its own tint, over every surface`, () => {
+    const failures = [];
+    for (const [textToken, tintToken] of TINT_PAIRS) {
+      const text = parseColor(palette[textToken], palette);
+      const tint = parseColor(palette[tintToken], palette);
+      assert.ok(text && tint, `${textToken}/${tintToken} did not parse`);
+      for (const surfaceToken of SURFACE_TOKENS) {
+        // Two composites, in order: the tint sits on the surface, the text sits on that.
+        const surface = composite(parseColor(palette[surfaceToken], palette), page);
+        const chip = composite(tint, surface);
+        const ratio = contrast(composite(text, chip), chip);
+        if (ratio < AA_NORMAL) failures.push(`${textToken} on ${tintToken} over ${surfaceToken}: ${ratio.toFixed(2)}:1`);
+      }
+    }
+    assert.deepEqual(
+      failures,
+      [],
+      `Below ${AA_NORMAL}:1. Lowering the tint's alpha cannot fix all of these — some of the text ` +
+        'tokens sit under 4.6 on the darkest flat surface before any tint is applied at all.',
+    );
   });
 }

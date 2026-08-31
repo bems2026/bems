@@ -107,14 +107,14 @@
    */
   --accent: #f59e0b;
   --accent-hi: #fbbf24; /* gradient stops only (chart fills) — not a text color */
-  --accent-text: #b45309; /* 4.6-5.0:1 — amber used as text/icon (day chips, captions) */
+  --accent-text: #ae4d03; /* 4.7-5.1:1 — amber used as text/icon (day chips, captions) */
   --accent-soft: rgb(245 158 11 / 0.1);
 
-  --blue: #2563eb; /* 4.7-5.2:1 — links, button backgrounds, small icon glyphs */
+  --blue: #1e5ce4; /* 4.9-5.4:1 — links, button backgrounds, small icon glyphs */
   --blue-bright: #3b82f6; /* dots, chart lines, larger swatches only */
   --blue-soft: rgb(59 130 246 / 0.1);
 
-  --green: #047857; /* 5.0-5.5:1 */
+  --green: #037756; /* 5.1-5.6:1 */
   --green-bright: #10b981;
   --green-soft: rgb(16 185 129 / 0.1);
 
@@ -149,9 +149,9 @@
    * of a hex the Three.js side can use. Keep these three in sync with their -text sibling
    * above by hand if either changes.
    */
-  --good: #047857; /* = --green */
+  --good: #037756; /* = --green */
   --good-soft: var(--green-soft);
-  --warn: #b45309; /* = --accent-text */
+  --warn: #ae4d03; /* = --accent-text */
   --warn-soft: var(--accent-soft);
   /* --warn as text on a --warn-soft fill measures 4.65:1 over a card (--bg-surface, white)
      but only 4.15:1 over the page itself (--bg-page, #eef1f6) — the page is the darker of
@@ -303,11 +303,11 @@
   --accent-text: #e0a94a; /* 8.9:1 — text role inverts: light-on-dark, not dark-on-light */
   --accent-soft: rgb(194 121 14 / 0.16);
 
-  --blue: #5f8be5; /* 5.0:1 */
+  --blue: #739ff9; /* 6.0:1 */
   --blue-bright: #6690e8; /* 6.0:1 */
   --blue-soft: rgb(95 139 229 / 0.16);
 
-  --green: #25a878; /* 6.2:1 */
+  --green: #32b585; /* 7.2:1 */
   --green-bright: #3dbb8a; /* 7.7:1 */
   --green-soft: rgb(37 168 120 / 0.16);
 
@@ -316,16 +316,20 @@
    * 4.33:1, under AA. Nothing rendered it there yet, which is the FI-007 pattern: a colour that
    * passes everywhere it currently appears and fails the first time it is placed somewhere new.
    * Raised by six per channel, which is below a visible difference and above the bar. */
-  --red: #e6675b;
+  --red: #f8796d;
   --red-bright: #e56f63; /* 6.1:1 */
-  --red-soft: rgb(230 103 91 / 0.16);
+  /* Derived from --red-bright, matching the light theme's convention (its --red-soft is
+   * --red-bright #ef4444 at 0.1). The dark copy had been tracking --red instead, which meant the
+   * chip lightened further every time --red was lightened — pushing badge text back under AA
+   * exactly when the text colour was raised to clear it. */
+  --red-soft: rgb(229 111 99 / 0.16);
 
   --purple: #a78bfa; /* 6.9:1 */
   --purple-bright: #c4b5fd; /* 10.2:1 */
 
   --focus-ring: #6690e8; /* = --blue-bright — 6.0:1, and 3:1+ against every surface it sits on */
 
-  --good: #25a878; /* = --green */
+  --good: #32b585; /* = --green */
   --good-soft: rgb(37 168 120 / 0.16);
   --warn: #e0a94a; /* = --accent-text */
   --warn-soft: rgb(194 121 14 / 0.16);
@@ -334,7 +338,7 @@
      both themes — a token that exists in only one theme is the dark-mode bug this file's
      header warns about. */
   --warn-on-page: var(--warn);
-  --bad: #e6675b; /* = --red, enforced by test/contrast.test.mjs */
+  --bad: #f8796d; /* = --red, enforced by test/contrast.test.mjs */
   --bad-soft: var(--red-soft);
   --info: #6690e8; /* = --blue-bright */
 

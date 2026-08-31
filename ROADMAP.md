@@ -2874,7 +2874,36 @@ may not.
   *Neuter-verified:* forcing `isReadingExpired` to `false` failed 8 of the 16.
 
 ### Accessibility
-- **FI-007** (S) `--good` on `--good-soft` measures 4.45:1 against the page background (4.99 on a card). It passes everywhere it currently renders, but will fail the first time a green badge is placed directly on the page. The same page-versus-card split already required `--warn-on-page`.
+- ~~**FI-007** (S) `--good` on `--good-soft` measures 4.45:1 against the page background.~~
+  **Done 2026-08-31**, and the entry understated it. FI-007 read this as one token's latent
+  hazard — *"passes everywhere it currently renders, but will fail the first time a green badge is
+  placed directly on the page."* Extending FI-008's guard to the composition rather than the token
+  showed **it was already live in three of the four dark-theme semantics**, on `.badge--*`, which
+  the shared `Badge` component renders across the app.
+  **Why a badge is the worst case in the palette.** `.badge--good { background: var(--good-soft);
+  color: var(--good); }` — the tint is translucent, so it composites onto whatever surface the
+  badge sits on and pulls that surface *towards the text colour*, which is the one direction that
+  destroys contrast. Every pair lost between 0.4 and 1.5 against its plain-surface figure.
+  Measured worst cases before: dark `--bad` **3.75:1**, dark `--blue` **3.63:1**, dark `--good`
+  **3.97:1**, light `--warn` and light `--blue` **4.27** and **4.24**.
+  **Lowering the tint alpha could not fix it, which is the finding that changed the approach.**
+  Solved numerically: light `--warn` and dark `--blue` stay under AA *even at alpha 0*, because
+  those text tokens sit at 4.24–4.58 on the darkest flat surface before any tint exists. So the
+  text tokens moved instead — darker in light, lighter in dark, 1–7 per channel in light and
+  13–20 in dark, same hue throughout. Every shift also *raises* contrast on plain surfaces, so
+  nothing was traded away to buy this.
+  *One tint did move, for a different reason.* Dark `--red-soft` derived from `--red` while the
+  light theme's derives from `--red-bright`. That inconsistency was self-defeating: the chip
+  lightened further every time `--red` was lightened, pushing badge text back under AA exactly
+  when the text colour was raised to clear it. Dark now follows the light convention.
+  *Verified in a real browser on the actual `.badge--*` elements*, not only in the file — light
+  good/warn/bad **4.85 / 4.83 / 5.44**, dark **4.62 / 5.81 / 4.56**, all over `--bg-surface-2`,
+  the worst flat surface.
+  *`scene3d/tokens.ts` mirrors `--good` and `--warn` into Three.js materials and was updated with
+  them*; its own drift guard reads the first occurrence in the stylesheet and confirms the pair.
+  *The guard now covers seven text/tint pairs across both themes*, including the four the
+  stylesheet does not compose today — a `-soft` token exists to be the background for its matching
+  text colour, and that is the palette's contract whether or not a component has used it yet.
 
 ### Developer experience
 - ~~**FI-008** (S) A contrast regression guard.~~ **Done 2026-08-31** — `test/contrast.test.mjs`,
@@ -2958,7 +2987,11 @@ may not.
    backup` and `docs/backup-policy.md` — but nothing has *verified* one. No restore has been
    tried, and whether Supabase itself takes a backup depends on a plan tier this pass could
    not check. See RM-006d.
-5. **Should `--good` be corrected pre-emptively** (FI-007), or left until a green badge actually lands on the page background?
+5. ~~**Should `--good` be corrected pre-emptively** (FI-007), or left until a green badge actually
+   lands on the page background?~~ **Answered 2026-08-31: the question had a false premise.** It
+   was not waiting to fail — measuring the composition rather than the token showed three of the
+   four dark-theme semantics were *already* under AA on the badges the app renders today. "Leave
+   it until it fails" is only a real option when you have checked whether it has.
 5b. ~~**Should device readings move to a purpose-built time-series database?**~~ **Answered
    2026-08-21, amended 2026-08-22** — including the stronger form of the question, "Supabase
    as the brain and InfluxDB as the engine, with Google Sheets for reporting". The answer is

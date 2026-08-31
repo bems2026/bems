@@ -18,8 +18,8 @@ export const TOKENS = {
    * render against the dark canvas.
    */
   accent: '#f59e0b',
-  good: '#047857',
-  warn: '#b45309',
+  good: '#037756',
+  warn: '#ae4d03',
   bad: '#b91c1c',
   bgSurface2: '#f8fafc',
   border: '#e2e8f0',
