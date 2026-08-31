@@ -1,7 +1,22 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-31 (UTC) — RM-027 to RM-032 and RM-034 done; RM-033 part-built
-**Audited at commit:** `b31caa2`
+**Last audited:** 2026-09-01 (UTC) — the control path, against the live Pi
+**Audited at commit:** `1f46590`
+
+**2026-09-01, and it changes what §0 says.** The headline claim below — that there is no
+unblocked coding task left — was **wrong**, and it was wrong because the fault report that
+contradicted it had been read as a network problem. A physical test reported an outlet toggle
+failing with something like "bridge not reachable", outlet rows flapping between stale and live
+while Node-RED showed the same devices connected throughout, and the Control page appearing to
+block ON/OFF. All three were reproduced against the live Pi and were **one constant**:
+`STALE_AFTER_MS` was 30 s for every device, while an outlet is polled once a minute by design.
+See **EX-133** through **EX-140**. Two of those (EX-139, EX-140) are built and dry-run against
+the live flow but **not applied** — they need a flow write. Two new backlog items were recorded
+rather than fixed: **FI-019** (the bridge listens on every interface) and **FI-020** (a switch's
+freshness is unmeasurable).
+The lesson worth keeping is not about staleness. It is that "every unticked item is blocked on
+something outside the code" was believed for a fortnight while a working outlet was being
+reported as unreachable — because the misreport named the wrong subsystem and nobody re-measured.
 **Landed since that audit, not re-audited:** a long session on 2026-08-31 — RM-006c's tier
 editor, FI-018 (baseline report), FI-008 (contrast guard), FI-006 (totals expiry), FI-007 (badge
 contrast), FI-002 (`npm run preflight`), RM-033's `npm run site:sql`, and the installer rehearsal
@@ -50,7 +65,10 @@ now" does not require reading all of it. Everything here is expanded below under
 
 ### Everything outstanding, 2026-08-31 — the handoff list
 
-Grouped by what each one waits on, because none of them wait on code. Ids link to the entries
+*Superseded in part on 2026-09-01: see the header, and the two flow writes now waiting at the
+end of this list. "None of them wait on code" was true of this list and not true of the system.*
+
+Grouped by what each one waits on. Ids link to the entries
 below, which carry the evidence.
 
 **A person has to be at the CARE office**
@@ -94,8 +112,18 @@ below, which carry the evidence.
 - **FI-012** — partition `readings` *if* growth ever outgrows the prune. Conditional; not due.
 - **FI-011** — push delivery for the monthly report, once a notification channel is configured.
 
+**Two flow writes are built, dry-run, and waiting on a go-ahead** *(added 2026-09-01)*
+- **EX-133's flow rebuild** — `npm run build:flow` is done and committed; the Pi needs
+  `npm run deploy:pi -- --force --apply` for the per-device staleness budgets to reach the wire.
+  Until then the bridge omits `stale_after_ms` and the frontend falls back to the old global
+  30 s, so **the fix is inert on the Pi** even though the app is deployed.
+- **EX-139 / EX-140** — `npm run fix-health:pi --apply` and `npm run poll-outlets:pi --apply`.
+  Both dry-run clean against the live flow. Back up `~/.node-red/flows.json` first, always.
+
 **Code, and deliberately not done**
-- **FI-009** is the only unblocked coding task in the file. Its own entry explains why it was left:
+- **FI-019** (the bridge on `0.0.0.0:1880`) and **FI-020** (a switch's freshness is
+  unmeasurable) were found on 2026-09-01 and recorded rather than fixed — each entry says why.
+- **FI-009** is the only other unblocked coding task in the file. Its own entry explains why it was left:
   each of the three selectors needs value-level rather than reference-level comparison to gain
   anything, and `FloorPlanView` genuinely reads every device. Filtering inside a zustand selector
   is also a documented loop hazard here. Low value, real risk.
@@ -1242,6 +1270,119 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       *Method note worth keeping:* a contrast reading taken straight after a theme toggle is
       unreliable — the card surface cross-fades, and a stale glass value produced two false
       alarms before I noticed. Measure on a clean load in each theme.
+- [x] **EX-133** **Staleness is a per-device budget, not one constant** — the fault behind
+      "the outlet keeps flipping between stale and live while Node-RED says it is connected".
+      `TIMING.STALE_AFTER_MS` was 30 s for every device, while the classes report on cadences an
+      order of magnitude apart. **Measured on the Pi 2026-09-01, 119 samples over 240 s:** every
+      live outlet and the near-idle branch meter peaked at **59.9 s** of reading age, because
+      `outletPollPlan` asks an outlet for its state once a minute and nothing else asks it
+      anything. So every one of them was flagged stale for **half of every minute**, forever, on
+      hardware working perfectly. Switches never flagged at all — `buildLatest` stamps
+      `ts = now` for them, so their freshness is unmeasurable rather than good.
+      `isReadingStale` has **fifteen call sites**, so one constant drove all of: the Devices
+      table flipping LIVE↔STALE, the alerts bell raising and clearing a COMM FAULT once a minute
+      per outlet, the 3D scene desaturating, and — the expensive one — `commandStore.reconcile`
+      reporting a relay that had genuinely moved as "the device did not report the new state".
+      The budget now travels on the reading (`Reading.stale_after_ms`), resolved by the bridge in
+      `shared/registry.mjs`'s `STALE_AFTER_MS_BY_CLASS`. **The bridge is the right author
+      because it owns the poller** — it is the only party that knows an outlet cannot report
+      faster than 60 s — and a copy of that table in `src/` would be free to disagree with the
+      thing it describes, which is exactly what the single 30 s was. A site may override per
+      device in its own directory (Track B). `online: false` still wins over any budget: that is
+      the bridge saying it has no connection at all, and no budget may launder it into "fresh".
+      **Two of this repo's own guards shaped the result** — the device-naming guard caught a
+      device id in a new comment, and the site-composition guard caught a first version
+      decorating `DEVICE_REGISTRY`, so the table is threaded into `buildLatest` as a parameter
+      like `offsetMinutes` instead. *Requires a flow rebuild* (`build:flow` + `deploy:pi
+      --force --apply`), because `build-flow.mjs` inlines the registry —
+      `shared/registry.mjs`, `shared/buildLatest.mjs`, `src/lib/staleness.ts`,
+      `test/reading-freshness.test.mjs`
+      **Guarded against reintroduction:** a test asserts the outlet budget strictly exceeds
+      `outletPollPlan.POLL_INTERVAL_S`. A budget shorter than the poll that feeds it *is* this
+      bug, and nothing previously forbade it.
+- [x] **EX-134** **The mock can now reproduce the fault it could not see.** `mock-bridge` stamped
+      `m.t = Date.now()` on every tick, so its devices were the only ones in the system that
+      reported continuously — and no amount of local testing could produce the sawtooth above.
+      `--poll-cadence=<s>` quantises metered arrivals to a cadence and emits the `arrivals` key
+      the real bridge's energy tab produces. `npm run mock -- --poll-cadence=60` is the live Pi's
+      actual behaviour. **A fault the mock cannot produce is a fault that gets diagnosed on
+      production hardware** — `mock-bridge/server.mjs`
+- [x] **EX-135** **A command that moved a relay stopped reporting failure.**
+      `commandStore.reconcile` only accepts its success path when the reading is not stale. The
+      Outlet Logic Hub echoes a commanded socket within one WS push, but the row's `ts` comes
+      from `<ctx>_last_time`, which advances only on the 60 s poll — so under the old budget
+      about half of all successful outlet commands missed the success path, waited out
+      `COMMAND_CONFIRM_MS`, and were reported as failures. The staleness conjunct stays (it is
+      what stops a frozen echo from an offline device confirming a command that never landed);
+      what was wrong was the number it consulted. **Verified in a browser:** an outlet commanded
+      at a meter age of **59 s** — the worst point in the cycle — switched and produced no FAULT
+      row nine seconds later. The failure message is also split: "did not report the new state"
+      claims the device answered and contradicted the command, which is only available when the
+      reading postdates it — `src/stores/commandStore.ts`
+- [x] **EX-136** **Two light controls had dead click handlers.** EX-017 removed `stale` from
+      `disabled=` but left it in the `toggle()` of `SwitchesListCard` and `LightingMatrixCard`,
+      so the button rendered enabled and the click did nothing at all. A control that looks
+      operable and silently is not is worse than a disabled one, which at least says so.
+      `isCommandable` (`online: false`) is the real refusal and still gates the button, where it
+      is visible — the four control cards
+- [x] **EX-137** **"Bridge not reachable" was one socket being offline.** Every dispatch failure
+      answered one 502 `hardware_dispatch_failed`, which `describeFailure` rendered as "The
+      bridge did not accept the command (502)" — so a refusal meaning *the bridge has no
+      connection to this device*, a fact about one socket with a remedy at that socket, arrived
+      looking like a building-wide outage. That is what the 2026-08-31 physical test reported,
+      while the bridge was serving readings throughout, and it aimed the diagnosis at the wrong
+      subsystem for a fortnight. `dispatchCommand` now returns a `reason`
+      (`device_offline` | `bridge_unreachable` | `bridge_rejected` | `no_route`) — a code, not a
+      prose string for the proxy to parse — the proxy maps each to its own response code and
+      carries `via`, and the UI names the actual cause. Where no code arrives, the message now
+      claims nothing about which subsystem failed: guessing is what caused the misdiagnosis —
+      `server/dispatchLight.mjs`, `server/proxy.mjs`, `src/stores/commandStore.ts`
+- [x] **EX-138** **Local-first is declared, observable and provable.** It was already the
+      behaviour — the fleet is on the Pi's own 2.4 GHz segment, `dispatchCommand` tries it first
+      on every command, and the cloud is only reached after a local failure — but it was a
+      property of the code rather than a decision on record, enabled only because credentials
+      happened to exist, and nothing on screen said so.
+      **Proven on hardware 2026-09-01:** `l1` commanded through `dispatchCommand` with no cloud
+      option configured at all — `ok=true via=local` in **85 ms**, state read back as changed,
+      then restored. Device id and local key over the building's own LAN, no vendor in the path.
+      `SITE.policy.dispatch` is `local-first` (unchanged behaviour) or `local-only`, which
+      **refuses** the fallback — a different guarantee from never having configured one, and the
+      failure detail says which. The Control page states the policy and names any device that
+      answered only through the cloud, which is a success the operator reads as unremarkable
+      while meaning that device stopped answering locally. `npm run local-probe:pi` reports it on
+      demand, **read-only**, and deliberately does *not* open its own `tuyapi` session: a
+      device's inbound socket table is small, and exhausting it is the exact fault ADR-002 was
+      written about — `shared/sites/<id>/site.mjs`, `node-red-bridge/localProbePlan.mjs`,
+      `src/components/control/DispatchPathNote.tsx`
+- [x] **EX-139** **Three metered channels had a health flag that could not go false.** A tuya
+      node reports data on output 1 and connection status on output 2; the parser sets
+      `<ctx>_health` false only on a `DISCONNECTED`/`ERROR` message, which arrives on output 2.
+      Read off the live flow 2026-09-01: of the three meter nodes, **one was wired and two were
+      not**, and those two feed three of the four metered channels — roughly **98% of measured
+      demand**. `buildLatest` drops an offline meter from the building totals and the
+      accumulator gates on the same flag, so a meter that cannot go offline keeps contributing
+      its last frozen reading to the kWh figures. Only the ten-minute arrival rule was catching
+      it: the backstop doing the primary signal's job.
+      `fix-tuya-health-signals.mjs` was written for exactly this and its other two fixes did
+      land, but its rewire list names a meter node the flow no longer has, so it now aborts
+      before it can help. Expressed as an **invariant** instead — a data output that goes
+      somewhere and a status output that goes nowhere is wrong — it needs no list of ids and
+      survives the flow being edited. **Dry-run against the Pi finds the two meters plus the two
+      quiesced IR devices, and says which are which.** *Not yet applied; needs a flow write* —
+      `node-red-bridge/healthWiringPlan.mjs`, `npm run fix-health:pi`
+- [x] **EX-140** **The outlet poller skips outlets that are known to be down.** `co4`–`co6` have
+      been off the network for weeks (RM-020) and were producing **180** `Device not connected`
+      plus a share of **490** `find() timed out` lines every thirty minutes, forever — nothing
+      else in the journal was. A log whose steady state is six errors a minute is a log nobody
+      reads, and this project has already had a real fault sit unnoticed inside that kind of
+      noise. One output per outlet, skipping any the parser has flagged disconnected.
+      **Self-healing, which is why it is preferred over quiescing them:** the reconnect loop is
+      untouched, so polling resumes by itself when a device returns; `quiescePlan` would need a
+      manual `--undo` after the site visit and would not stop the poller sending to a stopped
+      node anyway. Unknown health still polls — refusing would keep a device that has never
+      reported silent forever. The plan now **upgrades** an existing poller rather than reporting
+      "already present, nothing to do", which would have silently declined to fix the thing it
+      was run for. *Not yet applied; needs a flow write* — `node-red-bridge/outletPollPlan.mjs`
 - [x] **EX-129** `npm run set-device-ip:pi` — the RM-021 remedy, as a reversible script.
       Gives a `tuya-smart-device` node a static `deviceIp` so the bridge stops depending on a
       discovery broadcast the device has stopped sending. Dry run by default, `--apply` to
@@ -2935,6 +3076,30 @@ may not.
       weekday/weekend separation the three-day minimum exists to protect.
 
 ### Robustness
+- **FI-019** (M) **The bridge listens on every interface, including the device segment.**
+  Found 2026-09-01: `ss -lnt` on the Pi shows Node-RED on `0.0.0.0:1880`, so anything associated
+  to the 2.4 GHz device SSID can reach it. `GET /api/readings/latest` and `/api/devices` take no
+  authentication there, and the control endpoints are guarded only by `LIGHT_API_TOKEN`, which
+  lives in the flow on the same host.
+  **This is the same exposure shape as the mosquitto listener closed on 2026-08-26** — a service
+  bound wide on the segment the field devices share — and that one was judged worth fixing.
+  Recorded rather than fixed in the same pass because it is *not* a one-line change: the office
+  kiosk, the Node-RED editor, and `src/config/bridge.ts`'s no-Supabase fallback all reach 1880,
+  and `server/proxy.mjs` is already on the same host so it would be unaffected. Binding
+  `uiHost` to loopback needs each of those checked first, and a wrong move here is a remote
+  change to the one host nobody is standing next to. See CLAUDE.md's note on the broker for the
+  precedent, including why widening a listener back is reinstating the problem rather than
+  configuring a feature.
+- **FI-020** (S) **A switch's freshness is unmeasurable, and the UI cannot say so.**
+  `buildLatest` stamps `ts = now` for any device with no `ctx`, so a switch's staleness watchdog
+  can never fire — the same "an always-fresh timestamp cannot look old" failure the meters were
+  fixed for in EX-107. Nothing is currently wrong: a switch's `online` comes from
+  `global.lightStatus`, a real per-switch connection signal, which is what does the work. But
+  EX-133 gave switches a 30 s budget that *by construction* cannot be exceeded, and a budget
+  that cannot fire reads like a guarantee. Either the flow's `lightStatus.lastSeen` (which
+  exists, and is already carried in the mock's fixture) should feed `seenAt`, or the class
+  should declare that it has no measurable freshness and the UI should say "not measured"
+  instead of implying live. The second is smaller and more honest; the first is better.
 - ~~**FI-013** (S) The Outlet tab never polls its devices.~~ **Done 2026-08-25** — EX-038b.
 - **FI-009** (S) Narrow the three remaining whole-map store selectors — `FloorPlanView`, `AlertsPopover`, `EnergyBreakdownCard`. Left alone in the Phase 9 pass because each needs value-level rather than reference-level comparison to gain anything, and FloorPlanView genuinely reads every device.
 - ~~**FI-010** (M) The 24h chart has the same offline-blindness the 7d/30d charts just lost.~~ **Done 2026-08-25** — EX-102. The ring buffer records `online` per sample and `pointValue` suppresses a point marked offline, so an unreporting device leaves a gap rather than a flat line. Needs a flow deploy to take effect.
