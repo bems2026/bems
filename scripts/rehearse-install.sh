@@ -97,7 +97,23 @@ cp -r /staging /home/rehearse/bems
 chown -R rehearse:rehearse /home/rehearse/bems
 
 if [ "$MODE" = apply ]; then
-  echo "=== APPLY on a machine with nothing installed ==="
+  # A recording stub for systemctl. The container has no systemd — not even the binary — so the
+  # real installer stops at the first `systemctl enable`, and steps 6 to 8 never run. Those are
+  # the steps that create server/.env and rewrite the unit files for a different user and path,
+  # which is exactly where a second deployment breaks quietly.
+  #
+  # The stub records every call and returns 0. Nothing is started and nothing is enabled: what it
+  # buys is that the FILE operations after it get exercised, and that the list of units the
+  # installer would have touched can be read back and checked. Every call it swallowed is printed
+  # at the end, so no systemd behaviour is ever reported as having been tested.
+  cat > /usr/local/bin/systemctl <<'STUB'
+#!/bin/sh
+echo "systemctl $*" >> /tmp/systemctl-calls.log
+exit 0
+STUB
+  chmod +x /usr/local/bin/systemctl
+  : > /tmp/systemctl-calls.log
+  echo "=== APPLY on a machine with nothing installed (systemctl is a recording stub) ==="
   # `script` gives the installer a tty. Without one the Node-RED installer behaves differently,
   # and a difference introduced by the harness would be indistinguishable from a real finding.
   su rehearse -c 'cd /home/rehearse/bems && bash scripts/install.sh --apply < /dev/null'
@@ -110,6 +126,8 @@ if [ "$MODE" = apply ]; then
   echo "-- units installed:"; ls -1 /etc/systemd/system/ibems-*.service 2>&1
   echo "-- one unit, rewritten:"; grep -E '^(User|Group|WorkingDirectory|EnvironmentFile)=' /etc/systemd/system/ibems-dashboard.service 2>&1
   echo "-- dist built:"; ls -1 /home/rehearse/bems/dist/index.html 2>&1
+  echo "-- systemctl calls the installer made (STUBBED — none of these really happened):"
+  sed -e 's/^/     /' /tmp/systemctl-calls.log 2>&1
 else
   echo "=== dry run on a machine with nothing installed ==="
   su rehearse -c 'cd /home/rehearse/bems && bash scripts/install.sh'
@@ -126,10 +144,11 @@ echo
 bold "What this rehearsal could not exercise"
 if [ "$MODE" = apply ]; then
   cat <<'GAPS'
-  - systemctl daemon-reload / enable / start — a container has no systemd as PID 1, so these
-    FAIL here and always will. Their failure says nothing about a real Pi.
+  - systemctl was a RECORDING STUB. Every call it swallowed is listed above; not one of them was
+    really made. Nothing was enabled, nothing was started, and no unit was ever validated by
+    systemd. The stub exists so the file operations after it get exercised at all.
   - whether the services actually run, for the same reason.
-  Everything else above really happened. These two are not passes.
+  Everything else above really happened.
 GAPS
 else
   cat <<'GAPS'
