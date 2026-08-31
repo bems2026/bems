@@ -1,6 +1,7 @@
 import { Box } from 'lucide-react';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { SpatialView } from './SpatialView';
+import { SITE } from '@shared/siteConfig.mjs';
 
 /**
  * v4's 3D hero card chrome (title, subtitle) wrapping `SpatialView`. No link to Control from
@@ -22,7 +23,7 @@ export function Hero3DCard() {
         <div>
           <h3 className="hero-3d-title">
             <Box size={16} className="title-icon" aria-hidden="true" />
-            NBERIC · CARE office
+            {SITE.display_name}
           </h3>
           <p className="hero-3d-sub">
             Live 3D model

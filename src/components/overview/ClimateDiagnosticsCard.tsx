@@ -23,7 +23,10 @@ export function ClimateDiagnosticsCard() {
         <span className="climate-caps-label">2 SENSORS</span>
       </div>
       <div className="climate-grid">
-        <ClimateTile name="Room · CARE office" temp={acu?.room_temp_c} rh={acu?.humidity_pct} />
+        {/* "Indoor", not a room name. This reading comes from the aircon's own sensor, so the
+            only thing it can honestly claim is that it was taken inside — which building, and
+            which room, is the space tree's business (RM-028). */}
+        <ClimateTile name="Indoor" temp={acu?.room_temp_c} rh={acu?.humidity_pct} />
         <ClimateTile name="Outside" temp={outside?.temp_c} rh={outside?.humidity_pct} />
       </div>
     </div>

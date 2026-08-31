@@ -1,4 +1,6 @@
 import { PageHeader } from '@/components/layout/PageHeader';
+import { SITE } from '@shared/siteConfig.mjs';
+import { WEATHER_PLACE } from '@/config/weather';
 import { LiveDemandCard } from './LiveDemandCard';
 import { MainPanelHealthCard } from './MainPanelHealthCard';
 import { EnergyBreakdownCard } from './EnergyBreakdownCard';
@@ -38,7 +40,7 @@ import { useNowTick } from '@/lib/useNowTick';
 export function OverviewPage() {
   return (
     <>
-      <PageHeader title="Intelligent BEMS" sub="Building Energy Management System - MMSU Care Office" actions={<Clock />} />
+      <PageHeader title="Intelligent BEMS" sub={`Building Energy Management System · ${SITE.display_name}`} actions={<Clock />} />
 
       <div className="overview-bento">
         <div className="overview-col overview-col--left">
@@ -78,7 +80,7 @@ function Clock() {
     <div className="page-header-right">
       <div className="page-clock">{now.toLocaleTimeString('en-PH', { hour12: false })}</div>
       <div className="page-date">
-        {now.toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric' })} · Batac City
+        {now.toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric' })} · {WEATHER_PLACE}
       </div>
     </div>
   );

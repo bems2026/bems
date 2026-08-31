@@ -8,6 +8,7 @@ import { isStale } from '@/lib/bridgeClient';
 import type { ConnStatus } from '@/lib/bridgeClient';
 import { useEffect, useRef } from 'react';
 import { useNowTick } from '@/lib/useNowTick';
+import { SITE } from '@shared/siteConfig.mjs';
 
 const LIVE_LABEL: Record<ConnStatus, string> = {
   connected: 'LIVE',
@@ -79,7 +80,9 @@ export function TopNav({ activeId }: { activeId: string }) {
           <Zap size={15} strokeWidth={2.5} />
         </span>
         <span className="nav-brand-name">iBEMS</span>
-        <span className="nav-site-chip">MMSU CARE Office · NBERIC</span>
+        {/* The building this deployment serves, from the site module. It was a literal until
+            2026-08-31, so every deployment displayed the CARE office's name in its header. */}
+        <span className="nav-site-chip">{SITE.display_name}</span>
       </a>
 
       {/*
