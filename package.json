@@ -1,6 +1,7 @@
 {
   "name": "ibems-dashboard",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "description": "iBEMS web dashboard — live data via the Node-RED bridge, Supabase-backed history, and audited device control (hardware dispatch gated)",
