@@ -98,7 +98,10 @@ export function AutomationPage() {
                 alert: it's good news, so it should wait its turn rather than interrupt. */}
             <p className="automation-write-confirm" role="status">
               {saveStatus === 'idle' && lastSave
-                ? `Wrote ${lastSave.count} key${lastSave.count === 1 ? '' : 's'} at ${new Date(lastSave.at).toLocaleTimeString('en-PH', { hour12: false })}`
+                // THE READER'S OWN CLOCK, deliberately. This is when THEY pressed save, not
+                // something that happened in the building — see `src/lib/siteTime.ts` for the
+                // distinction and why the building's facts do not use this frame.
+                ? `Wrote ${lastSave.count} key${lastSave.count === 1 ? '' : 's'} at ${new Date(lastSave.at).toLocaleTimeString(undefined, { hour12: false })}`
                 : ''}
             </p>
             <button type="button" className="automation-write-btn" disabled={pendingEntries.length === 0 || saveStatus === 'saving'} onClick={askSave}>

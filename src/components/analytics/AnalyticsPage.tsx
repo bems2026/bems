@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { siteDate, siteDateTime, siteTimeShort } from '@/lib/siteTime';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Activity, Gauge, Plug } from 'lucide-react';
@@ -217,7 +218,7 @@ export function AnalyticsPage() {
                       where zero is a meaningful floor. */}
                   <YAxis stroke="var(--muted)" fontSize={11} width={44} tickLine={false} domain={param === 'voltage' ? ['auto', 'auto'] : undefined} />
                   <Tooltip
-                    labelFormatter={(t) => new Date(t as number).toLocaleString('en-PH', { hour12: false })}
+                    labelFormatter={(t) => siteDateTime(t as number)}
                     formatter={(v, name) => [formatParamValue(Number(v), param), scopeDevices.find((d) => d.id === name)?.display_name ?? String(name)]}
                     contentStyle={{ background: 'var(--bg-surface-2)', border: '1px solid var(--border)', borderRadius: 8 }}
                   />
@@ -353,12 +354,12 @@ function SourceSection({
  * ranges get a date instead. */
 function formatTick(t: number, range: AnalyticsRange): string {
   if (range === '24h') {
-    return new Date(t).toLocaleTimeString('en-PH', { hour12: false, hour: '2-digit', minute: '2-digit' });
+    return siteTimeShort(t);
   }
   // Over a year, a day-level tick repeats the same handful of visible labels with no way to
   // tell which month a point falls in — the same failure the day-level tick fixed for 7d.
   if (range === '1y') {
-    return new Date(t).toLocaleDateString('en-PH', { month: 'short', year: '2-digit' });
+    return siteDate(t, { month: 'short', year: '2-digit' });
   }
-  return new Date(t).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+  return siteDate(t, { month: 'short', day: 'numeric' });
 }

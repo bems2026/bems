@@ -76,12 +76,19 @@ export function isQuotable(coverage: Coverage | null): boolean {
   return coverage?.band === 'complete';
 }
 
-/** Pure. `2026-07-01` -> `July 2026`, without pulling a date library in for one format. */
+/**
+ * Pure. `2026-07-01` -> `July 2026`, without pulling a date library in for one format.
+ *
+ * `timeZone: 'UTC'` is right here and is NOT the mistake `src/lib/siteTime.ts` exists for. This
+ * formats a bare DATE STRING, not an instant: the value is constructed at UTC midnight, so
+ * pinning UTC is what stops a reader west of the meridian seeing `2026-07-01` labelled "June".
+ * The locale is the reader's, because how a month is spelled is theirs and not this building's.
+ */
 export function formatMonth(month: string): string {
   const [y, m] = month.slice(0, 10).split('-');
   const date = new Date(Date.UTC(Number(y), Number(m) - 1, 1));
   if (Number.isNaN(date.getTime())) return month;
-  return date.toLocaleDateString('en-PH', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
 }
 
 function requireSupabase() {

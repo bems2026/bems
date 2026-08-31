@@ -437,7 +437,7 @@ export function OfficeScene3D() {
     askImportLayout(parsed);
   };
 
-  const layoutStatus = layoutError ?? (saveStatus ? `Saved ${saveStatus.count} item${saveStatus.count === 1 ? '' : 's'} at ${new Date(saveStatus.at).toLocaleTimeString('en-PH', { hour12: false })}` : '');
+  const layoutStatus = layoutError ?? (saveStatus ? `Saved ${saveStatus.count} item${saveStatus.count === 1 ? '' : 's'} at ${new Date(saveStatus.at).toLocaleTimeString(undefined, { hour12: false })}` : '');
 
   return (
     <div ref={containerRef} className="scene3d-container">

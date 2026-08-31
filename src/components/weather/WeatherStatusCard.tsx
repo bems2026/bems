@@ -1,4 +1,5 @@
 import { InfoHint } from '@/components/ui/InfoHint';
+import { isSiteToday, siteDate } from '@/lib/siteTime';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { WEATHER_PLACE } from '@/config/weather';
 import { weatherLabel } from '@/lib/weatherClient';
@@ -87,5 +88,7 @@ export function WeatherStatusCard() {
 
 function dayLabel(ms: number): string {
   const d = new Date(ms);
-  return d.toDateString() === new Date().toDateString() ? 'Today' : d.toLocaleDateString('en-PH', { weekday: 'short' });
+  // `toDateString()` compares in the READER's zone, so the building's tomorrow could be
+  // labelled "Today" for anyone a few hours ahead of it.
+  return isSiteToday(d) ? 'Today' : siteDate(d, { weekday: 'short' });
 }

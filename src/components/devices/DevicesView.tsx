@@ -1,4 +1,5 @@
 import { memo, useMemo, useState } from 'react';
+import { siteTime } from '@/lib/siteTime';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -254,7 +255,9 @@ const DeviceRow = memo(function DeviceRow({ device, config, conn, onEdit, onRemo
         {formatWithUnit(measured(reading?.power_w, reading), 'W', 0)}
       </span>
       <span className="devices-table__lastseen mono" role="cell" data-label="Last seen">
-        {reading ? new Date(reading.ts).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
+        {/* When the DEVICE last reported — a fact about the building, so it reads the same to a
+            kiosk in the room and to somebody looking from another timezone. */}
+        {reading ? siteTime(reading.ts) : '—'}
       </span>
       <span className={`devices-table__comm ${COMM_CLASS[comm]}`} role="cell">
         {COMM_LABEL[comm]}

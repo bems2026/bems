@@ -1,7 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
 **Last audited:** 2026-08-31 (UTC) — RM-027 to RM-032 and RM-034 done; RM-033 part-built
-**Audited at commit:** `ee025af`
+**Audited at commit:** `9c7d2e5`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
 discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
@@ -2469,6 +2469,22 @@ may not.
       - the `sites` row itself: `phase19_sites.sql` seeds this site's id, so a second deployment
         still edits SQL. Provisioning should take it from the site directory.
       - FI-016, the Control page's outlet plan, which is the last screen naming `co1..co7`.
+
+      **A sweep, after the third time.** Finding the same defect three times meant looking for
+      the rest of it rather than fixing one more instance: **thirteen further `toLocale*String`
+      calls** formatted a building fact — a meter reading, a device's last report, a forecast
+      day — in whatever zone the reader's laptop was in, and every one of them also hardcoded
+      `en-PH`.
+      *The distinction that shapes the fix, and it is not "pin the timezone everywhere".* A
+      timestamp describing the BUILDING must read the same to everyone, and now does
+      (`src/lib/siteTime.ts`). A timestamp describing THIS READER's own action — "saved at
+      14:32", the control log — is a fact about their session, so their own clock is the correct
+      frame; those three call sites keep it and say why. The locale is the reader's everywhere:
+      how a date is spelled belongs to them, which instant it is belongs to the building.
+      `formatMonth`'s `timeZone: 'UTC'` is deliberately left alone — it labels a bare date
+      string, not an instant, and UTC is what stops `2026-07-01` reading as "June".
+      *Guarded:* no frontend module may hardcode a locale (neuter-checked), and the helper must
+      pin `SITE.timezone`. 757 frontend tests pass in UTC and at +08.
 
       **A third, one layer under the clock.** `weatherClient.ts`'s `parseSiteTime` parsed
       Open-Meteo's timestamps — which come back in the SITE's zone with no offset suffix — as the

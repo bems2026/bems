@@ -1,4 +1,5 @@
 import { useId, useMemo, useState } from 'react';
+import { siteDateTime, siteTimeShort } from '@/lib/siteTime';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { SplitSquareVertical } from 'lucide-react';
 import { useDeviceStore, historyFor } from '@/stores/deviceStore';
@@ -78,7 +79,7 @@ export function UntrackedLoadCard({ branchIds, outletIds, range }: { branchIds: 
             <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tickFormatter={formatTick} stroke="var(--muted)" fontSize={11} tickLine={false} />
             <YAxis stroke="var(--muted)" fontSize={11} width={44} tickLine={false} />
             <Tooltip
-              labelFormatter={(t) => new Date(t as number).toLocaleString('en-PH', { hour12: false })}
+              labelFormatter={(t) => siteDateTime(t as number)}
               formatter={(v, name) => [`${Number(v).toFixed(2)} kW`, name === 'totalKw' ? 'Panel total' : 'Outlet-metered']}
               contentStyle={{ background: 'var(--bg-surface-2)', border: '1px solid var(--border)', borderRadius: 8 }}
             />
@@ -113,5 +114,5 @@ function downsamplePaired(paired: { ts: string; total: number; metered: number }
 }
 
 function formatTick(t: number): string {
-  return new Date(t).toLocaleTimeString('en-PH', { hour12: false, hour: '2-digit', minute: '2-digit' });
+  return siteTimeShort(t);
 }

@@ -28,7 +28,9 @@ export const useControlLog = create<ControlLogState>((set) => ({
   log: (tag, text) =>
     set((s) => ({
       entries: [
-        { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, tag, text, time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) },
+        // The reader's own clock, deliberately: a control-log line records when THEY pressed
+        // the button, not something observed in the building. `src/lib/siteTime.ts` has the rule.
+        { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, tag, text, time: new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }) },
         ...s.entries,
       ].slice(0, MAX_ENTRIES),
     })),

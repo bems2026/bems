@@ -1,4 +1,5 @@
 import { useId, useMemo, useState } from 'react';
+import { siteTime, siteTimeShort } from '@/lib/siteTime';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { CHART_PARAMS, formatParamValue, pointValue, type ChartParam } from './chartParams';
 import type { HistoryPoint } from '@/lib/types';
@@ -61,7 +62,7 @@ export function HistoryAreaChart({
           <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tickFormatter={formatTick} stroke="var(--muted)" fontSize={9} tickLine={false} />
           <YAxis stroke="var(--muted)" fontSize={9} width={34} tickLine={false} domain={param === 'voltage' ? ['auto', 'auto'] : undefined} />
           <Tooltip
-            labelFormatter={(t) => new Date(t as number).toLocaleTimeString('en-PH', { hour12: false })}
+            labelFormatter={(t) => siteTime(t as number)}
             formatter={(v) => [formatParamValue(Number(v), param), CHART_PARAMS[param].label]}
             contentStyle={{ background: 'var(--bg-surface-2)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 11 }}
           />
@@ -73,5 +74,5 @@ export function HistoryAreaChart({
 }
 
 function formatTick(t: number): string {
-  return new Date(t).toLocaleTimeString('en-PH', { hour12: false, hour: '2-digit', minute: '2-digit' });
+  return siteTimeShort(t);
 }

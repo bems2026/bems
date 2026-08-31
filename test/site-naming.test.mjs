@@ -119,3 +119,35 @@ test('the Overview clock shows the building time, not the reader time', () => {
     assert.match(call, /timeZone:\s*SITE\.timezone/, `${call} does not pin the site timezone`);
   }
 });
+
+test('no frontend module hardcodes a locale', () => {
+  // `en-PH` appeared in thirteen `toLocale*String` calls. It is a quieter version of the same
+  // assumption as the building names: a guess about who is reading. How a date is spelled
+  // belongs to the reader; WHICH instant it is belongs to the building, and `src/lib/siteTime.ts`
+  // is where that second half is decided.
+  //
+  // `siteTime.ts` itself is exempt: its one `en-CA` builds a `YYYY-MM-DD` comparison key, not a
+  // string anybody sees.
+  const offenders = [];
+  for (const file of sourceFiles(join(ROOT, 'src'))) {
+    const rel = relative(ROOT, file).split(sep).join('/');
+    if (rel === 'src/lib/siteTime.ts') continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    for (const m of code.matchAll(/toLocale[A-Za-z]*String\(\s*['"]([a-z]{2}-[A-Z]{2})['"]/g)) {
+      offenders.push(`${rel} hardcodes locale "${m[1]}"`);
+    }
+  }
+  assert.deepEqual(offenders, [], 'Pass `undefined` for the locale — the reader owns formatting.');
+});
+
+test('a timestamp describing the building is formatted in the building timezone', () => {
+  // The three places this was got wrong were all `toLocale*String` with no `timeZone` at all, on
+  // a value that came from the building. Rather than guess which values those are, this asserts
+  // the helper exists and is what the building-fact call sites reach for.
+  const helper = readFileSync(join(ROOT, 'src', 'lib', 'siteTime.ts'), 'utf8');
+  assert.match(helper, /timeZone: zone/, 'siteTime.ts must pin the site zone');
+  assert.match(helper, /SITE\.timezone/, 'and take it from the site module');
+
+  const users = sourceFiles(join(ROOT, 'src')).filter((f) => /siteTime/.test(readFileSync(f, 'utf8')));
+  assert.ok(users.length >= 5, `expected the building-fact call sites to use it, found ${users.length}`);
+});
