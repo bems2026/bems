@@ -32,7 +32,21 @@
  *   type_c = 115/116/117      (power/current/voltage; no energy DPS)
  */
 
-/** @typedef {'outlet_dual'|'switch'|'meter'|'acu_ir'|'sensor_temp_humidity'} DeviceClass */
+/**
+ * The device classes this build knows how to handle, as a value rather than only a type — RM-033.
+ *
+ * It was a bare `@typedef`, which enforces nothing at runtime and cannot be read by a script. A
+ * class is flow-critical: command validation, state shape, icons and filters all key off it, and
+ * a site directory naming one this build has never heard of produces a device that renders and
+ * does nothing. `npm run site:check` reads this to say so.
+ *
+ * The typedef now derives from the array, so the two cannot drift.
+ * `src/lib/types.ts` carries the same union for the frontend, and
+ * `test/site-check.test.mjs` holds the two to each other.
+ */
+export const DEVICE_CLASSES = Object.freeze(['outlet_dual', 'switch', 'meter', 'acu_ir', 'sensor_temp_humidity']);
+
+/** @typedef {typeof DEVICE_CLASSES[number]} DeviceClass */
 
 export const DPS_MAPS = {
   type_a: { p: 105, c: 106, v: 107, scale: { p: 10, c: 1000, v: 10 } },

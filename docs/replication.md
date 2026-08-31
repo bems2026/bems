@@ -173,8 +173,23 @@ Two consequences worth being clear-eyed about:
   site-independent are guarded separately and *do* pass on any site:
   `test/site-config.test.mjs`, `test/site-naming.test.mjs`, `test/mock-fixture-plan.test.mjs`
   and `test/site-new.test.mjs`.
-- **You therefore have no suite that tells you *your* deployment is correct.** That gap is real
-  and is listed below.
+- **For your own site, run `npm run site:check` instead.** It is the conformance check the
+  suites above are not:
+
+  ```bash
+  npm run site:check
+  ```
+
+  It knows nothing about any particular building and everything about what a coherent site looks
+  like. **A freshly scaffolded site passes it** — empty is a warning, wrong is an error, because
+  a check that goes red on day one is one people learn to skip. It exits 1 only on a real fault.
+
+  The faults it exists for are the quiet ones. A circuit naming a meter that does not exist does
+  not crash: `PHASE_MAP` is derived from that tree, so the phase total silently omits a meter and
+  nothing on screen looks wrong. Two devices sharing a context prefix overwrite each other in the
+  flow's context store, and the dashboard shows one of them twice without saying so. Demonstrated
+  on 2026-08-31 against a site seeded with `mtr_lightning` for `mtr_lighting` and two switches on
+  one state key — both reported by name, exit 1.
 
 ---
 
@@ -191,7 +206,7 @@ short one.
 | **A second building's `sites` row** | Step 8 above: still a hand-edit of two migration files. |
 | **A 3D scene pack** | Site-specific by nature. A site with `scene_pack: null` gets the data-driven floor plan, which is the intended default. |
 | **The Control page's outlet plan** | Still pins one building's outlet positions (`ROADMAP.md` FI-016). Every other screen is data-driven. |
-| **A conformance suite for your own site** | The existing tests are the CARE office's regression suite (step 10). Nothing yet checks that *your* site directory is internally coherent — that every meter a circuit names exists, that no device id repeats, that the timezone and offset agree. |
+| ~~A conformance suite for your own site~~ | **Built** — `npm run site:check`, step 10. |
 
 ## Traps this project has already paid for
 

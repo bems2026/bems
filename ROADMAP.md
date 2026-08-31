@@ -1,7 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
 **Last audited:** 2026-08-31 (UTC) — RM-027 to RM-032 and RM-034 done; RM-033 part-built
-**Audited at commit:** `fb96069`
+**Audited at commit:** `cff3bc0`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
 discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
@@ -2468,10 +2468,24 @@ may not.
       - filling in `physical-install.md`'s twelve gaps, which needs a site visit;
       - the `sites` row itself: `phase19_sites.sql` seeds this site's id, so a second deployment
         still edits SQL. Provisioning should take it from the site directory.
-      - FI-016, the Control page's outlet plan, which is the last screen naming `co1..co7`;
-      - **a conformance check for a deployment's own site directory** (`site:check`) — that every
-        meter a circuit names exists, that no device id repeats, that the timezone and offset
-        agree. The existing suites cannot serve this, being the CARE office's own.
+      - FI-016, the Control page's outlet plan, which is the last screen naming `co1..co7`.
+
+      **`npm run site:check` — the conformance check, built 2026-08-31.** The suites in this repo
+      are this building's regression suite; this is the one a second deployment runs against its
+      own directory. Twenty-two checks over identity, devices and circuits.
+      *Empty is a warning, wrong is an error*, and that is the whole design: a scaffolded site has
+      no devices and no circuits by deliberate choice, so if empty failed, the command would be
+      broken at the moment it is most needed and the first thing anyone would learn is to skip it.
+      *The faults it exists for are the ones nothing else shows.* A circuit naming a meter that
+      does not exist does not crash — `PHASE_MAP` is derived, so the phase total silently omits a
+      meter and the screen looks right. Two devices sharing a `ctx` overwrite each other in the
+      flow's context store and the dashboard shows one twice. Demonstrated against a site seeded
+      with `mtr_lightning` for `mtr_lighting` and two switches on one state key: both named, exit 1.
+      *It approves this building*, which is the test that stops it measuring the wrong thing.
+      **`DEVICE_CLASSES` now exists as a value**, not only a `@typedef` that enforces nothing at
+      runtime, and the typedef derives from it. `src/lib/types.ts`'s union is held to the same
+      list — two copies of five strings were a silent drift waiting to happen, in the direction
+      where a class added to one and not the other renders as a device the UI cannot type.
 
 - [x] **RM-034** ~~There is no CI. Every test run is manual.~~
       **DONE 2026-08-27 — green on the first run, both Node versions.** `dad1a26`,
