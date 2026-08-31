@@ -1,7 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-08-28 (UTC), later — RM-027 to RM-032 and RM-034 done; RM-033 part-built
-**Audited at commit:** `f1d0269`
+**Last audited:** 2026-08-31 (UTC) — RM-027 to RM-032 and RM-034 done; RM-033 part-built
+**Audited at commit:** `33591d9`
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
 discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
@@ -2410,6 +2410,37 @@ may not.
       - **`docs/replication.md`** — the software half of the framework, written as a transcript
         of the run above rather than as a design. Its "What this does not cover" table is the
         point: a replication framework quiet about its gaps is worse than a short one.
+        *Corrected 2026-08-31:* it claimed the steps were carried out "end to end", which was
+        not true of two of them. Steps 8 (a second Supabase project) and 9 (a space tree for a
+        new site) were described from reading the code and are now marked as such. A step nobody
+        has walked is worth less than one somebody has, and a document going to other
+        institutions has to say which is which.
+
+      **What OPENING THE PAGE found, 2026-08-31, which reasoning about the code had not.**
+      Everything above was verified through data: the registry, the flow, the mock, the tests.
+      Then a deployment was pointed at a scaffolded site and the dashboard was actually looked
+      at. Two defects, both in the last place anyone would check because neither is data:
+      - **The chrome named one building.** `1c47554`. Five literals — the nav chip, the page
+        subtitle, the hero title, a climate tile and the date line — so every deployment
+        displayed *"MMSU CARE Office · NBERIC"* in its header. All now come from `SITE`;
+        `WEATHER_TZ`'s literal `'Asia/Manila'` now comes from `SITE.timezone` rather than being
+        a second copy of a fact the site already declares. `test/site-naming.test.mjs` guards it,
+        and states its own limit: it scans tokens that cannot be ordinary English, so it is a
+        floor rather than a ceiling.
+      - **A building with no meters reported using 0 kWh.** `33591d9`. Live Demand, voltage and
+        the Blue phase all correctly read "—" or "not metered"; the three energy tiles read
+        `0.00 kWh`. `buildLatest` was right — the zero was manufactured a layer earlier by a
+        `reduce(..., 0)` over an empty list and faithfully passed on. RM-024's rule at the layer
+        that SEEDS a figure, which is where it is easiest to miss because nothing there looks
+        like a claim about a building.
+
+      **The test suites are this building's regression suite, not a conformance suite** —
+      measured, and now written into the runbook so a new institution does not think it broke
+      something. On a scaffolded empty site: frontend 746/747, bridge **414/482**, server
+      **329/359**. A sampled failure reads `Cannot use 'in' operator to search for 'voltage' in
+      undefined` — a fixture looking up a device id the new site does not have. The consequence
+      is real and is listed as a gap: a new deployment has nothing that tells it its OWN site
+      directory is coherent.
 
       **What is left, and it needs decisions more than code:**
       - the day-one wizard (FI-002) — network join and vendor-account linking;
@@ -2418,7 +2449,10 @@ may not.
       - the physical-install guide for CT meters, relay modules and the IR blaster;
       - the `sites` row itself: `phase19_sites.sql` seeds this site's id, so a second deployment
         still edits SQL. Provisioning should take it from the site directory.
-      - FI-016, the Control page's outlet plan, which is the last screen naming `co1..co7`.
+      - FI-016, the Control page's outlet plan, which is the last screen naming `co1..co7`;
+      - **a conformance check for a deployment's own site directory** (`site:check`) — that every
+        meter a circuit names exists, that no device id repeats, that the timezone and offset
+        agree. The existing suites cannot serve this, being the CARE office's own.
 
 - [x] **RM-034** ~~There is no CI. Every test run is manual.~~
       **DONE 2026-08-27 — green on the first run, both Node versions.** `dad1a26`,

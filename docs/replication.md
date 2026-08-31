@@ -1,10 +1,14 @@
 # Standing up iBEMS in another building — the software half
 
-**Status, 2026-08-28:** the steps below were carried out end to end on this date, against a
-throwaway site scaffolded for the purpose. They are not a design; they are a transcript of a
-thing that worked, with what it found. The hardware and packaging half is **not** covered here —
-see [What this does not cover](#what-this-does-not-cover), which is honest about the gap rather
-than quiet about it.
+**Status, 2026-08-31.** Steps 1–7 and 10 below were **executed** against throwaway sites
+scaffolded for the purpose, and what they found is written into them. Steps 8 and 9 were **not**:
+no second Supabase project was created, and no space tree was built for a new site. Those two are
+described from reading the code, and are marked where they appear.
+
+That distinction is the point of this document. It is a transcript, not a design, and a step
+nobody has walked is worth less than one somebody has — so it says which is which. The hardware
+and packaging half is **not** covered at all: see
+[What this does not cover](#what-this-does-not-cover).
 
 This is Milestone 6's software track (`ROADMAP.md` RM-033). The funded plan's third component is
 *"a practical step-by-step framework that enables other SUCs to replicate and implement the
@@ -118,7 +122,7 @@ This is the step worth doing early, because it is the whole system minus the bui
 2026-08-28 it **crashed** for any site but the original one; that is fixed, and
 `test/mock-fixture-plan.test.mjs` exists so it stays fixed.
 
-## 8. The database
+## 8. The database *(not executed — described from the code)*
 
 Create a Supabase project for this deployment and apply `supabase/*.sql` **in filename order**,
 by hand, in the SQL editor. Rehearse first if you are changing any of them:
@@ -131,7 +135,7 @@ by hand, in the SQL editor. Rehearse first if you are changing any of them:
 backfills three tables with the same literal.** Both need editing for a new building. This is a
 known rough edge, not a design: see RM-033's open items.
 
-## 9. Build the space tree
+## 9. Build the space tree *(not executed for a new site)*
 
 In the app: **Devices → Spaces**. Add the building, its floors and its rooms, then place each
 device into one. Nothing below is available until this exists, and all of it arrives at once:
@@ -139,6 +143,38 @@ device into one. Nothing below is available until this exists, and all of it arr
 - per-space energy totals (Analytics → *By space*);
 - the data-driven floor plan, including positioning devices within a room;
 - honest location labels everywhere a device is named.
+
+## 10. Expect the test suites to fail, and know why
+
+Run them:
+
+```bash
+npm test && npm run test:bridge && npm run test:server
+```
+
+On a brand-new site, measured on 2026-08-31 against a scaffolded empty one:
+
+| Suite | Result on a new site |
+|---|---|
+| frontend (`npm test`) | 746 / 747 — effectively site-agnostic |
+| bridge (`npm run test:bridge`) | 414 / 482 — **68 failures** |
+| server (`npm run test:server`) | 329 / 359 — **30 failures** |
+
+**This is expected, and it is not a sign you have broken something.** These suites are the CARE
+office's *regression* suite, not a conformance suite: they assert that *this* building's seven
+outlets round-trip a command, that *this* panel derives to *these* four meters. Pointed at
+another building they fail because the fixtures name hardware you do not have. A sampled failure
+reads `Cannot use 'in' operator to search for 'voltage' in undefined` — a fixture looking up a
+device id that is not yours.
+
+Two consequences worth being clear-eyed about:
+
+- **The failures are noise for you, so do not chase them.** The parts that must be
+  site-independent are guarded separately and *do* pass on any site:
+  `test/site-config.test.mjs`, `test/site-naming.test.mjs`, `test/mock-fixture-plan.test.mjs`
+  and `test/site-new.test.mjs`.
+- **You therefore have no suite that tells you *your* deployment is correct.** That gap is real
+  and is listed below.
 
 ---
 
@@ -155,6 +191,7 @@ short one.
 | **A second building's `sites` row** | Step 8 above: still a hand-edit of two migration files. |
 | **A 3D scene pack** | Site-specific by nature. A site with `scene_pack: null` gets the data-driven floor plan, which is the intended default. |
 | **The Control page's outlet plan** | Still pins one building's outlet positions (`ROADMAP.md` FI-016). Every other screen is data-driven. |
+| **A conformance suite for your own site** | The existing tests are the CARE office's regression suite (step 10). Nothing yet checks that *your* site directory is internally coherent — that every meter a circuit names exists, that no device id repeats, that the timezone and offset agree. |
 
 ## Traps this project has already paid for
 
