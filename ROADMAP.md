@@ -1811,10 +1811,32 @@ fall back to it).
       page reads — a month "done" in the old table and absent from the new one is a month the
       page shows nothing for.
 
-      **STILL TO DO:** apply `supabase/phase27_period_reports.sql`. It backfills on the way in, so
-      the Reports page has its history from the first load. Until it is applied the page's
-      Monthly tab reads an absent table — **apply this before deploying the frontend**, same order
-      as phase25 and for the same reason.
+      *Applied 2026-09-01, and verifying it against production found a real defect before it was
+      ever seen on a screen.* The tables answer the page's exact queries and the constraint
+      refuses an unknown period. Two checks could NOT be exercised: this deployment's data starts
+      2026-08-16, so **no month has settled and phase12's tables are empty** — the backfill had
+      nothing to do and the equivalence check is proven only on the rehearsal's fixtures. The
+      anti-vacuity assertions beside it are what said so rather than letting it read as a pass.
+
+      **THE DEFECT.** A real week generated fine — 34.219 kWh for the week of 2026-08-17 — and the
+      number was wrong. Summing the daily counter's maxima double-counts a frozen meter:
+      `building_totals` has no `online` column, so unlike the per-device path there is nothing to
+      filter stale samples out with, and 18 August's counters were byte-identical to 17 August's.
+      The month counter had advanced ~19.5 over that week; a week cannot exceed the month-to-date
+      containing it. A week now sums INCREMENTS of the monotonic month counter, which a frozen day
+      advances by nothing. The rehearsal seeds a genuinely frozen day and asserts 14 rather than
+      24; reverting to daily maxima yields 34 and fails it.
+
+      One approximation stated rather than hidden: when the day before a period has no data at
+      all, that period's first observed day contributes its whole counter, because the baseline is
+      unknown. It over-counts only across a gap, and the coverage band already marks such a period
+      as incomplete.
+
+      **STILL TO DO:** **re-apply `supabase/phase27_period_reports.sql`** — it is
+      `create or replace`, so re-running is safe, and the copy in production still has the wrong
+      week expression. Then the week of 2026-08-17 needs regenerating: it already has a report
+      dated after it settled, so `weeksNeedingReport` will never rebuild it on its own. Deploy the
+      frontend after that, not before.
 
       *Rehearsed:* `supabase/rehearse.sh` on the Pi against PostgreSQL 16, with fourteen new
       assertions — phase12 equivalence both ways, the backfill actually running, week truncation

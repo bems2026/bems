@@ -224,12 +224,15 @@ begin
   get diagnostics n_devices = row_count;
 
   -- Building-wide.
-  with totals_hours as (
+  -- Extended one day EARLIER than the period, then narrowed. The extra day is the baseline for
+  -- the energy increments below and is used for nothing else — every other figure here is
+  -- strictly period-scoped, which is what the narrowing exists to keep true.
+  with totals_hours_ext as (
     select b.hour, b.total_power_w_avg, b.total_power_w_max, b.avg_voltage_avg,
            b.phase_current_red_avg, b.phase_current_yellow_avg, b.phase_current_blue_avg,
            b.energy_kwh_month_max, b.energy_kwh_today_max, b.sample_count
       from building_totals_hourly b
-     where b.hour >= win_start and b.hour < win_end
+     where b.hour >= win_start - interval '1 day' and b.hour < win_end
     union all
     select date_trunc('hour', t.ts),
            avg(t.total_power_w), max(t.total_power_w), avg(t.avg_voltage),
@@ -238,20 +241,46 @@ begin
            max(t.energy_kwh_today),
            count(*)::int
       from building_totals t
-     where t.ts >= win_start and t.ts < win_end
+     where t.ts >= win_start - interval '1 day' and t.ts < win_end
        and not exists (
              select 1 from building_totals_hourly b2
               where b2.hour = date_trunc('hour', t.ts))
      group by 1
   ),
+  totals_hours as (
+    select * from totals_hours_ext where hour >= win_start
+  ),
   -- The building's DAILY counter, folded to one high-water mark per local day. Same technique
   -- phase12 uses per device, applied building-wide — see the energy expression below for why a
   -- week needs it and a month does not.
+  /*
+   * A WEEK'S ENERGY, FROM INCREMENTS OF THE MONOTONIC MONTH COUNTER.
+   *
+   * The obvious version — sum the DAILY counter's per-day maxima, the technique phase12 uses per
+   * device — is wrong here, and production said so before this shipped. `building_totals` has NO
+   * `online` column (schema.sql:50), so unlike the per-device path there is nothing to filter
+   * frozen samples out with: a meter that goes offline keeps reporting its last value, and that
+   * value is then counted again as the next day's consumption. MEASURED on the week of
+   * 2026-08-17: 18 August's counters were byte-identical to 17 August's, and summing daily
+   * maxima produced 34.219 kWh against a month counter that had advanced by about 19.5 over the
+   * same week. A week cannot exceed the month-to-date total containing it.
+   *
+   * Differences of a monotonic counter do not have that failure mode: a frozen day advances the
+   * counter by nothing and so contributes nothing. It is the same property that makes phase12's
+   * `max(energy_kwh_month_max)` correct for a MONTH — a max over a monotonic series is already
+   * freeze-robust — which is why the month expression below is left exactly as phase12 had it.
+   */
   building_daily as (
     select (hour at time zone p_tz)::date as local_day,
-           max(energy_kwh_today_max)      as day_kwh
-      from totals_hours
+           max(energy_kwh_month_max)      as day_max
+      from totals_hours_ext
      group by 1
+  ),
+  building_increments as (
+    select local_day,
+           day_max,
+           lag(day_max) over (order by local_day) as prev_max
+      from building_daily
   )
   insert into period_building_reports (
     period, period_start, energy_kwh, peak_total_power_w, avg_voltage,
@@ -274,14 +303,25 @@ begin
          -- week's own energy. Presented as "energy this week" it would be wrong by however much
          -- the month had already accumulated, and it would look entirely plausible.
          --
-         -- So a week sums DAILY maxima instead. The daily counter resets at local midnight, so
-         -- each day's high-water mark is that day's consumption, and seven of them are the
-         -- week's — the same reasoning phase12 applies per device. It is independent of whatever
-         -- day the meter's own week counter happens to roll over on, which nothing here has
-         -- established.
+         -- So a week sums the counter's daily INCREMENTS instead. See `building_increments`
+         -- above for why increments and not the daily counter's maxima — the short version is
+         -- that a frozen meter repeats its last reading and there is no `online` column here to
+         -- exclude it with. Increments are also independent of whatever day the meter's own week
+         -- counter rolls over on, which nothing here has established.
          case p_period
            when 'month' then (select max(energy_kwh_month_max) from totals_hours)
-           when 'week'  then (select sum(day_kwh) from building_daily)
+           when 'week'  then (
+             select sum(case
+                          -- Nothing before it in the window, so its whole counter is the best
+                          -- estimate available — the same assumption a month makes.
+                          when prev_max is null then day_max
+                          when day_max >= prev_max then day_max - prev_max
+                          -- The counter went backwards: a new month started that day.
+                          else day_max
+                        end)
+               from building_increments
+              where local_day >= (win_start at time zone p_tz)::date
+                and local_day <  (win_end   at time zone p_tz)::date)
          end,
          (select max(total_power_w_max) from totals_hours),
          (select avg(avg_voltage_avg) from totals_hours),

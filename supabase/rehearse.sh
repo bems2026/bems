@@ -668,18 +668,47 @@ begin
    where period = 'week' and period_start = date '2026-06-01' and device_id = 'mtr_hist';
   assert v = 0.59, format('period report: expected week energy 0.59 from daily maxima, got %s', v);
 
-  -- BUILDING ENERGY FOR A WEEK IS NOT THE MONTH COUNTER. That counter is a running
-  -- month-to-date figure; over a week it reads as however much the month had accumulated by that
-  -- week's end. Here the seeded month counter reaches 3.57 while the DAILY counter's maxima sum
-  -- to 1.19 — so this assertion fails outright if the week ever starts using the month counter,
-  -- which is the mistake it exists to prevent.
+  -- A FROZEN METER MUST NOT BE COUNTED TWICE. `building_totals` has no `online` column, so a
+  -- meter that goes offline keeps reporting its last value and there is nothing to filter it out
+  -- with. Two days here carry an IDENTICAL month counter — the frozen signature measured on the
+  -- live building — and the week's energy must treat the second as zero consumption rather than
+  -- as another day of it.
+  --
+  -- Seeded straight into the hourly rollup so this is about the energy expression and not about
+  -- the raw/rollup seam, which the assertions above already cover.
+  insert into building_totals_hourly (hour, total_power_w_avg, total_power_w_max, avg_voltage_avg,
+    phase_current_red_avg, phase_current_yellow_avg, phase_current_blue_avg,
+    energy_kwh_today_max, energy_kwh_week_max, energy_kwh_month_max, sample_count)
+  values
+    -- Wed 2026-06-10 local: the counter reaches 10.
+    (timestamptz '2026-06-10 04:00:00+00', 100, 120, 230, 1, 1, null, 10, 10, 10, 60),
+    -- Thu 2026-06-11: byte-identical. The meter froze.
+    (timestamptz '2026-06-11 04:00:00+00', 100, 120, 230, 1, 1, null, 10, 10, 10, 60),
+    -- Fri 2026-06-12: it comes back and the counter advances by 4.
+    (timestamptz '2026-06-12 04:00:00+00', 100, 120, 230, 1, 1, null, 4, 14, 14, 60)
+  on conflict (hour) do nothing;
+
+  perform generate_period_report('week', date '2026-06-08');
   select energy_kwh into v from period_building_reports
-   where period = 'week' and period_start = date '2026-06-01';
-  select energy_kwh into v2 from period_building_reports
-   where period = 'month' and period_start = date '2026-06-01';
-  assert v is distinct from v2,
-    format('period report: a week must not report the month counter (both read %s)', v);
-  assert v is not null, 'period report: a week must still report SOME building energy';
+   where period = 'week' and period_start = date '2026-06-08';
+  -- 14, not 24. Summing the DAILY counter's maxima would give 10 + 10 + 4 = 24, counting the
+  -- frozen day as a second full day of consumption. Increments of the month counter give
+  -- 10 + 0 + 4 = 14, which is what the building actually used.
+  assert v = 14, format('period report: a frozen day must add nothing to a week, got %s (24 means the freeze was counted)', v);
+
+  -- A WEEK IS AN INCREMENT, NOT A RUNNING TOTAL. An earlier version of this block asserted that
+  -- a week's energy must DIFFER from the month's, which was right for the daily-maxima design it
+  -- was written against and is wrong for increments: a month whose data all falls inside one week
+  -- legitimately reports the same figure for both. Asserting inequality there would have been
+  -- asserting that the two disagree, which is not a property worth having.
+  --
+  -- What is worth having is the frozen-day check above, which is the failure this expression
+  -- actually had, and this: the LATER week must report only what the counter gained during it,
+  -- never the month-to-date it inherited.
+  select energy_kwh into v from period_building_reports
+   where period = 'week' and period_start = date '2026-06-08';
+  assert v is not null, 'period report: a week must report some building energy';
+  assert v < 24, format('period report: %s means the week absorbed the frozen day or the running total', v);
 
   -- Regenerating is an upsert, not a duplicate key. A report rebuilt after more of its period
   -- has been rolled up is built from MORE data, so the newer answer replaces the older one.
