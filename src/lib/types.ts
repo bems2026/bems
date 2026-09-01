@@ -231,4 +231,16 @@ export interface Capabilities {
    * `local-only` today, and is a completely different promise about tomorrow.
    */
   cloud_fallback_configured?: boolean;
+  /**
+   * The aircon setpoint floor the next command will be validated against — RM-038.
+   *
+   * NOT the same fact as `SITE.policy.acu_min_setpoint_c` in this bundle: that is what the build
+   * declared, and an operator can change the live one without a redeploy. Optional, because a
+   * proxy predating the field says nothing; `null` means the site has no policy floor and the
+   * hardware bound alone applies.
+   */
+  acu_min_setpoint_c?: number | null;
+  /** `'database'` or `'build'` — where the proxy got the floor above. During a Supabase outage
+   * it falls back to the build value, and a page presenting that as current would be wrong. */
+  policy_source?: string;
 }

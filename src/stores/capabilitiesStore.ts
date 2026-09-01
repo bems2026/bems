@@ -31,6 +31,19 @@ interface CapabilitiesState {
    */
   dispatchPolicy: string | null;
   cloudFallbackConfigured: boolean | null;
+  /**
+   * The aircon floor the NEXT command will actually be validated against — RM-038.
+   *
+   * NOT `SITE.policy.acu_min_setpoint_c`, which is what this bundle was BUILT with. An operator
+   * can change the floor without a redeploy, so a selector built from the build value would
+   * offer a degree that comes back as a 400 — which reads as a bug rather than as a policy.
+   * `null` means no policy floor, or that the proxy has not answered yet; `policySource` tells
+   * them apart.
+   */
+  acuMinSetpointC: number | null;
+  /** `'database'` when the proxy read the live row, `'build'` when it fell back. A page showing
+   * a floor it got from the build during an outage should be able to say so. */
+  policySource: string | null;
   load: () => Promise<void>;
 }
 
@@ -46,6 +59,8 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
   auditBufferPending: null,
   dispatchPolicy: null,
   cloudFallbackConfigured: null,
+  acuMinSetpointC: null,
+  policySource: null,
 
   // Same retry-with-backoff shape as useLiveConnection.ts's device-catalogue fetch — a
   // failed load here must never get stuck reporting "unknown" forever just because one
@@ -54,7 +69,7 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
     retry.cancel();
     const attempt = async (): Promise<void> => {
       try {
-        const { hardware_dispatch_enabled, dispatch_classes, audit_buffer_pending, dispatch_policy, cloud_fallback_configured } = await getCapabilities();
+        const { hardware_dispatch_enabled, dispatch_classes, audit_buffer_pending, dispatch_policy, cloud_fallback_configured, acu_min_setpoint_c, policy_source } = await getCapabilities();
         retry.succeeded();
         set({
           hardwareDispatchEnabled: hardware_dispatch_enabled,
@@ -65,6 +80,8 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
           auditBufferPending: typeof audit_buffer_pending === 'number' ? audit_buffer_pending : null,
           dispatchPolicy: typeof dispatch_policy === 'string' ? dispatch_policy : null,
           cloudFallbackConfigured: typeof cloud_fallback_configured === 'boolean' ? cloud_fallback_configured : null,
+          acuMinSetpointC: typeof acu_min_setpoint_c === 'number' ? acu_min_setpoint_c : null,
+          policySource: typeof policy_source === 'string' ? policy_source : null,
         });
       } catch {
         retry.retryAfterFailure(attempt);

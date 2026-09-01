@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Snowflake } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { primaryOfClass } from '@/lib/siteDevices';
@@ -12,6 +12,7 @@ import { SimulatedBadge } from './SimulatedBadge';
 import { useControlLog } from './controlLog';
 import { formatWithUnit } from '@/lib/format';
 import { setpointOptions, seedSetpoint } from './setpointOptions';
+import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
 import { SITE } from '@shared/registry.mjs';
 
 /** The site's aircon, found by capability rather than by this building's name for it — FI-016.
@@ -19,11 +20,22 @@ import { SITE } from '@shared/registry.mjs';
  * than offering a control that would send to nothing. */
 const useAcu = () => useDeviceStore((s) => primaryOfClass(s.devices, 'acu_ir'));
 
-/** The degrees this SITE may command: the IR library's range, narrowed by the building's own
- * policy floor. Derived in `setpointOptions.ts`, which is where the reasoning lives and which
- * is tested separately — `validateCommand` refuses the same values server-side, and that is
- * the enforcement; this only stops the selector offering a guaranteed 400. */
-const SETPOINTS = setpointOptions(SITE.policy.acu_min_setpoint_c);
+/**
+ * The floor in force, preferring what the proxy says over what this bundle was built with.
+ *
+ * RM-038: the floor is a university policy and policies change, so it is editable at runtime and
+ * lives in the database. The build value is the fallback for a proxy that predates the field, or
+ * one that has not answered yet — the same direction of fallback `server/livePolicy.mjs` uses,
+ * and for the same reason.
+ *
+ * `undefined` from the store means "not answered"; `null` means "answered, and this site has no
+ * policy floor". Only the first should fall back to the build.
+ */
+function useSetpointFloor(): number | null | undefined {
+  const live = useCapabilitiesStore((s) => s.acuMinSetpointC);
+  const source = useCapabilitiesStore((s) => s.policySource);
+  return source === null ? SITE.policy.acu_min_setpoint_c : live;
+}
 
 /**
  * The site's IR-commandable air conditioner. v4's mockup shows two, but a branch *meter* on an
@@ -45,9 +57,24 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
   const { ask, modalProps } = useConfirm();
   // Seeded from the ACU's last known setpoint when there is one, so the control opens showing
   // where the room actually is rather than a fixed guess.
-  const [setpointC, setSetpointC] = useState<number>(() =>
-    seedSetpoint(reading?.setpoint_c, SITE.policy.acu_min_setpoint_c),
-  );
+  const floorC = useSetpointFloor();
+  /** The degrees this SITE may command: the IR library's range, narrowed by the building's own
+   * policy floor. Derived in `setpointOptions.ts`, which is where the reasoning lives and which
+   * is tested separately — `validateCommand` refuses the same values server-side, and that is
+   * the enforcement; this only stops the selector offering a guaranteed 400. */
+  const setpoints = useMemo(() => setpointOptions(floorC), [floorC]);
+  const [chosen, setSetpointC] = useState<number>(() => seedSetpoint(reading?.setpoint_c, floorC));
+
+  /**
+   * A floor raised while this card is open leaves the selector on a degree that is no longer
+   * permitted, and the next send would come back a 400 — which reads as a bug rather than as a
+   * policy. So the value in force is DERIVED: if what was chosen is still offered it stands,
+   * and otherwise the nearest degree that is.
+   *
+   * Derived rather than corrected in an effect, so there is no render where the selector shows
+   * a value the send would refuse.
+   */
+  const setpointC = setpoints.includes(chosen) ? chosen : seedSetpoint(chosen, floorC);
 
   const view = controlView(reading, pending);
   const busy = view.kind === 'pending';
@@ -123,7 +150,7 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
               disabled={busy}
               onChange={(e) => setSetpointC(Number(e.target.value))}
             >
-              {SETPOINTS.map((c) => (
+              {setpoints.map((c) => (
                 <option key={c} value={c}>
                   {c}°C
                 </option>

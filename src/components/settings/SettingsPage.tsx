@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Building2, LayoutDashboard, Map as MapIcon, UserRound } from 'lucide-react';
+import { Building2, LayoutDashboard, Map as MapIcon, Thermometer, UserRound } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { SpaceTreePanel } from '@/components/devices/SpaceTreePanel';
 import { SpacePlanPanel } from '@/components/spatial/SpacePlanPanel';
 import { PageCardsPanel } from '@/components/devices/PageCardsPanel';
 import { AccountSection } from './AccountSection';
+import { PolicySection } from './PolicySection';
 
 /**
  * Where this deployment is configured — one page, replacing four buttons on the Devices toolbar.
@@ -26,13 +27,14 @@ import { AccountSection } from './AccountSection';
  * the one piece of navigation every page depends on, to buy a deep link into a settings pane.
  * Worth doing if anyone ever wants to link to one; not worth doing first.
  */
-type SectionId = 'account' | 'spaces' | 'floorplan' | 'display';
+type SectionId = 'account' | 'spaces' | 'floorplan' | 'display' | 'policy';
 
 const SECTIONS: { id: SectionId; label: string; blurb: string; Icon: typeof UserRound }[] = [
   { id: 'account', label: 'Account', blurb: 'Who is signed in, and how', Icon: UserRound },
   { id: 'spaces', label: 'Spaces', blurb: 'Buildings, floors and rooms', Icon: Building2 },
   { id: 'floorplan', label: 'Floor plan', blurb: 'Room outlines and where devices sit', Icon: MapIcon },
   { id: 'display', label: 'Page cards', blurb: 'Which optional cards this site shows', Icon: LayoutDashboard },
+  { id: 'policy', label: 'Building policy', blurb: 'Rules the bridge enforces', Icon: Thermometer },
 ];
 
 export function SettingsPage() {
@@ -90,6 +92,7 @@ export function SettingsPage() {
           {section === 'spaces' && <SpaceTreePanel />}
           {section === 'floorplan' && <SpacePlanPanel />}
           {section === 'display' && <PageCardsPanel />}
+          {section === 'policy' && <PolicySection />}
         </div>
       </div>
     </>

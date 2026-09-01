@@ -47,11 +47,30 @@ test('the seeded row matches the committed site module, so the two cannot disagr
   assert.ok(sql.includes(String(SITE.utc_offset_minutes)), 'the UTC offset must match');
 });
 
-test('the seeded policy carries the setpoint floor the command path enforces', () => {
-  // The floor is enforced from SITE.policy today. Seeding it here is what lets a later phase
-  // move the read to the database without the value having to be rediscovered.
+test('the seeded policy carries a setpoint floor at all', () => {
+  // The comment this test used to carry said seeding the floor here "lets a later phase move the
+  // read to the database without the value having to be rediscovered". That phase is phase26,
+  // and it has happened: the floor is now live state in the `sites` row, edited through
+  // `set_acu_min_setpoint`, and `server/livePolicy.mjs` reads it.
+  //
+  // SO THE EQUALITY CHECK IS GONE, deliberately. It asserted that this seed and the site module
+  // hold the same number forever, which stopped being true the moment the floor became something
+  // an operator changes without a deploy — and it fired on exactly that, when the module was
+  // corrected to the university's actual 24 while the already-applied seed kept its 25.
+  //
+  // The seed is not edited to match. It is history: `on conflict (id) do nothing` means it has no
+  // effect on a database that already has this row, and rewriting an applied migration to agree
+  // with a value that has since moved elsewhere is how two databases stop agreeing about what has
+  // been applied.
+  //
+  // What still matters, and is still checked: the key is seeded, so a fresh deployment starts
+  // with a floor rather than none, and the seeded value is one the hardware has a code for.
   assert.ok(sql.includes('acu_min_setpoint_c'), 'the policy floor belongs in the seeded row');
-  assert.ok(sql.includes(String(SITE.policy.acu_min_setpoint_c)), 'and must match the site module');
+  const seeded = sql.match(/"acu_min_setpoint_c"\s*:\s*(\d+)/);
+  assert.ok(seeded, 'the seeded floor must be a number this test can read');
+  const value = Number(seeded[1]);
+  assert.ok(value >= 16 && value <= 30, `the seeded floor ${value} is outside the IR library's range`);
+  assert.ok(Number.isInteger(SITE.policy.acu_min_setpoint_c), 'the site module must still declare a default floor');
 });
 
 test('the seed is conflict-safe, so applying the file twice does not fail', () => {

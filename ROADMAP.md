@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-01 (UTC) — the control path, against the live Pi
+**Last audited:** 2026-09-01 (UTC) — the control path, against the live Pi; settings and policy, same day
 **Audited at commit:** `1f46590`
 
 **2026-09-01, and it changes what §0 says.** The headline claim below — that there is no
@@ -1699,6 +1699,70 @@ fall back to it).
       Deleting `carePlan.ts` remains a **follow-up**, once this office's room is actually drawn —
       doing it in the same change would leave the CARE office with no plan between the deploy and
       the moment somebody draws one. That deletion closes the last half of FI-016.
+
+### Settings, policy and layout — RM-038 to RM-040
+
+- [x] **RM-038 (M)** **CODE DONE 2026-09-01 — `supabase/phase26_policy_setpoint.sql` NOT YET APPLIED.**
+      **The aircon floor stops being a build constant.** `policy.acu_min_setpoint_c` is the coldest
+      setpoint the building permits and it comes from the university's energy-efficiency policy —
+      a rule that changes. It was compiled into both the browser bundle and the proxy from
+      `shared/sites/<id>/site.mjs`, so revising an administrative decision meant editing source,
+      rebuilding and redeploying: a code change standing in for a signature.
+
+      *Corrected to 24 °C*, which the operator states is the actual university policy; the site
+      file had 25.
+
+      *Why a `security definer` function and not an UPDATE policy.* phase19 grants `sites` SELECT
+      and deliberately no UPDATE, because the same `policy` jsonb also carries `dispatch` — which
+      decides whether commands may leave the building for a vendor cloud. Postgres RLS is
+      row-level, not key-level, so a policy narrow enough to permit the setpoint and refuse the
+      dispatch mode cannot be written. `set_acu_min_setpoint` touches one key; the rehearsal
+      asserts `dispatch` survives, and that assertion was checked by making the function clobber
+      the whole object, which fails it.
+
+      *The fallback runs build-ward, and that direction is the point.* `server/livePolicy.mjs`
+      caches the row and, on any read failure, keeps the last good value or the build value —
+      never none. A floor that vanished during an outage would let through exactly the commands
+      it exists to refuse, silently. Twelve tests cover it; neutering the merge fails six.
+      `/api/capabilities` now reports both the floor in force and whether it came from the
+      database or the build, so `PolicySection` can say when it is showing a rule that is not
+      currently being enforced.
+
+      *The setpoint selector is reactive.* `IrCommandCenterCard` built its options once at module
+      scope from `SITE.policy`; it now derives them from the live floor, and a chosen degree that
+      the floor has since excluded resolves to the nearest permitted one during render rather
+      than in an effect.
+
+      `validateCommand` is still the enforcement, and the hardware bound (`ACU_MIN_C` = 16,
+      `ACU_MAX_C` = 30) is still applied after the policy floor, so nothing written here can widen
+      the range beyond what the IR library has codes for.
+
+      **STILL TO DO:** apply `supabase/phase26_policy_setpoint.sql`, then set the floor to 24 from
+      Settings → Building policy. Until it is applied the proxy simply keeps using the build value
+      — unlike phase25 this one degrades rather than breaking, because `livePolicy` treats a
+      missing function or an unreadable row as a failed read.
+
+      *Rehearsed:* `supabase/rehearse.sh` on the Pi, PostgreSQL 16, all migrations in order plus
+      seven new assertions for the function — valid write, key isolation, NULL removing the key,
+      both out-of-range refusals, and an unknown site raising rather than updating nothing.
+
+- [x] **RM-039 (S)** **DONE 2026-09-01.** The account menu hard-coded `FileText` for every entry,
+      so Reports and Settings drew the same glyph and the icon column carried no information. The
+      icon moved onto the nav item, so a new entry cannot inherit somebody else's. The test
+      compares rendered SVGs and was checked by putting the bug back.
+
+- [x] **RM-040 (S)** **DONE 2026-09-01.** The Automation page was 494px ragged at 1920px —
+      measured, not eyeballed: left column 1064px against right 1558px. One card caused it, the
+      load-shed table at 1104px, which landed in that column when it moved off the Devices
+      toolbar. The per-device rows are a lookup, so they sit behind a capped scroll with a pinned
+      header; the tier counts stay whole. Imbalance is now 119px. The tier tally also laid out
+      four-then-one, and the orphan was "Not classified" — not a fifth tier but the absence of
+      one, now stated as such on its own line.
+
+      **The Deployment settings section was deleted** in the same change, as asked. What it
+      uniquely showed: site id and timezone (both in the header chip) and the aircon floor (which
+      RM-038 gave a better home). *No longer displayed anywhere:* "commands reach hardware" and
+      "classes that dispatch". Worth knowing before somebody goes looking for them.
 
 - [x] **RM-008** ~~Apply the three Phase 9 migrations.~~ **Done 2026-08-21.** Applied via the
       Supabase Management API; all four objects confirmed live (`readings_buckets`,

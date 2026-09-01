@@ -52,6 +52,7 @@ import { URL, fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { verifyBreakGlassPassword } from './breakGlass.mjs';
 import { validateCommand, buildAck, ACCEPTED_STATUS } from '../shared/commands.mjs';
+import { createLivePolicy } from './livePolicy.mjs';
 import { DEVICE_REGISTRY, TIMING, SITE } from '../shared/registry.mjs';
 import { dispatchCommand, DISPATCH_CLASSES } from './dispatchLight.mjs';
 import { createTuyaClient, TUYA_HOSTS } from './tuyaCloud.mjs';
@@ -136,6 +137,23 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 // The ANON key, not service-role — verifying a user's own token needs no elevated
 // privilege, and this process's whole point is to hold less power than ingest.mjs, not more.
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+
+/**
+ * The live operating policy — RM-038. `SITE.policy` is the build-time declaration and the
+ * fallback; the `sites` row is what an operator can actually change. See `server/livePolicy.mjs`
+ * for why the fallback runs in that direction and not the other.
+ *
+ * NOTE the deliberate asymmetry with `DISPATCH_POLICY` above, which is still read from the build
+ * and NOT from here. Whether commands may leave the building for a vendor cloud is not something
+ * a settings screen may change: phase26's function cannot write that key, and reading it live
+ * would create an expectation that it can.
+ */
+const livePolicy = createLivePolicy({
+  buildPolicy: SITE.policy ?? {},
+  siteId: SITE.id,
+  supabaseUrl: SUPABASE_URL,
+  supabaseKey: SUPABASE_ANON_KEY,
+});
 const BREAK_GLASS_PASSWORD_HASH = process.env.BREAK_GLASS_PASSWORD_HASH;
 const SUPABASE_VERIFY_CACHE_MS = 60_000;
 
@@ -401,9 +419,12 @@ async function handleCommand(req, res, token) {
   }
 
   const body = await readJsonBody(req);
-  // SITE.policy carries this building's own bounds — e.g. the minimum aircon setpoint the
-  // operator permits, which is narrower than what the IR library can physically send.
-  const validated = validateCommand(body, DEVICE_REGISTRY, SITE.policy);
+  // This building's own bounds — e.g. the minimum aircon setpoint the operator permits, which is
+  // narrower than what the IR library can physically send. Read synchronously from the cache so a
+  // command never waits on a round trip; `refresh()` runs in the background and, on failure,
+  // leaves the last known floor in force rather than none.
+  void livePolicy.refresh();
+  const validated = validateCommand(body, DEVICE_REGISTRY, livePolicy.current());
   if (!validated.ok) {
     return sendJson(res, validated.status, { error: validated.error, code: validated.code });
   }
@@ -663,6 +684,7 @@ const server = http.createServer(async (req, res) => {
     // command accepted into the buffer is not the same fact as one recorded in the audit
     // table, and the operator must not have to guess which they just did — this project's
     // whole posture is that the UI never claims more than it can observe.
+    void livePolicy.refresh();
     return sendJson(res, 200, {
       hardware_dispatch_enabled: HARDWARE_DISPATCH_ENABLED,
       dispatch_classes: HARDWARE_DISPATCH_ENABLED ? DISPATCH_CLASSES : [],
@@ -673,6 +695,14 @@ const server = http.createServer(async (req, res) => {
       // `local-only` today and is a completely different promise about tomorrow.
       dispatch_policy: DISPATCH_POLICY,
       cloud_fallback_configured: Boolean(CLOUD_DISPATCH?.client),
+      // RM-038. The floor the NEXT command will actually be validated against, which is not
+      // necessarily the one in the browser's bundle: an operator can change it without a
+      // redeploy, and a setpoint selector built from a stale build value would offer a degree
+      // that comes back as a 400 — which reads as a bug rather than as a policy.
+      acu_min_setpoint_c: livePolicy.current().acu_min_setpoint_c ?? null,
+      // Where that number came from. A page reporting a floor it got from the build during a
+      // database outage should be able to say so rather than presenting it as current.
+      policy_source: livePolicy.status().source,
     });
   }
   if (req.method === 'POST' && url.pathname === '/api/enroll') {

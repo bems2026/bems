@@ -6717,3 +6717,63 @@ button.space-plan__pin {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+
+/* ---- Building policy — RM-038 ------------------------------------------------------------ */
+.policy-field {
+  margin-top: var(--sp-3);
+}
+.policy-field__label {
+  display: block;
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.policy-field__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.policy-field__input {
+  width: 6rem;
+  padding: var(--sp-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-inner);
+  background: var(--bg-surface);
+  color: var(--txt);
+  font-size: var(--fs-md);
+  font-variant-numeric: tabular-nums;
+}
+.policy-field__input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.policy-field__unit {
+  color: var(--muted-2);
+  font-size: var(--fs-sm);
+}
+.policy-field__ok {
+  color: var(--good);
+  font-size: var(--fs-xs);
+}
+.policy-field__hint {
+  margin: var(--sp-2) 0 0;
+  color: var(--muted-2);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+.policy-field__error {
+  margin: var(--sp-2) 0 0;
+  color: var(--bad);
+  font-size: var(--fs-xs);
+}
+/* Shown when the bridge is applying its BUILD value because it could not read the stored one.
+   Without it this screen would present a rule that is not currently being enforced. */
+.policy-field__warn {
+  margin: var(--sp-3) 0 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-left: 2px solid var(--warn);
+  color: var(--warn);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}

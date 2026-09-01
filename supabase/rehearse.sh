@@ -36,11 +36,28 @@ trap cleanup EXIT
 echo "== starting throwaway postgres =="
 docker run -d --name "$CONTAINER" -e POSTGRES_PASSWORD="$PGPASSWORD" postgres:16-alpine >/dev/null
 
-for _ in $(seq 1 60); do
-  if docker exec "$CONTAINER" pg_isready -U postgres >/dev/null 2>&1; then break; fi
+# WAIT ON A REAL QUERY, NOT `pg_isready`. The postgres image runs initdb against a temporary
+# server first, and `pg_isready` answers yes to THAT one — so the loop broke, the server then
+# shut down to restart for real, and the check immediately after it failed under `set -e`. The
+# whole run died at "starting throwaway postgres" with no further output. Observed 2026-09-01,
+# intermittently, on runs whose only difference was timing.
+#
+# A `select 1` over the real socket cannot be answered by the initdb server, and requiring two
+# consecutive successes covers the window where it is on its way down.
+ready=0
+for _ in $(seq 1 90); do
+  if docker exec "$CONTAINER" psql -U postgres -d postgres -tAc 'select 1' >/dev/null 2>&1; then
+    ready=$((ready + 1))
+    [ "$ready" -ge 2 ] && break
+  else
+    ready=0
+  fi
   sleep 1
 done
-docker exec "$CONTAINER" pg_isready -U postgres >/dev/null
+if [ "$ready" -lt 2 ]; then
+  echo "postgres never became ready" >&2
+  exit 1
+fi
 
 # ON_ERROR_STOP so any failing statement fails the whole run, loudly.
 psql() { docker exec -i "$CONTAINER" psql -v ON_ERROR_STOP=1 -q -U postgres -d postgres "$@"; }
@@ -138,7 +155,7 @@ do $$
 declare
   base   timestamptz := date_trunc('hour', now()) - interval '2 hours';
   h0     timestamptz := timestamptz '2026-06-01 00:00:00+00';
-  n int; n2 int; v numeric; rolled int; deleted int; ok boolean; site_of text;
+  n int; n2 int; v numeric; rolled int; deleted int; ok boolean; site_of text; txt text;
   n_bldg  uuid := gen_random_uuid();
   n_floor uuid := gen_random_uuid();
   n_room  uuid := gen_random_uuid();
@@ -509,6 +526,64 @@ begin
   select space_node_id, plan_x, plan_y into site_of_node, v, v2 from device_config where device_id = 'mtr_now';
   assert site_of_node is null, 'plan coords: deleting the room should clear the placement';
   assert v is null and v2 is null, format('plan coords: deleting the room must clear the position too, got %s/%s', v, v2);
+
+
+  -- ---- set_acu_min_setpoint (phase 26) -------------------------------------------------
+  -- The function exists so an administrative decision stops being a code change. These check
+  -- that it changes the ONE key it is allowed to and leaves the rest of the policy alone —
+  -- which is the whole argument for a definer function over an UPDATE policy.
+  -- Seeded here rather than assumed: phase19's insert does not carry `dispatch`, so an
+  -- assertion that it survives would have passed against a key that was never there.
+  update sites set policy = policy || '{"dispatch":"local-first"}'::jsonb where id = 'mmsu-nberic-care';
+
+  perform set_acu_min_setpoint('mmsu-nberic-care', 24);
+  select (policy ->> 'acu_min_setpoint_c')::int into n from sites where id = 'mmsu-nberic-care';
+  assert n = 24, format('setpoint: expected the floor to become 24, got %s', n);
+
+  -- THE ASSERTION THIS FUNCTION EXISTS FOR. `dispatch` decides whether commands may leave the
+  -- building for the vendor cloud. If a setpoint change could disturb it, the function would be
+  -- no safer than the UPDATE policy phase19 refused to grant.
+  select policy ->> 'dispatch' into txt from sites where id = 'mmsu-nberic-care';
+  assert txt = 'local-first', format('setpoint: dispatch must be untouched, got %s', txt);
+
+  select policy_updated_at is not null into ok from sites where id = 'mmsu-nberic-care';
+  assert ok, 'setpoint: a policy change must be stamped with when it happened';
+
+  -- NULL removes the key rather than storing a JSON null: "no policy floor" and "a floor of
+  -- null" would read the same to `policy ->> ...` but not to anything asking whether the key
+  -- is present, and the site file's own convention is absence.
+  perform set_acu_min_setpoint('mmsu-nberic-care', null);
+  select policy ? 'acu_min_setpoint_c' into ok from sites where id = 'mmsu-nberic-care';
+  assert not ok, 'setpoint: null must REMOVE the key, not store a null under it';
+  select policy ->> 'dispatch' into txt from sites where id = 'mmsu-nberic-care';
+  assert txt = 'local-first', 'setpoint: removing the floor must not remove the dispatch mode';
+
+  -- Out of range is refused. The hardware bound in shared/commands.mjs is the real authority;
+  -- this is a sanity check on a number a person typed into a settings field.
+  begin
+    perform set_acu_min_setpoint('mmsu-nberic-care', 12);
+    assert false, 'setpoint: 12 is below the hardware minimum and must be refused';
+  exception when check_violation then
+    null;  -- expected
+  end;
+  begin
+    perform set_acu_min_setpoint('mmsu-nberic-care', 31);
+    assert false, 'setpoint: 31 is above the hardware maximum and must be refused';
+  exception when check_violation then
+    null;  -- expected
+  end;
+
+  -- A typo in a site id must not silently succeed against zero rows, which is what a bare
+  -- UPDATE would have done.
+  begin
+    perform set_acu_min_setpoint('no-such-site', 25);
+    assert false, 'setpoint: an unknown site must raise, not update nothing quietly';
+  exception when no_data_found then
+    null;  -- expected
+  end;
+
+  -- Put it back, so anything after this sees the site as seeded.
+  perform set_acu_min_setpoint('mmsu-nberic-care', 25);
 
   raise notice 'all assertions passed';
 end $$;

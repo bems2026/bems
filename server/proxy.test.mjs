@@ -13,6 +13,20 @@ import { spawn } from 'node:child_process';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { SITE } from '../shared/siteConfig.mjs';
+
+/**
+ * The floor these tests expect the proxy to report with no database behind it — RM-038.
+ *
+ * DERIVED, not restated. The number itself is a university policy that changes; asserting a
+ * literal here made an unrelated capabilities test fail the moment the site file was corrected
+ * from 25 to 24. What these assertions are actually for is the SHAPE of the payload — that no
+ * field appears or vanishes unnoticed — and that survives a policy revision.
+ *
+ * `policy_source: 'build'` beside it is the load-bearing half: with no SUPABASE_URL in the test
+ * environment the proxy must fall back to what it was built with rather than dropping the floor.
+ */
+const BUILD_FLOOR = SITE.policy.acu_min_setpoint_c;
 import nodeCrypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -398,7 +412,7 @@ test('GET /api/capabilities reflects HARDWARE_DISPATCH_ENABLED — false by defa
     assert.equal(res.status, 200);
     // deepEqual, not a subset match: this endpoint tells the UI what it is allowed to claim
     // about hardware, so a field appearing unnoticed is exactly what should fail a test.
-    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: false, dispatch_classes: [], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false });
+    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: false, dispatch_classes: [], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build' });
   } finally {
     cleanup();
   }
@@ -408,7 +422,7 @@ test('GET /api/capabilities reports true once the gate is explicitly opened', as
   const { proxyUrl, cleanup } = await setup({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-light-token' });
   try {
     const res = await fetch(`${proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
-    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: true, dispatch_classes: ['switch', 'outlet_dual', 'acu_ir'], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false });
+    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: true, dispatch_classes: ['switch', 'outlet_dual', 'acu_ir'], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build' });
   } finally {
     cleanup();
   }

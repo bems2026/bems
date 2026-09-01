@@ -71,7 +71,12 @@ export const SITE = Object.freeze({
      * capability — while this is what the operator allows. A site with no such rule sets this
      * to null and gets the hardware bound alone.
      */
-    acu_min_setpoint_c: 25,
+    // 24, not 25: the operator states this is what the university's policy says. Corrected
+    // 2026-09-01. This is now only the DEFAULT — RM-038 made the live floor a `sites` row the
+    // bridge reads and a settings screen can change, so a future revision needs no code change.
+    // This value applies to a fresh deployment, and to this one whenever the database cannot be
+    // read (see `server/livePolicy.mjs` for why the fallback runs in that direction).
+    acu_min_setpoint_c: 24,
 
     /**
      * Which dispatch paths this building permits.

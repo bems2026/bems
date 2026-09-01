@@ -27,6 +27,7 @@ describe('SettingsPage', () => {
       'Spaces',
       'Floor plan',
       'Page cards',
+      'Building policy',
     ]);
   });
 
