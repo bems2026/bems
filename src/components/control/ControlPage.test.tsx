@@ -4,6 +4,7 @@ import { ControlPage } from './ControlPage';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore } from '@/stores/commandStore';
 import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
+import { useSiteUiStore } from '@/stores/siteUiStore';
 import { useControlLog } from './controlLog';
 import * as bridgeClient from '@/lib/bridgeClient';
 import type { CommandAck, Device } from '@/lib/types';
@@ -52,6 +53,9 @@ afterEach(() => {
   useCommandStore.setState({ pending: {} });
   useCapabilitiesStore.setState({ hardwareDispatchEnabled: null, dispatchClasses: null });
   useControlLog.setState({ entries: [] });
+  // Back to visible, which is both the default and what every test above assumes. A leaked
+  // `false` here would hide the plan for an unrelated test and read as a missing card.
+  useSiteUiStore.setState({ prefs: { controlPlanCard: true, overviewSceneCard: true } });
 });
 
 describe('ControlPage', () => {
@@ -332,5 +336,75 @@ describe('ACU setpoint', () => {
     render(<ControlPage />);
     const value = Number((screen.getByLabelText('SETPOINT') as HTMLSelectElement).value);
     expect(value).toBeGreaterThanOrEqual(SITE.policy.acu_min_setpoint_c ?? 16);
+  });
+});
+
+/**
+ * RM-035 — the plan card can be turned off, and turning it off must never turn off a control.
+ *
+ * The plan is a picture of a building, drawn from a pack surveyed in one office. A site whose
+ * room does not match needs to be able to hide it. But every lamp and socket on that plan is
+ * also in the Lighting switches and Outlets lists, driving the same `commandStore.send` — so
+ * hiding it removes a diagram and nothing else.
+ *
+ * This is the property most worth pinning, because the failure would be quiet and serious: a
+ * refactor that moved a control inside the hidden block would leave an operator unable to switch
+ * a relay, with nothing on screen explaining why, and every other test still green.
+ */
+describe('the plan card is optional, the controls are not', () => {
+  const bothOn = () => {
+    useDeviceStore.setState({
+      devices: [light(1), outlet(1)],
+      latestReadings: {
+        l1: { device_id: 'l1', ts: new Date().toISOString(), online: true, state: 'off' },
+        co1: { device_id: 'co1', ts: new Date().toISOString(), online: true, state: 'off', socket_states: { 1: 'off', 2: 'off' } },
+      },
+    });
+  };
+
+  it('shows the plan by default, because an existing deployment must look unchanged', () => {
+    useSiteUiStore.setState({ prefs: { controlPlanCard: true, overviewSceneCard: true } });
+    bothOn();
+    render(<ControlPage />);
+    expect(screen.getByText('Lighting & outlet plan')).toBeInTheDocument();
+  });
+
+  it('hides the plan when the site turns it off', () => {
+    useSiteUiStore.setState({ prefs: { controlPlanCard: false, overviewSceneCard: true } });
+    bothOn();
+    render(<ControlPage />);
+    expect(screen.queryByText('Lighting & outlet plan')).not.toBeInTheDocument();
+  });
+
+  it('still switches a light with the plan hidden — the list toggle dispatches as it always did', () => {
+    vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack({ device_id: 'l1', target: 'L1', action: 'on' }));
+    useSiteUiStore.setState({ prefs: { controlPlanCard: false, overviewSceneCard: true } });
+    bothOn();
+    render(<ControlPage />);
+    const row = screen.getByText('Light Switch 1').closest('.control-list-row') as HTMLElement;
+    fireEvent.click(within(row).getByRole('switch'));
+    expect(bridgeClient.sendCommand).toHaveBeenCalledWith(expect.objectContaining({ device_id: 'l1', action: 'on' }));
+  });
+
+  it('still switches an outlet socket with the plan hidden', () => {
+    vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack({ device_id: 'co1', socket: 1, action: 'on' }));
+    useSiteUiStore.setState({ prefs: { controlPlanCard: false, overviewSceneCard: true } });
+    bothOn();
+    render(<ControlPage />);
+    const row = screen.getByText('Outlet 1').closest('.control-list-row') as HTMLElement;
+    fireEvent.click(within(row).getAllByRole('button')[0]);
+    expect(bridgeClient.sendCommand).toHaveBeenCalledWith(expect.objectContaining({ device_id: 'co1', socket: 1, action: 'on' }));
+  });
+
+  it('leaves the master actions working, since they never read the plan at all', () => {
+    // "Lights off" acts on page membership, not on what is drawn. Worth pinning: an operator
+    // who has hidden the plan has not asked to lose the one action that switches everything.
+    vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack({ device_id: 'l1', target: 'L1', action: 'off' }));
+    useSiteUiStore.setState({ prefs: { controlPlanCard: false, overviewSceneCard: true } });
+    bothOn();
+    render(<ControlPage />);
+    fireEvent.click(screen.getByRole('button', { name: /Lights off/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Turn lights off' }));
+    expect(bridgeClient.sendCommand).toHaveBeenCalledWith(expect.objectContaining({ device_id: 'l1', action: 'off' }));
   });
 });

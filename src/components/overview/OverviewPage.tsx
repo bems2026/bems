@@ -5,6 +5,7 @@ import { LiveDemandCard } from './LiveDemandCard';
 import { MainPanelHealthCard } from './MainPanelHealthCard';
 import { EnergyBreakdownCard } from './EnergyBreakdownCard';
 import { Hero3DCard } from './Hero3DCard';
+import { useSiteUiStore } from '@/stores/siteUiStore';
 import { EnergyFlowCard } from './EnergyFlowCard';
 import { DeviceStatusCountsCard } from './DeviceStatusCountsCard';
 import { MasterQuickActionsCard } from './MasterQuickActionsCard';
@@ -38,6 +39,7 @@ import { useNowTick } from '@/lib/useNowTick';
  *     Automation; a breach is no longer announced here.
  */
 export function OverviewPage() {
+  const showSceneCard = useSiteUiStore((s) => s.prefs.overviewSceneCard);
   return (
     <>
       <PageHeader title="Intelligent BEMS" sub={`Building Energy Management System · ${SITE.display_name}`} actions={<Clock />} />
@@ -49,9 +51,15 @@ export function OverviewPage() {
           <EnergyBreakdownCard />
         </div>
 
-        <div className="overview-col overview-col--center">
-          <Hero3DCard />
-        </div>
+        {/* RM-035. The 3D hero renders a scene pack built for one office (`SITE.scene_pack`);
+            a site without one, or with one that does not match, can turn it off. It reports no
+            reading and drives no control, so hiding it costs nothing but the picture — the
+            column simply closes up. */}
+        {showSceneCard && (
+          <div className="overview-col overview-col--center">
+            <Hero3DCard />
+          </div>
+        )}
 
         <div className="overview-col overview-col--right">
           <WeatherStatusCard />

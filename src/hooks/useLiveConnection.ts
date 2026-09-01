@@ -7,6 +7,7 @@ import { useContextStore } from '@/stores/contextStore';
 import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
 import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
 import { useSpaceTreeStore } from '@/stores/spaceTreeStore';
+import { useSiteUiStore } from '@/stores/siteUiStore';
 import { useAnomaliesStore } from '@/stores/anomaliesStore';
 
 /**
@@ -69,6 +70,12 @@ export function useLiveConnection(): void {
     // device's placement is a label any page could adopt, and a second load path would be a
     // second thing to keep correct. Cheap — tens of rows, once.
     void useSpaceTreeStore.getState().load();
+
+    // Which optional cards this site shows (RM-035). Loaded at the root like every store
+    // above, and deliberately NOT awaited by anything: the pages that read it default to
+    // showing their cards, so a slow or failed load renders the dashboard somebody already
+    // has rather than a spinner in front of it.
+    void useSiteUiStore.getState().load();
 
     const disconnect = connectLive({
       onData: (rows) => {

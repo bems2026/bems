@@ -5,6 +5,7 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore } from '@/stores/commandStore';
 import { useDevicesFor } from '@/hooks/useDevicesFor';
 import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
+import { useSiteUiStore } from '@/stores/siteUiStore';
 import { AuditBacklogNote } from './AuditBacklogNote';
 import { DispatchPathNote } from './DispatchPathNote';
 import { ConfirmModal, type ConfirmTone } from '@/components/ui/ConfirmModal';
@@ -82,6 +83,7 @@ export function ControlPage() {
   // ignore the flag — which would defeat it at the one moment it matters.
   const flagSimulated = (cls: DeviceClass) => scope.simulated.includes(cls);
   const [confirming, setConfirming] = useState<MasterAction | null>(null);
+  const showPlanCard = useSiteUiStore((s) => s.prefs.controlPlanCard);
   useFaultLogging();
 
   const runMaster = (action: MasterAction) => {
@@ -142,19 +144,26 @@ export function ControlPage() {
 
       <div className="control-grid">
         <div className="control-grid__main">
-          <div className="card control-plan-card">
-            <div className="card-head">
-              <div>
-                <h3 className="card-title">Lighting &amp; outlet plan</h3>
-                <p className="card-sub">Click a lamp, a row switch, or an outlet socket to switch it.</p>
+          {/* RM-035. The plan is a PICTURE of this building, drawn from a pack surveyed in one
+              office — a site whose room does not match can turn it off. What it must never turn
+              off is a control: every lamp and socket on this plan is also in the two lists
+              below, driving the same `commandStore.send`. Hiding this removes a diagram, never
+              the ability to switch a relay, and `ControlPage.test.tsx` pins that. */}
+          {showPlanCard && (
+            <div className="card control-plan-card">
+              <div className="card-head">
+                <div>
+                  <h3 className="card-title">Lighting &amp; outlet plan</h3>
+                  <p className="card-sub">Click a lamp, a row switch, or an outlet socket to switch it.</p>
+                </div>
+                <span className="control-plan-card__tag">LAYOUT PER AS-BUILT SKETCH</span>
               </div>
-              <span className="control-plan-card__tag">LAYOUT PER AS-BUILT SKETCH</span>
+              <div className="control-plan-grid">
+                <LightingMatrixCard />
+                <OutletPlanCard />
+              </div>
             </div>
-            <div className="control-plan-grid">
-              <LightingMatrixCard />
-              <OutletPlanCard />
-            </div>
-          </div>
+          )}
 
           <div className="control-list-grid">
             <SwitchesListCard simulated={flagSimulated('switch')} />
