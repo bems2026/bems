@@ -1345,6 +1345,14 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       **Proven on hardware 2026-09-01:** `l1` commanded through `dispatchCommand` with no cloud
       option configured at all — `ok=true via=local` in **85 ms**, state read back as changed,
       then restored. Device id and local key over the building's own LAN, no vendor in the path.
+      **And `local-only` proven to REFUSE a working fallback, which is the stronger claim.** With
+      a real vendor client built from this deployment's own credentials: under `local-first` a
+      forced local failure reached the cloud (`via=cloud`, 1 vendor call) — *that check exists so
+      the next line cannot pass vacuously* — while under `local-only` the identical failure gave
+      `via=local` with **0 vendor calls** and a detail naming the policy. Then a real command over
+      the live bridge: `ok=true via=local` in **29 ms**, 0 vendor calls, relay observed
+      `off → on → off`. A configured fallback sitting unused is a different fact from an absent
+      one, and this is the difference measured.
       `SITE.policy.dispatch` is `local-first` (unchanged behaviour) or `local-only`, which
       **refuses** the fallback — a different guarantee from never having configured one, and the
       failure detail says which. The Control page states the policy and names any device that
