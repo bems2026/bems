@@ -6501,3 +6501,175 @@ button.space-plan__pin {
     display: none;
   }
 }
+
+/* ---- The lighting layer — RM-037 -------------------------------------------------------- */
+
+/* A lamp is drawn where it IS. The grid below is only how it got there, which is why nothing in
+   these rules ties a lamp's position to a cell. See `src/lib/lightingGrid.ts`. */
+.space-plan__lamp {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  /* `--lamp` is set per circuit from `circuitColors`. The ring is what keeps a mid-tone dot
+     legible on both the light and the dark inset background. */
+  background: var(--lamp, var(--accent));
+  border: 2px solid var(--bg-surface);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--lamp, var(--accent)) 60%, transparent);
+  pointer-events: none;
+}
+/* The circuit currently being painted, lifted out of the others so a ceiling can be checked
+   while it is being drawn. */
+.space-plan__lamp--painting {
+  width: 18px;
+  height: 18px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lamp, var(--accent)) 40%, transparent);
+}
+
+/* The ceiling grid. Only present while a circuit is being painted — see `SpacePlanView`. It sits
+   above the room outline so it can be aimed against the walls, and below the pins so a device is
+   never hidden by the thing being drawn around it. */
+/* MEASURED 2026-09-01: the frame carries its own 10% background grid as a reading aid ("about a
+   quarter along"), and with the ceiling grid drawn over it the two were almost indistinguishable
+   — an operator painting lamps could not see which lines were the cells they were aiming at. The
+   reading aid is what gives way: while painting, the cells ARE the grid. */
+.space-plan__frame--painting {
+  background-image: none;
+}
+.space-plan__lamp-grid {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  gap: 0;
+}
+.space-plan__cell {
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.space-plan__cell:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.space-plan__cell:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.space-plan__note--warn {
+  border-style: solid;
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.lamp-editor {
+  margin-top: var(--sp-4);
+}
+.lamp-editor__list {
+  list-style: none;
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.lamp-editor__row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-inner);
+}
+.lamp-editor__swatch {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+}
+.lamp-editor__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+}
+.lamp-editor__count {
+  flex: none;
+  color: var(--muted-2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.lamp-editor__count-unit {
+  /* The number is the fact; the word is only there so the column reads as a sentence. */
+  color: var(--muted-2);
+}
+.lamp-editor__grid-size {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+.lamp-editor__hint {
+  flex: 1 1 12rem;
+  color: var(--muted-2);
+  font-size: var(--fs-xs);
+}
+/* The circuit whose lamps the next tap on the plan will change. `aria-pressed` carries this to
+   assistive technology; this is the visual half of the same fact. */
+.space-plan__btn--on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+/* A plan built from data is drawn in NORMALISED space, not in the CARE office's surveyed
+   320:550 — RM-037. Square for the same reason `.space-plan__frame` is square: nothing here has
+   measured a room, and giving it invented proportions would assert a fact nobody established
+   while non-uniformly stretching every percentage-positioned device. */
+.control-outlet-plan--data {
+  aspect-ratio: 1;
+  max-width: 340px;
+}
+/* The drawn room outline. Takes no clicks — the pucks and rows above it are the controls, and
+   the outline is a drawing rather than a target. Deliberately not clipping them either: the
+   shape is the operator's sketch, so a device outside it is worth seeing rather than hiding. */
+.control-outlet-plan__shape {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.control-outlet-plan__shape path {
+  fill: var(--bg-surface-2);
+  fill-opacity: 0.5;
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+}
+.control-plan-panel__room {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-2);
+  color: var(--muted-2);
+  font-size: var(--fs-xs);
+}
+.control-plan-panel__room-label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.control-plan-panel__room-select {
+  max-width: 60%;
+  padding: 2px var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-surface);
+  color: var(--txt);
+  font-size: var(--fs-xs);
+}

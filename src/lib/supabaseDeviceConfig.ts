@@ -10,6 +10,7 @@
  */
 
 import { supabase } from '@/config/supabase';
+import { parseFixtures } from './lightingGrid';
 import { coerceFunctions } from './deviceFunctions';
 import { coerceCategory, coerceLoadShedGroup, normalizeDeviceConfig, type DeviceConfig } from './deviceConfig';
 import { coercePlanCoord } from './planLayout';
@@ -23,6 +24,7 @@ interface DeviceConfigRow {
    * stays; the encoding is decided elsewhere.) `coercePlanCoord` accepts either and refuses
    * anything else, and a deployment that has not applied phase23 yet simply has neither key. */
   plan_x?: unknown;
+  plan_fixtures?: unknown;
   plan_y?: unknown;
   functions: string[] | null;
   room: string | null;
@@ -37,6 +39,7 @@ interface DeviceConfigWriteRow {
   device_id: string;
   space_node_id: string | null;
   plan_x: number | null;
+  plan_fixtures: unknown;
   plan_y: number | null;
   functions: string[] | null;
   room: string | null;
@@ -65,6 +68,7 @@ export function deviceConfigRowToModel(row: DeviceConfigRow): DeviceConfig {
     deviceId: row.device_id,
     spaceNodeId: row.space_node_id,
     planX: coercePlanCoord(row.plan_x),
+    planFixtures: parseFixtures(row.plan_fixtures),
     planY: coercePlanCoord(row.plan_y),
     room: row.room,
     category: coerceCategory(row.category),
@@ -98,6 +102,9 @@ export function deviceConfigToRow(config: DeviceConfig, actorUserId: string | nu
     // position would null it on any unrelated edit — a notes change erasing a placement, with
     // no error and from a screen that never mentioned the plan.
     plan_x: normalized.planX,
+    // Same whole-row reasoning as plan_x below: omitting this would erase a ceiling layout
+    // on any unrelated edit, silently, from a screen that never mentioned lighting.
+    plan_fixtures: normalized.planFixtures,
     plan_y: normalized.planY,
     room: normalized.room,
     category: normalized.category,
@@ -111,7 +118,7 @@ export function deviceConfigToRow(config: DeviceConfig, actorUserId: string | nu
 /** Everything `deviceConfigStore.load()` needs, keyed by device id. */
 export async function fetchDeviceConfigs(): Promise<Record<string, DeviceConfig>> {
   const client = requireSupabase();
-  const { data, error } = await client.from('device_config').select('device_id,space_node_id,plan_x,plan_y,room,category,load_shed_group,display_name_override,notes,functions');
+  const { data, error } = await client.from('device_config').select('device_id,space_node_id,plan_x,plan_y,plan_fixtures,room,category,load_shed_group,display_name_override,notes,functions');
   if (error) throw new Error(`Supabase device_config fetch failed: ${error.message}`);
   return deviceConfigsToMap(data ?? []);
 }

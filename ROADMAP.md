@@ -1641,16 +1641,48 @@ fall back to it).
       un-editable and reopening the editor could only offer "start again". One pure
       `shapeToPath` renders every kind; "eject to grid" rasterises any preset into a nudgeable
       cols×rows bitmap. No migration: `attrs` exists for exactly this.
-- [ ] **RM-037 (M)** **Lighting layout becomes data, and the last hard-coded geometry can go.**
+- [x] **RM-037 (M)** **CODE DONE 2026-09-01 — `supabase/phase25_plan_fixtures.sql` NOT YET APPLIED.**
+      **Lighting layout becomes data, and the last hard-coded geometry can go.**
       `device_config.plan_fixtures` holds a switch's lamps as normalised points — **not grid cell
       indices**, because an index is meaningless without the grid that made it, so a 4×3 → 5×3
       resize would silently relocate every luminaire in the building when nothing had moved. The
-      grid is an input method, not a storage format.
-      `useControlPlan` prefers data, keeps the pack as a fallback, then the existing honest "no
-      plan is drawn for this site". Deleting `carePlan.ts` is a **follow-up**, once this office's
-      room is actually drawn — doing it in the same change would leave the CARE office with no
-      plan between the deploy and the moment somebody draws one. That deletion closes the last
-      half of FI-016.
+      grid is an input method, not a storage format. The test that proves it (`SpacePlanView.test.tsx`,
+      "resizes the grid without moving a single lamp") was neutered to confirm it bites: rendering
+      a lamp from its array index as a cell index fails it.
+
+      *Shipped:* `src/lib/lightingGrid.ts` (pure — `gridCells`, `cellOf`, `toggleFixture`,
+      `parseFixtures`, `circuitColors`; `MAX_FIXTURES = 200` as a stop on a stuck pointer, not a
+      design limit), `src/lib/controlPlanData.ts` (pure — `drawnRooms`, `dataPlanFor`),
+      `src/components/spatial/LightingGridEditor.tsx`, the ceiling grid and lamp layer in
+      `SpacePlanView.tsx`, `deviceConfigStore.toggleFixtureAt` (saves immediately, same reasoning
+      as `placeOnPlan`), `src/components/control/PlanRoomPicker.tsx` and
+      `plans/DataPlanShell.tsx`. Colour is an aid and never the label — every circuit is named as
+      well as coloured, and `circuitColors` sorts so a circuit keeps its colour whatever order a
+      fetch returns.
+
+      *`useControlPlan` now prefers data*, keeps the pack as a fallback, then the existing honest
+      "no plan is drawn for this site". A plan built from data is drawn in NORMALISED space
+      (`.control-outlet-plan--data`, `aspect-ratio: 1`), never in the CARE office's surveyed
+      320:550 — inheriting that would assert a measurement nobody took for the room being drawn.
+      The preference test was vacuous when first written (the pack's dynamic import had not
+      resolved, so reversing the preference broke nothing); it now waits for the pack to load
+      first, and the control test that makes it non-vacuous is kept beside it and says so.
+
+      *A device outside the drawn outline warns and is never blocked* — the outline is the
+      operator's sketch, so refusing a placement would make a hand-drawn wall authoritative over
+      the building.
+
+      **STILL TO DO:** apply `supabase/phase25_plan_fixtures.sql` by hand in the SQL editor —
+      **before** deploying this frontend, not after. `readDeviceConfigs` names every column in one
+      `select`, so against a database without `plan_fixtures` PostgREST fails the whole query
+      (42703) rather than omitting the column, and that query carries rooms, categories, shed
+      groups and plan positions. Deploying first does not degrade the plan; it takes the whole
+      device-config layer down until the migration runs. Not rehearsed: `supabase/rehearse.sh`
+      needs Docker, which is not installed on the workstation this was written on.
+
+      Deleting `carePlan.ts` remains a **follow-up**, once this office's room is actually drawn —
+      doing it in the same change would leave the CARE office with no plan between the deploy and
+      the moment somebody draws one. That deletion closes the last half of FI-016.
 
 - [x] **RM-008** ~~Apply the three Phase 9 migrations.~~ **Done 2026-08-21.** Applied via the
       Supabase Management API; all four objects confirmed live (`readings_buckets`,

@@ -17,7 +17,7 @@ describe('deviceConfigRowToModel', () => {
     ).toEqual({
       deviceId: 'co1', functions: null,
       spaceNodeId: null,
-      planX: null, planY: null,
+      planX: null, planY: null, planFixtures: [],
       room: 'CARE Office',
       category: 'outlet',
       loadShedGroup: 'never',
@@ -64,13 +64,13 @@ describe('deviceConfigToRow', () => {
     expect(
       deviceConfigToRow(
         { deviceId: 'co1', functions: null,
-      spaceNodeId: null, planX: null, planY: null, room: '  CARE Office  ', category: 'outlet', loadShedGroup: 'never', displayNameOverride: null, notes: '' },
+      spaceNodeId: null, planX: null, planY: null, planFixtures: [], room: '  CARE Office  ', category: 'outlet', loadShedGroup: 'never', displayNameOverride: null, notes: '' },
         'user-1',
       ),
     ).toEqual({
       device_id: 'co1', functions: null,
         space_node_id: null,
-      plan_x: null, plan_y: null,
+      plan_x: null, plan_y: null, plan_fixtures: [],
       room: 'CARE Office',
       category: 'outlet',
       load_shed_group: 'never',
@@ -82,7 +82,7 @@ describe('deviceConfigToRow', () => {
 
   it('allows a null actor — break-glass sessions never reach this far, but the type must not lie', () => {
     expect(deviceConfigToRow({ deviceId: 'l1', functions: null,
-      spaceNodeId: null, planX: null, planY: null, room: null, category: null, loadShedGroup: null, displayNameOverride: null, notes: null }, null).updated_by).toBeNull();
+      spaceNodeId: null, planX: null, planY: null, planFixtures: [], room: null, category: null, loadShedGroup: null, displayNameOverride: null, notes: null }, null).updated_by).toBeNull();
   });
 });
 

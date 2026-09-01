@@ -34,8 +34,10 @@ import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
 import { useSpaceTreeStore } from '@/stores/spaceTreeStore';
 import { flattenForPicker, pathLabel, subtreeIds } from '@/lib/spaceTree';
 import { groupByPlacement, planPointOf, pointerToPlan, clampToPlan, type PlanPoint } from '@/lib/planLayout';
-import { parseShape, shapeToPath } from '@/lib/roomShape';
+import { parseShape, shapeToPath, containsPoint } from '@/lib/roomShape';
+import { gridCells, circuitColors } from '@/lib/lightingGrid';
 import { RoomShapeEditor } from './RoomShapeEditor';
+import { LightingGridEditor, type LampGrid } from './LightingGridEditor';
 import { resolveDisplayName } from '@/lib/deviceConfig';
 import { isReadingStale } from '@/lib/staleness';
 import { InfoHint } from '@/components/ui/InfoHint';
@@ -46,11 +48,17 @@ import type { Device } from '@/lib/types';
  * says so, after which the two number fields refine it. */
 const KEYBOARD_START: PlanPoint = { x: 0.5, y: 0.5 };
 
+/** The ceiling grid a room starts with. Twelve cells is a plausible small office and, more to the
+ * point, it is only an aiming aid — see `lightingGrid.ts`. Nothing stored depends on it, so the
+ * default costs nothing if it is wrong. */
+const DEFAULT_LAMP_GRID: LampGrid = { cols: 4, rows: 3 };
+
 export function SpacePlanView({ editable = false }: { editable?: boolean }) {
   const devices = useDeviceStore((s) => s.devices);
   const readings = useDeviceStore((s) => s.latestReadings);
   const saved = useDeviceConfigStore((s) => s.saved);
   const placeOnPlan = useDeviceConfigStore((s) => s.placeOnPlan);
+  const toggleFixtureAt = useDeviceConfigStore((s) => s.toggleFixtureAt);
   const saveError = useDeviceConfigStore((s) => s.saveError);
   const nodes = useSpaceTreeStore((s) => s.nodes);
   const configured = useSpaceTreeStore((s) => s.canEdit);
@@ -59,13 +67,19 @@ export function SpacePlanView({ editable = false }: { editable?: boolean }) {
   // The selected room's own outline (RM-036), or the full frame for a room nobody has drawn —
   // which is exactly what every plan looked like before shapes existed, so an undrawn room is
   // unchanged rather than empty.
-  const shapePath = useMemo(() => {
+  const shape = useMemo(() => {
     const node = nodes.find((n) => n.id === nodeId);
-    return shapeToPath(parseShape((node?.attrs as { plan?: unknown } | undefined)?.plan));
+    return parseShape((node?.attrs as { plan?: unknown } | undefined)?.plan);
   }, [nodes, nodeId]);
+  const shapePath = useMemo(() => shapeToPath(shape), [shape]);
   /** The device currently being positioned — armed from the tray, or selected by clicking its
    * pin. One piece of state for both, because they are the same act at different stages. */
   const [armed, setArmed] = useState<string | null>(null);
+  /** The lighting circuit whose lamps are being painted, and the grid being aimed with. Both live
+   * here rather than in `LightingGridEditor` because the grid is drawn on this frame — one piece
+   * of state, or the overlay and the controls would disagree about the room. */
+  const [painting, setPainting] = useState<string | null>(null);
+  const [lampGrid, setLampGrid] = useState<LampGrid>(DEFAULT_LAMP_GRID);
 
   const canPlace = editable && configured;
   const options = useMemo(() => flattenForPicker(nodes), [nodes]);
@@ -88,6 +102,28 @@ export function SpacePlanView({ editable = false }: { editable?: boolean }) {
   const positioned = here.filter((d) => planPointOf(saved[d.id]) !== null);
   const unpositioned = here.filter((d) => planPointOf(saved[d.id]) === null);
 
+  // The lighting layer — RM-037. A circuit does not need a pin of its own to have lamps: the
+  // switch is on a wall and its luminaires are on the ceiling, which is why these are separate
+  // columns rather than one.
+  const circuits = here.filter((d) => d.class === 'switch');
+  const colors = useMemo(() => circuitColors(circuits.map((d) => d.id)), [circuits]);
+  const lampCounts = useMemo(
+    () => Object.fromEntries(circuits.map((d) => [d.id, saved[d.id]?.planFixtures?.length ?? 0])),
+    [circuits, saved],
+  );
+  const cells = useMemo(() => gridCells(lampGrid.cols, lampGrid.rows), [lampGrid]);
+
+  // A soft warning, never a block. The outline is the operator's sketch; refusing a placement
+  // because a hand-drawn wall is slightly off would make the drawing authoritative over the
+  // building. Lamps count too — a ceiling painted past a wall is the same mistake.
+  const strays = here.reduce((n, d) => {
+    const cfg = saved[d.id];
+    const point = planPointOf(cfg);
+    const outside = (p: PlanPoint) => !containsPoint(shape, p.x, p.y);
+    const pinOut = point !== null && outside(point) ? 1 : 0;
+    return n + pinOut + (cfg?.planFixtures ?? []).filter(outside).length;
+  }, 0);
+
   const deeper = useMemo(() => {
     if (nodeId === '') return 0;
     const inside = subtreeIds(nodes, nodeId);
@@ -101,7 +137,7 @@ export function SpacePlanView({ editable = false }: { editable?: boolean }) {
     return (
       <div className="space-plan">
         <p className="space-plan__note">
-          No spaces defined yet. Add them from Spaces on the Devices page, then place devices into
+          No spaces defined yet. Add them in Settings, under Spaces, then place devices into
           them — this plan draws whatever is placed.
         </p>
       </div>
@@ -149,8 +185,10 @@ export function SpacePlanView({ editable = false }: { editable?: boolean }) {
           value={nodeId}
           onChange={(e) => {
             setNodeId(e.target.value);
-            // A device armed in one room means nothing in another.
+            // A device armed in one room means nothing in another, and neither does a circuit
+            // whose lamps were being painted.
             setArmed(null);
+            setPainting(null);
           }}
         >
           <option value="">All spaces</option>
@@ -179,7 +217,7 @@ export function SpacePlanView({ editable = false }: { editable?: boolean }) {
       ) : (
         <>
           <div
-            className="space-plan__frame"
+            className={`space-plan__frame${painting !== null && canPlace ? ' space-plan__frame--painting' : ''}`}
             data-testid="plan-frame"
             onClick={onFrameClick}
             aria-label={`Plan of ${pathLabel(nodes, nodeId)}`}
@@ -192,6 +230,45 @@ export function SpacePlanView({ editable = false }: { editable?: boolean }) {
             <svg className="space-plan__shape" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
               <path d={shapePath} vectorEffect="non-scaling-stroke" />
             </svg>
+            {/* The ceiling grid, only while a circuit is being painted — RM-037. Above the
+                outline so it can be aimed against the room, below the pins so a device is never
+                hidden by the thing being drawn around it. */}
+            {painting !== null && canPlace && (
+              <div
+                className="space-plan__lamp-grid"
+                data-testid="lamp-grid"
+                style={{ gridTemplateColumns: `repeat(${lampGrid.cols}, 1fr)`, gridTemplateRows: `repeat(${lampGrid.rows}, 1fr)` }}
+              >
+                {cells.map((cell, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    className="space-plan__cell"
+                    // Coordinates a person can act on: "column 2, row 1" is somewhere to look on
+                    // a ceiling; cell 1 of 12 is not.
+                    aria-label={`Column ${(i % lampGrid.cols) + 1}, row ${Math.floor(i / lampGrid.cols) + 1}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void toggleFixtureAt(painting, cell, lampGrid.cols, lampGrid.rows);
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+            {/* Lamps, drawn wherever the plan is — they are the lighting layout, not an editing
+                affordance, and a read-only plan that omitted them would be showing a different
+                room from the one the editor shows. */}
+            {circuits.flatMap((circuit) =>
+              (saved[circuit.id]?.planFixtures ?? []).map((lamp, i) => (
+                <span
+                  key={`${circuit.id}-${i}`}
+                  className={`space-plan__lamp${painting === circuit.id ? ' space-plan__lamp--painting' : ''}`}
+                  data-testid={`plan-lamp-${circuit.id}-${i}`}
+                  style={{ left: `${lamp.x * 100}%`, top: `${lamp.y * 100}%`, ['--lamp' as string]: colors[circuit.id] }}
+                  title={`${nameOf(circuit.id)} — lamp ${i + 1}`}
+                />
+              )),
+            )}
             {positioned.map((device) => {
               const point = planPointOf(saved[device.id]);
               if (point === null) return null;
@@ -203,12 +280,17 @@ export function SpacePlanView({ editable = false }: { editable?: boolean }) {
                   point={point}
                   stale={isReadingStale(readings[device.id])}
                   selected={armed === device.id}
-                  selectable={canPlace}
+                  // Not selectable while lamps are being painted. A frame click has to mean
+                  // exactly one thing, and enforcing that where a device can be armed is
+                  // structural — a guard in the click handler would be checking a state that
+                  // could still be entered behind it. The pin stays visible; it is a marker for
+                  // as long as the grid is up.
+                  selectable={canPlace && painting === null}
                   onSelect={() => setArmed(device.id)}
                 />
               );
             })}
-            {positioned.length === 0 && (
+            {positioned.length === 0 && Object.values(lampCounts).every((n) => n === 0) && (
               <p className="space-plan__frame-empty">
                 {/* An empty frame with no explanation reads as a failed render. */}
                 Nothing on this plan yet.
@@ -217,10 +299,35 @@ export function SpacePlanView({ editable = false }: { editable?: boolean }) {
             )}
           </div>
 
+          {strays > 0 && (
+            <p className="space-plan__note space-plan__note--warn">
+              {strays === 1 ? 'One thing sits' : `${strays} things sit`} outside the drawn outline.
+              That is allowed — the outline is a sketch, not a survey — but it is worth a look.
+            </p>
+          )}
+
           {/* Only where the plan is already editable. On the read-only Spatial view the outline
               is something to look at, and an editor there would offer a write the page has
               otherwise promised not to make. */}
           {editable && <RoomShapeEditor nodeId={nodeId} nodeName={pathLabel(nodes, nodeId)} />}
+
+          {canPlace && (
+            <LightingGridEditor
+              circuits={circuits}
+              nameOf={nameOf}
+              colors={colors}
+              counts={lampCounts}
+              painting={painting}
+              onPaint={(id) => {
+                setPainting(id);
+                // Arming and painting are two different answers to "what does a click on the
+                // frame mean". Only one may be true.
+                if (id !== null) setArmed(null);
+              }}
+              grid={lampGrid}
+              onGrid={setLampGrid}
+            />
+          )}
 
           {deeper > 0 && (
             <p className="space-plan__note">

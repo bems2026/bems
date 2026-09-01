@@ -9,6 +9,7 @@ import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { useControlLog } from './controlLog';
 import { useControlPlan } from './useControlPlan';
+import { PlanRoomPicker } from './PlanRoomPicker';
 import type { Device, SocketIndex } from '@/lib/types';
 
 export function OutletPlanCard() {
@@ -17,7 +18,7 @@ export function OutletPlanCard() {
   const log = useControlLog((s) => s.log);
   const { ask, modalProps } = useConfirm();
   const outlets = devices.filter((d) => d.class === 'outlet_dual');
-  const plan = useControlPlan();
+  const { plan, source, rooms, roomId, setRoomId } = useControlPlan();
   const unplaced = outlets.filter((d) => !plan?.OUTLET_POSITIONS[d.id]);
 
   const allOn = () => {
@@ -48,8 +49,9 @@ export function OutletPlanCard() {
         <Plug size={12} className="title-icon" aria-hidden="true" />
         CONVENIENCE OUTLETS · CO1-CO7
       </div>
+      <PlanRoomPicker id="outlet-plan-room" source={source} rooms={rooms} roomId={roomId} setRoomId={setRoomId} />
       {plan ? (
-        <div className="control-outlet-plan">
+        <div className={`control-outlet-plan${source === 'data' ? ' control-outlet-plan--data' : ''}`}>
           <plan.PlanShell />
           {outlets.map((device) => {
             const at = plan.OUTLET_POSITIONS[device.id];

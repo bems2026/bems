@@ -8,6 +8,7 @@ import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { useControlLog } from './controlLog';
 import { useControlPlan } from './useControlPlan';
+import { PlanRoomPicker } from './PlanRoomPicker';
 import type { Device } from '@/lib/types';
 
 /**
@@ -30,7 +31,7 @@ function useLightSwitches(): Device[] {
  */
 export function LightingMatrixCard() {
   const lights = useLightSwitches();
-  const plan = useControlPlan();
+  const { plan, source, rooms, roomId, setRoomId } = useControlPlan();
   const unplaced = useMemo(() => lights.filter((d) => !plan?.LIGHT_POSITIONS[d.id]), [lights, plan]);
   const send = useCommandStore((s) => s.send);
   const log = useControlLog((s) => s.log);
@@ -62,8 +63,9 @@ export function LightingMatrixCard() {
         <Lightbulb size={12} className="title-icon" aria-hidden="true" />
         CEILING LUMINAIRES · L1-L7
       </div>
+      <PlanRoomPicker id="lighting-plan-room" source={source} rooms={rooms} roomId={roomId} setRoomId={setRoomId} />
       {plan ? (
-        <div className="control-outlet-plan">
+        <div className={`control-outlet-plan${source === 'data' ? ' control-outlet-plan--data' : ''}`}>
           <plan.PlanShell />
           {lights.map((device) => {
             const cells = plan.LIGHT_POSITIONS[device.id];

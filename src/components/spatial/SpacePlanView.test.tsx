@@ -191,3 +191,179 @@ describe('SpacePlanView — placing', () => {
     expect(screen.queryByRole('button', { name: /place Rack PDU/i })).not.toBeInTheDocument();
   });
 });
+
+/**
+ * Lamps, and which switch turns them on — RM-037.
+ *
+ * The property that matters most here: a lamp is drawn where it IS, and the grid is only how it
+ * got there. Nothing below asserts a cell index, because nothing stores one.
+ */
+describe('SpacePlanView — the lighting layer', () => {
+  const circuit = (id: string, display_name: string): Device => ({ ...device(id, display_name), class: 'switch', dps_map: 'type_a' });
+
+  const seedRoom = () => {
+    useDeviceStore.setState({
+      devices: [circuit('l1', 'Row A'), circuit('l2', 'Row B'), device('co1', 'Desk outlet')],
+      latestReadings: {}, totals: null, history: {},
+    });
+    useDeviceConfigStore.setState({
+      saved: {
+        l1: cfg('l1', { spaceNodeId: 'lab', planFixtures: [{ x: 0.25, y: 0.25 }, { x: 0.75, y: 0.25 }] }),
+        l2: cfg('l2', { spaceNodeId: 'lab', planFixtures: [{ x: 0.25, y: 0.75 }] }),
+        co1: cfg('co1', { spaceNodeId: 'lab', planX: 0.5, planY: 0.5 }),
+      },
+    });
+  };
+
+  const openLab = () => fireEvent.change(screen.getByLabelText('Space'), { target: { value: 'lab' } });
+
+  it('draws every lamp of every circuit in the room', () => {
+    seedRoom();
+    render(<SpacePlanView />);
+    openLab();
+    expect(screen.getAllByTestId(/^plan-lamp-l1-/)).toHaveLength(2);
+    expect(screen.getAllByTestId(/^plan-lamp-l2-/)).toHaveLength(1);
+  });
+
+  it('gives the two circuits different colours, so the plan says which switch reaches which lamp', () => {
+    seedRoom();
+    render(<SpacePlanView />);
+    openLab();
+    const a = screen.getByTestId('plan-lamp-l1-0').style.getPropertyValue('--lamp');
+    const b = screen.getByTestId('plan-lamp-l2-0').style.getPropertyValue('--lamp');
+    expect(a).not.toBe('');
+    expect(a).not.toBe(b);
+  });
+
+  it('names the circuit on each lamp, because colour alone is not a label', () => {
+    seedRoom();
+    render(<SpacePlanView />);
+    openLab();
+    expect(screen.getByTestId('plan-lamp-l1-0')).toHaveAttribute('title', expect.stringContaining('Row A'));
+  });
+
+  it('draws lamps on the read-only plan too — they are the layout, not an editing affordance', () => {
+    seedRoom();
+    render(<SpacePlanView />);
+    openLab();
+    expect(screen.getAllByTestId(/^plan-lamp-/)).toHaveLength(3);
+  });
+
+  it('offers no lighting editor where the plan is not editable', () => {
+    seedRoom();
+    render(<SpacePlanView />);
+    openLab();
+    expect(screen.queryByRole('button', { name: /Paint lamps for Row A/ })).not.toBeInTheDocument();
+  });
+
+  it('shows no grid until a circuit is being painted, so the plan is not a spreadsheet at rest', () => {
+    seedRoom();
+    render(<SpacePlanView editable />);
+    openLab();
+    expect(screen.queryByTestId('lamp-grid')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Paint lamps for Row A/ }));
+    expect(screen.getByTestId('lamp-grid')).toBeInTheDocument();
+  });
+
+  it('writes a lamp at the tapped cell, and saves it there and then', async () => {
+    const toggleFixtureAt = vi.fn().mockResolvedValue(undefined);
+    useDeviceConfigStore.setState({ toggleFixtureAt });
+    seedRoom();
+    render(<SpacePlanView editable />);
+    openLab();
+    fireEvent.click(screen.getByRole('button', { name: /Paint lamps for Row A/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Column 2, row 1' }));
+    await waitFor(() => expect(toggleFixtureAt).toHaveBeenCalled());
+    const [id, at, cols, rows] = toggleFixtureAt.mock.calls[0];
+    expect(id).toBe('l1');
+    expect(cols).toBe(4);
+    expect(rows).toBe(3);
+    // The cell's centre, in the plan's own 0..1 frame — never a cell index.
+    expect(at).toEqual({ x: 0.375, y: 1 / 6 });
+  });
+
+  it('resizes the grid without moving a single lamp', () => {
+    // THE TRAP THIS EXISTS FOR. Storing cell indices would make this resize relocate every
+    // luminaire in the building while nothing physically moved.
+    seedRoom();
+    render(<SpacePlanView editable />);
+    openLab();
+    fireEvent.click(screen.getByRole('button', { name: /Paint lamps for Row A/ }));
+    const before = screen.getAllByTestId(/^plan-lamp-l1-/).map((e) => e.getAttribute('style'));
+    fireEvent.change(screen.getByLabelText('Columns'), { target: { value: '6' } });
+    expect(screen.getAllByTestId(/^plan-lamp-l1-/).map((e) => e.getAttribute('style'))).toEqual(before);
+  });
+
+  it('stops painting when the room changes, because a circuit in one room means nothing in another', () => {
+    seedRoom();
+    render(<SpacePlanView editable />);
+    openLab();
+    fireEvent.click(screen.getByRole('button', { name: /Paint lamps for Row A/ }));
+    fireEvent.change(screen.getByLabelText('Space'), { target: { value: 'hall' } });
+    expect(screen.queryByTestId('lamp-grid')).not.toBeInTheDocument();
+  });
+
+  it('does not arm a device while painting, so one click on the frame means one thing', () => {
+    // Enforced where a device can be ARMED rather than where a click is handled: a guard in the
+    // click handler would be checking a state that could still be entered behind it. An earlier
+    // version had exactly that, and deleting it broke nothing — which is how it was found.
+    seedRoom();
+    render(<SpacePlanView editable />);
+    openLab();
+    fireEvent.click(screen.getByRole('button', { name: /Paint lamps for Row A/ }));
+    fireEvent.click(screen.getByTestId('plan-pin-co1'));
+    const frame = screen.getByTestId('plan-frame');
+    sizeTheFrame(frame);
+    fireEvent.click(frame, { clientX: 150, clientY: 250 });
+    expect(placeOnPlan).not.toHaveBeenCalled();
+  });
+
+  it('counts the lamps each circuit already has, so a room can be checked against the ceiling', () => {
+    seedRoom();
+    render(<SpacePlanView editable />);
+    openLab();
+    expect(screen.getByTestId('lamp-count-l1')).toHaveTextContent('2');
+    expect(screen.getByTestId('lamp-count-l2')).toHaveTextContent('1');
+  });
+
+  it('says a room has no lighting circuits rather than showing an editor that can do nothing', () => {
+    useDeviceStore.setState({ devices: [device('co1', 'Desk outlet')], latestReadings: {}, totals: null, history: {} });
+    useDeviceConfigStore.setState({ saved: { co1: cfg('co1', { spaceNodeId: 'lab' }) } });
+    render(<SpacePlanView editable />);
+    openLab();
+    expect(screen.getByText(/No lighting circuits are in this space/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * The outline is the operator's sketch, not a survey. A device outside it is worth pointing at
+ * and must never be refused — refusing would make a hand-drawn wall authoritative over a
+ * building. RM-036/RM-037.
+ */
+describe('SpacePlanView — a device outside the drawn room', () => {
+  const drawn = [
+    nodes[0],
+    { ...nodes[1], attrs: { plan: { kind: 'circle' } } },
+    nodes[2],
+  ] as SpaceNode[];
+
+  it('warns, and still shows the device where it was put', () => {
+    seedTree({ nodes: drawn });
+    useDeviceStore.setState({ devices: [device('co1', 'Desk outlet')], latestReadings: {}, totals: null, history: {} });
+    // A circle inscribed in the frame does not reach the corner.
+    useDeviceConfigStore.setState({ saved: { co1: cfg('co1', { spaceNodeId: 'lab', planX: 0.02, planY: 0.02 }) } });
+    render(<SpacePlanView />);
+    fireEvent.change(screen.getByLabelText('Space'), { target: { value: 'lab' } });
+    expect(screen.getByTestId('plan-pin-co1')).toBeInTheDocument();
+    expect(screen.getByText(/outside the drawn outline/)).toBeInTheDocument();
+  });
+
+  it('says nothing when every device is inside it', () => {
+    seedTree({ nodes: drawn });
+    useDeviceStore.setState({ devices: [device('co1', 'Desk outlet')], latestReadings: {}, totals: null, history: {} });
+    useDeviceConfigStore.setState({ saved: { co1: cfg('co1', { spaceNodeId: 'lab', planX: 0.5, planY: 0.5 }) } });
+    render(<SpacePlanView />);
+    fireEvent.change(screen.getByLabelText('Space'), { target: { value: 'lab' } });
+    expect(screen.queryByText(/outside the drawn outline/)).not.toBeInTheDocument();
+  });
+});

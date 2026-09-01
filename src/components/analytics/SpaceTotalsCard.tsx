@@ -104,7 +104,7 @@ export function SpaceTotalsCard({ range }: { range: AnalyticsRange }) {
 
       {configured && options.length === 0 && (
         <p className="space-totals-card__note">
-          No spaces defined yet. Add them from Spaces on the Devices page, then place devices into
+          No spaces defined yet. Add them in Settings, under Spaces, then place devices into
           them — this card totals whatever is placed.
         </p>
       )}

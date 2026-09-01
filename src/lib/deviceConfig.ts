@@ -12,6 +12,8 @@
  * operator's own functional grouping and means nothing to the bridge.
  */
 import type { DeviceFunction } from './deviceFunctions';
+import { parseFixtures } from './lightingGrid';
+import type { PlanPoint } from './planLayout';
 import { coerceFunctions } from './deviceFunctions';
 import type { Device } from './types';
 import { pathLabel, type SpaceNode } from './spaceTree';
@@ -39,6 +41,13 @@ export interface DeviceConfig {
    */
   planX: number | null;
   planY: number | null;
+  /**
+   * Where the several things this device controls are — today, a lighting circuit and its
+   * lamps. Empty for everything else. Separate from planX/planY because a device HAS a
+   * position while a circuit has a SET of them, and folding both into one array would make
+   * every consumer ask which it was looking at. See src/lib/lightingGrid.ts.
+   */
+  planFixtures: PlanPoint[];
   room: string | null;
   category: DeviceCategory | null;
   loadShedGroup: LoadShedGroup | null;
@@ -77,7 +86,7 @@ const CATEGORY_LABEL = Object.fromEntries(CATEGORY_OPTIONS.map((o) => [o.value, 
 const LOAD_SHED_SHORT: Record<LoadShedGroup, string> = { group_1: 'Shed 1', group_2: 'Shed 2', group_3: 'Shed 3', never: 'Protected' };
 
 export function emptyDeviceConfig(deviceId: string): DeviceConfig {
-  return { deviceId, spaceNodeId: null, planX: null, planY: null, room: null, category: null, loadShedGroup: null, displayNameOverride: null, notes: null, functions: null };
+  return { deviceId, spaceNodeId: null, planX: null, planY: null, planFixtures: [], room: null, category: null, loadShedGroup: null, displayNameOverride: null, notes: null, functions: null };
 }
 
 /** Unknown values become null rather than throwing or passing through. The only ways one can
@@ -122,6 +131,7 @@ export function normalizeDeviceConfig(config: DeviceConfig): DeviceConfig {
     spaceNodeId,
     planX: point?.x ?? null,
     planY: point?.y ?? null,
+    planFixtures: parseFixtures(config.planFixtures),
     room: text(config.room),
     category: coerceCategory(config.category),
     loadShedGroup: coerceLoadShedGroup(config.loadShedGroup),
@@ -145,6 +155,7 @@ export function isSameConfig(a: DeviceConfig, b: DeviceConfig): boolean {
   return (
     a.spaceNodeId === b.spaceNodeId &&
     a.planX === b.planX &&
+    JSON.stringify(a.planFixtures) === JSON.stringify(b.planFixtures) &&
     a.planY === b.planY &&
     a.room === b.room &&
     a.category === b.category &&

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { toggleFixture } from '@/lib/lightingGrid';
 import { supabase } from '@/config/supabase';
 import { fetchDeviceConfigs, writeDeviceConfig } from '@/lib/supabaseDeviceConfig';
 import { coerceFunctions, type DeviceFunction } from '@/lib/deviceFunctions';
@@ -51,6 +52,8 @@ interface DeviceConfigState {
    * have, which is the same class of lie as a frozen power reading.
    */
   placeOnPlan: (deviceId: string, point: PlanPoint | null) => Promise<void>;
+  /** Adds or removes one lamp for a lighting circuit, snapped to the tapped grid cell. */
+  toggleFixtureAt: (deviceId: string, at: PlanPoint, cols: number, rows: number) => Promise<void>;
   save: (deviceId: string) => Promise<void>;
 }
 
@@ -128,6 +131,25 @@ export const useDeviceConfigStore = create<DeviceConfigState>((set, get) => ({
       const base = effectiveConfig(s.draft, s.saved, deviceId);
       return { draft: { ...s.draft, [deviceId]: { ...base, planX: point?.x ?? null, planY: point?.y ?? null } } };
     }),
+
+  /**
+   * Toggles one lamp for a lighting circuit and saves — RM-037.
+   *
+   * Built on the effective config for the same reason  is: the write is a
+   * whole-row upsert, so painting a ceiling from a blank base would erase the notes, category
+   * and shed tier of the very circuit being drawn.
+   *
+   * Saves immediately, like . A ceiling on screen that the database does not have
+   * is the same dishonesty a pin behind a Save button would be.
+   */
+  toggleFixtureAt: async (deviceId, at, cols, rows) => {
+    set((s) => {
+      const base = effectiveConfig(s.draft, s.saved, deviceId);
+      const next = toggleFixture(base.planFixtures, at, cols, rows);
+      return { draft: { ...s.draft, [deviceId]: { ...base, planFixtures: next } } };
+    });
+    await get().save(deviceId);
+  },
 
   placeOnPlan: async (deviceId, point) => {
     get().setDraftPosition(deviceId, point);
