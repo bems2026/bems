@@ -1641,7 +1641,7 @@ fall back to it).
       un-editable and reopening the editor could only offer "start again". One pure
       `shapeToPath` renders every kind; "eject to grid" rasterises any preset into a nudgeable
       cols×rows bitmap. No migration: `attrs` exists for exactly this.
-- [x] **RM-037 (M)** **CODE DONE 2026-09-01 — `supabase/phase25_plan_fixtures.sql` NOT YET APPLIED.**
+- [x] **RM-037 (M)** **DONE 2026-09-01, migration applied and verified live, deployed.**
       **Lighting layout becomes data, and the last hard-coded geometry can go.**
       `device_config.plan_fixtures` holds a switch's lamps as normalised points — **not grid cell
       indices**, because an index is meaningless without the grid that made it, so a 4×3 → 5×3
@@ -1672,13 +1672,29 @@ fall back to it).
       operator's sketch, so refusing a placement would make a hand-drawn wall authoritative over
       the building.
 
-      **STILL TO DO:** apply `supabase/phase25_plan_fixtures.sql` by hand in the SQL editor —
-      **before** deploying this frontend, not after. `readDeviceConfigs` names every column in one
-      `select`, so against a database without `plan_fixtures` PostgREST fails the whole query
-      (42703) rather than omitting the column, and that query carries rooms, categories, shed
-      groups and plan positions. Deploying first does not degrade the plan; it takes the whole
-      device-config layer down until the migration runs. Not rehearsed: `supabase/rehearse.sh`
-      needs Docker, which is not installed on the workstation this was written on.
+      *Migration verified live before deploying, in that order and for a reason.*
+      `readDeviceConfigs` names every column in one `select`, so against a database without
+      `plan_fixtures` PostgREST fails the WHOLE query (42703) rather than omitting the column —
+      and that query carries rooms, categories, shed groups and plan positions. Deploying first
+      would not have degraded the plan; it would have taken the device-config layer down.
+      Verified from the Pi against the live project: the column is selectable, and so is the
+      frontend's exact select list — 14 rows, HTTP 200, `plan_fixtures` present on every row and
+      null on all of them. Then `git pull` + `npm run build` on the Pi, 979 tests green there,
+      and the served bundle confirmed to carry the new strings.
+
+      *Two things this was NOT able to check.* `supabase/rehearse.sh` needs Docker, which is not
+      installed on the workstation, so the file was never rehearsed against a throwaway database.
+      And `device_config_plan_fixtures_is_array` is unconfirmed: a check constraint is not
+      evaluated when a statement matches zero rows, so the read-only probe (a PATCH filtered to a
+      non-existent id) returned 204 either way. Confirming it needs one query in the SQL editor:
+      `select conname from pg_constraint where conrelid = 'device_config'::regclass;`. The column,
+      not the constraint, is what gated the deploy, and `parseFixtures` already tolerates junk.
+
+      **NOTHING IS DRAWN YET.** Measured on the live database the same day: 0 of 14 rows have a
+      `space_node_id`, 0 have a position, 0 have lamps. So the Control page still renders the
+      hand-surveyed pack — correctly, that is the documented fallback — and the floor plan lists
+      every device under "Not placed". RM-035/036/037 built the machinery; drawing this office is
+      an operator action and is what unblocks the `carePlan.ts` deletion below.
 
       Deleting `carePlan.ts` remains a **follow-up**, once this office's room is actually drawn —
       doing it in the same change would leave the CARE office with no plan between the deploy and
