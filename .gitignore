@@ -20,4 +20,11 @@ server/.env.*
 
 # Generated baseline reports (Milestone 1 artifacts). Dated copies belong with the
 # submission, not in the repository, where the wrong quarter would eventually get cited.
-reports/
+#
+# LEADING SLASH, so this means the reports directory at the ROOT and not any directory called
+# `reports` anywhere in the tree. Unanchored it also matched `src/components/reports/`, where the
+# Reports page lives: the files already committed there stayed tracked, so nothing looked wrong,
+# but a NEW file added beside them was silently ignored — absent from `git status`, absent from
+# the commit, and gone on the next clone with no error at any point. Measured 2026-09-01 with a
+# probe file and `git check-ignore`.
+/reports/
