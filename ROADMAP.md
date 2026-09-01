@@ -1702,7 +1702,7 @@ fall back to it).
 
 ### Settings, policy and layout — RM-038 to RM-040
 
-- [x] **RM-038 (M)** **CODE DONE 2026-09-01 — `supabase/phase26_policy_setpoint.sql` NOT YET APPLIED.**
+- [x] **RM-038 (M)** **DONE 2026-09-01, migration applied and verified live, deployed.**
       **The aircon floor stops being a build constant.** `policy.acu_min_setpoint_c` is the coldest
       setpoint the building permits and it comes from the university's energy-efficiency policy —
       a rule that changes. It was compiled into both the browser bundle and the proxy from
@@ -1737,10 +1737,14 @@ fall back to it).
       `ACU_MAX_C` = 30) is still applied after the policy floor, so nothing written here can widen
       the range beyond what the IR library has codes for.
 
-      **STILL TO DO:** apply `supabase/phase26_policy_setpoint.sql`, then set the floor to 24 from
-      Settings → Building policy. Until it is applied the proxy simply keeps using the build value
-      — unlike phase25 this one degrades rather than breaking, because `livePolicy` treats a
-      missing function or an unreadable row as a failed read.
+      *Verified live 2026-09-01.* The migration is applied; the function refuses 12 and 31, raises
+      on an unknown site id, and the floor is set to 24. `livePolicy` was proven against the real
+      project **non-vacuously**: the site file also says 24, so reading back 24 would have proved
+      nothing — the database was set to 26, the module read 26 rather than the build's 24 and
+      reported `source: 'database'`, and it was set back. Deployed and the proxy restarted.
+      One check that could NOT be made non-vacuous here: "every other policy key is untouched"
+      passed against a live policy that has only the one key. The rehearsal proves it properly,
+      with `dispatch` seeded first.
 
       *Rehearsed:* `supabase/rehearse.sh` on the Pi, PostgreSQL 16, all migrations in order plus
       seven new assertions for the function — valid write, key isolation, NULL removing the key,
@@ -1763,6 +1767,65 @@ fall back to it).
       uniquely showed: site id and timezone (both in the header chip) and the aircon floor (which
       RM-038 gave a better home). *No longer displayed anywhere:* "commands reach hardware" and
       "classes that dispatch". Worth knowing before somebody goes looking for them.
+
+- [x] **RM-041 (M)** **CODE DONE 2026-09-01 — `supabase/phase27_period_reports.sql` NOT YET APPLIED.**
+      **Reports gain a week.** The operator asked for weekly alongside monthly: a month is what
+      gets reported upward, a week is how somebody notices that something changed.
+
+      *Not a second copy of phase12.* The obvious move — `weekly_reports` plus a twin generator —
+      is 140 lines of duplicated seam handling, and the seam is the subtle part (the aggregation
+      reads the hourly rollup UNION the not-yet-rolled-up raw rows, excluding raw hours the rollup
+      already covers). Two copies drift, and the drift is silent because the numbers stay
+      plausible. Reading phase12's function, the only month-specific things in it are the
+      truncation, the interval and the target tables — so `generate_period_report(period, start,
+      tz)` keeps the shape and parameterises the window, writing period-agnostic tables keyed
+      `(period, period_start, …)`.
+
+      **phase12 is left entirely alone.** Its tables, function and grants all stay: they are what
+      the deployment runs today, and rewriting a working aggregation nobody asked to change, on a
+      live building, to gain a feature that does not need it, is not a trade worth making. The
+      migration backfills every existing month through the new function, and the rehearsal
+      asserts the two agree **row for row and column for column** — checked by perturbing the new
+      function's peak, which fails it. The daemon keeps calling phase12's function alongside the
+      new one so the comparison stays possible.
+
+      *The one place a week is genuinely different, not just differently windowed:* building
+      energy. A month uses the bridge's own month counter, exactly as phase12 does. A week cannot
+      — over a week that counter reads as the month-to-date total, which presented as "energy this
+      week" would be wrong by however much the month had already accumulated and would look
+      entirely plausible. A week sums DAILY maxima instead, the same technique phase12 uses per
+      device, which is also independent of whatever day the meter's own week counter rolls over
+      on. The rehearsal asserts the two figures differ, checked by making the week use the month
+      counter, which fails it.
+
+      *Frontend:* a Monthly/Weekly switch on Reports; the period list, summary, per-device table
+      and CSV all follow it. Both the list and the per-device rows are tagged with the period they
+      were fetched for, because **2026-06-01 is both a month start and a Monday** — untagged, one
+      renders under the other's heading. That guard was vacuous when first written (the fixture
+      resolved instantly, so there was no stale window) and now holds the list fetch open to
+      create one.
+
+      *Daemon:* `weeksNeedingReport` mirrors `monthsNeedingReport`, grace period and
+      rebuild-once rule included, capped at 12 a pass because weeks accrue ~4.3x faster than
+      months. It asks `period_building_reports`, not phase12's table, because that is what the
+      page reads — a month "done" in the old table and absent from the new one is a month the
+      page shows nothing for.
+
+      **STILL TO DO:** apply `supabase/phase27_period_reports.sql`. It backfills on the way in, so
+      the Reports page has its history from the first load. Until it is applied the page's
+      Monthly tab reads an absent table — **apply this before deploying the frontend**, same order
+      as phase25 and for the same reason.
+
+      *Rehearsed:* `supabase/rehearse.sh` on the Pi against PostgreSQL 16, with fourteen new
+      assertions — phase12 equivalence both ways, the backfill actually running, week truncation
+      to Monday, a week and a month coexisting on one start date, upsert on regeneration, the
+      derived 10080-minute expectation, an unknown period refused by both the function and the
+      check constraint, and the building-energy distinction above.
+
+- [ ] **RM-042 (S)** Retire `monthly_reports`, `monthly_building_reports` and
+      `generate_monthly_report`, and drop the second RPC call in `server/reports.mjs`. Blocked
+      until the period tables have carried a full month in production and the two have been
+      compared on real data rather than only on the rehearsal's fixtures.
 
 - [x] **RM-008** ~~Apply the three Phase 9 migrations.~~ **Done 2026-08-21.** Applied via the
       Supabase Management API; all four objects confirmed live (`readings_buckets`,

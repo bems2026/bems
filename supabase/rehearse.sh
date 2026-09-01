@@ -155,7 +155,7 @@ do $$
 declare
   base   timestamptz := date_trunc('hour', now()) - interval '2 hours';
   h0     timestamptz := timestamptz '2026-06-01 00:00:00+00';
-  n int; n2 int; v numeric; rolled int; deleted int; ok boolean; site_of text; txt text;
+  n int; n2 int; v numeric; rolled int; deleted int; ok boolean; site_of text; txt text; backfill_month date;
   n_bldg  uuid := gen_random_uuid();
   n_floor uuid := gen_random_uuid();
   n_room  uuid := gen_random_uuid();
@@ -584,6 +584,131 @@ begin
 
   -- Put it back, so anything after this sees the site as seeded.
   perform set_acu_min_setpoint('mmsu-nberic-care', 25);
+
+
+  -- ---- generate_period_report (phase 27) -----------------------------------------------
+  --
+  -- The migration's own backfill loop is a NO-OP here and correctly so: it runs while the
+  -- migrations are applying, and `generate_monthly_report` is not called until this assertion
+  -- block, so there are no months to backfill yet. (On the live database there are, which is the
+  -- case it exists for.) The loop body is therefore exercised here instead — the same statement
+  -- the migration runs, over the month generated above.
+  --
+  -- Finding this took the second assertion below rather than the first: an empty join satisfies
+  -- "no rows disagree" perfectly.
+  -- BOTH are regenerated here, deliberately. `generate_monthly_report` was called much earlier
+  -- in this block, and the sections between then and now seed more devices and more rows — so
+  -- comparing its output against a fresh run of the new function compared two different
+  -- INSTANTS, not two functions. It read "backfilled 2 month rows against 1", which looks like a
+  -- disagreement and was an experiment with a moving fixture.
+  for backfill_month in select distinct month from monthly_building_reports order by month loop
+    perform generate_monthly_report(backfill_month);
+    perform generate_period_report('month', backfill_month);
+  end loop;
+  --
+  -- THE ASSERTION THIS WHOLE FILE RESTS ON. phase27 generalises phase12's aggregation rather
+  -- than copying it, and backfills every existing month through the new function. If the two
+  -- disagree by so much as a rounding, the backfill has quietly rewritten history — and every
+  -- number on the Reports page would still look entirely plausible.
+  --
+  -- Compared row for row and column for column, not just on the headline figure.
+  select count(*) into n
+    from monthly_reports m
+    join period_reports p
+      on p.period = 'month' and p.period_start = m.month and p.device_id = m.device_id
+   where m.energy_kwh            is distinct from p.energy_kwh
+      or m.peak_power_w          is distinct from p.peak_power_w
+      or m.avg_power_w           is distinct from p.avg_power_w
+      or m.online_sample_count   is distinct from p.online_sample_count
+      or m.expected_sample_count is distinct from p.expected_sample_count;
+  assert n = 0, format('period report: %s device row(s) disagree with the phase12 report', n);
+
+  -- ...and every row is actually there. A join that matched nothing would satisfy the check
+  -- above vacuously, which is exactly how a backfill that ran zero times would pass.
+  select count(*) into n from monthly_reports;
+  select count(*) into n2 from period_reports where period = 'month';
+  assert n = n2 and n > 0,
+    format('period report: backfilled %s month rows against %s in phase12', n2, n);
+
+  select count(*) into n
+    from monthly_building_reports m
+    join period_building_reports p
+      on p.period = 'month' and p.period_start = m.month
+   where m.energy_kwh         is distinct from p.energy_kwh
+      or m.peak_total_power_w is distinct from p.peak_total_power_w
+      or m.avg_voltage        is distinct from p.avg_voltage
+      or m.command_count      is distinct from p.command_count
+      or m.anomaly_count      is distinct from p.anomaly_count
+      or m.online_sample_count is distinct from p.online_sample_count;
+  assert n = 0, format('period report: %s building row(s) disagree with the phase12 report', n);
+
+  -- ---- and now the thing this was all for: a week ---------------------------------------
+  -- 2026-06-01 was a Monday, so the seeded fixtures fall in the week beginning that day.
+  perform generate_period_report('week', date '2026-06-03');
+
+  -- Truncated, not taken as given. A caller passing a Wednesday must get that WEEK, or two
+  -- callers would write two different rows for the same seven days.
+  select count(*) into n from period_reports where period = 'week' and period_start = date '2026-06-01';
+  assert n > 0, 'period report: a mid-week date must resolve to that week''s Monday';
+  select count(*) into n from period_reports where period = 'week' and period_start = date '2026-06-03';
+  assert n = 0, 'period report: nothing may be stored under the date that was passed in';
+
+  -- A week is 7 * 24 * 60 minutes, and the expectation is derived from the window rather than
+  -- assumed — the same reason phase12 derives a month's length instead of assuming 30 days.
+  select expected_sample_count into n from period_reports
+   where period = 'week' and period_start = date '2026-06-01' and device_id = 'mtr_hist';
+  assert n = 10080, format('period report: a week is 10080 minutes, got %s', n);
+
+  -- The week and the month over the same fixtures see the same samples, because every seeded
+  -- reading falls inside both. Energy too: it is a sum of daily maxima, and the days are shared.
+  select online_sample_count into n from period_reports
+   where period = 'week' and period_start = date '2026-06-01' and device_id = 'mtr_hist';
+  assert n = 60, format('period report: expected the week to see 60 observed samples, got %s', n);
+  select energy_kwh into v from period_reports
+   where period = 'week' and period_start = date '2026-06-01' and device_id = 'mtr_hist';
+  assert v = 0.59, format('period report: expected week energy 0.59 from daily maxima, got %s', v);
+
+  -- BUILDING ENERGY FOR A WEEK IS NOT THE MONTH COUNTER. That counter is a running
+  -- month-to-date figure; over a week it reads as however much the month had accumulated by that
+  -- week's end. Here the seeded month counter reaches 3.57 while the DAILY counter's maxima sum
+  -- to 1.19 — so this assertion fails outright if the week ever starts using the month counter,
+  -- which is the mistake it exists to prevent.
+  select energy_kwh into v from period_building_reports
+   where period = 'week' and period_start = date '2026-06-01';
+  select energy_kwh into v2 from period_building_reports
+   where period = 'month' and period_start = date '2026-06-01';
+  assert v is distinct from v2,
+    format('period report: a week must not report the month counter (both read %s)', v);
+  assert v is not null, 'period report: a week must still report SOME building energy';
+
+  -- Regenerating is an upsert, not a duplicate key. A report rebuilt after more of its period
+  -- has been rolled up is built from MORE data, so the newer answer replaces the older one.
+  perform generate_period_report('week', date '2026-06-01');
+  select count(*) into n from period_reports
+   where period = 'week' and period_start = date '2026-06-01' and device_id = 'mtr_hist';
+  assert n = 1, format('period report: regenerating must upsert, found %s rows', n);
+
+  -- A week and a month starting on the same day are different rows, not one overwriting the
+  -- other. This is what the `period` column is for, and a primary key that omitted it would
+  -- silently make the second generation clobber the first.
+  select count(*) into n from period_reports
+   where period_start = date '2026-06-01' and device_id = 'mtr_hist';
+  assert n = 2, format('period report: week and month must coexist for one start date, got %s', n);
+
+  -- An unknown period raises rather than writing a row nothing will ever read.
+  begin
+    perform generate_period_report('fortnight', date '2026-06-01');
+    assert false, 'period report: an unknown period must raise';
+  exception when invalid_parameter_value then
+    null;  -- expected
+  end;
+  begin
+    insert into period_reports (period, period_start, device_id, online_sample_count, expected_sample_count)
+    values ('fortnight', date '2026-06-01', 'mtr_hist', 0, 0);
+    assert false, 'period report: the check constraint must refuse an unknown period';
+  exception when check_violation then
+    null;  -- expected
+  end;
 
   raise notice 'all assertions passed';
 end $$;

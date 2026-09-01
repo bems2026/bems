@@ -307,14 +307,19 @@ async function retentionPass() {
  * recording the building's electricity. */
 async function reportPass() {
   try {
-    const { generated, failed, reason } = await runReportGeneration({ client: supabase });
+    const { generated, generatedWeeks = [], failed, reason } = await runReportGeneration({ client: supabase });
     if (generated.length > 0) {
-      console.log(`[ibems-ingest] reports: generated ${generated.join(', ')}`);
+      console.log(`[ibems-ingest] reports: generated months ${generated.join(', ')}`);
+    }
+    if (generatedWeeks.length > 0) {
+      // Named as weeks, because a bare list of dates beside a list of first-of-months reads as
+      // one list with some odd entries in it.
+      console.log(`[ibems-ingest] reports: generated weeks ${generatedWeeks.join(', ')}`);
     }
     for (const f of failed) {
       console.error(`[ibems-ingest] reports: ${f.month} failed (will retry on the next check): ${f.error}`);
     }
-    if (generated.length === 0 && failed.length === 0) {
+    if (generated.length === 0 && generatedWeeks.length === 0 && failed.length === 0) {
       // The real reason, not the most reassuring one — "every complete month already has a
       // report" is vacuously true when no month has finished at all, and reads to whoever is
       // scanning this journal as though reports exist.

@@ -7,17 +7,18 @@ import { supabase } from '@/config/supabase';
 import { toCsv, downloadCsv, type CsvColumn } from '@/lib/csv';
 import {
   coverageOf,
-  formatMonth,
-  getDeviceReports,
-  getReportMonths,
+  formatPeriod,
+  getDevicePeriodReports,
+  getReportPeriods,
   isQuotable,
   type Coverage,
-  type MonthlyBuildingReport,
-  type MonthlyDeviceReport,
+  type PeriodBuildingReport,
+  type ReportPeriod,
+  type PeriodDeviceReport,
 } from '@/lib/supabaseReports';
 
 /**
- * Monthly energy reports — Phase 12.
+ * Energy reports, weekly or monthly — Phase 12, generalised by RM-041.
  *
  * PULL, NOT PUSH: reports are generated server-side into `monthly_reports` and read here.
  * There is no email or webhook delivery, deliberately — that would mean an SMTP credential
@@ -82,8 +83,22 @@ const DEVICE_CSV_COLUMNS: readonly CsvColumn<Record<string, unknown>>[] = [
 
 export function ReportsPage() {
   const devices = useDeviceStore((s) => s.devices);
-  const [months, setMonths] = useState<MonthlyBuildingReport[] | null>(null);
+  /**
+   * Week or month — RM-041. The operator asked for both, and they answer different questions: a
+   * month is what gets reported upward, a week is how you notice something changed.
+   *
+   * Changing it clears the selection rather than trying to map one period onto the other. The
+   * week containing 1 July is not "July", and a mapping that picked one would be inventing a
+   * correspondence that does not exist.
+   */
+  const [period, setPeriod] = useState<ReportPeriod>('month');
+  /** Tagged with the period it was fetched for, and derived — the same shape as `fetched`
+   * below and for the same reason. Clearing it inside the effect was a synchronous setState in
+   * a commit, which cascades a render; and until it cleared, the list of MONTHS would render
+   * under a heading that said weeks. */
+  const [loaded, setLoaded] = useState<{ period: ReportPeriod; list: PeriodBuildingReport[] } | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const months = loaded && loaded.period === period ? loaded.list : null;
   /**
    * Tagged with the month it was fetched for, and derived rather than stored — the same fix
    * commit c5d4e18 made for `deviceStore.history`, for the same reason. A plain `rows` state
@@ -92,7 +107,7 @@ export function ReportsPage() {
    * cleared, render July's per-device figures under August's heading. A result for another
    * month simply is not a result for this one.
    */
-  const [fetched, setFetched] = useState<{ month: string; rows: MonthlyDeviceReport[] } | null>(null);
+  const [fetched, setFetched] = useState<{ period: ReportPeriod; month: string; rows: PeriodDeviceReport[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const nameOf = useCallback(
@@ -103,33 +118,37 @@ export function ReportsPage() {
   useEffect(() => {
     if (!supabase) return;
     let cancelled = false;
-    getReportMonths()
+    getReportPeriods(period)
       .then((list) => {
         if (cancelled) return;
-        setMonths(list);
-        setSelected((current) => current ?? list[0]?.month?.slice(0, 10) ?? null);
+        setLoaded({ period, list });
+        // Always the newest of the period just switched to — NOT `current ?? …`, which would
+        // keep a month's date selected after switching to weeks and then match no week at all.
+        setSelected(list[0]?.period_start?.slice(0, 10) ?? null);
       })
       .catch((err) => !cancelled && setError(String(err)));
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [period]);
 
   useEffect(() => {
     if (!supabase || !selected) return;
     let cancelled = false;
-    getDeviceReports(selected)
-      .then((list) => !cancelled && setFetched({ month: selected, rows: list }))
+    getDevicePeriodReports(period, selected)
+      .then((list) => !cancelled && setFetched({ period, month: selected, rows: list }))
       .catch((err) => !cancelled && setError(String(err)));
     return () => {
       cancelled = true;
     };
-  }, [selected]);
+  }, [period, selected]);
 
-  const rows = fetched && fetched.month === selected ? fetched.rows : null;
+  // Tagged with the PERIOD as well as the start, so week 2026-06-01's rows are never rendered
+  // under month 2026-06-01's heading — the two are different reports that share a first day.
+  const rows = fetched && fetched.month === selected && fetched.period === period ? fetched.rows : null;
 
   const building = useMemo(
-    () => months?.find((m) => m.month.slice(0, 10) === selected) ?? null,
+    () => months?.find((m) => m.period_start.slice(0, 10) === selected) ?? null,
     [months, selected]
   );
   const buildingCoverage = building ? coverageOf(building.online_sample_count, building.expected_sample_count) : null;
@@ -139,6 +158,7 @@ export function ReportsPage() {
     const flat = rows.map((r) => {
       const c = coverageOf(r.online_sample_count, r.expected_sample_count);
       return {
+        period,
         month: selected,
         device_id: r.device_id,
         device_name: nameOf(r.device_id),
@@ -151,13 +171,15 @@ export function ReportsPage() {
         expected_sample_count: r.expected_sample_count,
       };
     });
-    downloadCsv(`ibems-report-${selected.slice(0, 7)}.csv`, toCsv(flat, DEVICE_CSV_COLUMNS));
+    // The whole date for a week, because seven of them share a `YYYY-MM` and would overwrite
+    // each other in a downloads folder.
+    downloadCsv(`ibems-${period}-report-${period === 'week' ? selected : selected.slice(0, 7)}.csv`, toCsv(flat, DEVICE_CSV_COLUMNS));
   };
 
   if (!supabase) {
     return (
       <>
-        <PageHeader title="Reports" sub="Monthly energy reports" />
+        <PageHeader title="Reports" sub="Weekly and monthly energy reports" />
         <p className="reports-note">
           Reports are stored in Supabase, which is not configured in this build. Nothing to show — rather than an
           empty table that would look like a month with no consumption.
@@ -172,7 +194,7 @@ export function ReportsPage() {
         title="Reports"
         sub={
           <>
-            Monthly energy, demand and activity per device{' '}
+            {period === 'week' ? 'Weekly' : 'Monthly'} energy, demand and activity per device{' '}
             <InfoHint>
               Generated server-side once a month has ended and settled, from the same hourly archive the long-range
               charts read. Every figure carries the share of the month actually observed — a partial month produces a
@@ -198,10 +220,26 @@ export function ReportsPage() {
         </p>
       ) : null}
 
+      {/* Week or month — RM-041. Two buttons rather than a select: there are exactly two, and a
+          select would hide one of them behind a click. */}
+      <div className="reports-periods" role="group" aria-label="Report period">
+        {(['month', 'week'] as const).map((p) => (
+          <button
+            key={p}
+            type="button"
+            className={`analytics-scope-btn${period === p ? ' analytics-scope-btn--active' : ''}`}
+            aria-pressed={period === p}
+            onClick={() => setPeriod(p)}
+          >
+            {p === 'month' ? 'Monthly' : 'Weekly'}
+          </button>
+        ))}
+      </div>
+
       {months && months.length > 0 ? (
-        <div className="reports-months" role="group" aria-label="Report month">
+        <div className="reports-months" role="group" aria-label={period === 'week' ? 'Report week' : 'Report month'}>
           {months.map((m) => {
-            const key = m.month.slice(0, 10);
+            const key = m.period_start.slice(0, 10);
             return (
               <button
                 key={key}
@@ -210,7 +248,7 @@ export function ReportsPage() {
                 aria-pressed={selected === key}
                 onClick={() => setSelected(key)}
               >
-                {formatMonth(key)}
+                {formatPeriod(period, key)}
               </button>
             );
           })}
@@ -218,9 +256,9 @@ export function ReportsPage() {
       ) : null}
 
       {building ? (
-        <section className="devices-table-card reports-summary" aria-label={`Building summary for ${formatMonth(building.month)}`}>
+        <section className="devices-table-card reports-summary" aria-label={`Building summary for ${formatPeriod(period, building.period_start)}`}>
           <h2 className="card-title">
-            {formatMonth(building.month)} · building <CoverageTag coverage={buildingCoverage} />
+            {formatPeriod(period, building.period_start)} · building <CoverageTag coverage={buildingCoverage} />
           </h2>
           <dl className="reports-summary__grid">
             <div>
@@ -263,7 +301,7 @@ export function ReportsPage() {
 
       {rows && rows.length > 0 ? (
         <div className="devices-table-card devices-table-scroll">
-          <table className="devices-table reports-table" aria-label={`Per-device report for ${selected ? formatMonth(selected) : ''}`}>
+          <table className="devices-table reports-table" aria-label={`Per-device report for ${selected ? formatPeriod(period, selected) : ''}`}>
             <thead>
               <tr>
                 <th scope="col">Device</th>
@@ -292,7 +330,7 @@ export function ReportsPage() {
       ) : null}
 
       {rows?.length === 0 && selected ? (
-        <p className="reports-note">No per-device rows for {formatMonth(selected)}.</p>
+        <p className="reports-note">No per-device rows for {formatPeriod(period, selected)}.</p>
       ) : null}
     </>
   );

@@ -123,3 +123,89 @@ export async function getDeviceReports(month: string): Promise<MonthlyDeviceRepo
   if (error) throw new Error(`Supabase report fetch failed for ${month}: ${error.message}`);
   return (data ?? []) as MonthlyDeviceReport[];
 }
+
+/**
+ * Which period a report covers — RM-041.
+ *
+ * A WEEK IS ITS MONDAY, because `date_trunc('week')` and ISO-8601 both say so, and because the
+ * generator truncates whatever date it is given. Two callers passing different days of the same
+ * week write the same row.
+ */
+export type ReportPeriod = 'week' | 'month';
+
+export interface PeriodDeviceReport {
+  period: ReportPeriod;
+  period_start: string;
+  device_id: string;
+  energy_kwh: number | null;
+  peak_power_w: number | null;
+  avg_power_w: number | null;
+  online_sample_count: number;
+  expected_sample_count: number;
+}
+
+export interface PeriodBuildingReport {
+  period: ReportPeriod;
+  period_start: string;
+  energy_kwh: number | null;
+  peak_total_power_w: number | null;
+  avg_voltage: number | null;
+  phase_current_red_avg: number | null;
+  phase_current_yellow_avg: number | null;
+  phase_current_blue_avg: number | null;
+  command_count: number;
+  command_count_manual: number;
+  command_count_schedule: number;
+  command_count_autoshed: number;
+  anomaly_count: number;
+  online_sample_count: number;
+  expected_sample_count: number;
+  generated_at: string;
+}
+
+/**
+ * Pure. How a period reads in a list: `July 2026`, or `Mon 6 Jul 2026` for the week starting
+ * then.
+ *
+ * `timeZone: 'UTC'` for the same reason `formatMonth` pins it — this formats a bare DATE STRING,
+ * not an instant, so without it a reader west of the meridian sees the day before. The locale is
+ * the reader's, because how a date is spelled is theirs and not this building's.
+ */
+export function formatPeriod(period: ReportPeriod, start: string): string {
+  if (period === 'month') return formatMonth(start);
+  const [y, m, d] = start.slice(0, 10).split('-');
+  const date = new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)));
+  if (Number.isNaN(date.getTime())) return start;
+  // "Week of" rather than a bare date: a list of Mondays with no label reads as a list of days
+  // on which something happened.
+  return `Week of ${date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}`;
+}
+
+/** Every period of this kind that has a generated report, newest first. Explicitly bounded —
+ * PostgREST caps silently, and this project has been bitten by inferring completeness from a
+ * response that had no way to signal truncation. 240 months is 20 years; 240 weeks is under 5,
+ * so weeks get their own, larger bound rather than sharing one that means different things. */
+export async function getReportPeriods(period: ReportPeriod): Promise<PeriodBuildingReport[]> {
+  const { data, error } = await requireSupabase()
+    .from('period_building_reports')
+    .select('*')
+    .eq('period', period)
+    .order('period_start', { ascending: false })
+    .limit(period === 'week' ? 520 : 240);
+  if (error) throw new Error(`Supabase report list failed: ${error.message}`);
+  return (data ?? []) as PeriodBuildingReport[];
+}
+
+/** The per-device rows for one period. At most one row per device, so the device count is the
+ * natural bound. */
+export async function getDevicePeriodReports(period: ReportPeriod, start: string): Promise<PeriodDeviceReport[]> {
+  const { data, error } = await requireSupabase()
+    .from('period_reports')
+    .select('*')
+    .eq('period', period)
+    .eq('period_start', start)
+    .order('energy_kwh', { ascending: false, nullsFirst: false })
+    .limit(500);
+  if (error) throw new Error(`Supabase report fetch failed for ${period} ${start}: ${error.message}`);
+  return (data ?? []) as PeriodDeviceReport[];
+}

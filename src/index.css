@@ -6777,3 +6777,10 @@ button.space-plan__pin {
   font-size: var(--fs-xs);
   line-height: 1.5;
 }
+
+/* Week or month — RM-041. Sits above the list of periods, which changes underneath it. */
+.reports-periods {
+  display: flex;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}

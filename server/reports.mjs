@@ -38,6 +38,64 @@ export const REPORT_GRACE_DAYS = 2;
  * between passes and the next one resumes exactly where this stopped. */
 export const MAX_MONTHS_PER_PASS = 6;
 
+/** Most weeks one pass will generate — RM-041. Higher than the month cap because weeks accrue
+ * about 4.3x faster, so a first run against a year of history would otherwise take a dozen
+ * passes to catch up. Same self-limiting reasoning either way: nothing is remembered between
+ * passes and the next one resumes where this stopped. */
+export const MAX_WEEKS_PER_PASS = 12;
+
+/** `YYYY-MM-DD` of the Monday on or before a UTC instant. `getUTCDay()` is 0 for Sunday, so
+ * Sunday steps back six days rather than one — the off-by-one that makes a week start on the
+ * wrong day is exactly this expression. */
+function weekKey(date) {
+  const d = new Date(date.getTime());
+  const back = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - back);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Pure. Which weeks still need a report? — RM-041.
+ *
+ * The same shape and the same reasoning as `monthsNeedingReport`, including the grace period and
+ * the rebuild-once rule; only the step differs. The UTC-versus-local caveat in that function's
+ * header applies here identically and for the same reason: Manila is UTC+8, so a local week ends
+ * before the UTC boundary and waiting for the UTC one can only be conservative.
+ *
+ * @param {{ generatedWeeks: Array<string|{period_start: string, generated_at?: string}>,
+ *           earliestDataTs: string|null, nowMs: number, graceDays?: number }} args
+ * @returns {string[]} `YYYY-MM-DD` Mondays, oldest first, at most MAX_WEEKS_PER_PASS of them.
+ */
+export function weeksNeedingReport({ generatedWeeks, earliestDataTs, nowMs, graceDays = REPORT_GRACE_DAYS }) {
+  if (earliestDataTs === null || earliestDataTs === undefined) return [];
+  const earliestMs = Date.parse(earliestDataTs);
+  if (Number.isNaN(earliestMs)) return [];
+
+  const generatedAt = new Map();
+  for (const w of generatedWeeks ?? []) {
+    const key = String(typeof w === 'string' ? w : (w?.period_start ?? '')).slice(0, 10);
+    if (key) generatedAt.set(key, typeof w === 'string' ? null : (w?.generated_at ?? null));
+  }
+
+  const weeks = [];
+  let cursor = Date.parse(`${weekKey(new Date(earliestMs))}T00:00:00Z`);
+  while (weeks.length < MAX_WEEKS_PER_PASS) {
+    const nextWeek = cursor + 7 * DAY_MS;
+    const settledAt = nextWeek + graceDays * DAY_MS;
+    if (settledAt > nowMs) break;
+
+    const key = weekKey(new Date(cursor));
+    if (!generatedAt.has(key)) {
+      weeks.push(key);
+    } else {
+      const at = Date.parse(generatedAt.get(key) ?? '');
+      if (!Number.isFinite(at) || at < settledAt) weeks.push(key);
+    }
+    cursor = nextWeek;
+  }
+  return weeks;
+}
+
 /** How often to look for missing reports. The answer changes at most once a month; this is
  * frequent enough to pick one up the same day and cheap enough to be irrelevant. */
 export const REPORT_CHECK_MS = 6 * 60 * 60 * 1000; // 6h
@@ -133,12 +191,23 @@ export async function runReportGeneration({ client, nowMs = Date.now(), tz }) {
   const candidates = [oldestHour, oldestRaw].filter((t) => t !== null && !Number.isNaN(Date.parse(t)));
   const earliestDataTs = candidates.length > 0 ? candidates.reduce((a, b) => (Date.parse(a) <= Date.parse(b) ? a : b)) : null;
 
-  // generated_at, not just month: staleness cannot be judged without it.
-  const generatedMonths = await client.select(
-    'monthly_building_reports',
-    'select=month,generated_at&order=month.asc&limit=1000'
+  // ASKED OF `period_building_reports`, NOT `monthly_building_reports` — RM-041. That is the
+  // table the Reports page reads, so it is the one whose gaps matter. Asking the old table would
+  // report a month as done while the page still showed nothing for it.
+  //
+  // `generated_at`, not just the date: staleness cannot be judged without it.
+  const generatedRows = await client.select(
+    'period_building_reports',
+    'select=period_start,generated_at&period=eq.month&order=period_start.asc&limit=1000'
   );
+  const generatedMonths = (generatedRows ?? []).map((r) => ({ month: r.period_start, generated_at: r.generated_at }));
   const missing = monthsNeedingReport({ generatedMonths, earliestDataTs, nowMs });
+
+  const generatedWeekRows = await client.select(
+    'period_building_reports',
+    'select=period_start,generated_at&period=eq.week&order=period_start.asc&limit=1000'
+  );
+  const missingWeeks = weeksNeedingReport({ generatedWeeks: generatedWeekRows, earliestDataTs, nowMs });
 
   // Said precisely, because "nothing to do" covers three different situations and the log
   // line used to claim the most reassuring one. "Every complete month already has one" is
@@ -147,21 +216,37 @@ export async function runReportGeneration({ client, nowMs = Date.now(), tz }) {
   let reason = '';
   if (earliestDataTs === null) {
     reason = 'no readings yet';
-  } else if (missing.length === 0) {
+  } else if (missing.length === 0 && missingWeeks.length === 0) {
     reason = (generatedMonths ?? []).length > 0
-      ? 'every settled month already has a current report'
-      : 'no month has finished settling yet';
+      ? 'every settled month and week already has a current report'
+      : 'no period has finished settling yet';
   }
 
   const generated = [];
+  const generatedWeeks = [];
   const failed = [];
   for (const month of missing) {
     try {
+      await client.rpc('generate_period_report', tz ? { p_period: 'month', p_start: month, p_tz: tz } : { p_period: 'month', p_start: month });
+      // ALSO the phase12 function, on purpose and temporarily. Its tables are no longer read by
+      // the app, but keeping them current is what makes the two comparable — the check that the
+      // generalised aggregation still agrees with the one it replaced. RM-042 retires them, and
+      // this call goes with them.
       await client.rpc('generate_monthly_report', tz ? { p_month: month, p_tz: tz } : { p_month: month });
       generated.push(month);
     } catch (err) {
       failed.push({ month, error: String(err) });
     }
   }
-  return { generated, failed, reason };
+  for (const week of missingWeeks) {
+    try {
+      await client.rpc('generate_period_report', tz ? { p_period: 'week', p_start: week, p_tz: tz } : { p_period: 'week', p_start: week });
+      generatedWeeks.push(week);
+    } catch (err) {
+      // Keyed `month` like the monthly failures, because the caller logs one list. A week's key
+      // is a full date and a month's is a first-of-month, so the two are never ambiguous.
+      failed.push({ month: week, error: String(err) });
+    }
+  }
+  return { generated, generatedWeeks, failed, reason };
 }

@@ -13,14 +13,51 @@ import {
   runReportGeneration,
   REPORT_GRACE_DAYS,
   MAX_MONTHS_PER_PASS,
+  weeksNeedingReport,
+  MAX_WEEKS_PER_PASS,
 } from './reports.mjs';
 
-/** A report the daemon itself would have written: generated after its month settled. */
+/** A report the daemon itself would have written: generated after its month settled. This is the
+ * shape the PURE function takes. */
 function settled(month, generatedAt) {
   return { month, generated_at: generatedAt };
 }
 
+/**
+ * The same fact in the shape the DATABASE returns it — `period_start`, not `month`.
+ *
+ * The two are separate on purpose. `runReportGeneration` reads `period_building_reports` and maps
+ * its rows into the pure function's shape, so a fixture using the pure shape for the client made
+ * every month look ungenerated and the daemon regenerated all of them. The failure was two RPC
+ * calls where none were expected, which reads as a logic bug and was a fixture in the wrong
+ * shape.
+ */
+function reported(periodStart, generatedAt) {
+  return { period_start: periodStart, generated_at: generatedAt };
+}
+
 const NOW = Date.parse('2026-08-21T12:00:00.000Z');
+
+/**
+ * Every week that has settled by NOW, already reported — so a test about MONTHS is not derailed
+ * by the weekly backlog also being empty. The daemon does both in one pass (RM-041), and a test
+ * asserting "no RPC was called" has to satisfy both halves or it is asserting the wrong thing.
+ *
+ * Built from the same rule the daemon applies rather than hard-coded, so it cannot drift out of
+ * agreement with `weeksNeedingReport` the way a literal list would.
+ */
+function allWeeksSettled(fromTs = '2026-01-01T00:00:00Z') {
+  // Walked directly rather than via `weeksNeedingReport`, which caps at MAX_WEEKS_PER_PASS and
+  // would leave a backlog behind — the cap is the daemon's pacing, not a statement about which
+  // weeks exist.
+  const out = [];
+  const d = new Date(Date.parse(fromTs));
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  for (let t = d.getTime(); t + 9 * 24 * 60 * 60 * 1000 <= NOW; t += 7 * 24 * 60 * 60 * 1000) {
+    out.push({ period_start: new Date(t).toISOString().slice(0, 10), generated_at: '2099-01-01T00:00:00Z' });
+  }
+  return out;
+}
 
 // --- monthsNeedingReport (pure) ----------------------------------------------------------
 
@@ -102,13 +139,16 @@ test('an unparseable earliest timestamp resolves to "do nothing", never to a gue
 
 // --- runReportGeneration (I/O against a fake client) --------------------------------------
 
-function fakeClient({ generated = [], hourly = [], raw = [], onRpc } = {}) {
+function fakeClient({ generated = [], generatedWeeks = [], hourly = [], raw = [], onRpc } = {}) {
   const calls = { select: [], rpc: [] };
   return {
     calls,
     select: async (table, query) => {
       calls.select.push({ table, query });
-      if (table === 'monthly_building_reports') return generated;
+      // RM-041: the daemon asks `period_building_reports`, not phase12's table, because that is
+      // what the Reports page reads — a month "done" in the old table and absent from the new
+      // one is a month the page shows nothing for.
+      if (table === 'period_building_reports') return query.includes('period=eq.week') ? generatedWeeks : generated;
       if (table === 'readings_hourly') return hourly;
       return raw;
     },
@@ -124,9 +164,12 @@ test('generates each missing month through the RPC, oldest first', async () => {
   const client = fakeClient({ hourly: [{ hour: '2026-06-02T00:00:00Z' }] });
   const r = await runReportGeneration({ client, nowMs: NOW });
 
-  assert.deepEqual(client.calls.rpc.map((c) => c.args.p_month), ['2026-06-01', '2026-07-01']);
-  assert.equal(client.calls.rpc[0].fn, 'generate_monthly_report');
+  const monthCalls = client.calls.rpc.filter((c) => c.fn === 'generate_period_report' && c.args.p_period === 'month');
+  assert.deepEqual(monthCalls.map((c) => c.args.p_start), ['2026-06-01', '2026-07-01']);
   assert.equal(r.generated.length, 2);
+  // phase12's function is still called alongside, on purpose and temporarily — its tables are
+  // no longer read but keeping them current is what makes the two aggregations comparable.
+  assert.equal(client.calls.rpc.filter((c) => c.fn === 'generate_monthly_report').length, 2);
 });
 
 test('takes the earliest of the rollup and the raw table, not whichever it asked first', async () => {
@@ -137,13 +180,15 @@ test('takes the earliest of the rollup and the raw table, not whichever it asked
     raw: [{ ts: '2026-07-22T00:00:00Z' }],
   });
   await runReportGeneration({ client, nowMs: NOW });
-  assert.equal(client.calls.rpc[0].args.p_month, '2026-05-01');
+  assert.equal(client.calls.rpc[0].args.p_start, '2026-05-01');
 });
 
 test('does nothing, and calls no RPC, when every complete month is already reported', async () => {
   const client = fakeClient({
     hourly: [{ hour: '2026-07-02T00:00:00Z' }],
-    generated: [settled('2026-07-01', '2026-08-03T01:00:00Z')],
+    generated: [reported('2026-07-01', '2026-08-03T01:00:00Z')],
+    // Every settled WEEK too, or the pass would still have weeks to generate and call the RPC.
+    generatedWeeks: allWeeksSettled(),
   });
   const r = await runReportGeneration({ client, nowMs: NOW });
   assert.equal(client.calls.rpc.length, 0);
@@ -156,7 +201,9 @@ test('one month failing does not abandon the rest of the backlog', async () => {
   const client = fakeClient({
     hourly: [{ hour: '2026-05-02T00:00:00Z' }],
     onRpc: (_fn, args) => {
-      if (args.p_month === '2026-06-01') throw new Error('boom');
+      // Scoped to the MONTH: 2026-06-01 is also a Monday, so an unscoped throw would fail
+      // that week too and this test would be about two failures rather than one.
+      if (args.p_month === '2026-06-01' || (args.p_period === 'month' && args.p_start === '2026-06-01')) throw new Error('boom');
       return [{ device_rows: 11, building_rows: 1 }];
     },
   });
@@ -231,17 +278,23 @@ test('says no month has settled yet, rather than claiming every month has a repo
   // The old line read "every complete month already has one", which is vacuously true when
   // there are no complete months at all - and reads to whoever is scanning the journal as
   // though reports exist.
-  const client = fakeClient({ hourly: [{ hour: '2026-08-02T00:00:00Z' }] });
+  // Late enough that no month HAS settled. A week has, so the fixture reports the weeks too —
+  // otherwise this would be testing the weekly backlog, not the sentence about months.
+  const client = fakeClient({
+    hourly: [{ hour: '2026-08-02T00:00:00Z' }],
+    generatedWeeks: allWeeksSettled('2026-08-02T00:00:00Z'),
+  });
   return runReportGeneration({ client, nowMs: NOW }).then((r) => {
     assert.deepEqual(r.generated, []);
-    assert.match(r.reason, /no month has finished settling/i);
+    assert.match(r.reason, /no period has finished settling/i);
   });
 });
 
 test('says reports are current only when some actually exist', async () => {
   const client = fakeClient({
     hourly: [{ hour: '2026-07-02T00:00:00Z' }],
-    generated: [settled('2026-07-01', '2026-08-03T01:00:00Z')],
+    generated: [reported('2026-07-01', '2026-08-03T01:00:00Z')],
+    generatedWeeks: allWeeksSettled('2026-07-02T00:00:00Z'),
   });
   const r = await runReportGeneration({ client, nowMs: NOW });
   assert.match(r.reason, /already has a current report/i);
@@ -256,6 +309,85 @@ test('says there are no readings at all when the tables are empty', async () => 
 test('asks for generated_at, not just the month — staleness cannot be judged without it', async () => {
   const client = fakeClient({ hourly: [{ hour: '2026-06-02T00:00:00Z' }] });
   await runReportGeneration({ client, nowMs: NOW });
-  const call = client.calls.select.find((c) => c.table === 'monthly_building_reports');
+  // `period_building_reports` now, not phase12's table — see the fake client's comment.
+  const call = client.calls.select.find((c) => c.table === 'period_building_reports');
   assert.match(call.query, /generated_at/);
+});
+
+// --- weeksNeedingReport (pure) — RM-041 ---------------------------------------------------
+
+test('a week is named by its Monday, whatever day the data starts on', () => {
+  // 2026-07-02 is a Thursday. The report is for the week it falls in, not for a Thursday-to-
+  // Wednesday span that would agree with no other caller's idea of that week.
+  const weeks = weeksNeedingReport({ generatedWeeks: [], earliestDataTs: '2026-07-02T00:00:00Z', nowMs: NOW });
+  assert.equal(weeks[0], '2026-06-29');
+  assert.equal(new Date(`${weeks[0]}T00:00:00Z`).getUTCDay(), 1, 'every key must be a Monday');
+});
+
+test('a Sunday steps back six days, not one', () => {
+  // `getUTCDay()` is 0 for Sunday, so `- getUTCDay()` would leave Sunday as its own week start
+  // and split a week in two. This is the off-by-one the expression exists to avoid.
+  const weeks = weeksNeedingReport({ generatedWeeks: [], earliestDataTs: '2026-07-05T12:00:00Z', nowMs: NOW });
+  assert.equal(weeks[0], '2026-06-29');
+});
+
+test('does not report a week until it has ended and been given the grace period', () => {
+  // The week beginning 2026-08-17 has not ended by the 21st, so nothing may claim it.
+  const weeks = weeksNeedingReport({ generatedWeeks: [], earliestDataTs: '2026-08-01T00:00:00Z', nowMs: NOW });
+  assert.ok(!weeks.includes('2026-08-17'), 'an unfinished week must not be reported');
+  // ...and 2026-08-10 IS settled by then: it ended on the 17th and its two grace days were up on
+  // the 19th. A first version of this test asserted it was still pending, which was an assertion
+  // about arithmetic I had got wrong rather than about the code.
+  assert.ok(weeks.includes('2026-08-10'), 'a week whose grace period has elapsed must be reported');
+
+  // The grace period itself, shown at a moment when a week is actually inside it: 2026-08-10
+  // ended on the 17th, so on the 18th it has ended but late-flushing rows may still be landing.
+  const duringGrace = weeksNeedingReport({
+    generatedWeeks: [], earliestDataTs: '2026-08-01T00:00:00Z', nowMs: Date.parse('2026-08-18T12:00:00Z'),
+  });
+  assert.ok(!duringGrace.includes('2026-08-10'), 'a week inside its grace period must not be reported');
+});
+
+test('rebuilds a week whose report was generated before it settled, exactly once', () => {
+  const early = [{ period_start: '2026-06-29', generated_at: '2026-07-01T00:00:00Z' }];
+  assert.ok(weeksNeedingReport({ generatedWeeks: early, earliestDataTs: '2026-06-29T00:00:00Z', nowMs: NOW }).includes('2026-06-29'));
+
+  const afterSettling = [{ period_start: '2026-06-29', generated_at: '2026-07-09T00:00:00Z' }];
+  assert.ok(!weeksNeedingReport({ generatedWeeks: afterSettling, earliestDataTs: '2026-06-29T00:00:00Z', nowMs: NOW }).includes('2026-06-29'));
+});
+
+test('caps a backlog rather than looping through a year of history in one pass', () => {
+  const weeks = weeksNeedingReport({ generatedWeeks: [], earliestDataTs: '2025-01-01T00:00:00Z', nowMs: NOW });
+  assert.equal(weeks.length, MAX_WEEKS_PER_PASS);
+});
+
+test('says nothing to do when there are no readings, rather than guessing a start', () => {
+  assert.deepEqual(weeksNeedingReport({ generatedWeeks: [], earliestDataTs: null, nowMs: NOW }), []);
+  assert.deepEqual(weeksNeedingReport({ generatedWeeks: [], earliestDataTs: 'not-a-date', nowMs: NOW }), []);
+});
+
+test('generates missing weeks through the period RPC, oldest first', async () => {
+  const client = fakeClient({
+    hourly: [{ hour: '2026-07-02T00:00:00Z' }],
+    generated: [reported('2026-07-01', '2026-08-03T01:00:00Z')],
+  });
+  const r = await runReportGeneration({ client, nowMs: NOW });
+  const weekCalls = client.calls.rpc.filter((c) => c.fn === 'generate_period_report' && c.args.p_period === 'week');
+  assert.deepEqual(weekCalls.slice(0, 2).map((c) => c.args.p_start), ['2026-06-29', '2026-07-06']);
+  assert.ok(r.generatedWeeks.length > 0, 'the pass must report which weeks it generated');
+});
+
+test('one week failing does not abandon the rest, nor the months', async () => {
+  const client = fakeClient({
+    hourly: [{ hour: '2026-07-02T00:00:00Z' }],
+    generated: [reported('2026-07-01', '2026-08-03T01:00:00Z')],
+    onRpc: (fn, args) => {
+      if (args.p_period === 'week' && args.p_start === '2026-07-06') throw new Error('boom');
+      return [{ device_rows: 11, building_rows: 1 }];
+    },
+  });
+  const r = await runReportGeneration({ client, nowMs: NOW });
+  assert.ok(r.generatedWeeks.includes('2026-06-29'), 'the week before the bad one must still be generated');
+  assert.ok(r.generatedWeeks.includes('2026-07-13'), 'and so must the one after it');
+  assert.deepEqual(r.failed.map((f) => f.month), ['2026-07-06']);
 });
