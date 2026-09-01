@@ -2059,6 +2059,14 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       a `solarman-register` wired to nothing — plus a `solarman-device` config node holding the
       serial number and that unreachable address. No data path, no context keys, no registry
       entry, nothing in this repository. Treat it as a placeholder, not a partial build.
+      **It is a placeholder that RUNS, though — corrected 2026-09-01.** "Wired to nothing" is
+      true of the register node and describes the data path accurately, but it reads as inert and
+      the config node is not: it holds a connection and retries, logging
+      `Socket problem for <addr>:8899: Socket timeout` about **3 times per 30 minutes**. Harmless
+      at that rate — the dead outlets' discovery loop is fifty times noisier — and it costs
+      nothing to leave. Worth knowing only so that the first person to see it in the journal
+      does not read a running node as evidence the integration is half-built, or go hunting for a
+      fault in something that is waiting on hardware.
       **The prerequisite is an operator action, not a coding task:** join the logger stick to
       the device SSID (it is 2.4 GHz-only, like everything else here) and confirm it takes a
       DHCP lease on that subnet. Until `npm run tuya:macs`-style evidence shows it present,
