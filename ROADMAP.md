@@ -1636,7 +1636,7 @@ fall back to it).
       RLS sits behind that. *Not yet exercised:* an operator actually flipping a toggle, which
       needs a signed-in session — `src/lib/siteUi.ts`, `src/components/devices/PageCardsPanel.tsx`,
       `supabase/phase24_site_ui_prefs.sql`
-- [ ] **RM-036 (M)** **A room gets its real outline.** `space_nodes.attrs.plan` holds a shape
+- [x] **RM-036 (M)** **DONE 2026-09-01.** A room gets its real outline. `space_nodes.attrs.plan` holds a shape
       *descriptor* (rect / L / T / U / triangle / circle / cells), not a baked path — a path is
       un-editable and reopening the editor could only offer "start again". One pure
       `shapeToPath` renders every kind; "eject to grid" rasterises any preset into a nudgeable
