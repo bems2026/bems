@@ -112,13 +112,12 @@ below, which carry the evidence.
 - **FI-012** — partition `readings` *if* growth ever outgrows the prune. Conditional; not due.
 - **FI-011** — push delivery for the monthly report, once a notification channel is configured.
 
-**Two flow writes are built, dry-run, and waiting on a go-ahead** *(added 2026-09-01)*
-- **EX-133's flow rebuild** — `npm run build:flow` is done and committed; the Pi needs
-  `npm run deploy:pi -- --force --apply` for the per-device staleness budgets to reach the wire.
-  Until then the bridge omits `stale_after_ms` and the frontend falls back to the old global
-  30 s, so **the fix is inert on the Pi** even though the app is deployed.
-- **EX-139 / EX-140** — `npm run fix-health:pi --apply` and `npm run poll-outlets:pi --apply`.
-  Both dry-run clean against the live flow. Back up `~/.node-red/flows.json` first, always.
+**The 2026-09-01 control-path work is fully applied** *(EX-133 – EX-144)*
+All three flow writes landed and were verified live: the bridge rebuild carrying
+`stale_after_ms`, the meter health rewiring, and the outlet poller's skip. Node-RED is bound to
+loopback. The end-to-end check is closed — the operator toggled an outlet socket and a light from
+the browser and saw no errors, with four `dispatched` / `via=local` audit rows to match. Nothing
+from that pass is outstanding.
 
 **Code, and deliberately not done**
 - **FI-019** (the bridge on `0.0.0.0:1880`) and **FI-020** (a switch's freshness is
@@ -1319,6 +1318,17 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       row nine seconds later. The failure message is also split: "did not report the new state"
       claims the device answered and contradicted the command, which is only available when the
       reading postdates it — `src/stores/commandStore.ts`
+      **Confirmed in production 2026-09-01**, on the real fleet through the real authenticated
+      path: the operator toggled `co1` socket 1 off and on, and `l1` on and off, from the browser
+      and reported no errors. All four audit rows read `dispatched` / `via=local`, attributed to
+      a real user, with an empty outage buffer and no Node-RED error for either device.
+      *That run corroborates the fix; it does not by itself prove it.* Two outlet commands nine
+      seconds apart could both have landed in the fresh half of the poll cycle, where the old
+      budget would also have worked. The proof is the deterministic reproduction above — the
+      regression test fails with a 30 s budget on the row and passes with 150 s, and
+      `npm run mock -- --poll-cadence=60` reproduces the sawtooth on demand. Worth saying plainly,
+      because "we tried it and it was fine" is the same class of evidence that let this fault
+      survive a fortnight in the first place.
 - [x] **EX-136** **Two light controls had dead click handlers.** EX-017 removed `stale` from
       `disabled=` but left it in the `toggle()` of `SwitchesListCard` and `LightingMatrixCard`,
       so the button rendered enabled and the click did nothing at all. A control that looks
