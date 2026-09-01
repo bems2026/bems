@@ -47,7 +47,10 @@ Decided by the operator, 2026-08-25.
   existing scripts.
 - `sudo systemctl restart nodered` and the `ibems-*` services. This is the single highest-value
   action available and it is reversible — see *Restart before you suspect hardware* below.
-- Run the repo's test suites, `npm run build`, `npm run build:flow`.
+- Run the repo's test suites, **`npm run lint`**, `npm run build`, `npm run build:flow`.
+  **Lint is in that list because CI runs it and a session once pushed without it** — the
+  failure was `react-hooks/globals` in a test, invisible to `tsc` and to vitest, and it
+  turned master red for two commits.
 - Any script in its **dry-run** form (they all default to it): `deploy:pi`, `quiesce:pi`,
   `enroll:pi`, `remove:pi`, `tuya:devices`.
 
