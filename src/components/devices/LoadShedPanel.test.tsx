@@ -94,13 +94,13 @@ describe('LoadShedPanel', () => {
     render(<LoadShedPanel onClose={() => {}} />);
     const select = screen.getByLabelText(/tier for SW-A/i) as HTMLSelectElement;
     expect(select.value).toBe('');
-    // Scoped to the tally: "Not classified" is legitimately also an <option> in every row's
-    // select, so a bare text query matches both.
-    const tally = document.querySelector('.shed-panel__tally');
-    const item = [...(tally?.querySelectorAll('.shed-panel__tally-item') ?? [])].find((el) =>
-      el.textContent?.startsWith('Not classified'),
-    );
-    expect(within(item as HTMLElement).getByText('1')).toBeInTheDocument();
+    // Scoped, because "Not classified" is legitimately also an <option> in every row's select,
+    // so a bare text query matches both. It is deliberately NOT one of the tier tiles: it is the
+    // absence of a tier, and the panel says so on its own line.
+    const unassigned = document.querySelector('.shed-panel__unassigned');
+    expect(within(unassigned as HTMLElement).getByText('1')).toBeInTheDocument();
+    expect(unassigned?.textContent).toMatch(/never shed/);
+    expect(document.querySelectorAll('.shed-panel__tally-item')).toHaveLength(4);
   });
 
   it('surfaces a failed save instead of leaving the new tier looking stored', async () => {

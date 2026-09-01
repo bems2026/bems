@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CircleUserRound, FileText, LogOut, WifiOff } from 'lucide-react';
+import { CircleUserRound, LogOut, WifiOff } from 'lucide-react';
 import { ACCOUNT_ITEMS } from './navItems';
 import { useAuthStore } from '@/stores/authStore';
 import { useAnchoredPopover } from '@/components/ui/useAnchoredPopover';
@@ -90,19 +90,25 @@ export function AccountMenu({ activeId }: { activeId: string }) {
               </div>
             )}
 
-            {ACCOUNT_ITEMS.map((item) => (
-              <a
-                key={item.id}
-                role="menuitem"
-                href={`#${item.id}`}
-                className={`account-menu__item${item.id === activeId ? ' account-menu__item--active' : ''}`}
-                aria-current={item.id === activeId ? 'page' : undefined}
-                onClick={() => setOpen(false)}
-              >
-                <FileText size={14} aria-hidden="true" />
-                {item.label}
-              </a>
-            ))}
+            {ACCOUNT_ITEMS.map((item) => {
+              // Each item brings its own icon (`navItems.ts`). This used to be a hard-coded
+              // `FileText` for every entry, which gave Reports and Settings the same glyph and
+              // made the icon column pure decoration.
+              const Icon = item.icon;
+              return (
+                <a
+                  key={item.id}
+                  role="menuitem"
+                  href={`#${item.id}`}
+                  className={`account-menu__item${item.id === activeId ? ' account-menu__item--active' : ''}`}
+                  aria-current={item.id === activeId ? 'page' : undefined}
+                  onClick={() => setOpen(false)}
+                >
+                  {Icon ? <Icon size={14} aria-hidden="true" /> : null}
+                  {item.label}
+                </a>
+              );
+            })}
 
             {signedIn && (
               <button

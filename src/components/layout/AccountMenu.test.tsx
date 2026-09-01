@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { AccountMenu } from './AccountMenu';
 import { useAuthStore } from '@/stores/authStore';
+import { ACCOUNT_ITEMS } from './navItems';
 
 vi.mock('@/config/supabase', () => ({ supabase: {} }));
 
@@ -108,5 +109,19 @@ describe('AccountMenu', () => {
       expect(screen.getByRole('menuitem', { name: /reports/i })).toBeInTheDocument();
       expect(screen.queryByRole('menuitem', { name: /sign out/i })).not.toBeInTheDocument();
     });
+  });
+
+  it('gives each entry its own icon, so the glyph column carries information', () => {
+    // WHAT THIS EXISTS FOR. The menu hard-coded `FileText` for every entry, so Reports and
+    // Settings rendered the same glyph — an icon column that looked meaningful and was not.
+    // The icon now comes off the item, and this compares the actual rendered SVGs.
+    render(<AccountMenu activeId="overview" />);
+    openMenu();
+    const glyphs = ACCOUNT_ITEMS.map((item) => {
+      const link = screen.getByRole('menuitem', { name: item.label });
+      return link.querySelector('svg')?.innerHTML ?? '';
+    });
+    expect(glyphs.every((g) => g !== '')).toBe(true);
+    expect(new Set(glyphs).size).toBe(ACCOUNT_ITEMS.length);
   });
 });

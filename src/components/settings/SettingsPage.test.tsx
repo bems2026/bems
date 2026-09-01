@@ -27,16 +27,15 @@ describe('SettingsPage', () => {
       'Spaces',
       'Floor plan',
       'Page cards',
-      'Deployment',
     ]);
   });
 
   it('opens a section and marks it current for assistive technology, not just visually', () => {
     render(<SettingsPage />);
-    fireEvent.click(screen.getByText('Deployment'));
+    fireEvent.click(screen.getByText('Page cards'));
     const nav = screen.getByRole('navigation', { name: 'Settings sections' });
     const active = within(nav).getByRole('button', { current: 'page' });
-    expect(active).toHaveTextContent('Deployment');
+    expect(active).toHaveTextContent('Page cards');
   });
 
   it('offers a way back only once a section is open', () => {
@@ -44,7 +43,7 @@ describe('SettingsPage', () => {
     // Rendering it on the list itself would be a control that goes nowhere.
     render(<SettingsPage />);
     expect(screen.queryByRole('button', { name: /All settings/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText('Deployment'));
+    fireEvent.click(screen.getByText('Page cards'));
     fireEvent.click(screen.getByRole('button', { name: /All settings/ }));
     expect(screen.getByText(/Choose a section/)).toBeInTheDocument();
   });

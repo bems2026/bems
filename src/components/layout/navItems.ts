@@ -1,6 +1,17 @@
+import { FileText, SlidersHorizontal, type LucideIcon } from 'lucide-react';
+
 export interface NavItem {
   id: string;
   label: string;
+  /**
+   * Only the account menu draws one — the tab bar reads fine on labels alone (see `NAV_ITEMS`).
+   *
+   * It lives on the ITEM rather than in the menu because the menu used to hard-code `FileText`
+   * for every entry, so Reports and Settings rendered the same glyph and the icon column carried
+   * no information at all. Declaring it here means a new entry cannot silently inherit somebody
+   * else's icon: it has to say what it is.
+   */
+  icon?: LucideIcon;
 }
 
 /**
@@ -32,7 +43,7 @@ export const NAV_ITEMS: NavItem[] = [
  * already wraps to two rows below 860px.
  */
 export const ACCOUNT_ITEMS: NavItem[] = [
-  { id: 'reports', label: 'Reports' },
+  { id: 'reports', label: 'Reports', icon: FileText },
   /**
    * Settings sits here rather than in the tab bar for the same reason Reports does, and for one
    * more that is specific to it: the five tabs answer "what is happening in the building now",
@@ -44,7 +55,7 @@ export const ACCOUNT_ITEMS: NavItem[] = [
    * header wrapped to two rows — and four of those buttons were configuration rather than
    * anything to do with the device list underneath them.
    */
-  { id: 'settings', label: 'Settings' },
+  { id: 'settings', label: 'Settings', icon: SlidersHorizontal },
 ];
 
 /**

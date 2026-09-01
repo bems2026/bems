@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { Building2, LayoutDashboard, Map as MapIcon, Server, UserRound } from 'lucide-react';
+import { Building2, LayoutDashboard, Map as MapIcon, UserRound } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { SpaceTreePanel } from '@/components/devices/SpaceTreePanel';
 import { SpacePlanPanel } from '@/components/spatial/SpacePlanPanel';
 import { PageCardsPanel } from '@/components/devices/PageCardsPanel';
 import { AccountSection } from './AccountSection';
-import { DeploymentSection } from './DeploymentSection';
 
 /**
  * Where this deployment is configured — one page, replacing four buttons on the Devices toolbar.
@@ -27,14 +26,13 @@ import { DeploymentSection } from './DeploymentSection';
  * the one piece of navigation every page depends on, to buy a deep link into a settings pane.
  * Worth doing if anyone ever wants to link to one; not worth doing first.
  */
-type SectionId = 'account' | 'spaces' | 'floorplan' | 'display' | 'deployment';
+type SectionId = 'account' | 'spaces' | 'floorplan' | 'display';
 
 const SECTIONS: { id: SectionId; label: string; blurb: string; Icon: typeof UserRound }[] = [
   { id: 'account', label: 'Account', blurb: 'Who is signed in, and how', Icon: UserRound },
   { id: 'spaces', label: 'Spaces', blurb: 'Buildings, floors and rooms', Icon: Building2 },
   { id: 'floorplan', label: 'Floor plan', blurb: 'Room outlines and where devices sit', Icon: MapIcon },
   { id: 'display', label: 'Page cards', blurb: 'Which optional cards this site shows', Icon: LayoutDashboard },
-  { id: 'deployment', label: 'Deployment', blurb: 'What this installation is set to', Icon: Server },
 ];
 
 export function SettingsPage() {
@@ -92,7 +90,6 @@ export function SettingsPage() {
           {section === 'spaces' && <SpaceTreePanel />}
           {section === 'floorplan' && <SpacePlanPanel />}
           {section === 'display' && <PageCardsPanel />}
-          {section === 'deployment' && <DeploymentSection />}
         </div>
       </div>
     </>

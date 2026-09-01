@@ -6260,11 +6260,35 @@ button.space-plan__pin {
   font-size: var(--fs-sm);
   line-height: 1.5;
 }
+/* A GRID, NOT WRAPPED FLEX. Five tiers in a wrapping flex row laid out four-then-one, so the
+   last tile sat alone on its own line and read as an afterthought rather than as the fifth of
+   five. `auto-fit` puts all five on one row wherever they fit and splits them evenly when they
+   do not. */
 .shed-panel__tally {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
   gap: var(--sp-3);
   margin-bottom: var(--sp-4);
+}
+
+/* See `LoadShedPanel.tsx` for the measurement this exists for. The header is pinned because a
+   row scrolled into view must still say which column is the tier and which is the current
+   state. */
+.shed-panel__table-scroll {
+  max-height: 26rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-inner);
+}
+.shed-panel__table-scroll:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.shed-panel__table-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-surface);
 }
 .shed-panel__tally-item {
   display: flex;
@@ -6672,4 +6696,24 @@ button.space-plan__pin {
   background: var(--bg-surface);
   color: var(--txt);
   font-size: var(--fs-xs);
+}
+
+/* "Not classified" is the absence of a tier, not a fifth tier — see `LoadShedPanel.tsx`. Styled
+   as a statement rather than a tile so it stops claiming to be one. */
+.shed-panel__unassigned {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin: calc(var(--sp-3) * -1) 0 var(--sp-4);
+  padding: var(--sp-2) var(--sp-3);
+  border-left: 2px solid var(--border-strong);
+  color: var(--muted-2);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+.shed-panel__unassigned-count {
+  color: var(--txt);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }

@@ -97,19 +97,31 @@ export function LoadShedPanel({ onClose }: { onClose?: () => void }) {
         </p>
       )}
 
+      {/* FOUR TILES, NOT FIVE. Every tier here is a decision somebody made — including "never",
+          which is a deliberate exemption. "Not classified" is the absence of a decision, and
+          rendering it as a fifth identical tile both said it was a tier and left it orphaned on
+          its own row when four fitted across. It gets its own line below, which is what it is. */}
       <div className="shed-panel__tally">
-        {[...SHED_ORDER, 'never' as const, 'unassigned' as const].map((tier) => (
+        {[...SHED_ORDER, 'never' as const].map((tier) => (
           <div key={tier} className="shed-panel__tally-item">
             <span className="metric-label">{TIER_LABEL[tier]}</span>
             <span className="shed-panel__tally-count">{summary.byTier[tier].total}</span>
             {/* "Would act" is the honest count: assigned, dispatchable and on. The difference
                 from the total is not a rounding error, it is the part that would do nothing. */}
-            {tier !== 'never' && tier !== 'unassigned' && summary.byTier[tier].total > 0 && (
+            {tier !== 'never' && summary.byTier[tier].total > 0 && (
               <span className="shed-panel__tally-sub">{summary.byTier[tier].effective} would act now</span>
             )}
           </div>
         ))}
       </div>
+
+      <p className="shed-panel__unassigned">
+        <span className="shed-panel__unassigned-count">{summary.byTier.unassigned.total}</span>
+        <span>
+          {TIER_LABEL.unassigned}
+          {summary.byTier.unassigned.total > 0 && ' — an unclassified device is never shed, so these are not volunteers'}
+        </span>
+      </p>
 
       {summary.inertCount > 0 && (
         <p className="shed-panel__warn" role="status">
@@ -119,6 +131,12 @@ export function LoadShedPanel({ onClose }: { onClose?: () => void }) {
         </p>
       )}
 
+      {/* MEASURED 2026-09-01 at 1920px: this table ran to 1104px against 406px for the other two
+          cards in the column, leaving the Automation page 494px ragged down its left-hand side.
+          The tier counts above are the summary; the per-device rows are a lookup, and a lookup
+          is the right thing to put behind a scroll. The header stays pinned so a row scrolled
+          into view still says which column is which. */}
+      <div className="shed-panel__table-scroll" tabIndex={0} role="region" aria-label="Device load-shed tiers">
       <table className="shed-panel__table">
         <thead>
           <tr>
@@ -162,6 +180,7 @@ export function LoadShedPanel({ onClose }: { onClose?: () => void }) {
           ))}
         </tbody>
       </table>
+      </div>
 
       {summary.rows.length === 0 && (
         <p className="shed-panel__note">No relay-controlled devices at this site, so there is nothing to shed.</p>
