@@ -1614,7 +1614,8 @@ layout comes from `carePlan.ts`, a pack surveyed in one room that would draw a s
 devices at this site's positions and look entirely correct doing it (the reason RM-032 refused to
 fall back to it).
 
-- [ ] **RM-035 (S)** **The plan and 3D cards become removable, per site.** A new
+- [x] **RM-035 (S)** **DONE 2026-09-01, migration applied and verified live.** The plan and 3D
+      cards are removable, per site. A new
       `site_ui_prefs` table — the operator-writable sibling of read-only `sites`, exactly as
       `device_config` is to `devices`. **Not a column on `sites`:** that row is deliberately
       read-only from the browser (`phase19_sites.sql` says so outright) and also carries
@@ -1623,7 +1624,18 @@ fall back to it).
       for the aircon policy too.
       Defaults are `true`, so the migration changes nothing on screen until somebody asks it to.
       **The property to hold:** hiding a card never hides a control — the lighting and outlet
-      lists keep dispatching. Losing a diagram is cosmetic; losing a relay is not.
+      lists keep dispatching. Losing a diagram is cosmetic; losing a relay is not. Pinned by test
+      and **neutered to prove it fires**: moving the switches list inside the hidden block — the
+      exact refactor that would break it — failed the guard.
+      *Verified live:* the migration was rehearsed against PostgreSQL 16 alongside every other
+      file, then applied **twice** in a throwaway container because it claims re-run safety and
+      phase21 is this project's scar from claiming that falsely — second apply clean, three
+      policies (SELECT/INSERT/UPDATE, no DELETE), zero rows seeded. On the live project the table
+      reads `200 []` to the service role and **42501 to anon for both read and write** — a
+      privilege error rather than an empty RLS result, so `anon` cannot reach the table at all and
+      RLS sits behind that. *Not yet exercised:* an operator actually flipping a toggle, which
+      needs a signed-in session — `src/lib/siteUi.ts`, `src/components/devices/PageCardsPanel.tsx`,
+      `supabase/phase24_site_ui_prefs.sql`
 - [ ] **RM-036 (M)** **A room gets its real outline.** `space_nodes.attrs.plan` holds a shape
       *descriptor* (rect / L / T / U / triangle / circle / cells), not a baked path — a path is
       un-editable and reopening the editor could only offer "start again". One pure

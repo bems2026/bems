@@ -17,10 +17,12 @@ import {
   insertSpaceNode,
   renameSpaceNode,
   deleteSpaceNode,
+  updateSpaceNodeAttrs,
   validateNewNode,
   type NewNode,
 } from '@/lib/supabaseSpaceTree';
 import { subtreeIds, type SpaceNode } from '@/lib/spaceTree';
+import type { RoomShape } from '@/lib/roomShape';
 
 interface SpaceTreeState {
   nodes: SpaceNode[];
@@ -42,6 +44,8 @@ interface SpaceTreeState {
   add: (node: NewNode) => Promise<void>;
   rename: (id: string, name: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
+  /** The room outline for one node, stored at attrs.plan — RM-036. */
+  setShape: (id: string, plan: RoomShape) => Promise<void>;
   /** How many nodes would go with `id` — the blast radius of a delete, which is invisible from
    * the row being clicked. */
   descendantCount: (id: string) => number;
@@ -118,6 +122,37 @@ export const useSpaceTreeStore = create<SpaceTreeState>((set, get) => ({
         nodes: s.nodes.map((n) => (n.id === id ? { ...n, name: name.trim() } : n)),
         mutating: false,
       }));
+    } catch (err) {
+      set({ mutating: false, error: message(err) });
+    }
+  },
+
+  /**
+   * Sets one node's room outline — RM-036. Stored at `attrs.plan`.
+   *
+   * Writes the whole `attrs` object with the new `plan` merged in, so any other key a future
+   * feature puts there survives. `attrs` is documented as "whatever a later site needs", which
+   * only stays true if every writer preserves what it did not put there.
+   *
+   * Saves immediately, like `placeOnPlan`. A plan showing an outline the database does not have
+   * is the same dishonesty a pin behind a Save button would be.
+   */
+  setShape: async (id, plan) => {
+    if (!supabase) {
+      set({ error: 'Supabase is not configured for this deployment, so the plan cannot be edited here.' });
+      return;
+    }
+    const node = get().nodes.find((n) => n.id === id);
+    if (!node) {
+      set({ error: 'That space is no longer in the tree.' });
+      return;
+    }
+    const attrs = { ...node.attrs, plan };
+    set({ mutating: true, error: null });
+    try {
+      const actorUserId = (await supabase.auth.getSession()).data.session?.user.id ?? null;
+      await updateSpaceNodeAttrs(id, attrs, actorUserId);
+      set((s) => ({ nodes: s.nodes.map((n) => (n.id === id ? { ...n, attrs } : n)), mutating: false }));
     } catch (err) {
       set({ mutating: false, error: message(err) });
     }

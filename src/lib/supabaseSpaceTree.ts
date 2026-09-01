@@ -159,6 +159,31 @@ export async function renameSpaceNode(id: string, name: string, actorUserId: str
 }
 
 /**
+ * Replaces one node's `attrs` — RM-036's room shape lives at `attrs.plan`.
+ *
+ * The WHOLE object, not a JSON patch. `attrs` is small and the caller has just read it, so a
+ * merge here would be a second place for the merge rule to live; `RoomShapeEditor` composes the
+ * new object from the node it is editing. Postgres has no partial-jsonb UPDATE that is any safer
+ * against a concurrent writer than this is, and there is one operator.
+ *
+ * Same affected-row check as `renameSpaceNode`, for the same reason: PostgREST reports an
+ * RLS-blocked UPDATE as a 200 with an empty array, so `{error}` alone would call a refused write
+ * a success.
+ */
+export async function updateSpaceNodeAttrs(id: string, attrs: Record<string, unknown>, actorUserId: string | null): Promise<void> {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from('space_nodes')
+    .update({ attrs, updated_by: actorUserId, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select('id');
+  if (error) throw new Error(`Supabase space_nodes attrs update failed: ${error.message}`);
+  if ((data?.length ?? 0) !== 1) {
+    throw new Error('That change matched no row — check you are signed in with a real Supabase session, not a break-glass one.');
+  }
+}
+
+/**
  * Deleting a node takes its subtree with it — `on delete cascade` on `parent_id`. Callers must
  * say so before asking: this is the one destructive action in the tree editor, and the blast
  * radius is invisible from the row being clicked.

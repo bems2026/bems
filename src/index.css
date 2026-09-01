@@ -5889,6 +5889,84 @@ fieldset.device-meta-editor__field > legend {
   min-height: 40px;
   max-width: 100%;
 }
+.space-plan__number {
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--txt);
+  padding: 8px 10px;
+  font: 500 var(--fs-sm) inherit;
+  /* 40px, matching `.space-plan__select` — these sit in the same row and a stepper that is
+     shorter than the select beside it reads as a rendering fault. Also SC 2.5.8's floor. */
+  min-height: 40px;
+  width: 5.5rem;
+  max-width: 100%;
+}
+
+/* The room outline editor — RM-036. */
+.room-shape {
+  margin: var(--sp-4) 0 0;
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-inner);
+  background: var(--bg-inset);
+}
+.room-shape__head {
+  margin-bottom: var(--sp-3);
+}
+.room-shape__body {
+  display: grid;
+  /* The preview keeps a fixed column and the controls take the rest, until there is no room for
+     two columns at all — below that the preview goes full width above them rather than being
+     squeezed to something too small to judge a shape by. */
+  grid-template-columns: minmax(0, 180px) minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: start;
+}
+@media (max-width: 620px) {
+  .room-shape__body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.room-shape__preview {
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-surface);
+}
+.room-shape__preview path {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.room-shape__cell {
+  fill: transparent;
+  stroke: var(--border);
+  stroke-width: 0.5;
+  cursor: pointer;
+}
+.room-shape__cell--on {
+  fill: var(--accent);
+  fill-opacity: 0.18;
+}
+.room-shape__cell:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.room-shape__controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.room-shape__presets,
+.room-shape__params {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: end;
+}
+
 .space-plan__note {
   margin: var(--sp-3) 0 0;
   padding: var(--sp-3);
@@ -5922,6 +6000,23 @@ fieldset.device-meta-editor__field > legend {
   /* A tenth of the frame per cell — a reading aid for "about a quarter along", not a grid the
      data snaps to. Positions stay continuous. */
   background-size: 10% 10%;
+}
+/* The drawn room outline — RM-036. Sits UNDER the pins and takes no clicks: the frame's own
+   handler is what places a device, and the outline is a drawing rather than a target. Deliberately
+   NOT clipping the pins either — the shape is the operator's sketch, not a survey, so a device
+   outside it is worth seeing rather than hiding. */
+.space-plan__shape {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.space-plan__shape path {
+  fill: var(--bg-surface-2);
+  fill-opacity: 0.55;
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
 }
 .space-plan__frame-empty {
   position: absolute;

@@ -34,6 +34,8 @@ import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
 import { useSpaceTreeStore } from '@/stores/spaceTreeStore';
 import { flattenForPicker, pathLabel, subtreeIds } from '@/lib/spaceTree';
 import { groupByPlacement, planPointOf, pointerToPlan, clampToPlan, type PlanPoint } from '@/lib/planLayout';
+import { parseShape, shapeToPath } from '@/lib/roomShape';
+import { RoomShapeEditor } from './RoomShapeEditor';
 import { resolveDisplayName } from '@/lib/deviceConfig';
 import { isReadingStale } from '@/lib/staleness';
 import { InfoHint } from '@/components/ui/InfoHint';
@@ -54,6 +56,13 @@ export function SpacePlanView({ editable = false }: { editable?: boolean }) {
   const configured = useSpaceTreeStore((s) => s.canEdit);
 
   const [nodeId, setNodeId] = useState('');
+  // The selected room's own outline (RM-036), or the full frame for a room nobody has drawn —
+  // which is exactly what every plan looked like before shapes existed, so an undrawn room is
+  // unchanged rather than empty.
+  const shapePath = useMemo(() => {
+    const node = nodes.find((n) => n.id === nodeId);
+    return shapeToPath(parseShape((node?.attrs as { plan?: unknown } | undefined)?.plan));
+  }, [nodes, nodeId]);
   /** The device currently being positioned — armed from the tray, or selected by clicking its
    * pin. One piece of state for both, because they are the same act at different stages. */
   const [armed, setArmed] = useState<string | null>(null);
@@ -175,6 +184,14 @@ export function SpacePlanView({ editable = false }: { editable?: boolean }) {
             onClick={onFrameClick}
             aria-label={`Plan of ${pathLabel(nodes, nodeId)}`}
           >
+            {/* The room's own outline — RM-036. Drawn UNDER the pins and deliberately not
+                clipping them: the shape is the operator's sketch, not a survey, so a device
+                falling outside it is a warning worth seeing rather than a device to hide.
+                `pointer-events: none` so every click still reaches the frame's placement
+                handler; the outline is a drawing, not a target. */}
+            <svg className="space-plan__shape" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+              <path d={shapePath} vectorEffect="non-scaling-stroke" />
+            </svg>
             {positioned.map((device) => {
               const point = planPointOf(saved[device.id]);
               if (point === null) return null;
@@ -199,6 +216,11 @@ export function SpacePlanView({ editable = false }: { editable?: boolean }) {
               </p>
             )}
           </div>
+
+          {/* Only where the plan is already editable. On the read-only Spatial view the outline
+              is something to look at, and an editor there would offer a write the page has
+              otherwise promised not to make. */}
+          {editable && <RoomShapeEditor nodeId={nodeId} nodeName={pathLabel(nodes, nodeId)} />}
 
           {deeper > 0 && (
             <p className="space-plan__note">
