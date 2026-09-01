@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, cleanup, act } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { useControlPlan } from './useControlPlan';
 import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
 import { useSpaceTreeStore } from '@/stores/spaceTreeStore';
@@ -21,19 +21,34 @@ const nodes: SpaceNode[] = [
 
 const cfg = (id: string, over: Partial<ReturnType<typeof emptyDeviceConfig>>) => ({ ...emptyDeviceConfig(id), ...over });
 
-/** Renders the hook and exposes what it returned, so the assertions read as facts about the hook
- * rather than about a card that happens to consume it. */
-let seen: ReturnType<typeof useControlPlan>;
+/**
+ * Renders the hook's whole return into the DOM and drives it through buttons.
+ *
+ * An earlier version assigned the return to a variable declared outside the component, which is
+ * a side effect during render — `react-hooks/globals` fails it, and rightly: what that variable
+ * held would depend on when React happened to re-render last. Everything the assertions need is
+ * rendered instead, so there is nothing to smuggle out.
+ */
 function Probe() {
-  seen = useControlPlan();
+  const { plan, source, rooms, roomId, setRoomId } = useControlPlan();
   return (
     <div>
-      <span data-testid="source">{seen.source ?? 'none'}</span>
-      <span data-testid="room">{seen.roomId ?? 'none'}</span>
-      {seen.plan ? <seen.plan.PlanShell /> : null}
+      <span data-testid="source">{source ?? 'none'}</span>
+      <span data-testid="room">{roomId ?? 'none'}</span>
+      <span data-testid="rooms">{rooms.map((r) => r.id).join(',')}</span>
+      <span data-testid="outlets">{JSON.stringify(plan?.OUTLET_POSITIONS ?? null)}</span>
+      <span data-testid="lights">{JSON.stringify(plan?.LIGHT_POSITIONS ?? null)}</span>
+      {rooms.map((r) => (
+        <button key={r.id} type="button" onClick={() => setRoomId(r.id)}>
+          show {r.id}
+        </button>
+      ))}
+      {plan ? <plan.PlanShell /> : null}
     </div>
   );
 }
+
+const read = (id: string) => JSON.parse(screen.getByTestId(id).textContent || 'null');
 
 beforeEach(() => {
   useSpaceTreeStore.setState({ nodes, status: 'ready', mutating: false, error: null, canEdit: true });
@@ -57,12 +72,10 @@ describe('useControlPlan — where the plan comes from', () => {
     // dynamic import cannot show.
     render(<Probe />);
     await screen.findByText('pack');
-    act(() => {
-      useDeviceConfigStore.setState({ saved: drawn });
-    });
-    expect(screen.getByTestId('source')).toHaveTextContent('data');
-    expect(seen.plan?.OUTLET_POSITIONS).toEqual({ co1: { x: 0.25, y: 0.75 } });
-    expect(seen.plan?.LIGHT_POSITIONS).toEqual({ l1: [{ x: 0.2, y: 0.2 }] });
+    useDeviceConfigStore.setState({ saved: drawn });
+    await screen.findByText('data');
+    expect(read('outlets')).toEqual({ co1: { x: 0.25, y: 0.75 } });
+    expect(read('lights')).toEqual({ l1: [{ x: 0.2, y: 0.2 }] });
   });
 
   it('draws the room the operator sketched, not a surveyed office', () => {
@@ -81,7 +94,7 @@ describe('useControlPlan — where the plan comes from', () => {
       },
     });
     render(<Probe />);
-    expect(seen.rooms.map((r) => r.id)).toEqual(['lab']);
+    expect(screen.getByTestId('rooms')).toHaveTextContent('lab');
   });
 
   it('switches room on request, and draws only that room', () => {
@@ -92,12 +105,12 @@ describe('useControlPlan — where the plan comes from', () => {
       },
     });
     render(<Probe />);
-    expect(seen.plan?.OUTLET_POSITIONS).toEqual({ co2: { x: 0.75, y: 0.75 } }); // Hall sorts first
-    act(() => seen.setRoomId('lab'));
-    expect(seen.plan?.OUTLET_POSITIONS).toEqual({ co1: { x: 0.25, y: 0.25 } });
+    expect(read('outlets')).toEqual({ co2: { x: 0.75, y: 0.75 } }); // Hall sorts first
+    fireEvent.click(screen.getByRole('button', { name: 'show lab' }));
+    expect(read('outlets')).toEqual({ co1: { x: 0.25, y: 0.25 } });
   });
 
-  it('falls back to the first drawn room when the chosen one stops being drawn', () => {
+  it('falls back to the first drawn room when the chosen one stops being drawn', async () => {
     // Otherwise a device moved out of the displayed room leaves the card showing an empty frame,
     // which reads as a failed render rather than as a room that is now empty.
     useDeviceConfigStore.setState({
@@ -107,23 +120,23 @@ describe('useControlPlan — where the plan comes from', () => {
       },
     });
     render(<Probe />);
-    act(() => seen.setRoomId('lab'));
+    fireEvent.click(screen.getByRole('button', { name: 'show lab' }));
     expect(screen.getByTestId('room')).toHaveTextContent('lab');
-    act(() => {
-      useDeviceConfigStore.setState({ saved: { co2: cfg('co2', { spaceNodeId: 'hall', planX: 0.75, planY: 0.75 }) } });
-    });
-    expect(screen.getByTestId('room')).toHaveTextContent('hall');
+    useDeviceConfigStore.setState({ saved: { co2: cfg('co2', { spaceNodeId: 'hall', planX: 0.75, planY: 0.75 }) } });
+    // By test id, not by text: once `lab` stops being drawn, three nodes say "hall" — the room,
+    // the room list, and the button that shows it.
+    await waitFor(() => expect(screen.getByTestId('room')).toHaveTextContent('hall'));
   });
 
   it('loads the build-time pack when nothing is drawn, and names no room over it', async () => {
-    // ALSO THE CONTROL FOR THE TEST ABOVE. Until this passed, "prefers data over the pack" was
+    // ALSO THE CONTROL FOR THE FIRST TEST. Until this passed, "prefers data over the pack" was
     // vacuous: the dynamic import had not resolved, so there was no pack for data to beat, and
     // reversing the preference in the hook broke nothing. If this ever stops finding a pack, the
     // preference test is asserting nothing again.
     render(<Probe />);
     await screen.findByText('pack');
     // A select over the pack would be a choice that does not exist: that pack IS one office.
-    expect(seen.rooms).toEqual([]);
-    expect(seen.roomId).toBeNull();
+    expect(screen.getByTestId('rooms')).toHaveTextContent('');
+    expect(screen.getByTestId('room')).toHaveTextContent('none');
   });
 });
