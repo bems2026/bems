@@ -13,7 +13,7 @@ import { useEffect, useRef } from 'react';
 import { Card } from '@/components/ui/Card';
 import { SpacePlanView } from './SpacePlanView';
 
-export function SpacePlanPanel({ onClose }: { onClose: () => void }) {
+export function SpacePlanPanel({ onClose }: { onClose?: () => void }) {
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   // Same focus treatment the other panels use: the heading takes focus on open so a screen
@@ -28,9 +28,11 @@ export function SpacePlanPanel({ onClose }: { onClose: () => void }) {
         <h2 className="card-title" ref={headingRef} tabIndex={-1}>
           Floor plan
         </h2>
-        <button type="button" className="space-plan-panel__close" onClick={onClose}>
-          Close
-        </button>
+        {onClose && (
+          <button type="button" className="space-plan-panel__close" onClick={onClose}>
+            Close
+          </button>
+        )}
       </div>
       <p className="space-plan-panel__lede">
         Each space has its own plan. Choose a space, pick a device, then click where it sits —
@@ -41,3 +43,4 @@ export function SpacePlanPanel({ onClose }: { onClose: () => void }) {
     </Card>
   );
 }
+

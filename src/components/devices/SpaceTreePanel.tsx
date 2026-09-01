@@ -21,7 +21,7 @@ import { SPACE_KINDS, MAX_NAME_LENGTH } from '@/lib/supabaseSpaceTree';
  * is closed. The three states are distinct and collapsing them loses "add at top level". */
 type AddTarget = { parent_id: string | null } | undefined;
 
-export function SpaceTreePanel({ onClose }: { onClose: () => void }) {
+export function SpaceTreePanel({ onClose }: { onClose?: () => void }) {
   const nodes = useSpaceTreeStore((s) => s.nodes);
   const error = useSpaceTreeStore((s) => s.error);
   const mutating = useSpaceTreeStore((s) => s.mutating);
@@ -86,9 +86,11 @@ export function SpaceTreePanel({ onClose }: { onClose: () => void }) {
         <h2 className="card-title space-tree-panel__heading" tabIndex={-1} ref={headingRef}>
           Spaces
         </h2>
-        <button type="button" className="space-tree-panel__close" onClick={onClose}>
-          Close
-        </button>
+        {onClose && (
+          <button type="button" className="space-tree-panel__close" onClick={onClose}>
+            Close
+          </button>
+        )}
       </div>
 
       <p className="space-tree-panel__lede">
@@ -212,3 +214,4 @@ function TreeRow({
     </li>
   );
 }
+

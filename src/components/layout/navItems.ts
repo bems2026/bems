@@ -31,7 +31,21 @@ export const NAV_ITEMS: NavItem[] = [
  * a different job, and a sixth tab would have made the primary navigation wider on a nav that
  * already wraps to two rows below 860px.
  */
-export const ACCOUNT_ITEMS: NavItem[] = [{ id: 'reports', label: 'Reports' }];
+export const ACCOUNT_ITEMS: NavItem[] = [
+  { id: 'reports', label: 'Reports' },
+  /**
+   * Settings sits here rather than in the tab bar for the same reason Reports does, and for one
+   * more that is specific to it: the five tabs answer "what is happening in the building now",
+   * and configuration answers "how is this deployment set up". They are read at different times
+   * by different people.
+   *
+   * It exists because the Devices page toolbar had become a junk drawer. Measured 2026-09-01:
+   * five buttons plus six filter chips needed **1123px on one line**, so on any laptop the page
+   * header wrapped to two rows — and four of those buttons were configuration rather than
+   * anything to do with the device list underneath them.
+   */
+  { id: 'settings', label: 'Settings' },
+];
 
 /**
  * Every navigable page. `App.tsx` validates the route hash and builds the browser-tab title

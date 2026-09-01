@@ -6361,3 +6361,143 @@ button.space-plan__pin {
     min-height: 44px;
   }
 }
+
+/* =============================================================================
+   Settings — RM-038. List and detail.
+
+   The Devices toolbar had grown to five buttons plus six filter chips, needing 1123px on one
+   line (measured 2026-09-01), so it wrapped on any laptop — and four of those buttons were
+   configuration rather than anything to do with the device list beneath them.
+
+   Two of these sections are tall editors (the space tree, the floor plan). A single stacked
+   page would put the deployment facts behind a whole plan editor, so the list stays beside the
+   detail on a wide screen and BECOMES the page on a narrow one.
+   ============================================================================= */
+.settings {
+  display: grid;
+  grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: start;
+}
+.settings__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  /* Sticky so the section list stays reachable while a long editor scrolls past it. `top` clears
+     the sticky nav — `--nav-h-live` is measured by TopNav rather than assumed, because the nav
+     wraps to two rows on narrow screens. */
+  position: sticky;
+  top: calc(var(--nav-h-live, 64px) + var(--sp-4));
+}
+.settings__item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-3);
+  text-align: left;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-inner);
+  color: var(--txt);
+  cursor: pointer;
+  /* 44px is SC 2.5.8's floor and these are the primary targets on a phone. */
+  min-height: 44px;
+}
+.settings__item:hover {
+  border-color: var(--border-strong);
+}
+.settings__item--active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.settings__icon {
+  flex: none;
+  color: var(--muted);
+}
+.settings__item--active .settings__icon {
+  color: var(--accent);
+}
+.settings__item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.settings__item-label {
+  font: 600 var(--fs-sm) inherit;
+}
+.settings__item-blurb {
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+}
+.settings__detail {
+  min-width: 0;
+}
+.settings-card {
+  padding: var(--sp-5);
+}
+.settings-card__actions {
+  margin-top: var(--sp-4);
+}
+.settings-facts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.settings-facts__row {
+  display: grid;
+  grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
+  gap: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border-faint);
+}
+.settings-facts__row:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+.settings-facts__row dt {
+  font-size: var(--fs-sm);
+  color: var(--muted-2);
+}
+.settings-facts__row dd {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--txt);
+}
+.settings-facts__id {
+  color: var(--muted-2);
+  font-size: var(--fs-xs);
+}
+.settings-facts__unknown {
+  color: var(--muted-2);
+  font-style: italic;
+}
+.settings-warn {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: start;
+  margin: var(--sp-3) 0 0;
+  padding: var(--sp-3);
+  border-radius: var(--r-inner);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+@media (max-width: 860px) {
+  .settings {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .settings__list {
+    position: static;
+  }
+  /* On a phone the list IS the page: opening a section replaces it, and the header's
+     "All settings" button is the way back. Showing both would put a tall editor below a list
+     nobody can see past. */
+  .settings--open .settings__list {
+    display: none;
+  }
+}

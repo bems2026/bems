@@ -41,7 +41,7 @@ const TIER_LABEL: Record<LoadShedGroup | 'unassigned', string> = {
   unassigned: 'Not classified',
 };
 
-export function LoadShedPanel({ onClose }: { onClose: () => void }) {
+export function LoadShedPanel({ onClose }: { onClose?: () => void }) {
   const devices = useDeviceStore((s) => s.devices);
   const readings = useDeviceStore((s) => s.latestReadings);
   const saved = useDeviceConfigStore((s) => s.saved);
@@ -77,9 +77,11 @@ export function LoadShedPanel({ onClose }: { onClose: () => void }) {
             unattended is not recoverable by a person, so that is deliberately manual.
           </InfoHint>
         </h2>
-        <button type="button" className="shed-panel__close" onClick={onClose}>
-          Close
-        </button>
+        {onClose && (
+          <button type="button" className="shed-panel__close" onClick={onClose}>
+            Close
+          </button>
+        )}
       </div>
 
       <p className="shed-panel__lede">
@@ -180,3 +182,4 @@ export function LoadShedPanel({ onClose }: { onClose: () => void }) {
     </Card>
   );
 }
+

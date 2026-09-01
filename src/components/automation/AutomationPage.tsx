@@ -11,6 +11,7 @@ import { useConfirm } from '@/components/ui/useConfirm';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { ScheduleRow } from './ScheduleRow';
 import { DsmThresholdsCard } from './DsmThresholdsCard';
+import { LoadShedPanel } from '@/components/devices/LoadShedPanel';
 import type { DeviceClass } from '@/lib/types';
 
 const TRIGGER_KEY = 'global.trigger.care_acu_on';
@@ -198,6 +199,11 @@ export function AutomationPage() {
 
         <div className="automation-side">
           <DsmThresholdsCard />
+
+          {/* Moved here from the Devices toolbar. The tiers are what auto-shed acts on when a
+              DSM threshold above is breached, so the rule and the thing it switches now sit on
+              one page — they were two clicks and a page apart, on a page about a device list. */}
+          <LoadShedPanel />
 
           <div className="card automation-pending-card">
             <h3 className="card-title">

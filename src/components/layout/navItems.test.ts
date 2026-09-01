@@ -17,9 +17,17 @@ describe('navItems', () => {
     expect(NAV_ITEMS.some((n) => n.id === 'reports')).toBe(false);
   });
 
-  it('still treats Reports as a real route, reachable from the account menu', () => {
-    expect(ACCOUNT_ITEMS.map((n) => n.id)).toEqual(['reports']);
+  it('still treats Reports and Settings as real routes, reachable from the account menu', () => {
+    expect(ACCOUNT_ITEMS.map((n) => n.id)).toEqual(['reports', 'settings']);
     expect(ROUTE_ITEMS.some((n) => n.id === 'reports')).toBe(true);
+    expect(ROUTE_ITEMS.some((n) => n.id === 'settings')).toBe(true);
+  });
+
+  it('does not put Settings in the tab bar either', () => {
+    // The five tabs answer "what is the building doing now". Configuration answers "how is this
+    // deployment set up" — read at a different time, by a different person, and a sixth tab
+    // would widen a nav that already wraps to two rows below 860px.
+    expect(NAV_ITEMS.some((n) => n.id === 'settings')).toBe(false);
   });
 
   it('ROUTE_ITEMS is every navigable page — the tab bar plus the account menu', () => {

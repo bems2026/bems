@@ -16,11 +16,16 @@ import type { SiteUiPrefs } from '@/lib/siteUi';
  * So this is not a preference panel that will grow to cover every card. It exists for cards that
  * make a claim about a building rather than about a reading, and there are two.
  *
- * WHY IT LIVES ON THE DEVICES PAGE. Partly because that is where this deployment is already
- * configured, beside the space tree and the load-shed tiers. Mostly because a control that hides
- * a card cannot live on the card it hides — there would be no way back.
+ * WHY IT LIVES UNDER SETTINGS. A control that hides a card cannot live on the card it hides —
+ * there would be no way back. It began on the Devices toolbar, which is where this deployment
+ * used to be configured; that toolbar had grown to five buttons plus six filter chips needing
+ * 1123px on one line, so the configuration moved to a page of its own (RM-038).
+ *
+ * The file still lives under `components/devices/` because it is imported by the Settings page
+ * and moving it would be a rename with no behavioural content. If a third home ever appears, move
+ * it then.
  */
-export function PageCardsPanel({ onClose }: { onClose: () => void }) {
+export function PageCardsPanel({ onClose }: { onClose?: () => void }) {
   const prefs = useSiteUiStore((s) => s.prefs);
   const setPref = useSiteUiStore((s) => s.setPref);
   const canEdit = useSiteUiStore((s) => s.canEdit);
@@ -58,9 +63,11 @@ export function PageCardsPanel({ onClose }: { onClose: () => void }) {
           </h3>
           <p className="card-sub">Applies to everyone, including the office kiosk.</p>
         </div>
-        <button type="button" className="shed-panel__close" onClick={onClose}>
-          Close
-        </button>
+        {onClose && (
+          <button type="button" className="shed-panel__close" onClick={onClose}>
+            Close
+          </button>
+        )}
       </div>
 
       {!canEdit && (
@@ -94,3 +101,4 @@ export function PageCardsPanel({ onClose }: { onClose: () => void }) {
     </div>
   );
 }
+
