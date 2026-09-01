@@ -1601,6 +1601,45 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 ## 2. Current roadmap (active execution)
 
+### Customisable floor plans — RM-035 to RM-037
+
+Design agreed 2026-09-01 and written up in **`docs/floor-plan-design.md`**, which carries the
+reasoning; these entries carry the state.
+
+**Why now.** The tree finally has rows — `NBERIC → First → Left → CARE Office` — and **nothing is
+in it**: 0 of 20 devices assigned to a space, none with plan coordinates. RM-030's by-space totals
+and RM-031's data-drawn plan both have their schema and no data. The placement step has not been
+taken because the result is not yet worth having: the frame is a fixed square, and the lighting
+layout comes from `carePlan.ts`, a pack surveyed in one room that would draw a second site's
+devices at this site's positions and look entirely correct doing it (the reason RM-032 refused to
+fall back to it).
+
+- [ ] **RM-035 (S)** **The plan and 3D cards become removable, per site.** A new
+      `site_ui_prefs` table — the operator-writable sibling of read-only `sites`, exactly as
+      `device_config` is to `devices`. **Not a column on `sites`:** that row is deliberately
+      read-only from the browser (`phase19_sites.sql` says so outright) and also carries
+      `policy.acu_min_setpoint_c`, the university's energy floor that `validateCommand` enforces
+      server-side. RLS is row-level, so granting UPDATE for a display preference would grant it
+      for the aircon policy too.
+      Defaults are `true`, so the migration changes nothing on screen until somebody asks it to.
+      **The property to hold:** hiding a card never hides a control — the lighting and outlet
+      lists keep dispatching. Losing a diagram is cosmetic; losing a relay is not.
+- [ ] **RM-036 (M)** **A room gets its real outline.** `space_nodes.attrs.plan` holds a shape
+      *descriptor* (rect / L / T / U / triangle / circle / cells), not a baked path — a path is
+      un-editable and reopening the editor could only offer "start again". One pure
+      `shapeToPath` renders every kind; "eject to grid" rasterises any preset into a nudgeable
+      cols×rows bitmap. No migration: `attrs` exists for exactly this.
+- [ ] **RM-037 (M)** **Lighting layout becomes data, and the last hard-coded geometry can go.**
+      `device_config.plan_fixtures` holds a switch's lamps as normalised points — **not grid cell
+      indices**, because an index is meaningless without the grid that made it, so a 4×3 → 5×3
+      resize would silently relocate every luminaire in the building when nothing had moved. The
+      grid is an input method, not a storage format.
+      `useControlPlan` prefers data, keeps the pack as a fallback, then the existing honest "no
+      plan is drawn for this site". Deleting `carePlan.ts` is a **follow-up**, once this office's
+      room is actually drawn — doing it in the same change would leave the CARE office with no
+      plan between the deploy and the moment somebody draws one. That deletion closes the last
+      half of FI-016.
+
 - [x] **RM-008** ~~Apply the three Phase 9 migrations.~~ **Done 2026-08-21.** Applied via the
       Supabase Management API; all four objects confirmed live (`readings_buckets`,
       `roll_up_and_prune_readings`, `readings_hourly`, `commands_complete_own_inflight`),
