@@ -217,7 +217,13 @@ export async function runReportGeneration({ client, nowMs = Date.now(), tz }) {
   if (earliestDataTs === null) {
     reason = 'no readings yet';
   } else if (missing.length === 0 && missingWeeks.length === 0) {
-    reason = (generatedMonths ?? []).length > 0
+    // WEEKS COUNT TOWARDS "some exist", not just months. Observed on the live Pi 2026-09-01:
+    // two weeks were reported and current while no month had settled, and this line still said
+    // "no period has finished settling yet" — the same shape of untrue-but-reassuring log the
+    // comment above was written to stop. A deployment younger than a month is exactly when
+    // weekly reports are the only ones there are.
+    const anyExist = (generatedMonths ?? []).length > 0 || (generatedWeekRows ?? []).length > 0;
+    reason = anyExist
       ? 'every settled month and week already has a current report'
       : 'no period has finished settling yet';
   }

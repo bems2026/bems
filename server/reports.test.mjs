@@ -278,14 +278,13 @@ test('says no month has settled yet, rather than claiming every month has a repo
   // The old line read "every complete month already has one", which is vacuously true when
   // there are no complete months at all - and reads to whoever is scanning the journal as
   // though reports exist.
-  // Late enough that no month HAS settled. A week has, so the fixture reports the weeks too —
-  // otherwise this would be testing the weekly backlog, not the sentence about months.
-  const client = fakeClient({
-    hourly: [{ hour: '2026-08-02T00:00:00Z' }],
-    generatedWeeks: allWeeksSettled('2026-08-02T00:00:00Z'),
-  });
+  // Data recent enough that NOTHING has settled — not a month and not a week either. An earlier
+  // version seeded every week as already reported, which after RM-041 means reports DO exist and
+  // made this assert the opposite sentence.
+  const client = fakeClient({ hourly: [{ hour: '2026-08-19T00:00:00Z' }] });
   return runReportGeneration({ client, nowMs: NOW }).then((r) => {
     assert.deepEqual(r.generated, []);
+    assert.deepEqual(r.generatedWeeks, [], 'the week containing 19 August has not ended by the 21st');
     assert.match(r.reason, /no period has finished settling/i);
   });
 });
@@ -390,4 +389,19 @@ test('one week failing does not abandon the rest, nor the months', async () => {
   assert.ok(r.generatedWeeks.includes('2026-06-29'), 'the week before the bad one must still be generated');
   assert.ok(r.generatedWeeks.includes('2026-07-13'), 'and so must the one after it');
   assert.deepEqual(r.failed.map((f) => f.month), ['2026-07-06']);
+});
+
+test('counts weeks towards "reports exist", not only months', async () => {
+  // OBSERVED ON THE LIVE PI. Two weeks were reported and current while no month had settled, and
+  // the daemon logged "no period has finished settling yet" — untrue, and reassuring in the
+  // wrong direction. A deployment younger than a month is precisely when weekly reports are the
+  // only ones there are.
+  const client = fakeClient({
+    hourly: [{ hour: '2026-08-02T00:00:00Z' }],
+    generated: [],
+    generatedWeeks: allWeeksSettled('2026-08-02T00:00:00Z'),
+  });
+  const r = await runReportGeneration({ client, nowMs: NOW });
+  assert.deepEqual(r.generated, [], 'no month has settled, so none should be generated');
+  assert.match(r.reason, /already has a current report/i);
 });
