@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-01 (UTC) — the control path, against the live Pi; settings and policy, same day
+**Last audited:** 2026-09-02 (UTC) — the control path, settings, policy and the kiosk, against the live Pi
 **Audited at commit:** `1f46590`
 
 **2026-09-01, and it changes what §0 says.** The headline claim below — that there is no
@@ -1848,6 +1848,42 @@ fall back to it).
       `generate_monthly_report`, and drop the second RPC call in `server/reports.mjs`. Blocked
       until the period tables have carried a full month in production and the two have been
       compared on real data rather than only on the rehearsal's fixtures.
+
+- [x] **RM-043 (S)** **DONE 2026-09-02, deployed.** **The office kiosk was running a week-old
+      build and nothing said so.** MEASURED on the Pi: `ibems-kiosk.service` had been up since
+      25 August 10:52; `dist/` was rebuilt 1 September 20:42. A single-page app never reloads
+      itself, so the office display had been serving the 25 August bundle through four deploys —
+      while the same URL over Tailscale, opened fresh each time, showed the current one. Nothing
+      was broken, which is why nothing caught it: the report was "it looks different on the
+      kiosk".
+
+      *Immediate:* the kiosk service was restarted, which is all a deploy ever needed and is
+      exactly the step nobody will remember next time.
+
+      *Durable:* `src/lib/buildVersion.ts` plus `useBuildWatch`. The signal is the entry bundle's
+      own hashed filename — Vite already derives it from the contents, so there is no version file
+      to emit and nothing to keep in sync, and in development the entry is `/src/main.tsx` and
+      never changes, so it is inert there rather than needing a special case. The booted name is
+      read from the DOM, NOT remembered from a first poll: a tab that loaded build A and first
+      polled after B shipped would otherwise adopt B as its baseline and never reload, which is
+      the very case this exists to end.
+
+      **A RELOAD MUST BE EARNED.** Every ambiguous answer — a failed fetch, a 502 page, HTML with
+      no module script — resolves to "no new build", because a wrong reload puts the office
+      display into a loop and that is far worse than an hour of stale build. Both guards were
+      checked by breaking them: treating an unknown bundle as new fails two tests, and removing
+      the idle check fails two more.
+
+      *Who reloads:* the kiosk reloads itself, since nobody is standing at it to click anything;
+      every other viewer gets a dismissible offer, because they may be mid-command and a page that
+      refreshed under someone's hand would be a worse fault than the one being fixed. Once a new
+      build is known the hook stops asking what is served and re-checks only for idleness, on a
+      15s timer — at the 5-minute poll interval the idle guard would only ever have held a reload
+      back if somebody happened to touch the screen in the minute before a poll.
+
+      *A test bug worth recording:* the first version fired the interaction and then advanced a
+      full poll interval, which simulates somebody who left five minutes ago, not somebody using
+      the screen — and reported the working guard as broken.
 
 - [x] **RM-008** ~~Apply the three Phase 9 migrations.~~ **Done 2026-08-21.** Applied via the
       Supabase Management API; all four objects confirmed live (`readings_buckets`,

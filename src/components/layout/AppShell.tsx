@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { TopNav } from './TopNav';
+import { NewBuildNotice } from './NewBuildNotice';
 
 interface AppShellProps {
   activeId: string;
@@ -22,6 +23,9 @@ export function AppShell({ activeId, children }: AppShellProps) {
         Skip to main content
       </a>
       <TopNav activeId={activeId} />
+      {/* RM-043. Mounted in the shell rather than on a page, because a deploy lands under
+          whatever page happens to be open. */}
+      <NewBuildNotice />
       <div className="app-main">
         {/* id targeted by the skip link above. tabIndex=-1 lets it receive programmatic
             focus on skip-link activation without adding it to the normal tab order. */}

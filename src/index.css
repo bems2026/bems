@@ -6784,3 +6784,42 @@ button.space-plan__pin {
   gap: var(--sp-2);
   margin-bottom: var(--sp-3);
 }
+
+/* A newer build has been deployed under this tab — RM-043. Full-width under the nav rather than
+   a floating toast: it is a statement about the whole page, and a toast that auto-dismisses
+   would be worse than not saying it, since the tab stays stale either way. */
+.new-build {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: var(--fs-xs);
+}
+.new-build__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.new-build__btn {
+  flex: none;
+  padding: 2px var(--sp-3);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--bg-surface);
+  color: var(--accent-text);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+.new-build__dismiss {
+  flex: none;
+  display: inline-flex;
+  padding: 2px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
