@@ -7,10 +7,14 @@ import { emptyDeviceConfig } from '@/lib/deviceConfig';
 import type { SpaceNode } from '@/lib/spaceTree';
 
 /**
- * The order of preference is the whole of RM-037's last step: **what somebody drew beats the
- * hand-surveyed pack**, and the pack still beats nothing. The pack is one office's coordinates;
- * at any other site it draws that site's devices at this site's positions and looks entirely
- * correct doing it.
+ * RM-044. There is one source now: what somebody drew.
+ *
+ * These used to assert a PREFERENCE — drawn data over a hand-surveyed build-time pack, with a
+ * control test proving the pack had actually loaded so the comparison was not vacuous. The pack
+ * was deleted on 2026-09-02 once the CARE office was drawn, and its coordinates live on as the
+ * `care-office` preset, so both of those tests went with it: there is no longer a second source
+ * for data to beat. What remains is that a drawn room produces a plan and an undrawn one
+ * produces nothing — which is now the whole contract.
  */
 
 const nodes: SpaceNode[] = [
@@ -62,16 +66,15 @@ afterEach(() => {
 });
 
 describe('useControlPlan — where the plan comes from', () => {
-  it('prefers what somebody drew over the build-time pack', async () => {
+  it('builds a plan from what somebody drew', async () => {
     const drawn = {
       co1: cfg('co1', { spaceNodeId: 'lab', planX: 0.25, planY: 0.75 }),
       l1: cfg('l1', { spaceNodeId: 'lab', planFixtures: [{ x: 0.2, y: 0.2 }] }),
     };
-    // Mount with nothing drawn first, and WAIT for the pack to actually arrive — the point is
-    // that the pack loses once it is genuinely there, which a mount that never resolved the
-    // dynamic import cannot show.
+    // Mounted with nothing drawn first, so the transition from "no plan" to "a plan" is what is
+    // asserted rather than the end state alone.
     render(<Probe />);
-    await screen.findByText('pack');
+    expect(screen.getByTestId('source')).toHaveTextContent('none');
     useDeviceConfigStore.setState({ saved: drawn });
     await screen.findByText('data');
     expect(read('outlets')).toEqual({ co1: { x: 0.25, y: 0.75 } });
@@ -128,14 +131,12 @@ describe('useControlPlan — where the plan comes from', () => {
     await waitFor(() => expect(screen.getByTestId('room')).toHaveTextContent('hall'));
   });
 
-  it('loads the build-time pack when nothing is drawn, and names no room over it', async () => {
-    // ALSO THE CONTROL FOR THE FIRST TEST. Until this passed, "prefers data over the pack" was
-    // vacuous: the dynamic import had not resolved, so there was no pack for data to beat, and
-    // reversing the preference in the hook broke nothing. If this ever stops finding a pack, the
-    // preference test is asserting nothing again.
+  it('has no plan at all when nothing is drawn, rather than falling back to another building', () => {
+    // What the deleted pack did. A site that has drawn nothing gets the honest empty state and
+    // the same controls in a list — never one building's coordinates rendered at another.
     render(<Probe />);
-    await screen.findByText('pack');
-    // A select over the pack would be a choice that does not exist: that pack IS one office.
+    expect(screen.getByTestId('source')).toHaveTextContent('none');
+    expect(read('outlets')).toBeNull();
     expect(screen.getByTestId('rooms')).toHaveTextContent('');
     expect(screen.getByTestId('room')).toHaveTextContent('none');
   });

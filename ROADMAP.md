@@ -1885,6 +1885,41 @@ fall back to it).
       full poll interval, which simulates somebody who left five minutes ago, not somebody using
       the screen — and reported the working guard as broken.
 
+- [x] **RM-044 (M)** **DONE 2026-09-02, applied live.** **The office is drawn, and the surveyed
+      pack became a preset instead of being deleted.** `carePlan.ts` held the CARE office's layout
+      as a build-time pack: it rendered wherever `SITE.scene_pack` named it, could not be edited,
+      and could not be used anywhere else. The knowledge in it was real — the outlet coordinates
+      came from the live Node-RED dashboard's own fixed `coords`, the ceiling grid from
+      `LIGHT_PLAN`, which the 3D scene draws from too. Deleting it would have thrown that away;
+      leaving it hard-coded kept the office undrawable.
+
+      *`src/lib/planPresets.ts`* carries it as `care-office`, applied from Settings → Floor plan.
+      After applying, the data is the source of truth and the preset is only the seed.
+
+      **THE FRAME CHANGES, AND THAT WAS THE TRAP.** The pack's numbers are normalised against the
+      320x550 **viewBox**; `plan_x`/`plan_y` mean "where in this ROOM", and the room rectangle is
+      inset 10px on every side. Copying one into the other looks entirely correct — every value is
+      still a plausible 0..1 — and puts every device a few percent out, in the same direction,
+      with nothing to flag it. `toRoomFrame` is tested on the corners and asserted not to be the
+      identity.
+
+      *A room may now carry its own proportions* (`attrs.plan.aspect`, `parseAspect`), so this
+      office draws as the 300:530 it has always been drawn as rather than as a square. A room that
+      has not said stays square, and square still means "nobody has said" — `geometry.ts` is
+      explicit that this room was never actually measured.
+
+      *Applied to production 2026-09-02, from the same arithmetic the button uses rather than
+      hand-copied numbers:* 14 devices into `CARE Office`, 7 outlets positioned, 7 circuits with
+      3 lamps each, room aspect 0.5660. **All 14 load-shed tiers survived** — the bulk write
+      builds on each device's effective config because the write is a whole-row upsert, and
+      breaking that guard fails a test.
+
+      *So `carePlan.ts` and `PlanShell.tsx` are deleted*, and `useControlPlan` has two sources
+      instead of three. That closes FI-016's remaining half and the last hard-coded building
+      geometry in the frontend. Two tests went with the pack — a preference test and its
+      anti-vacuity control — because there is no longer a second source for data to beat; what
+      replaced them asserts that an undrawn site gets nothing rather than another building.
+
 - [x] **RM-008** ~~Apply the three Phase 9 migrations.~~ **Done 2026-08-21.** Applied via the
       Supabase Management API; all four objects confirmed live (`readings_buckets`,
       `roll_up_and_prune_readings`, `readings_hourly`, `commands_complete_own_inflight`),

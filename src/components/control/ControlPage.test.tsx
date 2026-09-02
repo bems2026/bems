@@ -5,6 +5,9 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore } from '@/stores/commandStore';
 import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
 import { useSiteUiStore } from '@/stores/siteUiStore';
+import { useSpaceTreeStore } from '@/stores/spaceTreeStore';
+import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
+import { emptyDeviceConfig } from '@/lib/deviceConfig';
 import { useControlLog } from './controlLog';
 import * as bridgeClient from '@/lib/bridgeClient';
 import type { CommandAck, Device } from '@/lib/types';
@@ -50,6 +53,8 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.clearAllMocks();
   useDeviceStore.setState({ devices: [], latestReadings: {}, totals: null, history: {} });
+  useSpaceTreeStore.setState({ nodes: [], status: 'ready', canEdit: false, mutating: false, error: null });
+  useDeviceConfigStore.setState({ saved: {}, draft: {} });
   useCommandStore.setState({ pending: {} });
   useCapabilitiesStore.setState({ hardwareDispatchEnabled: null, dispatchClasses: null });
   useControlLog.setState({ entries: [] });
@@ -225,10 +230,18 @@ describe('ControlPage', () => {
       devices: [outlet(1)],
       latestReadings: { co1: { device_id: 'co1', ts: new Date().toISOString(), online: true, state: 'off', socket_states: { 1: 'off', 2: 'off' } } },
     });
+    // The plan is DRAWN DATA now, not a build-time pack (RM-044): the puck exists because a
+    // room has this outlet placed in it, and at a site where nothing is drawn it never appears —
+    // the same outlet is then commanded from `OutletsListCard`, which this file covers
+    // separately. Seeded here rather than awaited, because there is no import left to resolve.
+    useSpaceTreeStore.setState({
+      nodes: [{ id: 'room', site_id: 's', parent_id: null, kind: 'room', name: 'Office', sort_order: 0, attrs: {} }],
+      status: 'ready', canEdit: true, mutating: false, error: null,
+    });
+    useDeviceConfigStore.setState({
+      saved: { co1: { ...emptyDeviceConfig('co1'), spaceNodeId: 'room', planX: 0.5, planY: 0.5 } },
+    });
     render(<ControlPage />);
-    // AWAITED, because the plan is now a lazily-imported pack (FI-016): the puck exists once
-    // this site's pack resolves, and at a site with no pack it never does — the same outlet is
-    // then commanded from `OutletsListCard`, which this file covers separately.
     fireEvent.click(await screen.findByRole('button', { name: 'Outlet 1 DP1' }));
     expect(bridgeClient.sendCommand).toHaveBeenCalledWith(expect.objectContaining({ device_id: 'co1', socket: 1, action: 'on' }));
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();

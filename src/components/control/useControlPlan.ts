@@ -2,17 +2,18 @@
  * Whether this deployment has a Control-page plan, where it came from, and what is in it —
  * FI-016, RM-037.
  *
- * THREE SOURCES, IN THIS ORDER.
+ * TWO SOURCES NOW.
  *
  *   1. **What somebody drew.** Positions and lamps from `device_config`, for the room the card is
  *      showing (`src/lib/controlPlanData.ts`). This is the one that works at any site.
- *   2. **The build-time pack.** `SITE.scene_pack` → `carePlan.ts`, hand-surveyed coordinates for
- *      one office. Kept ON PURPOSE AND TEMPORARILY: deleting it in the same change would leave
- *      the CARE office with no plan between this deploy and the moment somebody draws its room.
- *      Once that room is drawn and verified, the pack and its coordinates go — that deletion is
- *      the close of FI-016's remaining half and of the last hard-coded building geometry in the
- *      frontend.
- *   3. **Nothing**, and both cards say so and fall back to a list of the same controls.
+ *   2. **Nothing**, and both cards say so and fall back to a list of the same controls.
+ *
+ * THERE USED TO BE A THIRD, between them: a build-time pack of hand-surveyed coordinates for one
+ * office, loaded when `SITE.scene_pack` named it. It was kept only until that office was actually
+ * drawn, and on 2026-09-02 it was — 7 outlets positioned and 7 circuits of 3 lamps each, in the
+ * `CARE Office` node. The coordinates were not thrown away: they became the `care-office` preset
+ * (`src/lib/planPresets.ts`, RM-044), which anyone can apply to any room and then edit. That is
+ * the close of FI-016's remaining half, and of the last hard-coded building geometry here.
  *
  * SAME GATE AS THE 3D SCENE (RM-032), because it is the same claim: a drawn plan asserts that
  * this room looks like this and that these devices are here. At a site that surveyed neither,
@@ -24,8 +25,7 @@
  * corroboration is not something a plan module should own. So the plan is consumed for its
  * coordinates and the cards keep their controls.
  */
-import { useEffect, useMemo, useState } from 'react';
-import { SITE } from '@shared/siteConfig.mjs';
+import { useMemo, useState } from 'react';
 import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
 import { useSpaceTreeStore } from '@/stores/spaceTreeStore';
 import { drawnRooms, dataPlanFor, type DrawnRoom } from '@/lib/controlPlanData';
@@ -41,30 +41,17 @@ export interface ControlPlan {
 
 export interface ControlPlanState {
   plan: ControlPlan | null;
-  /** Where `plan` came from. The cards use it to say which room they are showing — a picker over
-   * the pack would be a picker with nothing to pick. */
-  source: 'data' | 'pack' | null;
+  /** `'data'` when a room is drawn, `null` when none is. Kept as a named source rather than
+   * folded into `plan !== null` because the cards read it to decide whether to offer a room
+   * picker at all, and because a third source existed until 2026-09-02 and may again. */
+  source: 'data' | null;
   /** Rooms with something drawn in them. Empty unless `source` is `'data'`. */
   rooms: DrawnRoom[];
   roomId: string | null;
   setRoomId: (id: string) => void;
 }
 
-/** Packs this build carries. A site naming one that was never built degrades to the list rather
- * than throwing on an import that cannot resolve — a mistake in a site directory must not take
- * the Control page down, which is the surface an operator reaches for when something is wrong. */
-const PLAN_PACKS: Record<string, () => Promise<ControlPlan>> = {
-  // Two imports because the pack's data and its shell live in separate modules: a file exporting
-  // both a component and constants breaks fast refresh. They resolve together, so the card never
-  // sees a half-loaded pack.
-  care: async () => {
-    const [data, shell] = await Promise.all([import('./plans/carePlan'), import('./plans/PlanShell')]);
-    return { ...data, PlanShell: shell.PlanShell };
-  },
-};
-
 export function useControlPlan(): ControlPlanState {
-  const [pack, setPack] = useState<ControlPlan | null>(null);
   const saved = useDeviceConfigStore((s) => s.saved);
   const nodes = useSpaceTreeStore((s) => s.nodes);
 
@@ -77,35 +64,15 @@ export function useControlPlan(): ControlPlanState {
   const data = useMemo(() => dataPlanFor(saved, roomId), [saved, roomId]);
   const shape = useMemo(() => nodes.find((n) => n.id === roomId)?.attrs, [nodes, roomId]);
 
-  useEffect(() => {
-    const load = SITE.scene_pack ? PLAN_PACKS[SITE.scene_pack] : undefined;
-    if (!load) return;
-    let cancelled = false;
-    // A failed import leaves the list fallback in place rather than an error boundary. The
-    // controls work either way; only the drawing is missing, and a broken picture must not take
-    // the switches with it.
-    load().then(
-      (mod) => {
-        if (!cancelled) setPack(mod);
-      },
-      () => {},
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const plan = useMemo<ControlPlan | null>(() => {
-    if (data) {
-      const attrs = shape as { plan?: unknown } | undefined;
-      return { ...data, PlanShell: () => DataPlanShell({ plan: attrs?.plan }) };
-    }
-    return pack;
-  }, [data, shape, pack]);
+    if (!data) return null;
+    const attrs = shape as { plan?: unknown } | undefined;
+    return { ...data, PlanShell: () => DataPlanShell({ plan: attrs?.plan }) };
+  }, [data, shape]);
 
   return {
     plan,
-    source: data ? 'data' : plan ? 'pack' : null,
+    source: data ? 'data' : null,
     rooms: data ? rooms : [],
     roomId: data ? roomId : null,
     setRoomId: setChosen,

@@ -1,10 +1,10 @@
 /**
  * The room a drawn Control plan is drawn inside — RM-037.
  *
- * The counterpart to `PlanShell`, which draws the CARE office's surveyed outline, glazed
- * partitions and sliding door. This one draws whatever shape the operator sketched for the room
- * and nothing else: partitions, doors and desks are facts about a building, and inventing them
- * here would be exactly the hard-coded geometry this replaces.
+ * It draws whatever shape the operator sketched for the room and nothing else. Partitions, doors
+ * and desks are facts about a building, and inventing them here would be exactly the hard-coded
+ * geometry this replaced — `PlanShell`, deleted 2026-09-02, drew the CARE office's own outline,
+ * glazed partitions and sliding door at every deployment that named its pack.
  *
  * A room nobody has shaped falls back to the full frame — `parseShape`'s default — which is what
  * every plan looked like before shapes existed. An undrawn room is unchanged, not empty.
