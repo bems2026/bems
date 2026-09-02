@@ -219,7 +219,12 @@ export function buildAck(cmd, atMs) {
   if (cmd.action === 'set') {
     ack.capability = cmd.capability;
     ack.value = cmd.value;
-    ack.note = 'commanded setting only — this device does not confirm the value back';
+    // Narrower than the relay note above, because it turned out to be narrower in fact.
+    // Observed on `co3` 2026-09-03: a child-lock write came back in the device's NEXT READING,
+    // both when locking and when unlocking. So the honest claim is about this ack — accepted for
+    // dispatch, nothing confirmed at this moment — not the broader "the device never says". The
+    // relay note stays as it is: a relay genuinely has no readback on this hardware.
+    ack.note = 'commanded setting only — accepted for dispatch, not confirmed here; the value appears in a later reading if the device took it';
   }
   return ack;
 }

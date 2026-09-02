@@ -161,6 +161,23 @@ give it another port: `npm run mock -- --port=1881`. The recovery, as ever, was
 `sudo systemctl restart nodered` — which also brought the fleet back one device better than
 before.
 
+**Editing `server/` or `shared/` changes nothing until the daemons restart.** Node loads a
+module once, at process start. `ibems-proxy` and `ibems-scheduler` therefore keep running the
+code they were started with — on 2026-09-03 the proxy had been up since Sep 1 and was still
+validating commands with a two-day-old `shared/commands.mjs`, so a newly added command verb came
+back `400 invalid_action` and the app rendered it as *"This control is misconfigured — the bridge
+rejected it."* The code was correct, committed, pushed and tested; the process was old.
+`sudo systemctl restart ibems-proxy ibems-scheduler` is free and needs no asking. Do it after any
+change under `server/` or `shared/`, and check `systemctl show <unit> -p ActiveEnterTimestamp`
+against the file's mtime before believing a deploy landed.
+
+**And rebuild `dist` after any change under `src/`.** Same failure one layer over: the kiosk is
+served from `./dist` by `serve -s dist`, so an edit made *after* the last `npm run build` is
+simply not deployed. The gap that bit was 26 seconds — a build at 04:47:02 and a source edit at
+04:47:28 — which is exactly the size nobody thinks to check. `npm run build` and compare mtimes;
+no service restart is needed, but the browser needs a hard reload to pick up the new asset
+hashes.
+
 **Chromium here cannot render the app; Firefox can.** Chromium accepts a CDP connection and
 then answers no command, and `chromium --headless --screenshot` fetches the page HTML without
 parsing it — empty DOM, no asset requests, Vulkan/dawn initialisation failing in its own log.

@@ -50,6 +50,12 @@ npm run build:flow       # regenerate the flow after editing shared/
 npm run tuya:spec        # check the capability catalogue against the vendor's live device model
 ```
 
+**Deploying is two separate acts, and neither is implied by a commit.** `server/` and `shared/`
+changes need `sudo systemctl restart ibems-proxy ibems-scheduler` — Node loads a module once, so
+a running daemon keeps the code it started with. `src/` changes need `npm run build`, because the
+kiosk is served from `./dist`. Both have already produced a "the code is right but the system
+disagrees" hour; see `docs/pi-session-brief.md`.
+
 **`npm run mock` cannot bind on the Pi** — port 1880 is Node-RED there. Use
 `npm run mock -- --port=1881`. `npm run mock:stop` now refuses to stop anything that is not a
 mock, because it once stopped the live bridge.

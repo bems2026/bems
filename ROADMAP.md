@@ -268,6 +268,31 @@ migration runner and no tracker table, so this list is the record:
   ingestion outright, on the history of a real building. `test/phase28-reading-capabilities.test.mjs`
   asserts the daemon has not been widened, and is what must be updated when it is.
 
+### The first capability write reached hardware — 2026-09-03
+
+`co3`'s child lock was set from the app, locked and then unlocked, and every link was OBSERVED
+rather than inferred: validation, an audit row carrying `capability`/`capability_value`, cloud
+dispatch, and the new value coming back in the device's next reading both times.
+`status=dispatched`, `via=cloud` — as designed, since settings have no LAN route (FI-022).
+
+**The standard-instruction cloud path is now proven against real hardware.** The DP-instruction
+path the two CT meter products need is still unobserved; `warn_power` would be the test, and it
+arms a live circuit's over-power alarm.
+
+**Two stale-deploy faults surfaced doing it, and neither was in the code.** `ibems-proxy` had
+been running since Sep 1 and was still validating with a two-day-old `shared/commands.mjs`, so
+the new verb came back `400 invalid_action` and the app rendered it as "This control is
+misconfigured". And `dist` had been built 26 seconds before the last edit to
+`capabilityWidgets.tsx`, so the kiosk was a revision behind. Both rules are now written into
+`docs/pi-session-brief.md` and `CLAUDE.md`: a commit is not a deploy, `server/` and `shared/`
+need a daemon restart, `src/` needs a rebuild.
+
+**One claim was corrected by the evidence.** The capability ack said "this device does not
+confirm the value back"; `co3` plainly does, in its next reading. The ack is still
+`confirmed: false` — acceptance is not confirmation, and the reading is a separate later event —
+but the note now says that instead of overclaiming. The relay note is unchanged: a relay
+genuinely has no readback on this hardware.
+
 ### phase29 is applied and verified — 2026-09-03
 
 **`supabase/phase29_command_capability.sql`** (EX-152) **has run**, checked the same three ways
