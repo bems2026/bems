@@ -66,6 +66,23 @@ export function routeFor(device, cmd) {
 }
 
 /**
+ * Capability writes have no LOCAL route yet, and saying so explicitly is the point.
+ *
+ * The three routes above are hand-built `http in` nodes on the live flow's source tabs — the
+ * same tabs `build-flow.mjs` deliberately does not generate. Adding a fourth means writing to
+ * the live flow, which is an ask-first action and a plan module of its own (the shape
+ * `dpParserPlan` already establishes). Until that exists, a capability write falls through to
+ * the vendor cloud, which needs no flow change and works today.
+ *
+ * A distinct reason rather than the generic `no_route`, because the two mean different things
+ * to whoever reads the audit row: `no_route` is "this device class cannot be commanded at all",
+ * this is "the LAN path for settings is not built yet, so the vendor carried it".
+ */
+export function hasLocalCapabilityRoute() {
+  return false;
+}
+
+/**
  * POSTs a command to the live flow. Success is decided purely on `res.ok` (HTTP 2xx), never on
  * response body shape — the flow's success responses have no shared envelope, and parsing them
  * would couple this to an implementation detail with no contract behind it. The body is read,
@@ -74,6 +91,13 @@ export function routeFor(device, cmd) {
  * Returns `{ok:true}` or `{ok:false, detail}` — never throws.
  */
 async function dispatchLocal(device, cmd, { bridgeHost, bridgePort, lightApiToken }) {
+  if (cmd?.action === 'set' && !hasLocalCapabilityRoute()) {
+    return {
+      ok: false,
+      reason: 'no_local_capability_route',
+      detail: 'the bridge has no local endpoint for capability writes yet — see hasLocalCapabilityRoute',
+    };
+  }
   const route = routeFor(device, cmd);
   if (!route) return { ok: false, reason: 'no_route', detail: `no dispatch route for device class ${device.class}` };
 
@@ -116,6 +140,7 @@ async function dispatchLocal(device, cmd, { bridgeHost, bridgePort, lightApiToke
  *   `bridge_unreachable`  the bridge endpoint could not be reached at all
  *   `bridge_rejected`     the bridge answered with an error status
  *   `no_route`            this device class has no dispatch route
+ *   `no_local_capability_route`  settings have no LAN endpoint yet; the cloud carries them
  *
  * A code rather than a `detail` string for the caller to parse. Every one of these reached the
  * browser as a single 502 `hardware_dispatch_failed`, which `describeFailure` rendered as "The

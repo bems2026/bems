@@ -19,6 +19,15 @@
  *     temperature someone last picked", which no UI can honestly display. The bounds here are
  *     not a policy choice: they are exactly the keys the live flow's IR library holds, and a
  *     value outside them would resolve to no code at all.
+ *   - `action: 'set'` is the SECOND verb, added once devices turned out to hold more than a
+ *     relay: a child lock, an auto-off countdown, an over-power alarm threshold. It carries a
+ *     `capability` and a `value` instead of a socket, and every bound it enforces comes from
+ *     the vendor's own device model in `shared/deviceCapabilities.mjs` rather than from a
+ *     constant here. Crucially it consults that catalogue's `writable` flag and NOT the
+ *     vendor's `access` — the vendor marks four more capabilities writable (`relay_status`,
+ *     `switch_inching`, `cycle_time`, `random_time`) and each installs unattended switching
+ *     inside the device, where the Supabase scheduler cannot see it and the audit trail cannot
+ *     record it. Trusting `access: 'rw'` here would open all four.
  *   - An `outlet_dual` command MUST name a socket. There is no whole-outlet relay — `state`
  *     on an outlet reading is *derived* (`s1 || s2` in buildLatest.mjs), and the legacy
  *     Node-RED `Format CMD` nodes only ever emit `{dps: 1 | 2, set}`. A UI wanting "turn
@@ -26,6 +35,7 @@
  */
 
 import { iso8 } from './buildLatest.mjs';
+import { capabilityForDevice, validateCapabilityValue } from './deviceCapabilities.mjs';
 
 export const COMMAND_ROUTE = '/api/command';
 
@@ -71,7 +81,7 @@ export function validateCommand(body, registry, policy = {}) {
     return { ok: false, status: 400, code: 'invalid_body', error: 'request body must be a JSON object' };
   }
 
-  const { device_id, socket, action, command_id, target_c } = body;
+  const { device_id, socket, action, command_id, target_c, capability, value } = body;
 
   if (typeof device_id !== 'string' || device_id.length === 0) {
     return { ok: false, status: 400, code: 'invalid_body', error: 'device_id must be a non-empty string' };
@@ -82,12 +92,54 @@ export function validateCommand(body, registry, policy = {}) {
     return { ok: false, status: 404, code: 'unknown_device', error: `unknown device_id: ${device_id}` };
   }
 
-  if (NOT_COMMANDABLE_CLASSES.has(device.class)) {
+  if (action !== 'set' && NOT_COMMANDABLE_CLASSES.has(device.class)) {
     return { ok: false, status: 400, code: 'not_commandable', error: `${device.class} devices have no controllable state` };
   }
 
-  if (action !== 'on' && action !== 'off') {
-    return { ok: false, status: 400, code: 'invalid_action', error: 'action must be exactly "on" or "off"' };
+  if (action !== 'on' && action !== 'off' && action !== 'set') {
+    return { ok: false, status: 400, code: 'invalid_action', error: 'action must be exactly "on", "off" or "set"' };
+  }
+
+  /**
+   * A capability write. It leaves before the relay rules below, because none of them apply:
+   * a capability names its own socket in its code (`countdown_1` / `countdown_2`), and a meter
+   * that is `not_commandable` — a true statement about relay state — still holds an alarm
+   * threshold worth setting.
+   */
+  if (action === 'set') {
+    if (socket !== undefined) {
+      return { ok: false, status: 400, code: 'socket_not_applicable', error: 'a capability names its own socket — omit socket' };
+    }
+    if (typeof capability !== 'string' || capability.length === 0) {
+      return { ok: false, status: 400, code: 'invalid_capability', error: 'capability must be a non-empty string' };
+    }
+    const cap = capabilityForDevice(device, capability);
+    if (!cap) {
+      return {
+        ok: false,
+        status: 400,
+        code: 'unknown_capability',
+        error: `${device_id} has no capability "${capability}"`,
+      };
+    }
+    const bad = validateCapabilityValue(cap, value);
+    if (bad) return { ok: false, status: 400, ...bad };
+
+    // The RESOLVED code is what gets recorded, not what the caller typed: `warn_power` on
+    // `mtr_lo_yellow` is `warn_power2`, and the audit row should say which circuit was armed.
+    return {
+      ok: true,
+      cmd: { command_id, device_id, socket: undefined, action, capability: cap.code, value, target: cap.code },
+    };
+  }
+
+  if (capability !== undefined || value !== undefined) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'capability_not_applicable',
+      error: 'capability and value belong to action "set"',
+    };
   }
 
   const hasSockets = device.class === 'outlet_dual';
@@ -151,7 +203,7 @@ export function validateCommand(body, registry, policy = {}) {
  * a client that only logs the body still gets it.
  */
 export function buildAck(cmd, atMs) {
-  return {
+  const ack = {
     command_id: cmd.command_id,
     device_id: cmd.device_id,
     socket: cmd.socket,
@@ -162,4 +214,12 @@ export function buildAck(cmd, atMs) {
     confirmation: 'none',
     note: 'commanded state only — this device does not report relay state back',
   };
+  // Added only for a capability write, so a relay ack is byte-identical to what it always was
+  // and no existing reader meets a field it has never seen.
+  if (cmd.action === 'set') {
+    ack.capability = cmd.capability;
+    ack.value = cmd.value;
+    ack.note = 'commanded setting only — this device does not confirm the value back';
+  }
+  return ack;
 }

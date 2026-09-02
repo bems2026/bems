@@ -61,7 +61,7 @@ const FAILURE_COPY: Record<string, string> = {
   break_glass_cannot_command: 'Local sign-in is view-only. Sign in with your account to send commands.',
 };
 
-function describeFailure(err: unknown): string {
+export function describeFailure(err: unknown): string {
   if (err instanceof BridgeFetchError) {
     if (err.code && FAILURE_COPY[err.code]) return FAILURE_COPY[err.code];
     const misconfigured = err.status === 400 || err.status === 404;

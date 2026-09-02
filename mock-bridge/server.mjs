@@ -173,6 +173,21 @@ for (const d of DEVICE_REGISTRY) {
 const commanded = new Map();
 const pinned = (key, simulated) => (commanded.has(key) ? commanded.get(key) : simulated);
 
+/**
+ * Capability writes that have been accepted, keyed `<device_id>:<code>`.
+ *
+ * Separate from `commanded`, which is keyed by RELAY wire target and holds booleans. A
+ * capability value may be a boolean, a whole number of watts or an enum string, and a device
+ * that has had its alarm threshold set should report that threshold back on the next reading —
+ * otherwise the mock would accept a write and then contradict it, and a UI built against that
+ * would look broken against real hardware and correct here.
+ */
+const commandedCaps = new Map();
+const pinnedCap = (deviceId, code, simulated) => {
+  const key = `${deviceId}:${code}`;
+  return commandedCaps.has(key) ? commandedCaps.get(key) : simulated;
+};
+
 /** Read by the 1s energy-accrual loop below so kWh doesn't climb on an outlet whose
  * relays are commanded off — written fresh by every `snapshot()` call. Up to 1s of lag
  * versus a command landing mid-interval; irrelevant at this granularity. */
@@ -301,6 +316,10 @@ function snapshot() {
     if (has('countdown_2')) dp.countdown_2 = 0;
     if (has('relay_status')) dp.relay_status = 'memory';
     if (has('fault')) dp.fault = 0;
+
+    // Anything actually written wins over the simulated default, so a setting round-trips the
+    // way it does on real hardware: the reading is what tells the UI the value took.
+    for (const code of Object.keys(dp)) dp[code] = pinnedCap(d.id, code, dp[code]);
     return dp;
   };
 
@@ -523,7 +542,8 @@ function handleCommand(req, res) {
     if (CMD_DROP === 'all' || CMD_DROP === cmd.device_id) return; // never respond — exercises the client's own abort
 
     const commit = () => {
-      commanded.set(cmd.target, cmd.action === 'on');
+      if (cmd.action === 'set') commandedCaps.set(`${cmd.device_id}:${cmd.capability}`, cmd.value);
+      else commanded.set(cmd.target, cmd.action === 'on');
       const ack = buildAck(cmd, Date.now());
       rememberReplay(cmd.command_id, ack);
       send(res, ACCEPTED_STATUS, ack);

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Gauge, Lock, LockOpen, AlertTriangle, Timer, Settings2, Zap } from 'lucide-react';
 import { MetricValue } from '@/components/ui/MetricValue';
 import { Sparkline } from '@/components/ui/Sparkline';
@@ -6,8 +6,9 @@ import { useDeviceStore, historyFor } from '@/stores/deviceStore';
 import { measured } from '@/lib/staleness';
 import { formatNumber, MISSING } from '@/lib/format';
 import { faultFlags, READ_ONLY_SETTINGS } from '@/lib/capabilitySchema';
+import { useCapabilityStore, writeFor } from '@/stores/capabilityStore';
 import type { ResolvedCapabilities } from '@/lib/capabilitySchema';
-import type { Device, Reading } from '@/lib/types';
+import type { CapabilityValue, Device, Reading } from '@/lib/types';
 import { RelayToggle } from './RelayToggle';
 import { useRelayState } from '@/hooks/useRelayState';
 
@@ -134,19 +135,44 @@ export function EnergyWidget({ caps }: WidgetProps) {
   );
 }
 
-/** Child lock — the physical-button lockout, as a state badge. */
-export function ChildLockWidget({ caps }: WidgetProps) {
+/**
+ * Child lock — the physical-button lockout on the outlet itself.
+ *
+ * Writable, and the badge IS the control. The displayed state comes from the reading, never
+ * from what was just clicked: the device does not confirm a setting back synchronously, so an
+ * optimistic flip would show a lock that may not have engaged. "sending…" is the honest
+ * intermediate, and the badge changes when the device says it has.
+ */
+export function ChildLockWidget({ device, caps }: WidgetProps) {
   const locked = caps.value('child_lock');
   const unknown = locked === undefined;
+  const writable = caps.meta('child_lock')?.writable === true;
+  const setCapability = useCapabilityStore((s) => s.setCapability);
+  const write = useCapabilityStore((s) => writeFor(s.writes, device.id, 'child_lock'));
+  const busy = write?.phase === 'sending';
+
+  const label = unknown ? MISSING : locked ? 'locked' : 'unlocked';
 
   return (
     <Row
       icon={locked === true ? <Lock size={14} aria-hidden="true" /> : <LockOpen size={14} aria-hidden="true" />}
       label="Child lock"
     >
-      <span className={`badge${locked === true ? ' badge--accent' : ''}`}>
-        {unknown ? MISSING : locked ? 'locked' : 'unlocked'}
-      </span>
+      {writable ? (
+        <button
+          type="button"
+          className={`badge device-card__badge-button${locked === true ? ' badge--accent' : ''}`}
+          aria-pressed={locked === true}
+          aria-label={`Child lock, currently ${label}`}
+          disabled={busy || unknown}
+          onClick={() => void setCapability(device.id, 'child_lock', !locked)}
+        >
+          {busy ? 'sending…' : label}
+        </button>
+      ) : (
+        <span className={`badge${locked === true ? ' badge--accent' : ''}`}>{label}</span>
+      )}
+      {write?.phase === 'failed' && <span className="device-card__error">{write.error}</span>}
     </Row>
   );
 }
@@ -155,19 +181,43 @@ export function ChildLockWidget({ caps }: WidgetProps) {
  * The over-power alarm threshold the device holds, and the device's own verdict against it.
  *
  * The slider is bounded by the vendor's declared min/max/step rather than by anything chosen
- * here, so it cannot offer a value the hardware would reject. It is disabled for now: writing a
- * capability needs a command verb this system does not have yet (`shared/commands.mjs` accepts
- * only `on`/`off`, and `commands.action` is CHECK-constrained to match). Rendering it inert with
- * the reason on its title is honest; rendering it live and silently dropping the write is not.
+ * here, so it cannot offer a value the hardware would reject — including the step, because
+ * offering 1550 W when the device quantises to 100 W would show a number it never held.
  *
- * `power_type` is the DEVICE's verdict, not a threshold evaluated here. The two can disagree,
- * and when they do the device is the one wired to the circuit.
+ * The committed value comes from the READING. While dragging, the thumb follows the finger
+ * (`draft`), and the write is sent on release — one command per adjustment rather than one per
+ * pixel. If the device reports something else afterwards, the device wins.
+ *
+ * `power_type` is the DEVICE's verdict against this threshold, not one evaluated here. The two
+ * can disagree, and when they do the device is the one wired to the circuit.
  */
-export function WarnPowerWidget({ caps }: WidgetProps) {
+export function WarnPowerWidget({ device, caps }: WidgetProps) {
   const meta = caps.meta('warn_power');
   const value = caps.value('warn_power');
   const verdict = caps.value('power_type');
   const known = typeof value === 'number';
+  const writable = meta?.writable === true;
+
+  const setCapability = useCapabilityStore((s) => s.setCapability);
+  const write = useCapabilityStore((s) => writeFor(s.writes, device.id, 'warn_power'));
+  const busy = write?.phase === 'sending';
+
+  // The device's value is the truth; the draft exists only for the duration of a drag.
+  //
+  // It records WHAT IT WAS DRAGGED AGAINST, and is ignored the moment the reading moves — so a
+  // value the device rejected cannot linger on screen looking committed. Derived during render
+  // rather than cleared in an effect: resetting state from an effect renders once with the
+  // stale value first, and is what `react-hooks/set-state-in-effect` exists to catch.
+  const [draft, setDraft] = useState<{ against: CapabilityValue | undefined; value: number } | null>(null);
+  const live = draft && draft.against === value ? draft.value : null;
+
+  const min = meta?.min ?? 0;
+  const shown = live ?? (known ? value : min);
+
+  const commit = () => {
+    if (live === null || live === value) return; // released where it started — nothing to say
+    void setCapability(device.id, 'warn_power', live);
+  };
 
   return (
     <Row icon={<AlertTriangle size={14} aria-hidden="true" />} label="Power alarm">
@@ -175,20 +225,27 @@ export function WarnPowerWidget({ caps }: WidgetProps) {
         <input
           type="range"
           className="device-card__slider"
-          min={meta?.min ?? 0}
+          min={min}
           max={meta?.max ?? 100}
           step={meta?.step ?? 1}
-          value={known ? value : (meta?.min ?? 0)}
-          disabled
-          readOnly
+          value={shown}
+          disabled={!writable || busy || !known}
           aria-label="Over-power alarm threshold"
-          title="Set on the device. Changing it from here needs a capability command verb, which this build does not have yet."
+          aria-valuetext={`${formatNumber(shown, 0)} watts`}
+          onChange={(e) => setDraft({ against: value, value: Number(e.currentTarget.value) })}
+          // Committed on release, not on every pixel of the drag — one command per adjustment.
+          onPointerUp={() => commit()}
+          onKeyUp={(e) => { if (/^(Arrow|Home|End|Page)/.test(e.key)) commit(); }}
         />
-        <span className="device-card__threshold-value">{known ? `${formatNumber(value, 0)} W` : MISSING}</span>
-        {typeof verdict === 'string' && (
+        <span className="device-card__threshold-value">
+          {known || live !== null ? `${formatNumber(shown, 0)} W` : MISSING}
+        </span>
+        {busy && <span className="device-card__muted">sending…</span>}
+        {typeof verdict === 'string' && !busy && (
           <span className={`badge${verdict === 'warn' ? ' badge--warn' : ' badge--good'}`}>{verdict}</span>
         )}
       </span>
+      {write?.phase === 'failed' && <span className="device-card__error">{write.error}</span>}
     </Row>
   );
 }

@@ -170,7 +170,16 @@ export type SocketIndex = 1 | 2;
 export interface CommandRequest {
   device_id: string;
   socket?: SocketIndex;
-  action: SwitchState;
+  /**
+   * `on`/`off` switch a relay; `set` writes a capability and carries `capability` + `value`
+   * instead of a socket. The two never mix — `shared/commands.mjs` refuses a body that brings
+   * fields from both verbs.
+   */
+  action: SwitchState | 'set';
+  /** `set` only: the capability code, channel suffix optional — the server resolves it. */
+  capability?: string;
+  /** `set` only: the new value, in the canonical units the reading reports. */
+  value?: CapabilityValue;
   command_id?: string;
   /** ACU only: the setpoint in whole degrees, 16-30. The aircon is IR-commanded and its logic
    * takes a code rather than a relay state, so "on" alone cannot say what to turn on to. See
@@ -188,7 +197,11 @@ export interface CommandAck {
   command_id: string;
   device_id: string;
   socket?: SocketIndex;
-  action: SwitchState;
+  action: SwitchState | 'set';
+  /** `set` only: the capability actually written, channel suffix resolved by the server. */
+  capability?: string;
+  /** `set` only: the value the server accepted. */
+  value?: CapabilityValue;
   target: string;
   accepted_at: string;
   confirmed: false;

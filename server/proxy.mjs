@@ -511,6 +511,24 @@ async function handleCommand(req, res, token) {
       confirmed: false,
       confirmation: 'none',
       source: 'ibems-app',
+      /**
+       * Added ONLY for a capability write, and that is a sequencing decision rather than a
+       * tidiness one. These two columns and `action = 'set'` arrive with
+       * `supabase/phase29_command_capability.sql`, which is applied by hand. Naming a column
+       * PostgREST does not have makes it reject the insert, so:
+       *
+       *   - a relay command's row is byte-identical to what it has always been, and cannot be
+       *     broken by this change whether or not the migration has run;
+       *   - a capability write before the migration fails at the AUDIT INSERT, and
+       *     `auditedDispatch` refuses to dispatch anything it could not record first. The
+       *     failure mode is a refused command, never an unrecorded one that moved hardware.
+       *
+       * So the write path is safe by construction until the migration lands, rather than safe
+       * because someone remembered to apply it in the right order.
+       */
+      ...(cmd.action === 'set'
+        ? { capability: cmd.capability, capability_value: cmd.value }
+        : {}),
     },
     dispatchEnabled: HARDWARE_DISPATCH_ENABLED,
     dispatchClasses: DISPATCH_CLASSES,
@@ -569,6 +587,14 @@ async function handleCommand(req, res, token) {
       no_route: {
         code: 'no_dispatch_route',
         detail: 'This deployment has no way to command a device of this kind. The command was logged.',
+      },
+      // Distinct from `no_dispatch_route`, and the difference is the remedy. That one means the
+      // device cannot be commanded at all; this means SETTINGS have no LAN endpoint yet, so the
+      // vendor cloud carries them — and it was not reachable either. An operator reading this
+      // should check the internet, not the device.
+      no_local_capability_route: {
+        code: 'capability_needs_cloud',
+        detail: 'Settings are sent through the vendor cloud until the bridge gains a local route for them, and the cloud could not be reached. The command was logged.',
       },
     };
     const mapped = FAILURE[outcome.dispatchReason] ?? {

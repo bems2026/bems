@@ -33,6 +33,8 @@
  */
 
 /** Written before dispatch is attempted; replaced by the outcome once it is known. */
+import { capabilityForDevice } from '../shared/deviceCapabilities.mjs';
+
 export const STATUS_IN_FLIGHT = 'dispatching';
 
 /**
@@ -66,7 +68,25 @@ export async function auditedDispatch({
   updateAudit,
   log = console.error,
 }) {
-  const willDispatch = Boolean(dispatchEnabled) && dispatchClasses.includes(device.class);
+  /**
+   * WHY A CAPABILITY WRITE IS NOT GATED BY `dispatchClasses`.
+   *
+   * That list — switch, outlet_dual, acu_ir — answers "which classes have a RELAY route", and
+   * it is exactly right for on/off. A meter is not on it because it has no relay, which is
+   * true, and it also holds an over-power alarm threshold that is worth setting. Gating a
+   * capability write on the relay list would refuse every meter setting on grounds that have
+   * nothing to do with it.
+   *
+   * What gates a capability write instead is the catalogue's own `writable` allowlist, which is
+   * narrower than the vendor's `access: 'rw'` on purpose — see `shared/deviceCapabilities.mjs`.
+   * Re-checked here rather than trusted from validation upstream: this is the last line before
+   * hardware, and the audit row's status is decided from it.
+   */
+  const willDispatch = Boolean(dispatchEnabled) && (
+    cmd?.action === 'set'
+      ? Boolean(capabilityForDevice(device, cmd.capability)?.writable)
+      : dispatchClasses.includes(device.class)
+  );
   const openingStatus = willDispatch ? STATUS_IN_FLIGHT : 'dry_run';
 
   const inserted = await insertAudit({ ...auditRow, status: openingStatus, note });

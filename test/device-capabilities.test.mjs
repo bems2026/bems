@@ -238,3 +238,16 @@ test('both meter channels report idleness as the same word', () => {
   assert.equal(decodeDps('cz_ct_double', { 113: 'idle' }).device_state2, 'idle');
   assert.equal(decodeDps('cz_ct_double', { 103: 'working' }).device_state1, 'working');
 });
+
+test('every writable numeric capability is already in raw wire units', () => {
+  // `validateCapabilityValue` checks bounds in canonical units and the dispatch path writes raw
+  // dp values. Those two agree only while the divisor is 1, which it is for every writable
+  // numeric today. If a future capability arrives with a scale, this fails and somebody decides
+  // deliberately rather than discovering it as a value off by a factor of ten on a relay.
+  for (const id of CAPABILITY_PROFILE_IDS) {
+    for (const cap of writableCapabilities(id)) {
+      if (cap.kind !== 'value') continue;
+      assert.equal(divisorFor(cap), 1, `${id}.${cap.code} is writable and scaled — see the note here`);
+    }
+  }
+});

@@ -486,6 +486,100 @@ test('a command with the gate closed is accepted, dry_run, and audit-logged with
   }
 });
 
+test('a capability write is audited with its capability and value; a relay command is not', async () => {
+  // The two shapes share one table. A relay row must be byte-identical to what it has always
+  // been — `phase29_command_capability.sql` is applied by hand, and PostgREST rejects an insert
+  // naming a column it does not have, so a relay command must never carry the new fields.
+  const { proxyUrl, supabaseState, cleanup } = await setup();
+  try {
+    const capRes = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'co1', action: 'set', capability: 'child_lock', value: true }),
+    });
+    assert.equal(capRes.status, 202);
+    const ack = await capRes.json();
+    assert.equal(ack.action, 'set');
+    assert.equal(ack.capability, 'child_lock');
+    assert.equal(ack.value, true);
+    assert.equal(ack.confirmed, false, 'a setting is no more confirmed than a relay is');
+
+    const capRow = supabaseState.insertedCommands.at(-1);
+    assert.equal(capRow.action, 'set');
+    assert.equal(capRow.capability, 'child_lock');
+    assert.equal(capRow.capability_value, true);
+    assert.equal(capRow.target, 'child_lock');
+    assert.equal(capRow.socket, null);
+
+    await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l1', action: 'on' }),
+    });
+    const relayRow = supabaseState.insertedCommands.at(-1);
+    assert.equal(Object.hasOwn(relayRow, 'capability'), false);
+    assert.equal(Object.hasOwn(relayRow, 'capability_value'), false);
+  } finally {
+    cleanup();
+  }
+});
+
+test('a capability the catalogue refuses is rejected before anything is recorded', async () => {
+  // relay_status is vendor-writable and deliberately refused here. Nothing may reach the audit
+  // table, let alone hardware.
+  const { proxyUrl, supabaseState, cleanup } = await setup({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-light-token' });
+  try {
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'co1', action: 'set', capability: 'relay_status', value: 'memory' }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal((await res.json()).code, 'capability_not_writable');
+    assert.equal(supabaseState.insertedCommands.length, 0, 'nothing recorded');
+  } finally {
+    cleanup();
+  }
+});
+
+test('a meter setting is recorded and dispatched, though a meter has no relay class', async () => {
+  // `DISPATCH_CLASSES` answers "which classes have a relay route" and correctly excludes meters.
+  // A capability write is gated by the catalogue's writable allowlist instead, or every meter
+  // setting would be refused on grounds that have nothing to do with it.
+  //
+  // With no vendor cloud configured in this harness the dispatch cannot land — capability
+  // writes have no LAN endpoint yet — so the honest outcome is a recorded command and a 502
+  // that says which path was missing. What must NOT happen is a `dry_run`: that would mean the
+  // gate refused it, and the gate did not.
+  const { proxyUrl, supabaseState, cleanup } = await setup({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-light-token' });
+  try {
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'mtr_lo_red', action: 'set', capability: 'warn_power', value: 1500 }),
+    });
+    assert.equal(res.status, 502);
+    const body = await res.json();
+    assert.equal(body.code, 'capability_needs_cloud', 'names the missing path, not a generic failure');
+
+    const row = supabaseState.insertedCommands.at(-1);
+    assert.notEqual(row.status, 'dry_run', 'the gate allowed it; the transport is what failed');
+    assert.equal(row.capability, 'warn_power1', 'resolved to this meter’s own channel');
+    assert.equal(row.capability_value, 1500);
+
+    // ...and a RELAY command to the same meter is still refused, as it always was.
+    const relay = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'mtr_lo_red', action: 'on' }),
+    });
+    assert.equal(relay.status, 400);
+    assert.equal((await relay.json()).code, 'not_commandable');
+  } finally {
+    cleanup();
+  }
+});
+
 test('the gate alone never claims success — a dispatch that fails is recorded as failed, not dispatched', async () => {
   // This used to be proven with an outlet, on the grounds that outlets had no dispatch path at
   // all. They do now, so the same guarantee is shown the only way still available: a real

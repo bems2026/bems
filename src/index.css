@@ -7068,9 +7068,9 @@ button.space-plan__pin {
   width: 100%;
 }
 
-/* The slider is inert until a capability command verb exists. It is rendered rather than hidden
-   so the threshold the device actually holds is visible, and reads as disabled rather than as
-   broken. */
+/* The threshold the device actually holds, and the control that changes it. Disabled only when
+   the capability is not writable or a write is in flight — never merely because the reading is
+   stale, on the same reasoning as the relay toggles. */
 .device-card__threshold {
   display: inline-flex;
   align-items: center;
@@ -7079,7 +7079,11 @@ button.space-plan__pin {
 .device-card__slider {
   width: 7rem;
   accent-color: var(--accent);
+  cursor: pointer;
+}
+.device-card__slider:disabled {
   cursor: not-allowed;
+  opacity: 0.6;
 }
 .device-card__threshold-value {
   font-variant-numeric: tabular-nums;
@@ -7105,4 +7109,21 @@ button.space-plan__pin {
 .devices-detail__title {
   margin: 0;
   font-size: var(--fs-sm);
+}
+
+/* The child-lock badge is also its control, so it needs to read as pressable without becoming a
+   different shape from the read-only badges beside it. */
+.device-card__badge-button {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  font: inherit;
+}
+.device-card__badge-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+/* A failed write says why, next to the control that failed — not in a toast somewhere else. */
+.device-card__error {
+  color: var(--bad);
+  font-size: var(--fs-2xs);
 }

@@ -352,3 +352,77 @@ export function decodeDps(profileId, dps) {
   }
   return out;
 }
+
+/**
+ * One of a DEVICE's own capabilities, by base name or by exact code.
+ *
+ * The channel filter is the point. A caller naming a bare `warn_power` gets the threshold for
+ * the channel this logical device actually reads, and a caller naming the OTHER channel's code
+ * outright gets nothing — which is a refusal, not a silent redirect. Writing channel 1's alarm
+ * threshold onto channel 2 would arm the wrong branch circuit, and the two are different
+ * physical circuits in the same building.
+ */
+export function capabilityForDevice(device, name) {
+  const p = profile(device?.capability_profile);
+  if (!p || typeof name !== 'string') return null;
+  const channel = device?.channel ?? 1;
+  return (
+    p.capabilities.find(
+      (c) => (c.channel == null || c.channel === channel) && (c.base === name || c.code === name),
+    ) ?? null
+  );
+}
+
+/**
+ * Is this a value this capability will accept? Returns `null` when it is, or `{code, error}`.
+ *
+ * Every bound comes from the vendor's own declaration — nothing here invents a range. Values
+ * are in the same canonical units `decodeDps` produces; `divisorFor` is 1 for every writable
+ * numeric capability today, which `test/device-capabilities.test.mjs` pins so that a future
+ * capability with a scale cannot quietly make the API and the wire disagree.
+ */
+export function validateCapabilityValue(cap, value) {
+  if (!cap) return { code: 'unknown_capability', error: 'no such capability on this device' };
+  if (!cap.writable) {
+    return { code: 'capability_not_writable', error: `${cap.code} is read-only in this system` };
+  }
+
+  if (cap.kind === 'bool') {
+    if (typeof value !== 'boolean') return { code: 'invalid_value', error: `${cap.code} takes true or false` };
+    return null;
+  }
+
+  if (cap.kind === 'enum') {
+    if (typeof value !== 'string') return { code: 'invalid_value', error: `${cap.code} takes a string` };
+    if (!cap.range?.includes(value)) {
+      return { code: 'value_out_of_range', error: `${cap.code} accepts one of: ${cap.range?.join(', ')}` };
+    }
+    return null;
+  }
+
+  if (cap.kind === 'value') {
+    // Integer only: every writable numeric here is a whole number of seconds or watts, and a
+    // fractional value would be rounded on the wire rather than rejected — a silent change to
+    // what the operator asked for.
+    if (!Number.isInteger(value)) return { code: 'invalid_value', error: `${cap.code} takes a whole number` };
+    const div = divisorFor(cap);
+    const min = typeof cap.min === 'number' ? cap.min / div : undefined;
+    const max = typeof cap.max === 'number' ? cap.max / div : undefined;
+    if ((min !== undefined && value < min) || (max !== undefined && value > max)) {
+      return { code: 'value_out_of_range', error: `${cap.code} must be between ${min} and ${max}` };
+    }
+    // The device's own step. Offering 1550 W when the hardware quantises to 100 W would show
+    // the operator a number the device never held.
+    if (typeof cap.step === 'number' && cap.step > 1) {
+      const step = cap.step / div;
+      const base = min ?? 0;
+      if (Math.round((value - base) % step) !== 0) {
+        return { code: 'value_off_step', error: `${cap.code} moves in steps of ${step}` };
+      }
+    }
+    return null;
+  }
+
+  // string and bitmap are never writable here; reaching this means the catalogue changed.
+  return { code: 'capability_not_writable', error: `${cap.code} cannot be written` };
+}

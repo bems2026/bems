@@ -259,6 +259,16 @@ Two SQL files are waiting on a hand-apply in the Supabase SQL editor. This proje
 migration runner and no tracker table, so this list is the record:
 
 - **`supabase/phase27_period_reports.sql`** — see RM-041.
+- **`supabase/phase29_command_capability.sql`** — EX-152. Lets a command name a CAPABILITY
+  rather than only on/off. `commands.action` is CHECK-constrained to `('on','off')`, which is
+  one of the few things in this schema that genuinely forces a migration, and it is the reason a
+  relay was the only thing this system could command at all.
+  **The write path is safe by construction until this is applied**, which is deliberate rather
+  than lucky: `server/proxy.mjs` adds `capability`/`capability_value` to the audit row only for
+  a capability write, PostgREST rejects an insert naming a column it does not have, and
+  `auditedDispatch` refuses to dispatch anything it could not record first. So before the
+  migration a capability write is a refused command, never an unrecorded one that moved
+  hardware — and a relay command's row is byte-identical either way.
 - **`supabase/phase28_reading_capabilities.sql`** — EX-147. Adds the promoted telemetry columns
   (`total_energy_kwh`, `warn_power_w`, `power_type`, `net_state`, `fault`) and a `capabilities`
   jsonb for the long tail. **Nothing depends on it yet**: the bridge and the frontend read
@@ -1261,6 +1271,64 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       by test, in both directions, because a drift there shows up as a gap in the history rather
       than as an error. **AUTHORED, NOT APPLIED** — see §0 —
       `supabase/phase28_reading_capabilities.sql`, `test/phase28-reading-capabilities.test.mjs`
+
+- [x] **EX-152** `supabase/phase29_command_capability.sql` — `action = 'set'` joins `on`/`off`
+      rather than replacing them, so every existing row and both existing readers
+      (`server/reports.mjs`, the Control page's command log) are untouched. Three CHECKs: the
+      action vocabulary, the capability allowlist, and a shape constraint making a capability and
+      its value arrive together or not at all. The allowlist is pinned to
+      `shared/deviceCapabilities.mjs` by test in both directions.
+      **AUTHORED, NOT APPLIED** — see §0 — `supabase/phase29_command_capability.sql`,
+      `test/phase29-command-capability.test.mjs` (7 tests)
+- [x] **EX-153** The command contract gains a second verb. `validateCommand` accepts
+      `{action:'set', capability, value}` and enforces every bound from the vendor's own device
+      model — type, range, and the device's own step, because offering 1550 W when the hardware
+      quantises to 100 W would show the operator a number it never held. Three refusals matter
+      more than the acceptance: a capability the device does not have; a capability the VENDOR
+      marks writable and this system does not (`relay_status`, `switch_inching`, `cycle_time`,
+      `random_time` — each installs unattended switching inside the device, invisible to the
+      scheduler and unrecordable in the audit trail); and the other channel's code on a
+      dual-channel meter, which would arm the wrong branch circuit. `not_commandable` no longer
+      blocks a meter — that rule is about relay state, and a meter genuinely has none while still
+      holding an alarm threshold worth setting — `shared/commands.mjs`,
+      `shared/deviceCapabilities.mjs`, `test/command-capability.test.mjs` (16 tests)
+- [x] **EX-154** Cloud dispatch splits by instruction set, which is the brief's rule made
+      executable rather than described. `/v1.0/devices/{id}/specifications` answers for the light
+      switch (`tdq`) and the outlet (`pc`); both CT meters (`cz`) refuse it outright with
+      `code 2009: not support this device`. So a product with a standard instruction set is
+      commanded by code at `/v1.0/devices/{id}/commands`, and one without goes through the
+      thing-model property endpoint at `/v2.0/cloud/thing/{id}/shadow/properties/issue`. The
+      choice is returned as a value (`instruction: 'standard' | 'dp'`) so a test asserts on it
+      instead of pattern-matching a URL — `server/dispatchCloud.mjs`,
+      `server/dispatchCapability.test.mjs` (9 tests)
+- [x] **EX-155** The dispatch gate learns the difference between a relay and a setting.
+      `DISPATCH_CLASSES` answers "which classes have a relay route" and correctly excludes
+      meters; gating a capability write on it would refuse every meter setting on grounds that
+      have nothing to do with it. A capability write is gated by the catalogue's `writable`
+      allowlist instead, re-checked at the last line before hardware rather than trusted from
+      validation upstream. `capability_needs_cloud` is its own failure code, distinct from
+      `no_dispatch_route`: one means the device cannot be commanded at all, the other means
+      settings have no LAN endpoint yet and the vendor carried them —
+      `server/auditedDispatch.mjs`, `server/dispatchLight.mjs`, `server/proxy.mjs`,
+      `server/proxy.test.mjs`
+- [x] **EX-156** The two controls the brief named are live: the child-lock badge is its own
+      toggle, and the anomaly-threshold slider is bounded by the vendor's declared
+      min/max/step. Neither shows an optimistic value — the device does not confirm a setting
+      back, so the reading stays the only thing that says what it holds and "sending…" is the
+      honest intermediate. The slider commits on release rather than on every pixel of the drag,
+      and its draft records what it was dragged against so a value the device rejected cannot
+      linger looking committed. Held in its own store rather than `commandStore`, whose
+      optimistic machinery is typed for `SwitchState` and reconciled against relay readings —
+      `src/stores/capabilityStore.ts`, `src/components/devices/capabilityWidgets.tsx`,
+      `DeviceCard.test.tsx`
+- [ ] **FI-022** Capability writes have no LOCAL route — they reach hardware only through the
+      vendor cloud. The three existing dispatch routes (`/light/:id`, `/outlet/:target`, `/acu`)
+      are hand-built `http in` nodes on the source tabs, and a fourth means writing to the live
+      flow: a plan module in the shape `dpParserPlan` already establishes, plus a generator
+      change, since `build-flow.mjs`'s `httpIn` hardcodes `method: 'get'`. Until then a site with
+      `DISPATCH_POLICY=local-only` cannot write settings at all, and one without internet cannot
+      either — both fail honestly, with `capability_needs_cloud` naming the missing path.
+      `server/dispatchLight.mjs`'s `hasLocalCapabilityRoute()` is the single place that says so
 
 ### Data & Supabase
 

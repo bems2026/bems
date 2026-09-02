@@ -1,8 +1,17 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, within, fireEvent } from '@testing-library/react';
 import { DeviceCard } from './DeviceCard';
 import { useDeviceStore } from '@/stores/deviceStore';
+import { useCapabilityStore } from '@/stores/capabilityStore';
+import * as bridgeClient from '@/lib/bridgeClient';
 import type { Device, Reading } from '@/lib/types';
+
+vi.mock('@/lib/bridgeClient', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/bridgeClient')>();
+  return { ...actual, sendCommand: vi.fn() };
+});
+
+const sendCommand = vi.mocked(bridgeClient.sendCommand);
 
 const device = (id: string, name: string, cls: Device['class'], extra: Partial<Device> = {}): Device => ({
   id, display_name: name, class: cls, room: null, dps_map: null, status: 'active', ...extra,
@@ -26,7 +35,9 @@ const mount = (d: Device, devices: Device[], readings: Record<string, Reading>) 
 
 afterEach(() => {
   cleanup();
+  vi.clearAllMocks();
   useDeviceStore.setState({ devices: [], latestReadings: {}, totals: null, history: {} });
+  useCapabilityStore.setState({ writes: {} });
 });
 
 describe('DeviceCard — what it mounts', () => {
@@ -108,12 +119,11 @@ describe('DeviceCard — values', () => {
       mtr_lo_red: reading('mtr_lo_red', { warn_power1: 500, power_type1: 'normal' }),
     });
     const slider = screen.getByLabelText('Over-power alarm threshold') as HTMLInputElement;
+    // Every bound is the vendor's own, so the control cannot offer a value the hardware rejects.
     expect(slider.min).toBe('200');
     expect(slider.max).toBe('50000');
     expect(slider.step).toBe('100');
-    // Inert until a capability command verb exists — rendering it live and dropping the write
-    // would be worse than rendering it disabled with the reason on the title.
-    expect(slider.disabled).toBe(true);
+    expect(slider.disabled).toBe(false);
     expect(screen.getByText('500 W')).toBeInTheDocument();
     expect(screen.getByText('normal')).toBeInTheDocument();
   });
@@ -202,5 +212,66 @@ describe('DeviceCard — switching subject without closing', () => {
     rerender(<DeviceCard device={singleMeter} />);
     expect(screen.getByText('L.O Red')).toBeInTheDocument();
     expect(screen.getByText('27.5')).toBeInTheDocument();
+  });
+});
+
+describe('DeviceCard — writing a capability', () => {
+  it('sends the child lock as a capability command, and shows the DEVICE state meanwhile', async () => {
+    // The badge must not flip optimistically: the device does not confirm a setting back, so a
+    // lock that appeared to engage because we asked would be exactly the lie the relay path was
+    // built to avoid. "sending…" is the honest intermediate.
+    let resolveAck: (v: unknown) => void = () => {};
+    sendCommand.mockImplementation(() => new Promise((r) => { resolveAck = r; }) as never);
+
+    mount(outlet, [outlet], { co3: reading('co3', { child_lock: false }) });
+    fireEvent.click(screen.getByRole('button', { name: /Child lock, currently unlocked/ }));
+
+    expect(sendCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ device_id: 'co3', action: 'set', capability: 'child_lock', value: true }),
+    );
+    expect(await screen.findByText('sending…')).toBeInTheDocument();
+    // Still reads the device's own state underneath, not the value we asked for.
+    expect(screen.queryByText('locked')).not.toBeInTheDocument();
+
+    resolveAck({ confirmed: false });
+  });
+
+  it('reports a failed write beside the control that failed', async () => {
+    sendCommand.mockRejectedValue(new Error('capability_needs_cloud'));
+    mount(outlet, [outlet], { co3: reading('co3', { child_lock: false }) });
+    fireEvent.click(screen.getByRole('button', { name: /Child lock/ }));
+    expect(await screen.findByText(/./, { selector: '.device-card__error' })).toBeInTheDocument();
+  });
+
+  it('commits the alarm threshold on release, not on every pixel of the drag', async () => {
+    sendCommand.mockResolvedValue({ confirmed: false } as never);
+    mount(singleMeter, [singleMeter], { mtr_lo_red: reading('mtr_lo_red', { warn_power1: 500, power_type1: 'normal' }) });
+
+    const slider = screen.getByLabelText('Over-power alarm threshold');
+    fireEvent.change(slider, { target: { value: '1200' } });
+    fireEvent.change(slider, { target: { value: '1500' } });
+    expect(sendCommand).not.toHaveBeenCalled();
+    expect(screen.getByText('1500 W')).toBeInTheDocument();
+
+    fireEvent.pointerUp(slider);
+    expect(sendCommand).toHaveBeenCalledTimes(1);
+    expect(sendCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ device_id: 'mtr_lo_red', action: 'set', capability: 'warn_power', value: 1500 }),
+    );
+  });
+
+  it('does not send when the slider is released at the value the device already holds', async () => {
+    sendCommand.mockResolvedValue({ confirmed: false } as never);
+    mount(singleMeter, [singleMeter], { mtr_lo_red: reading('mtr_lo_red', { warn_power1: 500 }) });
+    fireEvent.pointerUp(screen.getByLabelText('Over-power alarm threshold'));
+    expect(sendCommand).not.toHaveBeenCalled();
+  });
+
+  it('offers no control for a capability this system refuses to write', () => {
+    // relay_status is vendor-writable and deliberately read-only here; it must render as text.
+    mount(light, [light], { l1: reading('l1', { relay_status: 'memory' }) });
+    const row = screen.getByText('Device settings').closest('.device-card__row') as HTMLElement;
+    expect(within(row).queryByRole('button')).toBeNull();
+    expect(row.textContent).toContain('memory');
   });
 });
