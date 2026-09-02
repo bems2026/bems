@@ -1914,11 +1914,29 @@ fall back to it).
       builds on each device's effective config because the write is a whole-row upsert, and
       breaking that guard fails a test.
 
-      *So `carePlan.ts` and `PlanShell.tsx` are deleted*, and `useControlPlan` has two sources
-      instead of three. That closes FI-016's remaining half and the last hard-coded building
-      geometry in the frontend. Two tests went with the pack — a preference test and its
-      anti-vacuity control — because there is no longer a second source for data to beat; what
-      replaced them asserts that an undrawn site gets nothing rather than another building.
+      *So `carePlan.ts` and the old `PlanShell.tsx` are deleted*, and `useControlPlan` no longer
+      takes device coordinates from a pack. That closes FI-016's remaining half. Two tests went
+      with the pack — a preference test and its anti-vacuity control — because there is no longer
+      a second source for data to beat; what replaced them asserts that an undrawn site gets
+      nothing rather than another building.
+
+      **CORRECTED SAME DAY, twice.** The first version put the preset in `src/lib/planPresets.ts`
+      and `test/device-ids-in-frontend.test.mjs` failed CI — correctly. That module ships to every
+      deployment, so a replicated site would have carried this office's `co1`..`l7` in its bundle
+      and offered them as a starting point for somebody else's room. The layout now lives in
+      `src/components/control/plans/carePreset.ts`, one of the two directories that guard exempts
+      **because they load only behind `SITE.scene_pack`**. `src/lib/planPresets.ts` keeps the
+      machinery — types, `toRoomFrame`, `presetPlacements` — and names no device.
+
+      And the drawn Control plan looked much worse than the pack it replaced: a bare square. Two
+      causes, both fixed. `.control-outlet-plan--data` hard-coded `aspect-ratio: 1`, so a 300:530
+      room drew as a square and stretched every device across it; the card now takes the room's
+      own `attrs.plan.aspect`. And `DataPlanShell` draws only the sketched outline, which lost the
+      glazed partition and the sliding door — facts about this building that the shape vocabulary
+      cannot express. `CarePlanShell` restores them as a **pack**: loaded only when
+      `SITE.scene_pack` names it, drawing no device and knowing no device id, re-expressed in the
+      room's own 0..1 frame so it cannot sit a few percent off the pins beside it. A replicated
+      deployment gets the sketched outline and is told it has no presets.
 
 - [x] **RM-008** ~~Apply the three Phase 9 migrations.~~ **Done 2026-08-21.** Applied via the
       Supabase Management API; all four objects confirmed live (`readings_buckets`,

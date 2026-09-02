@@ -13,23 +13,52 @@
  *
  * IT NEVER INVENTS. Devices this deployment does not have are skipped and reported. A preset
  * naming another building's hardware applies the part that fits and says what it could not.
+ *
+ * PRESETS ARE SITE PACKS, loaded the same way the 3D scene is: only when `SITE.scene_pack` names
+ * one. A replicated deployment sees no presets at all and is told so, rather than being offered
+ * another building's outlets as a starting point for its own room.
  */
-import { useState } from 'react';
+
+import { useEffect, useState } from 'react';
 import { LayoutTemplate } from 'lucide-react';
-import { PLAN_PRESETS, presetPlacements, type PlanPreset } from '@/lib/planPresets';
+import { SITE } from '@shared/siteConfig.mjs';
+import { presetPlacements, type PlanPreset } from '@/lib/planPresets';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
 import { useSpaceTreeStore } from '@/stores/spaceTreeStore';
 import { InfoHint } from '@/components/ui/InfoHint';
+
+/** Preset packs this build carries. A site naming one that was never built degrades to "no
+ * presets" rather than throwing on an import that cannot resolve — a mistake in a site directory
+ * must not take the floor-plan editor down. */
+const PRESET_PACKS: Record<string, () => Promise<PlanPreset[]>> = {
+  care: async () => [(await import('@/components/control/plans/carePreset')).carePreset],
+};
 
 export function PlanPresetPicker({ nodeId, nodeName }: { nodeId: string; nodeName: string }) {
   const devices = useDeviceStore((s) => s.devices);
   const applyPlacements = useDeviceConfigStore((s) => s.applyPlacements);
   const setShape = useSpaceTreeStore((s) => s.setShape);
 
+  const [presets, setPresets] = useState<PlanPreset[]>([]);
   const [confirming, setConfirming] = useState<PlanPreset | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
+
+  useEffect(() => {
+    const load = SITE.scene_pack ? PRESET_PACKS[SITE.scene_pack] : undefined;
+    if (!load) return;
+    let cancelled = false;
+    load().then(
+      (list) => {
+        if (!cancelled) setPresets(list);
+      },
+      () => {},
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const apply = async (preset: PlanPreset) => {
     setBusy(true);
@@ -60,8 +89,16 @@ export function PlanPresetPicker({ nodeId, nodeName }: { nodeId: string; nodeNam
         </InfoHint>
       </h4>
 
+      {presets.length === 0 && (
+        <p className="space-plan__note">
+          No layout presets are built for this deployment. Draw the room with the shape editor
+          above, then place devices and paint lamps — a preset is only a shortcut to the same
+          thing.
+        </p>
+      )}
+
       <ul className="plan-preset__list">
-        {PLAN_PRESETS.map((preset) => (
+        {presets.map((preset) => (
           <li key={preset.id} className="plan-preset__row">
             <div className="plan-preset__text">
               <span className="plan-preset__name">{preset.label}</span>

@@ -18,7 +18,7 @@ export function OutletPlanCard() {
   const log = useControlLog((s) => s.log);
   const { ask, modalProps } = useConfirm();
   const outlets = devices.filter((d) => d.class === 'outlet_dual');
-  const { plan, source, rooms, roomId, setRoomId } = useControlPlan();
+  const { plan, source, rooms, roomId, setRoomId, aspect } = useControlPlan();
   const unplaced = outlets.filter((d) => !plan?.OUTLET_POSITIONS[d.id]);
 
   const allOn = () => {
@@ -51,7 +51,12 @@ export function OutletPlanCard() {
       </div>
       <PlanRoomPicker id="outlet-plan-room" source={source} rooms={rooms} roomId={roomId} setRoomId={setRoomId} />
       {plan ? (
-        <div className={`control-outlet-plan${source === 'data' ? ' control-outlet-plan--data' : ''}`}>
+        <div
+          className={`control-outlet-plan${source === 'data' ? ' control-outlet-plan--data' : ''}`}
+          // The ROOM's proportions, not a fixed square — RM-044. A tall narrow office drawn
+          // square stretches every percentage-positioned device across it.
+          style={aspect === null ? undefined : { aspectRatio: String(aspect) }}
+        >
           <plan.PlanShell />
           {outlets.map((device) => {
             const at = plan.OUTLET_POSITIONS[device.id];

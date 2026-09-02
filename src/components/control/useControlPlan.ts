@@ -25,11 +25,19 @@
  * corroboration is not something a plan module should own. So the plan is consumed for its
  * coordinates and the cards keep their controls.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { SITE } from '@shared/siteConfig.mjs';
 import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
 import { useSpaceTreeStore } from '@/stores/spaceTreeStore';
 import { drawnRooms, dataPlanFor, type DrawnRoom } from '@/lib/controlPlanData';
 import { DataPlanShell } from './plans/DataPlanShell';
+import { parseAspect } from '@/lib/roomShape';
+
+/** Room shells this build carries — see `siteShell` below. A site naming one that was never
+ * built falls back to the sketched outline rather than throwing on an unresolvable import. */
+const SHELL_PACKS: Record<string, () => Promise<() => React.ReactNode>> = {
+  care: async () => (await import('./plans/CarePlanShell')).CarePlanShell,
+};
 
 export interface ControlPlan {
   PlanShell: () => React.ReactNode;
@@ -41,6 +49,9 @@ export interface ControlPlan {
 
 export interface ControlPlanState {
   plan: ControlPlan | null;
+  /** The room's width over its height, or null when nobody has said. The card uses it so a tall
+   * narrow room is not drawn as a square — RM-044. */
+  aspect: number | null;
   /** `'data'` when a room is drawn, `null` when none is. Kept as a named source rather than
    * folded into `plan !== null` because the cards read it to decide whether to offer a room
    * picker at all, and because a third source existed until 2026-09-02 and may again. */
@@ -63,15 +74,43 @@ export function useControlPlan(): ControlPlanState {
 
   const data = useMemo(() => dataPlanFor(saved, roomId), [saved, roomId]);
   const shape = useMemo(() => nodes.find((n) => n.id === roomId)?.attrs, [nodes, roomId]);
+  const aspect = useMemo(() => parseAspect((shape as { plan?: unknown } | undefined)?.plan), [shape]);
+
+  /**
+   * A site's own room shell, if it has one — RM-044.
+   *
+   * `DataPlanShell` draws whatever outline was sketched and nothing else, which is right for any
+   * site and lost this office its glazed partition and sliding door. Those are facts about a
+   * building, so they live in a pack: loaded only when `SITE.scene_pack` names it, drawing no
+   * device and knowing no device id. A replicated deployment gets the sketched outline.
+   */
+  const [siteShell, setSiteShell] = useState<(() => React.ReactNode) | null>(null);
+  useEffect(() => {
+    const load = SITE.scene_pack ? SHELL_PACKS[SITE.scene_pack] : undefined;
+    if (!load) return;
+    let cancelled = false;
+    // A failed import leaves the sketched outline in place rather than an error boundary: the
+    // controls work either way and a missing decoration must not take the switches with it.
+    load().then(
+      (Shell) => {
+        if (!cancelled) setSiteShell(() => Shell);
+      },
+      () => {},
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const plan = useMemo<ControlPlan | null>(() => {
     if (!data) return null;
     const attrs = shape as { plan?: unknown } | undefined;
-    return { ...data, PlanShell: () => DataPlanShell({ plan: attrs?.plan }) };
-  }, [data, shape]);
+    return { ...data, PlanShell: siteShell ?? (() => DataPlanShell({ plan: attrs?.plan })) };
+  }, [data, shape, siteShell]);
 
   return {
     plan,
+    aspect,
     source: data ? 'data' : null,
     rooms: data ? rooms : [],
     roomId: data ? roomId : null,

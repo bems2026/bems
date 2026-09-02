@@ -6656,6 +6656,9 @@ button.space-plan__pin {
    measured a room, and giving it invented proportions would assert a fact nobody established
    while non-uniformly stretching every percentage-positioned device. */
 .control-outlet-plan--data {
+  /* Square is the FALLBACK for a room nobody has given proportions to, not the shape of every
+     room — RM-044. When `attrs.plan.aspect` is set, the card overrides this inline with the
+     room's own ratio; drawing a 300:530 office as a square stretched every device across it. */
   aspect-ratio: 1;
   max-width: 340px;
 }

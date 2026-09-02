@@ -31,7 +31,7 @@ function useLightSwitches(): Device[] {
  */
 export function LightingMatrixCard() {
   const lights = useLightSwitches();
-  const { plan, source, rooms, roomId, setRoomId } = useControlPlan();
+  const { plan, source, rooms, roomId, setRoomId, aspect } = useControlPlan();
   const unplaced = useMemo(() => lights.filter((d) => !plan?.LIGHT_POSITIONS[d.id]), [lights, plan]);
   const send = useCommandStore((s) => s.send);
   const log = useControlLog((s) => s.log);
@@ -65,7 +65,12 @@ export function LightingMatrixCard() {
       </div>
       <PlanRoomPicker id="lighting-plan-room" source={source} rooms={rooms} roomId={roomId} setRoomId={setRoomId} />
       {plan ? (
-        <div className={`control-outlet-plan${source === 'data' ? ' control-outlet-plan--data' : ''}`}>
+        <div
+          className={`control-outlet-plan${source === 'data' ? ' control-outlet-plan--data' : ''}`}
+          // The ROOM's proportions, not a fixed square — RM-044. A tall narrow office drawn
+          // square stretches every percentage-positioned device across it.
+          style={aspect === null ? undefined : { aspectRatio: String(aspect) }}
+        >
           <plan.PlanShell />
           {lights.map((device) => {
             const cells = plan.LIGHT_POSITIONS[device.id];
