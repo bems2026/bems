@@ -60,7 +60,7 @@ const BUILD_LATEST_SRC = readFileSync(join(HERE, '..', 'shared', 'buildLatest.mj
 
 /**
  * Tab ids of the live flow. Verified against the real Pi's ~/.node-red/flows.json on
- * 2026-08-10, over SSH (bems@100.73.48.96) — NOT the same ids as a dev-machine copy of
+ * 2026-08-10, against the deployment itself — NOT the same ids as a dev-machine copy of
  * this file would have. Same four tab labels, entirely different ids; this is exactly
  * the mismatch deploy.mjs's tab-verification check exists to catch. Don't reuse ids from
  * any other copy of flows.json without re-verifying against the actual deploy target.
@@ -99,6 +99,10 @@ for (const k of keys) {
   meters[k] = {
     v: flow.get(k + '_last_v'), c: flow.get(k + '_last_c'), p: flow.get(k + '_last_p'),
     e: flow.get(k + '_energy'), h: flow.get(k + '_health'),
+    // Every capability the generated parser decoded, by code, already in canonical units.
+    // The meters' own today_acc_energy/total_energy ride here rather than overwriting
+    // the <ctx>_energy key, which the legacy two-second engine and the /ui dashboard own.
+    dp: flow.get(k + '_dp'),
     // Sample-buffer depth. This tab appends one entry per message and drains the buffer on a
     // five-minute cycle, so the number moves whenever the meter is reporting — including when
     // the measured values do not, which is the case that matters. It is the ONLY arrival
@@ -124,7 +128,11 @@ for (let i = 1; i <= 7; i++) {
   const k = 'co' + i;
   meters[k] = {
     v: flow.get(k + '_last_v'), c: flow.get(k + '_last_c'), p: flow.get(k + '_last_p'),
-    e: flow.get(k + '_energy'), h: flow.get(k + '_health'), t: flow.get(k + '_last_time')
+    e: flow.get(k + '_energy'), h: flow.get(k + '_health'),
+    // Every capability the generated parser decoded, by code, already in canonical units.
+    // The meters' own today_acc_energy/total_energy ride here rather than overwriting
+    // the <ctx>_energy key, which the legacy two-second engine and the /ui dashboard own.
+    dp: flow.get(k + '_dp'), t: flow.get(k + '_last_time')
   };
 }
 msg.snapshot = msg.snapshot || {};

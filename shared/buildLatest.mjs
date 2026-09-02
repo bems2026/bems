@@ -102,22 +102,50 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, st
     if (d.ctx) {
       const src = (d.class === 'outlet_dual' ? outlet.meters : energy.meters)[d.ctx] || {};
       const v = num(src.v), c = num(src.c), p = num(src.p), e = num(src.e);
+
+      // Everything the device reports beyond volts/amps/watts, decoded by the generated source-tab
+      // parser and keyed by its vendor capability code. Omitted entirely when the parser has not
+      // seen this device yet, so an older flow and a newer bridge still agree on every other field.
+      const dp = src.dp && typeof src.dp === 'object' ? src.dp : null;
+      if (dp && Object.keys(dp).length) r.capabilities = dp;
+
+      // TODAY'S ENERGY, PREFERRING THE DEVICE'S OWN FIGURE.
+      //
+      // `src.e` is `<ctx>_energy`, which for a CT meter is INTEGRATED from power by the legacy
+      // two-second engine. Integration is the mechanism behind the frozen-meter corruption fixed
+      // in Aug 2026: a disconnected meter's last wattage compounds into the total for as long as
+      // it stays down. The meters have always reported `today_acc_energy` themselves and nothing
+      // read it — measured 2026-09-02, `mtr_co_yellow` integrated to 8.0437 kWh while the meter
+      // itself said 8.057.
+      //
+      // Outlets have no such dp (they report `add_ele`, an increment their parser accumulates),
+      // so they keep `src.e` and this changes nothing for them.
+      //
+      // The channel suffix is load-bearing: one physical dual-channel meter is two logical
+      // devices here, and taking the wrong channel's total would attribute one branch circuit's
+      // consumption to another.
+      const ownDaily = dp ? num(dp['today_acc_energy' + (d.channel || 1)]) : undefined;
+      const eToday = ownDaily !== undefined ? ownDaily : e;
       // Absent readings are omitted, never coerced to 0 — "no data" and "zero watts"
       // are different facts and the UI renders them differently.
       if (v !== undefined) r.voltage = v;
       if (c !== undefined) r.current = c;
       if (p !== undefined) r.power_w = p;
-      if (e !== undefined) r.energy_kwh_today = e;
+      if (eToday !== undefined) r.energy_kwh_today = eToday;
       // Per-device week/month = the completed days this bridge has folded into its own
       // accumulator (`snap.energyAcc`, maintained by the Accumulate-energy step) plus the
       // live daily counter. Each meter only ever reports a DAILY figure, so anything
       // longer has to be accumulated here; a device the accumulator hasn't seen a full day
       // for is omitted rather than reported as its daily value.
+      // The accumulator banks whatever `energy_kwh_today` reported, so switching that field's
+      // source switches this one with it and the two cannot disagree. Crossing over may bank one
+      // small step if the device's own figure sits below the integrated one at that moment — the
+      // counter-regression branch handles it as real consumption, which is the safe direction.
       const acc = (snap.energyAcc || {})[d.id];
-      if (acc && e !== undefined) {
+      if (acc && eToday !== undefined) {
         const wb = num(acc.weekBase), mb = num(acc.monthBase);
-        if (wb !== undefined) r.energy_kwh_week = Math.round((wb + e) * 1000) / 1000;
-        if (mb !== undefined) r.energy_kwh_month = Math.round((mb + e) * 1000) / 1000;
+        if (wb !== undefined) r.energy_kwh_week = Math.round((wb + eToday) * 1000) / 1000;
+        if (mb !== undefined) r.energy_kwh_month = Math.round((mb + eToday) * 1000) / 1000;
       }
       r.online = bool(src.h);
 
@@ -163,6 +191,10 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, st
       // No health entry at all (older flow, or a mock that doesn't simulate it) — fall
       // back to the previous always-online assumption rather than invent a false negative.
       r.online = entry ? entry.conn === 'CONNECTED' : true;
+      // A switch has no metering, but it does have settings — countdown, power-on behaviour,
+      // inching, switch type. They ride on the same lightStatus entry its connection state does.
+      const sdp = entry && entry.dp && typeof entry.dp === 'object' ? entry.dp : null;
+      if (sdp && Object.keys(sdp).length) r.capabilities = sdp;
     } else if (d.state_ctx === 'ac_dash_state') {
       // The aircon and the outside-temp sensor are both fed by the IR blaster, and neither is
       // a meter nor a switch — so both used to fall through to a hardcoded `online = true`.

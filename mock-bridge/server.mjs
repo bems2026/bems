@@ -44,6 +44,7 @@ import crypto from 'node:crypto';
 import { DEVICE_REGISTRY, PHASE_MAP, STALE_AFTER_MS_BY_CLASS, TIMING, publicDevices, SITE } from '../shared/registry.mjs';
 import { fixturePlan, branchEnergyTotal } from './fixturePlan.mjs';
 import { buildLatest, iso8 } from '../shared/buildLatest.mjs';
+import { CAPABILITY_PROFILES, channelCodesFor } from '../shared/deviceCapabilities.mjs';
 import { COMMAND_ROUTE, ACCEPTED_STATUS, validateCommand, buildAck } from '../shared/commands.mjs';
 import { CONTEXT_ROUTE, CONTEXT_ACCEPTED_STATUS, validateContextWrite, buildContextAck } from '../shared/context.mjs';
 
@@ -264,8 +265,58 @@ function snapshot() {
   });
   lastGate = gateByOutlet;
 
+  // A plausible decoded capability set, built from the SAME catalogue the real parsers are
+  // generated from — so the frontend meets the real codes, the real channel suffixes and the
+  // real units here, and a card that works against the mock works on the Pi. Synthesising the
+  // shape by hand is how a mock drifts into testing itself.
+  const mockDp = (d, m) => {
+    const profile = CAPABILITY_PROFILES[d.capability_profile];
+    if (!profile) return undefined;
+    const code = channelCodesFor(profile.id, d.channel ?? 1);
+    const has = (c) => profile.capabilities.some((x) => x.code === c);
+    const num3 = (x) => Math.round(Number(x) * 1000) / 1000;
+    const dp = {};
+
+    if (m.v !== undefined && code.cur_voltage) dp[code.cur_voltage] = num3(m.v);
+    if (m.c !== undefined && code.cur_current) dp[code.cur_current] = num3(m.c);
+    if (m.p !== undefined && code.cur_power) dp[code.cur_power] = num3(m.p);
+    if (code.cur_voltage === undefined && m.v !== undefined && has('cur_voltage')) {
+      // The outlet's codes carry no channel suffix, so they are not in `channelCodesFor`.
+      dp.cur_voltage = num3(m.v); dp.cur_current = num3(m.c); dp.cur_power = num3(m.p);
+    }
+
+    // The meters report today's total themselves; `buildLatest` prefers it over the integrated
+    // figure, so the mock has to offer it or it would exercise the fallback path only.
+    if (code.today_acc_energy) dp[code.today_acc_energy] = num3(m.e);
+    if (code.total_energy) dp[code.total_energy] = num3(Number(m.e) + 29482.5);
+    if (code.warn_power) dp[code.warn_power] = 1500;
+    if (code.power_type) dp[code.power_type] = Number(m.p) > 1500 ? 'warn' : 'normal';
+    if (code.device_state) dp[code.device_state] = m.h ? (Number(m.p) > 1 ? 'working' : 'monitor') : 'idle';
+    if (has('all_energy')) dp.all_energy = num3(Number(m.e) * 2 + 40421.9);
+    if (has('net_state')) dp.net_state = m.h ? 'cloud_net' : 'no_net';
+
+    if (has('add_ele')) dp.add_ele = 0.008;
+    if (has('child_lock')) dp.child_lock = false;
+    if (has('countdown_1')) dp.countdown_1 = 0;
+    if (has('countdown_2')) dp.countdown_2 = 0;
+    if (has('relay_status')) dp.relay_status = 'memory';
+    if (has('fault')) dp.fault = 0;
+    return dp;
+  };
+
+  PLAN.branchCtx.forEach((k) => {
+    const d = DEVICE_REGISTRY.find((x) => x.ctx === k);
+    if (d && energyMeters[k].h) energyMeters[k].dp = mockDp(d, energyMeters[k]);
+  });
+
   const outletMeters = {};
-  PLAN.outlets.forEach((d, idx) => { outletMeters[d.ctx] = mk(d.ctx, idx + 11, true, gateByOutlet[d.ctx]); });
+  PLAN.outlets.forEach((d, idx) => {
+    outletMeters[d.ctx] = mk(d.ctx, idx + 11, true, gateByOutlet[d.ctx]);
+    if (outletMeters[d.ctx].h) {
+      const [k1, k2] = d.sockets;
+      outletMeters[d.ctx].dp = { ...mockDp(d, outletMeters[d.ctx]), switch_1: status[k1], switch_2: status[k2] };
+    }
+  });
 
   const lights = {};
   const lightHealth = {};
@@ -281,7 +332,21 @@ function snapshot() {
     // The convention belongs to the live flow's `global.lightStatus`, not to this fixture —
     // spelling it here rather than assuming `L${i}` is what lets another site's keys work.
     const key = d.state_key.slice(1);
-    lightHealth[key] = { id: key, conn: d.id === STALE_ID ? 'DISCONNECTED' : 'CONNECTED', on: lights[d.state_key], lastSeen: new Date(t).toISOString() };
+    lightHealth[key] = {
+      id: key,
+      conn: d.id === STALE_ID ? 'DISCONNECTED' : 'CONNECTED',
+      on: lights[d.state_key],
+      lastSeen: new Date(t).toISOString(),
+      // A switch's settings ride on its lightStatus entry rather than a <ctx>_dp key, because it
+      // has no metering context at all. Same shape the generated collector writes.
+      dp: {
+        switch_1: lights[d.state_key],
+        countdown_1: 0,
+        relay_status: 'off',
+        switch_type: 'flip',
+        switch_inching: '',
+      },
+    };
   });
 
   // `undefined` when this site has no branch meters at all, so `buildLatest` renders the

@@ -89,7 +89,19 @@ zero are different facts and the UI renders them differently.
     "energy_kwh_today": 3.11,
     "online": true,
     "state": "on",
-    "socket_states": { "1": "on", "2": "off" }
+    "socket_states": { "1": "on", "2": "off" },
+    "capabilities": {
+      "switch_1": true,
+      "switch_2": false,
+      "cur_power": 402.1,
+      "cur_voltage": 221.4,
+      "cur_current": 1.82,
+      "add_ele": 0.008,
+      "child_lock": false,
+      "countdown_1": 0,
+      "relay_status": "memory",
+      "fault": 0
+    }
   }
 ]
 ```
@@ -101,10 +113,50 @@ zero are different facts and the UI renders them differently.
 | `voltage` | number \| absent | `<ctx>_last_v` |
 | `current` | number \| absent | `<ctx>_last_c` |
 | `power_w` | number \| absent | `<ctx>_last_p` |
-| `energy_kwh_today` | number \| absent | `<ctx>_energy` |
-| `online` | boolean | `<ctx>_health` for metered devices; `switch` class — see below; `acu_ir`/`sensor_temp_humidity` — hardcoded `true` (no health signal exists for these) |
+| `energy_kwh_today` | number \| absent | the device's own `today_acc_energy<channel>` when it reports one, else `<ctx>_energy` — see below |
+| `energy_kwh_week` | number \| absent | this bridge's accumulator base + `energy_kwh_today` |
+| `energy_kwh_month` | number \| absent | as above |
+| `stale_after_ms` | number \| absent | the device's own override, else its class's budget |
+| `online` | boolean | `<ctx>_health` for metered devices; `switch` class — see below; `acu_ir`/`sensor_temp_humidity` — whether any field of `ac_dash_state` parses as a number |
 | `state` | `"on" \| "off" \| null` | see below |
 | `socket_states` | object \| absent | `outlet_dual` only |
+| `setpoint_c`, `room_temp_c`, `humidity_pct` | number \| absent | `acu_ir` only, from `ac_dash_state` |
+| `temp_c` | number \| absent | `sensor_temp_humidity` only |
+| `capabilities` | object \| absent | every dp the device reports, decoded — see below |
+
+### `capabilities`
+
+Everything the device reports beyond volts, amps and watts, keyed by its **vendor capability
+code** and already converted to canonical units (V, A, W, kWh, seconds). Which codes a device
+carries is declared per product in `shared/deviceCapabilities.mjs`, and
+`npm run tuya:spec` checks that declaration against the vendor's live device model.
+
+Absent entirely when the source tab's parser has not been regenerated, or has not yet seen the
+device — an older flow and a newer bridge still agree on every other field. Individual codes are
+omitted rather than zeroed, on the same rule as the metered fields.
+
+Metered devices carry it on `<ctx>_dp`; `switch` devices carry it on their
+`global.lightStatus` entry, because they have no metering context at all.
+
+Two things about the codes are worth knowing before reading them:
+
+- **Channel suffixes are load-bearing.** One physical dual-channel CT meter is two logical
+  `meter` devices, and each reads only its own suffix (`cur_power1` vs `cur_power2`). Taking the
+  other channel's would attribute one branch circuit's consumption to another.
+- **The same dp number means different things on different products.** dp 113 is `net_state` on
+  the single-channel meter and `device_state2` on the dual-channel one. This is why the
+  catalogue is keyed by product profile rather than by device class.
+
+### `energy_kwh_today` — which source wins
+
+The CT meters report today's total themselves (`today_acc_energy<channel>`), and that is
+preferred. `<ctx>_energy` — which the legacy two-second engine INTEGRATES from power — is the
+fallback for a device that reports no such dp, and for outlets, which report `add_ele`
+(an increment their parser accumulates) instead.
+
+Integration is what produced the frozen-meter corruption fixed in Aug 2026: a disconnected
+meter's last wattage compounds into the total for as long as it stays down. Measured
+2026-09-02, `mtr_co_yellow` had integrated to 8.0437 kWh while the meter itself said 8.057.
 
 **`switch` online derivation:** `global.lightStatus[n].conn === 'CONNECTED'`, where `n` is
 `state_key` with its `L` prefix stripped (`L3` → `3`). `lightStatus` is populated by the
@@ -114,6 +166,8 @@ connectivity. Falls back to `true` if no `lightStatus` entry exists for that swi
 flow, or a bridge/mock snapshot that doesn't carry `health` at all) — an absent signal is
 never turned into a false negative.
 
+A switch's `capabilities` ride on the same `lightStatus` entry, under `dp`.
+
 **`state` derivation by class:**
 
 - `switch` — `bems_lights_state[state_key]`, e.g. `bems_lights_state.L3`
@@ -121,8 +175,8 @@ never turned into a false negative.
 - `acu_ir` — `ac_dash_state.power`
 - `meter`, `sensor_temp_humidity` — `null` (not a switchable thing)
 
-> **`state` and `socket_states` are transient device state, not readings.** The Stage 3
-> `readings` table is `(device_id, ts, voltage, current, power_w, energy_kwh)` — no state
+> **`state` and `socket_states` are transient device state, not readings.** The `readings`
+> table is `(device_id, ts, voltage, current, power_w, energy_kwh_today, online)` — no state
 > column. At Stage 3 these move to a separate device-state concept; they are carried on this
 > payload only because Stage 1 has one live feed, not two.
 

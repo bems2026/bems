@@ -253,6 +253,21 @@ Everything else is small, and the build order below is honest about size.
   two weeks (RM-020), so their averages mean nothing and their tiers should be set on what they
   feed rather than on what they have measured.
 
+### Migrations authored but NOT applied
+
+Two SQL files are waiting on a hand-apply in the Supabase SQL editor. This project has no
+migration runner and no tracker table, so this list is the record:
+
+- **`supabase/phase27_period_reports.sql`** — see RM-041.
+- **`supabase/phase28_reading_capabilities.sql`** — EX-147. Adds the promoted telemetry columns
+  (`total_energy_kwh`, `warn_power_w`, `power_type`, `net_state`, `fault`) and a `capabilities`
+  jsonb for the long tail. **Nothing depends on it yet**: the bridge and the frontend read
+  capabilities off the live feed, and `energy_kwh_today` already carries the meters' own figure
+  through the existing column. **Apply it BEFORE widening `server/shapeRows.mjs`** — PostgREST
+  rejects an insert naming a column that does not exist, so widening the daemon first would stop
+  ingestion outright, on the history of a real building. `test/phase28-reading-capabilities.test.mjs`
+  asserts the daemon has not been widened, and is what must be updated when it is.
+
 ### The migration that was outstanding is applied
 
 **`supabase/phase18_command_via.sql`** (EX-101) **has run.** This section previously said it
@@ -1093,6 +1108,99 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       `touch /home/bems/.ibems-wifi-prefer.disabled` stops it, for when the Pi is deliberately
       parked elsewhere — `server/wifiPreference.mjs`, `server/wifi-prefer.mjs`,
       `server/wifiPreference.test.mjs`, `server/ibems-wifi-prefer.service`, `.timer`
+
+- [x] **EX-141** Device capability catalogue — what each PRODUCT can do, keyed by capability
+      profile rather than by device class, with dp number, access mode, kind, scale, unit, range
+      and an explicit `writable` allowlist per capability. Every value was **measured** on
+      2026-09-02 from the vendor's own device model rather than transcribed, via
+      `/v1.0/devices/{id}/specifications` and `/v2.0/cloud/thing/{id}/model`.
+      **It had to be keyed by product, not class:** the single- and dual-channel CT meters are
+      both `class: 'meter'`, and dp 113 is `net_state` on one and `device_state2` on the other —
+      a class-keyed table would map one product's network state onto the other's second channel,
+      silently, on the half of the fleet that bills. Resolves the brief's standard-vs-DP rule by
+      evidence: the light switch and the outlet answer `/specifications`, both CT meters refuse
+      it outright (`code 2009: not support this device`), so the meters can only be addressed by
+      dp — `shared/deviceCapabilities.mjs`, `test/device-capabilities.test.mjs` (17 tests)
+- [x] **EX-142** `npm run tuya:spec` — re-reads the vendor device model and diffs it against the
+      committed catalogue, so a firmware change that moves a dp or rescales a value fails a check
+      instead of silently turning 225.4 V into 2254 V. Profiles are matched to products by
+      **dp→code fingerprint**, not by product id, which keeps vendor identifiers out of a public
+      repo and is a stronger claim anyway. It earned its keep on first run: it caught a
+      keying bug in itself (both meters are category `cz`, so keying products by category made
+      the second look already-claimed), a false unit mismatch (the vendor writes both `kWh` and
+      `kwh` on one device), and two real vendor quirks now encoded — `device_state` spells idle
+      as `close` on channel 1 and `idle` on channel 2, and `relay_status` has three different
+      vocabularies depending on which vendor path served it — `server/tuya-spec.mjs`,
+      `server/tuyaSpecDiff.mjs`, `server/tuyaSpecDiff.test.mjs` (10 tests)
+- [x] **EX-143** Source-tab dp parsers generated from the catalogue instead of hand-written, as a
+      pure plan + dry-run-by-default runner in the established `outletPollPlan`/`healthWiringPlan`
+      shape. **This closes the same undeclared-state hole as `findTimeout`:** every dp the system
+      reads was decoded by a hand-written function node on a tab `build-flow.mjs` does not
+      generate, so what the building measures could change with no diff and no alarm — and had.
+      The generator preserves every context key those nodes already wrote (the legacy `/ui`
+      dashboard, `Calculate 3-Phase Totals` and the bridge collectors all read them, and none are
+      in this repo), and adds one: `<ctx>_dp`, carrying every decoded capability by code. A
+      refusal check blocks any write that would drop a key, change a node's wiring, or touch a
+      node nobody planned. The Aircon tab's second writer of `arec_health` is reported rather
+      than rewritten — `node-red-bridge/dpParserPlan.mjs`,
+      `node-red-bridge/fix-dp-parsers.mjs`, `test/dp-parser-plan.test.mjs` (22 tests).
+      **APPLIED LIVE 2026-09-02** (`flows.json` backed up first, twice). All 12 generated nodes
+      confirmed present on the live flow and correctly wired; `tuyaVersion`/`findTimeout`
+      survived byte-identically (10x 3.5, 7x 3.4, 2x 3.3, all findTimeout 10000) and the node
+      count was unchanged at 275. No parser errors in the journal — the only errors are the
+      pre-existing CO4/CO5/CO6 `find()` timeouts (RM-020) and the unrelated solarman socket.
+      Ingestion wrote 20 readings + totals every minute straight through the restart with no gap
+      and no buffered rows.
+      **NOTE ON THE LIGHT SWITCHES:** their capabilities populate only when a switch actually
+      reports dps, and nothing polls them — the same gap FI-020 records for their freshness, and
+      the same one `outletPollPlan` was written to close for outlets (FI-013). As of the apply,
+      the seven lights carry `state` and `online` as before but no `capabilities` yet. A switch
+      poller mirroring `outletPollPlan` is the obvious follow-up; it needs another flow write.
+- [x] **EX-144** Two live data faults fixed by EX-143, both found while measuring rather than
+      reported: (a) the outlet parsers read `add_ele` at **scale 2 when it is scale 3**, and
+      **assigned** it when it reports energy *since the last report* — so every packet discarded
+      the day's total and replaced it with one small delta. `co3` drew 74.8 W all day and
+      reported 0.08 kWh, and that number reached `readings` and the monthly reports. (b) Nothing
+      reset an outlet's energy at midnight — `Zero Out Energy Memory` clears the four CT meters
+      and no outlet — so `co<n>_energy` was a lifetime counter being served as "today". Both are
+      covered by tests that execute the generated parser and were confirmed to fail against the
+      code they replace
+- [x] **EX-145** `energy_kwh_today` now prefers the meter's **own** `today_acc_energy<channel>`
+      over the value the legacy two-second engine integrates from power. Integration is the
+      mechanism behind the frozen-meter corruption fixed in Aug 2026; measured 2026-09-02,
+      `mtr_co_yellow` had integrated to 8.0437 kWh while the meter itself said 8.057. The
+      channel suffix is load-bearing — one physical meter is two logical devices. Outlets are
+      unaffected (they have no such dp). The week/month accumulator banks whatever
+      `energy_kwh_today` carried, so the two cannot disagree —
+      `shared/buildLatest.mjs`, `test/capability-readings.test.mjs` (11 tests).
+      **APPLIED LIVE 2026-09-02 and read back.** `mtr_co_yellow` reported
+      `energy_kwh_today = 8.64`, exactly its own `today_acc_energy1`, where it had been serving
+      an integrated 8.0437 against the device's 8.057 an hour earlier. `mtr_lo_yellow` took
+      channel 2 correctly (`0.377` = `today_acc_energy2`), and `mtr_arec_acu`'s value went from
+      the integrator's `5.260075499999954` to a clean `5.306`. The vendor's own arithmetic
+      checks out on the wire: `total_energy1 + total_energy2 = 29483.156 + 10939.39 =
+      40422.546 = all_energy`, exactly. Outlets carry all 17 of their capabilities including the
+      fault bitmap and the calibration coefficients. A meter that has not reported its telemetry
+      dps since the deploy still shows the integrated fallback, which is the designed behaviour
+      and self-heals on its next report.
+- [x] **EX-146** `npm run mock:stop` refuses to stop a process that is not a mock bridge.
+      It killed the **live Node-RED bridge** on 2026-09-02: on the Pi port 1880 belongs to
+      Node-RED, so `npm run mock` cannot bind there and `mock:stop` is exactly what the bind
+      failure invites you to reach for. The dashboard, ingestion and scheduler all lost their
+      data source at once and nothing said why. Now matched on the process's own command line,
+      with `--force` for the deliberate case; verified against the live bridge, which it now
+      declines to touch — `mock-bridge/stop.mjs`, `test/mock-stop-guard.test.mjs`
+
+- [x] **EX-147** `supabase/phase28_reading_capabilities.sql` — telemetry history beyond volts,
+      amps and watts: four promoted columns for the questions worth asking of the history
+      ("which branch tripped its power warning", "did this outlet report a fault before it went
+      dark", "was it on the local segment or the cloud when it stopped answering"), plus a
+      `capabilities` jsonb for the long tail so a vendor adding a dp does not need a migration.
+      All nullable, no backfill, no index yet — the natural query is already scoped by the
+      existing `(device_id, ts)`. The CHECK vocabularies are pinned to the capability catalogue
+      by test, in both directions, because a drift there shows up as a gap in the history rather
+      than as an error. **AUTHORED, NOT APPLIED** — see §0 —
+      `supabase/phase28_reading_capabilities.sql`, `test/phase28-reading-capabilities.test.mjs`
 
 ### Data & Supabase
 

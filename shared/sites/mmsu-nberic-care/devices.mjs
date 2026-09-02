@@ -27,6 +27,13 @@
  * `dps_map` names a family in `shared/registry.mjs`'s `DPS_MAPS`. Those families describe Tuya
  * firmware, not this building, which is why they stayed shared while this moved.
  *
+ * `capability_profile` names an entry in `shared/deviceCapabilities.mjs` — the full vendor device
+ * model, not just the three or four dps `dps_map` covers. It is a PRODUCT fact, and it has to be
+ * one: the single- and dual-channel CT meters are both `class: 'meter'` and both `dps_map:
+ * 'type_a'` on channel 1, yet they disagree about what dp 113 means. `channel` picks which half
+ * of a dual-channel device a logical meter reads. `null` means the device has no dps at all
+ * (the IR blaster, the ambient sensor), which is a different statement from "none recorded yet".
+ *
  * `room` is intentionally null everywhere: nothing in the live flow records room assignment.
  * The space tree (RM-028) is where a device's location is recorded now. Do not invent values.
  */
@@ -41,6 +48,7 @@ export const BUILT_IN_DEVICES = [
     class: /** @type {DeviceClass} */ ('outlet_dual'),
     room: null,
     dps_map: 'type_b',
+    capability_profile: 'pc_outlet',
     ctx: `co${n}`,
     sockets: [`CO${n}_1`, `CO${n}_2`],
     branch_circuit: 'C.O Yellow',
@@ -54,6 +62,7 @@ export const BUILT_IN_DEVICES = [
     class: /** @type {DeviceClass} */ ('switch'),
     room: null,
     dps_map: null,
+    capability_profile: 'tdq_switch',
     ctx: null,
     state_key: `L${n}`, // key within flow context `bems_lights_state`
     branch_circuit: 'L.O Red',
@@ -67,6 +76,8 @@ export const BUILT_IN_DEVICES = [
     class: 'meter',
     room: null,
     dps_map: 'type_a',
+    capability_profile: 'cz_ct_double',
+    channel: 1,
     ctx: 'co_yel',
     branch_circuit: 'C.O Yellow',
     description: 'Convenience outlets branch',
@@ -79,6 +90,8 @@ export const BUILT_IN_DEVICES = [
     class: 'meter',
     room: null,
     dps_map: 'type_a',
+    capability_profile: 'cz_ct_single',
+    channel: 1,
     ctx: 'lo_red',
     branch_circuit: 'L.O Red',
     description: "The room's lighting circuits",
@@ -99,6 +112,8 @@ export const BUILT_IN_DEVICES = [
     class: 'meter',
     room: null,
     dps_map: 'type_a',
+    capability_profile: 'cz_ct_single',
+    channel: 1,
     ctx: 'arec',
     branch_circuit: 'CARE ACU',
     description: "The CARE ACU's own branch — the indoor unit the IR blaster commands",
@@ -111,6 +126,8 @@ export const BUILT_IN_DEVICES = [
     class: 'meter',
     room: null,
     dps_map: 'type_c',
+    capability_profile: 'cz_ct_double',
+    channel: 2,
     ctx: 'lo_yel2',
     branch_circuit: 'L.O Yellow',
     description: 'Outdoor ACU (separate unit, right side outside the room)',
@@ -130,6 +147,7 @@ export const BUILT_IN_DEVICES = [
     class: 'acu_ir',
     room: null,
     dps_map: null,
+    capability_profile: null, // IR, not dps — see `profileFor`
     ctx: null,
     state_ctx: 'ac_dash_state', // { power, setTemp, roomTemp, humidity, outTemp }
     status: 'active',
@@ -142,6 +160,7 @@ export const BUILT_IN_DEVICES = [
     class: 'sensor_temp_humidity',
     room: null,
     dps_map: null,
+    capability_profile: null, // read from `ac_dash_state`, not dps
     ctx: null,
     state_ctx: 'ac_dash_state',
     state_field: 'outTemp',

@@ -84,6 +84,8 @@ describe('isKioskOrigin', () => {
   it('does not treat a remote viewer as a kiosk', () => {
     // Somebody over Tailscale may be mid-command. They get an offer, not an interruption.
     expect(isKioskOrigin('bems.example.ts.net')).toBe(false);
-    expect(isKioskOrigin('100.73.48.96')).toBe(false);
+    // 100.64.0.0/10 is the CGNAT range Tailscale allocates from; this is an illustrative
+    // address in it, not a real node — the repo is public.
+    expect(isKioskOrigin('100.64.0.1')).toBe(false);
   });
 });
