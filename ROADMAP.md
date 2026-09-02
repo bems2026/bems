@@ -259,16 +259,6 @@ Two SQL files are waiting on a hand-apply in the Supabase SQL editor. This proje
 migration runner and no tracker table, so this list is the record:
 
 - **`supabase/phase27_period_reports.sql`** — see RM-041.
-- **`supabase/phase29_command_capability.sql`** — EX-152. Lets a command name a CAPABILITY
-  rather than only on/off. `commands.action` is CHECK-constrained to `('on','off')`, which is
-  one of the few things in this schema that genuinely forces a migration, and it is the reason a
-  relay was the only thing this system could command at all.
-  **The write path is safe by construction until this is applied**, which is deliberate rather
-  than lucky: `server/proxy.mjs` adds `capability`/`capability_value` to the audit row only for
-  a capability write, PostgREST rejects an insert naming a column it does not have, and
-  `auditedDispatch` refuses to dispatch anything it could not record first. So before the
-  migration a capability write is a refused command, never an unrecorded one that moved
-  hardware — and a relay command's row is byte-identical either way.
 - **`supabase/phase28_reading_capabilities.sql`** — EX-147. Adds the promoted telemetry columns
   (`total_energy_kwh`, `warn_power_w`, `power_type`, `net_state`, `fault`) and a `capabilities`
   jsonb for the long tail. **Nothing depends on it yet**: the bridge and the frontend read
@@ -277,6 +267,27 @@ migration runner and no tracker table, so this list is the record:
   rejects an insert naming a column that does not exist, so widening the daemon first would stop
   ingestion outright, on the history of a real building. `test/phase28-reading-capabilities.test.mjs`
   asserts the daemon has not been widened, and is what must be updated when it is.
+
+### phase29 is applied and verified — 2026-09-03
+
+**`supabase/phase29_command_capability.sql`** (EX-152) **has run**, checked the same three ways
+phase18 was, because "a column exists" and "the migration ran" are different claims:
+
+1. `capability` (text) and `capability_value` (jsonb) are served by PostgREST.
+2. Both `comment on column` texts from the file itself come back in the OpenAPI description —
+   which is what distinguishes the file having run from a column having appeared somehow.
+3. The constraints reject: `commands_action_check` refuses `toggle`,
+   `commands_capability_check` refuses `relay_status`, and `commands_capability_shape_check`
+   refuses both a relay command carrying a capability and a `set` with no value. The positive
+   half was proved without writing anything — a well-formed `set` + `child_lock` + `true` row
+   cleared every CHECK and was stopped only by `commands_requested_by_fkey`, having been
+   addressed to a user id that cannot exist. That foreign key was the backstop on every probe,
+   so none of them could land: 0 rows written, 146 commands on record before and after.
+
+**Capability writes are therefore live.** The dispatch gate was already open, so the child-lock
+toggle and the alarm-threshold slider now reach real devices — through the vendor cloud only,
+until FI-022 gives settings a LAN route. No capability command has been sent yet
+(`action=set` rows: 0).
 
 ### The migration that was outstanding is applied
 
@@ -1278,8 +1289,9 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       action vocabulary, the capability allowlist, and a shape constraint making a capability and
       its value arrive together or not at all. The allowlist is pinned to
       `shared/deviceCapabilities.mjs` by test in both directions.
-      **AUTHORED, NOT APPLIED** — see §0 — `supabase/phase29_command_capability.sql`,
-      `test/phase29-command-capability.test.mjs` (7 tests)
+      **APPLIED AND VERIFIED 2026-09-03** — see §0 for the three signals —
+      `supabase/phase29_command_capability.sql`, `test/phase29-command-capability.test.mjs`
+      (7 tests)
 - [x] **EX-153** The command contract gains a second verb. `validateCommand` accepts
       `{action:'set', capability, value}` and enforces every bound from the vendor's own device
       model — type, range, and the device's own step, because offering 1550 W when the hardware
