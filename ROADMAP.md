@@ -2691,6 +2691,13 @@ fall back to it).
       `systemctl --user` with `XDG_RUNTIME_DIR=/run/user/1000`.
       **What is left is only the reboot test** — that the session survives a cold boot via
       lightdm autologin has still never actually been exercised.
+      *Narrowed 2026-09-02.* Two `systemctl --user restart ibems-kiosk` cycles (RM-043) confirmed
+      the session survives a **Chromium process restart**: the profile at
+      `~/.config/ibems-kiosk` holds an `sb-<project>-auth-token` in localStorage, and the proxy
+      logged 2,061 authenticated requests from the kiosk origin in the hours after. So what is
+      genuinely untested is now only the part a service restart cannot exercise — lightdm
+      autologin starting the user manager from cold. That needs a real reboot, on site, with
+      somebody able to reach the machine if it does not come back.
 
 
 ---
