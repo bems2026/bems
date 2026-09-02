@@ -1032,7 +1032,23 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       the fleet table's Details button, rendered beside the table rather than inside a row because
       that table is a strict nine-column ARIA grid whose row/column agreement is asserted by test
       — `src/components/devices/DeviceCard.tsx`, `capabilityWidgets.tsx`, `widgetRegistry.ts`,
-      `DeviceCard.test.tsx` (14 tests)
+      `DeviceCard.test.tsx` (16 tests).
+      **VERIFIED IN A REAL BROWSER 2026-09-03**, against a scratch build talking to the mock
+      bridge — and it found a bug that 14 passing tests had not. Opening Details on a second
+      device while one was already open re-uses the same component instance, and
+      `useState(device)` initialises once and never resyncs, so the card rendered the PREVIOUS
+      device's body under the new device's tabs: the screenshot showed "CARE ACU IR" titled above
+      C.O Yellow's two channels. The chosen channel is now held as an ID, which cannot outlive
+      its device and still remembers the tab when you come back. Two regression tests, both
+      confirmed to fail against the code they replace.
+      A layout fault came out of the same pass: the panel is full page width, and rows laid out
+      `space-between` put each label a screen's width from its value. Rows are a two-column grid
+      now and the card is capped at 46rem. Checked in both themes.
+      **For whoever renders this project in a browser next:** Chromium on this Pi accepts a CDP
+      connection and then never answers a command, and its one-shot `--screenshot` fetches the
+      HTML without parsing it — empty DOM, no asset requests — with Vulkan/dawn initialisation
+      failing in its own log. **Firefox works**, driven over Marionette. No dependency was added;
+      Node 22 has `net` and a built-in `WebSocket`. See `docs/pi-session-brief.md`
 - [x] **EX-150** One relay control, replacing five. `SwitchesListCard`, `OutletsListCard`,
       `LightingMatrixCard`, `OutletPlanCard` and `MasterQuickActionsCard` each re-derived the same
       `controlView` → `busy`/`unknown`/`on` triple and then decided independently what `disabled`

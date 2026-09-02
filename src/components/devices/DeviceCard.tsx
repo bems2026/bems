@@ -25,11 +25,18 @@ import { widgetsFor } from './widgetRegistry';
 export function DeviceCard({ device }: { device: Device }) {
   const reading = useDeviceStore((s) => s.latestReadings[device.id]);
   const sibling = useChannelSibling(device);
-  const [shown, setShown] = useState<Device>(device);
 
-  // The tab bar switches which logical device is rendered. Both are real registry entries with
-  // their own readings, so this is a choice of subject, not a filter over one.
-  const active = sibling ? shown : device;
+  // The chosen channel is held as an ID, not as a Device, and that is a bug fix rather than a
+  // style choice. Holding the device itself in `useState(device)` initialised once and never
+  // resynced, so opening Details on a second device while one was already open re-used this
+  // component instance and rendered the PREVIOUS device's body under the new device's tabs —
+  // seen in a browser as "CARE ACU IR" titled above C.O Yellow's two channels.
+  //
+  // An id cannot outlive its device: if it names neither the current device nor its sibling, it
+  // simply falls back to the device. That also means switching to Ch 2 and coming back later
+  // remembers the channel, which a remount-on-key fix would have thrown away.
+  const [shownId, setShownId] = useState<string | null>(null);
+  const active = (sibling ? [device, sibling].find((d) => d.id === shownId) : undefined) ?? device;
   const activeReading = useDeviceStore((s) => s.latestReadings[active.id]);
   const caps = useMemo(() => capabilitiesOf(active, activeReading), [active, activeReading]);
   const widgets = useMemo(() => widgetsFor(caps, active), [caps, active]);
@@ -58,7 +65,7 @@ export function DeviceCard({ device }: { device: Device }) {
               role="tab"
               aria-selected={active.id === d.id}
               className={`device-card__tab${active.id === d.id ? ' device-card__tab--on' : ''}`}
-              onClick={() => setShown(d)}
+              onClick={() => setShownId(d.id)}
             >
               Ch {d.channel} · {d.display_name}
             </button>

@@ -6924,6 +6924,11 @@ button.space-plan__pin {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--r-inner);
+  /* Capped, and it matters: the panel this sits in is the full page width, and a row whose
+     label is left-aligned and value right-aligned then separates the two by most of a metre of
+     screen. Measured in a browser at 1500px — "Energy" and its kWh figures were unreadable as
+     a pair. A card should look like a card. */
+  max-width: 46rem;
 }
 .device-card__head {
   display: flex;
@@ -6981,12 +6986,14 @@ button.space-plan__pin {
   flex-direction: column;
   gap: var(--sp-1);
 }
+/* A two-column grid rather than space-between: the label column is sized to the longest label
+   so every value starts at the same x, which is what makes a stack of unlike rows scannable.
+   space-between put each value hard against the right edge, so no two lined up. */
 .device-card__row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(8.5rem, max-content) 1fr;
   align-items: baseline;
-  justify-content: space-between;
   gap: var(--sp-3);
-  flex-wrap: wrap;
   padding: var(--sp-1) 0;
 }
 .device-card__row-label {
@@ -6998,20 +7005,21 @@ button.space-plan__pin {
   white-space: nowrap;
 }
 .device-card__row-value {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--sp-2);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
 }
 .device-card__kv {
-  display: inline-flex;
-  gap: var(--sp-2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
   align-items: baseline;
 }
 .device-card__kv--wrap {
   flex-wrap: wrap;
-  justify-content: flex-end;
 }
 .device-card__setting {
   white-space: nowrap;
@@ -7040,7 +7048,6 @@ button.space-plan__pin {
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
-  padding: var(--sp-2) 0;
 }
 .device-card__metrics {
   display: flex;

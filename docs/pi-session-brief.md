@@ -161,6 +161,29 @@ give it another port: `npm run mock -- --port=1881`. The recovery, as ever, was
 `sudo systemctl restart nodered` — which also brought the fleet back one device better than
 before.
 
+**Chromium here cannot render the app; Firefox can.** Chromium accepts a CDP connection and
+then answers no command, and `chromium --headless --screenshot` fetches the page HTML without
+parsing it — empty DOM, no asset requests, Vulkan/dawn initialisation failing in its own log.
+Both look like an app fault and are not one. Firefox renders it correctly and can be driven over
+Marionette (`firefox --headless --marionette`, raw TCP on 2828, framing `<len>:<json>`), which
+needs no dependency — Node 22 has `net` and a built-in `WebSocket`.
+Two traps if you do this: `--virtual-time-budget` never expires on this app, because a 1 s tick
+and a live WebSocket mean the page is never idle — use a wall-clock `--timeout` instead. And
+navigating to a URL that differs only by its hash does NOT reload, so a second run silently
+inspects the first run's React state.
+
+**`pkill -f <pattern>` matches your own shell.** `pkill -f firefox`, `pkill -f vite`, and a
+`pgrep -f … | xargs kill` all killed the very command running them, because the pattern appears
+in that command's own `/proc/<pid>/cmdline`. It presents as an unexplained exit code 144 with no
+output. Anchor the pattern (`^/usr/lib/firefox`) or skip `$$` and `$PPID` explicitly.
+
+**Never point a scratch build at `./dist`.** `ibems-dashboard.service` serves that directory to
+the office kiosk. On 2026-09-02 a `vite build` with an overridden `outDir` in a merged config
+wrote there anyway — `mergeConfig` did not apply it — and the kiosk briefly had a bundle with
+**no Supabase configured**, which auto-authenticates. Pass `--outDir` on the CLI, where it
+actually wins, and fingerprint `dist` before and after:
+`find dist -type f -exec md5sum {} \; | sort | md5sum`.
+
 **A ping with no reply is not client isolation.** Windows drops ICMP by default. Use `ip neigh` —
 if ARP resolves the MAC, layer 2 works.
 

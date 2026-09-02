@@ -168,3 +168,39 @@ describe('DeviceCard — dual-channel meters', () => {
     expect(screen.queryAllByRole('tab')).toHaveLength(0);
   });
 });
+
+describe('DeviceCard — switching subject without closing', () => {
+  it('follows the device prop when another device is opened while one is already open', () => {
+    // FOUND IN A BROWSER, not by a test. Opening Details on a second device re-uses the same
+    // component instance, and `useState(device)` initialises once and never resyncs — so the
+    // card rendered the PREVIOUS device's body under the new device's tabs. The screenshot
+    // showed "CARE ACU IR" titled above C.O Yellow's two channels.
+    const { rerender } = mount(meter1, [meter1, meter2, outlet], {
+      mtr_co_yellow: reading('mtr_co_yellow', { cur_power1: 998.4 }),
+      co3: reading('co3', { cur_power: 74.8, cur_voltage: 227 }),
+    });
+    expect(screen.getByText('C.O Yellow')).toBeInTheDocument();
+
+    rerender(<DeviceCard device={outlet} />);
+    // The TITLE, not any occurrence: this outlet's branch_circuit is legitimately "C.O Yellow"
+    // and appears as its subtitle, which is the meter's name too.
+    expect(document.querySelector('.device-card__title')?.textContent).toContain('Outlet 3');
+    expect(document.querySelector('.device-card__title')?.textContent).not.toContain('C.O Yellow');
+    expect(screen.queryAllByRole('tab')).toHaveLength(0);
+    expect(screen.getByText('74.8')).toBeInTheDocument();
+  });
+
+  it('does not carry a chosen channel across to an unrelated device', () => {
+    const { rerender } = mount(meter1, [meter1, meter2, singleMeter], {
+      mtr_co_yellow: reading('mtr_co_yellow', { cur_power1: 998.4 }),
+      mtr_lo_yellow: reading('mtr_lo_yellow', { cur_power2: 12.5 }),
+      mtr_lo_red: reading('mtr_lo_red', { cur_power1: 27.5 }),
+    });
+    fireEvent.click(screen.getAllByRole('tab')[1]);
+    expect(screen.getByText('12.5')).toBeInTheDocument();
+
+    rerender(<DeviceCard device={singleMeter} />);
+    expect(screen.getByText('L.O Red')).toBeInTheDocument();
+    expect(screen.getByText('27.5')).toBeInTheDocument();
+  });
+});

@@ -81,27 +81,29 @@ export function TelemetryWidget({ device, caps, reading }: WidgetProps) {
   const w = measured(caps.value('cur_power') as number | undefined, reading);
 
   return (
-    <div className="device-card__telemetry">
-      <div className="device-card__metrics">
-        <span className="device-card__metric">
-          <MetricValue value={w ?? null} unit="W" digits={1} size="md" />
-          <span className="device-card__metric-label">power</span>
-        </span>
-        <span className="device-card__metric">
-          <MetricValue value={v ?? null} unit="V" digits={1} size="sm" />
-          <span className="device-card__metric-label">volts</span>
-        </span>
-        <span className="device-card__metric">
-          <MetricValue value={a ?? null} unit="A" digits={3} size="sm" />
-          <span className="device-card__metric-label">amps</span>
-        </span>
-      </div>
-      {series.length > 1 && (
-        <div className="device-card__spark">
-          <Sparkline values={series} height={28} />
+    <Row icon={<Zap size={14} aria-hidden="true" />} label="Live now">
+      <div className="device-card__telemetry">
+        <div className="device-card__metrics">
+          <span className="device-card__metric">
+            <MetricValue value={w ?? null} unit="W" digits={1} size="md" />
+            <span className="device-card__metric-label">power</span>
+          </span>
+          <span className="device-card__metric">
+            <MetricValue value={v ?? null} unit="V" digits={1} size="sm" />
+            <span className="device-card__metric-label">volts</span>
+          </span>
+          <span className="device-card__metric">
+            <MetricValue value={a ?? null} unit="A" digits={3} size="sm" />
+            <span className="device-card__metric-label">amps</span>
+          </span>
         </div>
-      )}
-    </div>
+        {series.length > 1 && (
+          <div className="device-card__spark">
+            <Sparkline values={series} height={28} />
+          </div>
+        )}
+      </div>
+    </Row>
   );
 }
 
