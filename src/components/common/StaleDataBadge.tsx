@@ -10,6 +10,12 @@ interface StaleDataBadgeProps {
   label?: string;
   children: ReactNode;
   className?: string;
+  /**
+   * `'flag'` (default) shows the word. `'dot'` shows a marker and nothing else — for a floor
+   * plan, where a pin is about 24px wide and the word is wider than the whole thing it labels.
+   * See the note on the compact variant below.
+   */
+  variant?: 'flag' | 'dot';
 }
 
 /**
@@ -34,8 +40,19 @@ interface StaleDataBadgeProps {
  * `aria-label` carries the full sentence; the visible text stays the short "stale" — the
  * accessible name takes precedence over visible text when both are present, so screen
  * readers get the fuller description without changing what's shown on screen.
+ *
+ * THE COMPACT VARIANT, AND WHY IT IS NOT A SHORTER WORD — RM-045. On a floor plan the wrapped
+ * content is a ~24px pin, and this flag is wider than the whole thing it describes: it covered
+ * the puck, the id, and its neighbours. MEASURED on the office kiosk (800x480, 2026-09-02) four
+ * stale outlets hid CO1 and CO4 completely and most of the plan with them — a flag that made the
+ * page it was warning about unreadable.
+ *
+ * `variant="dot"` renders a marker instead. The sighted signal on a plan is the dimming plus the
+ * marker; the word is what gets dropped, NOT the announcement. The live region and its full
+ * sentence are identical in both variants, and a test asserts that, because shrinking the visual
+ * is only acceptable while the spoken form does not shrink with it.
  */
-export function StaleDataBadge({ deviceId, label, children, className }: StaleDataBadgeProps) {
+export function StaleDataBadge({ deviceId, label, children, className, variant = 'flag' }: StaleDataBadgeProps) {
   const reading = useDeviceStore((s) => (deviceId ? s.latestReadings[deviceId] : s.totals));
 
   // Staleness is a function of wall-clock time, not just store writes — without this tick,
@@ -51,8 +68,13 @@ export function StaleDataBadge({ deviceId, label, children, className }: StaleDa
     <div className={`stale-wrap${stale ? ' stale-wrap--stale' : ''}${className ? ` ${className}` : ''}`}>
       {children}
       {stale && (
-        <span className="stale-flag" role="status" aria-live="polite" aria-label={`${subject}: no reading in the last ${staleWindowLabel(reading)}`}>
-          stale
+        <span
+          className={`stale-flag${variant === 'dot' ? ' stale-flag--dot' : ''}`}
+          role="status"
+          aria-live="polite"
+          aria-label={`${subject}: no reading in the last ${staleWindowLabel(reading)}`}
+        >
+          {variant === 'dot' ? null : 'stale'}
         </span>
       )}
     </div>

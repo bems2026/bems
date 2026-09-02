@@ -1938,6 +1938,20 @@ fall back to it).
       room's own 0..1 frame so it cannot sit a few percent off the pins beside it. A replicated
       deployment gets the sketched outline and is told it has no presets.
 
+- [x] **RM-045 (S)** **DONE 2026-09-02, deployed.** **The stale flag covered the pin it
+      described.** MEASURED on the office kiosk (800x480): four stale outlets rendered four
+      "STALE" pills that hid CO1 and CO4 completely and most of the outlet plan with them. The
+      flag is `position: absolute; top: 0; right: 0` inside a wrap that, on a plan, is only as
+      wide as a ~24px pin — so the word is wider than the thing it labels. Not a regression from
+      RM-044; it had always been like that, and only became obvious once several outlets went
+      stale at once.
+
+      `StaleDataBadge` gains `variant="dot"`: a 9px marker at the pin's corner, nudged outside by
+      its own radius so it touches rather than covers. **The word is what shrinks, not the
+      announcement** — the live region and its full sentence are identical in both variants, and
+      a test asserts it, checked by making the compact variant drop its `aria-label`, which fails.
+      The lists and the alerts popover keep the word, where there is room to say it.
+
 - [x] **RM-008** ~~Apply the three Phase 9 migrations.~~ **Done 2026-08-21.** Applied via the
       Supabase Management API; all four objects confirmed live (`readings_buckets`,
       `roll_up_and_prune_readings`, `readings_hourly`, `commands_complete_own_inflight`),

@@ -125,7 +125,11 @@ function OutletPin({ device, left, top }: { device: Device; left?: string; top?:
 
   return (
     <div className={left ? 'control-outlet-pin' : 'control-outlet-pin control-outlet-pin--inline'} style={left ? { left, top } : undefined}>
-      <StaleDataBadge deviceId={device.id} label={device.display_name}>
+      {/* `dot`, not the word — RM-045. On the plan this wraps a ~24px pin, and the "STALE"
+          pill is wider than the pin it describes: four stale outlets hid most of the plan on
+          the office kiosk. The dimming and the marker are the sighted signal here; the live
+          region still announces the same full sentence. */}
+      <StaleDataBadge deviceId={device.id} label={device.display_name} variant="dot">
         <div className="control-outlet-pin__id">{device.id.toUpperCase()}</div>
         <div className="control-outlet-pin__puck" role="group" aria-label={`${device.display_name} sockets`}>
           <button
