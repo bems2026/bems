@@ -6905,3 +6905,197 @@ button.space-plan__pin {
   color: var(--good);
   font-size: var(--fs-xs);
 }
+
+/* ---------------------------------------------------------------------------
+   DeviceCard — a device rendered from its capability schema rather than its class.
+
+   Deliberately reuses `.badge`, `.metric-value` and the `--sp-*`/`--fs-*`/colour tokens rather
+   than introducing a parallel palette: every colour here is an existing token, so the contrast
+   guard in `test/contrast.test.mjs` already covers each of them on every surface.
+
+   The card has to tolerate wildly different content — a light switch shows three rows, a dual
+   outlet shows eight — so nothing is sized to a fixed height and every row wraps.
+   --------------------------------------------------------------------------- */
+.device-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-inner);
+}
+.device-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.device-card__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.device-card__pill {
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-pill);
+  background: var(--chip-bg);
+  color: var(--muted);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.device-card__sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-2xs);
+}
+
+/* Two channels of ONE physical meter. The tabs exist because the registry models them as two
+   logical devices on purpose — see `useChannelSibling`. */
+.device-card__tabs {
+  display: flex;
+  gap: var(--sp-1);
+  flex-wrap: wrap;
+}
+.device-card__tab {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-inner);
+  background: var(--bg-inset);
+  color: var(--muted);
+  font-size: var(--fs-2xs);
+  cursor: pointer;
+}
+.device-card__tab--on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.device-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.device-card__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  padding: var(--sp-1) 0;
+}
+.device-card__row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--muted);
+  font-size: var(--fs-2xs);
+  white-space: nowrap;
+}
+.device-card__row-value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.device-card__kv {
+  display: inline-flex;
+  gap: var(--sp-2);
+  align-items: baseline;
+}
+.device-card__kv--wrap {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.device-card__setting {
+  white-space: nowrap;
+}
+.device-card__muted {
+  color: var(--muted);
+}
+.device-card__empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-2xs);
+}
+
+.device-card__relay,
+.device-card__sockets {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.device-card__relay-label {
+  color: var(--muted);
+  font-size: var(--fs-2xs);
+}
+
+.device-card__telemetry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2) 0;
+}
+.device-card__metrics {
+  display: flex;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+.device-card__metric {
+  display: flex;
+  flex-direction: column;
+}
+.device-card__metric-label {
+  color: var(--muted);
+  font-size: var(--fs-3xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.device-card__spark {
+  width: 100%;
+}
+
+/* The slider is inert until a capability command verb exists. It is rendered rather than hidden
+   so the threshold the device actually holds is visible, and reads as disabled rather than as
+   broken. */
+.device-card__threshold {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.device-card__slider {
+  width: 7rem;
+  accent-color: var(--accent);
+  cursor: not-allowed;
+}
+.device-card__threshold-value {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The capability card opened from the fleet table. A panel beside the table rather than an
+   expanding row: the table is a strict nine-column ARIA grid whose row/column agreement is
+   asserted by test, and an expanding row would have to break that or fake a cell. */
+.devices-detail {
+  margin-top: var(--sp-4);
+  padding: var(--sp-4);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+}
+.devices-detail__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.devices-detail__title {
+  margin: 0;
+  font-size: var(--fs-sm);
+}

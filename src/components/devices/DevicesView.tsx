@@ -15,6 +15,7 @@ import { useDeviceConnectivity } from '@/hooks/useDeviceConnectivity';
 import { flapSeverity, type ConnectivityRow } from '@/lib/deviceConnectivity';
 import { metaSummary, type DeviceConfig } from '@/lib/deviceConfig';
 import { DeviceMetaEditor } from './DeviceMetaEditor';
+import { DeviceCard } from './DeviceCard';
 import { EnrollWizard } from './EnrollWizard';
 import { RemoveDevicePanel } from './RemoveDevicePanel';
 import { SegmentPresenceNote } from './SegmentPresenceNote';
@@ -64,6 +65,10 @@ export function DevicesView() {
   const unstable = Object.values(connectivity).filter((r) => flapSeverity(r) !== 'steady' && flapSeverity(r) !== 'unknown');
   const [filter, setFilter] = useState<DeviceClass | 'all'>('all');
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Which device's capability card is open. Rendered BESIDE the table rather than inside a row:
+  // the table is a strict nine-column ARIA grid and `DevicesView.test.tsx` asserts every row has
+  // exactly one cell per column header, so an expanding row would have to break that or fake it.
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [enrolling, setEnrolling] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const removingDevice = removingId ? (devices.find((d) => d.id === removingId) ?? null) : null;
@@ -72,6 +77,7 @@ export function DevicesView() {
   // explains itself, which is worse than an absent one for something irreversible-looking.
   const enrolledIds = useMemo(() => new Set((ENROLLED_DEVICES as { id: string }[]).map((d) => d.id)), []);
   const editingDevice = editingId ? (devices.find((d) => d.id === editingId) ?? null) : null;
+  const detailDevice = detailId ? (devices.find((d) => d.id === detailId) ?? null) : null;
 
   const filtered = useMemo(() => {
     const list = filter === 'all' ? devices : devices.filter((d) => d.class === filter);
@@ -129,6 +135,19 @@ export function DevicesView() {
       />
 
       {editingDevice && <DeviceMetaEditor device={editingDevice} onClose={() => setEditingId(null)} />}
+      {detailDevice && (
+        <section className="devices-detail" aria-label={`${detailDevice.display_name} capabilities`}>
+          <div className="devices-detail__head">
+            <h3 className="devices-detail__title">What this device can do</h3>
+            <button type="button" className="devices-table__edit-btn" onClick={() => setDetailId(null)}>
+              Close
+            </button>
+          </div>
+          {/* Everything below is chosen by the device's capability schema, not by its class —
+              see `DeviceCard`. A device that lacks a capability renders nothing for it. */}
+          <DeviceCard device={detailDevice} />
+        </section>
+      )}
       {enrolling && <EnrollWizard onClose={() => setEnrolling(false)} />}
       {removingDevice && (
         <RemoveDevicePanel
@@ -172,7 +191,7 @@ export function DevicesView() {
               <span role="columnheader">Edit</span>
             </div>
             {filtered.map((d) => (
-              <DeviceRow key={d.id} device={d} config={configs[d.id]} conn={connectivity[d.id]} onEdit={() => setEditingId(d.id)} onRemove={enrolledIds.has(d.id) ? () => setRemovingId(d.id) : undefined} />
+              <DeviceRow key={d.id} device={d} config={configs[d.id]} conn={connectivity[d.id]} onEdit={() => setEditingId(d.id)} onDetail={() => setDetailId(d.id)} onRemove={enrolledIds.has(d.id) ? () => setRemovingId(d.id) : undefined} />
             ))}
           </div>
         </div>
@@ -198,7 +217,7 @@ export function DevicesView() {
  * no longer has to hold the whole map to hand rows their data, and a row re-renders for its
  * own device rather than for any device.
  */
-const DeviceRow = memo(function DeviceRow({ device, config, conn, onEdit, onRemove }: { device: Device; config: DeviceConfig | undefined; conn: ConnectivityRow | undefined; onEdit: () => void; onRemove?: () => void }) {
+const DeviceRow = memo(function DeviceRow({ device, config, conn, onEdit, onDetail, onRemove }: { device: Device; config: DeviceConfig | undefined; conn: ConnectivityRow | undefined; onEdit: () => void; onDetail: () => void; onRemove?: () => void }) {
   const reading = useDeviceStore((s) => s.latestReadings[device.id]);
   const switchable = hasSwitchableState(device.class);
   const comm = commState(reading);
@@ -249,6 +268,9 @@ const DeviceRow = memo(function DeviceRow({ device, config, conn, onEdit, onRemo
         {stateText}
       </span>
       <span className="devices-table__edit-cell" role="cell">
+        <button type="button" className="devices-table__edit-btn" onClick={onDetail}>
+          Details
+        </button>
         <button type="button" className="devices-table__edit-btn" onClick={onEdit}>
           Edit
         </button>

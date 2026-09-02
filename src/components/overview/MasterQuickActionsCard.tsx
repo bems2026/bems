@@ -7,6 +7,8 @@ import { controlView } from '@/lib/socketView';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { CardLink } from '@/components/ui/CardLink';
+import { RelayToggle } from '@/components/devices/RelayToggle';
+import { useRelayState } from '@/hooks/useRelayState';
 
 /** How many lighting circuits get a quick-toggle row here. Was `['l1']` — one building's name
  * for "the first lighting circuit", which is what this always meant (the old comment said so:
@@ -95,14 +97,11 @@ export function MasterQuickActionsCard() {
 
 function QuickToggleRow({ deviceId }: { deviceId: string }) {
   const device = useDeviceStore((s) => s.devices.find((d) => d.id === deviceId));
-  const reading = useDeviceStore((s) => s.latestReadings[deviceId]);
-  const pending = useCommandStore((s) => s.pending[targetKey(deviceId)]);
-  const send = useCommandStore((s) => s.send);
-  const view = controlView(reading, pending);
-
-  const busy = view.kind === 'pending';
-  const unknown = view.kind === 'unknown';
-  const on = !unknown && view.value === 'on';
+  // Shared with every other relay control. This row previously spelled its own refusal rule and
+  // left out `isCommandable`, so it was the one toggle in the app that stayed clickable for a
+  // device the bridge had reported offline — the dispatch could not land and nothing said so.
+  const { busy, unknown, on } = useRelayState(deviceId);
+  const name = device?.display_name ?? deviceId;
 
   return (
     <div className="quick-row">
@@ -110,20 +109,11 @@ function QuickToggleRow({ deviceId }: { deviceId: string }) {
         <Lightbulb size={16} />
       </span>
       <div className="quick-row__body">
-        <p className="quick-row__name">{device?.display_name ?? deviceId}</p>
+        <p className="quick-row__name">{name}</p>
         <p className="quick-row__sub">{unknown ? 'no reading yet' : busy ? 'switching…' : on ? 'on' : 'off'}</p>
       </div>
-      <button
-        type="button"
-        className={`quick-toggle${on ? ' quick-toggle--on' : ''}`}
-        role="switch"
-        aria-checked={on}
-        aria-label={device?.display_name ?? deviceId}
-        disabled={busy || unknown}
-        onClick={() => send(deviceId, undefined, on ? 'off' : 'on')}
-      >
-        <span className="quick-toggle__knob" />
-      </button>
+      <RelayToggle deviceId={deviceId} name={name} />
     </div>
   );
 }
+

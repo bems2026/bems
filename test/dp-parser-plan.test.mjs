@@ -34,7 +34,6 @@ function fakeFlow(initial = {}) {
 
 /** Run a generated parser exactly as Node-RED would: `msg` and `flow` in scope, a return out. */
 function run(source, msg, flow) {
-  // eslint-disable-next-line no-new-func
   return new Function('msg', 'flow', source)(msg, flow);
 }
 
@@ -271,7 +270,6 @@ test('the generated lights collector keeps conn/on/lastSeen and adds the setting
   const src = generateSwitchCollectorSource(CAPABILITY_PROFILES.tdq_switch);
   const store = new Map();
   const global = { get: (k) => store.get(k), set: (k, v) => store.set(k, v) };
-  // eslint-disable-next-line no-new-func
   const runSwitch = (msg) => new Function('msg', 'global', src)(msg, global);
 
   runSwitch({ lightId: '3', payload: { state: 'connected' } });

@@ -420,4 +420,31 @@ describe('the plan card is optional, the controls are not', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Turn lights off' }));
     expect(bridgeClient.sendCommand).toHaveBeenCalledWith(expect.objectContaining({ device_id: 'l1', action: 'off' }));
   });
+
+  it('a device excluded from control gets no toggle anywhere on the page, not just no master action', () => {
+    // `device_config.functions` is a SITE decision about which page a device belongs on. Only
+    // ControlPage's master actions used to honour it, so a device an operator had deliberately
+    // excluded was left out of "Lights off" and then handed its own toggle in the list below —
+    // the one place the exclusion mattered most.
+    useDeviceStore.setState({ devices: [light(1), light(2), outlet(1)] });
+    useDeviceConfigStore.setState({
+      saved: { l2: { ...emptyDeviceConfig('l2'), functions: [] } },
+      draft: {},
+    });
+    render(<ControlPage />);
+
+    expect(screen.getAllByRole('switch', { name: 'Light Switch 1' }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('switch', { name: 'Light Switch 2' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Light Switch 2')).not.toBeInTheDocument();
+  });
+
+  it('a device with no config recorded still appears — absent is not excluded', () => {
+    // `null` functions means "nobody has said", which falls back to the class default. Treating
+    // that as an exclusion would empty the page on a site that has never opened the editor.
+    useDeviceStore.setState({ devices: [light(1)] });
+    useDeviceConfigStore.setState({ saved: {}, draft: {} });
+    render(<ControlPage />);
+    expect(screen.getAllByRole('switch', { name: 'Light Switch 1' }).length).toBeGreaterThan(0);
+  });
+
 });

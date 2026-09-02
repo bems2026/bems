@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
 import { Lightbulb } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
-import { useCommandStore, targetKey } from '@/stores/commandStore';
-import { controlView, isCommandable } from '@/lib/socketView';
-import { isReadingStale, staleWindowLabel } from '@/lib/staleness';
+import { useDevicesFor } from '@/hooks/useDevicesFor';
+import { useCommandStore } from '@/stores/commandStore';
+import { staleWindowLabel } from '@/lib/staleness';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
+import { useRelayState } from '@/hooks/useRelayState';
 import { useControlLog } from './controlLog';
 import { useControlPlan } from './useControlPlan';
 import { PlanRoomPicker } from './PlanRoomPicker';
@@ -19,8 +20,12 @@ import type { Device } from '@/lib/types';
  * cached") and can loop.
  */
 function useLightSwitches(): Device[] {
-  const devices = useDeviceStore((s) => s.devices);
-  return useMemo(() => devices.filter((d) => d.class === 'switch').sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true })), [devices]);
+  // Filtered through `useDevicesFor('control')`, not by class alone. Page membership is a SITE
+  // decision recorded in `device_config.functions`, and only ControlPage's master actions used
+  // to honour it — so a device an operator had deliberately excluded was left out of "Lights
+  // off" while still getting a clickable fixture on the plan.
+  const { included } = useDevicesFor('control');
+  return useMemo(() => included.filter((d) => d.class === 'switch').sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true })), [included]);
 }
 
 /**
@@ -112,22 +117,22 @@ export function LightingMatrixCard() {
 
 function LightRow({ device, cells }: { device: Device; cells?: { x: number; y: number }[] }) {
   const reading = useDeviceStore((s) => s.latestReadings[device.id]);
-  const pending = useCommandStore((s) => s.pending[targetKey(device.id)]);
   const send = useCommandStore((s) => s.send);
   const log = useControlLog((s) => s.log);
 
-  const view = controlView(reading, pending);
-  const busy = view.kind === 'pending';
-  // Absolutely positioned within a shared plan container (see `pct(px, VB_W)` below), so
-  // it can't be wrapped in StaleDataBadge's own div without breaking that positioning —
-  // dimming comes for free from the existing `.control-lamp:disabled` rule instead.
-  const stale = isReadingStale(reading);
-  const on = (view.kind === 'idle' || view.kind === 'pending') && view.value === 'on';
+  // The derivation is shared with every other relay control (`useRelayState`); only the markup
+  // is special here, because these lamps are absolutely positioned within a plan container (see
+  // `pct(px, VB_W)` below) and cannot be wrapped in StaleDataBadge's own div without breaking
+  // that positioning — dimming comes from the existing `.control-lamp:disabled` rule instead.
+  //
+  // Sharing it also aligned the refusal rule: this lamp used to omit `unknown`, so a light that
+  // had never reported offered a toggle with no state to toggle *from*.
+  const { on, disabled, stale } = useRelayState(device.id);
 
-  // Not `stale` — see SwitchesListCard's `toggle`. The lamp is disabled by `isCommandable`
-  // below; gating the handler as well made a click on an enabled control do nothing silently.
+  // Not gated on `stale` — see `RelayToggle`. Gating the handler but not the control is what
+  // made a click on an enabled button do nothing silently.
   const toggle = () => {
-    if (busy) return;
+    if (disabled) return;
     const next = on ? 'off' : 'on';
     send(device.id, undefined, next);
     log('RELAY', `${device.display_name} → ${next}`);
@@ -156,7 +161,7 @@ function LightRow({ device, cells }: { device: Device; cells?: { x: number; y: n
             tabIndex={isPrimary ? 0 : -1}
             className={`control-lamp${on ? ' control-lamp--on' : ''}${at ? '' : ' control-lamp--inline'}`}
             style={at ? { left: `${at.x * 100}%`, top: `${at.y * 100}%` } : undefined}
-            disabled={busy || !isCommandable(reading)}
+            disabled={disabled}
             title={isPrimary && stale ? `${device.display_name}: stale — no reading in the last ${staleWindowLabel(reading)}` : undefined}
             onClick={toggle}
           />

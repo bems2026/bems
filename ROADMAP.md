@@ -1009,6 +1009,50 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       useful number on screen exactly when it is needed — `src/lib/staleness.ts`
 - [x] **EX-013** Per-reading freshness treatment: content dims, flag stays legible — `src/components/common/StaleDataBadge.tsx`, `src/lib/staleness.ts`
 
+- [x] **EX-148** `src/lib/capabilitySchema.ts` — the frontend's view of what a device can do,
+      **importing** `shared/deviceCapabilities.mjs` rather than mirroring it (the bridge generates
+      its parsers from that same file, so a second copy here would be free to disagree with the
+      thing producing the data). What it adds is the **channel resolution**: one physical
+      dual-channel CT meter is two logical devices, and a component asking for `cur_power` must
+      get its own channel. The other channel is excluded outright rather than deprioritised, so a
+      value cannot fall through to a sibling branch circuit — neutering that filter fails four
+      tests. Separates "what the hardware CAN do" from "what the reading currently carries", which
+      is what lets a widget mount and show `—` instead of appearing and vanishing as packets
+      arrive — `src/lib/capabilitySchema.ts`, `src/lib/capabilitySchema.test.ts` (13 tests)
+- [x] **EX-149** `DeviceCard` — a device rendered from its capability schema instead of its class,
+      composed from a widget registry (`widgetRegistry.ts`) keyed on what the PRODUCT declares.
+      Adding a capability is now an entry in `shared/deviceCapabilities.mjs` plus a widget; no
+      card is edited and no class is special-cased. Widgets: relay/sockets, live telemetry with
+      sparkline, the device's own energy counters, child lock, the over-power alarm (slider
+      bounded by the vendor's own min/max/step, inert until a capability command verb exists),
+      countdown, the fault bitmap decoded to named bits, and the settings this system deliberately
+      refuses to write. Dual-channel meters get a tab per channel — and the pairing is refused
+      when more than one candidate exists, because the registry carries no physical-device id to
+      join on and guessing would put two unrelated branch circuits under one card. Reached from
+      the fleet table's Details button, rendered beside the table rather than inside a row because
+      that table is a strict nine-column ARIA grid whose row/column agreement is asserted by test
+      — `src/components/devices/DeviceCard.tsx`, `capabilityWidgets.tsx`, `widgetRegistry.ts`,
+      `DeviceCard.test.tsx` (14 tests)
+- [x] **EX-150** One relay control, replacing five. `SwitchesListCard`, `OutletsListCard`,
+      `LightingMatrixCard`, `OutletPlanCard` and `MasterQuickActionsCard` each re-derived the same
+      `controlView` → `busy`/`unknown`/`on` triple and then decided independently what `disabled`
+      meant — **and three of them had genuinely different refusal rules**:
+      `MasterQuickActionsCard` omitted `isCommandable`, so it was the one toggle in the app that
+      stayed clickable for a device the bridge had reported offline; `LightingMatrixCard` omitted
+      `unknown`, so a light that had never reported offered a toggle with no state to toggle
+      *from*. That is the same shape as EX-017, where the staleness fix reached the `disabled`
+      attribute but not the click handler. The rule now lives once, in `useRelayState`. Each
+      toggle also subscribes to its OWN pending entry, where `OutletRow` and `OutletPin` used to
+      select the whole `pending` map and re-render every socket on any command anywhere in the
+      building — `src/hooks/useRelayState.ts`, `src/components/devices/RelayToggle.tsx`
+- [x] **EX-151** The control cards honour `device_config.functions`. Only ControlPage's master
+      actions did; the four cards filtered by class directly, so a device an operator had
+      deliberately excluded was left out of "Lights off" and then handed its own toggle in the
+      list below it — the one place the exclusion mattered most. `null` functions still means
+      "nobody has said" and falls back to the class default, so a site that has never opened the
+      editor is unaffected — `src/components/control/`, `src/hooks/useDevicesFor.ts`,
+      `ControlPage.test.tsx`
+
 ### Frontend — state & data layer
 
 - [x] **EX-020** Bridge resilience layer: abort timeouts, in-flight guard, exponential backoff, WS primary with HTTP-poll fallback — `src/lib/bridgeClient.ts`

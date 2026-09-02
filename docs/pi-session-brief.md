@@ -57,7 +57,8 @@ Decided by the operator, 2026-08-25.
 **Ask first — every time:**
 
 - **Writing the live flow**: `deploy:pi --apply`, `quiesce:pi --apply`, `enroll:pi --apply`,
-  `remove:pi --apply`, or any `POST /flows`. Back up `~/.node-red/flows.json` first, always.
+  `remove:pi --apply`, `fix-dp-parsers:pi --apply`, or any `POST /flows`. Back up
+  `~/.node-red/flows.json` first, always.
 - **Dispatching to hardware** — anything that moves a relay, including a "harmless" no-op.
 - **`git commit`, `git push`**, or editing `.env` files.
 
@@ -151,6 +152,15 @@ the test fails**, then read the live system back.
 message; the tuya node fails afterwards. This is fixed in `dispatchCommand`, but the same shape
 will recur anywhere a queue is mistaken for a result.
 
+**`npm run mock:stop` used to stop the live bridge.** On the Pi, port 1880 belongs to Node-RED —
+so `npm run mock` cannot bind, and `mock:stop` is exactly what that bind failure invites you to
+reach for. On 2026-09-02 it did, and the dashboard, the ingestion daemon and the scheduler all
+lost their data source at once with nothing saying why. It now checks the process's own command
+line and refuses anything that is not a mock (`--force` overrides). To run the mock here at all,
+give it another port: `npm run mock -- --port=1881`. The recovery, as ever, was
+`sudo systemctl restart nodered` — which also brought the fleet back one device better than
+before.
+
 **A ping with no reply is not client isolation.** Windows drops ICMP by default. Use `ip neigh` —
 if ARP resolves the MAC, layer 2 works.
 
@@ -198,7 +208,14 @@ npm run set-device-ip:pi -- --host=127.0.0.1 [--undo] [--apply]
 # Broker: confirm it is still loopback-only. Two rows, both loopback, nothing on 0.0.0.0.
 ss -lnt | grep :1883
 
-# Suites
+# Capability catalogue vs the vendor's live device model — read-only
+npm run tuya:spec [-- --verbose]
+
+# Regenerate the source-tab dp parsers from the catalogue (dry run first, always)
+npm run fix-dp-parsers:pi -- --host=127.0.0.1 [--apply]
+
+# Suites. Run them ONE AT A TIME on this box — three heavy jobs at once produced twelve
+# spurious failures on 2026-09-02 that all passed on a clean serial re-run.
 npm test && npm run test:bridge && npm run test:server
 ```
 

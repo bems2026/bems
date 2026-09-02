@@ -1,15 +1,13 @@
 import { useMemo } from 'react';
 import { Plug } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
-import { useCommandStore, targetKey, type PendingCommand } from '@/stores/commandStore';
-import { controlView, isCommandable } from '@/lib/socketView';
+import { useDevicesFor } from '@/hooks/useDevicesFor';
 import { corroborate } from '@/lib/relayCorroboration';
-import { isReadingStale } from '@/lib/staleness';
 import { StaleDataBadge } from '@/components/common/StaleDataBadge';
 import { InfoHint } from '@/components/ui/InfoHint';
+import { RelayToggle } from '@/components/devices/RelayToggle';
 import { SimulatedBadge } from './SimulatedBadge';
-import type { Device, Reading, SocketIndex } from '@/lib/types';
-import { useControlLog, type LogTag } from './controlLog';
+import type { Device } from '@/lib/types';
 
 /**
  * The 7 dual-socket outlets as a scannable list — same control path the plan's pucks use
@@ -18,8 +16,12 @@ import { useControlLog, type LogTag } from './controlLog';
  * `useMemo` over the raw selector rather than inline in the selector itself.
  */
 export function OutletsListCard({ simulated = false }: { simulated?: boolean }) {
-  const devices = useDeviceStore((s) => s.devices);
-  const outlets = useMemo(() => devices.filter((d) => d.class === 'outlet_dual').sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true })), [devices]);
+// Filtered through `useDevicesFor('control')`, not by class alone. Page membership is a SITE
+// decision recorded in `device_config.functions`, and only ControlPage's master actions used to
+// honour it — so a device an operator had deliberately excluded was left out of "Lights off"
+// while still getting its own toggle in the list below it.
+  const { included } = useDevicesFor('control');
+  const outlets = useMemo(() => included.filter((d) => d.class === 'outlet_dual').sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true })), [included]);
 
   return (
     <div className="card control-list-card">
@@ -38,11 +40,7 @@ export function OutletsListCard({ simulated = false }: { simulated?: boolean }) 
 
 function OutletRow({ device }: { device: Device }) {
   const reading = useDeviceStore((s) => s.latestReadings[device.id]);
-  const pendingMap = useCommandStore((s) => s.pending);
-  const send = useCommandStore((s) => s.send);
-  const log = useControlLog((s) => s.log);
   const corroboration = corroborate(device, reading);
-  const stale = isReadingStale(reading);
 
   return (
     <StaleDataBadge deviceId={device.id} label={device.display_name} className="control-list-row">
@@ -54,52 +52,12 @@ function OutletRow({ device }: { device: Device }) {
         </p>
       </div>
       <div className="control-list-row__sockets">
-        <SocketMiniToggle deviceId={device.id} socket={1} pendingMap={pendingMap} reading={reading} send={send} log={log} name={device.display_name} stale={stale} />
-        <SocketMiniToggle deviceId={device.id} socket={2} pendingMap={pendingMap} reading={reading} send={send} log={log} name={device.display_name} stale={stale} />
+        {/* Each toggle subscribes to its OWN pending entry. This row used to select the whole
+            `pending` map and thread it down, so any command anywhere in the building re-rendered
+            both sockets of every outlet. */}
+        <RelayToggle deviceId={device.id} name={device.display_name} socket={1} variant="socket" />
+        <RelayToggle deviceId={device.id} name={device.display_name} socket={2} variant="socket" />
       </div>
     </StaleDataBadge>
-  );
-}
-
-function SocketMiniToggle({
-  deviceId,
-  socket,
-  pendingMap,
-  reading,
-  send,
-  log,
-  name,
-  stale,
-}: {
-  deviceId: string;
-  socket: SocketIndex;
-  pendingMap: Record<string, PendingCommand>;
-  reading: Reading | undefined;
-  send: (deviceId: string, socket: SocketIndex | undefined, desired: 'on' | 'off') => Promise<void>;
-  log: (tag: LogTag, text: string) => void;
-  name: string;
-  stale: boolean;
-}) {
-  const view = controlView(reading, pendingMap[targetKey(deviceId, socket)], socket);
-  const busy = view.kind === 'pending';
-  const unknown = view.kind === 'unknown';
-  const on = !unknown && view.value === 'on';
-
-  return (
-    <button
-      type="button"
-      className={`outlet-socket-toggle outlet-socket-toggle--compact${on ? ' outlet-socket-toggle--on' : ''}${busy ? ' outlet-socket-toggle--busy' : ''}`}
-      aria-pressed={on}
-      aria-busy={busy}
-      disabled={busy || unknown || !isCommandable(reading)}
-      onClick={() => {
-        const next = on ? 'off' : 'on';
-        send(deviceId, socket, next);
-        log('RELAY', `${name} S${socket} → ${next}`);
-      }}
-    >
-      <span className="outlet-socket-toggle__label">S{socket}</span>
-      <span className="outlet-socket-toggle__state">{unknown ? 'unknown' : stale ? 'stale' : busy ? '…' : on ? 'on' : 'off'}</span>
-    </button>
   );
 }

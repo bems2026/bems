@@ -1,23 +1,28 @@
 import { Plug } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
-import { useCommandStore, targetKey } from '@/stores/commandStore';
-import { controlView, isCommandable } from '@/lib/socketView';
+import { useDevicesFor } from '@/hooks/useDevicesFor';
+import { useCommandStore } from '@/stores/commandStore';
 import { corroborate } from '@/lib/relayCorroboration';
-import { isReadingStale } from '@/lib/staleness';
 import { StaleDataBadge } from '@/components/common/StaleDataBadge';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
+import { useRelayState } from '@/hooks/useRelayState';
 import { useControlLog } from './controlLog';
 import { useControlPlan } from './useControlPlan';
 import { PlanRoomPicker } from './PlanRoomPicker';
 import type { Device, SocketIndex } from '@/lib/types';
 
 export function OutletPlanCard() {
-  const devices = useDeviceStore((s) => s.devices);
   const send = useCommandStore((s) => s.send);
   const log = useControlLog((s) => s.log);
   const { ask, modalProps } = useConfirm();
-  const outlets = devices.filter((d) => d.class === 'outlet_dual');
+  // Filtered through `useDevicesFor('control')`, not by class alone. Page membership is a SITE
+  // decision recorded in `device_config.functions`, and only ControlPage's master actions used
+  // to honour it — so a device an operator had deliberately excluded was left out of the master
+  // actions while still getting a clickable puck on the plan, and being switched by this card's
+  // own "all on".
+  const { included } = useDevicesFor('control');
+  const outlets = included.filter((d) => d.class === 'outlet_dual');
   const { plan, source, rooms, roomId, setRoomId, aspect } = useControlPlan();
   const unplaced = outlets.filter((d) => !plan?.OUTLET_POSITIONS[d.id]);
 
@@ -102,20 +107,16 @@ export function OutletPlanCard() {
 
 function OutletPin({ device, left, top }: { device: Device; left?: string; top?: string }) {
   const reading = useDeviceStore((s) => s.latestReadings[device.id]);
-  const pendingMap = useCommandStore((s) => s.pending);
   const send = useCommandStore((s) => s.send);
   const log = useControlLog((s) => s.log);
   const corroboration = corroborate(device, reading);
-  const stale = isReadingStale(reading);
 
-  const s1View = controlView(reading, pendingMap[targetKey(device.id, 1)], 1);
-  const s2View = controlView(reading, pendingMap[targetKey(device.id, 2)], 2);
-  const s1On = (s1View.kind === 'idle' || s1View.kind === 'pending') && s1View.value === 'on';
-  const s2On = (s2View.kind === 'idle' || s2View.kind === 'pending') && s2View.value === 'on';
-  const s1Busy = s1View.kind === 'pending';
-  const s2Busy = s2View.kind === 'pending';
-  const s1Unknown = s1View.kind === 'unknown';
-  const s2Unknown = s2View.kind === 'unknown';
+  // Shared derivation, bespoke markup: these are half-pucks positioned on a floor plan, not
+  // list rows. `useRelayState` subscribes per socket, where this used to take the whole
+  // `pending` map and so re-rendered every pin on any command anywhere in the building.
+  const s1 = useRelayState(device.id, 1);
+  const s2 = useRelayState(device.id, 2);
+  const stale = s1.stale;
 
   const toggle = (socket: SocketIndex, on: boolean) => {
     const next = on ? 'off' : 'on';
@@ -134,21 +135,21 @@ function OutletPin({ device, left, top }: { device: Device; left?: string; top?:
         <div className="control-outlet-pin__puck" role="group" aria-label={`${device.display_name} sockets`}>
           <button
             type="button"
-            className={`control-outlet-pin__half control-outlet-pin__half--left${s1On ? ' control-outlet-pin__half--on' : ''}`}
-            disabled={s1Busy || s1Unknown || !isCommandable(reading)}
-            aria-pressed={s1On}
+            className={`control-outlet-pin__half control-outlet-pin__half--left${s1.on ? ' control-outlet-pin__half--on' : ''}`}
+            disabled={s1.disabled}
+            aria-pressed={s1.on}
             aria-label={`${device.display_name} DP1`}
-            title={`DP1: ${s1Unknown ? 'unknown' : stale ? 'stale' : s1Busy ? 'switching…' : s1On ? 'on' : 'off'}`}
-            onClick={() => toggle(1, s1On)}
+            title={`DP1: ${s1.unknown ? 'unknown' : stale ? 'stale' : s1.busy ? 'switching…' : s1.on ? 'on' : 'off'}`}
+            onClick={() => toggle(1, s1.on)}
           />
           <button
             type="button"
-            className={`control-outlet-pin__half control-outlet-pin__half--right${s2On ? ' control-outlet-pin__half--on' : ''}`}
-            disabled={s2Busy || s2Unknown || !isCommandable(reading)}
-            aria-pressed={s2On}
+            className={`control-outlet-pin__half control-outlet-pin__half--right${s2.on ? ' control-outlet-pin__half--on' : ''}`}
+            disabled={s2.disabled}
+            aria-pressed={s2.on}
             aria-label={`${device.display_name} DP2`}
-            title={`DP2: ${s2Unknown ? 'unknown' : stale ? 'stale' : s2Busy ? 'switching…' : s2On ? 'on' : 'off'}`}
-            onClick={() => toggle(2, s2On)}
+            title={`DP2: ${s2.unknown ? 'unknown' : stale ? 'stale' : s2.busy ? 'switching…' : s2.on ? 'on' : 'off'}`}
+            onClick={() => toggle(2, s2.on)}
           />
         </div>
         {corroboration === 'contradicted' && <div className="control-outlet-pin__warn">⚠ drawing power</div>}

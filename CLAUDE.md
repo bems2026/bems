@@ -47,7 +47,12 @@ npm run test:bridge      # bridge/contract (node --test)
 npm run test:server      # server (node --test)
 npm run build            # tsc -b && vite build — catches what vitest's type-stripping misses
 npm run build:flow       # regenerate the flow after editing shared/
+npm run tuya:spec        # check the capability catalogue against the vendor's live device model
 ```
+
+**`npm run mock` cannot bind on the Pi** — port 1880 is Node-RED there. Use
+`npm run mock -- --port=1881`. `npm run mock:stop` now refuses to stop anything that is not a
+mock, because it once stopped the live bridge.
 
 ## Site facts worth never re-deriving
 
@@ -162,6 +167,16 @@ npm run build:flow       # regenerate the flow after editing shared/
 
 - **The default branch is `master`.** Do not create or rename branches.
 - **Never hand-edit `node-red-bridge/bridge-flow.json`.** It is generated; `npm run test:bridge` fails if it drifts from `shared/`.
+- **The source-tab dp parsers are generated too**, from `shared/deviceCapabilities.mjs` via
+  `npm run fix-dp-parsers:pi` (dry run by default). They live on the four hand-built tabs, so
+  editing one in the Node-RED editor puts it back outside anything that can verify it. What each
+  dp means, its scale and its unit are decided in the catalogue and checked against the vendor by
+  `npm run tuya:spec`.
+- **Capability codes are keyed by PRODUCT, not device class.** dp 113 is `net_state` on the
+  single-channel CT meter and `device_state2` on the dual-channel one, and both are
+  `class: 'meter'`. Nothing in `src/` should test for a code by hand — `lib/capabilitySchema.ts`
+  resolves the channel, and taking the wrong one attributes a branch circuit's load to its
+  neighbour.
 - **The only place a bridge URL appears is `src/config/bridge.ts`.**
 - Server and bridge code has **no external dependencies** and uses **no mocking library** — tests spawn real processes and hand-roll fake HTTP servers.
 - TDD: failing test, confirm it fails, minimal implementation, green, commit.

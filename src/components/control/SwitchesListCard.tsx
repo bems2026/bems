@@ -1,12 +1,11 @@
 import { useMemo } from 'react';
 import { Lightbulb } from 'lucide-react';
-import { useDeviceStore } from '@/stores/deviceStore';
-import { useCommandStore, targetKey } from '@/stores/commandStore';
-import { controlView, isCommandable } from '@/lib/socketView';
+import { useDevicesFor } from '@/hooks/useDevicesFor';
 import { StaleDataBadge } from '@/components/common/StaleDataBadge';
 import { InfoHint } from '@/components/ui/InfoHint';
+import { RelayToggle } from '@/components/devices/RelayToggle';
+import { useRelayState } from '@/hooks/useRelayState';
 import { SimulatedBadge } from './SimulatedBadge';
-import { useControlLog } from './controlLog';
 
 /**
  * The 7 lighting circuits as a scannable list — same devices the matrix above controls,
@@ -16,8 +15,12 @@ import { useControlLog } from './controlLog';
  * a fresh array itself.
  */
 export function SwitchesListCard({ simulated = false }: { simulated?: boolean }) {
-  const devices = useDeviceStore((s) => s.devices);
-  const lights = useMemo(() => devices.filter((d) => d.class === 'switch').sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true })), [devices]);
+// Filtered through `useDevicesFor('control')`, not by class alone. Page membership is a SITE
+// decision recorded in `device_config.functions`, and only ControlPage's master actions used to
+// honour it — so a device an operator had deliberately excluded was left out of "Lights off"
+// while still getting its own toggle in the list below it.
+  const { included } = useDevicesFor('control');
+  const lights = useMemo(() => included.filter((d) => d.class === 'switch').sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true })), [included]);
 
   return (
     <div className="card control-list-card">
@@ -35,45 +38,19 @@ export function SwitchesListCard({ simulated = false }: { simulated?: boolean })
 }
 
 function SwitchRow({ deviceId, name }: { deviceId: string; name: string }) {
-  const reading = useDeviceStore((s) => s.latestReadings[deviceId]);
-  const pending = useCommandStore((s) => s.pending[targetKey(deviceId)]);
-  const send = useCommandStore((s) => s.send);
-  const log = useControlLog((s) => s.log);
-  const view = controlView(reading, pending);
-
-  const busy = view.kind === 'pending';
-  const unknown = view.kind === 'unknown';
-  const on = !unknown && view.value === 'on';
-
-  // Not `stale`. EX-017 removed staleness from `disabled=` on the reasoning that telemetry and
-  // dispatch travel in opposite directions, but left it in this handler — so the button rendered
-  // enabled and the click did nothing at all. A control that looks operable and silently is not
-  // is worse than a disabled one, which at least says so. `isCommandable` (online:false) is the
-  // real refusal and gates the button below.
-  const toggle = () => {
-    if (busy || unknown) return;
-    const next = on ? 'off' : 'on';
-    send(deviceId, undefined, next);
-    log('RELAY', `${name} → ${next}`);
-  };
+  // The toggle, its refusal rule and this wording all come from one place now. They used to be
+  // derived separately here, which is how EX-017's staleness fix ended up applied to the
+  // `disabled=` attribute but not to the click handler — a button that looked operable and did
+  // nothing. See `RelayToggle`.
+  const { label } = useRelayState(deviceId);
 
   return (
     <StaleDataBadge deviceId={deviceId} label={name} className="control-list-row">
       <div className="control-list-row__body">
         <p className="control-list-row__name">{name}</p>
-        <p className="control-list-row__meta">{unknown ? 'no reading yet' : busy ? 'switching…' : on ? 'on' : 'off'}</p>
+        <p className="control-list-row__meta">{label}</p>
       </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={on}
-        aria-label={name}
-        className={`quick-toggle${on ? ' quick-toggle--on' : ''}`}
-        disabled={busy || unknown || !isCommandable(reading)}
-        onClick={toggle}
-      >
-        <span className="quick-toggle__knob" />
-      </button>
+      <RelayToggle deviceId={deviceId} name={name} />
     </StaleDataBadge>
   );
 }

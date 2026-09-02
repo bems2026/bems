@@ -17,12 +17,29 @@ export interface Device {
   class: DeviceClass;
   room: string | null;
   dps_map: DpsMap;
+  /**
+   * Names an entry in `shared/deviceCapabilities.mjs` — what this device's PRODUCT can do.
+   *
+   * Distinct from `class`, and it has to be: the single- and dual-channel CT meters are both
+   * `class: 'meter'` and both read power from dp 105 on channel 1, yet they disagree about what
+   * dp 113 means. `null` is a real answer — the IR blaster and the ambient sensor have no dps at
+   * all — and is different from the field being absent, which means an older bridge.
+   */
+  capability_profile?: string | null;
+  /** Which half of a dual-channel product this logical device reads. Absent on single-channel. */
+  channel?: 1 | 2;
   status: DeviceStatus;
   sockets?: [string, string];
   branch_circuit?: string;
   description?: string;
   phase?: 'red' | 'yellow';
 }
+
+/**
+ * A single decoded capability value. `number` for scaled measurements and settings, `boolean`
+ * for relay and lock states, `string` for the enums (`relay_status`, `net_state`, `power_type`).
+ */
+export type CapabilityValue = number | boolean | string;
 
 /**
  * One row of `GET /api/readings/latest` (and of each `/ws/live` frame). Metered fields
@@ -57,6 +74,23 @@ export interface Reading {
   humidity_pct?: number;
   /** `sensor_temp_humidity` only. */
   temp_c?: number;
+  /**
+   * Everything the device reports beyond volts, amps and watts, keyed by its VENDOR capability
+   * code and already in canonical units — `child_lock`, `countdown_1`, `warn_power1`,
+   * `today_acc_energy2`, the outlet's `fault` bitmap, and so on.
+   *
+   * Which codes a device carries is a fact about its PRODUCT, declared in
+   * `shared/deviceCapabilities.mjs` and checked against the vendor's own device model by
+   * `npm run tuya:spec`. Nothing in `src/` should test for a code by hand: use
+   * `lib/capabilitySchema.ts`, which resolves the channel suffix (one physical dual-channel
+   * meter is two logical devices here, and `cur_power1` vs `cur_power2` is the difference
+   * between two branch circuits reading correctly and reading each other's load).
+   *
+   * Absent on a bridge whose parsers predate this, and on devices with no dps at all (the IR
+   * blaster, the ambient sensor). Individual codes are omitted rather than zeroed, on the same
+   * rule as the metered fields above.
+   */
+  capabilities?: Record<string, CapabilityValue>;
   /**
    * How long this device's reading may go without advancing before it stops being fresh —
    * decided by the bridge, in `shared/registry.mjs`'s `STALE_AFTER_MS_BY_CLASS`, and carried
