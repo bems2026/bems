@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shapeToPath, shapeToCells, parseShape, SHAPE_PRESETS, DEFAULT_SHAPE, cellIndex, type RoomShape } from './roomShape';
+import { shapeToPath, shapeToCells, parseShape, SHAPE_PRESETS, DEFAULT_SHAPE, cellIndex, type RoomShape, parseAspect } from './roomShape';
 
 /**
  * The room outline, as geometry rather than as a picture.
@@ -150,5 +150,26 @@ describe('cellIndex', () => {
     expect(cellIndex(3, 0, 4)).toBe(3);
     expect(cellIndex(0, 1, 4)).toBe(4);
     expect(cellIndex(2, 2, 4)).toBe(10);
+  });
+});
+
+describe('parseAspect — RM-044', () => {
+  it('reads the proportions a preset or an operator stored', () => {
+    expect(parseAspect({ kind: 'rect', aspect: 300 / 530 })).toBeCloseTo(300 / 530, 6);
+  });
+
+  it('is null when nobody has said, which renders square', () => {
+    // Square means "not measured", not "measured as square" — the default every plan had.
+    expect(parseAspect({ kind: 'rect' })).toBeNull();
+    expect(parseAspect(null)).toBeNull();
+    expect(parseAspect('rect')).toBeNull();
+  });
+
+  it('refuses a ratio that would push the page off the screen', () => {
+    // It becomes a CSS aspect-ratio. A frame forty times taller than it is wide is a corrupt
+    // row, and rendering it faithfully would be worse than ignoring it.
+    for (const bad of [0, -1, 0.01, 40, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(parseAspect({ kind: 'rect', aspect: bad })).toBeNull();
+    }
   });
 });

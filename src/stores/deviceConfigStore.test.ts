@@ -166,3 +166,50 @@ describe('useDeviceConfigStore.placeOnPlan (RM-031)', () => {
     expect(useDeviceConfigStore.getState().saved.co1.planX).toBeNull();
   });
 });
+
+describe('applyPlacements — RM-044', () => {
+  const place = (deviceId: string, over: Partial<import('@/lib/planPresets').PresetPlacement> = {}) => ({
+    deviceId, spaceNodeId: 'room-a', planX: 0.25, planY: 0.75, planFixtures: [], ...over,
+  });
+
+  it('writes every placement', async () => {
+    vi.mocked(supabaseDeviceConfig.writeDeviceConfig).mockResolvedValue(undefined);
+    await useDeviceConfigStore.getState().applyPlacements([place('co1'), place('co2')]);
+    expect(vi.mocked(supabaseDeviceConfig.writeDeviceConfig)).toHaveBeenCalledTimes(2);
+    expect(useDeviceConfigStore.getState().saved.co1).toMatchObject({ spaceNodeId: 'room-a', planX: 0.25, planY: 0.75 });
+  });
+
+  it('keeps what a preset says nothing about', async () => {
+    // THE TRAP. The write is a whole-row upsert, so applying a layout from blank bases would
+    // erase the notes, category and shed tier of every device it touched. A preset says where
+    // things are; it says nothing about what they are for.
+    vi.mocked(supabaseDeviceConfig.writeDeviceConfig).mockResolvedValue(undefined);
+    useDeviceConfigStore.setState({
+      saved: { co1: { ...emptyDeviceConfig('co1'), notes: 'behind the filing cabinet', loadShedGroup: 'never', category: 'outlet' } },
+    });
+    await useDeviceConfigStore.getState().applyPlacements([place('co1')]);
+    expect(useDeviceConfigStore.getState().saved.co1).toMatchObject({
+      notes: 'behind the filing cabinet',
+      loadShedGroup: 'never',
+      category: 'outlet',
+      planX: 0.25,
+    });
+  });
+
+  it('stops on the first failure rather than reporting a half-applied layout as done', async () => {
+    // A room that looks drawn and is wrong is worse than one that stopped and said where.
+    vi.mocked(supabaseDeviceConfig.writeDeviceConfig).mockResolvedValue(undefined);
+    vi.mocked(supabaseDeviceConfig.writeDeviceConfig).mockRejectedValueOnce(new Error('RLS said no'));
+    await useDeviceConfigStore.getState().applyPlacements([place('co1'), place('co2'), place('co3')]);
+    expect(vi.mocked(supabaseDeviceConfig.writeDeviceConfig)).toHaveBeenCalledTimes(1);
+    expect(useDeviceConfigStore.getState().saveStatus).toBe('error');
+  });
+
+  it('gives a lighting circuit its lamps and no position of its own', async () => {
+    vi.mocked(supabaseDeviceConfig.writeDeviceConfig).mockResolvedValue(undefined);
+    await useDeviceConfigStore.getState().applyPlacements([
+      place('l1', { planX: null, planY: null, planFixtures: [{ x: 0.2, y: 0.2 }, { x: 0.5, y: 0.2 }] }),
+    ]);
+    expect(useDeviceConfigStore.getState().saved.l1).toMatchObject({ planX: null, planFixtures: [{ x: 0.2, y: 0.2 }, { x: 0.5, y: 0.2 }] });
+  });
+});

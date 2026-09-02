@@ -252,3 +252,30 @@ export const SHAPE_PRESETS: { kind: ShapeKind; label: string; make: () => RoomSh
   { kind: 'triangle', label: 'Triangle', make: () => ({ kind: 'triangle', apex: 'top' }) },
   { kind: 'circle', label: 'Round', make: () => ({ kind: 'circle' }) },
 ];
+
+/**
+ * How wide the room is relative to its height, or null when nobody has said — RM-044.
+ *
+ * SEPARATE FROM `RoomShape` on purpose. The kind (rect / L / triangle …) is what the outline
+ * looks like; the aspect is how the frame is proportioned, and every kind can have one. Folding
+ * it into the union would mean adding the same optional field to five members and threading it
+ * through `shapeToPath`, which draws in a 0..1 box and should keep doing so.
+ *
+ * NULL MEANS SQUARE, and square means "not measured" rather than "measured as square" — the
+ * default every plan had before this existed. The CARE preset carries 300:530 because that is
+ * what the original drawing used; `geometry.ts` is explicit that the real room was never
+ * measured, so this is a shape somebody can correct, not a survey.
+ *
+ * Bounded because it becomes a CSS `aspect-ratio`: a frame 40x taller than it is wide is a
+ * corrupt row, and rendering it would push everything else off the screen.
+ */
+export const MIN_ASPECT = 0.2;
+export const MAX_ASPECT = 5;
+
+export function parseAspect(raw: unknown): number | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
+  const v = (raw as { aspect?: unknown }).aspect;
+  if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+  if (v < MIN_ASPECT || v > MAX_ASPECT) return null;
+  return v;
+}

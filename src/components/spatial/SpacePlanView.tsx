@@ -12,10 +12,12 @@
  * the child's frame. Drawing it in the parent's frame would place it somewhere nobody chose —
  * and the result would look surveyed. Descendants are counted and named, not drawn.
  *
- * THE FRAME IS NORMALISED SPACE, NOT A SURVEY. It is square because nothing here has measured a
- * room. Giving it invented proportions would assert a fact nobody established, which is the same
- * failure this project spends its effort avoiding elsewhere. When `space_nodes.attrs` carries
- * real dimensions, a 0..1 position converts into them without being re-entered.
+ * THE FRAME IS NORMALISED SPACE, NOT A SURVEY. Positions are 0..1 and always were; what changed
+ * in RM-044 is that a room may now carry its own PROPORTIONS in `attrs.plan.aspect`, so the
+ * drawing is shaped like the room instead of always square. A room that has not said stays
+ * square — and square still means "nobody has said", never "measured as square". The positions
+ * are unaffected either way: three quarters of the way down is three quarters of the way down,
+ * whatever the frame's shape.
  *
  * PLACEMENT IS CLICK-TO-PLACE, NOT DRAG. The roadmap said drag; this is a deliberate deviation
  * and the reason is the kiosk. A drag needs pointer capture, behaves differently under touch, and
@@ -34,10 +36,11 @@ import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
 import { useSpaceTreeStore } from '@/stores/spaceTreeStore';
 import { flattenForPicker, pathLabel, subtreeIds } from '@/lib/spaceTree';
 import { groupByPlacement, planPointOf, pointerToPlan, clampToPlan, type PlanPoint } from '@/lib/planLayout';
-import { parseShape, shapeToPath, containsPoint } from '@/lib/roomShape';
+import { parseShape, shapeToPath, containsPoint, parseAspect } from '@/lib/roomShape';
 import { gridCells, circuitColors } from '@/lib/lightingGrid';
 import { RoomShapeEditor } from './RoomShapeEditor';
 import { LightingGridEditor, type LampGrid } from './LightingGridEditor';
+import { PlanPresetPicker } from './PlanPresetPicker';
 import { resolveDisplayName } from '@/lib/deviceConfig';
 import { isReadingStale } from '@/lib/staleness';
 import { InfoHint } from '@/components/ui/InfoHint';
@@ -72,6 +75,12 @@ export function SpacePlanView({ editable = false }: { editable?: boolean }) {
     return parseShape((node?.attrs as { plan?: unknown } | undefined)?.plan);
   }, [nodes, nodeId]);
   const shapePath = useMemo(() => shapeToPath(shape), [shape]);
+  /** The room's proportions, or null for the square frame every plan had before RM-044. Square
+   * means "nobody has said", not "measured as square". */
+  const aspect = useMemo(() => {
+    const node = nodes.find((n) => n.id === nodeId);
+    return parseAspect((node?.attrs as { plan?: unknown } | undefined)?.plan);
+  }, [nodes, nodeId]);
   /** The device currently being positioned — armed from the tray, or selected by clicking its
    * pin. One piece of state for both, because they are the same act at different stages. */
   const [armed, setArmed] = useState<string | null>(null);
@@ -218,6 +227,7 @@ export function SpacePlanView({ editable = false }: { editable?: boolean }) {
         <>
           <div
             className={`space-plan__frame${painting !== null && canPlace ? ' space-plan__frame--painting' : ''}`}
+            style={aspect === null ? undefined : { aspectRatio: String(aspect) }}
             data-testid="plan-frame"
             onClick={onFrameClick}
             aria-label={`Plan of ${pathLabel(nodes, nodeId)}`}
@@ -310,6 +320,10 @@ export function SpacePlanView({ editable = false }: { editable?: boolean }) {
               is something to look at, and an editor there would offer a write the page has
               otherwise promised not to make. */}
           {editable && <RoomShapeEditor nodeId={nodeId} nodeName={pathLabel(nodes, nodeId)} />}
+
+          {/* RM-044. Below the shape editor: a preset sets the shape too, so it reads as the
+              shortcut to what is above it rather than a competing control. */}
+          {canPlace && <PlanPresetPicker nodeId={nodeId} nodeName={pathLabel(nodes, nodeId)} />}
 
           {canPlace && (
             <LightingGridEditor

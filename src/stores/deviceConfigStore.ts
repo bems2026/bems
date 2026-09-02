@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { PresetPlacement } from '@/lib/planPresets';
 import { toggleFixture } from '@/lib/lightingGrid';
 import { supabase } from '@/config/supabase';
 import { fetchDeviceConfigs, writeDeviceConfig } from '@/lib/supabaseDeviceConfig';
@@ -52,6 +53,8 @@ interface DeviceConfigState {
    * have, which is the same class of lie as a frozen power reading.
    */
   placeOnPlan: (deviceId: string, point: PlanPoint | null) => Promise<void>;
+  /** Applies a whole layout — see `src/lib/planPresets.ts`. */
+  applyPlacements: (placements: PresetPlacement[]) => Promise<void>;
   /** Adds or removes one lamp for a lighting circuit, snapped to the tapped grid cell. */
   toggleFixtureAt: (deviceId: string, at: PlanPoint, cols: number, rows: number) => Promise<void>;
   save: (deviceId: string) => Promise<void>;
@@ -149,6 +152,40 @@ export const useDeviceConfigStore = create<DeviceConfigState>((set, get) => ({
       return { draft: { ...s.draft, [deviceId]: { ...base, planFixtures: next } } };
     });
     await get().save(deviceId);
+  },
+
+  /**
+   * Writes a whole layout at once — RM-044.
+   *
+   * Built on each device's EFFECTIVE config, the same reason `setDraftPosition` is: the write is
+   * a whole-row upsert, so applying a layout from blank bases would erase the notes, category and
+   * shed tier of every device it touched. A preset says where things are; it says nothing about
+   * what they are for.
+   *
+   * ONE DEVICE AT A TIME, sequentially, and a failure stops rather than continuing. A layout that
+   * applied to nine of fourteen devices and reported success would leave a room that looks drawn
+   * and is wrong — worse than one that stopped and said where.
+   */
+  applyPlacements: async (placements) => {
+    for (const p of placements) {
+      set((s) => {
+        const base = effectiveConfig(s.draft, s.saved, p.deviceId);
+        return {
+          draft: {
+            ...s.draft,
+            [p.deviceId]: {
+              ...base,
+              spaceNodeId: p.spaceNodeId,
+              planX: p.planX,
+              planY: p.planY,
+              planFixtures: p.planFixtures,
+            },
+          },
+        };
+      });
+      await get().save(p.deviceId);
+      if (get().saveStatus === 'error') return;
+    }
   },
 
   placeOnPlan: async (deviceId, point) => {

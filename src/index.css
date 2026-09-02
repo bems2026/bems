@@ -6823,3 +6823,63 @@ button.space-plan__pin {
   color: inherit;
   cursor: pointer;
 }
+
+/* Start a room from a known layout — RM-044. */
+.plan-preset {
+  margin-top: var(--sp-4);
+}
+.plan-preset__list {
+  list-style: none;
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.plan-preset__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-inner);
+}
+.plan-preset__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.plan-preset__name {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.plan-preset__blurb {
+  color: var(--muted-2);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+/* Applying a preset overwrites positions and lamps for every device it names. That is a large,
+   mostly-irreversible edit, so it gets a warning tone rather than a quiet button. */
+.plan-preset__confirm {
+  margin-top: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--warn);
+  border-radius: var(--r-inner);
+}
+.plan-preset__warn {
+  margin: 0 0 var(--sp-3);
+  color: var(--warn);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+.plan-preset__actions {
+  display: flex;
+  gap: var(--sp-2);
+}
+.plan-preset__done {
+  margin: var(--sp-3) 0 0;
+  color: var(--good);
+  font-size: var(--fs-xs);
+}
