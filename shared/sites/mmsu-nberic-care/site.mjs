@@ -34,6 +34,24 @@ export const SITE = Object.freeze({
   utc_offset_minutes: 480,
 
   /**
+   * The most a single branch circuit here may plausibly consume in one day, in kWh.
+   *
+   * A backstop, not a budget. `buildLatest` publishes each meter's daily energy from the
+   * device's own counter, and nothing in one sample can tell a real busy day from a register
+   * carrying an offset nobody cleared — which is exactly what happened on 2026-09-03, when
+   * L.O Yellow reported 3,625 kWh for a circuit that averages 36 W. Beyond this bound the
+   * integrated value is preferred, and if that is implausible too the field is omitted rather
+   * than guessed at.
+   *
+   * Sized against the building, not the fault: the whole metered load averages 919 W and its
+   * measured demand ceiling is 2.21 kW, so any single branch running flat out all day is well
+   * under 100. Raise it if a site adds a genuinely large single circuit — the cost of it being
+   * too low is a dropped reading, which is visible, and the cost of it being too high is a
+   * fabricated one, which is not.
+   */
+  max_branch_kwh_per_day: 100,
+
+  /**
    * Which 3D scene pack renders for this site, or null for none. Consumed in RM-032; declared
    * now so the field does not have to be retrofitted into every site directory later.
    */

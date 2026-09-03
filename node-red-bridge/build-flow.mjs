@@ -36,6 +36,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { DEVICE_REGISTRY, PHASE_MAP, STALE_AFTER_MS_BY_CLASS, TIMING, publicDevices, SITE } from '../shared/registry.mjs';
 import { TRACK_ARRIVALS_SRC } from './arrivalTracker.mjs';
+import { energyDayBaseSrc } from './energyDayBase.mjs';
 
 /** Devices that report an energy counter — the only ones the accumulator has anything to
  * accumulate for. Derived from the registry, never hand-listed. */
@@ -166,7 +167,9 @@ const REG = ${JSON.stringify(DEVICE_REGISTRY)};
 const PHASE_MAP = ${JSON.stringify(PHASE_MAP)};
 const STALE_AFTER_MS_BY_CLASS = ${JSON.stringify(STALE_AFTER_MS_BY_CLASS)};
 
-msg.payload = buildLatest(msg.snapshot || {}, REG, PHASE_MAP, Date.now(), ${SITE.utc_offset_minutes}, STALE_AFTER_MS_BY_CLASS);
+const MAX_BRANCH_KWH_PER_DAY = ${JSON.stringify(SITE.max_branch_kwh_per_day)};
+
+msg.payload = buildLatest(msg.snapshot || {}, REG, PHASE_MAP, Date.now(), ${SITE.utc_offset_minutes}, STALE_AFTER_MS_BY_CLASS, MAX_BRANCH_KWH_PER_DAY);
 msg.headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
 return msg;`;
 
@@ -389,16 +392,22 @@ const readOut = linkOutReturn(BRIDGE_TAB, 1180, 200);
 const buildFn = fn(BRIDGE_TAB, 'Build latest readings', BUILD_LATEST.trim(), 990, 200, [[readOut.id]]);
 // Reads this tab's own energy accumulators into the snapshot, immediately before the build
 // step consumes it. Not a link call: the keys live on THIS tab, not a building tab.
+// Where each meter's daily counter stood when the local day began. Sits between arrival
+// tracking and the build step for the same reason both of those sit where they do: it needs the
+// energy meters already in the snapshot, and buildLatest needs its output in the SAME pass —
+// unlike `energyAcc`, which is a tick behind by construction because it consumes the built rows.
+// See node-red-bridge/energyDayBase.mjs for why a daily counter cannot be trusted as an absolute.
+const dayBaseFn = fn(BRIDGE_TAB, 'Energy day baseline', energyDayBaseSrc(SITE.utc_offset_minutes).trim(), 900, 380, [[buildFn.id]]);
 // Arrival tracking sits immediately before the build step and after every collector, because
 // it needs the energy meters already in the snapshot and buildLatest needs its output.
-const arrFn = fn(BRIDGE_TAB, 'Track meter arrivals', TRACK_ARRIVALS.trim(), 900, 320, [[buildFn.id]]);
+const arrFn = fn(BRIDGE_TAB, 'Track meter arrivals', TRACK_ARRIVALS.trim(), 900, 320, [[dayBaseFn.id]]);
 const cAcc = fn(BRIDGE_TAB, 'collect energy accumulators', COLLECT_ENERGY_ACC(METERED_IDS).trim(), 900, 260, [[arrFn.id]]);
 const cAir = linkCall(BRIDGE_TAB, 'collect aircon', collectorLinkIds.aircon, 820, 200, [[cAcc.id]]);
 const cSw = linkCall(BRIDGE_TAB, 'collect switch', collectorLinkIds.switch, 660, 200, [[cAir.id]]);
 const cOut = linkCall(BRIDGE_TAB, 'collect outlet', collectorLinkIds.outlet, 500, 200, [[cSw.id]]);
 const cEn = linkCall(BRIDGE_TAB, 'collect energy', collectorLinkIds.energy, 340, 200, [[cOut.id]]);
 const readIn = linkIn(BRIDGE_TAB, 'bridge/read-latest', 180, 200, [[cEn.id]]);
-nodes.push(readIn, cEn, cOut, cSw, cAir, cAcc, arrFn, buildFn, readOut);
+nodes.push(readIn, cEn, cOut, cSw, cAir, cAcc, arrFn, dayBaseFn, buildFn, readOut);
 
 // --- GET /api/devices -------------------------------------------------------
 const devRes = httpRes(BRIDGE_TAB, 640, 320);

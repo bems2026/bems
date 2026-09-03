@@ -188,7 +188,7 @@
     "wires": []
   },
   {
-    "id": "b41dc00000000021",
+    "id": "b41dc00000000022",
     "type": "link in",
     "z": "b41d9e0000000001",
     "name": "bridge/read-latest",
@@ -197,12 +197,12 @@
     "y": 200,
     "wires": [
       [
-        "b41dc00000000020"
+        "b41dc00000000021"
       ]
     ]
   },
   {
-    "id": "b41dc00000000020",
+    "id": "b41dc00000000021",
     "type": "link call",
     "z": "b41d9e0000000001",
     "name": "collect energy",
@@ -215,12 +215,12 @@
     "y": 200,
     "wires": [
       [
-        "b41dc00000000019"
+        "b41dc00000000020"
       ]
     ]
   },
   {
-    "id": "b41dc00000000019",
+    "id": "b41dc00000000020",
     "type": "link call",
     "z": "b41d9e0000000001",
     "name": "collect outlet",
@@ -233,12 +233,12 @@
     "y": 200,
     "wires": [
       [
-        "b41dc00000000018"
+        "b41dc00000000019"
       ]
     ]
   },
   {
-    "id": "b41dc00000000018",
+    "id": "b41dc00000000019",
     "type": "link call",
     "z": "b41d9e0000000001",
     "name": "collect switch",
@@ -251,12 +251,12 @@
     "y": 200,
     "wires": [
       [
-        "b41dc00000000017"
+        "b41dc00000000018"
       ]
     ]
   },
   {
-    "id": "b41dc00000000017",
+    "id": "b41dc00000000018",
     "type": "link call",
     "z": "b41d9e0000000001",
     "name": "collect aircon",
@@ -269,12 +269,12 @@
     "y": 200,
     "wires": [
       [
-        "b41dc00000000016"
+        "b41dc00000000017"
       ]
     ]
   },
   {
-    "id": "b41dc00000000016",
+    "id": "b41dc00000000017",
     "type": "function",
     "z": "b41d9e0000000001",
     "name": "collect energy accumulators",
@@ -289,12 +289,12 @@
     "y": 260,
     "wires": [
       [
-        "b41dc00000000015"
+        "b41dc00000000016"
       ]
     ]
   },
   {
-    "id": "b41dc00000000015",
+    "id": "b41dc00000000016",
     "type": "function",
     "z": "b41d9e0000000001",
     "name": "Track meter arrivals",
@@ -309,6 +309,26 @@
     "y": 320,
     "wires": [
       [
+        "b41dc00000000015"
+      ]
+    ]
+  },
+  {
+    "id": "b41dc00000000015",
+    "type": "function",
+    "z": "b41d9e0000000001",
+    "name": "Energy day baseline",
+    "func": "const now = new Date(Date.now() + 480 * 60000);\nconst dayKey = now.getUTCFullYear() + '-' + (now.getUTCMonth() + 1) + '-' + now.getUTCDate();\nconst store = flow.get('energy_day_base') || {};\nconst meters = ((msg.snapshot || {}).energy || {}).meters || {};\nconst out = {};\nfor (const k of Object.keys(meters)) {\n  const m = meters[k] || {};\n  const dp = m.dp;\n  // A meter whose parser has not decoded anything yet has no counter to baseline. Skipping it\n  // leaves buildLatest on the integrated value, which is the pre-2026-09-03 behaviour.\n  if (!dp || typeof dp !== 'object') continue;\n  let entry = store[k];\n  if (!entry || entry.dayKey !== dayKey) entry = { dayKey: dayKey, base: {} };\n  const integrated = Number(m.e);\n  for (const code of Object.keys(dp)) {\n    if (code.indexOf('today_acc_energy') !== 0) continue;\n    const val = Number(dp[code]);\n    if (!isFinite(val)) continue;\n    const prev = entry.base[code];\n    if (prev === undefined || val < prev) {\n      // Seed from the integrated figure so the published value does not jump. Refuse a seed that\n      // would make the baseline negative or the counter look smaller than it is.\n      entry.base[code] = isFinite(integrated) && integrated >= 0 && integrated <= val\n        ? val - integrated\n        : val;\n    }\n  }\n  store[k] = entry;\n  out[k] = entry.base;\n}\nflow.set('energy_day_base', store);\nmsg.snapshot = msg.snapshot || {};\nmsg.snapshot.energyDayBase = out;\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 900,
+    "y": 380,
+    "wires": [
+      [
         "b41dc00000000014"
       ]
     ]
@@ -318,7 +338,7 @@
     "type": "function",
     "z": "b41d9e0000000001",
     "name": "Build latest readings",
-    "func": "/**\n * Builds the `/api/readings/latest` payload from a raw context snapshot.\n *\n * This file is the SINGLE implementation of that transform. It is:\n *   - imported directly by `mock-bridge/server.mjs`\n *   - inlined verbatim into the Node-RED function node by `node-red-bridge/build-flow.mjs`\n *     (which strips the `export` keywords — nothing else)\n *\n * That is what makes the mock and the real bridge byte-identical in shape. A drift\n * between them would produce the worst kind of bug: frontend works locally, breaks on\n * the Pi. So keep this pure — no Node-RED APIs, no imports, no Node built-ins.\n */\n\n/**\n * ISO 8601 at a fixed UTC offset, regardless of the host's timezone setting.\n *\n * `offsetMinutes` defaults to 480 (+08:00) so that every caller predating RM-027 behaves\n * exactly as before — including `test/contract.test.mjs`, which pins the wire format. The\n * site's real value is threaded in by `node-red-bridge/build-flow.mjs`.\n *\n * A number of minutes rather than an IANA zone name because this function is inlined verbatim\n * into a Node-RED function node, where a full-ICU build is not something to bet the building's\n * timestamps on. `shared/sites/<id>/site.mjs` carries both and a test asserts they agree.\n */\nfunction iso8(ms, offsetMinutes = 480) {\n  const d = new Date(Number(ms) + offsetMinutes * 60000);\n  const p = (n) => String(n).padStart(2, '0');\n  const sign = offsetMinutes < 0 ? '-' : '+';\n  const abs = Math.abs(offsetMinutes);\n  return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate()) +\n    'T' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) + ':' + p(d.getUTCSeconds()) +\n    sign + p(Math.floor(abs / 60)) + ':' + p(abs % 60);\n}\n\nfunction num(v) {\n  const n = parseFloat(v);\n  return Number.isFinite(n) ? n : undefined;\n}\n\nfunction bool(v) {\n  return v === true || v === 'true' || v === 1 || v === '1';\n}\n\n/**\n * How long a metered device may go with no evidence of a fresh report before `online` stops\n * being believed, whatever the connection flag says.\n *\n * WHY THIS IS NEEDED AT ALL: `h` reports the tuya node's socket, and a socket whose peer\n * vanished without sending a FIN stays \"connected\" indefinitely. On 2026-08-26 the Pi's own\n * address changed out from under every established session (it had fallen back to a different\n * SSID); three meters then reported `online: true` carrying byte-identical readings for over\n * half an hour while nothing at all was reachable.\n *\n * WHY IT IS THIS LARGE: it must sit well clear of the slowest legitimate report. Measured on\n * site the same day, an online outlet's arrival stamp lagged by up to 59 s, and the energy\n * tab's sample buffers are drained on a five-minute cycle. Ten minutes is roughly ten times\n * the slowest normal gap and still an order of magnitude inside the failure it exists to catch.\n * Erring short is the dangerous direction: `online: false` removes a device from the building\n * totals below, so a threshold that trips on a merely-late meter under-reports the building.\n */\nconst STALE_READING_MS = 600000;\n\n/**\n * @param {object} snap  { energy:{meters,totals}, outlet:{meters,state}, switch:{state}, aircon:{state} }\n * @param {Array}  REG   device registry\n * @param {object} PHASE_MAP\n * @param {number} nowMs\n * @param {number} [offsetMinutes] minutes east of UTC for the site; see iso8()\n * @param {object} [staleAfterMsByClass] device class -> staleness budget in ms; threaded in\n *        rather than imported, exactly like `offsetMinutes`, because this file is inlined\n *        verbatim into a Node-RED function node and may not import anything. The authority is\n *        `shared/registry.mjs`'s `STALE_AFTER_MS_BY_CLASS`; `{}` reproduces the pre-2026-09-01\n *        behaviour, where every consumer fell back to one global 30 s.\n * @returns {Array} one entry per device, plus a trailing `_totals` entry\n */\nfunction buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, staleAfterMsByClass = {}) {\n  const energy = snap.energy || { meters: {}, totals: {} };\n  const outlet = snap.outlet || { meters: {}, state: {} };\n  const lights = (snap.switch || {}).state || {};\n  const ac = (snap.aircon || {}).state || {};\n  const outletStatus = outlet.state.status || {};\n  const out = [];\n\n  for (const d of REG) {\n    const r = { device_id: d.id, ts: iso8(nowMs, offsetMinutes) };\n\n    // How long this device's reading may go without advancing before the frontend should stop\n    // calling it fresh. Carried on the wire rather than re-derived in `src/`, because the\n    // cadence is a fact about the BRIDGE — it owns the 60 s outlet poller, so it is the only\n    // party that knows an outlet cannot report faster than that. A second copy of the table in\n    // the frontend would be free to disagree with the thing it describes, which is precisely\n    // what one global 30 s did.\n    //\n    // A device's own value wins over its class, so a site can declare one differently in\n    // `shared/sites/<id>/devices.mjs` without restating the class defaults. Omitted entirely\n    // when neither is known, which is what makes an older frontend and an older bridge both\n    // fall back to the single 30 s default unchanged.\n    const staleAfter = typeof d.stale_after_ms === 'number' ? d.stale_after_ms : staleAfterMsByClass[d.class];\n    if (typeof staleAfter === 'number') r.stale_after_ms = staleAfter;\n\n    // --- metered devices ----------------------------------------------------\n    if (d.ctx) {\n      const src = (d.class === 'outlet_dual' ? outlet.meters : energy.meters)[d.ctx] || {};\n      const v = num(src.v), c = num(src.c), p = num(src.p), e = num(src.e);\n\n      // Everything the device reports beyond volts/amps/watts, decoded by the generated source-tab\n      // parser and keyed by its vendor capability code. Omitted entirely when the parser has not\n      // seen this device yet, so an older flow and a newer bridge still agree on every other field.\n      const dp = src.dp && typeof src.dp === 'object' ? src.dp : null;\n      if (dp && Object.keys(dp).length) r.capabilities = dp;\n\n      // TODAY'S ENERGY, PREFERRING THE DEVICE'S OWN FIGURE.\n      //\n      // `src.e` is `<ctx>_energy`, which for a CT meter is INTEGRATED from power by the legacy\n      // two-second engine. Integration is the mechanism behind the frozen-meter corruption fixed\n      // in Aug 2026: a disconnected meter's last wattage compounds into the total for as long as\n      // it stays down. The meters have always reported `today_acc_energy` themselves and nothing\n      // read it — measured 2026-09-02, `mtr_co_yellow` integrated to 8.0437 kWh while the meter\n      // itself said 8.057.\n      //\n      // Outlets have no such dp (they report `add_ele`, an increment their parser accumulates),\n      // so they keep `src.e` and this changes nothing for them.\n      //\n      // The channel suffix is load-bearing: one physical dual-channel meter is two logical\n      // devices here, and taking the wrong channel's total would attribute one branch circuit's\n      // consumption to another.\n      const ownDaily = dp ? num(dp['today_acc_energy' + (d.channel || 1)]) : undefined;\n      const eToday = ownDaily !== undefined ? ownDaily : e;\n      // Absent readings are omitted, never coerced to 0 — \"no data\" and \"zero watts\"\n      // are different facts and the UI renders them differently.\n      if (v !== undefined) r.voltage = v;\n      if (c !== undefined) r.current = c;\n      if (p !== undefined) r.power_w = p;\n      if (eToday !== undefined) r.energy_kwh_today = eToday;\n      // Per-device week/month = the completed days this bridge has folded into its own\n      // accumulator (`snap.energyAcc`, maintained by the Accumulate-energy step) plus the\n      // live daily counter. Each meter only ever reports a DAILY figure, so anything\n      // longer has to be accumulated here; a device the accumulator hasn't seen a full day\n      // for is omitted rather than reported as its daily value.\n      // The accumulator banks whatever `energy_kwh_today` reported, so switching that field's\n      // source switches this one with it and the two cannot disagree. Crossing over may bank one\n      // small step if the device's own figure sits below the integrated one at that moment — the\n      // counter-regression branch handles it as real consumption, which is the safe direction.\n      const acc = (snap.energyAcc || {})[d.id];\n      if (acc && eToday !== undefined) {\n        const wb = num(acc.weekBase), mb = num(acc.monthBase);\n        if (wb !== undefined) r.energy_kwh_week = Math.round((wb + eToday) * 1000) / 1000;\n        if (mb !== undefined) r.energy_kwh_month = Math.round((mb + eToday) * 1000) / 1000;\n      }\n      r.online = bool(src.h);\n\n      // When did this device last actually report? Two sources, preferring the source tab's\n      // own stamp:\n      //   `src.t`        the arrival time the tab records. Outlet meters carry one; the energy\n      //                  tab writes no timestamp of any kind, which is why the second exists.\n      //   `snap.arrivals` what the bridge itself last saw change for this meter — tracked by\n      //                  `node-red-bridge/arrivalTracker.mjs` from the energy tab's own SAMPLE\n      //                  BUFFER DEPTH (`<ctx>_arr_v`), which grows on every message even when\n      //                  the measured values do not. The energy tab writes no timestamp of any\n      //                  kind, which is why that indirection exists at all.\n      //\n      // ARRIVAL, NOT VALUE CHANGE. This distinction was measured rather than assumed, and the\n      // obvious version is wrong: `mtr_lo_yellow` and `mtr_co_yellow` are two channels of one\n      // physical meter, and over ten minutes the first sat byte-identical at 0 W while the\n      // second swung between 215 V and 229 V. The device was plainly reporting throughout, so\n      // treating \"the numbers stopped moving\" as death would have marked a healthy idle circuit\n      // offline and quietly subtracted it from the building totals.\n      //\n      // The energy ACCUMULATOR was removed from that signature on 2026-09-01 (ROADMAP EX-141).\n      // It is integrated on a timer rather than on arrival — measured: `co_yel_energy` moved\n      // three times across fourteen seconds in which no message arrived at all — so including it\n      // let a meter drawing power fake its own freshness, and would have kept a meter that DIED\n      // while loaded looking fresh indefinitely. `STALE_READING_MS` below is the backstop for a\n      // health flag that lies, so it must not depend on anything the same failure would move.\n      const t = num(src.t);\n      const seenAt = t !== undefined && t > 0 ? t : num((snap.arrivals || {})[d.ctx]);\n      if (seenAt !== undefined) {\n        // Report when the reading happened, not when it was served. `ts = now` on a device\n        // that has not reported is a fabrication, and it is what let the staleness watchdog\n        // sleep through the outage above — an always-fresh timestamp can never look old.\n        r.ts = iso8(seenAt, offsetMinutes);\n        if (nowMs - seenAt > STALE_READING_MS) r.online = false;\n      }\n    } else if (d.class === 'switch') {\n      // Switches have no `ctx` (no metering DPS), but a real per-switch connection signal\n      // DOES exist — `global.lightStatus`, populated by the Lighting Logic Hub — it was\n      // just never read here before. `state_key` is `L1`..`L7`; `lightStatus`'s keys are\n      // the bare numbers `1`..`7`.\n      const health = (snap.switch || {}).health || {};\n      const entry = health[d.state_key.slice(1)];\n      // No health entry at all (older flow, or a mock that doesn't simulate it) — fall\n      // back to the previous always-online assumption rather than invent a false negative.\n      r.online = entry ? entry.conn === 'CONNECTED' : true;\n      // A switch has no metering, but it does have settings — countdown, power-on behaviour,\n      // inching, switch type. They ride on the same lightStatus entry its connection state does.\n      const sdp = entry && entry.dp && typeof entry.dp === 'object' ? entry.dp : null;\n      if (sdp && Object.keys(sdp).length) r.capabilities = sdp;\n    } else if (d.state_ctx === 'ac_dash_state') {\n      // The aircon and the outside-temp sensor are both fed by the IR blaster, and neither is\n      // a meter nor a switch — so both used to fall through to a hardcoded `online = true`.\n      //\n      // That hardcoded true was a fabrication, and it was live: on 2026-08-25 the blaster and\n      // `Outside Temp` nodes were in a permanent `find() timed out` retry loop (they are not in\n      // the Tuya cloud project and have never connected — RM-016), while the dashboard showed\n      // both devices ONLINE carrying no measurement at all. A fabricated online is worse than a\n      // stale reading: a stale one at least happened once.\n      //\n      // ONLINE means \"carries at least one real measurement\", not \"the key exists\". The flow\n      // does not leave `ac_dash_state` empty when the blaster is dead — read off the live Pi,\n      // it seeds a placeholder: `{power:\"OFFLINE\", setTemp:\"--\", roomTemp:\"--\", humidity:\"--\",\n      // outTemp:\"--\"}`. A first version of this fix tested `Object.keys(ac).length` and so\n      // passed its own tests while changing nothing in production, because emptiness was an\n      // assumption rather than an observation.\n      //\n      // `num()` rejects \"--\" and \"OFFLINE\" and accepts \"25.4\", so the placeholder reads as\n      // offline and a real poll reads as online, with no magic string to keep in sync. ANY one\n      // field is enough: the blaster sends temperature and humidity on separate DPS, so\n      // demanding all of them would report a half-working device as dead.\n      //\n      // This is the same move the `switch` branch above made when `lightStatus` turned out to\n      // be readable — except there the fallback stayed optimistic, because a missing health map\n      // really could mean an older flow. Here there is no such ambiguity: nothing else writes\n      // this key, and a placeholder is a positive statement that nothing has reported.\n      r.online = [ac.roomTemp, ac.outTemp, ac.humidity, ac.setTemp].some((v) => num(v) !== undefined);\n    } else {\n      r.online = true;\n    }\n\n    // --- switchable state ---------------------------------------------------\n    if (d.class === 'switch') {\n      r.state = bool(lights[d.state_key]) ? 'on' : 'off';\n    } else if (d.class === 'outlet_dual') {\n      const s1 = bool(outletStatus[d.sockets[0]]);\n      const s2 = bool(outletStatus[d.sockets[1]]);\n      r.socket_states = { 1: s1 ? 'on' : 'off', 2: s2 ? 'on' : 'off' };\n      r.state = (s1 || s2) ? 'on' : 'off';\n    } else if (d.class === 'acu_ir') {\n      r.state = bool(ac.power) ? 'on' : 'off';\n      if (num(ac.setTemp) !== undefined) r.setpoint_c = num(ac.setTemp);\n      if (num(ac.roomTemp) !== undefined) r.room_temp_c = num(ac.roomTemp);\n      if (num(ac.humidity) !== undefined) r.humidity_pct = num(ac.humidity);\n    } else if (d.class === 'sensor_temp_humidity') {\n      r.state = null;\n      if (num(ac.outTemp) !== undefined) r.temp_c = num(ac.outTemp);\n      if (num(ac.humidity) !== undefined) r.humidity_pct = num(ac.humidity);\n    } else {\n      r.state = null;\n    }\n\n    out.push(r);\n  }\n\n  // --- building totals ------------------------------------------------------\n  const byId = {};\n  for (const r of out) byId[r.device_id] = r;\n\n  // A meter that's gone offline still has its last cached v/c/p sitting in `byId` (that's\n  // the whole point of \"last known reading\" — see the per-device loop above), but a\n  // building-wide total is a claim about what's happening RIGHT NOW, not a museum of last\n  // known values. Every aggregate below skips `online === false` explicitly, matching the\n  // per-device `online` derivation two branches up — a disconnected meter contributes\n  // nothing here, the same way a disconnected switch's health entry now actually means\n  // something instead of being silently ignored.\n  function phaseCurrent(ids) {\n    let sum = 0, seen = false;\n    for (const id of ids) {\n      const r = byId[id];\n      if (r && r.online !== false && typeof r.current === 'number') { sum += r.current; seen = true; }\n    }\n    return seen ? Math.round(sum * 1000) / 1000 : null;\n  }\n\n  let totalP = 0, pSeen = false, vSum = 0, vCount = 0;\n  for (const d of REG) {\n    if (d.class !== 'meter') continue;\n    const r = byId[d.id] || {};\n    if (r.online === false) continue;\n    if (typeof r.power_w === 'number') { totalP += r.power_w; pSeen = true; }\n    if (typeof r.voltage === 'number' && r.voltage > 0) { vSum += r.voltage; vCount++; }\n  }\n\n  const t = energy.totals || {};\n  const today = num(t.today), week = num(t.week), month = num(t.month);\n\n  out.push({\n    device_id: '_totals',\n    ts: iso8(nowMs, offsetMinutes),\n    energy_kwh_today: today === undefined ? null : today,\n    energy_kwh_week: week === undefined ? null : week,\n    energy_kwh_month: month === undefined ? null : month,\n    total_power_w: pSeen ? Math.round(totalP * 10) / 10 : null,\n    avg_voltage: vCount ? Math.round((vSum / vCount) * 10) / 10 : null,\n    // blue is null, not 0. No Blue-phase meter is installed; `Calculate 3-Phase Totals`\n    // hardcodes currentBlue = 0. The UI must render this as \"not metered\".\n    phase_current: {\n      red: phaseCurrent(PHASE_MAP.red),\n      yellow: phaseCurrent(PHASE_MAP.yellow),\n      blue: null,\n    },\n  });\n\n  return out;\n}\n\n\nconst REG = [{\"id\":\"co1\",\"display_name\":\"Outlet 1\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"capability_profile\":\"pc_outlet\",\"ctx\":\"co1\",\"sockets\":[\"CO1_1\",\"CO1_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co2\",\"display_name\":\"Outlet 2\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"capability_profile\":\"pc_outlet\",\"ctx\":\"co2\",\"sockets\":[\"CO2_1\",\"CO2_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co3\",\"display_name\":\"Outlet 3\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"capability_profile\":\"pc_outlet\",\"ctx\":\"co3\",\"sockets\":[\"CO3_1\",\"CO3_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co4\",\"display_name\":\"Outlet 4\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"capability_profile\":\"pc_outlet\",\"ctx\":\"co4\",\"sockets\":[\"CO4_1\",\"CO4_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co5\",\"display_name\":\"Outlet 5\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"capability_profile\":\"pc_outlet\",\"ctx\":\"co5\",\"sockets\":[\"CO5_1\",\"CO5_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co6\",\"display_name\":\"Outlet 6\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"capability_profile\":\"pc_outlet\",\"ctx\":\"co6\",\"sockets\":[\"CO6_1\",\"CO6_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co7\",\"display_name\":\"Outlet 7\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"capability_profile\":\"pc_outlet\",\"ctx\":\"co7\",\"sockets\":[\"CO7_1\",\"CO7_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"l1\",\"display_name\":\"Light Switch 1\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"capability_profile\":\"tdq_switch\",\"ctx\":null,\"state_key\":\"L1\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l2\",\"display_name\":\"Light Switch 2\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"capability_profile\":\"tdq_switch\",\"ctx\":null,\"state_key\":\"L2\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l3\",\"display_name\":\"Light Switch 3\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"capability_profile\":\"tdq_switch\",\"ctx\":null,\"state_key\":\"L3\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l4\",\"display_name\":\"Light Switch 4\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"capability_profile\":\"tdq_switch\",\"ctx\":null,\"state_key\":\"L4\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l5\",\"display_name\":\"Light Switch 5\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"capability_profile\":\"tdq_switch\",\"ctx\":null,\"state_key\":\"L5\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l6\",\"display_name\":\"Light Switch 6\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"capability_profile\":\"tdq_switch\",\"ctx\":null,\"state_key\":\"L6\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l7\",\"display_name\":\"Light Switch 7\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"capability_profile\":\"tdq_switch\",\"ctx\":null,\"state_key\":\"L7\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"mtr_co_yellow\",\"display_name\":\"C.O Yellow\",\"class\":\"meter\",\"room\":null,\"dps_map\":\"type_a\",\"capability_profile\":\"cz_ct_double\",\"channel\":1,\"ctx\":\"co_yel\",\"branch_circuit\":\"C.O Yellow\",\"description\":\"Convenience outlets branch\",\"phase\":\"yellow\",\"status\":\"active\"},{\"id\":\"mtr_lo_red\",\"display_name\":\"L.O Red\",\"class\":\"meter\",\"room\":null,\"dps_map\":\"type_a\",\"capability_profile\":\"cz_ct_single\",\"channel\":1,\"ctx\":\"lo_red\",\"branch_circuit\":\"L.O Red\",\"description\":\"The room's lighting circuits\",\"phase\":\"red\",\"status\":\"active\"},{\"id\":\"mtr_arec_acu\",\"display_name\":\"CARE ACU\",\"class\":\"meter\",\"room\":null,\"dps_map\":\"type_a\",\"capability_profile\":\"cz_ct_single\",\"channel\":1,\"ctx\":\"arec\",\"branch_circuit\":\"CARE ACU\",\"description\":\"The CARE ACU's own branch — the indoor unit the IR blaster commands\",\"phase\":\"red\",\"status\":\"active\"},{\"id\":\"mtr_lo_yellow\",\"display_name\":\"L.O Yellow\",\"class\":\"meter\",\"room\":null,\"dps_map\":\"type_c\",\"capability_profile\":\"cz_ct_double\",\"channel\":2,\"ctx\":\"lo_yel2\",\"branch_circuit\":\"L.O Yellow\",\"description\":\"Outdoor ACU (separate unit, right side outside the room)\",\"phase\":\"yellow\",\"status\":\"active\"},{\"id\":\"acu_main\",\"display_name\":\"CARE ACU IR\",\"class\":\"acu_ir\",\"room\":null,\"dps_map\":null,\"capability_profile\":null,\"ctx\":null,\"state_ctx\":\"ac_dash_state\",\"status\":\"active\"},{\"id\":\"sens_outside_temp\",\"display_name\":\"Outside Temp\",\"class\":\"sensor_temp_humidity\",\"room\":null,\"dps_map\":null,\"capability_profile\":null,\"ctx\":null,\"state_ctx\":\"ac_dash_state\",\"state_field\":\"outTemp\",\"status\":\"active\"}];\nconst PHASE_MAP = {\"red\":[\"mtr_lo_red\",\"mtr_arec_acu\"],\"yellow\":[\"mtr_co_yellow\",\"mtr_lo_yellow\"],\"blue\":[]};\nconst STALE_AFTER_MS_BY_CLASS = {\"outlet_dual\":150000,\"meter\":150000,\"switch\":30000,\"acu_ir\":30000,\"sensor_temp_humidity\":30000};\n\nmsg.payload = buildLatest(msg.snapshot || {}, REG, PHASE_MAP, Date.now(), 480, STALE_AFTER_MS_BY_CLASS);\nmsg.headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };\nreturn msg;",
+    "func": "/**\n * Builds the `/api/readings/latest` payload from a raw context snapshot.\n *\n * This file is the SINGLE implementation of that transform. It is:\n *   - imported directly by `mock-bridge/server.mjs`\n *   - inlined verbatim into the Node-RED function node by `node-red-bridge/build-flow.mjs`\n *     (which strips the `export` keywords — nothing else)\n *\n * That is what makes the mock and the real bridge byte-identical in shape. A drift\n * between them would produce the worst kind of bug: frontend works locally, breaks on\n * the Pi. So keep this pure — no Node-RED APIs, no imports, no Node built-ins.\n */\n\n/**\n * ISO 8601 at a fixed UTC offset, regardless of the host's timezone setting.\n *\n * `offsetMinutes` defaults to 480 (+08:00) so that every caller predating RM-027 behaves\n * exactly as before — including `test/contract.test.mjs`, which pins the wire format. The\n * site's real value is threaded in by `node-red-bridge/build-flow.mjs`.\n *\n * A number of minutes rather than an IANA zone name because this function is inlined verbatim\n * into a Node-RED function node, where a full-ICU build is not something to bet the building's\n * timestamps on. `shared/sites/<id>/site.mjs` carries both and a test asserts they agree.\n */\nfunction iso8(ms, offsetMinutes = 480) {\n  const d = new Date(Number(ms) + offsetMinutes * 60000);\n  const p = (n) => String(n).padStart(2, '0');\n  const sign = offsetMinutes < 0 ? '-' : '+';\n  const abs = Math.abs(offsetMinutes);\n  return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate()) +\n    'T' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) + ':' + p(d.getUTCSeconds()) +\n    sign + p(Math.floor(abs / 60)) + ':' + p(abs % 60);\n}\n\nfunction num(v) {\n  const n = parseFloat(v);\n  return Number.isFinite(n) ? n : undefined;\n}\n\nfunction bool(v) {\n  return v === true || v === 'true' || v === 1 || v === '1';\n}\n\n/**\n * How long a metered device may go with no evidence of a fresh report before `online` stops\n * being believed, whatever the connection flag says.\n *\n * WHY THIS IS NEEDED AT ALL: `h` reports the tuya node's socket, and a socket whose peer\n * vanished without sending a FIN stays \"connected\" indefinitely. On 2026-08-26 the Pi's own\n * address changed out from under every established session (it had fallen back to a different\n * SSID); three meters then reported `online: true` carrying byte-identical readings for over\n * half an hour while nothing at all was reachable.\n *\n * WHY IT IS THIS LARGE: it must sit well clear of the slowest legitimate report. Measured on\n * site the same day, an online outlet's arrival stamp lagged by up to 59 s, and the energy\n * tab's sample buffers are drained on a five-minute cycle. Ten minutes is roughly ten times\n * the slowest normal gap and still an order of magnitude inside the failure it exists to catch.\n * Erring short is the dangerous direction: `online: false` removes a device from the building\n * totals below, so a threshold that trips on a merely-late meter under-reports the building.\n */\nconst STALE_READING_MS = 600000;\n\n/**\n * @param {object} snap  { energy:{meters,totals}, outlet:{meters,state}, switch:{state}, aircon:{state} }\n * @param {Array}  REG   device registry\n * @param {object} PHASE_MAP\n * @param {number} nowMs\n * @param {number} [offsetMinutes] minutes east of UTC for the site; see iso8()\n * @param {object} [staleAfterMsByClass] device class -> staleness budget in ms; threaded in\n *        rather than imported, exactly like `offsetMinutes`, because this file is inlined\n *        verbatim into a Node-RED function node and may not import anything. The authority is\n *        `shared/registry.mjs`'s `STALE_AFTER_MS_BY_CLASS`; `{}` reproduces the pre-2026-09-01\n *        behaviour, where every consumer fell back to one global 30 s.\n * @param {number} [maxDailyKwh] the most a single branch circuit may plausibly consume in one\n *        day at this site — `SITE.max_branch_kwh_per_day`, threaded in for the same reason as\n *        the two above. A daily figure beyond it is not believed; see the backstop below.\n *        Omitted means no bound, which reproduces the pre-2026-09-03 behaviour.\n * @returns {Array} one entry per device, plus a trailing `_totals` entry\n */\nfunction buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, staleAfterMsByClass = {}, maxDailyKwh = undefined) {\n  const energy = snap.energy || { meters: {}, totals: {} };\n  const outlet = snap.outlet || { meters: {}, state: {} };\n  const lights = (snap.switch || {}).state || {};\n  const ac = (snap.aircon || {}).state || {};\n  const outletStatus = outlet.state.status || {};\n  const out = [];\n\n  for (const d of REG) {\n    const r = { device_id: d.id, ts: iso8(nowMs, offsetMinutes) };\n\n    // How long this device's reading may go without advancing before the frontend should stop\n    // calling it fresh. Carried on the wire rather than re-derived in `src/`, because the\n    // cadence is a fact about the BRIDGE — it owns the 60 s outlet poller, so it is the only\n    // party that knows an outlet cannot report faster than that. A second copy of the table in\n    // the frontend would be free to disagree with the thing it describes, which is precisely\n    // what one global 30 s did.\n    //\n    // A device's own value wins over its class, so a site can declare one differently in\n    // `shared/sites/<id>/devices.mjs` without restating the class defaults. Omitted entirely\n    // when neither is known, which is what makes an older frontend and an older bridge both\n    // fall back to the single 30 s default unchanged.\n    const staleAfter = typeof d.stale_after_ms === 'number' ? d.stale_after_ms : staleAfterMsByClass[d.class];\n    if (typeof staleAfter === 'number') r.stale_after_ms = staleAfter;\n\n    // --- metered devices ----------------------------------------------------\n    if (d.ctx) {\n      const src = (d.class === 'outlet_dual' ? outlet.meters : energy.meters)[d.ctx] || {};\n      const v = num(src.v), c = num(src.c), p = num(src.p), e = num(src.e);\n\n      // Everything the device reports beyond volts/amps/watts, decoded by the generated source-tab\n      // parser and keyed by its vendor capability code. Omitted entirely when the parser has not\n      // seen this device yet, so an older flow and a newer bridge still agree on every other field.\n      const dp = src.dp && typeof src.dp === 'object' ? src.dp : null;\n      if (dp && Object.keys(dp).length) r.capabilities = dp;\n\n      // TODAY'S ENERGY, PREFERRING THE DEVICE'S OWN FIGURE.\n      //\n      // `src.e` is `<ctx>_energy`, which for a CT meter is INTEGRATED from power by the legacy\n      // two-second engine. Integration is the mechanism behind the frozen-meter corruption fixed\n      // in Aug 2026: a disconnected meter's last wattage compounds into the total for as long as\n      // it stays down. The meters have always reported `today_acc_energy` themselves and nothing\n      // read it — measured 2026-09-02, `mtr_co_yellow` integrated to 8.0437 kWh while the meter\n      // itself said 8.057.\n      //\n      // Outlets have no such dp (they report `add_ele`, an increment their parser accumulates),\n      // so they keep `src.e` and this changes nothing for them.\n      //\n      // The channel suffix is load-bearing: one physical dual-channel meter is two logical\n      // devices here, and taking the wrong channel's total would attribute one branch circuit's\n      // consumption to another.\n      //\n      // AN INCREMENT, NOT AN ABSOLUTE. `today_acc_energy` is only \"today's\" if the device resets\n      // it, and one channel of this fleet's dual-channel meter does not: measured 2026-09-03,\n      // channel 1 read 3.477 kWh while channel 2 read 3625.021 and was incrementing correctly on\n      // top of that offset — a 3,625 kWh day for a circuit that averages 36 W. So the figure is\n      // published relative to where the counter stood when the local day began, tracked by\n      // `node-red-bridge/energyDayBase.mjs` and arriving as `snap.energyDayBase`. Clamped at\n      // zero: a re-baseline and a counter arriving in the same tick may cross, and a negative\n      // kWh is not a reading.\n      //\n      // With no baseline yet — an older flow, or a meter the tracker has not seen — the raw\n      // counter is used, which is exactly the behaviour that shipped in `658d7c2`.\n      const ownRaw = dp ? num(dp['today_acc_energy' + (d.channel || 1)]) : undefined;\n      let ownDaily;\n      if (ownRaw !== undefined) {\n        const baseFor = (snap.energyDayBase || {})[d.ctx];\n        const dayBase = baseFor ? num(baseFor['today_acc_energy' + (d.channel || 1)]) : undefined;\n        ownDaily = dayBase !== undefined ? Math.max(0, ownRaw - dayBase) : ownRaw;\n      }\n      let eToday = ownDaily !== undefined ? ownDaily : e;\n\n      // THE BACKSTOP. Both sources above can be wrong in ways this file cannot detect from one\n      // sample — a counter carrying an offset nothing cleared, or an integrator that compounded\n      // a dead meter's last wattage for a week. `maxDailyKwh` is a physical bound on what a\n      // single branch of this building's sub-panel can consume in a day. Prefer the integrated\n      // value when the device's figure breaches it; omit the field entirely when both do, rather\n      // than coerce to 0 — \"no data\" and \"zero watts\" are different facts and the UI renders them\n      // differently. Absent bound means no rejection, so a site that has not declared one behaves\n      // exactly as before.\n      if (maxDailyKwh !== undefined && eToday !== undefined && eToday > maxDailyKwh) {\n        eToday = e !== undefined && e <= maxDailyKwh ? e : undefined;\n      }\n      // Absent readings are omitted, never coerced to 0 — \"no data\" and \"zero watts\"\n      // are different facts and the UI renders them differently.\n      if (v !== undefined) r.voltage = v;\n      if (c !== undefined) r.current = c;\n      if (p !== undefined) r.power_w = p;\n      if (eToday !== undefined) r.energy_kwh_today = eToday;\n      // Per-device week/month = the completed days this bridge has folded into its own\n      // accumulator (`snap.energyAcc`, maintained by the Accumulate-energy step) plus the\n      // live daily counter. Each meter only ever reports a DAILY figure, so anything\n      // longer has to be accumulated here; a device the accumulator hasn't seen a full day\n      // for is omitted rather than reported as its daily value.\n      // The accumulator banks whatever `energy_kwh_today` reported, so switching that field's\n      // source switches this one with it and the two cannot disagree. Crossing over may bank one\n      // small step if the device's own figure sits below the integrated one at that moment — the\n      // counter-regression branch handles it as real consumption, which is the safe direction.\n      const acc = (snap.energyAcc || {})[d.id];\n      if (acc && eToday !== undefined) {\n        const wb = num(acc.weekBase), mb = num(acc.monthBase);\n        if (wb !== undefined) r.energy_kwh_week = Math.round((wb + eToday) * 1000) / 1000;\n        if (mb !== undefined) r.energy_kwh_month = Math.round((mb + eToday) * 1000) / 1000;\n      }\n      r.online = bool(src.h);\n\n      // When did this device last actually report? Two sources, preferring the source tab's\n      // own stamp:\n      //   `src.t`        the arrival time the tab records. Outlet meters carry one; the energy\n      //                  tab writes no timestamp of any kind, which is why the second exists.\n      //   `snap.arrivals` what the bridge itself last saw change for this meter — tracked by\n      //                  `node-red-bridge/arrivalTracker.mjs` from the energy tab's own SAMPLE\n      //                  BUFFER DEPTH (`<ctx>_arr_v`), which grows on every message even when\n      //                  the measured values do not. The energy tab writes no timestamp of any\n      //                  kind, which is why that indirection exists at all.\n      //\n      // ARRIVAL, NOT VALUE CHANGE. This distinction was measured rather than assumed, and the\n      // obvious version is wrong: `mtr_lo_yellow` and `mtr_co_yellow` are two channels of one\n      // physical meter, and over ten minutes the first sat byte-identical at 0 W while the\n      // second swung between 215 V and 229 V. The device was plainly reporting throughout, so\n      // treating \"the numbers stopped moving\" as death would have marked a healthy idle circuit\n      // offline and quietly subtracted it from the building totals.\n      //\n      // The energy ACCUMULATOR was removed from that signature on 2026-09-01 (ROADMAP EX-141).\n      // It is integrated on a timer rather than on arrival — measured: `co_yel_energy` moved\n      // three times across fourteen seconds in which no message arrived at all — so including it\n      // let a meter drawing power fake its own freshness, and would have kept a meter that DIED\n      // while loaded looking fresh indefinitely. `STALE_READING_MS` below is the backstop for a\n      // health flag that lies, so it must not depend on anything the same failure would move.\n      const t = num(src.t);\n      const seenAt = t !== undefined && t > 0 ? t : num((snap.arrivals || {})[d.ctx]);\n      if (seenAt !== undefined) {\n        // Report when the reading happened, not when it was served. `ts = now` on a device\n        // that has not reported is a fabrication, and it is what let the staleness watchdog\n        // sleep through the outage above — an always-fresh timestamp can never look old.\n        r.ts = iso8(seenAt, offsetMinutes);\n        if (nowMs - seenAt > STALE_READING_MS) r.online = false;\n      }\n    } else if (d.class === 'switch') {\n      // Switches have no `ctx` (no metering DPS), but a real per-switch connection signal\n      // DOES exist — `global.lightStatus`, populated by the Lighting Logic Hub — it was\n      // just never read here before. `state_key` is `L1`..`L7`; `lightStatus`'s keys are\n      // the bare numbers `1`..`7`.\n      const health = (snap.switch || {}).health || {};\n      const entry = health[d.state_key.slice(1)];\n      // No health entry at all (older flow, or a mock that doesn't simulate it) — fall\n      // back to the previous always-online assumption rather than invent a false negative.\n      r.online = entry ? entry.conn === 'CONNECTED' : true;\n      // A switch has no metering, but it does have settings — countdown, power-on behaviour,\n      // inching, switch type. They ride on the same lightStatus entry its connection state does.\n      const sdp = entry && entry.dp && typeof entry.dp === 'object' ? entry.dp : null;\n      if (sdp && Object.keys(sdp).length) r.capabilities = sdp;\n    } else if (d.state_ctx === 'ac_dash_state') {\n      // The aircon and the outside-temp sensor are both fed by the IR blaster, and neither is\n      // a meter nor a switch — so both used to fall through to a hardcoded `online = true`.\n      //\n      // That hardcoded true was a fabrication, and it was live: on 2026-08-25 the blaster and\n      // `Outside Temp` nodes were in a permanent `find() timed out` retry loop (they are not in\n      // the Tuya cloud project and have never connected — RM-016), while the dashboard showed\n      // both devices ONLINE carrying no measurement at all. A fabricated online is worse than a\n      // stale reading: a stale one at least happened once.\n      //\n      // ONLINE means \"carries at least one real measurement\", not \"the key exists\". The flow\n      // does not leave `ac_dash_state` empty when the blaster is dead — read off the live Pi,\n      // it seeds a placeholder: `{power:\"OFFLINE\", setTemp:\"--\", roomTemp:\"--\", humidity:\"--\",\n      // outTemp:\"--\"}`. A first version of this fix tested `Object.keys(ac).length` and so\n      // passed its own tests while changing nothing in production, because emptiness was an\n      // assumption rather than an observation.\n      //\n      // `num()` rejects \"--\" and \"OFFLINE\" and accepts \"25.4\", so the placeholder reads as\n      // offline and a real poll reads as online, with no magic string to keep in sync. ANY one\n      // field is enough: the blaster sends temperature and humidity on separate DPS, so\n      // demanding all of them would report a half-working device as dead.\n      //\n      // This is the same move the `switch` branch above made when `lightStatus` turned out to\n      // be readable — except there the fallback stayed optimistic, because a missing health map\n      // really could mean an older flow. Here there is no such ambiguity: nothing else writes\n      // this key, and a placeholder is a positive statement that nothing has reported.\n      r.online = [ac.roomTemp, ac.outTemp, ac.humidity, ac.setTemp].some((v) => num(v) !== undefined);\n    } else {\n      r.online = true;\n    }\n\n    // --- switchable state ---------------------------------------------------\n    if (d.class === 'switch') {\n      r.state = bool(lights[d.state_key]) ? 'on' : 'off';\n    } else if (d.class === 'outlet_dual') {\n      const s1 = bool(outletStatus[d.sockets[0]]);\n      const s2 = bool(outletStatus[d.sockets[1]]);\n      r.socket_states = { 1: s1 ? 'on' : 'off', 2: s2 ? 'on' : 'off' };\n      r.state = (s1 || s2) ? 'on' : 'off';\n    } else if (d.class === 'acu_ir') {\n      r.state = bool(ac.power) ? 'on' : 'off';\n      if (num(ac.setTemp) !== undefined) r.setpoint_c = num(ac.setTemp);\n      if (num(ac.roomTemp) !== undefined) r.room_temp_c = num(ac.roomTemp);\n      if (num(ac.humidity) !== undefined) r.humidity_pct = num(ac.humidity);\n    } else if (d.class === 'sensor_temp_humidity') {\n      r.state = null;\n      if (num(ac.outTemp) !== undefined) r.temp_c = num(ac.outTemp);\n      if (num(ac.humidity) !== undefined) r.humidity_pct = num(ac.humidity);\n    } else {\n      r.state = null;\n    }\n\n    out.push(r);\n  }\n\n  // --- building totals ------------------------------------------------------\n  const byId = {};\n  for (const r of out) byId[r.device_id] = r;\n\n  // A meter that's gone offline still has its last cached v/c/p sitting in `byId` (that's\n  // the whole point of \"last known reading\" — see the per-device loop above), but a\n  // building-wide total is a claim about what's happening RIGHT NOW, not a museum of last\n  // known values. Every aggregate below skips `online === false` explicitly, matching the\n  // per-device `online` derivation two branches up — a disconnected meter contributes\n  // nothing here, the same way a disconnected switch's health entry now actually means\n  // something instead of being silently ignored.\n  function phaseCurrent(ids) {\n    let sum = 0, seen = false;\n    for (const id of ids) {\n      const r = byId[id];\n      if (r && r.online !== false && typeof r.current === 'number') { sum += r.current; seen = true; }\n    }\n    return seen ? Math.round(sum * 1000) / 1000 : null;\n  }\n\n  let totalP = 0, pSeen = false, vSum = 0, vCount = 0;\n  for (const d of REG) {\n    if (d.class !== 'meter') continue;\n    const r = byId[d.id] || {};\n    if (r.online === false) continue;\n    if (typeof r.power_w === 'number') { totalP += r.power_w; pSeen = true; }\n    if (typeof r.voltage === 'number' && r.voltage > 0) { vSum += r.voltage; vCount++; }\n  }\n\n  const t = energy.totals || {};\n  const today = num(t.today), week = num(t.week), month = num(t.month);\n\n  out.push({\n    device_id: '_totals',\n    ts: iso8(nowMs, offsetMinutes),\n    energy_kwh_today: today === undefined ? null : today,\n    energy_kwh_week: week === undefined ? null : week,\n    energy_kwh_month: month === undefined ? null : month,\n    total_power_w: pSeen ? Math.round(totalP * 10) / 10 : null,\n    avg_voltage: vCount ? Math.round((vSum / vCount) * 10) / 10 : null,\n    // blue is null, not 0. No Blue-phase meter is installed; `Calculate 3-Phase Totals`\n    // hardcodes currentBlue = 0. The UI must render this as \"not metered\".\n    phase_current: {\n      red: phaseCurrent(PHASE_MAP.red),\n      yellow: phaseCurrent(PHASE_MAP.yellow),\n      blue: null,\n    },\n  });\n\n  return out;\n}\n\n\nconst REG = [{\"id\":\"co1\",\"display_name\":\"Outlet 1\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"capability_profile\":\"pc_outlet\",\"ctx\":\"co1\",\"sockets\":[\"CO1_1\",\"CO1_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co2\",\"display_name\":\"Outlet 2\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"capability_profile\":\"pc_outlet\",\"ctx\":\"co2\",\"sockets\":[\"CO2_1\",\"CO2_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co3\",\"display_name\":\"Outlet 3\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"capability_profile\":\"pc_outlet\",\"ctx\":\"co3\",\"sockets\":[\"CO3_1\",\"CO3_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co4\",\"display_name\":\"Outlet 4\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"capability_profile\":\"pc_outlet\",\"ctx\":\"co4\",\"sockets\":[\"CO4_1\",\"CO4_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co5\",\"display_name\":\"Outlet 5\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"capability_profile\":\"pc_outlet\",\"ctx\":\"co5\",\"sockets\":[\"CO5_1\",\"CO5_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co6\",\"display_name\":\"Outlet 6\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"capability_profile\":\"pc_outlet\",\"ctx\":\"co6\",\"sockets\":[\"CO6_1\",\"CO6_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"co7\",\"display_name\":\"Outlet 7\",\"class\":\"outlet_dual\",\"room\":null,\"dps_map\":\"type_b\",\"capability_profile\":\"pc_outlet\",\"ctx\":\"co7\",\"sockets\":[\"CO7_1\",\"CO7_2\"],\"branch_circuit\":\"C.O Yellow\",\"status\":\"active\"},{\"id\":\"l1\",\"display_name\":\"Light Switch 1\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"capability_profile\":\"tdq_switch\",\"ctx\":null,\"state_key\":\"L1\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l2\",\"display_name\":\"Light Switch 2\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"capability_profile\":\"tdq_switch\",\"ctx\":null,\"state_key\":\"L2\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l3\",\"display_name\":\"Light Switch 3\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"capability_profile\":\"tdq_switch\",\"ctx\":null,\"state_key\":\"L3\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l4\",\"display_name\":\"Light Switch 4\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"capability_profile\":\"tdq_switch\",\"ctx\":null,\"state_key\":\"L4\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l5\",\"display_name\":\"Light Switch 5\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"capability_profile\":\"tdq_switch\",\"ctx\":null,\"state_key\":\"L5\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l6\",\"display_name\":\"Light Switch 6\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"capability_profile\":\"tdq_switch\",\"ctx\":null,\"state_key\":\"L6\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"l7\",\"display_name\":\"Light Switch 7\",\"class\":\"switch\",\"room\":null,\"dps_map\":null,\"capability_profile\":\"tdq_switch\",\"ctx\":null,\"state_key\":\"L7\",\"branch_circuit\":\"L.O Red\",\"status\":\"active\"},{\"id\":\"mtr_co_yellow\",\"display_name\":\"C.O Yellow\",\"class\":\"meter\",\"room\":null,\"dps_map\":\"type_a\",\"capability_profile\":\"cz_ct_double\",\"channel\":1,\"ctx\":\"co_yel\",\"branch_circuit\":\"C.O Yellow\",\"description\":\"Convenience outlets branch\",\"phase\":\"yellow\",\"status\":\"active\"},{\"id\":\"mtr_lo_red\",\"display_name\":\"L.O Red\",\"class\":\"meter\",\"room\":null,\"dps_map\":\"type_a\",\"capability_profile\":\"cz_ct_single\",\"channel\":1,\"ctx\":\"lo_red\",\"branch_circuit\":\"L.O Red\",\"description\":\"The room's lighting circuits\",\"phase\":\"red\",\"status\":\"active\"},{\"id\":\"mtr_arec_acu\",\"display_name\":\"CARE ACU\",\"class\":\"meter\",\"room\":null,\"dps_map\":\"type_a\",\"capability_profile\":\"cz_ct_single\",\"channel\":1,\"ctx\":\"arec\",\"branch_circuit\":\"CARE ACU\",\"description\":\"The CARE ACU's own branch — the indoor unit the IR blaster commands\",\"phase\":\"red\",\"status\":\"active\"},{\"id\":\"mtr_lo_yellow\",\"display_name\":\"L.O Yellow\",\"class\":\"meter\",\"room\":null,\"dps_map\":\"type_c\",\"capability_profile\":\"cz_ct_double\",\"channel\":2,\"ctx\":\"lo_yel2\",\"branch_circuit\":\"L.O Yellow\",\"description\":\"Outdoor ACU (separate unit, right side outside the room)\",\"phase\":\"yellow\",\"status\":\"active\"},{\"id\":\"acu_main\",\"display_name\":\"CARE ACU IR\",\"class\":\"acu_ir\",\"room\":null,\"dps_map\":null,\"capability_profile\":null,\"ctx\":null,\"state_ctx\":\"ac_dash_state\",\"status\":\"active\"},{\"id\":\"sens_outside_temp\",\"display_name\":\"Outside Temp\",\"class\":\"sensor_temp_humidity\",\"room\":null,\"dps_map\":null,\"capability_profile\":null,\"ctx\":null,\"state_ctx\":\"ac_dash_state\",\"state_field\":\"outTemp\",\"status\":\"active\"}];\nconst PHASE_MAP = {\"red\":[\"mtr_lo_red\",\"mtr_arec_acu\"],\"yellow\":[\"mtr_co_yellow\",\"mtr_lo_yellow\"],\"blue\":[]};\nconst STALE_AFTER_MS_BY_CLASS = {\"outlet_dual\":150000,\"meter\":150000,\"switch\":30000,\"acu_ir\":30000,\"sensor_temp_humidity\":30000};\n\nconst MAX_BRANCH_KWH_PER_DAY = 100;\n\nmsg.payload = buildLatest(msg.snapshot || {}, REG, PHASE_MAP, Date.now(), 480, STALE_AFTER_MS_BY_CLASS, MAX_BRANCH_KWH_PER_DAY);\nmsg.headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };\nreturn msg;",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -345,7 +365,7 @@
     "wires": []
   },
   {
-    "id": "b41dc00000000024",
+    "id": "b41dc00000000025",
     "type": "http in",
     "z": "b41d9e0000000001",
     "name": "GET /api/devices",
@@ -357,12 +377,12 @@
     "y": 320,
     "wires": [
       [
-        "b41dc00000000023"
+        "b41dc00000000024"
       ]
     ]
   },
   {
-    "id": "b41dc00000000023",
+    "id": "b41dc00000000024",
     "type": "function",
     "z": "b41d9e0000000001",
     "name": "Serve devices",
@@ -377,12 +397,12 @@
     "y": 320,
     "wires": [
       [
-        "b41dc00000000022"
+        "b41dc00000000023"
       ]
     ]
   },
   {
-    "id": "b41dc00000000022",
+    "id": "b41dc00000000023",
     "type": "http response",
     "z": "b41d9e0000000001",
     "name": "",
@@ -393,7 +413,7 @@
     "wires": []
   },
   {
-    "id": "b41dc00000000027",
+    "id": "b41dc00000000028",
     "type": "http in",
     "z": "b41d9e0000000001",
     "name": "GET /api/readings/latest",
@@ -405,17 +425,17 @@
     "y": 380,
     "wires": [
       [
-        "b41dc00000000026"
+        "b41dc00000000027"
       ]
     ]
   },
   {
-    "id": "b41dc00000000026",
+    "id": "b41dc00000000027",
     "type": "link call",
     "z": "b41d9e0000000001",
     "name": "",
     "links": [
-      "b41dc00000000021"
+      "b41dc00000000022"
     ],
     "linkType": "static",
     "timeout": "30",
@@ -423,12 +443,12 @@
     "y": 380,
     "wires": [
       [
-        "b41dc00000000025"
+        "b41dc00000000026"
       ]
     ]
   },
   {
-    "id": "b41dc00000000025",
+    "id": "b41dc00000000026",
     "type": "http response",
     "z": "b41d9e0000000001",
     "name": "",
@@ -439,7 +459,7 @@
     "wires": []
   },
   {
-    "id": "b41dc00000000030",
+    "id": "b41dc00000000031",
     "type": "http in",
     "z": "b41d9e0000000001",
     "name": "GET /api/readings/history",
@@ -451,12 +471,12 @@
     "y": 440,
     "wires": [
       [
-        "b41dc00000000029"
+        "b41dc00000000030"
       ]
     ]
   },
   {
-    "id": "b41dc00000000029",
+    "id": "b41dc00000000030",
     "type": "function",
     "z": "b41d9e0000000001",
     "name": "Serve history",
@@ -471,12 +491,12 @@
     "y": 440,
     "wires": [
       [
-        "b41dc00000000028"
+        "b41dc00000000029"
       ]
     ]
   },
   {
-    "id": "b41dc00000000028",
+    "id": "b41dc00000000029",
     "type": "http response",
     "z": "b41d9e0000000001",
     "name": "",
@@ -487,7 +507,7 @@
     "wires": []
   },
   {
-    "id": "b41dc00000000034",
+    "id": "b41dc00000000035",
     "type": "inject",
     "z": "b41d9e0000000001",
     "name": "push 2s",
@@ -507,17 +527,17 @@
     "y": 520,
     "wires": [
       [
-        "b41dc00000000033"
+        "b41dc00000000034"
       ]
     ]
   },
   {
-    "id": "b41dc00000000033",
+    "id": "b41dc00000000034",
     "type": "link call",
     "z": "b41d9e0000000001",
     "name": "",
     "links": [
-      "b41dc00000000021"
+      "b41dc00000000022"
     ],
     "linkType": "static",
     "timeout": "30",
@@ -525,12 +545,12 @@
     "y": 520,
     "wires": [
       [
-        "b41dc00000000032"
+        "b41dc00000000033"
       ]
     ]
   },
   {
-    "id": "b41dc00000000032",
+    "id": "b41dc00000000033",
     "type": "function",
     "z": "b41d9e0000000001",
     "name": "Serialize for WS",
@@ -545,12 +565,12 @@
     "y": 520,
     "wires": [
       [
-        "b41dc00000000031"
+        "b41dc00000000032"
       ]
     ]
   },
   {
-    "id": "b41dc00000000031",
+    "id": "b41dc00000000032",
     "type": "websocket out",
     "z": "b41d9e0000000001",
     "name": "",
@@ -567,7 +587,7 @@
     "wholemsg": "false"
   },
   {
-    "id": "b41dc00000000038",
+    "id": "b41dc00000000039",
     "type": "inject",
     "z": "b41d9e0000000001",
     "name": "sample 60s",
@@ -587,17 +607,17 @@
     "y": 600,
     "wires": [
       [
-        "b41dc00000000037"
+        "b41dc00000000038"
       ]
     ]
   },
   {
-    "id": "b41dc00000000037",
+    "id": "b41dc00000000038",
     "type": "link call",
     "z": "b41d9e0000000001",
     "name": "",
     "links": [
-      "b41dc00000000021"
+      "b41dc00000000022"
     ],
     "linkType": "static",
     "timeout": "30",
@@ -605,13 +625,13 @@
     "y": 600,
     "wires": [
       [
-        "b41dc00000000035",
-        "b41dc00000000036"
+        "b41dc00000000036",
+        "b41dc00000000037"
       ]
     ]
   },
   {
-    "id": "b41dc00000000035",
+    "id": "b41dc00000000036",
     "type": "function",
     "z": "b41d9e0000000001",
     "name": "Append to history ring",
@@ -629,7 +649,7 @@
     ]
   },
   {
-    "id": "b41dc00000000036",
+    "id": "b41dc00000000037",
     "type": "function",
     "z": "b41d9e0000000001",
     "name": "Accumulate energy",

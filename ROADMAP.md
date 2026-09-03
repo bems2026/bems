@@ -1,7 +1,8 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-02 (UTC) — the control path, settings, policy and the kiosk, against the live Pi
-**Audited at commit:** `1f46590`
+**Last audited:** 2026-09-03 — the fleet, the energy path and the dispatch policy, measured on the
+live Pi over the tailnet. §0 leads with what that measurement found.
+**Audited at commit:** `e00ce71`
 
 **2026-09-01, and it changes what §0 says.** The headline claim below — that there is no
 unblocked coding task left — was **wrong**, and it was wrong because the fault report that
@@ -59,6 +60,37 @@ other four and none needed changing.
 ---
 
 ## 0. Triage — what to do next
+
+### 2026-09-03 — the power cycle was performed, and it is the top of this list now
+
+The remedy RM-020 had been waiting months for was carried out, and **it made things worse**.
+Measured the same morning from a remote session, on the Pi:
+
+- **4 of 18 devices online** — all four logical meters, and not one outlet or light switch.
+- **Only 3 Tuya discovery broadcasters** in a 30 s passive listen on UDP 6666/6667. The other
+  fourteen are not on the air, so `find()` has nothing to find and a Node-RED restart cannot
+  help — the RM-021 case, not the `l6` stuck-node case. A restart was tried at 11:14 and
+  produced **zero** device connections in the following half hour.
+- Every one of the fourteen **did** connect earlier the same boot and then dropped — CO4 fifty
+  times, CO7 twenty-nine, L7 twenty-five — with 187 recorded disconnects and 12,386 Node-RED log
+  lines in 3.6 h.
+- **The vendor cloud sees the same flapping**, which is what makes this a network finding rather
+  than a bridge one: five devices changed cloud state between two `tuya:devices` runs minutes
+  apart. Tuya reaches them over the internet, not our subnet, so nothing in this repository can
+  cause it.
+- **The AP renumbered its LAN onto a different private /24 across the power cycle.** The Pi kept
+  the same host number on both, so this is the router's configuration changing, not the Pi's. Its
+  firmware dates from 2020-09-27 and the DHCP lease is 7200 s. That move is the one event
+  coincident with the fleet loss and is where the next person should start.
+
+**This is a network job, not a coding one.** See **RM-046**. Two things in this repository made
+it noisier and are worth fixing regardless: discovery retries at a fixed 1 s with no back-off,
+which `docs/adr-002-device-recovery-path.md` already prescribed and nobody built, and 650+
+`EHOSTUNREACH` to two addresses that stopped existing when the subnet moved, because a node that
+has cached an address never returns to broadcast discovery.
+
+The same morning's deploy also produced a live data fault, now fixed — see **EX-158**.
+
 
 This file is long because the reasoning is the point; this section exists so that "what
 now" does not require reading all of it. Everything here is expanded below under its own id.
@@ -166,7 +198,7 @@ Everything else is small, and the build order below is honest about size.
 
 | Item | Why it is stuck |
 |---|---|
-| **RM-020** Power-cycle `co4`–`co6` | `co4` and `co6` are absent from the segment entirely — no ARP entry, so not associated to the AP. `co5` **is** on the segment and still needs power: the static-address remedy was tried on it 2026-08-26 and it refused every connection (RM-021). **Operator cannot do this during office hours** (stated 2026-08-26) and will say when they can. Was `co1`–`co6`; `co1`–`co3` came back once the Pi was returned to the device network (RM-023). `co4` moved `stale` → `absent` inside one session, so **re-run `npm run tuya:macs` before the trip** — the list moves, and it moved twice on the day this row was last rewritten. |
+| **RM-020** Power-cycle `co4`–`co6` | **SUPERSEDED 2026-09-03 by RM-042 — the power cycle was performed and it cost the rest of the fleet.** Before: `co4`/`co6` absent from the segment, `co5` on it and refusing every TCP connection after the static-address remedy (RM-021), operator unable to act during office hours. After: 4 of 18 devices online — all four meters, and nothing else. Do not read the rest of this row as current; the three outlets are no longer a separable problem from the other eleven. |
 | **RM-007** Kiosk sign-in | Needs one interactive login at the physical screen. `ibems-kiosk` is inactive. |
 | **RM-016** IR Blaster + Outside Temp | Re-pairing needs the devices and the Smart Life account. Quiesced meanwhile, so they cost nothing but still cannot report. **Confirmed by the operator 2026-08-31: neither has been set up.** Verified the same day against the live bridge — `acu_main` and `sens_outside_temp` both report `online: false` with no values, so the Climate card shows `—` and the IR card shows "no reading yet", which is the honest rendering. Their registry `status` is still `active`, which claims more than is true; worth revisiting when they are paired rather than churning it twice. |
 
@@ -1388,6 +1420,48 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       every light reported **7/7 codes** — `switch_inching: "AAAC"`, `switch_type: "flip"`,
       `relay_status` decoding through the alias table — matching what the vendor cloud reports for
       the same product
+- [x] **EX-158** A meter's daily counter is published as an **increment from where it stood at
+      local midnight**, not as an absolute, plus a plausibility ceiling under both energy
+      sources. EX-145 was right that the device's own `today_acc_energy<channel>` beats the
+      integrated value, and it verified that on 2026-09-02 — including `mtr_lo_yellow` reading a
+      clean `0.377`. What it could not know is that the register is only "today's" for as long
+      as the DEVICE agrees a day has ended.
+      **Measured 2026-09-03, after the site power cycle.** The same channel-2 register read
+      **3625.021 kWh** while channel 1 of the same physical meter read a normal **3.477**. It was
+      incrementing correctly on top of that offset — `cur_power2` was a believable 119.6 W and
+      the locally integrated `lo_yel2_energy` was 0.825 kWh, which a 90 s sample confirmed accrues
+      at 120.0 W against a measured 119.3 W (ratio 1.01, and 1.00–1.06 across all four channels).
+      So the meter was measuring correctly and its daily accumulator had been corrupted; the
+      power cycle is the only event between `0.377` and `3625.021`.
+      The consequences were not confined to a wrong number on a card. `energy_kwh_week` and
+      `_month` are `weekBase + energy_kwh_today`, so both read ~3,626. `enacc_mtr_lo_yellow` had
+      banked `lastToday: 3625.011` and would have folded it into `weekBase` at the next local
+      midnight, where no later fix could have separated it out. And `readings` had been carrying
+      the figure since **2026-09-03T02:04:00Z**, four minutes after the deploy, into the tables
+      the period reports and the Milestone 1 baseline are built from.
+      The fix is `node-red-bridge/energyDayBase.mjs`: a function node between the arrival tracker
+      and the build step, recording where each `today_acc_energy*` register stood when the local
+      day began and publishing the difference. It re-anchors on two events — the local day rolling
+      over at the site's own offset, and the counter going backwards, which is a device-side reset
+      or a reboot and must not yield a negative. The anchor is **seeded from the integrated
+      value** rather than from zero, so deploying it mid-day does not reset a dashboard somebody
+      is watching to 0 and lose the morning.
+      `SITE.max_branch_kwh_per_day` (100) is the backstop under both sources: beyond it the
+      integrated value is preferred, and if that is implausible too the field is **omitted** — the
+      same "no data and zero watts are different facts" rule the rest of the file follows. Sized
+      against a building whose whole metered load averages 919 W, so it catches 3,625 without
+      second-guessing a busy day.
+      Runs in the SAME pass as `buildLatest`, unlike `snap.energyAcc` which is a tick behind by
+      construction because it consumes the built rows. Executed by its tests rather than
+      pattern-matched, following `arrivalTracker.mjs`; both guards were neutered and confirmed to
+      fail the right tests (3 for the baseline, 2 for the ceiling) before being believed —
+      `node-red-bridge/energyDayBase.mjs`, `shared/buildLatest.mjs`,
+      `shared/sites/mmsu-nberic-care/site.mjs`, `test/energy-day-base.test.mjs` (14 tests).
+      **The general lesson, and it has now cost twice.** `shared/channelSwap.mjs` records the
+      first time this dual-channel meter mis-attributed energy. Both faults are the same shape: a
+      vendor register that is correct until it is not, trusted as an absolute with nothing
+      independent to check it against. The integrated value is the second opinion this system
+      already had and was not using.
 - [ ] **FI-023** `state` for a switch is the COMMANDED value, not the measured one, and the two
       currently disagree on all seven lights. `buildLatest` derives it from `bems_lights_state`,
       which the flow's `Lighting Logic Hub` sets from an incoming *command* before forwarding it
@@ -2261,6 +2335,31 @@ fall back to it).
       announcement** — the live region and its full sentence are identical in both variants, and
       a test asserts it, checked by making the compact variant drop its `aria-label`, which fails.
       The lists and the alerts popover keep the word, where there is room to say it.
+
+- [ ] **RM-046 (BLOCKED — needs someone at the office, with the router's credentials)**
+      **The access point is dropping the fleet.** 2026-09-03, after the RM-020 power cycle: 4 of
+      18 devices online, only the three physical meters broadcasting, and the other fourteen
+      associating and dropping continuously. The full measurement is in §0.
+      **What makes this a network finding and not a bridge one:** the vendor cloud, which reaches
+      these devices over the internet rather than our subnet, saw five of them change state
+      between two `tuya:devices` runs minutes apart. Node-RED cannot cause a device to go offline
+      to Tuya. The Pi itself is not the flapping party either — `NetworkManager` logged zero
+      disconnects, signal 86 on the correct 2.4 GHz SSID, channel 11, and no competing AP visible.
+      **The lead worth following first:** the AP renumbered its LAN onto a different private /24
+      across the power cycle. A router does not renumber itself for no reason,
+      and whatever did it is the best candidate for what else changed. Check its **maximum
+      associated clients** and DHCP pool: eighteen Tuya devices plus the Pi, the kiosk and phones
+      is a lot for consumer firmware dated 2020-09-27, and a client cap produces exactly this
+      signature — some admitted, some refused, the set rotating.
+      **Sequence on the day.** Re-run `npm run tuya:macs` immediately before acting, not the night
+      before: the split moved twice inside an hour on 2026-08-26 and moved again between two runs
+      on 2026-09-03. Then the AP. Only then power-cycle whatever is still dark to both the cloud
+      and the segment — and note that a Node-RED restart was already tried on 2026-09-03 and
+      recovered nothing, so this is the RM-021 case where restarting re-enters the same timeout
+      loop rather than the `l6` case where it fixes things in two seconds.
+      **Take `docs/physical-install.md` on the same trip** — its twelve `〔FILL IN〕` gaps need a
+      camera and a panel read, and this is the visit that closes them (RM-033).
+      Related: **RM-013** is the same root cause seen intermittently; this is it at fleet scale.
 
 - [x] **RM-008** ~~Apply the three Phase 9 migrations.~~ **Done 2026-08-21.** Applied via the
       Supabase Management API; all four objects confirmed live (`readings_buckets`,

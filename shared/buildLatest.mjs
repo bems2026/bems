@@ -71,9 +71,13 @@ export const STALE_READING_MS = 600000;
  *        verbatim into a Node-RED function node and may not import anything. The authority is
  *        `shared/registry.mjs`'s `STALE_AFTER_MS_BY_CLASS`; `{}` reproduces the pre-2026-09-01
  *        behaviour, where every consumer fell back to one global 30 s.
+ * @param {number} [maxDailyKwh] the most a single branch circuit may plausibly consume in one
+ *        day at this site — `SITE.max_branch_kwh_per_day`, threaded in for the same reason as
+ *        the two above. A daily figure beyond it is not believed; see the backstop below.
+ *        Omitted means no bound, which reproduces the pre-2026-09-03 behaviour.
  * @returns {Array} one entry per device, plus a trailing `_totals` entry
  */
-export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, staleAfterMsByClass = {}) {
+export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, staleAfterMsByClass = {}, maxDailyKwh = undefined) {
   const energy = snap.energy || { meters: {}, totals: {} };
   const outlet = snap.outlet || { meters: {}, state: {} };
   const lights = (snap.switch || {}).state || {};
@@ -124,8 +128,38 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, st
       // The channel suffix is load-bearing: one physical dual-channel meter is two logical
       // devices here, and taking the wrong channel's total would attribute one branch circuit's
       // consumption to another.
-      const ownDaily = dp ? num(dp['today_acc_energy' + (d.channel || 1)]) : undefined;
-      const eToday = ownDaily !== undefined ? ownDaily : e;
+      //
+      // AN INCREMENT, NOT AN ABSOLUTE. `today_acc_energy` is only "today's" if the device resets
+      // it, and one channel of this fleet's dual-channel meter does not: measured 2026-09-03,
+      // channel 1 read 3.477 kWh while channel 2 read 3625.021 and was incrementing correctly on
+      // top of that offset — a 3,625 kWh day for a circuit that averages 36 W. So the figure is
+      // published relative to where the counter stood when the local day began, tracked by
+      // `node-red-bridge/energyDayBase.mjs` and arriving as `snap.energyDayBase`. Clamped at
+      // zero: a re-baseline and a counter arriving in the same tick may cross, and a negative
+      // kWh is not a reading.
+      //
+      // With no baseline yet — an older flow, or a meter the tracker has not seen — the raw
+      // counter is used, which is exactly the behaviour that shipped in `658d7c2`.
+      const ownRaw = dp ? num(dp['today_acc_energy' + (d.channel || 1)]) : undefined;
+      let ownDaily;
+      if (ownRaw !== undefined) {
+        const baseFor = (snap.energyDayBase || {})[d.ctx];
+        const dayBase = baseFor ? num(baseFor['today_acc_energy' + (d.channel || 1)]) : undefined;
+        ownDaily = dayBase !== undefined ? Math.max(0, ownRaw - dayBase) : ownRaw;
+      }
+      let eToday = ownDaily !== undefined ? ownDaily : e;
+
+      // THE BACKSTOP. Both sources above can be wrong in ways this file cannot detect from one
+      // sample — a counter carrying an offset nothing cleared, or an integrator that compounded
+      // a dead meter's last wattage for a week. `maxDailyKwh` is a physical bound on what a
+      // single branch of this building's sub-panel can consume in a day. Prefer the integrated
+      // value when the device's figure breaches it; omit the field entirely when both do, rather
+      // than coerce to 0 — "no data" and "zero watts" are different facts and the UI renders them
+      // differently. Absent bound means no rejection, so a site that has not declared one behaves
+      // exactly as before.
+      if (maxDailyKwh !== undefined && eToday !== undefined && eToday > maxDailyKwh) {
+        eToday = e !== undefined && e <= maxDailyKwh ? e : undefined;
+      }
       // Absent readings are omitted, never coerced to 0 — "no data" and "zero watts"
       // are different facts and the UI renders them differently.
       if (v !== undefined) r.voltage = v;

@@ -409,7 +409,7 @@ function snapshot() {
 
 // The site's offset, same as the generated flow passes — the mock is contract-identical to
 // the real bridge by construction, and a timestamp is part of the contract.
-const latest = () => buildLatest(snapshot(), DEVICE_REGISTRY, PHASE_MAP, Date.now(), SITE.utc_offset_minutes, STALE_AFTER_MS_BY_CLASS);
+const latest = () => buildLatest(snapshot(), DEVICE_REGISTRY, PHASE_MAP, Date.now(), SITE.utc_offset_minutes, STALE_AFTER_MS_BY_CLASS, SITE.max_branch_kwh_per_day);
 
 // ---------------------------------------------------------------------------
 // history ring buffer — same semantics as the Node-RED one
