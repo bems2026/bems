@@ -44,6 +44,7 @@
     "fix-health:pi": "node node-red-bridge/fix-health-wiring.mjs",
     "fix-dp-parsers:pi": "node node-red-bridge/fix-dp-parsers.mjs",
     "backoff:pi": "node node-red-bridge/apply-discovery-backoff.mjs",
+    "stale-address:pi": "node node-red-bridge/apply-stale-address.mjs",
     "enroll:pi": "node node-red-bridge/enroll-device.mjs",
     "remove:pi": "node node-red-bridge/remove-device.mjs",
     "quiesce:pi": "node node-red-bridge/quiesce-dead-nodes.mjs",
