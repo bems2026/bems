@@ -81,6 +81,9 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, st
   const energy = snap.energy || { meters: {}, totals: {} };
   const outlet = snap.outlet || { meters: {}, state: {} };
   const lights = (snap.switch || {}).state || {};
+  // `lights` above is what this system last ASKED FOR; this is what the relay last SAID. Both are
+  // needed, in two places each, so they are resolved together — see the switch state block below.
+  const switchHealth = (snap.switch || {}).health || {};
   const ac = (snap.aircon || {}).state || {};
   const outletStatus = outlet.state.status || {};
   const out = [];
@@ -220,8 +223,7 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, st
       // DOES exist — `global.lightStatus`, populated by the Lighting Logic Hub — it was
       // just never read here before. `state_key` is `L1`..`L7`; `lightStatus`'s keys are
       // the bare numbers `1`..`7`.
-      const health = (snap.switch || {}).health || {};
-      const entry = health[d.state_key.slice(1)];
+      const entry = switchHealth[d.state_key.slice(1)];
       // No health entry at all (older flow, or a mock that doesn't simulate it) — fall
       // back to the previous always-online assumption rather than invent a false negative.
       r.online = entry ? entry.conn === 'CONNECTED' : true;
@@ -262,7 +264,30 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, st
 
     // --- switchable state ---------------------------------------------------
     if (d.class === 'switch') {
-      r.state = bool(lights[d.state_key]) ? 'on' : 'off';
+      /**
+       * WHAT THE RELAY IS DOING, not what was last asked of it — FI-023.
+       *
+       * `lights` is `bems_lights_state`, which the flow's `Lighting Logic Hub` writes from an
+       * incoming COMMAND before forwarding it to the device. Nothing ever writes back what the
+       * relay did, so that map is a record of intent, and reading it as state means the app can
+       * never notice a light switched at the wall, by its own schedule, or by a command that
+       * silently failed.
+       *
+       * It did not notice. On 2026-09-03 the dashboard showed all seven office lights off while
+       * the devices reported all seven on — confirmed independently by the vendor cloud, which
+       * reaches them over the internet rather than the local subnet.
+       *
+       * The measured value was already here: `Collect status` maintains `lightStatus[<n>].on`
+       * from `dps['1']`, and this function was reading only `.conn` from that same entry.
+       *
+       * Preferred, not required. A flow or a mock with no lightStatus at all falls back to the
+       * commanded value, which is what keeps this from being a regression for them — and the
+       * check is `typeof === 'boolean'` rather than a truthiness test, because flow context
+       * survives restarts on disk and a half-written entry must read as absent, not as ON.
+       */
+      const measured = switchHealth[d.state_key.slice(1)];
+      const observed = measured && typeof measured.on === 'boolean' ? measured.on : undefined;
+      r.state = (observed !== undefined ? observed : bool(lights[d.state_key])) ? 'on' : 'off';
     } else if (d.class === 'outlet_dual') {
       const s1 = bool(outletStatus[d.sockets[0]]);
       const s2 = bool(outletStatus[d.sockets[1]]);

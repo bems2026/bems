@@ -1462,22 +1462,33 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       vendor register that is correct until it is not, trusted as an absolute with nothing
       independent to check it against. The integrated value is the second opinion this system
       already had and was not using.
-- [ ] **FI-023** `state` for a switch is the COMMANDED value, not the measured one, and the two
-      currently disagree on all seven lights. `buildLatest` derives it from `bems_lights_state`,
-      which the flow's `Lighting Logic Hub` sets from an incoming *command* before forwarding it
-      to the device — nothing ever writes back what the relay did. The measured state has been
-      sitting unused in `global.lightStatus[n].on` (from `Collect status`, `dps['1']`) the whole
-      time; `buildLatest` reads only `.conn` from that entry.
-      Surfaced by EX-157: on 2026-09-03 the app showed all seven lights **off** while the devices
-      and the vendor cloud independently reported all seven **on**. So the primary display of a
-      building energy management system was showing seven circuits as off while they were on.
-      The fix is to prefer `lightStatus[n].on` and fall back to the commanded value — small, but
-      it changes a live control surface: Overview counts would move, and
-      `commandStore.reconcile` currently confirms a light command by comparing against the value
-      that command itself wrote, so "confirmed" has never meant anything for lights. Making it
-      real also means a light that does not report within the 6 s grace window would show as
-      failed when it worked. Prove it on one light before trusting it
-
+- [x] **FI-023** A switch's `state` is what the RELAY is doing, not what was last asked of it.
+      `buildLatest` derived it from `bems_lights_state`, which the flow's `Lighting Logic Hub`
+      writes from an incoming COMMAND before forwarding it to the device — a record of intent,
+      never corrected by the hardware. So the app could not notice a light switched at the wall,
+      by its own schedule, or by a command that silently failed.
+      It did not notice: on 2026-09-03 the dashboard showed all seven office lights off while the
+      devices reported all seven on, confirmed independently by the vendor cloud, which reaches
+      them over the internet rather than the local subnet. The primary display of a building
+      energy management system was reporting seven circuits as off while they were on.
+      The measured value was already present — `Collect status` has always maintained
+      `lightStatus[<n>].on` from `dps['1']`, and this function read only `.conn` from that same
+      entry. It is now preferred, with the commanded value kept as the fallback so a flow or mock
+      carrying no lightStatus is unaffected, and the check is `typeof === 'boolean'` rather than a
+      truthiness test because flow context survives restarts on disk and a half-written entry must
+      read as absent rather than as ON. An offline switch reports its last MEASURED value:
+      stale-but-real beats fresh-but-imagined, and `online: false` is what says how much to trust
+      it. Both halves confirmed to fail the right tests when neutered —
+      `shared/buildLatest.mjs`, `test/switch-measured-state.test.mjs` (7 tests).
+      **NOT YET DEPLOYED.** `buildLatest` is inlined into the generated flow, so this needs
+      `build:flow` + `deploy:pi --force --apply`, and it changes what command confirmation MEANS:
+      `commandStore.reconcile` previously compared against the value the command itself had just
+      written, so a light command confirmed instantly and "confirmed" meant nothing. It now waits
+      for the device, which is correct — and means a light that does not report inside the 6 s
+      `COMMAND_CONFIRM_MS` window would show as failed when it worked. Lights push on change and
+      are now polled every 60 s (EX-157), so that should be comfortable, but it is unproven: at
+      the time of writing 0 of 7 lights are reachable (RM-013), so the first light command after
+      this deploys is the one to watch
 ### Data & Supabase
 
 - [x] **EX-080** Base schema: devices, readings, building_totals, ingestion_health — `supabase/schema.sql`
