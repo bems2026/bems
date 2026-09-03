@@ -104,26 +104,59 @@ const CLOUD_DISPATCH = buildCloudDispatch(process.env);
 const DISPATCH_POLICY = SITE.policy?.dispatch ?? 'local-first';
 
 /**
+ * The readings document, fetched at most once at a time.
+ *
+ * NOT A CACHE, and the distinction is the whole point. There is no TTL and nothing is retained
+ * after the request settles: this holds only the promise for a fetch that is CURRENTLY IN
+ * FLIGHT, so a caller either starts a new request or joins one that has not finished yet. The
+ * next command after it settles fetches afresh.
+ *
+ * Why it exists: the Control page's "all off" fires one command per socket with no await and no
+ * concurrency cap — fourteen for the outlets, seven for the lights — and each one independently
+ * asked the bridge for the whole document. One button therefore put fourteen simultaneous HTTP
+ * requests through the same Node-RED event loop that services the tuya nodes. Measured
+ * 2026-09-03 on a fleet already flapping at the access point, which is to say the app was
+ * amplifying the fault it was being used to diagnose.
+ */
+let readingsInFlight = null;
+
+function fetchReadingsOnce() {
+  if (readingsInFlight) return readingsInFlight;
+  readingsInFlight = (async () => {
+    try {
+      const res = await fetch(`http://${BRIDGE_HOST}:${BRIDGE_PORT}/api/readings/latest`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) return null;
+      const rows = await res.json();
+      return Array.isArray(rows) ? rows : null;
+    } catch {
+      return null;
+    } finally {
+      // Cleared in `finally` so a failed fetch cannot wedge every later command onto a rejected
+      // promise — the next caller starts a fresh request rather than inheriting this one's fate.
+      readingsInFlight = null;
+    }
+  })();
+  return readingsInFlight;
+}
+
+/**
  * The bridge own view of whether a device is reachable, used to stop a local dispatch claiming
  * success it cannot have had. Returns `true`/`false`, or `null` when the bridge could not be
  * asked — see `dispatchCommand`, which treats `null` as "attempt local anyway" on purpose.
  *
- * Deliberately unmemoised. This is read on a user-initiated command, not in a loop, and the
- * whole point is that it is current: a cached "online" from thirty seconds ago is the same
- * fabrication the HTTP 2xx was.
+ * Deliberately unmemoised ACROSS TIME. This is read on a user-initiated command and the whole
+ * point is that it is current: a cached "online" from thirty seconds ago is the same fabrication
+ * the HTTP 2xx was. Sharing one in-flight request between commands issued in the same instant
+ * gives up nothing there — that request would have been made anyway, and every one of those
+ * callers would have accepted its answer.
  */
 async function readDeviceOnline(device) {
-  try {
-    const res = await fetch(`http://${BRIDGE_HOST}:${BRIDGE_PORT}/api/readings/latest`, {
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) return null;
-    const rows = await res.json();
-    const row = Array.isArray(rows) ? rows.find((r) => r.device_id === device.id) : null;
-    return row ? row.online === true : null;
-  } catch {
-    return null;
-  }
+  const rows = await fetchReadingsOnce();
+  if (!rows) return null;
+  const row = rows.find((r) => r.device_id === device.id);
+  return row ? row.online === true : null;
 }
 
 const PROXY_PORT = Number(process.env.PROXY_PORT) || 8080;

@@ -1462,6 +1462,39 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       vendor register that is correct until it is not, trusted as an absolute with nothing
       independent to check it against. The integrated value is the second opinion this system
       already had and was not using.
+- [x] **EX-159** Concurrent commands share one readings fetch instead of each making their own.
+      The Control page's master actions fire one command per socket with no await and no
+      concurrency cap — fourteen for the outlets, seven for the lights — and `readDeviceOnline`
+      independently pulled the **whole** `/api/readings/latest` document before each dispatch. One
+      button therefore put fourteen simultaneous HTTP requests through the same Node-RED event
+      loop that services the tuya nodes. Found 2026-09-03 while diagnosing RM-046, on a fleet
+      already flapping at the access point: the app was amplifying the fault it was being used to
+      diagnose, and the operator's report was "some connect for a while, then after a few tests
+      they drop".
+      **Coalescing, not caching**, and the distinction is the whole point. `readDeviceOnline`'s
+      docblock was right that a cached online flag from thirty seconds ago is the same fabrication
+      the HTTP 2xx was, so no TTL was introduced and nothing is retained once a request settles.
+      Only a currently-in-flight promise is shared, and it is cleared in `finally` so a failed
+      fetch cannot wedge every later command onto a rejected promise. A second test asserts the
+      freshness half directly — a device taken offline **between** two sequential commands is
+      still seen, which a cache would have missed — and it passed both before and after the
+      change, which is what makes it a guard rather than a restatement of the fix.
+      `server/proxy.mjs`, `server/proxy.test.mjs` (2 tests, 48 in the file)
+- [ ] **FI-024** The outlet master actions send both sockets of one physical device at the same
+      instant. `OutletPlanCard`'s `allOn`/`allOff` do `send(d.id, 1, …)` then `send(d.id, 2, …)`
+      back to back with no await, and both sockets are the **same** Tuya device — which accepts
+      one inbound TCP session at a time (`docs/adr-002-device-recovery-path.md`, and the whole
+      reason `sessionCollapsePlan.mjs` exists). Seven devices, fourteen commands, two racing at
+      each.
+      Not fixed in the same pass as EX-159 deliberately. EX-159 removed the amplification that
+      was measurably hurting the bridge — fourteen readings fetches became one — with no change
+      to control-surface timing. This one cannot be fixed without changing how bulk commands are
+      SEQUENCED on a live control surface, which interacts with `commandStore`'s optimistic
+      entries, the `COMMAND_CONFIRM_MS` window and the 15 s failed-sweep. A global concurrency cap
+      in `commandStore.send` is the obvious move and is the one most likely to break those
+      timings quietly. Worth doing, worth designing first.
+      **Not yet observed to cause a failure** — recorded because the constraint is documented and
+      the code plainly violates it, not because a dropped command was traced to it.
 - [x] **FI-023** A switch's `state` is what the RELAY is doing, not what was last asked of it.
       `buildLatest` derived it from `bems_lights_state`, which the flow's `Lighting Logic Hub`
       writes from an incoming COMMAND before forwarding it to the device — a record of intent,

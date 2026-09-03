@@ -774,6 +774,66 @@ test('a device the bridge reports offline is never sent a local command, nor aud
   }
 });
 
+/**
+ * The Control page's "all off" fires one command per socket with no await and no concurrency
+ * cap — fourteen for the outlets, seven for the lights. Each one independently asked the bridge
+ * for the WHOLE readings document before dispatching, so a single button put fourteen
+ * simultaneous HTTP requests through the same Node-RED event loop that services the tuya nodes.
+ *
+ * Measured 2026-09-03, on a fleet that was already flapping at the access point: the app was
+ * amplifying the problem it was being used to diagnose. The operator's report was "some connect
+ * for a while, then after a few tests they drop".
+ *
+ * The fix is COALESCING, not caching. The docblock on `readDeviceOnline` is right that a cached
+ * online flag from thirty seconds ago is the same fabrication the HTTP 2xx was, so nothing here
+ * introduces a time window: concurrent callers share the one request that is already in flight
+ * and would have been made anyway, and the next command after it settles fetches afresh.
+ */
+test('concurrent commands share one readings fetch instead of each making their own', async () => {
+  const { proxyUrl, lightState, cleanup } = await setupDispatch();
+  try {
+    const ids = ['l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'l7'];
+    const results = await Promise.all(ids.map((device_id) => fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id, action: 'off' }),
+    })));
+
+    // Every command still has to succeed on its own terms — coalescing may not drop one.
+    for (const r of results) assert.equal(r.status, 202);
+    assert.equal(lightState.requests.length, ids.length, 'every command must still reach the device');
+
+    assert.equal(lightState.healthReads > 0, true, 'the proxy must still ask before dispatching');
+    assert.ok(
+      lightState.healthReads < ids.length,
+      `seven concurrent commands must not make seven readings fetches; made ${lightState.healthReads}`,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test('a later command does not reuse an earlier answer, so freshness is not traded away', async () => {
+  const { proxyUrl, lightState, cleanup } = await setupDispatch();
+  try {
+    const send = (device_id) => fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id, action: 'off' }),
+    });
+    await send('l1');
+    const after = lightState.healthReads;
+    // The device goes offline between the two commands. A cache would miss this; coalescing
+    // cannot, because nothing is in flight by the time the second command arrives.
+    lightState.offline.add('l2');
+    const res = await send('l2');
+    assert.ok(lightState.healthReads > after, 'a sequential command must ask again');
+    assert.notEqual(res.status, 202, 'and must see the device is now offline');
+  } finally {
+    cleanup();
+  }
+});
+
 test('dispatch open + switch + downstream failure: 502 bridge_rejected, audit row says failed not dispatched', async () => {
   const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch();
   try {
