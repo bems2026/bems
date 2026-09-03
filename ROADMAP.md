@@ -1515,7 +1515,28 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       neuters — no cap, no reset, no send-on-change guard, unscoped status node — were each
       confirmed to fail the right tests before any of this was believed.
       `node-red-bridge/discoveryBackoffPlan.mjs`, `node-red-bridge/apply-discovery-backoff.mjs`,
-      `test/discovery-backoff.test.mjs` (21 tests)
+      `test/discovery-backoff.test.mjs` (23 tests)
+      **APPLIED LIVE 2026-09-03**, flows.json backed up first. 285 nodes (+8), `findTimeout` and
+      `tuyaVersion` byte-identical on all 19 tuya nodes afterwards, all six services up, the four
+      meters undisturbed. Measured per device rather than in aggregate, because aggregate is what
+      hid the first attempt: `CO1`'s successive `find()` timeouts went **11 s, 11 s, 12 s, 18 s,
+      42 s, 70 s** — exactly `findTimeout` plus a doubling retry, capped. Fleet-wide the journal
+      fell from **210-257 lines a minute to 42**, an 83% reduction, and load average from 3.07 to
+      1.53.
+      **The first deploy changed nothing, and said so nowhere.** The controller read the reporting
+      node from `msg.source`; Node-RED's runtime puts it at **`msg.status.source`**
+      (`@node-red/runtime/lib/flows/Flow.js`, `handleStatus`). The id never matched, every output
+      was null, no error was raised, and the retry interval stayed at 11 s. The tests passed
+      because the harness built the message the same wrong way — executing the shipped source
+      rather than pattern-matching it is worth nothing when the INPUT is invented, which is a
+      sharper version of the lesson `arrivalTracker.mjs` records. Two tests now pin the shape, and
+      reverting the read fails 15 of 23.
+      **One measured surprise, harmless:** the vendor node emits **two** red statuses per failed
+      cycle (`setStatusOnError` then `setStatusDisconnected`, both calling `node.status`), so the
+      schedule advances about twice as fast as the one-red-per-cycle design assumed — reaching the
+      cap in roughly four cycles instead of seven. The cap bounds it and a green still resets it
+      fully, so this is faster quiet rather than a defect; worth knowing before anyone retunes the
+      constants.
 - [ ] **FI-025** A tuya node that has cached a device address never returns to broadcast
       discovery, so it hammers an address that has stopped existing. Measured 2026-09-03 after the
       AP renumbered its LAN (RM-046): **325 `EHOSTUNREACH` to one address and 323 to another**, in
