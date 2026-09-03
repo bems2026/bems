@@ -2523,7 +2523,26 @@ fall back to it).
       between two `tuya:devices` runs minutes apart. Node-RED cannot cause a device to go offline
       to Tuya. The Pi itself is not the flapping party either — `NetworkManager` logged zero
       disconnects, signal 86 on the correct 2.4 GHz SSID, channel 11, and no competing AP visible.
-      **The lead worth following first:** the AP renumbered its LAN onto a different private /24
+      **THE CAUSE IS NOW MEASURED, 2026-09-03 — `npm run rf:survey`.** The device SSID is on
+      **channel 11 with a foreign AP on channel 10 at signal 82 against its own 87**, 17 MHz of
+      overlap. Adjacent-channel interference is the destructive kind: two APs on the SAME channel
+      hear each other and take turns, but two on 10 and 11 overlap in frequency and cannot decode
+      each other, so neither defers and they corrupt each other's frames.
+      It explains **which** devices survive, which is what makes this testable rather than
+      plausible. A strong client near the AP rides it out and a weak one does not: the Pi is at
+      about −33 dBm and has never dropped, the meters in the panel stayed up, and the switches and
+      outlets spread around the room are exactly the ones that churned. It also explains why a
+      Node-RED restart cannot help and why the vendor cloud sees the same flapping.
+      Scored across the three non-overlapping channels: **ch 1 = 31, ch 11 = 93, ch 6 = 118**.
+      **The action is to move the AP to channel 1.** Note that channel 6 is *worse* than the
+      channel in use — channels 4 and 5 carry strong APs that bite deep into it — so "just change
+      the channel" is not enough guidance and picking 6 would make things worse.
+      A subnet census the same day found only **7 live hosts on the whole /24**: the router and six
+      clients, out of about twenty expected. So this is not an AP at its client ceiling with
+      everything associated; it is most of the fleet unable to hold an association at all.
+      **Still needs the router's admin page**, and none of it is visible from the Pi: the channel
+      change itself, the maximum-associated-clients setting, and the DHCP pool.
+      **The other lead, still open:** the AP renumbered its LAN onto a different private /24
       across the power cycle. A router does not renumber itself for no reason,
       and whatever did it is the best candidate for what else changed. Check its **maximum
       associated clients** and DHCP pool: eighteen Tuya devices plus the Pi, the kiosk and phones
