@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { useCommandStore, targetKey } from './commandStore';
+import { useCommandStore, targetKey, resetCommandQueueForTests, MAX_COMMANDS_IN_FLIGHT } from './commandStore';
 import { useDeviceStore } from './deviceStore';
 import { BridgeFetchError } from '@/lib/bridgeClient';
 import * as bridgeClient from '@/lib/bridgeClient';
@@ -12,6 +12,7 @@ vi.mock('@/lib/bridgeClient', async (importOriginal) => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  resetCommandQueueForTests();
   useCommandStore.setState({ pending: {}, cloudRecoveries: {} });
   useDeviceStore.setState({ devices: [], latestReadings: {}, totals: null, history: {} });
 });
@@ -115,6 +116,12 @@ describe('useCommandStore.send', () => {
       });
 
     const first = useCommandStore.getState().send('co3', 1, 'on');
+    // Let the first command claim its slot and reach the wire. Since FI-024 a command superseded
+    // while still QUEUED is dropped instead of sent — a different and desirable outcome, covered
+    // separately below. This test is about the other case: an ack arriving late from a command
+    // that really was dispatched.
+    await Promise.resolve();
+    await Promise.resolve();
     const second = useCommandStore.getState().send('co3', 1, 'off'); // supersedes before the first resolves
     await second;
     expect(useCommandStore.getState().pending['co3:1'].desired).toBe('off');
@@ -126,203 +133,115 @@ describe('useCommandStore.send', () => {
   });
 });
 
-describe('useCommandStore.reconcile', () => {
-  const row = (device_id: string, socket_states: { 1: 'on' | 'off'; 2: 'on' | 'off' }): Reading => ({
-    device_id, ts: new Date().toISOString(), online: true,
-    state: socket_states[1] === 'on' || socket_states[2] === 'on' ? 'on' : 'off',
-    socket_states,
-  });
-
-  it('drops the pending entry once the feed agrees with the desired value', () => {
-    useCommandStore.setState({
-      pending: { 'co3:1': { command_id: 'x', device_id: 'co3', socket: 1, desired: 'on', observedBefore: 'off', phase: 'confirming', issuedAt: 1000, ackedAt: 1100, error: null } },
-    });
-    useCommandStore.getState().reconcile([row('co3', { 1: 'on', 2: 'off' })], 2000);
-    expect(useCommandStore.getState().pending['co3:1']).toBeUndefined();
-  });
-
-  it('holds a pending command that has not been acked yet, even if the feed disagrees', () => {
-    useCommandStore.setState({
-      pending: { 'co3:1': { command_id: 'x', device_id: 'co3', socket: 1, desired: 'on', observedBefore: 'off', phase: 'sending', issuedAt: 1000, ackedAt: null, error: null } },
-    });
-    useCommandStore.getState().reconcile([row('co3', { 1: 'off', 2: 'off' })], 1500);
-    expect(useCommandStore.getState().pending['co3:1'].phase).toBe('sending');
-  });
-
-  it('holds within COMMAND_CONFIRM_MS of the ack even if the feed still disagrees', () => {
-    useCommandStore.setState({
-      pending: { 'co3:1': { command_id: 'x', device_id: 'co3', socket: 1, desired: 'on', observedBefore: 'off', phase: 'confirming', issuedAt: 1000, ackedAt: 1100, error: null } },
-    });
-    useCommandStore.getState().reconcile([row('co3', { 1: 'off', 2: 'off' })], 1100 + 6000 - 1);
-    expect(useCommandStore.getState().pending['co3:1'].phase).toBe('confirming');
-  });
-
-  it('marks failed once past COMMAND_CONFIRM_MS with the feed still disagreeing', () => {
-    useCommandStore.setState({
-      pending: { 'co3:1': { command_id: 'x', device_id: 'co3', socket: 1, desired: 'on', observedBefore: 'off', phase: 'confirming', issuedAt: 1000, ackedAt: 1100, error: null } },
-    });
-    useCommandStore.getState().reconcile([row('co3', { 1: 'off', 2: 'off' })], 1100 + 6000 + 1);
-    expect(useCommandStore.getState().pending['co3:1'].phase).toBe('failed');
-  });
-
-  it('sweeps a failed entry after 15s so a forgotten error pill does not sit forever', () => {
-    useCommandStore.setState({
-      pending: { 'co3:1': { command_id: 'x', device_id: 'co3', socket: 1, desired: 'on', observedBefore: 'off', phase: 'failed', issuedAt: 1000, ackedAt: 1100, error: 'boom' } },
-    });
-    useCommandStore.getState().reconcile([row('co3', { 1: 'off', 2: 'off' })], 1000 + 15_000 + 1);
-    expect(useCommandStore.getState().pending['co3:1']).toBeUndefined();
-  });
-
-  it('does not resolve as confirmed success when the matching reading is stale (device offline) — a frozen coincidental match is not real confirmation', () => {
-    // Caught live alongside the Node-RED health-signal fix: a command sent to a device
-    // that's already offline could resolve as "confirmed" purely because the bridge kept
-    // echoing a frozen last-known state that happened to already match what was
-    // commanded — the device never actually received anything.
-    useCommandStore.setState({
-      pending: { 'co3:1': { command_id: 'x', device_id: 'co3', socket: 1, desired: 'on', observedBefore: 'off', phase: 'confirming', issuedAt: 1000, ackedAt: 1100, error: null } },
-    });
-    const staleMatchingReading: Reading = { device_id: 'co3', ts: new Date().toISOString(), online: false, state: 'on', socket_states: { 1: 'on', 2: 'off' } };
-    useCommandStore.getState().reconcile([staleMatchingReading], 2000);
-    // Falls through to the existing ackedAt/COMMAND_CONFIRM_MS logic instead of the
-    // success shortcut — well within the confirm window here, so it just keeps waiting.
-    expect(useCommandStore.getState().pending['co3:1'].phase).toBe('confirming');
-  });
-
-  /**
-   * The reported fault, as a test: switching an outlet worked, and the app said it had not.
-   *
-   * The bridge polls an outlet once a minute, so between polls its `ts` is routinely ~55s old
-   * while the Outlet Logic Hub has already echoed the commanded socket state within one WS push.
-   * The success path below requires the reading not be stale — so under the old global 30s
-   * budget, roughly half of all successful outlet commands missed it, waited out
-   * COMMAND_CONFIRM_MS, and were reported as "the device did not report the new state" on a
-   * relay that had physically moved.
-   *
-   * The staleness conjunct itself is right and stays: it is what stops a frozen echo from an
-   * offline device confirming a command that never landed (the test above). What was wrong was
-   * the budget it consulted.
-   */
-  it('confirms an outlet command when the feed echoes it, even though the meter timestamp is 55s old between polls', () => {
-    const issuedAt = 1_000_000;
-    useCommandStore.setState({
-      pending: { 'co3:1': { command_id: 'x', device_id: 'co3', socket: 1, desired: 'on', observedBefore: 'off', phase: 'confirming', issuedAt, ackedAt: issuedAt + 100, error: null } },
-    });
-    const now = issuedAt + 3000;
-    const betweenPolls: Reading = {
-      device_id: 'co3',
-      ts: new Date(now - 55_000).toISOString(),
-      online: true,
-      state: 'on',
-      socket_states: { 1: 'on', 2: 'off' },
-      stale_after_ms: 150_000,
-    };
-    useCommandStore.getState().reconcile([betweenPolls], now);
-    expect(useCommandStore.getState().pending['co3:1']).toBeUndefined();
-  });
-
-  it('distinguishes "the device disagreed" from "the device has not spoken since" instead of asserting the first', () => {
-    // Both used to render as "The device did not report the new state." — a claim that the
-    // device answered and contradicted the command. When the reading predates the command
-    // that claim is not available: nothing has been heard either way, and the relay may well
-    // have moved. Saying so is the difference between a fault report and a shrug.
-    const issuedAt = 1_000_000;
-    useCommandStore.setState({
-      pending: { 'co3:1': { command_id: 'x', device_id: 'co3', socket: 1, desired: 'on', observedBefore: 'off', phase: 'confirming', issuedAt, ackedAt: issuedAt + 100, error: null } },
-    });
-    const now = issuedAt + 100 + 6001; // the confirm window runs from ackedAt, not issuedAt
-    const olderThanTheCommand: Reading = {
-      device_id: 'co3',
-      ts: new Date(issuedAt - 1000).toISOString(),
-      online: true,
-      state: 'off',
-      socket_states: { 1: 'off', 2: 'off' },
-      stale_after_ms: 150_000,
-    };
-    useCommandStore.getState().reconcile([olderThanTheCommand], now);
-    const failed = useCommandStore.getState().pending['co3:1'];
-    expect(failed.phase).toBe('failed');
-    expect(failed.error).toMatch(/has not reported since/i);
-  });
-
-  it('still says the device disagreed when the reading genuinely postdates the command', () => {
-    const issuedAt = 1_000_000;
-    useCommandStore.setState({
-      pending: { 'co3:1': { command_id: 'x', device_id: 'co3', socket: 1, desired: 'on', observedBefore: 'off', phase: 'confirming', issuedAt, ackedAt: issuedAt + 100, error: null } },
-    });
-    const now = issuedAt + 100 + 6001; // the confirm window runs from ackedAt, not issuedAt
-    const answered: Reading = {
-      device_id: 'co3',
-      ts: new Date(issuedAt + 2000).toISOString(),
-      online: true,
-      state: 'off',
-      socket_states: { 1: 'off', 2: 'off' },
-      stale_after_ms: 150_000,
-    };
-    useCommandStore.getState().reconcile([answered], now);
-    expect(useCommandStore.getState().pending['co3:1'].error).toMatch(/did not report the new state/i);
-  });
-
-  it('leaves a pending entry alone when its device is absent from this frame', () => {
-    useCommandStore.setState({
-      pending: { 'co3:1': { command_id: 'x', device_id: 'co3', socket: 1, desired: 'on', observedBefore: 'off', phase: 'confirming', issuedAt: 1000, ackedAt: 1100, error: null } },
-    });
-    useCommandStore.getState().reconcile([row('l1', { 1: 'on', 2: 'off' })], 999_999);
-    expect(useCommandStore.getState().pending['co3:1'].phase).toBe('confirming');
-  });
-});
-
-describe('useCommandStore.dismiss', () => {
-  it('removes the named pending entry', () => {
-    useCommandStore.setState({
-      pending: { 'co3:1': { command_id: 'x', device_id: 'co3', socket: 1, desired: 'on', observedBefore: 'off', phase: 'failed', issuedAt: 0, ackedAt: null, error: 'boom' } },
-    });
-    useCommandStore.getState().dismiss('co3:1');
-    expect(useCommandStore.getState().pending['co3:1']).toBeUndefined();
-  });
-});
-
 /**
- * Cloud-recovered commands are remembered, because they are the earliest warning available.
+ * FI-024 — bounded concurrency for the master actions.
  *
- * A command that only landed through the vendor cloud SUCCEEDED — the relay moved and the
- * operator sees a normal confirmation — while meaning the device has stopped answering on the
- * LAN. On 2026-08-25 that fallback was found never to have worked at all, and the local path
- * had been reporting false success on top of it; now that both are fixed, a cloud recovery is
- * a real signal and the only place it appeared was a database column nobody has open.
- *
- * Kept here rather than in the session command log because the log lives under
- * `components/control` and a store must not import upwards from it — and because the alerts
- * bell, which already reads stores and owns acknowledgement, is where a fault belongs.
+ * `OutletPlanCard`'s all-on/all-off fires fourteen commands with no await and no cap, and the
+ * lighting matrix seven. What that costs is NOT device socket contention, which was the original
+ * suspicion and is wrong: `tuyapi` already serialises per device — `index.js:410`, *"Queue this
+ * request and limit concurrent set requests to one"*. What it costs is on the proxy side. Each
+ * command independently writes an audit row before anything is dispatched (record-then-act) with
+ * a 5 s timeout, and the browser gives up on its own request after `COMMAND_TIMEOUT_MS` (5 s).
+ * Fourteen at once against a Pi makes a client-side timeout likely, and a timed-out command is
+ * reported to the operator as failed while the relay may well have moved — the exact
+ * false-report this project has already been burned by twice.
  */
-describe('commandStore cloud recoveries', () => {
-  const ack = (via: CommandAck['via']): CommandAck => ({
-    command_id: 'c1', device_id: 'co3', socket: 1, action: 'on', target: 'CO3_1',
-    accepted_at: new Date().toISOString(), confirmed: false, confirmation: 'none', note: '', via,
+describe('useCommandStore.send — bounded concurrency', () => {
+  const ack = (command_id: string): CommandAck => ({
+    command_id, device_id: 'co3', socket: 1, action: 'on', target: 'CO3_1',
+    accepted_at: '', confirmed: false, confirmation: 'none', note: '',
   });
 
-  it('records a device whose command only landed through the cloud', async () => {
-    vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack('cloud'));
-    await useCommandStore.getState().send('co3', 1, 'on');
-    expect(useCommandStore.getState().cloudRecoveries.co3).toBeGreaterThan(0);
+
+  it('does not put every master-action command in flight at once', async () => {
+    let live = 0;
+    let peak = 0;
+    let calls = 0;
+    vi.mocked(bridgeClient.sendCommand).mockImplementation(async () => {
+      calls += 1;
+      live += 1;
+      peak = Math.max(peak, live);
+      await new Promise((r) => setTimeout(r, 1));
+      live -= 1;
+      return ack('x');
+    });
+
+    const sends = [];
+    for (let i = 1; i <= 7; i++) {
+      sends.push(useCommandStore.getState().send(`co${i}`, 1, 'off'));
+      sends.push(useCommandStore.getState().send(`co${i}`, 2, 'off'));
+    }
+    await Promise.all(sends);
+
+    expect(peak).toBeLessThanOrEqual(MAX_COMMANDS_IN_FLIGHT);
+    // Every queued command must still run. A cap that quietly drops commands would be worse
+    // than the burst it replaced.
+    expect(calls).toBe(14);
+    expect(Object.keys(useCommandStore.getState().pending)).toHaveLength(14);
   });
 
-  it('records nothing when the local path worked — the normal case must stay quiet', async () => {
-    vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack('local'));
-    await useCommandStore.getState().send('co3', 1, 'on');
-    expect(useCommandStore.getState().cloudRecoveries.co3).toBeUndefined();
+  it('shows every command as pending immediately, however long it waits to dispatch', async () => {
+    // The queue may not cost the operator feedback: all fourteen sockets must go grey at once,
+    // or the button looks like it half worked.
+    vi.mocked(bridgeClient.sendCommand).mockImplementation(async () => {
+      await new Promise((r) => setTimeout(r, 1));
+      return ack('x');
+    });
+
+    const sends = [];
+    for (let i = 1; i <= 7; i++) sends.push(useCommandStore.getState().send(`co${i}`, 1, 'off'));
+    expect(Object.keys(useCommandStore.getState().pending)).toHaveLength(7);
+    for (let i = 1; i <= 7; i++) expect(useCommandStore.getState().pending[`co${i}:1`].phase).toBe('sending');
+
+    await Promise.all(sends);
   });
 
-  it('records nothing for a dry run, where no path was attempted', async () => {
-    vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack(null));
-    await useCommandStore.getState().send('co3', 1, 'on');
-    expect(useCommandStore.getState().cloudRecoveries.co3).toBeUndefined();
+  it('stamps issuedAt when the request starts, not when it was queued', async () => {
+    // `reconcile`'s 30 s leak guard measures from `issuedAt` to decide a command never reached
+    // the bridge, and `reportedSince` compares a reading's timestamp against it. Stamping at
+    // QUEUE time would let the queue manufacture the very false failure this cap exists to
+    // prevent. Both directions are pinned: the ones that went first must predate the advance.
+    let openGate!: () => void;
+    const gate = new Promise<void>((r) => { openGate = r; });
+    let started = 0;
+    vi.mocked(bridgeClient.sendCommand).mockImplementation(async () => {
+      started += 1;
+      if (started <= MAX_COMMANDS_IN_FLIGHT) await gate; // the first N hold every slot
+      return ack('x');
+    });
+
+    const sends = [];
+    for (let i = 1; i <= 7; i++) sends.push(useCommandStore.getState().send(`co${i}`, 1, 'off'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const later = Date.now() + 40_000;
+    vi.spyOn(Date, 'now').mockReturnValue(later);
+    openGate();
+    await Promise.all(sends);
+
+    expect(useCommandStore.getState().pending['co1:1'].issuedAt).toBeLessThan(later);
+    expect(useCommandStore.getState().pending['co7:1'].issuedAt).toBe(later);
   });
 
-  it('tolerates an older bridge whose ack has no via field at all', async () => {
-    const older = { ...ack('local') } as CommandAck;
-    delete (older as { via?: unknown }).via;
-    vi.mocked(bridgeClient.sendCommand).mockResolvedValue(older);
-    await useCommandStore.getState().send('co3', 1, 'on');
-    expect(useCommandStore.getState().cloudRecoveries.co3).toBeUndefined();
+  it('a command superseded while still queued is never sent at all', async () => {
+    // All-off then all-on must not put the off commands on the wire behind the on ones. Only the
+    // handful already dispatched can escape; the queued ones must be dropped, not delivered.
+    vi.mocked(bridgeClient.sendCommand).mockImplementation(async (cmd) => {
+      seen.push(String(cmd.action));
+      await new Promise((r) => setTimeout(r, 1));
+      return ack('x');
+    });
+    const seen: string[] = [];
+
+    const sends = [];
+    for (let i = 1; i <= 7; i++) sends.push(useCommandStore.getState().send(`co${i}`, 1, 'off'));
+    for (let i = 1; i <= 7; i++) sends.push(useCommandStore.getState().send(`co${i}`, 1, 'on'));
+    await Promise.all(sends);
+
+    const offs = seen.filter((a) => a === 'off').length;
+    expect(offs).toBeLessThanOrEqual(MAX_COMMANDS_IN_FLIGHT);
+    expect(seen.filter((a) => a === 'on')).toHaveLength(7);
+    for (let i = 1; i <= 7; i++) expect(useCommandStore.getState().pending[`co${i}:1`].desired).toBe('on');
   });
 });

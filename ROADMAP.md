@@ -1594,21 +1594,41 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       and per-device-threshold tests were all asserting on an output that is null either way, and
       one passed only because a recovery had coincidentally zeroed the counter it checked. Running
       the shipped source is not enough on its own; the assertion has to be able to fail.
-- [ ] **FI-024** The outlet master actions send both sockets of one physical device at the same
-      instant. `OutletPlanCard`'s `allOn`/`allOff` do `send(d.id, 1, …)` then `send(d.id, 2, …)`
-      back to back with no await, and both sockets are the **same** Tuya device — which accepts
-      one inbound TCP session at a time (`docs/adr-002-device-recovery-path.md`, and the whole
-      reason `sessionCollapsePlan.mjs` exists). Seven devices, fourteen commands, two racing at
-      each.
-      Not fixed in the same pass as EX-159 deliberately. EX-159 removed the amplification that
-      was measurably hurting the bridge — fourteen readings fetches became one — with no change
-      to control-surface timing. This one cannot be fixed without changing how bulk commands are
-      SEQUENCED on a live control surface, which interacts with `commandStore`'s optimistic
-      entries, the `COMMAND_CONFIRM_MS` window and the 15 s failed-sweep. A global concurrency cap
-      in `commandStore.send` is the obvious move and is the one most likely to break those
-      timings quietly. Worth doing, worth designing first.
-      **Not yet observed to cause a failure** — recorded because the constraint is documented and
-      the code plainly violates it, not because a dropped command was traced to it.
+- [x] **EX-162** (was FI-024) The master actions dispatch at most four commands at once, and the
+      premise the item was filed on was wrong. FI-024 said the hazard was device socket
+      contention: `OutletPlanCard` fires both sockets of one physical device in the same instant
+      and a Tuya device accepts one inbound session. **It is handled a layer down.** `tuyapi`
+      serialises per device already — `index.js:410`, *"Queue this request and limit concurrent
+      set requests to one"* — so there was never a race at the socket. Recorded here because the
+      entry had been written from the documented constraint rather than from the library, and
+      checking took ten minutes.
+      **The real cost is on the proxy side and in the browser.** Every command independently
+      writes an audit row BEFORE anything is dispatched — record-then-act, `auditedDispatch.mjs`
+      — with a 5 s timeout against Supabase, and the browser abandons its own request after
+      `COMMAND_TIMEOUT_MS`, also 5 s. Fourteen at once against a Pi makes a client-side timeout
+      likely, and a timed-out command is shown to the operator as FAILED while the relay may well
+      have moved. This project has twice been burned by a working command reported as a failure;
+      a burst that manufactures that report is worth bounding. Four, so fourteen still drain in
+      four rounds.
+      **Two things had to be got right, and one of them the fix nearly broke itself.**
+      `reconcile`'s 30 s leak guard measures from `issuedAt` to decide a command never reached
+      the bridge, and `reportedSince` compares a reading against it. Stamping at QUEUE time would
+      let the queue manufacture exactly the false failure the cap exists to prevent, so
+      `issuedAt` is re-stamped at dispatch — which is also what both readers already meant.
+      And **the uncontended path must not defer**: awaiting even an already-resolved promise
+      costs a microtask, and nine `ControlPage` tests assert `sendCommand` is called
+      synchronously on click. That is not test pedantry — it is the guarantee that a single
+      command behaves exactly as it did before the cap existed. Only a contended one waits.
+      A command superseded while still QUEUED is now dropped rather than sent: all-off then
+      all-on no longer puts the off commands on the wire behind the on ones. That changed what
+      the existing supersede test was exercising, so it now lets the first command reach the wire
+      before superseding it — the late-ack case it was always about.
+      Four neuters — no cap, no `issuedAt` re-stamp, no superseded-while-queued guard, leaked
+      slot — each fail the right tests. The queue counter is module state that outlives
+      `setState`, so `resetCommandQueueForTests` clears it between tests; without it one leaked
+      slot made nine unrelated tests time out at once, which is how the leak was found.
+      `src/stores/commandStore.ts`, `src/stores/commandStore.test.ts` (4 tests, 15 in the file)
+      Frontend-only: no flow write, no deploy to the Pi needed beyond the dashboard build.
 - [x] **FI-023** A switch's `state` is what the RELAY is doing, not what was last asked of it.
       `buildLatest` derived it from `bems_lights_state`, which the flow's `Lighting Logic Hub`
       writes from an incoming COMMAND before forwarding it to the device — a record of intent,

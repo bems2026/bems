@@ -29,6 +29,48 @@ export interface PendingCommand {
  * rather than queuing behind it. */
 export const targetKey = (deviceId: string, socket?: SocketIndex): string => (socket === undefined ? deviceId : `${deviceId}:${socket}`);
 
+/**
+ * How many commands may be on the wire at once — FI-024.
+ *
+ * WHAT THIS IS NOT FOR. The original suspicion was device socket contention: the outlet master
+ * actions fire both sockets of one physical device in the same instant, and a Tuya device accepts
+ * one inbound session. That turns out to be handled a layer down — `tuyapi` serialises per device
+ * already (`index.js:410`, *"Queue this request and limit concurrent set requests to one"*), so
+ * there was never a race at the socket.
+ *
+ * WHAT IT IS FOR. The cost is on the proxy side and in the browser. Every command independently
+ * writes an audit row BEFORE anything is dispatched — record-then-act, `auditedDispatch.mjs` —
+ * with a 5 s timeout against Supabase, and the browser abandons its own request after
+ * `COMMAND_TIMEOUT_MS`, also 5 s. Fourteen at once against a Pi makes a client-side timeout
+ * likely, and a timed-out command is shown to the operator as FAILED while the relay may well
+ * have moved. This project has twice been burned by a command that worked being reported as one
+ * that did not; a burst that manufactures that report is worth bounding.
+ *
+ * Four, not one: fourteen commands still drain in four rounds, so all-off stays a prompt action
+ * rather than a visibly serial one. A single click never waits — it acquires immediately.
+ */
+export const MAX_COMMANDS_IN_FLIGHT = 4;
+
+let inFlight = 0;
+const waiting: Array<() => void> = [];
+
+function releaseSlot(): void {
+  inFlight -= 1;
+  waiting.shift()?.();
+}
+
+/**
+ * Clears the queue between tests.
+ *
+ * The counter is module state and outlives `useCommandStore.setState`, so one test that leaves a
+ * command in flight otherwise shrinks the cap for every test after it — which is exactly how this
+ * was found: nine unrelated tests began timing out at once.
+ */
+export function resetCommandQueueForTests(): void {
+  inFlight = 0;
+  waiting.length = 0;
+}
+
 function newCommandId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -117,7 +159,22 @@ export const useCommandStore = create<CommandState>((set, get) => ({
       },
     }));
 
-    try {
+    const dispatch = async (): Promise<void> => {
+      try {
+      // Superseded while it sat in the queue — all-off then all-on, say. Before there was a queue
+      // this could not happen, because everything was already on the wire. Sending it now would
+      // put a command the operator has replaced onto the hardware, behind the one they meant.
+      if (get().pending[key]?.command_id !== command_id) return;
+
+      // `issuedAt` is re-stamped HERE rather than left at queue time, and that is load-bearing:
+      // `reconcile`'s 30 s leak guard measures from it to decide a command never reached the
+      // bridge, and `reportedSince` compares a reading's timestamp against it. Both mean "when
+      // this was dispatched". Stamping at queue time would let the queue manufacture the very
+      // false failure this cap exists to prevent.
+      set((s) => (s.pending[key]?.command_id === command_id
+        ? { pending: { ...s.pending, [key]: { ...s.pending[key], issuedAt: Date.now() } } }
+        : s));
+
       const ack = await sendCommand({ device_id: deviceId, socket, action: desired, command_id, ...(targetC === undefined ? {} : { target_c: targetC }) });
       // Only 'cloud' is recorded. 'local' is the ordinary case and would be noise; null is a
       // dry run, where no path was attempted at all; a missing field is an older bridge.
@@ -131,7 +188,27 @@ export const useCommandStore = create<CommandState>((set, get) => ({
     } catch (err) {
       if (get().pending[key]?.command_id !== command_id) return;
       set((s) => ({ pending: { ...s.pending, [key]: { ...s.pending[key], phase: 'failed', error: describeFailure(err) } } }));
+      } finally {
+        // In `finally` so a superseded early-return, a rejection and a success all give the slot
+        // back. Leaking one would shrink the cap permanently, and leaking four would wedge every
+        // later command in this tab until a reload.
+        releaseSlot();
+      }
+    };
+
+    // THE UNCONTENDED PATH MUST NOT DEFER. A single click has to reach `sendCommand` in the same
+    // tick it always did: awaiting even an already-resolved promise costs a microtask, and nine
+    // ControlPage tests assert the call happens synchronously on click — which is not test
+    // pedantry, it is the guarantee that one command behaves exactly as it did before this cap
+    // existed. Only a genuinely contended command waits.
+    if (inFlight < MAX_COMMANDS_IN_FLIGHT) {
+      inFlight += 1;
+      return dispatch();
     }
+    await new Promise<void>((resolve) => {
+      waiting.push(() => { inFlight += 1; resolve(); });
+    });
+    return dispatch();
   },
 
   reconcile: (rows, nowMs = Date.now()) => {
