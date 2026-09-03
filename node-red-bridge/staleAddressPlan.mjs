@@ -13,56 +13,82 @@
  *         return Promise.resolve(true);
  *
  * Once a `find()` has succeeded the resolved address is cached ON THE INSTANCE, and every later
- * `find()` returns instantly without broadcasting. The node's retry loop becomes
- * find (no-op) -> connect -> EHOSTUNREACH -> find (no-op), gated only by `retryTimeout` and not by
- * `findTimeout` at all — which is why those two spun roughly four times faster than the rest.
- * `find()` is the only thing that can discover a device's NEW address, and a node in this state
- * never really calls it. EX-160's back-off slows the loop; it cannot correct its aim.
+ * `find()` returns instantly without broadcasting. `find()` is the only thing that can discover a
+ * device's NEW address, so a node in this state can never recover from a DHCP change on its own.
+ * EX-160's back-off slows that loop; it cannot correct its aim.
  *
- * THE FIX is to make the node build a new `TuyaDevice`. `CONTROL`/`RECONNECT` does NOT do that —
- * it reuses the instance, cache and all, which is why the obvious control operation is the wrong
- * one. `CONTROL`/`CONNECT` does: the vendor node's handler runs `initTuya()`, which is
- * `tuyaDevice = new TuyaDevice(connectionParams)`, and `connectionParams.ip` is `node.deviceIp` —
- * empty on every node in this fleet. A fresh instance broadcasts.
+ * Note how a node ENTERS the state: any device that connects once and then goes away leaves its
+ * address cached, so the next connect failure re-enters `findDevice`, which short-circuits. It is
+ * not an exotic case — it is the normal fate of every device that has ever been reachable.
  *
- * `DISCONNECT` is sent first because `closeComm()` clears the pending find timer. Without it,
- * `startComm()` sets a second one and the loop doubles. The vendor node's own 1 s delay inside
+ * ---------------------------------------------------------------------------
+ * HOW IT IS DETECTED, and why it is not detected the obvious way.
+ *
+ * The obvious way is to read the socket error. **Nothing in Node-RED carries it.** All three
+ * candidate signals were read rather than assumed, and all three are dead ends:
+ *
+ *   - the STATUS text for a socket error is `'Error : ' + JSON.stringify(error)`, and
+ *     `JSON.stringify` of an `Error` is `{}` (`src/tuya-smart-device.js:435`);
+ *   - a CATCH node never sees these at all: `node.logger.error` calls `node.error(msg)` with one
+ *     argument (`src/utils.js:27`), and `Node.prototype.error` only routes to catch nodes when a
+ *     second, object argument is present (`@node-red/runtime/lib/nodes/Node.js:570`);
+ *   - the node's own STATUS OUTPUT carries `{ payload: { state } }` and no error text
+ *     (`:311-318`).
+ *
+ * The error text exists only in the journal. So the detection is derived from the MECHANISM
+ * instead, and is strictly better for it: **a find/connect cycle cannot complete faster than
+ * `findTimeout` unless `find()` short-circuited.** The node goes yellow when `findDevice` starts
+ * and red when the cycle fails; a real, broadcasting `find()` spends `findTimeout` before failing,
+ * while a short-circuited one falls straight through to a connect that fails in well under a
+ * second. Measuring that latency needs no error text and cannot be fooled by a reworded message.
+ *
+ * The threshold is derived per device from that node's OWN declared `findTimeout` rather than
+ * hard-coded, so it stays correct if a node is ever tuned differently — and `findTimeout` is one
+ * of the values that lives only on the live flow, so reading it here rather than assuming 10 s is
+ * the difference between a check that tracks reality and one that quietly stops matching it.
+ * ---------------------------------------------------------------------------
+ *
+ * THE REMEDY is `CONTROL`/`DISCONNECT` then `CONTROL`/`CONNECT`, because CONNECT runs the vendor
+ * node's `initTuya()` — `tuyaDevice = new TuyaDevice(connectionParams)`, a fresh instance with no
+ * cached address, and `connectionParams.ip` is `node.deviceIp`, empty on every node in this fleet.
+ * `RECONNECT`, the obvious choice, does NOT do this: it reuses the instance, cache and all.
+ * DISCONNECT goes first because `closeComm()` clears the pending find timer; without it
+ * `startComm()` sets a second and the loop doubles. The vendor node's own 1 s delay inside
  * `startComm` exists for exactly this ordering — its comment says so.
  *
  * SELF-LIMITING BY CONSTRUCTION, which is what makes it safe to arm. After a recovery the node
- * really does broadcast, so a device that is genuinely absent produces a find TIMEOUT next rather
- * than an unreachable — and that resets the streak. A device that is gone gets one recovery
+ * really does broadcast, so its next failed cycle takes the full `findTimeout` — which is not a
+ * short-circuit, and resets the streak. A device that is genuinely absent gets one recovery
  * attempt, not a loop of them. The cooldown is a second belt on the same braces.
- *
- * WHY A `catch` NODE and not the status node EX-160 uses: the status text for a socket error is
- * `'Error : ' + JSON.stringify(error)`, and `JSON.stringify` of an `Error` is `{}` — the fill and
- * text carry no way to tell an unreachable address from a device that simply is not there. The
- * vendor node's `node.logger.error` calls `node.error()` (`src/utils.js:27`), so the full socket
- * message reaches a `catch` node intact. Different fault, different signal, different input.
  *
  * Pure: takes a flow array, returns a plan. `apply-stale-address.mjs` applies it, dry-run by
  * default.
  */
 
 /**
- * Socket errors that mean "nothing answers at layer 3 on that address".
+ * A cycle shorter than this fraction of the node's own `findTimeout` is taken as proof that
+ * `find()` returned without broadcasting.
  *
- * Deliberately narrow. `ECONNREFUSED` is excluded because something IS there and refusing, which
- * is ADR-002's exhausted-socket-table case and wants a different remedy; `ECONNRESET` is a
- * mid-session drop, not a wrong address. Re-initing on either would be acting on a guess.
+ * A half is a wide margin in the direction that matters. A real failing find takes the whole
+ * `findTimeout` (10 s on this fleet); a short-circuited one takes as long as one TCP connect to
+ * an address nothing answers on, which is well under a second even when ARP has to time out.
+ * Erring high would restart healthy nodes; erring low only delays a recovery.
  */
-export const UNREACHABLE_MARKERS = Object.freeze(['EHOSTUNREACH', 'ENETUNREACH', 'EHOSTDOWN']);
+export const SHORTCIRCUIT_FRACTION = 0.5;
+
+/** Used when a node declares no `findTimeout` — the same default the vendor node falls back to. */
+export const DEFAULT_FIND_TIMEOUT_MS = 10000;
 
 /**
- * Consecutive unreachable errors before a device is restarted.
+ * Consecutive short-circuited cycles before a device is restarted.
  *
- * Three, not one: a single failure is also what a device that is merely rebooting produces, and
- * restarting a node costs a real reconnect. Three consecutive with no other error in between is
- * the signature of the stuck loop rather than of a transient.
+ * Three, not one: restarting a node costs a real reconnect, and one fast cycle is also what a
+ * device that is merely rebooting can produce. Three in a row with no full-length cycle between
+ * them is the signature of the stuck loop rather than of a transient.
  */
-export const UNREACHABLE_STREAK = 3;
+export const SHORTCIRCUIT_STREAK = 3;
 
-/** No device may be restarted more than once a minute, whatever the errors say. */
+/** No device may be restarted more than once a minute, whatever the cycles say. */
 export const RECOVERY_COOLDOWN_MS = 60000;
 
 /**
@@ -71,18 +97,18 @@ export const RECOVERY_COOLDOWN_MS = 60000;
  *
  * Node context is invisible: it is not written to `~/.node-red/context/<tab>/flow.json`, so there
  * is no way to tell a controller that is working from one that is silently receiving nothing.
- * EX-160 shipped to live hardware in exactly that state and changed nothing for twenty minutes
- * because its input shape was wrong, and nothing anywhere said so. This one can be checked:
- * a populated `bems_stale_recovery` proves the catch node is delivering, even when no device is
- * currently stuck and the recovery path is therefore never taken.
+ * EX-160 shipped to live hardware in exactly that state and changed nothing, and nothing anywhere
+ * said so. **This is not hypothetical for this feature either:** the first implementation used a
+ * catch node, deployed cleanly, raised no error, and received nothing at all — and the only
+ * reason that was caught rather than declared a success is that this key was empty on disk.
  *
  * The back-off keeps NODE context for the opposite and equally deliberate reason: its state
- * describes `node.retryTimeout`, which is reset by a Node-RED restart. Persisting it would leave
- * a remembered `applied` value describing a node that had gone back to 1 s.
+ * describes `node.retryTimeout`, which a Node-RED restart resets. Persisting it would leave a
+ * remembered value describing a node that had gone back to 1 s.
  */
 export const STATE_KEY = 'bems_stale_recovery';
 
-export const CATCH_ID_PREFIX = 'bems_stale_catch_';
+export const STATUS_ID_PREFIX = 'bems_stale_status_';
 export const FN_ID_PREFIX = 'bems_stale_fn_';
 
 /** Every tuya device node on one tab, in flow order — the order the outputs are wired in. */
@@ -99,34 +125,75 @@ export function staleAddressTabs(flows) {
   return seen;
 }
 
-const STALE_FN = `// Force a fresh discovery when a node is dialling an address that no longer exists.
+/**
+ * The short-circuit threshold for one node, from its OWN declared `findTimeout`.
+ *
+ * `findTimeout` is a string on the live flow and may be absent or nonsense; anything unusable
+ * falls back to the vendor default rather than to zero, because a zero threshold would classify
+ * every cycle as a short circuit and restart the whole fleet.
+ */
+export function shortCircuitMsFor(node) {
+  const declared = Number(node?.findTimeout);
+  const findTimeout = Number.isFinite(declared) && declared > 0 ? declared : DEFAULT_FIND_TIMEOUT_MS;
+  return Math.floor(findTimeout * SHORTCIRCUIT_FRACTION);
+}
+
+const STALE_FN = `// Force a fresh discovery when a node's find() has stopped broadcasting.
 // See node-red-bridge/staleAddressPlan.mjs for the tuyapi short-circuit this works around.
+//
+// A find/connect cycle CANNOT complete faster than findTimeout unless find() short-circuited,
+// so the yellow -> red latency is the detector. No error text is involved, because Node-RED
+// carries none: the status text for a socket error is 'Error : {}'.
 const IDS_LIST = IDS;
-const MARKERS = MARKERS_JSON;
+const LIMITS = LIMITS_JSON;
 const STREAK = STREAK_N;
 const COOLDOWN = COOLDOWN_MS;
 
-// The reporting node is at msg.error.source — @node-red/runtime/lib/flows/Flow.js, handleError:
-//   errorMessage.error = { message, source: { id, type, name, count } }
-const err = (msg && msg.error) || {};
-const src = err.source || {};
+// The reporting node is at msg.status.source — @node-red/runtime/lib/flows/Flow.js, handleStatus:
+//   message.status.source = { id: node.id, type: node.type, name: node.name }
+const st = (msg && msg.status) || {};
+const src = st.source || (msg && msg.source) || {};
 const idx = IDS_LIST.indexOf(src.id);
 const out = IDS_LIST.map(function () { return null; });
 if (idx < 0) return out;
 
-const text = String(err.message === undefined ? '' : err.message).toUpperCase();
-let unreachable = false;
-for (let i = 0; i < MARKERS.length; i++) {
-  if (text.indexOf(MARKERS[i]) !== -1) { unreachable = true; break; }
+const fill = st.fill;
+if (fill !== 'green' && fill !== 'red' && fill !== 'yellow') return out;
+
+const now = NOW;
+const store = flow.get(STATE_KEY) || {};
+const entry = store[src.id] || { hits: 0, lastAt: null, yellowAt: null };
+
+if (fill === 'yellow') {
+  // findDevice() has just started. Only the FIRST yellow of a cycle matters: the vendor node
+  // guards its state transitions, but a re-entered connecting must not restart the clock.
+  if (entry.yellowAt === null) entry.yellowAt = now;
+  store[src.id] = entry;
+  flow.set(STATE_KEY, store);
+  return out;
 }
 
-const store = flow.get(STATE_KEY) || {};
-const entry = store[src.id] || { hits: 0, lastAt: null };
+if (fill === 'green') {
+  entry.hits = 0;
+  entry.yellowAt = null;
+  store[src.id] = entry;
+  flow.set(STATE_KEY, store);
+  return out;
+}
 
-if (!unreachable) {
-  // Any other error means this node is not dialling a dead address. A find() timeout in
-  // particular PROVES it is broadcasting again, which is the state we are trying to restore —
-  // so a genuinely absent device gets one recovery attempt rather than a loop of them.
+// red: the cycle failed. How long it took is the whole signal.
+const started = entry.yellowAt;
+entry.yellowAt = null;
+if (started === null) {
+  // No cycle start seen — nothing can be concluded, so conclude nothing.
+  store[src.id] = entry;
+  flow.set(STATE_KEY, store);
+  return out;
+}
+
+if ((now - started) >= LIMITS[idx]) {
+  // A full-length cycle: find() really did broadcast. This is the state we are trying to
+  // restore, so it clears the streak — which is what stops an absent device looping.
   entry.hits = 0;
   store[src.id] = entry;
   flow.set(STATE_KEY, store);
@@ -136,14 +203,14 @@ if (!unreachable) {
 entry.hits = entry.hits + 1;
 // lastAt null means never recovered, which is not the same as recovered at the epoch — the
 // cooldown must not block the FIRST recovery.
-if (entry.hits < STREAK || (entry.lastAt !== null && (NOW - entry.lastAt) < COOLDOWN)) {
+if (entry.hits < STREAK || (entry.lastAt !== null && (now - entry.lastAt) < COOLDOWN)) {
   store[src.id] = entry;
   flow.set(STATE_KEY, store);
   return out;
 }
 
 entry.hits = 0;
-entry.lastAt = NOW;
+entry.lastAt = now;
 store[src.id] = entry;
 flow.set(STATE_KEY, store);
 
@@ -156,25 +223,26 @@ out[idx] = [
 ];
 return out;`;
 
-export function staleAddressFnFor(ids) {
+export function staleAddressFnFor(ids, limits) {
   return STALE_FN
     .replace('IDS_LIST = IDS', `IDS_LIST = ${JSON.stringify(ids)}`)
-    .replace('MARKERS_JSON', JSON.stringify(UNREACHABLE_MARKERS))
-    .replace(/STATE_KEY/g, JSON.stringify(STATE_KEY))
-    .replace('STREAK_N', String(UNREACHABLE_STREAK))
+    .replace('LIMITS_JSON', JSON.stringify(limits))
+    .replace('STREAK_N', String(SHORTCIRCUIT_STREAK))
     .replace('COOLDOWN_MS', String(RECOVERY_COOLDOWN_MS))
-    .replace(/NOW/g, 'Date.now()');
+    .replace(/STATE_KEY/g, JSON.stringify(STATE_KEY))
+    .replace('NOW', 'Date.now()');
 }
 
 /**
- * Runs the controller against a fake node context, for tests.
+ * Runs the controller against a fake flow context, for tests.
  *
  * `nowMs` is injected by overriding `Date.now` for the duration of the call rather than by
  * threading a parameter into the source, so the thing under test is byte-identical to the thing
- * that ships — the cooldown is only testable if time is controllable.
+ * that ships — both the latency measurement and the cooldown are only testable if time is
+ * controllable.
  */
-export function runStaleAddress(store, ids, msg, nowMs) {
-  const fn = new Function('flow', 'msg', staleAddressFnFor(ids));
+export function runStaleAddress(store, ids, limits, msg, nowMs) {
+  const fn = new Function('flow', 'msg', staleAddressFnFor(ids, limits));
   const flow = { get: (k) => store[k], set: (k, v) => { store[k] = v; } };
   const realNow = Date.now;
   if (typeof nowMs === 'number') Date.now = () => nowMs;
@@ -185,30 +253,26 @@ export function runStaleAddress(store, ids, msg, nowMs) {
   }
 }
 
-function catchNode(z, ids, y) {
+function statusNode(z, ids, y) {
   return {
-    id: CATCH_ID_PREFIX + z,
-    type: 'catch',
+    id: STATUS_ID_PREFIX + z,
+    type: 'status',
     z,
-    name: 'Tuya device errors',
-    // Scoped to the tuya nodes so this never sees an error from anything else on the tab.
+    name: 'Tuya find cycle',
     scope: ids,
-    // false, not true: `uncaught` means "only errors no other catch node handled". These errors
-    // are raised by the vendor node's own logger and are ordinary caught errors.
-    uncaught: false,
     x: 140,
     y,
     wires: [[FN_ID_PREFIX + z]],
   };
 }
 
-function controllerNode(z, ids, y) {
+function controllerNode(z, ids, limits, y) {
   return {
     id: FN_ID_PREFIX + z,
     type: 'function',
     z,
     name: 'Stale address recovery',
-    func: staleAddressFnFor(ids),
+    func: staleAddressFnFor(ids, limits),
     outputs: ids.length,
     noerr: 0,
     initialize: '',
@@ -232,35 +296,37 @@ export function planStaleAddress(flows) {
   let y = 1900;
 
   for (const z of tabs) {
-    const ids = tuyaNodesOn(next, z).map((n) => n.id);
+    const nodes = tuyaNodesOn(next, z);
+    const ids = nodes.map((n) => n.id);
+    const limits = nodes.map((n) => shortCircuitMsFor(n));
     targets.push(...ids);
-    const wantFn = controllerNode(z, ids, y);
-    const wantCatch = catchNode(z, ids, y);
+    const wantFn = controllerNode(z, ids, limits, y);
+    const wantStatus = statusNode(z, ids, y);
     const existingFn = next.find((n) => n.id === wantFn.id);
-    const existingCatch = next.find((n) => n.id === wantCatch.id);
+    const existingStatus = next.find((n) => n.id === wantStatus.id);
 
-    if (existingFn && existingCatch) {
+    if (existingFn && existingStatus) {
       const current = existingFn.func === wantFn.func
         && existingFn.outputs === wantFn.outputs
         && JSON.stringify(existingFn.wires) === JSON.stringify(wantFn.wires)
-        && JSON.stringify(existingCatch.scope ?? []) === JSON.stringify(wantCatch.scope);
+        && JSON.stringify(existingStatus.scope ?? []) === JSON.stringify(wantStatus.scope);
       if (current) continue;
       next = next.map((n) => {
         if (n.id === wantFn.id) return { ...n, func: wantFn.func, outputs: wantFn.outputs, wires: wantFn.wires };
-        if (n.id === wantCatch.id) return { ...n, scope: wantCatch.scope };
+        if (n.id === wantStatus.id) return { ...n, scope: wantStatus.scope };
         return n;
       });
-      upgraded.push(wantFn.id, wantCatch.id);
+      upgraded.push(wantFn.id, wantStatus.id);
       y += 80;
       continue;
     }
 
-    if (existingFn || existingCatch) {
+    if (existingFn || existingStatus) {
       return { flows, added: [], upgraded: [], targets: [], unchanged: true, reason: `tab ${z} has half a controller — repair by hand` };
     }
 
-    next = [...next, wantCatch, wantFn];
-    added.push(wantCatch, wantFn);
+    next = [...next, wantStatus, wantFn];
+    added.push(wantStatus, wantFn);
     y += 80;
   }
 
@@ -287,7 +353,7 @@ export function validateStaleAddress(before, after) {
   for (const n of after) {
     const original = beforeById.get(n.id);
     if (original === undefined || original === JSON.stringify(n)) continue;
-    if (n.id.startsWith(FN_ID_PREFIX) || n.id.startsWith(CATCH_ID_PREFIX)) continue;
+    if (n.id.startsWith(FN_ID_PREFIX) || n.id.startsWith(STATUS_ID_PREFIX)) continue;
     problems.push(`existing node ${n.name ?? n.deviceName ?? n.id} was modified`);
   }
   for (const id of beforeById.keys()) {
@@ -301,7 +367,7 @@ export function validateStaleAddress(before, after) {
     }
   }
   for (const n of after) {
-    if (!n.id?.startsWith?.(CATCH_ID_PREFIX)) continue;
+    if (!n.id?.startsWith?.(STATUS_ID_PREFIX)) continue;
     for (const t of n.scope ?? []) {
       if (!ids.has(t)) problems.push(`${n.id} is scoped to non-existent ${t}`);
     }

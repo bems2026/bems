@@ -25,8 +25,8 @@
  * BACK UP `~/.node-red/flows.json` BEFORE APPLYING. This adds nodes to the hand-built source
  * tabs, which carry `findTimeout` and `tuyaVersion` — values nothing in this repository declares.
  *
- * AFTER APPLYING: watch for the EHOSTUNREACH count falling, and for a `find` actually running.
- *   sudo journalctl -u nodered --since "-10 min" | grep -c EHOSTUNREACH
+ * AFTER APPLYING: check the controller is RECEIVING, not just that the deploy returned 2xx.
+ *   python3 -c "import json;print(json.load(open('/home/bems/.node-red/context/<tab>/flow.json')).get('bems_stale_recovery'))"
  * A 2xx from the admin API means the flow was accepted, not that a device was recovered.
  */
 
@@ -35,7 +35,7 @@ import { dirname, join } from 'node:path';
 import { loadDotEnv, createAdminClient } from './nodeRedAdmin.mjs';
 import {
   planStaleAddress, validateStaleAddress, tuyaNodesOn,
-  UNREACHABLE_MARKERS, UNREACHABLE_STREAK, RECOVERY_COOLDOWN_MS,
+  SHORTCIRCUIT_STREAK, RECOVERY_COOLDOWN_MS, SHORTCIRCUIT_FRACTION, shortCircuitMsFor,
 } from './staleAddressPlan.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -70,12 +70,14 @@ const tabLabel = (z) => flows.find((n) => n.id === z && n.type === 'tab')?.label
 const tabs = [...new Set(plan.targets.map((id) => flows.find((n) => n.id === id)?.z))];
 
 console.log(`Stale-address recovery for ${plan.targets.length} device node(s).`);
-console.log(`Trigger: ${UNREACHABLE_STREAK} consecutive [${UNREACHABLE_MARKERS.join(', ')}] errors,`);
-console.log(`then DISCONNECT + CONNECT, at most once per ${RECOVERY_COOLDOWN_MS / 1000}s per device.\n`);
+console.log(`Trigger: ${SHORTCIRCUIT_STREAK} consecutive find/connect cycles that complete in under`);
+console.log(`${SHORTCIRCUIT_FRACTION} x each node's OWN findTimeout — which is proof find() did not`);
+console.log(`broadcast — then DISCONNECT + CONNECT, at most once per ${RECOVERY_COOLDOWN_MS / 1000}s per device.\n`);
 for (const z of tabs) {
-  console.log(`  ${tabLabel(z)}: ${tuyaNodesOn(flows, z).map((n) => n.deviceName ?? n.id).join(', ')}`);
+  const shown = tuyaNodesOn(flows, z).map((n) => `${n.deviceName ?? n.id} (<${shortCircuitMsFor(n)}ms)`);
+  console.log(`  ${tabLabel(z)}: ${shown.join(', ')}`);
 }
-if (plan.added.length) console.log(`\nAdds ${plan.added.length} node(s): one catch node and one controller per tab.`);
+if (plan.added.length) console.log(`\nAdds ${plan.added.length} node(s): one status node and one controller per tab.`);
 if (plan.upgraded.length) console.log(`\nUpgrades ${plan.upgraded.length} existing node(s) to the current device set.`);
 console.log('\nNo tuya node is modified — the recovery is a run-time control message, so deviceIp,');
 console.log('retryTimeout, findTimeout and tuyaVersion on the source tabs are left exactly as they are.');
@@ -103,7 +105,9 @@ if (!res.ok) {
   console.error(await res.text().catch(() => ''));
   process.exit(1);
 }
-console.log('\nDeployed. Verify by measurement, not by this 2xx:');
-console.log('  sudo journalctl -u nodered --since "-10 min" | grep -c EHOSTUNREACH');
-console.log('A node that was stuck should stop naming a dead address and start timing out on');
-console.log('find() instead — which is the broadcast path, and the only one that can recover it.');
+console.log('\nDeployed. Verify that the controller is RECEIVING, not just that this returned 2xx —');
+console.log('the first attempt at this feature deployed cleanly, raised no error, and got nothing:');
+console.log('  cat ~/.node-red/context/<tab>/flow.json | python3 -m json.tool | grep -A6 bems_stale_recovery');
+console.log('An entry per device means the status node is delivering. A device that was stuck');
+console.log('should then stop failing fast and start taking the full findTimeout, which is the');
+console.log('broadcast path and the only one that can recover it.');
