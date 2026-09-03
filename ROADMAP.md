@@ -1671,6 +1671,28 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       devices, and the answer no longer depends on how many rows a server decides to return.
       A device whose own query fails is omitted rather than assumed good — this feeds an alarm,
       and a wrongly seeded device would let a transient read failure raise a fleet alert.
+      **Live after the fix: "seeded with 18 of 20 device(s)"** — and the two excluded are exactly
+      `acu_main` and `sens_outside_temp`, which have never been paired. The furniture guard and
+      the blind-spot fix are both doing their job, and the log line now names the denominator so
+      a short seed is visible instead of plausible.
+
+- [x] **EX-164 — LOCAL CONTROL RE-PROVEN ON A HEALTHY FLEET, 2026-09-03 20:39.** The proof that
+      could not be run while the fleet was down (see the note under RM-046): every commandable
+      device was locally unreachable, so any command would have taken the `local-first` cloud
+      fallback and proved nothing about the LAN path.
+      Two light commands issued from the browser by the operator, read back from the audit trail:
+      `l1` and `l2`, both `status: dispatched`, both **`via: local`**, accepted in ~110 ms and
+      ~300 ms. `via=local` is dispositive on vendor calls by construction — `dispatchCommand`
+      only reaches the cloud when the local attempt has already failed.
+      **Corroborated against the hardware rather than the ack**, which this project has twice been
+      burned by: `global.lightStatus` — the flow's `Collect status` reading `dps['1']` off the
+      device — showed `L1 on=false` and `L2 on=false` afterwards, with `L7 on=true` unchanged
+      beside them. The relays moved; an HTTP 202 alone would not have said so.
+      Also worth recording because it is the shape of a real failure: the audit rows for this
+      morning's testing show **12 of 14 `via=local` and 2 `via=cloud`**, each cloud row carrying
+      *"local failed (the bridge reports this device offline, so a local SET cannot reach it);
+      recovered via cloud"*. That is `local-first` doing exactly what it is for, on a fleet that
+      was flapping — and it is the reason the site is not on `local-only` yet.
 - [x] **FI-023** A switch's `state` is what the RELAY is doing, not what was last asked of it.
       `buildLatest` derived it from `bems_lights_state`, which the flow's `Lighting Logic Hub`
       writes from an incoming COMMAND before forwarding it to the device — a record of intent,
@@ -1698,6 +1720,21 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       are now polled every 60 s (EX-157), so that should be comfortable, but it is unproven: at
       the time of writing 0 of 7 lights are reachable (RM-013), so the first light command after
       this deploys is the one to watch
+      **APPLIED LIVE 2026-09-03 20:47**, flows.json backed up first. It had been sitting
+      committed-but-undeployed for six hours — the flow was last rebuilt at 12:24, before this
+      commit landed, so the running bridge carried EX-158's day baseline and NOT this. Caught by
+      grepping the DEPLOYED `Build latest readings` for `switchHealth` rather than trusting the
+      repo, which is the same lesson `1f9bed3` already carries under the title "A commit is not a
+      deploy". Anything that edits `shared/buildLatest.mjs` needs `build:flow` +
+      `deploy:pi --force --apply`, and nothing warns you.
+      293 → 293 nodes, `findTimeout` 19/19 intact, and EX-160's and EX-161's controllers (8 + 8)
+      survived the `--force` because they live on the SOURCE tabs, not the bridge tab.
+      All seven lights now report a `state` matching `global.lightStatus[n].on`.
+      **That check is weaker than it looks and the discriminating test is still owed:** commanded
+      and measured currently AGREE on all seven, so agreement proves the field is populated, not
+      that it follows the hardware when the two diverge. **Flip a light at the wall and confirm
+      the app follows it** — that is the observation this entry was written for, and it needs a
+      person in the room.
 ### Data & Supabase
 
 - [x] **EX-080** Base schema: devices, readings, building_totals, ingestion_health — `supabase/schema.sql`
