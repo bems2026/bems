@@ -14,7 +14,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createFleetAlarm } from './fleetAlarm.mjs';
+import { createFleetAlarm, loadKnownOnline } from './fleetAlarm.mjs';
 
 const up = (id) => ({ device_id: id, online: true });
 const down = (id) => ({ device_id: id, online: false });
@@ -164,4 +164,65 @@ test('a seeded alarm still reports recovery', () => {
   const alarm = createFleetAlarm({ knownOnline: ['a', 'b', 'c'] });
   alarm.observe([down('a'), down('b'), down('c')]);
   assert.equal(alarm.observe([up('a'), up('b'), up('c')])?.kind, 'recovered');
+});
+
+/**
+ * THE SEED'S OWN BUG, measured 2026-09-03 within an hour of shipping the seed above.
+ *
+ * The first implementation asked one bulk question — `readings?online=is.true&limit=20000`. It
+ * came back with **1,000 rows out of 145,350 matching**, because PostgREST caps result sets
+ * server-side and says nothing about it. The distinct devices in that arbitrary slice were 15 of
+ * 18, so the seed silently restored the blind spot for three devices.
+ *
+ * This project has met that cap before — `supabaseHistory.ts` carries `assertNotTruncated`,
+ * `demand-profile.mjs` paginates around it — which is what makes writing it a third time worth
+ * a test rather than a comment.
+ */
+test('the seed asks one device at a time, so a server row cap cannot truncate it', async () => {
+  const asked = [];
+  const select = async (table, query) => {
+    asked.push(query);
+    // A server that caps at one row, which is what the real one effectively did.
+    return [{ device_id: 'x' }];
+  };
+  const ids = ['a', 'b', 'c', 'd', 'e'];
+  const got = await loadKnownOnline({ select, deviceIds: ids });
+  assert.deepEqual(got.sort(), ids);
+  assert.equal(asked.length, ids.length, 'one query per device, not one query for all of them');
+  for (const q of asked) assert.match(q, /device_id=eq\./, 'each query must name its device');
+});
+
+test('a device with no online history in the window is not seeded', async () => {
+  const select = async (_t, query) => (query.includes('device_id=eq.a') ? [{ device_id: 'a' }] : []);
+  const got = await loadKnownOnline({ select, deviceIds: ['a', 'b'] });
+  assert.deepEqual(got, ['a']);
+});
+
+test('a device whose query fails is omitted, never assumed good', async () => {
+  // This feeds an alarm. A device wrongly seeded lets a transient read failure raise a fleet alert.
+  const select = async (_t, query) => {
+    if (query.includes('device_id=eq.b')) throw new Error('timeout');
+    return [{ device_id: 'a' }];
+  };
+  const got = await loadKnownOnline({ select, deviceIds: ['a', 'b'] });
+  assert.deepEqual(got, ['a']);
+});
+
+test('every query failing returns null, which the caller reads as start unseeded', async () => {
+  const select = async () => { throw new Error('database down'); };
+  assert.equal(await loadKnownOnline({ select, deviceIds: ['a', 'b'] }), null);
+});
+
+test('an empty or missing device list returns null rather than an empty seed', async () => {
+  const select = async () => [];
+  assert.equal(await loadKnownOnline({ select, deviceIds: [] }), null);
+  assert.equal(await loadKnownOnline({ select, deviceIds: undefined }), null);
+});
+
+test('the window is the configured number of days back from now', async () => {
+  let seen = null;
+  const select = async (_t, query) => { seen = query; return []; };
+  const nowMs = Date.parse('2026-09-03T12:00:00Z');
+  await loadKnownOnline({ select, deviceIds: ['a'], days: 7, nowMs });
+  assert.ok(seen.includes(encodeURIComponent('2026-08-27T12:00:00.000Z').replace(/%3A/g, '%3A')) || seen.includes('2026-08-27'), seen);
 });

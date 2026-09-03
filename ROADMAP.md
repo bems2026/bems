@@ -1658,6 +1658,19 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       Both guards were neutered and fail the right tests (3 for the bad-seed guard, 7 for the
       seeding itself) — `server/fleetAlarm.mjs`, `server/ingest.mjs`,
       `server/fleetAlarm.test.mjs` (6 tests, 17 in the file)
+      **AND THE SEED ITSELF HAD THE SAME CLASS OF BUG, found within the hour by checking rather
+      than trusting the log line.** It asked one bulk question — `readings?online=is.true&limit=20000`
+      — and got **1,000 rows back out of 145,350 matching**, because PostgREST caps result sets
+      server-side and says nothing about it. The distinct devices in that arbitrary slice were 15
+      of 18, so the seed silently restored the blind spot for three devices. The daemon logged
+      "seeded with 15 device(s)" and looked like a success.
+      This project has met that cap twice before — `supabaseHistory.ts` carries `assertNotTruncated`
+      and `demand-profile.mjs` paginates around it — which is what makes writing it a third time
+      worth a test rather than a comment. `loadKnownOnline` now asks **one device at a time** with
+      `limit=1`. Pagination would also work; per-device cannot be wrong, the fleet is twenty
+      devices, and the answer no longer depends on how many rows a server decides to return.
+      A device whose own query fails is omitted rather than assumed good — this feeds an alarm,
+      and a wrongly seeded device would let a transient read failure raise a fleet alert.
 - [x] **FI-023** A switch's `state` is what the RELAY is doing, not what was last asked of it.
       `buildLatest` derived it from `bems_lights_state`, which the flow's `Lighting Logic Hub`
       writes from an incoming COMMAND before forwarding it to the device — a record of intent,

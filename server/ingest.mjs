@@ -19,7 +19,7 @@
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TIMING, METERED, SITE } from '../shared/registry.mjs';
+import { TIMING, METERED, SITE, DEVICE_REGISTRY } from '../shared/registry.mjs';
 import { shapeDeviceRows, shapeAnomalyRows } from './shapeRows.mjs';
 import { makeSupabaseClient } from './supabaseRest.mjs';
 import { appendToBuffer, readBuffer, writeBuffer, bufferCount } from './ingestBuffer.mjs';
@@ -34,7 +34,7 @@ import {
   RETENTION_CHECK_MS,
 } from './retention.mjs';
 import { runReportGeneration, REPORT_CHECK_MS } from './reports.mjs';
-import { createFleetAlarm } from './fleetAlarm.mjs';
+import { createFleetAlarm, loadKnownOnline, KNOWN_ONLINE_DAYS } from './fleetAlarm.mjs';
 import { createNotifier, fleetMessage } from './notify.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -352,27 +352,16 @@ async function reportPass() {
  * the daemon behaves exactly as it did before — blind to a pre-existing outage, but never
  * alarming on devices it has no evidence about.
  */
-async function loadKnownOnline() {
-  const since = new Date(Date.now() - 7 * 86400000).toISOString();
-  try {
-    const rows = await supabase.select(
-      'readings',
-      `select=device_id&online=is.true&ts=gte.${since}&limit=20000`,
-    );
-    if (!Array.isArray(rows)) return null;
-    return [...new Set(rows.map((r) => r?.device_id).filter((d) => typeof d === 'string'))];
-  } catch {
-    return null;
-  }
-}
-
 async function main() {
   console.log(`[ibems-ingest] starting — bridge=${BRIDGE_URL} poll=${POLL_MS}ms buffer=${BUFFER_PATH}`);
 
-  const knownOnline = await loadKnownOnline();
+  const knownOnline = await loadKnownOnline({
+    select: supabase.select,
+    deviceIds: DEVICE_REGISTRY.map((d) => d.id),
+  });
   if (knownOnline?.length) {
     fleetAlarm = createFleetAlarm({ knownOnline });
-    console.log(`[ibems-ingest] fleet alarm seeded with ${knownOnline.length} device(s) seen online in the last 7 days`);
+    console.log(`[ibems-ingest] fleet alarm seeded with ${knownOnline.length} of ${DEVICE_REGISTRY.length} device(s) seen online in the last ${KNOWN_ONLINE_DAYS} days`);
   } else {
     console.warn('[ibems-ingest] fleet alarm NOT seeded — it cannot report an outage that started before this process did');
   }

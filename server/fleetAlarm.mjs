@@ -39,6 +39,49 @@
  */
 export const DEFAULT_THRESHOLD = 3;
 
+/** How far back a device must have worked to count as "known good" — see `loadKnownOnline`. */
+export const KNOWN_ONLINE_DAYS = 7;
+
+/**
+ * Which of `deviceIds` reported online in the last `days`, asked ONE DEVICE AT A TIME.
+ *
+ * WHY NOT ONE BULK QUERY, which is the obvious shape and was the first implementation: PostgREST
+ * caps result sets server-side and does it SILENTLY. Measured 2026-09-03 — `readings` had 145,350
+ * matching rows over seven days, the request asked for `limit=20000`, and **1,000 came back**.
+ * The distinct devices in that arbitrary slice happened to be 15 of 18. Nothing in the response
+ * said it had been truncated, and a seed short by three devices restores the exact blind spot
+ * this function exists to close, for whichever devices fall outside the slice.
+ *
+ * This project has met that cap before — `supabaseHistory.ts` carries `assertNotTruncated` and
+ * `demand-profile.mjs` paginates around it. Pagination would work here too; per-device
+ * `limit=1` is chosen instead because it cannot be wrong. The fleet is twenty devices, the
+ * question is a boolean per device, and the answer does not depend on how many rows a server
+ * decided to return.
+ *
+ * A device whose query fails is OMITTED rather than assumed good: this feeds an alarm, and a
+ * device wrongly seeded would let a transient read failure raise a fleet alert. Returns null only
+ * when every query failed, which the caller treats as "start unseeded".
+ */
+export async function loadKnownOnline({ select, deviceIds, days = KNOWN_ONLINE_DAYS, nowMs = Date.now() }) {
+  const since = new Date(nowMs - days * 86400000).toISOString();
+  const ids = Array.isArray(deviceIds) ? deviceIds.filter((d) => typeof d === 'string') : [];
+  if (!ids.length) return null;
+
+  let failures = 0;
+  const results = await Promise.all(ids.map(async (id) => {
+    try {
+      const rows = await select('readings', `select=device_id&device_id=eq.${encodeURIComponent(id)}&online=is.true&ts=gte.${since}&limit=1`);
+      return Array.isArray(rows) && rows.length > 0 ? id : null;
+    } catch {
+      failures += 1;
+      return null;
+    }
+  }));
+
+  if (failures === ids.length) return null;
+  return results.filter((id) => id !== null);
+}
+
 export function createFleetAlarm({ threshold = DEFAULT_THRESHOLD, knownOnline } = {}) {
   /**
    * Devices observed online at least once since this process started, PLUS those the caller
