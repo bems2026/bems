@@ -78,6 +78,40 @@ Decided by the operator, 2026-08-25.
 
 ---
 
+## State as of 2026-09-03 — the fleet is down, and it is the access point
+
+**4 of 20 devices online: the four logical meters, and nothing else.** All seven outlets, all
+seven light switches, both quiesced IR/sensor devices are offline. A 30 s passive listen on the
+Tuya discovery ports hears **3 broadcasters** — the three physical meters — so `find()` has
+nothing to find for the other fourteen.
+
+This followed the RM-020 power cycle. **Do not repeat the reflex fixes; both have been tried and
+measured:**
+
+- **A Node-RED restart does not help.** Tried 11:14 and again 12:24 on 2026-09-03; zero device
+  connections followed. This is the RM-021 case — `find()` can only locate a device that
+  broadcasts — not the `l6` case where a restart fixes it in two seconds.
+- **It is not the bridge.** The vendor cloud, which reaches these devices over the internet
+  rather than our subnet, saw **five of them change state between two `tuya:devices` runs minutes
+  apart**. Nothing in this repository can make a device flap to Tuya. Earlier the same boot all
+  fourteen connected and dropped repeatedly — CO4 fifty times, 187 disconnects, 12,386 log lines
+  in 3.6 h.
+- **The AP renumbered its LAN onto a different private /24 across the power cycle**, with the Pi
+  keeping its host number. Its firmware dates from 2020-09-27. That is the lead — see **RM-046**,
+  which carries the full sequence for the site visit.
+
+The Pi itself is healthy: NetworkManager logged zero disconnects, signal 86 on the correct
+2.4 GHz SSID, no competing AP visible. `npm run local-probe:pi` confirms `findTimeout: 10000` and
+every `tuyaVersion` still correct on all 19 nodes.
+
+**Consequence for anyone verifying control:** every commandable device is a `switch`, an
+`outlet_dual` or the `acu_ir`, and all of them are locally unreachable. Meters are in
+`NOT_COMMANDABLE_CLASSES`. **So the local-dispatch proof cannot be re-run until the fleet is
+back** — a command issued now would take the `local-first` cloud fallback and would prove nothing
+about the LAN path. Do not record a cloud dispatch as evidence that local control works.
+
+---
+
 ## State as of 2026-08-26, with the evidence
 
 Do not trust this section past its date — re-run the first-moves checks. It is here so you know
@@ -126,6 +160,26 @@ The local-vs-cloud comparison is the one that decides what kind of problem you h
 ## Traps this project has actually fallen into
 
 Each of these cost real time. They are not hypothetical.
+
+**`journalctl --since "today HH:MM"` silently returns NOTHING on this host.** Measured
+2026-09-03: `journalctl -u nodered --since "today 07:50" | wc -l` gave **0** while the very next
+command, `journalctl -u nodered -n 40`, printed entries from within that window. It exits 0 and
+prints no warning, so it reads as "the service logged nothing" — which is a conclusion, and a
+wrong one. Use **`-b`** for this boot, or bucket by the log's own timestamp field with `awk`.
+The same session nearly concluded "no device has connected since boot" from a filter that was
+simply not matching.
+
+**Fixing the energy source can trigger the corruption it prevents, if you deploy it alone.**
+The day-baseline node (EX-158) makes `energy_kwh_today` drop from a poisoned value to the true
+one. `ACCUMULATE_ENERGY` sees that as the counter going backwards, treats it as real consumption
+— which is normally the safe direction — and banks the poisoned figure into `weekBase` and
+`monthBase` on its next 60 s tick. **It fired during the two-minute window between the deploy and
+the context repair on 2026-09-03**, adding exactly 3625.108 to both, and had to be undone by
+hand. The deterministic order is: apply the flow write, **stop Node-RED**, correct
+`enacc_<device>` in `~/.node-red/context/<bridge tab>/flow.json`, start Node-RED. Context is only
+re-read at startup, so editing it while Node-RED runs is overwritten. Back the file up first —
+the identical delta on `weekBase` and `monthBase` is what proves a single bank rather than
+accumulated drift, and is how to size the correction.
 
 **Restart before you suspect hardware.** `l6` had a written diagnosis — `EHOSTUNREACH` at every
 protocol version, ARP `FAILED`, "needs eyes on the fixture". Nobody went, and a restart fixed it
