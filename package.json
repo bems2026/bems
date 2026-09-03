@@ -4,7 +4,7 @@
   "license": "MIT",
   "private": true,
   "type": "module",
-  "description": "iBEMS web dashboard \u2014 live data via the Node-RED bridge, Supabase-backed history, and audited device control (hardware dispatch gated)",
+  "description": "iBEMS web dashboard — live data via the Node-RED bridge, Supabase-backed history, and audited device control (hardware dispatch gated)",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -43,6 +43,7 @@
     "local-probe:pi": "node node-red-bridge/local-probe.mjs",
     "fix-health:pi": "node node-red-bridge/fix-health-wiring.mjs",
     "fix-dp-parsers:pi": "node node-red-bridge/fix-dp-parsers.mjs",
+    "backoff:pi": "node node-red-bridge/apply-discovery-backoff.mjs",
     "enroll:pi": "node node-red-bridge/enroll-device.mjs",
     "remove:pi": "node node-red-bridge/remove-device.mjs",
     "quiesce:pi": "node node-red-bridge/quiesce-dead-nodes.mjs",

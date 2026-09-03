@@ -84,10 +84,11 @@ Measured the same morning from a remote session, on the Pi:
   coincident with the fleet loss and is where the next person should start.
 
 **This is a network job, not a coding one.** See **RM-046**. Two things in this repository made
-it noisier and are worth fixing regardless: discovery retries at a fixed 1 s with no back-off,
-which `docs/adr-002-device-recovery-path.md` already prescribed and nobody built, and 650+
-`EHOSTUNREACH` to two addresses that stopped existing when the subnet moved, because a node that
-has cached an address never returns to broadcast discovery.
+it noisier. The first is now fixed — discovery retried at a fixed 1 s with no back-off, which
+`docs/adr-002-device-recovery-path.md` prescribed and nobody built; see **EX-160**
+(`npm run backoff:pi`). The second is still open: 650+ `EHOSTUNREACH` to two addresses that
+stopped existing when the subnet moved, because a node that has cached an address never returns
+to broadcast discovery — **FI-025**.
 
 The same morning's deploy also produced a live data fault, now fixed — see **EX-158**.
 
@@ -1480,6 +1481,52 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       still seen, which a cache would have missed — and it passed both before and after the
       change, which is what makes it a guard rather than a restatement of the fix.
       `server/proxy.mjs`, `server/proxy.test.mjs` (2 tests, 48 in the file)
+- [x] **EX-160** Exponential back-off on failed discovery — `npm run backoff:pi`. The item
+      `docs/adr-002-device-recovery-path.md` prescribed ("Back off on failed discovery rather than
+      retrying at a fixed rate forever") and nothing ever built, closed on the day it finally
+      mattered. With fourteen devices off the air (RM-046) every one sat in a
+      `find()` -> timeout -> retry loop at a fixed 1 s: **~230 journal lines a minute, 12,386 in
+      3.6 h**, load average near 3.5, and not one attempt able to succeed, because `find()` only
+      locates a device that BROADCASTS and a 30 s listen heard three of twenty.
+      The loop period is `findTimeout + retryTimeout` — 11 s as shipped. Backing `retryTimeout`
+      off to a 60 s cap makes it ~70 s, which is the whole of the reduction.
+      **It does not edit `retryTimeout` on any node, and that is the design.** That value, with
+      `findTimeout` and `tuyaVersion`, lives only on the four hand-built source tabs, is declared
+      nowhere in this repository, and losing it produces no diff, no alarm, and every device
+      reading offline. Rewriting it to reduce log volume would be reintroducing exactly that
+      hazard. Instead the back-off is applied at RUN TIME through the vendor node's own
+      `CONTROL` / `SET_RETRY_TIMEOUT` operation — read out of
+      `node-red-contrib-tuya-smart-device@5.4.0` rather than assumed: `src/tuya-smart-device.js`
+      assigns `node.retryTimeout` at :206-214, and that same field is read by the reconnect timer
+      at :367 and the re-find timer at :547 and :600. So nothing on disk changes,
+      `findSettingsDrift` and `live-flow-baseline.json` stay valid, and **a Node-RED restart
+      returns every node to its declared 1 s** — the safe direction to fail.
+      **How it knows** is a core `status` node scoped to the tuya nodes on its own tab, which
+      needs no change to any of them. Not `<ctx>_health`: that is per-tab flow context and a
+      function node has no cross-tab read, the constraint `build-flow.mjs` was shaped around. It
+      keys on the status FILL (`green`/`red`/`yellow`, :324-350), not the text — the text is the
+      error message and varies, the fill does not. `yellow` is transitional and is ignored, so the
+      schedule cannot come to depend on how many times the vendor node happens to say
+      "connecting".
+      Two properties worth stating because they are what make it safe rather than merely quieter:
+      the **first** failure sends nothing, since the schedule's first step IS the declared value
+      and a device that blips once costs zero messages; and a device is reset to 1 s **the moment
+      it reports connected**, so a returning device is not left on a minute-long retry. Four
+      neuters — no cap, no reset, no send-on-change guard, unscoped status node — were each
+      confirmed to fail the right tests before any of this was believed.
+      `node-red-bridge/discoveryBackoffPlan.mjs`, `node-red-bridge/apply-discovery-backoff.mjs`,
+      `test/discovery-backoff.test.mjs` (21 tests)
+- [ ] **FI-025** A tuya node that has cached a device address never returns to broadcast
+      discovery, so it hammers an address that has stopped existing. Measured 2026-09-03 after the
+      AP renumbered its LAN (RM-046): **325 `EHOSTUNREACH` to one address and 323 to another**, in
+      3.6 h, both of them leases that had been valid that morning. `find()` is the only thing that
+      can recover from a DHCP change, and a node in this state never calls it.
+      EX-160's back-off slows the loop but does not fix its aim — a node backing off to 60 s is
+      still dialling a dead address, and will keep doing so until Node-RED restarts. The remedy is
+      probably to send `CONTROL`/`RECONNECT` after N consecutive host-unreachable errors, which
+      forces a fresh `find()`. That needs the error TEXT, not just the status fill, so it wants
+      either the node's status output or the `catch`-node path — a different input than EX-160's,
+      which is why it was not folded in.
 - [ ] **FI-024** The outlet master actions send both sockets of one physical device at the same
       instant. `OutletPlanCard`'s `allOn`/`allOff` do `send(d.id, 1, …)` then `send(d.id, 2, …)`
       back to back with no await, and both sockets are the **same** Tuya device — which accepts
