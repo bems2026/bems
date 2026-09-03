@@ -69,7 +69,12 @@ const RETENTION_DAYS = Number(process.env.INGEST_RETENTION_DAYS) || DEFAULT_RETE
  * overnight and the channel would simply be muted.
  */
 const notifier = createNotifier(process.env);
-const fleetAlarm = createFleetAlarm();
+/**
+ * Seeded at startup — see `loadKnownOnline`. `let`, not `const`, because the seed is a database
+ * read and the alarm has to exist before it completes; an unseeded alarm is the pre-2026-09-03
+ * behaviour, which is safe but blind to an outage that predates this process.
+ */
+let fleetAlarm = createFleetAlarm();
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.error('[ibems-ingest] SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required — see server/.env.example');
@@ -330,8 +335,47 @@ async function reportPass() {
   }
 }
 
+/**
+ * Which devices have a history of working, so the fleet alarm can tell "broken" from "never set
+ * up" on the very first tick after a restart.
+ *
+ * WHY IT EXISTS, measured 2026-09-03: the fleet fell from 18 devices to 4 and stayed there for
+ * nine hours with no alert at all. This daemon had restarted with sixteen already offline, and
+ * `createFleetAlarm` only counts a device as down once it has seen it UP — so none of them ever
+ * qualified. The alarm was blind to the largest outage this system has had, and the case it
+ * missed is exactly "the fleet came back up wrong".
+ *
+ * Seven days rather than all history: a device decommissioned a month ago should not raise an
+ * alarm for being absent, and a week comfortably covers a weekend plus a public holiday.
+ *
+ * A FAILURE HERE IS NOT FATAL and must not be. It returns null, the alarm starts unseeded, and
+ * the daemon behaves exactly as it did before — blind to a pre-existing outage, but never
+ * alarming on devices it has no evidence about.
+ */
+async function loadKnownOnline() {
+  const since = new Date(Date.now() - 7 * 86400000).toISOString();
+  try {
+    const rows = await supabase.select(
+      'readings',
+      `select=device_id&online=is.true&ts=gte.${since}&limit=20000`,
+    );
+    if (!Array.isArray(rows)) return null;
+    return [...new Set(rows.map((r) => r?.device_id).filter((d) => typeof d === 'string'))];
+  } catch {
+    return null;
+  }
+}
+
 async function main() {
   console.log(`[ibems-ingest] starting — bridge=${BRIDGE_URL} poll=${POLL_MS}ms buffer=${BUFFER_PATH}`);
+
+  const knownOnline = await loadKnownOnline();
+  if (knownOnline?.length) {
+    fleetAlarm = createFleetAlarm({ knownOnline });
+    console.log(`[ibems-ingest] fleet alarm seeded with ${knownOnline.length} device(s) seen online in the last 7 days`);
+  } else {
+    console.warn('[ibems-ingest] fleet alarm NOT seeded — it cannot report an outage that started before this process did');
+  }
 
   try {
     await syncDevices();

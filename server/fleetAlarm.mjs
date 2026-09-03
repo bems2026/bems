@@ -13,9 +13,23 @@
  * over the threshold from the moment the daemon started and hold it there forever, which is
  * how a warning becomes furniture.
  *
- * The state is in-process on purpose. It resets when the daemon restarts, which re-arms the
+ * THE SET IS SEEDED, and the correction is worth stating because this file used to claim the
+ * opposite. It said the in-process state "resets when the daemon restarts, which re-arms the
  * alarm — correct, because a restart is also when the operator is most likely to want to know
- * the fleet came back up wrong.
+ * the fleet came back up wrong." A restart in fact DISARMS it, for exactly the devices that are
+ * already broken, which is that case.
+ *
+ * Measured 2026-09-03: the fleet went from 18 devices to 4 after a site power cycle and stayed
+ * there for nine hours. **No alert was ever sent.** `ibems-ingest` restarted at 07:51 with
+ * sixteen devices already offline; none was observed online during that process, so none entered
+ * the set, so none could count as down. The alarm was blind to the largest outage this system
+ * has had.
+ *
+ * `knownOnline` closes it, from the history the database already holds. The furniture guard
+ * survives intact: a device that has NEVER reported online has no history, so it still cannot
+ * contribute. And a seed that is missing, empty or unusable degrades to the old behaviour rather
+ * than to alarming on everything — the seed is a database read, databases are unreachable
+ * sometimes, and a failed read must not manufacture a fleet alarm.
  */
 
 /**
@@ -25,9 +39,13 @@
  */
 export const DEFAULT_THRESHOLD = 3;
 
-export function createFleetAlarm({ threshold = DEFAULT_THRESHOLD } = {}) {
-  /** Devices observed online at least once since this process started. */
-  const everOnline = new Set();
+export function createFleetAlarm({ threshold = DEFAULT_THRESHOLD, knownOnline } = {}) {
+  /**
+   * Devices observed online at least once since this process started, PLUS those the caller
+   * knows have a history of being online. Anything not an array is ignored rather than trusted,
+   * so a failed database read starts the daemon blind instead of making it alarm on everything.
+   */
+  const everOnline = new Set(Array.isArray(knownOnline) ? knownOnline.filter((d) => typeof d === 'string') : []);
   let alarming = false;
 
   return {

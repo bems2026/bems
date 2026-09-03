@@ -103,3 +103,65 @@ test('the threshold is configurable, because three is a judgement not a law', ()
   alarm.observe([up('a'), up('b')]);
   assert.equal(alarm.observe([down('a'), down('b')]).kind, 'stuck');
 });
+
+/**
+ * THE BLIND SPOT, measured 2026-09-03 and the reason `knownOnline` exists.
+ *
+ * The fleet went from 18 devices to 4 after a site power cycle and stayed there for nine hours.
+ * **No alert was ever sent.** `ibems-ingest` restarted at 07:51 with sixteen devices already
+ * offline; because none of them was observed online during that process, none entered
+ * `everOnline`, so none could ever count as down, so the alarm never armed.
+ *
+ * The module's own docblock claimed the opposite — that a restart "re-arms the alarm ... because
+ * a restart is also when the operator is most likely to want to know the fleet came back up
+ * wrong". A restart in fact DISARMS it, for precisely the devices that are already broken, which
+ * is exactly that case. The reasoning was sound and the conclusion was backwards.
+ *
+ * The fix is to seed the set from devices that have a history of being online, which the
+ * database already knows. That keeps the furniture guard intact: a device that has NEVER
+ * reported online has no history, so it still cannot contribute.
+ */
+test('a device that was working before the daemon started still counts as down', () => {
+  // The nine-hour blind spot, as one assertion.
+  const alarm = createFleetAlarm({ knownOnline: ['a', 'b', 'c'] });
+  const event = alarm.observe([down('a'), down('b'), down('c')]);
+  assert.equal(event?.kind, 'stuck');
+  assert.deepEqual(event.devices, ['a', 'b', 'c']);
+});
+
+test('a device with no history still cannot raise the alarm, however long it is offline', () => {
+  // The furniture guard the seeding must not break: the quiesced IR blaster and outside-temp
+  // sensor have never reported online, so they have no history and must stay uncounted.
+  const alarm = createFleetAlarm({ knownOnline: ['a'] });
+  for (let i = 0; i < 50; i++) {
+    assert.equal(alarm.observe([up('a'), down('acu_main'), down('sens_outside_temp')]), null);
+  }
+});
+
+test('seeding is additive — devices seen online at run time still join the set', () => {
+  const alarm = createFleetAlarm({ knownOnline: ['a'] });
+  assert.equal(alarm.observe([up('a'), up('b'), up('c')]), null);
+  const event = alarm.observe([down('a'), down('b'), down('c')]);
+  assert.equal(event?.kind, 'stuck');
+});
+
+test('an absent or failed seed degrades to the old behaviour, never to alarming on everything', () => {
+  // The seed is a database read and databases are unreachable sometimes. Failing that read must
+  // not manufacture a fleet alarm — the daemon starts blind, exactly as it did before.
+  for (const seed of [undefined, null, [], 'nonsense', 42]) {
+    const alarm = createFleetAlarm({ knownOnline: seed });
+    assert.equal(alarm.observe([down('a'), down('b'), down('c')]), null, `seed ${JSON.stringify(seed)}`);
+  }
+});
+
+test('a seeded alarm still fires only on the edge, not every tick', () => {
+  const alarm = createFleetAlarm({ knownOnline: ['a', 'b', 'c'] });
+  assert.equal(alarm.observe([down('a'), down('b'), down('c')])?.kind, 'stuck');
+  for (let i = 0; i < 20; i++) assert.equal(alarm.observe([down('a'), down('b'), down('c')]), null);
+});
+
+test('a seeded alarm still reports recovery', () => {
+  const alarm = createFleetAlarm({ knownOnline: ['a', 'b', 'c'] });
+  alarm.observe([down('a'), down('b'), down('c')]);
+  assert.equal(alarm.observe([up('a'), up('b'), up('c')])?.kind, 'recovered');
+});

@@ -1629,6 +1629,35 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       slot made nine unrelated tests time out at once, which is how the leak was found.
       `src/stores/commandStore.ts`, `src/stores/commandStore.test.ts` (4 tests, 15 in the file)
       Frontend-only: no flow write, no deploy to the Pi needed beyond the dashboard build.
+      **Confirmed deployed 2026-09-03**: `dist` was rebuilt at 16:01, a minute after the commit,
+      the served bundle contains the cap, and nothing under `src/` has changed since.
+
+- [x] **EX-163** The fleet alarm can now report an outage that started before the daemon did.
+      **It could not, and that is not theoretical — it is why nobody was told about RM-046.** The
+      fleet fell from 18 devices to 4 after the site power cycle and stayed there for **nine
+      hours with no alert at all**, on a deployment where `NTFY_TOPIC` is configured and the
+      channel works. `ibems-ingest` restarted at 07:51 with sixteen devices already offline, and
+      `createFleetAlarm` only counts a device as down once it has seen that device UP — so none
+      of the sixteen ever qualified, `down` stayed empty, and the alarm never armed.
+      The module's own docblock claimed the opposite: that the in-process state resetting on
+      restart *"re-arms the alarm — correct, because a restart is also when the operator is most
+      likely to want to know the fleet came back up wrong"*. A restart **disarms** it, for exactly
+      the devices that are already broken, which is precisely that case. The reasoning behind
+      `everOnline` was sound — the quiesced IR blaster and outside-temp sensor would otherwise
+      hold the fleet over threshold forever — and the conclusion drawn from it was backwards.
+      `createFleetAlarm({ knownOnline })` is seeded from the devices that reported online in the
+      last **7 days**, which the database already knows. Seven rather than all history so a
+      decommissioned device cannot alarm for being absent, and long enough to cover a weekend
+      plus a holiday. The furniture guard is intact by construction: a device that has NEVER
+      reported online has no history and still cannot contribute.
+      **A failed seed degrades to the old behaviour, never to alarming on everything** — it is a
+      database read, databases are unreachable sometimes, and a read that fails must not
+      manufacture a fleet alarm. Anything that is not an array of strings is ignored rather than
+      trusted, and the daemon logs which of the two states it started in rather than leaving it
+      to be inferred.
+      Both guards were neutered and fail the right tests (3 for the bad-seed guard, 7 for the
+      seeding itself) — `server/fleetAlarm.mjs`, `server/ingest.mjs`,
+      `server/fleetAlarm.test.mjs` (6 tests, 17 in the file)
 - [x] **FI-023** A switch's `state` is what the RELAY is doing, not what was last asked of it.
       `buildLatest` derived it from `bems_lights_state`, which the flow's `Lighting Logic Hub`
       writes from an incoming COMMAND before forwarding it to the device — a record of intent,
@@ -2514,8 +2543,36 @@ fall back to it).
       a test asserts it, checked by making the compact variant drop its `aria-label`, which fails.
       The lists and the alerts popover keep the word, where there is room to say it.
 
-- [ ] **RM-046 (BLOCKED — needs someone at the office, with the router's credentials)**
-      **The access point is dropping the fleet.** 2026-09-03, after the RM-020 power cycle: 4 of
+- [x] **RM-046 — RESOLVED 2026-09-03. 18/20 online, and the recovery took BOTH halves.**
+      Final state: every outlet, every light switch and all four meters online; discovery
+      broadcasters **3 → 17**; Node-RED's journal **230 → 1 line a minute**. The only two still
+      offline are `acu_main` and `sens_outside_temp`, which is RM-016 and unrelated — they have
+      never been paired.
+      **What fixed it, with the evidence for each step and the limits of the claim.** Three
+      interventions, three outcomes:
+      1. A power cycle into a congested channel (morning) — **made it worse.** 18 devices became 4.
+      2. A channel change with no re-association (16:15, ch 11 → 1) — **recovered nothing.** The
+         air was measurably fixed (interference score 93 → 0, Pi retry-discarded frames 93 → 2)
+         and in 21 minutes not one device connected.
+      3. A power cycle into the clean channel — **17 of 17 came back.**
+      So neither was sufficient alone: the devices needed to re-associate, and they needed a
+      clean channel for that association to succeed.
+      **Where that reading is weaker than it looks, said plainly.** Each is a single observation
+      and none was controlled. The channel at the time of the morning power cycle was never
+      measured — 11 was read at 14:47, hours later — and the neighbouring APs are demonstrably
+      hopping (one was seen on channel 10, then 13, then 8 across three scans within two hours).
+      So "the morning cycle went into a congested channel" is inference, not measurement.
+      **Which makes the fixed channel the load-bearing part of the fix, not the specific number.**
+      If BEMS is left on auto it can wander back onto a busy channel and this recurs with no
+      change on our side. Confirm it is pinned manually.
+      Still not measured, and still only visible from the router's admin page: the AP's
+      maximum-associated-clients setting, the DHCP pool, and why the LAN renumbered onto a
+      different private /24 in the first place. The fleet being healthy does not answer any of
+      the three, and the renumber remains unexplained.
+      Nobody was told any of this while it was happening — see **EX-163**.
+
+- [x] **RM-046 (historical detail, kept for the diagnosis)**
+      **The access point was dropping the fleet.** 2026-09-03, after the RM-020 power cycle: 4 of
       18 devices online, only the three physical meters broadcasting, and the other fourteen
       associating and dropping continuously. The full measurement is in §0.
       **What makes this a network finding and not a bridge one:** the vendor cloud, which reaches
