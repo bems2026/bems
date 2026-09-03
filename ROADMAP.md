@@ -86,9 +86,10 @@ Measured the same morning from a remote session, on the Pi:
 **This is a network job, not a coding one.** See **RM-046**. Two things in this repository made
 it noisier. The first is now fixed — discovery retried at a fixed 1 s with no back-off, which
 `docs/adr-002-device-recovery-path.md` prescribed and nobody built; see **EX-160**
-(`npm run backoff:pi`). The second is still open: 650+ `EHOSTUNREACH` to two addresses that
+(`npm run backoff:pi`). The second is fixed too — 650+ `EHOSTUNREACH` to two addresses that
 stopped existing when the subnet moved, because a node that has cached an address never returns
-to broadcast discovery — **FI-025**.
+to broadcast discovery; see **EX-161** (`npm run stale-address:pi`), whose recovery path is built
+and armed but has not yet had a live occurrence to act on.
 
 The same morning's deploy also produced a live data fault, now fixed — see **EX-158**.
 
@@ -1537,17 +1538,62 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       cap in roughly four cycles instead of seven. The cap bounds it and a green still resets it
       fully, so this is faster quiet rather than a defect; worth knowing before anyone retunes the
       constants.
-- [ ] **FI-025** A tuya node that has cached a device address never returns to broadcast
-      discovery, so it hammers an address that has stopped existing. Measured 2026-09-03 after the
-      AP renumbered its LAN (RM-046): **325 `EHOSTUNREACH` to one address and 323 to another**, in
-      3.6 h, both of them leases that had been valid that morning. `find()` is the only thing that
-      can recover from a DHCP change, and a node in this state never calls it.
-      EX-160's back-off slows the loop but does not fix its aim — a node backing off to 60 s is
-      still dialling a dead address, and will keep doing so until Node-RED restarts. The remedy is
-      probably to send `CONTROL`/`RECONNECT` after N consecutive host-unreachable errors, which
-      forces a fresh `find()`. That needs the error TEXT, not just the status fill, so it wants
-      either the node's status output or the `catch`-node path — a different input than EX-160's,
-      which is why it was not folded in.
+- [x] **EX-161** (was FI-025) A node whose cached address has stopped existing is made to
+      rediscover — `npm run stale-address:pi`. Measured 2026-09-03 after the AP renumbered its LAN
+      (RM-046): **325 `EHOSTUNREACH` to one address and 323 to another** in 3.6 h, both leases that
+      had been valid that morning, while devices in the ordinary not-found state produced far
+      fewer. `tuyapi@7.7.1` `index.js:996-1002` is why — once `find()` resolves an address it
+      caches it ON THE INSTANCE and every later call returns `Promise.resolve(true)` without
+      broadcasting. `find()` is the only thing that can discover a NEW address, so such a node can
+      never recover from a DHCP change; and it is not an exotic state, it is the normal fate of
+      any device that has ever been reachable and then gone away. EX-160's back-off slows that
+      loop without correcting its aim.
+      **The remedy is not the obvious control operation.** `RECONNECT` reuses the instance, cache
+      and all. `CONNECT` runs the vendor node's `initTuya()` — `new TuyaDevice(connectionParams)`,
+      a fresh instance, and `connectionParams.ip` is `node.deviceIp`, empty on every node here.
+      `DISCONNECT` is sent first because `closeComm()` clears the pending find timer; without it
+      `startComm()` sets a second and the loop doubles.
+      **No Node-RED signal carries the socket error, which was established by reading all three
+      candidates rather than assuming.** The status TEXT is `'Error : ' + JSON.stringify(error)`
+      and stringifying an `Error` gives `{}`; a CATCH node never sees these because
+      `Node.prototype.error` only routes to one when passed a second object argument
+      (`Node.js:570`) and the vendor logger passes one (`utils.js:27`); the node's own status
+      OUTPUT carries `{state}` and nothing else. The text exists only in the journal.
+      So detection comes from the mechanism instead, and is better for it: **a find/connect cycle
+      cannot complete faster than `findTimeout` unless `find()` short-circuited.** The node goes
+      yellow when `findDevice` starts and red when the cycle fails; a real find spends the whole
+      `findTimeout`, a short-circuited one falls through to a connect that fails in well under a
+      second. The threshold is taken per device from that node's OWN declared `findTimeout` — one
+      of the values that lives only on the live flow — so it tracks reality instead of quietly
+      ceasing to match it. An absent or nonsense value falls back to the vendor default and never
+      to zero, because a zero threshold would classify every cycle as a short circuit and restart
+      the whole fleet.
+      Self-limiting: after a recovery the node really broadcasts, so its next failure is
+      full-length, which resets the streak. An absent device gets one attempt, not a loop. Three
+      consecutive short cycles are required and no device may be restarted more than once a minute.
+      `node-red-bridge/staleAddressPlan.mjs`, `node-red-bridge/apply-stale-address.mjs`,
+      `test/stale-address.test.mjs` (28 tests)
+      **APPLIED LIVE 2026-09-03**, flows.json backed up first. 293 nodes (+8), `findTimeout` and
+      `tuyaVersion` untouched. **The controller is confirmed RECEIVING**, which is not the same as
+      the deploy succeeding: `bems_stale_recovery` in flow context carries an entry for all 17
+      non-quiesced device nodes, each with `yellowAt` cleared — and only a red processed after a
+      yellow clears it, so the full cycle round-trip is proven. All 17 read `hits: 0`, i.e. every
+      observed cycle took the full `findTimeout`: correct, because the 12:24 Node-RED restart had
+      already rebuilt every `TuyaDevice` and no device is currently in the stale state. The Aircon
+      tab has no entry because both its nodes are quiesced and emit no status at all.
+      **NOT PROVEN: the recovery path itself has never fired against real hardware**, because the
+      condition did not exist while it was deployed. It is covered by tests and seven neuters; it
+      has not been seen to restore a live device. The next AP or DHCP change is the test.
+      **Two attempts, and the first one taught the more useful lesson.** It used a catch node,
+      deployed cleanly, raised no error, and received nothing whatsoever — the same silent no-op
+      shape as EX-160's first deploy. It was caught only because this controller's state lives in
+      FLOW context and an empty key on disk is visible. That is why it lives there and the
+      back-off's does not: the back-off's state describes `node.retryTimeout`, which a restart
+      resets, so persisting it would be a lie. Observability was chosen per fault, not by habit.
+      **And three of the seven neuters passed on the first run** — the re-entered-yellow, bare-red
+      and per-device-threshold tests were all asserting on an output that is null either way, and
+      one passed only because a recovery had coincidentally zeroed the counter it checked. Running
+      the shipped source is not enough on its own; the assertion has to be able to fail.
 - [ ] **FI-024** The outlet master actions send both sockets of one physical device at the same
       instant. `OutletPlanCard`'s `allOn`/`allOff` do `send(d.id, 1, …)` then `send(d.id, 2, …)`
       back to back with no await, and both sockets are the **same** Tuya device — which accepts
