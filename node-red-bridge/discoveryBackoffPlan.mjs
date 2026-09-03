@@ -89,12 +89,18 @@ const IDS_LIST = IDS;
 const BASE = BASE_MS;
 const MAX = MAX_MS;
 
-const src = (msg && msg.source) || {};
+// The reporting node is at msg.status.source, NOT msg.source — Node-RED's runtime builds it
+// there (@node-red/runtime/lib/flows/Flow.js, handleStatus: "message.status.source = {id, type,
+// name}"). Getting this wrong is SILENT: the id simply does not match, every output is null, and
+// nothing is logged. It cost a live deploy that changed nothing on 2026-09-03. The fallback is
+// belt-and-braces, not an alternative contract.
+const st = (msg && msg.status) || {};
+const src = st.source || (msg && msg.source) || {};
 const idx = IDS_LIST.indexOf(src.id);
 const out = IDS_LIST.map(function () { return null; });
 if (idx < 0) return out;
 
-const fill = ((msg && msg.status) || {}).fill;
+const fill = st.fill;
 if (fill !== 'green' && fill !== 'red') return out;
 
 const store = context.get('backoff') || {};

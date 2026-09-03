@@ -42,8 +42,26 @@ const flow = () => [
   { id: 'other', type: 'inject', z: 'outlet', name: 'unrelated', wires: [[]] },
 ];
 
+/**
+ * A status message EXACTLY as Node-RED's runtime builds it.
+ *
+ * This shape is the whole reason the first live deploy of this feature changed nothing. The
+ * reporting node is at `msg.status.source`, not `msg.source` — see
+ * `@node-red/runtime/lib/flows/Flow.js`, `handleStatus`:
+ *
+ *     message.status.source = { id: node.id, type: node.type, name: node.name }
+ *
+ * The original tests built `{ source, status }` and passed, because they asserted against the
+ * author's assumption rather than the runtime's contract. Executing the source is only worth
+ * anything if the input is real, and a mismatch here is SILENT: the id fails to match, every
+ * output is null, and nothing is logged anywhere.
+ */
+const statusMsg = (id, fill) => ({
+  status: { fill, shape: 'ring', text: fill === 'green' ? 'connected' : 'disconnected', source: { id, type: 'tuya-smart-device', name: id } },
+});
+
 /** Drives the emitted controller source against a fake node context. */
-const drive = (store, ids, id, fill) => runBackoff(store, ids, { source: { id }, status: { fill } });
+const drive = (store, ids, id, fill) => runBackoff(store, ids, statusMsg(id, fill));
 /** The single non-null message a run produced, or null. */
 const sent = (outs) => outs.find((m) => m !== null) ?? null;
 
@@ -137,7 +155,27 @@ test('a status from a node this controller does not own sends nothing', () => {
 test('a malformed status message is survived rather than thrown on', () => {
   const store = {}, ids = ['m1'];
   assert.doesNotThrow(() => runBackoff(store, ids, {}));
-  assert.doesNotThrow(() => runBackoff(store, ids, { source: {}, status: {} }));
+  assert.doesNotThrow(() => runBackoff(store, ids, { status: {} }));
+  assert.doesNotThrow(() => runBackoff(store, ids, { status: { source: {} } }));
+});
+
+test('the reporting node is read from msg.status.source, which is where the runtime puts it', () => {
+  // Pinned because getting it wrong is silent and cost a live deploy that changed nothing.
+  // `@node-red/runtime/lib/flows/Flow.js` handleStatus:
+  //     message.status.source = { id: node.id, type: node.type, name: node.name }
+  const store = {}, ids = ['m1'];
+  runBackoff(store, ids, { status: { fill: 'red', source: { id: 'm1' } } });
+  const m = sent(runBackoff(store, ids, { status: { fill: 'red', source: { id: 'm1' } } }));
+  assert.equal(m.payload.value, BASE_RETRY_MS * 2, 'msg.status.source.id must be the id that matches');
+});
+
+test('a message shaped the way the author first assumed is not silently accepted as a match', () => {
+  // The original bug: `{ source: { id } }` at the top level. It is tolerated as a fallback, but
+  // a message carrying NEITHER shape must do nothing rather than act on a wrong device.
+  const store = {}, ids = ['m1', 'm2'];
+  const outs = runBackoff(store, ids, { status: { fill: 'red' } });
+  assert.deepEqual(outs, [null, null]);
+  assert.deepEqual(store.backoff, undefined, 'no state may be recorded for an unidentifiable node');
 });
 
 // --- the flow plan ---------------------------------------------------------------------------
