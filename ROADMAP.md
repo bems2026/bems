@@ -1367,6 +1367,43 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       either — both fail honestly, with `capability_needs_cloud` naming the missing path.
       `server/dispatchLight.mjs`'s `hasLocalCapabilityRoute()` is the single place that says so
 
+- [x] **EX-157** A 60 s poller for the light switches, closing the half of FI-013 that fix left
+      out. A `tdq` switch volunteers its relay state when it changes and essentially nothing else,
+      so the countdown, power-on mode, switch type and inching setting it also holds never
+      arrived: measured on the Pi, all seven lights were online and reporting **1 of the 7 codes**
+      their profile declares, while every outlet and meter had a full set — the outlets only
+      because `outletPollPlan` already asks them. Sending `{ operation: 'GET' }` makes the tuya
+      node answer on the same output a spontaneous report uses, so `tag L<n>` and `Collect status`
+      handle the reply unchanged.
+      Ids are derived from the node NAME, not flow order — the live flow lists them 2,3,5,6,7,4,1,
+      so position would poll each light under its neighbour's health entry, skipping the wrong
+      device. A light already flagged disconnected is skipped; one with no health entry is polled,
+      because refusing would keep a never-reporting light silent forever. Fires 25 s into the
+      minute, offset from the outlet poller's 10 s, so fourteen queries do not land on one radio
+      segment at once. Both neuters (ids-from-position, skip-unknown) confirmed to fail the right
+      tests — `node-red-bridge/switchPollPlan.mjs`, `node-red-bridge/poll-switches.mjs`,
+      `test/switch-poll.test.mjs` (12 tests).
+      **APPLIED LIVE 2026-09-03**, flows.json backed up first. 277 nodes (+2), `tuyaVersion` and
+      `findTimeout` byte-identical across all 19 tuya nodes, no new journal noise. Within a minute
+      every light reported **7/7 codes** — `switch_inching: "AAAC"`, `switch_type: "flip"`,
+      `relay_status` decoding through the alias table — matching what the vendor cloud reports for
+      the same product
+- [ ] **FI-023** `state` for a switch is the COMMANDED value, not the measured one, and the two
+      currently disagree on all seven lights. `buildLatest` derives it from `bems_lights_state`,
+      which the flow's `Lighting Logic Hub` sets from an incoming *command* before forwarding it
+      to the device — nothing ever writes back what the relay did. The measured state has been
+      sitting unused in `global.lightStatus[n].on` (from `Collect status`, `dps['1']`) the whole
+      time; `buildLatest` reads only `.conn` from that entry.
+      Surfaced by EX-157: on 2026-09-03 the app showed all seven lights **off** while the devices
+      and the vendor cloud independently reported all seven **on**. So the primary display of a
+      building energy management system was showing seven circuits as off while they were on.
+      The fix is to prefer `lightStatus[n].on` and fall back to the commanded value — small, but
+      it changes a live control surface: Overview counts would move, and
+      `commandStore.reconcile` currently confirms a light command by comparing against the value
+      that command itself wrote, so "confirmed" has never meant anything for lights. Making it
+      real also means a light that does not report within the 6 s grace window would show as
+      failed when it worked. Prove it on one light before trusting it
+
 ### Data & Supabase
 
 - [x] **EX-080** Base schema: devices, readings, building_totals, ingestion_health — `supabase/schema.sql`
