@@ -34,11 +34,12 @@
 
 import { execFileSync } from 'node:child_process';
 
+/** Returns the output, or `null` if the command failed — the difference matters for the rescan. */
 const sh = (cmd, args) => {
   try {
-    return execFileSync(cmd, args, { encoding: 'utf8', timeout: 30000 });
+    return execFileSync(cmd, args, { encoding: 'utf8', timeout: 30000, stdio: ['ignore', 'pipe', 'ignore'] });
   } catch {
-    return '';
+    return null;
   }
 };
 
@@ -74,6 +75,27 @@ export function scoreChannel(candidate, neighbours) {
   return Math.round(cost);
 }
 
+/**
+ * Whether the scan can be believed at all.
+ *
+ * WHY THIS EXISTS, and it is not hypothetical. `nmcli dev wifi rescan` needs privilege; without
+ * it NetworkManager answers *"not authorized"* on stderr and `wifi list` returns only whatever is
+ * still cached — which, immediately after a channel change, is the connected AP and nothing else.
+ * The first version of this script took that at face value and printed **"No adjacent-channel
+ * clash with this network. The radio environment is not the fault."** on 2026-09-03, moments
+ * after a real change, when it had in fact measured nothing. A survey that cannot tell a clear
+ * band from a failed scan is worse than no survey: it hands out an all-clear.
+ *
+ * One network in earshot means the radio heard itself. A genuinely empty 2.4 GHz band in an
+ * office is possible but rare enough that saying "I could not measure" is the honest default.
+ */
+export function surveyIsCredible(neighbours, rescanOk) {
+  if (neighbours.length === 0) return { credible: false, why: 'the scan returned nothing at all' };
+  if (neighbours.length === 1) return { credible: false, why: 'the scan returned only this Pi own network, which is what a failed rescan looks like' };
+  if (!rescanOk) return { credible: true, why: 'the rescan was refused, so these results may be cached and stale' };
+  return { credible: true, why: null };
+}
+
 export function parseWifiList(text) {
   const out = [];
   for (const line of text.split('\n')) {
@@ -90,19 +112,35 @@ export function parseWifiList(text) {
 }
 
 if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, '/')}` || process.argv[1]?.endsWith('rf-survey.mjs')) {
-  sh('nmcli', ['dev', 'wifi', 'rescan']);
+  // Try the privileged rescan first; fall back to the unprivileged one and record which worked,
+  // because a refused rescan silently downgrades everything below to whatever was cached.
+  let rescanOk = sh('sudo', ['-n', 'nmcli', 'dev', 'wifi', 'rescan']) !== null;
+  if (!rescanOk) rescanOk = sh('nmcli', ['dev', 'wifi', 'rescan']) !== null;
   await new Promise((r) => setTimeout(r, 8000));
 
-  const neighbours = parseWifiList(sh('nmcli', ['-t', '-f', 'SSID,CHAN,SIGNAL', 'dev', 'wifi', 'list']));
-  const active = sh('nmcli', ['-t', '-f', 'ACTIVE,SSID,CHAN,SIGNAL', 'dev', 'wifi', 'list'])
+  const neighbours = parseWifiList(sh('nmcli', ['-t', '-f', 'SSID,CHAN,SIGNAL', 'dev', 'wifi', 'list']) ?? '');
+  const active = (sh('nmcli', ['-t', '-f', 'ACTIVE,SSID,CHAN,SIGNAL', 'dev', 'wifi', 'list']) ?? '')
     .split('\n').find((l) => l.startsWith('yes:'));
   const mine = active ? parseWifiList(active.slice(4))[0] : null;
 
   console.log('2.4 GHz SURVEY — read-only, changes nothing\n');
 
+  const credibility = surveyIsCredible(neighbours, rescanOk);
+  if (!credibility.credible) {
+    console.log('THIS SURVEY MEASURED NOTHING USABLE, so it is refusing to give a verdict.');
+    console.log(`Reason: ${credibility.why}.`);
+    console.log('A scan needs privilege — NetworkManager answers "not authorized" and returns only');
+    console.log('what was cached, which right after a channel change is this AP and nothing else.');
+    console.log('Re-run it as: sudo -E npm run rf:survey');
+    console.log('\nNot reporting a clear band, because a failed scan and a clear band look identical');
+    console.log('from here and only one of them is good news.');
+    process.exit(2);
+  }
+  if (credibility.why) console.log(`CAVEAT: ${credibility.why}.\n`);
+
   if (mine) {
     console.log(`This Pi is on "${mine.ssid}", channel ${mine.chan}, signal ${mine.signal}.`);
-    const link = sh('cat', ['/proc/net/wireless']).split('\n').find((l) => l.trim().startsWith('wlan0'));
+    const link = (sh('cat', ['/proc/net/wireless']) ?? '').split('\n').find((l) => l.trim().startsWith('wlan0'));
     if (link) {
       const f = link.trim().split(/\s+/);
       console.log(`Link quality ${f[2]}, level ${f[3]} dBm, ${f[8]} frames discarded on retry.`);

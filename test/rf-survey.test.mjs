@@ -13,7 +13,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { scoreChannel, parseWifiList } from '../scripts/rf-survey.mjs';
+import { scoreChannel, parseWifiList, surveyIsCredible } from '../scripts/rf-survey.mjs';
 
 /** The real scan from the Pi, 2026-09-03. */
 const CARE_OFFICE = [
@@ -87,4 +87,36 @@ test('a hidden SSID is kept, because it still occupies the air', () => {
 test('malformed scan lines are skipped rather than thrown on', () => {
   assert.deepEqual(parseWifiList(''), []);
   assert.deepEqual(parseWifiList('nonsense\n\nSSID:notanumber:70'), []);
+});
+
+/**
+ * A failed scan and a clear band look identical from here, and only one of them is good news.
+ *
+ * Measured 2026-09-03, minutes after the channel really was changed: `nmcli dev wifi rescan`
+ * needs privilege, NetworkManager answered "not authorized", `wifi list` returned only the
+ * connected AP, and this script printed *"No adjacent-channel clash with this network. The radio
+ * environment is not the fault."* It had measured nothing at all. A survey that hands out an
+ * all-clear it did not earn is worse than no survey.
+ */
+test('a scan that returned nothing is refused, not reported as a clear band', () => {
+  const v = surveyIsCredible([], true);
+  assert.equal(v.credible, false);
+  assert.match(v.why, /nothing/);
+});
+
+test('a scan showing only our own network is refused — that is what a failed rescan looks like', () => {
+  const v = surveyIsCredible([{ ssid: 'BEMS', chan: 1, signal: 86 }], true);
+  assert.equal(v.credible, false);
+});
+
+test('a real scan is credible', () => {
+  assert.equal(surveyIsCredible(CARE_OFFICE, true).credible, true);
+});
+
+test('a refused rescan on an otherwise real scan is believed, but carries a staleness caveat', () => {
+  // The results are probably fine — they are just possibly cached. Refusing outright here would
+  // make the script useless on a Pi without passwordless sudo.
+  const v = surveyIsCredible(CARE_OFFICE, false);
+  assert.equal(v.credible, true);
+  assert.match(v.why, /stale|cached/);
 });
