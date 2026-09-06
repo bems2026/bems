@@ -1,0 +1,89 @@
+/*
+ * The app's own tokens, copied from `src/index.css` so the README's images look like the
+ * product rather than like a README. Copied, not imported: these render under headless
+ * Chromium from a `file://` URL with no Tailwind and no build step, and a token that drifts
+ * here makes a picture slightly wrong, not a page broken. Re-check against `src/index.css`
+ * if the app's palette ever moves.
+ */
+@font-face {
+  font-family: 'Manrope';
+  src: url('../../../node_modules/@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2') format('woff2-variations');
+  font-weight: 200 800;
+  font-display: block;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('../../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2') format('woff2');
+  font-weight: 500;
+  font-display: block;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('../../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-display: block;
+}
+
+:root {
+  --bg-page: #eef1f6;
+  --bg-surface: #ffffff;
+  --bg-inset: #f1f5f9;
+  --glass: rgb(255 255 255 / 0.75);
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --txt: #1e293b;
+  --muted: #475569;
+  --muted-2: #5f6b7d;
+  --faint: #94a3b8;
+  --accent: #f59e0b;
+  --accent-hi: #fbbf24;
+  --accent-text: #ae4d03;
+  --blue: #1e5ce4;
+  --blue-bright: #3b82f6;
+  --green: #037756;
+  --green-bright: #10b981;
+  --red: #b91c1c;
+  --purple: #7c3aed;
+  --glow-a: rgb(245 158 11 / 0.16);
+  --glow-b: rgb(59 130 246 / 0.13);
+  --shadow: 0 1px 2px rgb(15 23 42 / 0.05), 0 8px 24px rgb(15 23 42 / 0.06);
+}
+
+[data-theme='dark'] {
+  --bg-page: #121212;
+  --bg-surface: #1e1e1e;
+  --bg-inset: #171717;
+  --glass: rgb(30 30 30 / 0.75);
+  --border: #2c2c2c;
+  --border-strong: #3d3d3d;
+  --txt: #e8e8e8;
+  --muted: #b4bcc7;
+  --muted-2: #8b93a0;
+  --faint: #7b8494;
+  --accent: #c2790e;
+  --accent-hi: #dba33f;
+  --accent-text: #e0a94a;
+  --blue: #739ff9;
+  --blue-bright: #6690e8;
+  --green: #32b585;
+  --green-bright: #3dbb8a;
+  --red: #f8796d;
+  --purple: #a78bfa;
+  --glow-a: rgb(194 121 14 / 0.20);
+  --glow-b: rgb(95 139 229 / 0.16);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.35);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg-page);
+  color: var(--txt);
+  font-family: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.mono {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}

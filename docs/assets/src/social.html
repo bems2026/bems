@@ -1,0 +1,68 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="stylesheet" href="tokens.css">
+<script src="theme.js"></script>
+<title>iBEMS social preview</title>
+<style>
+  /* 1280x640 — GitHub's social-preview size. Crops in some clients bite the edges, so
+     everything that matters stays inside the middle ~1100x480. */
+  body { width: 1280px; height: 640px; overflow: hidden; }
+  .stage {
+    width: 1280px; height: 640px; padding: 74px 92px 66px; display: flex; flex-direction: column;
+    background:
+      radial-gradient(820px 420px at 2% 0%, var(--glow-a), transparent 58%),
+      radial-gradient(860px 460px at 100% 100%, var(--glow-b), transparent 58%),
+      var(--bg-page);
+  }
+  .eyebrow { font-size: 14px; font-weight: 600; letter-spacing: 0.16em; color: var(--muted-2); text-transform: uppercase; }
+  .word { margin: 20px 0 0; font-size: 116px; font-weight: 800; letter-spacing: -0.04em; line-height: 1; }
+  .word .i { color: var(--accent-text); }
+  .tag { margin: 24px 0 0; font-size: 31px; font-weight: 700; letter-spacing: -0.018em; max-width: 940px; line-height: 1.24; }
+  .sub { margin: 14px 0 0; font-size: 19px; font-weight: 500; color: var(--muted); }
+  .spacer { flex: 1 1 auto; }
+  .foot { display: flex; align-items: center; gap: 12px; }
+  .stat {
+    padding: 8px 15px; border-radius: 9px; border: 1px solid var(--border-strong);
+    background: var(--bg-surface); font-size: 15px; font-weight: 700; color: var(--txt);
+  }
+  .stat span { color: var(--muted-2); font-weight: 600; }
+  .repo { margin-left: auto; font-size: 16px; font-weight: 600; color: var(--muted-2); }
+  .fleet { display: flex; align-items: center; gap: 16px; }
+  .tiles { display: flex; gap: 6px; }
+  .t { width: 20px; height: 20px; border-radius: 5px; }
+  .fleet-lbl { font-size: 15px; font-weight: 600; color: var(--muted-2); }
+  .rule { height: 5px; background: linear-gradient(90deg, var(--accent), var(--accent-hi) 26%, var(--blue-bright) 62%, var(--green-bright)); }
+</style>
+<div class="stage">
+  <div class="eyebrow mono">MMSU CARE Office &middot; NBERIC</div>
+  <h1 class="word"><span class="i">i</span>BEMS</h1>
+  <p class="tag">Building energy management for a real office.</p>
+  <p class="sub">Metering, control and load-shedding &mdash; on one Raspberry Pi, on the building's own network.</p>
+  <div class="spacer"></div>
+  <div class="fleet">
+    <span class="tiles" data-n="7" data-c="var(--blue)"></span>
+    <span class="tiles" data-n="7" data-c="var(--accent)"></span>
+    <span class="tiles" data-n="4" data-c="var(--green)"></span>
+    <span class="tiles" data-n="2" data-c="var(--purple)"></span>
+    <span class="fleet-lbl">outlets &middot; lighting &middot; branch meters &middot; aircon and sensor</span>
+  </div>
+  <div class="spacer"></div>
+  <div class="foot">
+    <span class="stat">20 <span>devices</span></span>
+    <span class="stat">4 <span>daemons</span></span>
+    <span class="stat">200 <span>test files</span></span>
+    <span class="stat">MIT</span>
+    <span class="repo mono">github.com/bems2026/bems</span>
+  </div>
+</div>
+<div class="rule"></div>
+<script>
+  for (const el of document.querySelectorAll('.tiles')) {
+    for (let i = 0; i < Number(el.dataset.n); i++) {
+      const d = document.createElement('span');
+      d.className = 't';
+      d.style.background = el.dataset.c;
+      el.append(d);
+    }
+  }
+</script>

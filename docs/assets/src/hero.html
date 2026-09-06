@@ -1,0 +1,83 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="stylesheet" href="tokens.css">
+<script src="theme.js"></script>
+<title>iBEMS hero</title>
+<style>
+  body { width: 1280px; height: 320px; overflow: hidden; }
+  .stage {
+    position: relative; width: 1280px; height: 320px; display: flex; align-items: center;
+    padding: 0 52px; gap: 44px;
+    background:
+      radial-gradient(760px 380px at 6% 118%, var(--glow-a), transparent 62%),
+      radial-gradient(680px 360px at 96% -18%, var(--glow-b), transparent 62%),
+      var(--bg-page);
+  }
+  .rule { position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-hi) 26%, var(--blue-bright) 62%, var(--green-bright)); }
+
+  .left { flex: 1 1 auto; min-width: 0; }
+  .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.14em; color: var(--muted-2); text-transform: uppercase; }
+  .word { margin: 12px 0 0; font-size: 76px; font-weight: 800; letter-spacing: -0.035em; line-height: 1; }
+  .word .i { color: var(--accent-text); }
+  .tag { margin: 14px 0 0; font-size: 21px; font-weight: 600; color: var(--txt); letter-spacing: -0.012em; }
+  .sub { margin: 7px 0 0; font-size: 16px; font-weight: 500; color: var(--muted); }
+
+  .panel {
+    flex: 0 0 388px; align-self: stretch; margin: 46px 0; border-radius: 16px;
+    border: 1px solid var(--border); background: var(--glass); box-shadow: var(--shadow);
+    padding: 18px 20px 16px; display: flex; flex-direction: column; position: relative; overflow: hidden;
+  }
+  .panel-head { display: flex; align-items: baseline; justify-content: space-between; }
+  .panel-title { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; color: var(--muted-2); text-transform: uppercase; }
+  .panel-count { font-size: 15px; font-weight: 700; color: var(--txt); }
+  .spark { position: absolute; left: 0; right: 0; bottom: 0; height: 84px; opacity: 0.5; }
+  .rows { margin-top: 14px; display: grid; gap: 9px; position: relative; z-index: 1; }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .tiles { display: flex; gap: 4px; }
+  .t { width: 13px; height: 13px; border-radius: 3.5px; }
+  .lbl { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 0.01em; }
+</style>
+<div class="stage">
+  <div class="left">
+    <div class="eyebrow mono">MMSU CARE Office &middot; NBERIC &middot; Batac City</div>
+    <h1 class="word"><span class="i">i</span>BEMS</h1>
+    <p class="tag">Building energy management for a real office.</p>
+    <p class="sub">Metering, control and load-shedding &mdash; on one Raspberry Pi, on the building's own network.</p>
+  </div>
+
+  <div class="panel">
+    <svg class="spark" viewBox="0 0 388 84" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="f" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.30"/>
+          <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <path d="M0,62 L26,58 L52,64 L78,44 L104,49 L130,31 L156,37 L182,22 L208,29 L234,18 L260,26 L286,14 L312,24 L338,17 L364,27 L388,21 L388,84 L0,84 Z" fill="url(#f)"/>
+      <path d="M0,62 L26,58 L52,64 L78,44 L104,49 L130,31 L156,37 L182,22 L208,29 L234,18 L260,26 L286,14 L312,24 L338,17 L364,27 L388,21"
+            fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    </svg>
+    <div class="panel-head">
+      <span class="panel-title">Fleet</span>
+      <span class="panel-count">20 devices</span>
+    </div>
+    <div class="rows">
+      <div class="row"><span class="tiles" data-n="7" data-c="var(--blue)"></span><span class="lbl">7 &times; metering outlet</span></div>
+      <div class="row"><span class="tiles" data-n="7" data-c="var(--accent)"></span><span class="lbl">7 &times; lighting circuit</span></div>
+      <div class="row"><span class="tiles" data-n="4" data-c="var(--green)"></span><span class="lbl">4 &times; CT branch meter</span></div>
+      <div class="row"><span class="tiles" data-n="2" data-c="var(--purple)"></span><span class="lbl">air-conditioning &middot; outdoor sensor</span></div>
+    </div>
+  </div>
+  <div class="rule"></div>
+</div>
+<script>
+  for (const el of document.querySelectorAll('.tiles')) {
+    for (let i = 0; i < Number(el.dataset.n); i++) {
+      const d = document.createElement('span');
+      d.className = 't';
+      d.style.background = el.dataset.c;
+      el.append(d);
+    }
+  }
+</script>

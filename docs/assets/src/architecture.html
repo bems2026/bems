@@ -1,0 +1,136 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="stylesheet" href="tokens.css">
+<script src="theme.js"></script>
+<title>iBEMS architecture</title>
+<style>
+  body { width: 1280px; height: 592px; overflow: hidden; }
+  .stage {
+    width: 1280px; height: 592px; padding: 26px 44px 30px; display: flex; flex-direction: column;
+    background:
+      radial-gradient(700px 340px at 4% -6%, var(--glow-a), transparent 60%),
+      radial-gradient(700px 380px at 98% 106%, var(--glow-b), transparent 60%),
+      var(--bg-page);
+  }
+  h1 { margin: 0; font-size: 25px; font-weight: 800; letter-spacing: -0.022em; }
+  .lede { margin: 5px 0 0; font-size: 14px; font-weight: 500; color: var(--muted); }
+
+  .card { border: 1px solid var(--border); background: var(--bg-surface); border-radius: 14px; box-shadow: var(--shadow); }
+  .band { padding: 13px 18px; }
+  .band-head { display: flex; align-items: baseline; gap: 10px; }
+  .kicker { font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted-2); }
+  .band-title { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+  .note { font-size: 12px; font-weight: 500; color: var(--muted); }
+
+  .chips { display: flex; gap: 7px; margin-top: 10px; flex-wrap: nowrap; }
+  .chip {
+    display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--bg-inset); font-size: 12px; font-weight: 600; color: var(--txt);
+  }
+  .dot { width: 9px; height: 9px; border-radius: 2.5px; }
+
+  .conn { position: relative; }
+  .conn svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .edge {
+    position: absolute; left: 50%; transform: translateX(-50%); top: 50%; margin-top: -11px;
+    background: var(--bg-page); padding: 0 11px; font-size: 11px; font-weight: 500; color: var(--muted-2);
+    white-space: nowrap; text-align: center;
+  }
+  .edge.left  { left: 22%; }
+  .edge.right { left: 78%; }
+
+  .pi { padding: 13px 18px 15px; }
+  .procs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 11px; margin-top: 11px; }
+  .proc { border: 1px solid var(--border); background: var(--bg-inset); border-radius: 11px; padding: 10px 12px 11px; }
+  .proc-top { display: flex; align-items: center; gap: 7px; }
+  .bar { width: 3px; height: 15px; border-radius: 2px; }
+  .proc-name { font-size: 12.5px; font-weight: 700; letter-spacing: -0.005em; }
+  .proc-port { margin-left: auto; font-size: 10px; font-weight: 600; color: var(--muted-2); }
+  .proc-body { margin: 7px 0 0; font-size: 11.5px; line-height: 1.42; font-weight: 500; color: var(--muted); }
+
+  .out { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+  .out .card { padding: 12px 16px 13px; }
+  .foot { margin-top: 12px; font-size: 11.5px; font-weight: 500; color: var(--muted-2); text-align: center; }
+  .foot b { color: var(--muted); font-weight: 700; }
+</style>
+<div class="stage">
+  <header>
+    <h1>How a reading becomes a chart</h1>
+    <p class="lede">Four stages, one Raspberry Pi. The live path never leaves the building.</p>
+  </header>
+
+  <div class="card band" style="margin-top:14px">
+    <div class="band-head">
+      <span class="kicker">1 &nbsp;Field</span>
+      <span class="band-title">20 Tuya devices</span>
+      <span class="note">2.4&nbsp;GHz only &middot; same L2 segment as the Pi &middot; no cloud in the read path</span>
+    </div>
+    <div class="chips">
+      <span class="chip"><i class="dot" style="background:var(--blue)"></i>7 metering outlets</span>
+      <span class="chip"><i class="dot" style="background:var(--accent)"></i>7 lighting circuits</span>
+      <span class="chip"><i class="dot" style="background:var(--green)"></i>4 CT branch meters</span>
+      <span class="chip"><i class="dot" style="background:var(--purple)"></i>1 air-conditioner (IR)</span>
+      <span class="chip"><i class="dot" style="background:var(--purple)"></i>1 outdoor sensor</span>
+      <span class="chip" style="background:transparent;border-style:dashed;color:var(--muted-2)">4 branch circuits &rarr; 2 metered phases</span>
+    </div>
+  </div>
+
+  <div class="conn" style="height:52px">
+    <svg viewBox="0 0 1192 52" preserveAspectRatio="none">
+      <defs><marker id="a" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+        <path d="M0,0 L8,4 L0,8 z" fill="var(--border-strong)"/></marker></defs>
+      <path d="M596,0 L596,44" stroke="var(--border-strong)" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+    </svg>
+    <span class="edge mono">Tuya v3.4/v3.5 &middot; TCP 6668 &middot; discovery UDP 6666/6667 every ~5&nbsp;s</span>
+  </div>
+
+  <div class="card pi">
+    <div class="band-head">
+      <span class="kicker">2 &nbsp;One Raspberry Pi</span>
+      <span class="band-title">Four processes, each with one job</span>
+      <span class="note">systemd &middot; restarts on boot &middot; nothing else is allowed to reach the bridge</span>
+    </div>
+    <div class="procs">
+      <div class="proc">
+        <div class="proc-top"><i class="bar" style="background:var(--accent)"></i><span class="proc-name">Node-RED bridge</span><span class="proc-port mono">:1880</span></div>
+        <p class="proc-body">Talks to the devices. Shapes one payload for everything downstream. Bound to loopback.</p>
+      </div>
+      <div class="proc">
+        <div class="proc-top"><i class="bar" style="background:var(--blue)"></i><span class="proc-name">Auth proxy</span><span class="proc-port mono">:8080</span></div>
+        <p class="proc-body">Authenticates every request and every socket. Validates and audits commands.</p>
+      </div>
+      <div class="proc">
+        <div class="proc-top"><i class="bar" style="background:var(--green)"></i><span class="proc-name">Ingest daemon</span><span class="proc-port mono">60&nbsp;s</span></div>
+        <p class="proc-body">Writes history. Buffers to disk through a database outage and drains oldest first.</p>
+      </div>
+      <div class="proc">
+        <div class="proc-top"><i class="bar" style="background:var(--purple)"></i><span class="proc-name">Scheduler</span><span class="proc-port mono">15&nbsp;s</span></div>
+        <p class="proc-body">Fires schedules and auto-shed through the same gate a human click uses.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="conn" style="height:60px">
+    <svg viewBox="0 0 1192 60" preserveAspectRatio="none">
+      <defs><marker id="b" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+        <path d="M0,0 L8,4 L0,8 z" fill="var(--border-strong)"/></marker></defs>
+      <path d="M596,0 L596,16 L282,16 L282,52" stroke="var(--border-strong)" stroke-width="1.5" fill="none" marker-end="url(#b)"/>
+      <path d="M596,0 L596,16 L910,16 L910,52" stroke="var(--border-strong)" stroke-width="1.5" fill="none" marker-end="url(#b)"/>
+    </svg>
+    <span class="edge left mono">WS /ws/live every 2&nbsp;s</span>
+    <span class="edge right mono">upsert readings + totals</span>
+  </div>
+
+  <div class="out">
+    <div class="card">
+      <div class="band-head"><span class="kicker">3 &nbsp;Live</span><span class="band-title">Browser &amp; office kiosk</span></div>
+      <p class="proc-body">Seven screens, a 3D floor view, and a control page that says which classes are really live. Falls back to 15&nbsp;s polling when the socket drops.</p>
+    </div>
+    <div class="card">
+      <div class="band-head"><span class="kicker">4 &nbsp;History</span><span class="band-title">Supabase Postgres</span></div>
+      <p class="proc-body">30 days per-minute, then rolled into permanent hourly buckets. Charts read it straight from the browser &mdash; not through the proxy.</p>
+    </div>
+  </div>
+
+  <p class="foot">Cut the internet and the building keeps working: <b>metering, control and shedding are all local</b>. Only history and login need the outside.</p>
+</div>

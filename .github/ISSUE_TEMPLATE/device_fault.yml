@@ -1,0 +1,81 @@
+name: Device fault
+description: A light, outlet, meter or the air-conditioner is not behaving — offline, will not switch, or reporting nothing.
+title: '[device] '
+labels: [device]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Please try the first two checks before filing.** Every question below has, at least
+        once in this project, told a network fault apart from a code fault — or saved a walk to
+        the breaker for hardware that turned out to be fine.
+
+  - type: input
+    id: device
+    attributes:
+      label: Which device
+      description: The id from the Devices page — `co1`–`co7`, `l1`–`l7`, a meter, or `acu_main`.
+      placeholder: l6
+    validations:
+      required: true
+
+  - type: dropdown
+    id: symptom
+    attributes:
+      label: What is wrong
+      options:
+        - Reads offline / no data
+        - Reads online but will not switch
+        - Switches, but the physical device does not follow
+        - Readings look wrong (voltage, current, power, energy)
+        - Flapping between live and stale
+        - Something else
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: restart
+    attributes:
+      label: Was Node-RED restarted first?
+      description: >
+        A Node-RED node that has given up looks exactly like hardware that is unplugged or out of
+        range. One device was diagnosed as an RF/range fault, with a roadmap entry saying it
+        needed eyes on the fixture; `sudo systemctl restart nodered` reconnected it in two
+        seconds, and the same restart took the fleet from 9 online to 14. Restart first. Only if
+        the device is still dark is a hardware suspicion earned.
+      options:
+        - label: Yes — restarted, and the fault survived it
+        - label: No (please try, then say what happened)
+
+  - type: textarea
+    id: arp
+    attributes:
+      label: Does layer 2 resolve?
+      description: >
+        `ip neigh` on the Pi, for the device's address. **A ping that gets no reply is not
+        evidence.** That was concluded twice here and was wrong both times — a firewall that
+        drops ICMP is indistinguishable from a blocked network, so the ping cannot tell you
+        anything. ARP can: if the MAC resolves, layer 2 is working whatever ICMP does.
+      render: shell
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: What Node-RED said
+      description: >
+        The lines around the fault. `find() timed out` is worth quoting exactly — it is what a
+        wrong protocol version, a stale address, and a genuinely absent device all look like.
+        **Remove any address or token before pasting: this repository is public.**
+      render: shell
+
+  - type: textarea
+    id: app
+    attributes:
+      label: What the app showed
+      description: The state on the Devices page, the badge on the row, and anything the Control page said. A screenshot is fine.
+
+  - type: input
+    id: when
+    attributes:
+      label: When did it start
+      placeholder: 2026-09-05, after the morning power cycle

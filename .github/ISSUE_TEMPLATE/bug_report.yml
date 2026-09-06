@@ -1,0 +1,60 @@
+name: Bug report
+description: The software behaved incorrectly — the app, a daemon, a script, or the database.
+title: '[bug] '
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If a **device** is misbehaving rather than the software, use the *Device fault* template
+        instead — its questions are the ones that separate the two.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where
+      options:
+        - Frontend (src/)
+        - Ingest / scheduler / proxy (server/)
+        - Node-RED bridge or the generated flow
+        - Database, migrations, or a report
+        - Deployment scripts (scripts/) or replication
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce it
+      description: >
+        Against `npm run mock` if you can — it takes no hardware, and a fault that reproduces
+        there can be fixed by anyone. The mock has failure injection for exactly this:
+        `--500`, `--drop-ws`, `--stale=<id>`, `--cmd-fail=<id>`, `--poll-cadence=60`.
+      placeholder: |
+        1. npm run mock -- --stale=co3
+        2. npm run dev
+        3. Open Devices, and …
+    validations:
+      required: true
+
+  - type: input
+    id: where
+    attributes:
+      label: Where it ran
+      description: Workstation or the Pi, and `node -v`. CI runs Node 22 and 24 because the two have already disagreed.
+      placeholder: Pi, node v22.23.2
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs or output
+      description: '**Remove any token, key, hostname or IP address before pasting: this repository is public.**'
+      render: shell
