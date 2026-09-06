@@ -1,9 +1,5 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero-dark.png">
-  <img src="docs/assets/hero-light.png" alt="iBEMS — building energy management for a real office" width="100%">
-</picture>
 
 <br>
 
@@ -31,17 +27,10 @@ if that stops being true.
 ## What it does
 
 <table>
-<tr>
-<td width="50%"><a href="docs/assets/shot-overview.png"><img src="docs/assets/shot-overview.png" alt="Overview: live demand, phase balance, energy breakdown, floor plan, weather and facility power"></a></td>
-<td width="50%"><a href="docs/assets/shot-analytics.png"><img src="docs/assets/shot-analytics.png" alt="Analytics: 24-hour power trends per branch circuit, with energy totals for today, this week and this month"></a></td>
-</tr>
+
 <tr>
 <td><b>Overview</b> — live demand, phase balance, today's energy split by branch, the floor plan, and what is scheduled next.</td>
 <td><b>Analytics</b> — power, voltage, current and energy over 24 h to a year, per branch and per outlet, with the untracked gap named rather than hidden.</td>
-</tr>
-<tr>
-<td><a href="docs/assets/shot-control.png"><img src="docs/assets/shot-control.png" alt="Control: lighting and outlet relays, IR air-conditioner setpoint, and per-class dispatch badges"></a></td>
-<td><a href="docs/assets/shot-devices.png"><img src="docs/assets/shot-devices.png" alt="Devices: the whole fleet with voltage, current, power, last seen and communication state"></a></td>
 </tr>
 <tr>
 <td><b>Control</b> — every relay, the air-conditioner's setpoint, and a badge on each class saying whether commands are actually reaching hardware.</td>
@@ -51,8 +40,6 @@ if that stops being true.
 
 The fifth tab is **Automation** — per-device schedules staged as drafts until you commit them,
 demand thresholds, and load-shed tiers:
-
-<a href="docs/assets/shot-automation.png"><img src="docs/assets/shot-automation.png" alt="Automation: per-device on/off schedules with a day picker and an arm switch, demand-side thresholds, and load-shed tiers" width="100%"></a>
 
 > A shed tier is **permission, not size** — it says a load *may* be dropped, not that it is
 > large. Nothing without a tier is ever shed: an unclassified device is not a volunteer.
