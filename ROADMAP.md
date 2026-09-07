@@ -4,7 +4,7 @@
 accumulator, measured against 610,989 live readings and a three-minute watch of the running
 bridge. §0 leads with what that measurement found: **RM-047**, every outlet's daily energy
 fabricated, still live.
-**Audited at commit:** `e0dd3a5`
+**Audited at commit:** `dd2ac66`
 
 **2026-09-01, and it changes what §0 says.** The headline claim below — that there is no
 unblocked coding task left — was **wrong**, and it was wrong because the fault report that
@@ -330,16 +330,9 @@ Everything else is small, and the build order below is honest about size.
 
 ### Migrations authored but NOT applied
 
-Three SQL files are waiting on a hand-apply in the Supabase SQL editor. This project has no
+Two SQL files are waiting on a hand-apply in the Supabase SQL editor. This project has no
 migration runner and no tracker table, so this list is the record:
 
-- **`supabase/phase30_ingestion_scrub.sql`** — EX-166. Three additive columns on
-  `ingestion_health` recording what the scrub refused. **Unlike phase28 below, applying this is
-  not a prerequisite for deploying the daemon**, and that is deliberate: `updateHealth` detects
-  the missing columns from PostgREST's own error, says so once in the journal, and re-sends the
-  row without them, so `last_success_at` keeps moving either way
-  (`server/healthRow.mjs`, 13 tests). Until it is applied, the scrub still runs and its
-  rejections are still recorded — in the ingestion journal rather than in the database.
 - **`supabase/phase27_period_reports.sql`** — see RM-041.
 - **`supabase/phase28_reading_capabilities.sql`** — EX-147. Adds the promoted telemetry columns
   (`total_energy_kwh`, `warn_power_w`, `power_type`, `net_state`, `fault`) and a `capabilities`
@@ -349,6 +342,14 @@ migration runner and no tracker table, so this list is the record:
   rejects an insert naming a column that does not exist, so widening the daemon first would stop
   ingestion outright, on the history of a real building. `test/phase28-reading-capabilities.test.mjs`
   asserts the daemon has not been widened, and is what must be updated when it is.
+
+**`supabase/phase30_ingestion_scrub.sql` was applied 2026-09-07 and is verified.** The three
+columns are present and `updateHealth` is writing them. Worth recording because the deploy order
+was the wrong way round and the design absorbed it: the daemon shipped first, detected the
+missing columns from PostgREST's own error, said so once in the journal, and kept
+`last_success_at` moving — measured 29 s old at the moment the columns did not exist. After the
+migration landed the daemon needed a restart to stop downgrading, since it settles that question
+once per process; that is the one manual step the design does not remove.
 
 ### The first capability write reached hardware — 2026-09-03
 
