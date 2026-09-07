@@ -330,9 +330,16 @@ Everything else is small, and the build order below is honest about size.
 
 ### Migrations authored but NOT applied
 
-Two SQL files are waiting on a hand-apply in the Supabase SQL editor. This project has no
+Three SQL files are waiting on a hand-apply in the Supabase SQL editor. This project has no
 migration runner and no tracker table, so this list is the record:
 
+- **`supabase/phase31_readings_hourly_time_weighted.sql`** — RM-049. Replaces
+  `roll_up_and_prune_readings` so the hourly average is weighted by the time each sample stands
+  for. **Apply it before `readings_hourly` has any rows in it** — it is empty today and retention
+  has not rolled anything up, so applying now means no bucket is ever computed the old way and
+  there is nothing to backfill. Idempotent (`create or replace`), rehearsed against PostgreSQL 16
+  with fixtures that fail if the weighting, the cap, or the per-column denominator filter is
+  wrong.
 - **`supabase/phase27_period_reports.sql`** — see RM-041.
 - **`supabase/phase28_reading_capabilities.sql`** — EX-147. Adds the promoted telemetry columns
   (`total_energy_kwh`, `warn_power_w`, `power_type`, `net_state`, `fault`) and a `capabilities`
@@ -2739,6 +2746,64 @@ fall back to it).
       settled report to move a number by 0.1 kWh is not worth changing published history for.
       `readings_hourly` is still empty, so no rollup carries the fault.
       `server/backfillOutletEnergy.mjs`, `server/backfillOutletEnergy.test.mjs` (16)
+
+- [x] **RM-049 (S) — the hourly rollup's average is weighted by the time each sample stands for.
+      Authored and rehearsed 2026-09-07; `supabase/phase31_readings_hourly_time_weighted.sql`
+      awaits a hand-apply.** `roll_up_and_prune_readings` used a plain `avg(r.power_w)`, which is
+      right only if every sample represents the same amount of time. Measured over 2026-09-05,
+      the gaps between consecutive readings are 60 s ×3,498, 58 s ×423, 61 s ×318, 59 s ×317,
+      **30 s ×313** and 92 s ×271 — and `r.ts` is the device's arrival time, so that is real meter
+      cadence, not loop jitter.
+
+      **How much it matters was measured before the migration was written**, because unequal
+      intervals alone do not prove the two answers differ. Over 109 device-hours:
+
+      | | plain vs time-weighted |
+      |---|---|
+      | median device-hour | **0.131 %** — genuinely fine |
+      | p95 | 8.38 % |
+      | worst (co5, 06:00) | **38.3 %** — 37.3 W reported against 51.5 W |
+
+      So the typical hour is unaffected and the tail is badly wrong, in exactly the case that
+      creates it: a device whose reporting cadence tracks its load, where a plain mean
+      over-weights the closely-spaced samples that cluster around a change.
+
+      **The timing is the good part.** `readings_hourly` is still EMPTY — retention has not rolled
+      anything up — so this lands before a single bucket exists, with nothing to backfill and no
+      series computed two different ways. That window closes the first time raw rows age past the
+      retention horizon.
+
+      **A weight capped at 300 s, defaulted to 60 s when there is no predecessor.** The cap is the
+      same number as `MAX_INTEGRATION_GAP_MS` for the same reason, and the opposite response is
+      correct: that code *skips* a long gap because inventing one fabricates kWh, this one *caps*
+      it because dropping the sample would lose the only reading a sparse hour has. Same hazard,
+      opposite handling, and the migration says so.
+
+      **The per-column denominator filter is not new** — `phase10`'s `readings_archive` already
+      does exactly this one level up, and states why: an unmetered device can be online with a
+      null reading, and counting its weight dilutes the average. A light switch is in that state
+      every minute of every hour.
+
+      **REHEARSED AGAINST REAL POSTGRESQL 16, not just asserted.** `supabase/rehearse.sh` applies
+      every migration in order in a throwaway container; the existing fixture is uniform
+      one-minute spacing, so weighted and plain agree to the last digit there and it would have
+      passed a broken weighting. Two fixtures were added that discriminate: unequal gaps with an
+      exactly computable answer of **700** where a plain mean gives 340 and an uncapped weight
+      gives 927.27, and an online-with-null-reading device that must average **100**, where
+      counting the null's weight gives 50.
+
+      **All three neuters were then run through the full rehearsal, and each returned exactly the
+      wrong number predicted for it** — reverting to a plain `avg` gave 340, removing the cap gave
+      927.27, dropping the per-column denominator filter gave 50 — with the restored file green
+      again. The predicted values are written into the assertion messages, so a future failure
+      says which of the three ways it broke.
+      `supabase/phase31_readings_hourly_time_weighted.sql`, `supabase/rehearse.sh`
+
+      **Recorded, not done:** `phase10`'s hour-to-day rollup weights each hour by
+      `online_sample_count`, a count. An hour of 60 samples and one of 30 slower ones both span an
+      hour, so that weighting is a proxy. Fixing it needs a `covered_seconds` column on
+      `readings_hourly`; nothing has yet shown the proxy is wrong enough to matter, and an unused
+      column is a worse answer than a written-down question.
 
 - [x] **RM-048 (S) — a reading nobody took is no longer written down as zero. 2026-09-07.**
       The project's own rule — *omit, never zero* — violated in the one place that manufactures
