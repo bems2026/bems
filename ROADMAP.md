@@ -2696,12 +2696,51 @@ fall back to it).
       right-endpoint one by fifty times the tolerance, and confirmed stable over 20 consecutive
       runs.
 
-      **Historical rows are NOT repaired by this.** `readings.energy_kwh_today` for the outlets is
-      wrong from whenever the increment change was deployed until this one lands; the four CT
-      meters and `building_totals` are unaffected. Today's rows stay inflated and the flow's
-      running `<ctx>_energy` counters clear themselves at the local midnight rollover. Decide
-      separately whether to correct the history or to mark the window, and do not quietly do
-      neither.
+- [x] **RM-047b (M) — the history is corrected too, 2026-09-07.** The choice was correct-it
+      rather than mark-the-window: marking only helps if something reads the mark, and nothing in
+      `src/` does, so a mark would have left the wrong numbers on screen while feeling like a fix.
+
+      **The objection had to be answered first, because this rewrites a production table.**
+      Recomputing is not fabrication here: `pc_outlet` has no energy register at all, so this
+      column has NEVER held a device measurement for an outlet — it has always been a value the
+      bridge derived from power. This recomputes the same derived quantity with the corrected
+      formula from `power_w`, which is measured and is not touched. `outletIdsFrom` selects by
+      class, so a CT meter — which does have its own counter — is unreachable from here by
+      construction, and a test asserts it.
+
+      **AND THE FIRST RULE I WROTE WAS WRONG, which the measurement caught before it ran.**
+      Integrating the stored history naively gave co5 **12.33 kWh a day for eight consecutive
+      days** in late August. Checked: 2026-08-28 has 1,440 rows with `online: false` on every one
+      and `power_w` frozen at exactly 513.9 W — the device was gone and the bridge was serving its
+      last wattage. That is integration's documented compounding fault, and a blanket backfill
+      would have invented more energy than the bug it was fixing. So an interval counts only when
+      the device was online at BOTH endpoints; the live parser needs no such guard because no
+      packet means no integration, but history has no such protection. With the guard, co5's
+      phantom 12.33 kWh/day collapses to 0.00.
+
+      **Result, converged and idempotent:** 149,432 of 209,539 outlet rows rewritten; the seven
+      outlets' summed daily peaks go from **344.8 kWh to 11.7 kWh**, and a re-run now reports
+      11.7 against 11.7. Exact undo data was snapshotted first
+      (`~/backups/rm047-*/outlet-energy-before.ndjson`, 209,518 rows).
+
+      **The flow's counters had to be repaired as well, or the backfill was pointless.** Today's
+      rows kept being rewritten from the still-inflated `<ctx>_energy` in flow context — co1 at
+      15.41, co5 at 33.78. Repaired with Node-RED stopped (backup beside the file), each set to
+      the corrected value-so-far-today; verified live afterwards, co1 flat at 0.495 on 0 W while
+      co4 and co6 advance in step with their wattage.
+
+      **A small residual difference is expected and is not a bug.** The parser accumulates on
+      `Date.now()` deltas at packet arrival, while the backfill integrates over the stored `ts`,
+      which is the bridge's build time. The two drift slightly, so a dry run will always report a
+      handful of differing rows.
+
+      **Reports need no action.** `period_reports` holds 2026-08 and the weeks of 08-10, 08-17 and
+      08-24 — all of them before the fault window, which began 09-03. September is not settled, so
+      the first September report will be generated from the corrected rows. The August reports are
+      left as generated: the outlets drew fractions of a kWh in that period and regenerating a
+      settled report to move a number by 0.1 kWh is not worth changing published history for.
+      `readings_hourly` is still empty, so no rollup carries the fault.
+      `server/backfillOutletEnergy.mjs`, `server/backfillOutletEnergy.test.mjs` (16)
 
 - [x] **RM-047a (S)** The options NOT taken, recorded so the choice can be re-argued rather than
       rediscovered.
