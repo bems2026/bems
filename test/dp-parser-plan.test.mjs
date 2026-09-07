@@ -72,15 +72,21 @@ test('an outlet packet decodes to the values the vendor cloud reports', () => {
   assert.equal(s.co3_dp.add_ele, 0.008, 'scale 3, not the scale 2 the live parser used');
 });
 
-test('add_ele ACCUMULATES — the live parser assigned it, and that is the fault', () => {
-  // Neuter check: replacing `energy +=` with `energy =` in the generated source makes this fail,
-  // which is what the live node does and why co3 reported 0.08 kWh while drawing 74.8 W.
-  const flow = fakeFlow({ co3_last_day: new Date().getDate() });
+test('repeating add_ele adds NOTHING — RM-047, and this test used to assert the opposite', () => {
+  // THIS TEST PREVIOUSLY ENCODED THE BUG. It ran five identical packets and asserted the total
+  // was 0.04 kWh — "five 0.008 kWh increments" — which is exactly what five POLLS of one retained
+  // `add_ele` produce, and exactly the fabrication measured on the live fleet on 2026-09-07.
+  // It was green the entire time co5 was reporting 72.427 kWh for a 2.268 kWh day, because it
+  // asserted the behaviour rather than the outcome. See test/outlet-energy-integration.test.mjs.
+  const flow = fakeFlow({ co3_last_day: new Date().getDate(), co3_energy: 0 });
   const d = device('co3');
   const src = generateParserSource(d, profileOf(d));
 
-  for (let i = 0; i < 5; i += 1) run(src, { payload: { dps: { 17: 8, 19: 748 } } }, flow);
-  assert.equal(Math.round(flow._dump().co3_energy * 1000) / 1000, 0.04, 'five 0.008 kWh increments');
+  for (let i = 0; i < 5; i += 1) {
+    flow.set('co3_last_time', Date.now() - 60_000);
+    run(src, { payload: { dps: { 17: 8, 19: 0 } } }, flow);
+  }
+  assert.equal(flow._dump().co3_energy, 0, 'five minutes at zero watts is zero energy');
 });
 
 test('an outlet resets its daily energy at the local date rollover', () => {
@@ -89,23 +95,29 @@ test('an outlet resets its daily energy at the local date rollover', () => {
   const d = device('co3');
   const src = generateParserSource(d, profileOf(d));
   const yesterday = new Date(Date.now() - 24 * 3600 * 1000).getDate();
-  const flow = fakeFlow({ co3_energy: 4.2, co3_last_day: yesterday });
+  const flow = fakeFlow({ co3_energy: 4.2, co3_last_day: yesterday, co3_last_p: 748, co3_last_time: Date.now() - 60_000 });
 
   run(src, { payload: { dps: { 17: 8, 19: 748 } } }, flow);
-  assert.equal(flow._dump().co3_energy, 0.008, "yesterday's 4.2 kWh did not carry into today");
+  assert.ok(flow._dump().co3_energy < 0.02, "yesterday's 4.2 kWh did not carry into today");
   assert.equal(flow._dump().co3_last_day, new Date().getDate());
 });
 
-test('integration is the fallback, used only when no energy dp arrived', () => {
+test('integration is now the source, and a gap too long to trust is refused', () => {
+  // Was "integration is the fallback, used only when no energy dp arrived". Both halves changed:
+  // it is the only source now, and an hour-long gap is no longer integrated at the last known
+  // wattage — that is the compounding fault integration is known for, and MAX_INTEGRATION_GAP_MS
+  // is what stops it.
   const d = device('co3');
   const src = generateParserSource(d, profileOf(d));
-  const flow = fakeFlow({
-    co3_last_day: new Date().getDate(),
-    co3_last_time: Date.now() - 3600_000, // one hour ago
-    co3_energy: 0,
-  });
-  run(src, { payload: { dps: { 19: 1000 } } }, flow); // 100.0 W, no add_ele
-  assert.ok(Math.abs(flow._dump().co3_energy - 0.1) < 0.002, 'one hour at 100 W is 0.1 kWh');
+  const state = () => ({ co3_last_day: new Date().getDate(), co3_energy: 0, co3_last_p: 1000 });
+
+  const withinCap = fakeFlow({ ...state(), co3_last_time: Date.now() - 60_000 });
+  run(src, { payload: { dps: { 19: 10000 } } }, withinCap); // 1000.0 W for one minute
+  assert.ok(Math.abs(withinCap._dump().co3_energy - 0.01667) < 0.0002, 'a minute at 1 kW is 0.0167 kWh');
+
+  const beyondCap = fakeFlow({ ...state(), co3_last_time: Date.now() - 3600_000 });
+  run(src, { payload: { dps: { 19: 10000 } } }, beyondCap);
+  assert.equal(beyondCap._dump().co3_energy, 0, 'an hour offline contributed nothing');
 });
 
 test('the two channels of one physical meter read their own dps', () => {

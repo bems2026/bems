@@ -125,12 +125,27 @@ flow.set("${ctx}_dp", decoded);
 }
 
 /**
+ * The longest gap between two packets that may still be integrated, in ms — RM-047.
+ *
+ * Integration's one documented weakness is that a device which stops reporting compounds its
+ * last wattage into the total for as long as it stays down. Past this span the interval is
+ * SKIPPED rather than clamped: we do not know what the socket did while it was gone, and
+ * inventing five minutes of it is the same class of harm as inventing a reading. Under-counting
+ * an outage is the safe direction, and `online: false` is what says an outage happened.
+ *
+ * Five minutes is 3.3x the slowest sample spacing measured on this fleet (30 / 60 / 90 s) and
+ * far under any outage worth noticing, so it costs nothing in normal operation — across five
+ * days and four meters it skipped exactly one interval, on the day of the fleet outage. Erring
+ * tight would discard real energy on a merely slow tick; erring wide would fabricate it.
+ */
+export const MAX_INTEGRATION_GAP_MS = 5 * 60 * 1000;
+
+/**
  * The outlet tail. This is where both energy faults are fixed, and where the existing keys keep
  * their old meaning.
  */
-function outletTail(device, profile) {
+function outletTail(device) {
   const ctx = device.ctx;
-  const addEle = codeOf(profile, 1, 'add_ele');
   return `
 let lastV = parseFloat(flow.get("${ctx}_last_v")) || 0;
 let lastC = parseFloat(flow.get("${ctx}_last_c")) || 0;
@@ -138,6 +153,12 @@ let lastP = parseFloat(flow.get("${ctx}_last_p")) || 0;
 let energy = parseFloat(flow.get("${ctx}_energy")) || 0.0;
 let lastTime = flow.get("${ctx}_last_time") || Date.now();
 let now = Date.now();
+
+// The wattage this interval STARTED at, captured before the packet overwrites it. Averaging
+// the two endpoints instead of applying the arriving wattage backwards over the whole preceding
+// minute halves the error on any load that changed during it, and costs nothing on one that did
+// not. \`lastP\` itself still means "the most recent reading" everywhere else below.
+let prevP = lastP;
 
 if (fresh.cur_voltage !== undefined) lastV = fresh.cur_voltage;
 if (fresh.cur_current !== undefined) lastC = fresh.cur_current;
@@ -154,17 +175,33 @@ else if (lastDay !== today) {
     flow.set("${ctx}_last_day", today);
 }
 
-if (dps) {
-    if (fresh.${addEle} !== undefined) {
-        // \`${addEle}\` is energy SINCE THE LAST REPORT, so it accumulates. Assigning it — which
-        // is what this node used to do, at the wrong scale as well — discarded the day's total
-        // on every packet and left a busy outlet reporting hundredths of a kWh.
-        energy += fresh.${addEle};
-    } else if (fresh.cur_power !== undefined) {
-        // No energy dp in this packet: integrate, exactly as before. This is the weaker source
-        // and it is deliberately the fallback, not the default.
-        let hours = (now - lastTime) / 3600000;
-        energy += (lastP / 1000) * hours;
+// RM-047. ENERGY IS INTEGRATED FROM POWER, AND \`add_ele\` IS NOT ACCUMULATED.
+//
+// This node used to do \`energy += fresh.add_ele\`. That is correct for a device-pushed
+// \`dp-refresh\`, where \`add_ele\` genuinely means "energy since I last told you". It is wrong
+// for the 60 s poll, whose \`data\` event returns the device's entire RETAINED dp table —
+// including the last \`add_ele\` it ever sent. Both events leave the tuya node as byte-identical
+// messages, so nothing downstream can tell a fresh increment from its echo, and every poll
+// banked the same increment again. Measured on the live bridge 2026-09-07: co5 drew 0 W for
+// three minutes while accruing exactly 0.028 kWh a minute, and reported 72.427 kWh for a day
+// its own power integrates to 2.268 — 32-fold, on a socket whose highest reading ever is 674 W.
+//
+// A cumulative register would be re-read harmlessly, which is why the CT meters never had this
+// fault; \`pc_outlet\` has none — all 17 dps are switches, countdowns, coefficients, diagnostics
+// and that one increment — so there is nothing to difference against and integration is what is
+// left. It is trustworthy here: for the four meters both figures exist for the same day, and
+// integrating their stored power reproduces their own counters to about 1% across 2026-08-30 to
+// 09-02, against the +3,200% being replaced.
+//
+// \`add_ele\` is still decoded into \`${ctx}_dp\` above and still reaches the bridge — it is the
+// only device-side energy figure an outlet reports, and any future cross-check needs it. It is
+// simply no longer added to anything.
+if (dps && fresh.cur_power !== undefined) {
+    let hours = (now - lastTime) / 3600000;
+    // Skipped, not clamped, past the cap — see MAX_INTEGRATION_GAP_MS. A non-positive span is
+    // refused too, so a clock stepping backwards can never subtract energy.
+    if (hours > 0 && hours <= ${MAX_INTEGRATION_GAP_MS} / 3600000) {
+        energy += ((prevP + lastP) / 2 / 1000) * hours;
     }
 }
 
@@ -231,7 +268,7 @@ return [ { payload: uiData }, { payload: lastP } ];
 
 /** The full generated source for one device's parser. */
 export function generateParserSource(device, profile) {
-  const tail = device.class === 'outlet_dual' ? outletTail(device, profile) : meterTail(device, profile);
+  const tail = device.class === 'outlet_dual' ? outletTail(device) : meterTail(device, profile);
   return parserHead(device, profile) + tail;
 }
 

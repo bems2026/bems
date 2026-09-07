@@ -63,11 +63,14 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
-### 2026-09-07 — every outlet's daily energy is fabricated, and it is the top of this list
+### 2026-09-07 — every outlet was fabricating its daily energy. Fixed; see RM-047
 
-**RM-047.** All seven outlets accrue energy they have not used, every minute, and have done
-since the `add_ele` accumulator shipped. Measured on the live bridge over a three-minute watch
-with no flow change and no device connection:
+All seven outlets accrued energy they had not used, every minute, from whenever the `add_ele`
+accumulator shipped until this was found. **This is the operator's 2026-09-03 report — "the
+energy breakdown in analytics goes wrong" — and it was still live four days later**, found while
+sizing EX-166's bounds against real data rather than by anything that was looking for it.
+Measured on the live bridge over a three-minute watch with no flow change and no device
+connection:
 
 - **co5 drew 0 W for the entire window** while its `energy_kwh_today` rose by exactly 0.0280 kWh
   once every 60 s — its `add_ele` value, stuck at 0.028 and re-added on every poll. That is a
@@ -94,9 +97,8 @@ is harmless. `pc_outlet` has **no cumulative energy dp at all** — all 17 are s
 countdowns, coefficients, diagnostics and the one increment — so an outlet has no register to
 fall back to and the fix cannot simply mirror the meter path.
 
-**This is the operator's 2026-09-03 report — "the energy breakdown in analytics goes wrong" —
-still live.** The building total is not affected (`_totals` is computed from the four CT meters:
-11.44 kWh against the outlets' 71.4), so the fault is confined to the per-device breakdown,
+**The building total was not affected** (`_totals` is computed from the four CT meters:
+11.44 kWh against the outlets' 71.4), so the fault was confined to the per-device breakdown —
 which is exactly the surface that was reported as wrong.
 
 **EX-166's scrub does not catch this and says so in its own header.** 72 kWh is inside a 100 kWh
@@ -2627,9 +2629,54 @@ fall back to it).
       derived 10080-minute expectation, an unknown period refused by both the function and the
       check constraint, and the building-energy distinction above.
 
-- [ ] **RM-047 (M)** **Outlet daily energy is fabricated on every poll — measured 2026-09-07,
-      still live on all seven.** The evidence is in §0; this is the fix, and it needs a decision
-      because none of the options is free.
+- [x] **RM-047 (M) — FIXED 2026-09-07, option 1.** **Outlet daily energy was fabricated on every
+      poll, on all seven.** The evidence is in §0. The parser now integrates power over elapsed
+      time and does not accumulate `add_ele` at all.
+
+      **The assumption was measured before it was relied on.** For the four CT meters both
+      figures exist for the same day, so integrating their stored `power_w` can be checked
+      against their own `today_acc_energy`: **0.0–1.1% across 2026-08-30 to 09-02** on every
+      meter, and 3.1–3.7% on 09-03, the fleet-outage day where gaps are expected. About 1%
+      against a real counter, replacing +3,200%.
+
+      **Two refinements the old code did not have.** The interval is now a trapezoid over both
+      endpoints rather than the arriving wattage applied backwards over the whole preceding
+      minute — free, and it halves the error on any load that changed during the interval. And a
+      gap longer than `MAX_INTEGRATION_GAP_MS` (5 min) is **skipped rather than clamped**: that is
+      integration's one documented weakness — *"a disconnected meter's last wattage compounds into
+      the total for as long as it stays down"* — and we do not know what the socket did while it
+      was gone, so inventing it would be the same class of harm as inventing a reading. Five
+      minutes is 3.3× the slowest measured sample spacing (30/60/90 s) and cost exactly one
+      skipped interval across five days and four meters. A non-positive span is refused too, so a
+      clock stepping backwards cannot subtract energy.
+
+      `add_ele` is still decoded and still reaches `capabilities` — it is the only device-side
+      energy figure an outlet reports and any future cross-check needs it. It is simply not added
+      to anything.
+
+      **A GREEN TEST WAS ASSERTING THE FABRICATION.** `dp-parser-plan.test.mjs`'s *"add_ele
+      ACCUMULATES"* ran five identical packets and asserted the total was 0.04 kWh — *"five 0.008
+      kWh increments"*. Five identical packets **are** five polls of one retained value, so the
+      test described the bug and called it the fix. It was green for the whole period co5 was
+      reporting 72.427 kWh for a 2.268 kWh day. That is the **third** time in two sessions a test
+      has encoded an assumption instead of an outcome; the other two were `scheduler.test.mjs`
+      supplying a socket the UI cannot produce, and the EX-160 harness building the same wrong
+      `msg` shape the code read.
+      Four neuters — restoring the `add_ele` accumulation, removing the staleness cap, removing
+      the non-positive guard, and reverting to right-endpoint — each fail exactly the right tests
+      and nothing else.
+      `node-red-bridge/dpParserPlan.mjs`, `test/outlet-energy-integration.test.mjs` (16),
+      `test/dp-parser-plan.test.mjs` (3 rewritten)
+
+      **Historical rows are NOT repaired by this.** `readings.energy_kwh_today` for the outlets is
+      wrong from whenever the increment change was deployed until this one lands; the four CT
+      meters and `building_totals` are unaffected. Today's rows stay inflated and the flow's
+      running `<ctx>_energy` counters clear themselves at the local midnight rollover. Decide
+      separately whether to correct the history or to mark the window, and do not quietly do
+      neither.
+
+- [x] **RM-047a (S)** The options NOT taken, recorded so the choice can be re-argued rather than
+      rediscovered.
 
       **Why the obvious fix is not available.** The meter path works by preferring
       `today_acc_energy`, a `cumulative_daily` register that is harmless to re-read. `pc_outlet`
@@ -2660,15 +2707,8 @@ fall back to it).
          upgrade removes it silently — the same exposure shape as `findTimeout` and the broker
          config.
 
-      **Recommendation: option 1**, with the staleness guard, and `add_ele` kept in
-      `capabilities` for cross-checking rather than for accumulating. It is a `dpParserPlan`
-      change, so it needs `fix-dp-parsers:pi` and touches the four hand-built source tabs — back
-      up `~/.node-red/flows.json` first.
-
-      **Historical rows are not repaired by any of this.** `readings.energy_kwh_today` for the
-      outlets is wrong from whenever the increment change was deployed; the four CT meters and
-      `building_totals` are unaffected. Decide separately whether to correct the history or to
-      mark the window, and do not quietly do neither.
+      **Option 1 was taken — see RM-047 above**, where its cross-check is redone properly against
+      five days of both figures rather than the single three-minute window quoted here.
 
 - [ ] **RM-042 (S)** Retire `monthly_reports`, `monthly_building_reports` and
       `generate_monthly_report`, and drop the second RPC call in `server/reports.mjs`. Blocked
