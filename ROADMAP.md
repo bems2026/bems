@@ -2740,6 +2740,39 @@ fall back to it).
       `readings_hourly` is still empty, so no rollup carries the fault.
       `server/backfillOutletEnergy.mjs`, `server/backfillOutletEnergy.test.mjs` (16)
 
+- [x] **RM-048 (S) — a reading nobody took is no longer written down as zero. 2026-09-07.**
+      The project's own rule — *omit, never zero* — violated in the one place that manufactures
+      the values. Both generated tails opened with `parseFloat(flow.get("<ctx>_last_p")) || 0`
+      and closed with an unconditional `flow.set`, so a packet carrying no telemetry — a
+      connect-time status frame, a settings-only report — wrote a real `0` into flow context for
+      a device that had never reported.
+
+      **That reached the wire, which is what makes it worth fixing.** `build-flow.mjs`'s
+      collectors read those exact keys, so `buildLatest` would publish `voltage: 0, current: 0,
+      power_w: 0` as measured values — and the outlet tab's arrival timestamp would call them
+      fresh, because a packet *did* arrive.
+
+      **Latent, not active, and worth saying so rather than overstating it.** All eleven metered
+      devices report, so the live context holds real values — checked on the Pi, every outlet
+      carries a genuine `_last_v` near 228 V with `_last_p` at 0 because the sockets are actually
+      off. A newly enrolled device, or any device whose first packet is a status frame, walks
+      straight into it.
+
+      **Three things deliberately unchanged.** `<ctx>_energy` keeps its `|| 0`: it is an
+      accumulator, and zero is where a counter legitimately starts — absent and zero mean the
+      same thing for it, which is precisely what makes them different for a reading. The arrival
+      timestamp stays unconditional, because it is the outlet tab's only freshness signal and
+      withholding it would make a reporting device look dead — the opposite failure, and a worse
+      one. And the legacy `/ui` payload and the second output feeding the two-second totals
+      engine still receive numbers, because neither lives in this repository and neither can be
+      tested from here; the fallback is kept for display and simply never persisted.
+
+      Three neuters each fail the right tests: restoring the unconditional writes, making the
+      arrival stamp conditional, and the subtle one — `if (fresh.cur_power)` instead of
+      `!== undefined`, which would treat a genuine 0 W as absent and is the exact mistake this
+      change is about, one line over.
+      `node-red-bridge/dpParserPlan.mjs`, `test/parser-absent-not-zero.test.mjs` (14)
+
 - [x] **RM-047a (S)** The options NOT taken, recorded so the choice can be re-argued rather than
       rediscovered.
 

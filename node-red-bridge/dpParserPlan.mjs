@@ -147,9 +147,23 @@ export const MAX_INTEGRATION_GAP_MS = 5 * 60 * 1000;
 function outletTail(device) {
   const ctx = device.ctx;
   return `
-let lastV = parseFloat(flow.get("${ctx}_last_v")) || 0;
-let lastC = parseFloat(flow.get("${ctx}_last_c")) || 0;
-let lastP = parseFloat(flow.get("${ctx}_last_p")) || 0;
+// ABSENT IS NOT ZERO. \`parseFloat(...) || 0\` used to open these three, and the tail below used
+// to persist the result unconditionally — so a packet carrying no telemetry (a connect-time
+// status frame, a settings-only report) wrote a real 0 into context for a device that had never
+// reported. \`build-flow.mjs\`'s collector reads these exact keys, so that 0 reached the wire as
+// a measured \`voltage\`/\`current\`/\`power_w\`, with the arrival timestamp below calling it fresh.
+// \`have*\` tracks whether there is anything to write down; the local fallback is kept only for
+// the two legacy outputs at the bottom, neither of which lives in this repository.
+let storedV = parseFloat(flow.get("${ctx}_last_v"));
+let storedC = parseFloat(flow.get("${ctx}_last_c"));
+let storedP = parseFloat(flow.get("${ctx}_last_p"));
+let haveV = isFinite(storedV), haveC = isFinite(storedC), haveP = isFinite(storedP);
+let lastV = haveV ? storedV : 0;
+let lastC = haveC ? storedC : 0;
+let lastP = haveP ? storedP : 0;
+// \`energy\` keeps its \`|| 0\` on purpose: it is an ACCUMULATOR, and zero is where a counter
+// legitimately starts. Absent and zero mean the same thing for it, which is exactly what makes
+// them different for a reading.
 let energy = parseFloat(flow.get("${ctx}_energy")) || 0.0;
 let lastTime = flow.get("${ctx}_last_time") || Date.now();
 let now = Date.now();
@@ -160,9 +174,9 @@ let now = Date.now();
 // not. \`lastP\` itself still means "the most recent reading" everywhere else below.
 let prevP = lastP;
 
-if (fresh.cur_voltage !== undefined) lastV = fresh.cur_voltage;
-if (fresh.cur_current !== undefined) lastC = fresh.cur_current;
-if (fresh.cur_power !== undefined) lastP = fresh.cur_power;
+if (fresh.cur_voltage !== undefined) { lastV = fresh.cur_voltage; haveV = true; }
+if (fresh.cur_current !== undefined) { lastC = fresh.cur_current; haveC = true; }
+if (fresh.cur_power !== undefined) { lastP = fresh.cur_power; haveP = true; }
 
 // MIDNIGHT RESET. \`Zero Out Energy Memory\` clears the four CT meters and no outlet, so this
 // counter used to run for the life of the flow while being served as "today". The Pi runs on
@@ -205,10 +219,14 @@ if (dps && fresh.cur_power !== undefined) {
     }
 }
 
+// The arrival stamp is unconditional and must stay so — it is this tab's ONLY freshness signal
+// and \`buildLatest\` derives both \`ts\` and the staleness backstop from it. A packet arriving IS
+// the news, whatever it carried.
 flow.set("${ctx}_last_time", now);
-flow.set("${ctx}_last_v", lastV);
-flow.set("${ctx}_last_c", lastC);
-flow.set("${ctx}_last_p", lastP);
+// The readings are conditional — see the note at the top of this tail.
+if (haveV) flow.set("${ctx}_last_v", lastV);
+if (haveC) flow.set("${ctx}_last_c", lastC);
+if (haveP) flow.set("${ctx}_last_p", lastP);
 flow.set("${ctx}_energy", energy);
 
 let timestamp = new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -234,20 +252,25 @@ function meterTail(device, profile) {
   const cCode = codeOf(profile, channel, 'cur_current');
   const pCode = codeOf(profile, channel, 'cur_power');
   return `
-let lastV = parseFloat(flow.get("${ctx}_last_v")) || 0;
-let lastC = parseFloat(flow.get("${ctx}_last_c")) || 0;
-let lastP = parseFloat(flow.get("${ctx}_last_p")) || 0;
+// ABSENT IS NOT ZERO — the same fault as the outlet tail, in separate code. See the note there.
+let storedV = parseFloat(flow.get("${ctx}_last_v"));
+let storedC = parseFloat(flow.get("${ctx}_last_c"));
+let storedP = parseFloat(flow.get("${ctx}_last_p"));
+let haveV = isFinite(storedV), haveC = isFinite(storedC), haveP = isFinite(storedP);
+let lastV = haveV ? storedV : 0;
+let lastC = haveC ? storedC : 0;
+let lastP = haveP ? storedP : 0;
 
 // Channel ${channel} of this product: dps ${
     [vCode, cCode, pCode].map((code) => profile.capabilities.find((c) => c.code === code)?.dp).join(', ')
   }.
-if (fresh.${vCode} !== undefined) lastV = fresh.${vCode};
-if (fresh.${cCode} !== undefined) lastC = fresh.${cCode};
-if (fresh.${pCode} !== undefined) lastP = fresh.${pCode};
+if (fresh.${vCode} !== undefined) { lastV = fresh.${vCode}; haveV = true; }
+if (fresh.${cCode} !== undefined) { lastC = fresh.${cCode}; haveC = true; }
+if (fresh.${pCode} !== undefined) { lastP = fresh.${pCode}; haveP = true; }
 
-flow.set("${ctx}_last_v", lastV);
-flow.set("${ctx}_last_c", lastC);
-flow.set("${ctx}_last_p", lastP);
+if (haveV) flow.set("${ctx}_last_v", lastV);
+if (haveC) flow.set("${ctx}_last_c", lastC);
+if (haveP) flow.set("${ctx}_last_p", lastP);
 flow.set("${ctx}_last_time", Date.now());
 
 // Written by the legacy two-second engine, not here. The device's own today_acc_energy travels
