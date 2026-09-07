@@ -97,7 +97,12 @@ echo "== seeding =="
 psql <<'SQL'
 insert into devices (id, display_name, class) values
   ('mtr_hist', 'Historical Meter', 'meter'),
-  ('mtr_now',  'Recent Meter',     'meter')
+  ('mtr_now',  'Recent Meter',     'meter'),
+  -- phase31: the hourly average is time-weighted, and the fixture above cannot tell whether
+  -- it is. Every sample there is exactly a minute apart, so a weighted mean and a plain one
+  -- agree to the last digit and the rehearsal would pass a broken weighting.
+  ('mtr_uneven', 'Uneven Cadence Meter', 'meter'),
+  ('mtr_nulls',  'Online With No Power', 'meter')
 on conflict (id) do nothing;
 
 -- WINDOW A — fixed history, June 2026. Two hours of per-minute readings; the SECOND hour is
@@ -112,6 +117,29 @@ select 'mtr_hist',
        n * 0.01,
        (n < 60)
   from generate_series(0, 119) n;
+
+-- phase31 FIXTURE A — unequal gaps, inside hour 0, with an exactly computable answer.
+--   00:00:00  100 W   weight 60  (no predecessor: the nominal-interval default)
+--   00:00:30  100 W   weight 30
+--   00:01:00  100 W   weight 30
+--   00:02:00  400 W   weight 60
+--   00:32:00 1000 W   weight 300 (a 1,800 s gap, CAPPED)
+-- weighted = (6000 + 3000 + 3000 + 24000 + 300000) / 480 = 700 exactly.
+-- A plain mean would be 340; an uncapped weight would be 927.27. All three differ, so the
+-- assertion below distinguishes the fix from both of the ways it could be got wrong.
+insert into readings (device_id, ts, voltage, current, power_w, energy_kwh_today, online)
+values ('mtr_uneven', timestamptz '2026-06-01 00:00:00+00', 220, 1.0,  100, 0.01, true),
+       ('mtr_uneven', timestamptz '2026-06-01 00:00:30+00', 220, 1.0,  100, 0.01, true),
+       ('mtr_uneven', timestamptz '2026-06-01 00:01:00+00', 220, 1.0,  100, 0.01, true),
+       ('mtr_uneven', timestamptz '2026-06-01 00:02:00+00', 220, 1.0,  400, 0.01, true),
+       ('mtr_uneven', timestamptz '2026-06-01 00:32:00+00', 220, 1.0, 1000, 0.01, true);
+
+-- phase31 FIXTURE B — online with a NULL reading, which a light switch is every minute of
+-- every hour. The null sample's weight must not enter the denominator:
+--   weighted = (100 x 60) / 60 = 100.  Counting the null row's weight would give 50.
+insert into readings (device_id, ts, voltage, current, power_w, energy_kwh_today, online)
+values ('mtr_nulls', timestamptz '2026-06-01 00:00:00+00', 220, 1.0, null, 0.01, true),
+       ('mtr_nulls', timestamptz '2026-06-01 00:01:00+00', 220, 1.0,  100, 0.01, true);
 
 -- site_id is NOT NULL since phase20. The seed runs after every migration, so leaving it out
 -- fails here rather than at anything this rehearsal is trying to prove.
@@ -185,11 +213,25 @@ begin
   -- ---- roll_up_and_prune_readings (phase 9) --------------------------------------------
   select r.rolled, r.deleted into rolled, deleted
     from roll_up_and_prune_readings(h0 + interval '1 hour') r;
-  assert rolled = 1, format('rollup: expected 1 hour rolled, got %s', rolled);
-  assert deleted = 60, format('rollup: expected 60 raw rows pruned, got %s', deleted);
+  -- Three device-hours now: mtr_hist plus phase31's two fixtures, all inside hour 0.
+  assert rolled = 3, format('rollup: expected 3 device-hours rolled, got %s', rolled);
+  assert deleted = 67, format('rollup: expected 67 raw rows pruned (60 + 5 + 2), got %s', deleted);
 
   select online_sample_count into n from readings_hourly where device_id = 'mtr_hist';
   assert n = 60, format('rollup: expected 60 online samples in the bucket, got %s', n);
+
+  -- ---- phase31: the hourly average is weighted by the time each sample represents --------
+  select power_w_avg into v from readings_hourly where device_id = 'mtr_uneven';
+  assert v = 700, format(
+    'phase31: expected the time-weighted average 700, got %s (a plain mean gives 340; an uncapped weight gives 927.27)', v);
+
+  -- The maximum is deliberately NOT weighted — a maximum has no weight.
+  select power_w_max into v from readings_hourly where device_id = 'mtr_uneven';
+  assert v = 1000, format('phase31: power_w_max must stay a plain max, got %s', v);
+
+  select power_w_avg into v from readings_hourly where device_id = 'mtr_nulls';
+  assert v = 100, format(
+    'phase31: a null reading must not contribute weight to the denominator; expected 100, got %s (50 means it did)', v);
 
   -- ---- readings_archive (phase 10) -----------------------------------------------------
   -- The seam: hour 0 now lives ONLY in readings_hourly, hour 1 ONLY in readings. One series,
