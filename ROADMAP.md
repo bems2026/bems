@@ -334,14 +334,16 @@ Two SQL files are waiting on a hand-apply in the Supabase SQL editor. This proje
 migration runner and no tracker table, so this list is the record:
 
 - **`supabase/phase27_period_reports.sql`** — see RM-041.
-- **`supabase/phase28_reading_capabilities.sql`** — EX-147. Adds the promoted telemetry columns
-  (`total_energy_kwh`, `warn_power_w`, `power_type`, `net_state`, `fault`) and a `capabilities`
-  jsonb for the long tail. **Nothing depends on it yet**: the bridge and the frontend read
-  capabilities off the live feed, and `energy_kwh_today` already carries the meters' own figure
-  through the existing column. **Apply it BEFORE widening `server/shapeRows.mjs`** — PostgREST
-  rejects an insert naming a column that does not exist, so widening the daemon first would stop
-  ingestion outright, on the history of a real building. `test/phase28-reading-capabilities.test.mjs`
-  asserts the daemon has not been widened, and is what must be updated when it is.
+- **`supabase/phase28_reading_capabilities.sql`** — EX-147, and the daemon that fills it is
+  EX-167, deployed. Adds the promoted telemetry columns (`total_energy_kwh`, `warn_power_w`,
+  `power_type`, `net_state`, `fault`) and a `capabilities` jsonb for the long tail.
+  **THE SEQUENCING WARNING IN THAT FILE IS NOW OBSOLETE and is kept for its reasoning only.** It
+  says widening the daemon first would stop ingestion outright; the daemon now detects the
+  missing columns from PostgREST's own error, says so once naming this file, drops the six, and
+  keeps writing every pre-phase28 field — demonstrated live on 2026-09-07, when EX-167 was
+  deployed before this migration was applied and ingestion did not miss a tick. Applying it,
+  then restarting `ibems-ingest`, is all that is left; until then the four leading indicators
+  keep reaching the browser and being discarded, exactly as before.
 
 **`supabase/phase31_readings_hourly_time_weighted.sql` was applied 2026-09-07, and the DEPLOYED
 function was measured rather than taken on trust.** PostgREST cannot read a function's source,
@@ -2848,6 +2850,16 @@ fall back to it).
       column list against the promoter's rather than a second hand-written list.
       `server/readingCapabilities.mjs` (+18), `server/shapeRows.mjs`, `server/ingest.mjs`,
       `server/ingest.test.mjs` (+4), `test/phase28-reading-capabilities.test.mjs`
+
+      **DEPLOYED 2026-09-07, AND THE SAFETY NET WAS EXERCISED FOR REAL RATHER THAN IN A TEST.**
+      It was deployed deliberately BEFORE the migration was applied, which is the order phase28's
+      header calls catastrophic. The journal shows exactly one line —
+      *"readings has no capability columns — apply supabase/phase28_reading_capabilities.sql.
+      Recording without them; every pre-phase28 field is unaffected"* — followed by
+      `wrote 20 readings + totals` on every tick since. Rows read back carry all seven
+      pre-phase28 columns, `ingestion_health` is current, the outage buffer is empty and the
+      scrub refused nothing. Without the guard this deploy would have stopped the building's
+      history at that moment.
 
 - [x] **RM-050 (S) — `semantic` does some work. 2026-09-07.** The plan's Phase 6 was written
       against `dpParserPlan`, which hard-coded increment behaviour by matching the literal name
