@@ -4,7 +4,7 @@
 accumulator, measured against 610,989 live readings and a three-minute watch of the running
 bridge. §0 leads with what that measurement found: **RM-047**, every outlet's daily energy
 fabricated, still live.
-**Audited at commit:** `3613e72`
+**Audited at commit:** `e0dd3a5`
 
 **2026-09-01, and it changes what §0 says.** The headline claim below — that there is no
 unblocked coding task left — was **wrong**, and it was wrong because the fault report that
@@ -2667,6 +2667,34 @@ fall back to it).
       and nothing else.
       `node-red-bridge/dpParserPlan.mjs`, `test/outlet-energy-integration.test.mjs` (16),
       `test/dp-parser-plan.test.mjs` (3 rewritten)
+
+      **DEPLOYED AND VERIFIED LIVE, 2026-09-07.** `fix-dp-parsers:pi --apply` rewrote exactly the
+      seven outlet parsers (5,037 -> 6,721 bytes each, 8 context keys preserved apiece, invariants
+      held, no meter touched), after a timestamped `flows.json` backup. The deployed `co5` parser
+      was read back: its only executable energy statement is
+      `energy += ((prevP + lastP) / 2 / 1000) * hours` and `energy += fresh.add_ele` appears
+      nowhere outside the comment that quotes it. The same watch that found the fault, re-run
+      against the fixed parser:
+
+      | device | power | `add_ele` | per-minute delta, before -> after |
+      |---|---|---|---|
+      | co1 | **0 W** | 0.051, stuck | 0.0510 -> **0.0000** across four minutes |
+      | co5 | 55.7 W | 0.052, stuck | 0.0520 -> **0.0009** (≈54 W, matching the meter) |
+      | co6 | 19–27 W | 0.024, stuck | 0.0260 -> **0.0003–0.0005** (≈24 W) |
+      | mtr_co_yellow | ~690 W | — | unchanged, still its own counter |
+
+      co1 is the clean proof: zero watts now yields zero energy, where it had been accruing
+      0.051 kWh every minute — 73 kWh a day from a socket drawing nothing. Fleet back to 18/20
+      after the Node-RED restart (the two out are `acu_main` and `sens_outside_temp`, both known),
+      and ingestion ticking clean with zero scrub rejections.
+
+      **A FLAKY TEST WAS CAUGHT BY RUNNING THE SUITE ON THE PI FIRST, not by CI.** Three
+      integration assertions used a 1e-9 tolerance on a figure derived from the wall clock, and
+      the Pi is slow enough that the millisecond between staging the interval and the parser
+      reading its own `Date.now()` broke them. Green on the workstation, intermittently red on the
+      hardware. Loosened to 1e-4, which still separates the trapezoid result from the
+      right-endpoint one by fifty times the tolerance, and confirmed stable over 20 consecutive
+      runs.
 
       **Historical rows are NOT repaired by this.** `readings.energy_kwh_today` for the outlets is
       wrong from whenever the increment change was deployed until this one lands; the four CT
