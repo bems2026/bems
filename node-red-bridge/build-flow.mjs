@@ -34,7 +34,7 @@
 import { writeFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { DEVICE_REGISTRY, PHASE_MAP, STALE_AFTER_MS_BY_CLASS, TIMING, publicDevices, SITE } from '../shared/registry.mjs';
+import { DEVICE_REGISTRY, PHASE_MAP, STALE_AFTER_MS_BY_CLASS, TIMING, publicDevices, SITE, DAILY_ENERGY_CODE_BY_DEVICE } from '../shared/registry.mjs';
 import { TRACK_ARRIVALS_SRC } from './arrivalTracker.mjs';
 import { energyDayBaseSrc } from './energyDayBase.mjs';
 
@@ -168,8 +168,12 @@ const PHASE_MAP = ${JSON.stringify(PHASE_MAP)};
 const STALE_AFTER_MS_BY_CLASS = ${JSON.stringify(STALE_AFTER_MS_BY_CLASS)};
 
 const MAX_BRANCH_KWH_PER_DAY = ${JSON.stringify(SITE.max_branch_kwh_per_day)};
+// Which dp carries each meter's own daily counter, resolved from the catalogue's
+// cumulative_daily semantic rather than from a name assembled inside buildLatest.
+// (No backticks in this comment: it is inside a template literal.)
+const DAILY_ENERGY_CODE = ${JSON.stringify(DAILY_ENERGY_CODE_BY_DEVICE)};
 
-msg.payload = buildLatest(msg.snapshot || {}, REG, PHASE_MAP, Date.now(), ${SITE.utc_offset_minutes}, STALE_AFTER_MS_BY_CLASS, MAX_BRANCH_KWH_PER_DAY);
+msg.payload = buildLatest(msg.snapshot || {}, REG, PHASE_MAP, Date.now(), ${SITE.utc_offset_minutes}, STALE_AFTER_MS_BY_CLASS, MAX_BRANCH_KWH_PER_DAY, DAILY_ENERGY_CODE);
 msg.headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
 return msg;`;
 

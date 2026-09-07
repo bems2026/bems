@@ -2747,6 +2747,42 @@ fall back to it).
       `readings_hourly` is still empty, so no rollup carries the fault.
       `server/backfillOutletEnergy.mjs`, `server/backfillOutletEnergy.test.mjs` (16)
 
+- [x] **RM-050 (S) — `semantic` does some work. 2026-09-07.** The plan's Phase 6 was written
+      against `dpParserPlan`, which hard-coded increment behaviour by matching the literal name
+      `add_ele`. **RM-047 deleted that accumulation outright, so the original target no longer
+      exists** — the only mentions left are comments explaining its removal. The concern survived
+      one file over, and that is what this fixes.
+
+      `shared/buildLatest.mjs` chooses between a meter's own daily counter and the bridge's
+      integrator, and identified that counter as `dp['today_acc_energy' + (d.channel || 1)]` — a
+      name assembled by hand. The catalogue already declares which capability that is
+      (`semantic: 'cumulative_daily'`), and `shared/deviceCapabilities.mjs`'s own header names the
+      mistake the field exists to prevent — *"assigning an increment to a cumulative"* — while
+      `semantic` was, until now, **read by no production code at all**: declared, tested, and
+      load-bearing on nothing.
+
+      **What would have gone wrong.** A meter product coding its daily counter anything else — and
+      the replication framework and RM-026's inverter both make a new product a real prospect —
+      returns undefined from that lookup, falls silently through to the integrated value, and
+      loses the accuracy EX-158 was built to gain. Nothing reports a fault; the number is just the
+      worse one.
+
+      **Latent, and provably so.** `DAILY_ENERGY_CODE_BY_DEVICE` resolves to
+      `{mtr_co_yellow: today_acc_energy1, mtr_lo_red: today_acc_energy1, mtr_arec_acu:
+      today_acc_energy1, mtr_lo_yellow: today_acc_energy2}` — character-for-character what the old
+      literal produced for all four meters, including channel 2 for the dual meter's second
+      branch. So this cannot change a single current reading, and the test for an older flow
+      passing no map at all is what keeps that true.
+
+      Derived once in `shared/registry.mjs` so the two callers that thread it in — the generated
+      flow and the mock bridge — cannot drift. Four neuters each fail the right tests: reverting
+      to the literal, reading the day base from a different dp than the reading it is subtracted
+      from, ignoring the channel (which would attribute one branch circuit to its neighbour), and
+      matching `cumulative_total` instead of `cumulative_daily`.
+      `shared/deviceCapabilities.mjs`, `shared/buildLatest.mjs`, `shared/registry.mjs`,
+      `node-red-bridge/build-flow.mjs`, `mock-bridge/server.mjs`,
+      `test/semantic-driven-energy.test.mjs` (8)
+
 - [x] **RM-049 (S) — the hourly rollup's average is weighted by the time each sample stands for.
       Authored and rehearsed 2026-09-07; `supabase/phase31_readings_hourly_time_weighted.sql`
       awaits a hand-apply.** `roll_up_and_prune_readings` used a plain `avg(r.power_w)`, which is

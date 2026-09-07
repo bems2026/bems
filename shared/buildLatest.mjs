@@ -75,9 +75,14 @@ export const STALE_READING_MS = 600000;
  *        day at this site — `SITE.max_branch_kwh_per_day`, threaded in for the same reason as
  *        the two above. A daily figure beyond it is not believed; see the backstop below.
  *        Omitted means no bound, which reproduces the pre-2026-09-03 behaviour.
+ * @param {object} [dailyEnergyCodeByDevice] device id -> the capability code carrying that
+ *        device's own daily energy counter, from `dailyEnergyCodeFor`. Threaded in rather than
+ *        looked up, for the same reason as the three above: this file is inlined verbatim into a
+ *        Node-RED function node and may not import anything. `{}` reproduces the pre-2026-09-07
+ *        behaviour, where the code was a literal assembled here.
  * @returns {Array} one entry per device, plus a trailing `_totals` entry
  */
-export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, staleAfterMsByClass = {}, maxDailyKwh = undefined) {
+export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, staleAfterMsByClass = {}, maxDailyKwh = undefined, dailyEnergyCodeByDevice = {}) {
   const energy = snap.energy || { meters: {}, totals: {} };
   const outlet = snap.outlet || { meters: {}, state: {} };
   const lights = (snap.switch || {}).state || {};
@@ -153,11 +158,25 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, st
       //
       // With no baseline yet — an older flow, or a meter the tracker has not seen — the raw
       // counter is used, which is exactly the behaviour that shipped in `658d7c2`.
-      const ownRaw = dp ? num(dp['today_acc_energy' + (d.channel || 1)]) : undefined;
+      // WHICH dp IS THE DAILY COUNTER comes from the catalogue, not from a name assembled here.
+      // `shared/deviceCapabilities.mjs` declares it as `semantic: 'cumulative_daily'` and
+      // `dailyEnergyCodeFor` resolves it per channel; `build-flow.mjs` threads the result in,
+      // for the same reason `offsetMinutes` and `maxDailyKwh` are threaded — this function is
+      // inlined verbatim into a Node-RED node and may not import anything.
+      //
+      // The fallback is the old literal, so a deployed flow predating this passes nothing and
+      // behaves precisely as it did. Both meter products in this building code it exactly that
+      // way, which is why this is a drift guard and not a live fix: a future product coding it
+      // differently would have fallen silently back to the integrated value, with nothing
+      // reporting a fault and only the number being worse.
+      const dailyCode = dailyEnergyCodeByDevice[d.id] || ('today_acc_energy' + (d.channel || 1));
+      const ownRaw = dp ? num(dp[dailyCode]) : undefined;
       let ownDaily;
       if (ownRaw !== undefined) {
         const baseFor = (snap.energyDayBase || {})[d.ctx];
-        const dayBase = baseFor ? num(baseFor['today_acc_energy' + (d.channel || 1)]) : undefined;
+        // The SAME code, deliberately. A baseline read from a different dp than the reading it
+        // is subtracted from would produce a confident, meaningless number.
+        const dayBase = baseFor ? num(baseFor[dailyCode]) : undefined;
         ownDaily = dayBase !== undefined ? Math.max(0, ownRaw - dayBase) : ownRaw;
       }
       let eToday = ownDaily !== undefined ? ownDaily : e;

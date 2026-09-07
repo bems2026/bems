@@ -81,6 +81,7 @@ export { CIRCUITS };
  * which every deployment does.
  */
 import { BUILT_IN_DEVICES } from './siteConfig.mjs';
+import { dailyEnergyCodeFor } from './deviceCapabilities.mjs';
 export { BUILT_IN_DEVICES };
 
 /**
@@ -187,6 +188,18 @@ export const DEVICE_REGISTRY = [...BUILT_IN_DEVICES, ...ENROLLED_DEVICES];
 
 /** Devices that report voltage/current/power — i.e. everything with a `ctx` prefix. */
 export const METERED = DEVICE_REGISTRY.filter((d) => d.ctx);
+
+/**
+ * Device id -> the capability code carrying that device's own daily energy counter.
+ *
+ * Derived here, once, so the two callers that thread it into `buildLatest` — the generated flow
+ * and the mock bridge — cannot drift into disagreeing about which dp a meter's daily figure
+ * lives on. Devices with no such counter (every outlet, every switch) are simply absent, and
+ * `buildLatest` falls back to integrating, which is what they have always done.
+ */
+export const DAILY_ENERGY_CODE_BY_DEVICE = Object.fromEntries(
+  METERED.map((d) => [d.id, dailyEnergyCodeFor(d)]).filter(([, code]) => code),
+);
 
 /** Public device list as served by `GET /api/devices` (internal wiring fields stripped). */
 export function publicDevices() {

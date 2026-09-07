@@ -41,7 +41,7 @@
 
 import http from 'node:http';
 import crypto from 'node:crypto';
-import { DEVICE_REGISTRY, PHASE_MAP, STALE_AFTER_MS_BY_CLASS, TIMING, publicDevices, SITE } from '../shared/registry.mjs';
+import { DEVICE_REGISTRY, PHASE_MAP, STALE_AFTER_MS_BY_CLASS, TIMING, publicDevices, SITE, DAILY_ENERGY_CODE_BY_DEVICE } from '../shared/registry.mjs';
 import { fixturePlan, branchEnergyTotal } from './fixturePlan.mjs';
 import { buildLatest, iso8 } from '../shared/buildLatest.mjs';
 import { CAPABILITY_PROFILES, channelCodesFor } from '../shared/deviceCapabilities.mjs';
@@ -409,7 +409,7 @@ function snapshot() {
 
 // The site's offset, same as the generated flow passes — the mock is contract-identical to
 // the real bridge by construction, and a timestamp is part of the contract.
-const latest = () => buildLatest(snapshot(), DEVICE_REGISTRY, PHASE_MAP, Date.now(), SITE.utc_offset_minutes, STALE_AFTER_MS_BY_CLASS, SITE.max_branch_kwh_per_day);
+const latest = () => buildLatest(snapshot(), DEVICE_REGISTRY, PHASE_MAP, Date.now(), SITE.utc_offset_minutes, STALE_AFTER_MS_BY_CLASS, SITE.max_branch_kwh_per_day, DAILY_ENERGY_CODE_BY_DEVICE);
 
 // ---------------------------------------------------------------------------
 // history ring buffer — same semantics as the Node-RED one

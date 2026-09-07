@@ -374,6 +374,36 @@ export function capabilityForDevice(device, name) {
 }
 
 /**
+ * The code carrying this device's OWN daily energy counter, or `null` if it has none.
+ *
+ * WHY THIS EXISTS RATHER THAN A LITERAL. `shared/buildLatest.mjs` decides whether to trust a
+ * meter's own figure or fall back to the bridge's integrator, and it used to identify that
+ * counter as `'today_acc_energy' + (d.channel || 1)` — a name assembled by hand. This file
+ * already declares which capability that is, and its own header calls out the mistake the
+ * distinction exists to prevent: *"assigning an increment to a cumulative"*. Until this,
+ * `semantic` was read by no production code at all — declared, tested, and load-bearing on
+ * nothing.
+ *
+ * A meter product coding its daily counter anything else would have gone unnoticed: the lookup
+ * returns undefined, the device falls through to the integrated value, and nothing reports a
+ * fault — the number is simply the worse one. Both profiles in this building happen to code it
+ * `today_acc_energy{n}`, so this is a drift guard rather than a live fix.
+ *
+ * Channel-aware for the reason `capabilityForDevice` is: the dual meter's two channels are two
+ * different branch circuits, and taking the wrong one attributes a circuit's consumption to its
+ * neighbour.
+ */
+export function dailyEnergyCodeFor(device) {
+  const p = profile(device?.capability_profile);
+  if (!p) return null;
+  const channel = device?.channel ?? 1;
+  const cap = p.capabilities.find(
+    (c) => c.semantic === 'cumulative_daily' && (c.channel ?? 1) === channel,
+  );
+  return cap ? cap.code : null;
+}
+
+/**
  * Is this a value this capability will accept? Returns `null` when it is, or `{code, error}`.
  *
  * Every bound comes from the vendor's own declaration — nothing here invents a range. Values
