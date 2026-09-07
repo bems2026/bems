@@ -68,6 +68,18 @@ function poll(flow, dps, gapMs = 60_000) {
   return run(SRC, { payload: { dps } }, flow);
 }
 
+/**
+ * How close an integrated figure must land.
+ *
+ * NOT tighter, deliberately. `poll` stages the interval by winding `last_time` back from
+ * `Date.now()`, and the parser then reads its own `Date.now()` a moment later — so the real span
+ * is 60 s plus however long that took. At 1e-9 this suite passed on the workstation and failed
+ * intermittently on the Pi, which is slower: a test tight enough to be flaky cries wolf, and the
+ * millisecond it was objecting to is 0.00000008 kWh. This still separates the trapezoid result
+ * from the right-endpoint one by fifty times the tolerance, which is the thing being asserted.
+ */
+const KWH_EPSILON = 1e-4;
+
 const today = () => new Date().getDate();
 const energyOf = (flow) => flow._dump().co3_energy;
 
@@ -106,7 +118,7 @@ test("co5's measured day lands near its integrated truth, not 32x above it", () 
 test('energy comes from power over elapsed time', () => {
   const flow = fakeFlow({ co3_last_day: today(), co3_energy: 0, co3_last_p: 600 });
   poll(flow, { 19: 6000 }, 60_000); // 600.0 W for one minute
-  assert.ok(Math.abs(energyOf(flow) - 0.01) < 1e-9, `got ${energyOf(flow)}`);
+  assert.ok(Math.abs(energyOf(flow) - 0.01) < KWH_EPSILON, `got ${energyOf(flow)}`);
 });
 
 test('the interval is trapezoid, not the arriving wattage applied backwards', () => {
@@ -114,13 +126,13 @@ test('the interval is trapezoid, not the arriving wattage applied backwards', ()
   // minute. Averaging the endpoints halves that error, and costs nothing.
   const flow = fakeFlow({ co3_last_day: today(), co3_energy: 0, co3_last_p: 0 });
   poll(flow, { 19: 6000 }, 60_000); // 0 W -> 600 W across the minute
-  assert.ok(Math.abs(energyOf(flow) - 0.005) < 1e-9, `got ${energyOf(flow)} — right-endpoint would be 0.01`);
+  assert.ok(Math.abs(energyOf(flow) - 0.005) < KWH_EPSILON, `got ${energyOf(flow)} — right-endpoint would be 0.01`);
 });
 
 test('a steady load integrates the same whichever way the endpoints are read', () => {
   const flow = fakeFlow({ co3_last_day: today(), co3_energy: 0, co3_last_p: 600 });
   poll(flow, { 19: 6000 }, 60_000);
-  assert.ok(Math.abs(energyOf(flow) - 0.01) < 1e-9);
+  assert.ok(Math.abs(energyOf(flow) - 0.01) < KWH_EPSILON);
 });
 
 // ---------------------------------------------------------------------------
