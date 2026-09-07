@@ -4,7 +4,7 @@
 accumulator, measured against 610,989 live readings and a three-minute watch of the running
 bridge. §0 leads with what that measurement found: **RM-047**, every outlet's daily energy
 fabricated, still live.
-**Audited at commit:** `dd2ac66`
+**Audited at commit:** `e6771d3`
 
 **2026-09-01, and it changes what §0 says.** The headline claim below — that there is no
 unblocked coding task left — was **wrong**, and it was wrong because the fault report that
@@ -2782,6 +2782,14 @@ fall back to it).
       `shared/deviceCapabilities.mjs`, `shared/buildLatest.mjs`, `shared/registry.mjs`,
       `node-red-bridge/build-flow.mjs`, `mock-bridge/server.mjs`,
       `test/semantic-driven-energy.test.mjs` (8)
+
+      **DEPLOYED AND VERIFIED LIVE, 2026-09-07.** `deploy:pi --force --apply` after a timestamped
+      backup: all four source tabs matched, no id collisions, 293 → 293 nodes, **5/5 bridge
+      checks**, and no Node-RED restart needed — the admin API reloads the flow. The deployed
+      transform carries the map, and the claim that it changes nothing is now measured rather than
+      argued: every one of the four meters' `energy_kwh_today` still equals its own
+      `today_acc_energy` capability exactly, so the semantic lookup resolved to precisely the dp
+      the literal did. Fleet 18/20.
 
 - [x] **RM-049 (S) — the hourly rollup's average is weighted by the time each sample stands for.
       Authored and rehearsed 2026-09-07; `supabase/phase31_readings_hourly_time_weighted.sql`
