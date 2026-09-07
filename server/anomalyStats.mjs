@@ -4,20 +4,44 @@
  * lives in ingest.mjs itself (module-level, same pattern as its existing `lastError`),
  * exactly like shapeRows.mjs stays pure while ingest.mjs owns the mutable state around it.
  *
- * First pass: simple, explainable rolling statistics — no ML, no training data. Two
- * complementary checks, either one flags an anomaly:
+ * Simple, explainable rolling statistics — no ML, no training data. Two complementary checks,
+ * which must AGREE before anything is recorded:
  *   - z-score against the window's mean/stddev — the usual "how many standard deviations
  *     off" signal.
  *   - Tukey's-fence IQR bounds — robust to the mean/stddev being dragged around by a
  *     single earlier outlier already sitting in the window.
+ *
+ * EITHER-FLAGS WAS THE ORIGINAL RULE, AND MEASUREMENT OVERTURNED IT — RM-004, which asked for
+ * exactly this re-check once a week of continuous telemetry existed. Over the four days to
+ * 2026-09-07 this recorded **2,833 anomalies**: 2,152 from the IQR check alone, 667 from both,
+ * 14 from z alone. The median |z| across every flagged row was **2.37**, against a threshold of
+ * 3.5 — the median thing being called an anomaly was not anomalous by the other check at all.
+ *
+ * The mechanism, narrowed down by running the numbers rather than reasoning about them. A
+ * switched outlet sits at exactly 0 W for most of a 20-sample window, so `q1 = q3 = 0`, the
+ * window's own IQR is 0, ANOMALY_MIN_IQR_W substitutes 1 W and the fence becomes +-3 W. That
+ * alone is not enough — on an ALL-zero window the stddev floor makes z large too, so both fire
+ * and the sample is recorded either way. The false positive lives in a band one sample wide:
+ *
+ *     ten zeros, then 74 W          z = 74.00   fence [-3, 3]        both   <- kept
+ *     nine zeros + a 74, then 74    z =  3.00   fence [-3, 3]        iqr    <- the 2,152
+ *     seven zeros + three 74s       z =  1.53   fence [-166, 222]    none
+ *
+ * One prior "on" sample lifts the stddev enough to pull z under threshold while two zeros still
+ * sit at both quartiles. So the second sample of every switch-on was an alarm.
  *
  * ANOMALY_MIN_STDDEV_W / ANOMALY_MIN_IQR_W are NOT a "skip detection on a flat window"
  * gate — they're a noise floor substituted into the spread whenever the window's own
  * stddev/iqr is smaller. A hard gate would mean a device that's been rock-steady for 20
  * minutes could never be flagged no matter how large a subsequent jump is, which is
  * exactly the "stuck relay" / "ACU suddenly drawing way more" case this exists to catch.
- * The floor still suppresses sub-watt noise on a flat window while still catching a real
- * jump on that same window (see anomalyStats.test.mjs).
+ * Requiring agreement does NOT reintroduce that blind spot, which is what makes it the right
+ * fix rather than merely a quieter one: a real jump on a flat window trips both checks at once
+ * and is still recorded (see anomalyAgreement.test.mjs).
+ *
+ * `method` is still computed and returned when only one check fires, and is still written to
+ * the `anomalies` table. That column is what makes this decision auditable afterwards — every
+ * row recorded from now on reads `both`, and a run of `iqr` rows would mean this was reverted.
  */
 
 export const ANOMALY_WINDOW_SIZE = 20; // ~20 min of history at the default 60s poll
@@ -87,7 +111,11 @@ export function detectAnomaly(window, value) {
   const method = zFlagged && iqrFlagged ? 'both' : zFlagged ? 'zscore' : iqrFlagged ? 'iqr' : 'none';
 
   return {
-    isAnomaly: zFlagged || iqrFlagged,
+    // BOTH, not either — see this file's header for the measurement that changed it. The two
+    // checks are complementary rather than redundant, so agreement is a meaningfully stronger
+    // claim than either alone: z asks "is this far from typical", IQR asks "is this outside the
+    // bulk", and a real fault answers yes to both.
+    isAnomaly: zFlagged && iqrFlagged,
     method,
     zScore,
     baselineMean: baseline.mean,

@@ -185,8 +185,6 @@ below, which carry the evidence.
   re-pairing.
 
 **Elapsed time**
-- **RM-004** — re-check anomaly detection for false positives once a week of continuous telemetry
-  exists.
 - **FI-012** — partition `readings` *if* growth ever outgrows the prune. Conditional; not due.
 - **FI-011** — push delivery for the monthly report, once a notification channel is configured.
 
@@ -259,7 +257,6 @@ Everything else is small, and the build order below is honest about size.
 
 - **RM-012** — `l6` is reachable and controllable again; only its one-hour stability window
   is unproven.
-- **RM-004** — anomaly false-positive re-check needs about a week of continuous telemetry.
 - **RM-006d** — a restore has never been *performed*. Configured is not verified. Supabase
   itself is reachable (checked 2026-08-26).
 
@@ -3691,8 +3688,48 @@ fall back to it).
       would still read `dry_run`; `server/dispatchLight.mjs` has listed
       `['switch','outlet_dual','acu_ir']` since `c287e4c`, so opening the gate made all three
       live at once. The Control page's "Outlets off" master now genuinely cuts every socket.
-- [ ] **RM-004** Re-check anomaly detection for false positives once real telemetry resumes.
-      *Acceptance:* a week of live-varying data with no unexplained alerts on the cyclical-load branch meters. The current zero-alert result is not evidence — the meters have been returning frozen values.
+- [x] **RM-004 — DONE 2026-09-07. The re-check ran, and the answer was that the rule was
+      wrong.** *Acceptance was:* a week of live-varying data with no unexplained alerts on the
+      cyclical-load branch meters. Measured over the four days to 2026-09-07, on exactly that
+      live-varying data: **2,833 anomalies** — iqr 2,152, both 667, zscore 14 — led by co6 (968),
+      co5 (868) and `mtr_co_yellow` (698), which is the branch meter the acceptance names.
+      **The median |z| across every flagged row was 2.37, against a threshold of 3.5.** The median
+      thing this system called an anomaly was not anomalous by the other check at all, and 59.1%
+      of flagged rows had an IQR fence collapsed to the ±3 W noise floor.
+
+      **The mechanism, narrowed by running the numbers rather than reasoning about them — and my
+      first explanation was wrong.** A switched outlet sits at 0 W, so `q1 = q3 = 0`, the floor
+      substitutes 1 W and the Tukey fence becomes ±3 W. That alone is *not* enough: on an ALL-zero
+      window the stddev floor makes z large too, both checks fire, and the sample is recorded
+      either way. The false positive lives in a band one sample wide:
+
+      | window | z | fence | method |
+      |---|---|---|---|
+      | ten zeros, then 74 W | 74.00 | [-3, 3] | `both` — kept |
+      | nine zeros + one 74, then 74 | **3.00** | [-3, 3] | `iqr` — the 2,152 |
+      | seven zeros + three 74s | 1.53 | [-166, 222] | `none` |
+
+      One prior "on" sample lifts the stddev enough to pull z under threshold while two zeros
+      still sit at both quartiles. **The second sample of every switch-on was an alarm.**
+
+      Detection now requires the two checks to AGREE. On the measured window that is 2,833 → 667,
+      **76.5% fewer**. It does not reintroduce the blind spot the noise floor exists to prevent,
+      which is what makes it the right fix rather than merely a quieter one: a real jump on a flat
+      window trips both checks at once and is still recorded, as are a step change on a variable
+      circuit and a collapse to zero on a busy one.
+
+      **What it gives up, stated rather than buried:** 14 rows of 2,833 — a value beyond 3.5σ that
+      Tukey's deliberately generous "far out" fence still contains. There is a test that pins
+      exactly that case.
+
+      **Four neuters each fail the right tests**, including *raising the IQR noise floor* — the
+      tempting alternative, which would have hidden the symptom without touching the reasoning.
+
+      **The 2,833 existing rows are left alone.** They are the detector's own output, not a
+      measurement of the building, and they are the evidence for this change; `method` tells them
+      apart. The alerts popover looks back only 15 minutes
+      (`src/lib/supabaseAnomalies.ts`), so they leave the UI on their own.
+      `server/anomalyStats.mjs`, `server/anomalyAgreement.test.mjs` (11)
 - [x] **RM-005** ~~Decide whether Mosquitto is still load-bearing or can be decommissioned.~~
       **Answered 2026-08-24.** RM-001 removed the one thing that explained the silence — the
       ESP32 is 2.4 GHz and the site was on 5 GHz — so the question is finally answerable, and the
