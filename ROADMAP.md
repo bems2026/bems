@@ -4,7 +4,7 @@
 accumulator, measured against 610,989 live readings and a three-minute watch of the running
 bridge. §0 leads with what that measurement found: **RM-047**, every outlet's daily energy
 fabricated, still live.
-**Audited at commit:** `e6771d3`
+**Audited at commit:** `29c7be1`
 
 **2026-09-01, and it changes what §0 says.** The headline claim below — that there is no
 unblocked coding task left — was **wrong**, and it was wrong because the fault report that
@@ -330,16 +330,9 @@ Everything else is small, and the build order below is honest about size.
 
 ### Migrations authored but NOT applied
 
-Three SQL files are waiting on a hand-apply in the Supabase SQL editor. This project has no
+Two SQL files are waiting on a hand-apply in the Supabase SQL editor. This project has no
 migration runner and no tracker table, so this list is the record:
 
-- **`supabase/phase31_readings_hourly_time_weighted.sql`** — RM-049. Replaces
-  `roll_up_and_prune_readings` so the hourly average is weighted by the time each sample stands
-  for. **Apply it before `readings_hourly` has any rows in it** — it is empty today and retention
-  has not rolled anything up, so applying now means no bucket is ever computed the old way and
-  there is nothing to backfill. Idempotent (`create or replace`), rehearsed against PostgreSQL 16
-  with fixtures that fail if the weighting, the cap, or the per-column denominator filter is
-  wrong.
 - **`supabase/phase27_period_reports.sql`** — see RM-041.
 - **`supabase/phase28_reading_capabilities.sql`** — EX-147. Adds the promoted telemetry columns
   (`total_energy_kwh`, `warn_power_w`, `power_type`, `net_state`, `fault`) and a `capabilities`
@@ -349,6 +342,16 @@ migration runner and no tracker table, so this list is the record:
   rejects an insert naming a column that does not exist, so widening the daemon first would stop
   ingestion outright, on the history of a real building. `test/phase28-reading-capabilities.test.mjs`
   asserts the daemon has not been widened, and is what must be updated when it is.
+
+**`supabase/phase31_readings_hourly_time_weighted.sql` was applied 2026-09-07, and the DEPLOYED
+function was measured rather than taken on trust.** PostgREST cannot read a function's source,
+and calling the rollup for real deletes raw rows — so neither "it exists" nor "run it and see"
+was available. Instead the rehearsal's own discriminating fixture was seeded at **2020-01-01**,
+decades before this building's oldest reading (2026-08-16), and rolled with a cutoff that could
+only select those rows. It returned **`power_w_avg = 700`** — a plain mean gives 340 and an
+uncapped weight 927.27, so that single number proves both the weighting and the 300 s cap are
+live. Every fixture row and the bucket it produced were then removed, and the cleanup verified:
+zero rows before 2021, `readings_hourly` back to empty, oldest real reading unchanged.
 
 **`supabase/phase30_ingestion_scrub.sql` was applied 2026-09-07 and is verified.** The three
 columns are present and `updateHealth` is writing them. Worth recording because the deploy order
@@ -2689,7 +2692,25 @@ fall back to it).
       | mtr_co_yellow | ~690 W | — | unchanged, still its own counter |
 
       co1 is the clean proof: zero watts now yields zero energy, where it had been accruing
-      0.051 kWh every minute — 73 kWh a day from a socket drawing nothing. Fleet back to 18/20
+      0.051 kWh every minute — 73 kWh a day from a socket drawing nothing.
+
+      **CONFIRMED OVER 4+ HOURS OF REAL OPERATION, not just the three-minute watch.** Reported
+      daily energy against what each outlet's own power integrates to, from the counter repair to
+      four hours later:
+
+      | device | reported | integrated | ratio |
+      |---|---|---|---|
+      | co1, co3 | **0.0000** | 0.0000 | zero watts all window, gained nothing |
+      | co2 | 0.0131 | 0.0131 | 1.00x |
+      | co4 | 0.0230 | 0.0236 | 0.98x |
+      | co5 | 0.1130 | 0.1218 | 0.93x (peak 588 W) |
+      | co6 | 0.0708 | 0.0723 | 0.98x |
+      | co7 | 0.0040 | 0.0036 | 1.12x — 0.4 Wh apart, so the ratio is noise |
+
+      Over the same window the old code would have given co1 0.24 kWh at zero watts and co5
+      **6.7 kWh**. The few percent that remain are the expected drift between the parser's
+      `Date.now()` deltas and this check's integration over the stored arrival time.
+      Fleet back to 18/20
       after the Node-RED restart (the two out are `acu_main` and `sens_outside_temp`, both known),
       and ingestion ticking clean with zero scrub rejections.
 
