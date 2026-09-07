@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import { CAPABILITY_PROFILES, capabilityFor } from '../shared/deviceCapabilities.mjs';
+import { PHASE28_COLUMNS } from '../server/readingCapabilities.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const raw = readFileSync(join(ROOT, 'supabase', 'phase28_reading_capabilities.sql'), 'utf8');
@@ -85,19 +86,37 @@ test('each column carries a comment explaining what NULL means there', () => {
   }
 });
 
-test('the file says the ingestion daemon must not be widened before it is applied', () => {
-  // PostgREST rejects an insert naming a column that does not exist, so widening shapeRows.mjs
-  // first would stop ingestion outright — on the history of a real building. The sequencing has
-  // to be written where the person applying it will read it.
+test('the file still records the sequencing that made this dangerous', () => {
+  // Kept after the fact rather than deleted: the hazard is the reason the daemon now degrades
+  // instead of stopping, and a reader of the migration should meet the reasoning before the
+  // workaround. PostgREST rejects an insert naming a column that does not exist, so widening
+  // shapeRows.mjs first would once have stopped ingestion outright — on the history of a real
+  // building.
   assert.match(raw, /shapeRows\.mjs/);
-  assert.match(raw, /does NOT write these columns yet/i);
 });
 
-test('shapeRows.mjs has indeed not been widened yet', () => {
-  // The half of the previous test that can actually be checked against the tree. When the
-  // migration is applied and the daemon is widened, this test is what must be updated with it.
+test('the daemon IS now widened — applied 2026-09-07', () => {
+  // This test previously asserted the opposite, and said so: "When the migration is applied and
+  // the daemon is widened, this test is what must be updated with it." This is that update.
   const shapeRows = readFileSync(join(ROOT, 'server', 'shapeRows.mjs'), 'utf8');
-  for (const col of ['total_energy_kwh', 'warn_power_w', 'net_state']) {
-    assert.equal(shapeRows.includes(col), false, `shapeRows must not write ${col} until phase 28 is applied`);
-  }
+  assert.match(shapeRows, /promoteCapabilities/, 'shapeRows promotes capabilities into columns');
+});
+
+test('getting the order backwards no longer stops ingestion', () => {
+  // The sequencing is a human step — these migrations are pasted into the SQL editor by hand —
+  // so the daemon does not depend on it being got right. It detects the missing columns from
+  // PostgREST's own error, says so once, drops the six, and keeps writing every field it wrote
+  // before. Losing capability columns for a while is a feature not recorded; losing the insert
+  // is the building's history stopping.
+  const ingest = readFileSync(join(ROOT, 'server', 'ingest.mjs'), 'utf8');
+  assert.match(ingest, /isMissingCapabilityColumnError/);
+  assert.match(ingest, /withoutCapabilityColumns/);
+  assert.match(ingest, /phase28_reading_capabilities\.sql/, 'and it names the file to apply');
+});
+
+test('every column the migration adds is one the promoter can write', () => {
+  // A column nothing fills is a schema making a claim the code cannot keep. Checked against the
+  // SQL rather than a second list, so adding a column there without handling it here fails here.
+  const declared = [...sql.matchAll(/add column if not exists (\w+)/g)].map((m) => m[1]);
+  assert.deepEqual(declared.sort(), [...PHASE28_COLUMNS].sort());
 });

@@ -5,8 +5,12 @@
  * `docs/bridge-contract.md`'s field names — never a rename. No I/O here; kept pure so it's
  * cheap to test without a live bridge or Supabase project (see `ingest.test.mjs`).
  */
-import { SITE } from '../shared/registry.mjs';
+import { SITE, DEVICE_REGISTRY } from '../shared/registry.mjs';
 import { scrubReading, scrubTotals, readingBounds, totalsBounds } from './scrubTelemetry.mjs';
+import { promoteCapabilities } from './readingCapabilities.mjs';
+
+/** id -> registry entry. `promoteCapabilities` needs the device's CHANNEL to resolve a code. */
+const DEVICE_BY_ID = new Map(DEVICE_REGISTRY.map((d) => [d.id, d]));
 
 /**
  * Splits `GET /api/readings/latest`'s response (per-device rows + the `_totals`
@@ -20,6 +24,12 @@ import { scrubReading, scrubTotals, readingBounds, totalsBounds } from './scrubT
  * 36 W circuit reached Supabase. A refused field becomes `null` and the row survives; a row
  * whose timestamp cannot key it is dropped, and both are counted so nothing is discarded
  * silently.
+ *
+ * SINCE phase28 IT ALSO KEEPS WHAT THE DEVICE SAYS BEYOND VOLTS, AMPS AND WATTS — see
+ * `server/readingCapabilities.mjs`. Those values were on the wire every minute and thrown away
+ * every minute. A device this registry does not know contributes no capability columns rather
+ * than guessed ones: an unknown device cannot have its channel resolved, and a channel guessed
+ * wrong attributes one branch circuit's totals to another.
  *
  * `nowMs` is a parameter rather than a `Date.now()` read inside, so the timestamp window is
  * testable against fixed fixtures instead of drifting out from under them.
@@ -60,6 +70,7 @@ export function splitLatestPayload(latest, nowMs = Date.now(), site = SITE) {
       totals = scrubbed.row;
       continue;
     }
+    const device = DEVICE_BY_ID.get(entry.device_id);
     const scrubbed = scrubReading({
       device_id: entry.device_id,
       ts: entry.ts,
@@ -68,6 +79,10 @@ export function splitLatestPayload(latest, nowMs = Date.now(), site = SITE) {
       power_w: entry.power_w ?? null,
       energy_kwh_today: entry.energy_kwh_today ?? null,
       online: !!entry.online,
+      // Merged before the scrub, which only ever rewrites its own four numeric fields and
+      // copies the rest through. Both routes append to the same `rejections`, so a capability
+      // the catalogue refuses is counted exactly like a reading out of bounds.
+      ...(device ? promoteCapabilities(device, entry.capabilities, rejections) : {}),
     }, rBounds, nowMs);
     rejections.push(...scrubbed.rejections);
     if (scrubbed.row) readings.push(scrubbed.row);

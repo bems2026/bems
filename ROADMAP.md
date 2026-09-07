@@ -2802,6 +2802,53 @@ fall back to it).
       touching it — and the original is backed up beside the file.
       Device IDs stay in that workbook and are not reproduced here.
 
+- [x] **EX-167 — the daemon keeps what the devices report beyond volts, amps and watts.
+      2026-09-07.** Four questions could not be asked of the history at all, and all four were
+      already on the wire — the devices have always reported them and this daemon discarded them
+      every minute: which branch tripped its power warning, a meter's lifetime total, whether an
+      outlet reported a fault before it went dark, and whether a device was on the cloud or the
+      local segment when it stopped answering. `phase28` made room for them in Aug; nothing
+      filled it, because the plan made it conditional on *"a working scrub"* — which EX-166 is.
+
+      **Built from what the fleet actually sends, read off the live bridge first:** meters carry
+      `net_state` (all four) and `total_energy{ch}` (all four), `power_type1` on `mtr_co_yellow`,
+      and `warn_power` on none of them right now; outlets carry `fault: 0`; light switches carry
+      none of the five. So every column had to tolerate absence, which is the ordinary case.
+
+      **THE CHANNEL IS RESOLVED FROM THE CATALOGUE, NEVER ASSEMBLED.** `total_energy1` and
+      `total_energy2` are two different branch circuits on one physical meter, and both codes
+      arrive on both logical devices' payloads. A hand-built name would eventually put one
+      circuit's lifetime total on the other's history — and it is not even uniform, since dp 113
+      is `net_state` on the single-channel meter and `device_state2` on the dual-channel one while
+      both are `class: 'meter'`. Neutering this one alone fails **twelve** tests.
+
+      **A VALUE OUTSIDE A CLOSED VOCABULARY IS REFUSED HERE, NOT SENT.** `power_type` and
+      `net_state` carry CHECK constraints, and a constraint violation does not fail one field:
+      PostgREST rejects the whole batch, `writeOrBuffer` buffers it, and `flushBuffer` replays it
+      at the head of every cycle for ever. That is the same permanent wedge EX-166's timestamp
+      rule exists to stop, reached by a different route — so a drift between catalogue and
+      hardware now costs one column and is counted as a scrub rejection, on the same counter and
+      in the same health row.
+
+      **AND THE MIGRATION ORDER NO LONGER MATTERS.** phase28's own header warns that widening the
+      daemon first "would stop ingestion outright — on a table that is the history of a real
+      building". These migrations are pasted in by hand, so that ordering is a human step. The
+      daemon now detects the missing columns from PostgREST's own error, says so once naming the
+      file to apply, drops the six, and keeps writing every field it wrote before — the same
+      pattern phase30 proved live. Losing a not-yet-recorded feature for a while is survivable;
+      losing the insert is the building's history stopping.
+
+      The jsonb carries every capability that was NOT promoted, never a second copy — the
+      migration says "every other decoded capability", and a value stored twice invites the two
+      to disagree. An empty tail is `null` rather than `{}`, because "reported nothing" and
+      "reported nothing beyond what was promoted" are different claims.
+      Five neuters each fail the right tests. `test/phase28-reading-capabilities.test.mjs`'s
+      *"shapeRows.mjs has indeed not been widened yet"* said of itself that it was what must be
+      updated when this happened; it now asserts the opposite, and a new test checks the SQL's
+      column list against the promoter's rather than a second hand-written list.
+      `server/readingCapabilities.mjs` (+18), `server/shapeRows.mjs`, `server/ingest.mjs`,
+      `server/ingest.test.mjs` (+4), `test/phase28-reading-capabilities.test.mjs`
+
 - [x] **RM-050 (S) — `semantic` does some work. 2026-09-07.** The plan's Phase 6 was written
       against `dpParserPlan`, which hard-coded increment behaviour by matching the literal name
       `add_ele`. **RM-047 deleted that accumulation outright, so the original target no longer

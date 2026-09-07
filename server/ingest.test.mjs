@@ -45,6 +45,10 @@ test('splitLatestPayload separates per-device readings from the _totals row', ()
   assert.deepEqual(readings[0], {
     device_id: 'co3', ts: AT,
     voltage: 221.4, current: 1.82, power_w: 402.1, energy_kwh_today: 3.11, online: true,
+    // phase28. This entry carries no `capabilities`, so all six are the honest null rather than
+    // absent — a column that is never written is indistinguishable from one that does not exist.
+    total_energy_kwh: null, warn_power_w: null, power_type: null, net_state: null,
+    fault: null, capabilities: null,
   });
   // state/socket_states must NOT appear — readings table has no such column (transient
   // device state per docs/bridge-contract.md, not a reading).
@@ -75,6 +79,8 @@ test('splitLatestPayload defaults missing metering fields to null, not 0 (unmete
   ], AT_MS);
   assert.deepEqual(readings[0], {
     device_id: 'l3', ts: AT, voltage: null, current: null, power_w: null, energy_kwh_today: null, online: true,
+    total_energy_kwh: null, warn_power_w: null, power_type: null, net_state: null,
+    fault: null, capabilities: null,
   });
 });
 
@@ -161,4 +167,64 @@ test('ingestBuffer: writeBuffer replaces contents wholesale (models draining a p
   const remaining = readBuffer(bufferPath);
   assert.equal(remaining.length, 2);
   assert.deepEqual(remaining.map((e) => e.rows[0].id), [2, 3]);
+});
+
+// ---------------------------------------------------------------------------
+// phase28, through the real transform rather than the promoter alone.
+// ---------------------------------------------------------------------------
+
+test('meter capabilities are promoted into columns, each on its own channel', () => {
+  // Values read off the live fleet 2026-09-07. mtr_lo_yellow is channel 2 of the SAME physical
+  // meter as mtr_co_yellow, so both codes arrive on both entries and each must take its own.
+  const caps = { total_energy1: 29508, total_energy2: 14568.196, net_state: 'cloud_net',
+                 power_type1: 'normal', add_ele1: 0.01, device_state1: 'working' };
+  const { readings } = splitLatestPayload([
+    { device_id: 'mtr_co_yellow', ts: AT, power_w: 48.8, online: true, capabilities: caps },
+    { device_id: 'mtr_lo_yellow', ts: AT, power_w: 42.4, online: true, capabilities: caps },
+  ], AT_MS);
+
+  const co = readings.find((r) => r.device_id === 'mtr_co_yellow');
+  const lo = readings.find((r) => r.device_id === 'mtr_lo_yellow');
+  assert.equal(co.total_energy_kwh, 29508);
+  assert.equal(lo.total_energy_kwh, 14568.196, 'channel 2 takes its own branch, not channel 1s');
+  assert.equal(co.net_state, 'cloud_net');
+  assert.equal(co.power_type, 'normal');
+  // The long tail keeps what was not promoted, and does not repeat what was.
+  assert.deepEqual(co.capabilities, { total_energy2: 14568.196, add_ele1: 0.01, device_state1: 'working' });
+});
+
+test('an outlet promotes its fault and nothing else', () => {
+  const { readings, rejections } = splitLatestPayload([
+    { device_id: 'co5', ts: AT, power_w: 0, online: true,
+      capabilities: { fault: 0, add_ele: 0.022, child_lock: false } },
+  ], AT_MS);
+  assert.equal(readings[0].fault, 0);
+  assert.equal(readings[0].total_energy_kwh, null);
+  assert.deepEqual(readings[0].capabilities, { add_ele: 0.022, child_lock: false });
+  assert.deepEqual(rejections, []);
+});
+
+test('a capability the catalogue refuses is counted, and the row still lands', () => {
+  // The CHECK constraint on net_state would reject the whole BATCH, which then sits at the head
+  // of the outage buffer for ever. Refusing it here costs one column.
+  const { readings, rejections } = splitLatestPayload([
+    { device_id: 'mtr_co_yellow', ts: AT, power_w: 48.8, online: true,
+      capabilities: { net_state: 'carrier_pigeon', total_energy1: 29508 } },
+  ], AT_MS);
+  assert.equal(readings.length, 1, 'the reading is still written');
+  assert.equal(readings[0].net_state, null);
+  assert.equal(readings[0].total_energy_kwh, 29508);
+  assert.equal(rejections.length, 1);
+  assert.match(String(rejections[0]), /net_state/);
+});
+
+test('a device the registry does not know gets no capability columns at all', () => {
+  // Its channel cannot be resolved, and a channel guessed wrong puts one branch circuit's
+  // lifetime total on another's history.
+  const { readings } = splitLatestPayload([
+    { device_id: 'not_a_device', ts: AT, power_w: 5, online: true,
+      capabilities: { total_energy1: 999, net_state: 'cloud_net' } },
+  ], AT_MS);
+  assert.equal('total_energy_kwh' in readings[0], false);
+  assert.equal('capabilities' in readings[0], false);
 });

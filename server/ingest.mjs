@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { TIMING, METERED, SITE, DEVICE_REGISTRY } from '../shared/registry.mjs';
 import { shapeDeviceRows, shapeAnomalyRows } from './shapeRows.mjs';
 import { buildHealthRow, isMissingScrubColumnError, withoutScrubColumns } from './healthRow.mjs';
+import { isMissingCapabilityColumnError, withoutCapabilityColumns } from './readingCapabilities.mjs';
 import { makeSupabaseClient } from './supabaseRest.mjs';
 import { appendToBuffer, readBuffer, writeBuffer, bufferCount } from './ingestBuffer.mjs';
 import { takeBufferedCommands, restoreUndrained } from './auditQueue.mjs';
@@ -189,12 +190,37 @@ async function drainCommandAudit() {
   }
 }
 
+/**
+ * Whether this database has had `supabase/phase28_reading_capabilities.sql` applied.
+ *
+ * `true` until something says otherwise. Settled by the first failure rather than a probe at
+ * startup, exactly like `scrubColumnsPresent` — see `server/readingCapabilities.mjs` for why the
+ * question has to be asked at all, and what it costs to get the answer wrong.
+ */
+let capabilityColumnsPresent = true;
+
 async function writeOrBuffer(table, rows, onConflict) {
   if (rows.length === 0) return;
+  const payload = table === 'readings' && !capabilityColumnsPresent
+    ? withoutCapabilityColumns(rows)
+    : rows;
   try {
-    await supabase.upsert(table, rows, onConflict ? { onConflict } : undefined);
+    await supabase.upsert(table, payload, onConflict ? { onConflict } : undefined);
   } catch (err) {
-    appendToBuffer(BUFFER_PATH, { table, rows, onConflict, buffered_at: new Date().toISOString() });
+    // THE ORDERING HAZARD phase28's own header describes: PostgREST rejects an insert naming a
+    // column that does not exist, so widening this daemon before the migration is applied "would
+    // stop ingestion outright — on a table that is the history of a real building". Migrations
+    // here are hand-applied, so the order is a human step. Rather than depend on getting it
+    // right, say so once and keep writing everything that was written before.
+    if (table === 'readings' && capabilityColumnsPresent && isMissingCapabilityColumnError(err)) {
+      console.warn('[ibems-ingest] readings has no capability columns — apply supabase/phase28_reading_capabilities.sql. Recording without them; every pre-phase28 field is unaffected.');
+      capabilityColumnsPresent = false;
+      try {
+        await supabase.upsert(table, withoutCapabilityColumns(rows), onConflict ? { onConflict } : undefined);
+        return;
+      } catch { /* fall through and buffer, as any other failure would */ }
+    }
+    appendToBuffer(BUFFER_PATH, { table, rows: payload, onConflict, buffered_at: new Date().toISOString() });
     throw err;
   }
 }
