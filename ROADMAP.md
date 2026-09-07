@@ -2773,6 +2773,14 @@ fall back to it).
       change is about, one line over.
       `node-red-bridge/dpParserPlan.mjs`, `test/parser-absent-not-zero.test.mjs` (14)
 
+      **DEPLOYED AND VERIFIED LIVE, 2026-09-07.** All eleven parsers rewritten — seven outlets
+      6,721 → 8,158 bytes, four meters ~4,200 → ~4,550 — with 8 and 9 context keys preserved
+      respectively, invariants held, after a timestamped `flows.json` backup. Read back from the
+      live flow: `Outlet 5 Unified` and `C.O Yellow Unified` each show **3 conditional writes and
+      0 unconditional `_last_v` writes**. Fleet 18/20 after the restart, and every one of the
+      eleven metered devices reports a real voltage (225–231 V) with genuine zeros where the
+      sockets are actually off — which is the distinction the change exists to preserve.
+
 - [x] **RM-047a (S)** The options NOT taken, recorded so the choice can be re-argued rather than
       rediscovered.
 
