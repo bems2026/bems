@@ -2747,6 +2747,40 @@ fall back to it).
       `readings_hourly` is still empty, so no rollup carries the fault.
       `server/backfillOutletEnergy.mjs`, `server/backfillOutletEnergy.test.mjs` (16)
 
+- [x] **RM-051 (S) — the functionality test log carried the same blind spot as the code.
+      Revised 2026-09-07.** The Lighting sheet asks whether a switch follows the wall plate and
+      whether the screen matches it. **The Outlets sheet asked neither** — which is precisely the
+      fault the operator found by hand the same day, *despite* the log not asking them to look.
+      Both documents were written from the same assumption, which is why the gap survived in both.
+
+      Outlets went **6 → 10 functions** per device, Lighting **6 → 7**:
+
+      | added | to | why it earns a row |
+      |---|---|---|
+      | Button still works | Outlets | the app did not follow the physical button; state came from the last command |
+      | Reports its state | Outlets | same fix, and the half a person can only check by watching |
+      | Auto-shed switches it off | both | never tested on any device, and refused on all seven outlets until RM-047's session |
+      | Daily energy is believable | Outlets | **every other row passed while today's kWh was 32× too high** |
+
+      That last one is the point. A pass/fail switching test cannot see a wrong number: the socket
+      switched correctly all day and reported 32 times the energy it used. Its pass condition is
+      checkable by eye — *"today's kWh keeps step with the watts; a socket sitting at zero gains
+      no energy"* — because a socket drawing nothing that still gains kWh is exactly what the
+      live watch showed.
+
+      Wording and block position mirror the Lighting sheet rather than inventing new phrasing, per
+      the plan. `Schedule fires` also gained a note: it is the row that was failing on Outlet 5,
+      it was fixed the same day, and any earlier result on it is stale.
+
+      Mechanically: blocks rebuilt to rows 18–87 and 18–117, formulas carried across with
+      openpyxl's `Translator` so relative refs follow the row, and the conditional formatting, the
+      P/F validation and the Summary's fixed ranges and per-device counts (`*6` → `*7` / `*10`)
+      all extended to match. Verified afterwards: zero stale references, every formula naming only
+      its own row and its slot's header row, all 10 slots resolving correctly, 7×10 and 10×10
+      blocks. **Nothing was lost** — every TRIES cell in the workbook was empty, checked before
+      touching it — and the original is backed up beside the file.
+      Device IDs stay in that workbook and are not reproduced here.
+
 - [x] **RM-050 (S) — `semantic` does some work. 2026-09-07.** The plan's Phase 6 was written
       against `dpParserPlan`, which hard-coded increment behaviour by matching the literal name
       `add_ele`. **RM-047 deleted that accumulation outright, so the original target no longer
