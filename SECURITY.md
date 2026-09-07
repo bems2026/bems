@@ -1,6 +1,6 @@
 # Security policy
 
-iBEMS runs a real building. A fault here does not corrupt a record — it switches a relay, or
+iBEMS runs real buildings. A fault here does not corrupt a record — it switches a relay, or
 leaves a room dark. Please treat it accordingly.
 
 ## Reporting a vulnerability
@@ -8,16 +8,16 @@ leaves a room dark. Please treat it accordingly.
 Use **[GitHub's private vulnerability reporting](https://github.com/bems2026/bems/security/advisories/new)**
 (Security → Report a vulnerability). It is private to the maintainers until a fix ships.
 
-If that is unavailable to you, email the MMSU CARE Office at **care@mmsu.edu.ph** with `iBEMS
+If that is unavailable to you, email the maintainers at **care@mmsu.edu.ph** with `iBEMS
 security` in the subject.
 
 Please include what you did, what happened, and what you expected. A proof of concept helps;
-**do not run one against a live deployment that is not yours** — the devices in scope are lights,
-outlets and air-conditioning in an occupied office.
+**do not run one against a live deployment that is not yours** — the devices in scope are the
+lights, outlets and air-conditioning of an occupied building.
 
-Expect an acknowledgement within five working days. This is a small university research team,
-not a vendor with an on-call rota, and we would rather say that than imply a response time we
-cannot hold. There is no bounty.
+Expect an acknowledgement within five working days. This is a small research team, not a vendor
+with an on-call rota, and we would rather say that than imply a response time we cannot hold.
+There is no bounty.
 
 ## Scope
 
@@ -51,7 +51,8 @@ attack:
   else, on purpose.
 - **The bridge and the MQTT broker listen on loopback only.** Both once did not, and both are
   narrower now because a measurement — not a review — showed what was reachable from the device
-  Wi-Fi. Widening either is reinstating the problem, not configuring a feature.
+  Wi-Fi. Widening either is reinstating the problem, not configuring a feature. If you deploy
+  this, keep them there.
 - **Hardware dispatch is gated and off unless a deployment sets it.** Every command is validated
   and written to an audit row *before* anything is touched, using the caller's own token, so a
   relay that moved without a record is not a representable state.

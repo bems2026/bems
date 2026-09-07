@@ -14,8 +14,11 @@ body:
     id: device
     attributes:
       label: Which device
-      description: The id from the Devices page — `co1`–`co7`, `l1`–`l7`, a meter, or `acu_main`.
-      placeholder: l6
+      description: >
+        The id from the Devices page, and its class — outlet, switch, meter, air-conditioner or
+        sensor. Device ids are declared by each deployment in `shared/sites/<slug>/devices.mjs`,
+        so yours will not look like anybody else's.
+      placeholder: 'l6 (switch)'
     validations:
       required: true
 
@@ -39,9 +42,9 @@ body:
       label: Was Node-RED restarted first?
       description: >
         A Node-RED node that has given up looks exactly like hardware that is unplugged or out of
-        range. One device was diagnosed as an RF/range fault, with a roadmap entry saying it
+        range. A device was once diagnosed as an RF/range fault, with a roadmap entry saying it
         needed eyes on the fixture; `sudo systemctl restart nodered` reconnected it in two
-        seconds, and the same restart took the fleet from 9 online to 14. Restart first. Only if
+        seconds, and the same restart took that fleet from 9 online to 14. Restart first. Only if
         the device is still dark is a hardware suspicion earned.
       options:
         - label: Yes — restarted, and the fault survived it
@@ -78,4 +81,4 @@ body:
     id: when
     attributes:
       label: When did it start
-      placeholder: 2026-09-05, after the morning power cycle
+      placeholder: after a power cycle / after a deploy / it never worked

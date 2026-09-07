@@ -30,20 +30,20 @@
   }
   .panel-head { display: flex; align-items: baseline; justify-content: space-between; }
   .panel-title { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; color: var(--muted-2); text-transform: uppercase; }
-  .panel-count { font-size: 15px; font-weight: 700; color: var(--txt); }
+  .panel-count { font-size: 11px; font-weight: 600; color: var(--muted-2); }
   .spark { position: absolute; left: 0; right: 0; bottom: 0; height: 84px; opacity: 0.5; }
   .rows { margin-top: 14px; display: grid; gap: 9px; position: relative; z-index: 1; }
   .row { display: flex; align-items: center; gap: 10px; }
   .tiles { display: flex; gap: 4px; }
-  .t { width: 13px; height: 13px; border-radius: 3.5px; }
+  .t { width: 11px; height: 11px; border-radius: 3px; }
   .lbl { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 0.01em; }
 </style>
 <div class="stage">
   <div class="left">
-    <div class="eyebrow mono">MMSU CARE Office &middot; NBERIC &middot; Batac City</div>
+    <div class="eyebrow mono">Open source &middot; MIT &middot; self-hosted on one Raspberry Pi</div>
     <h1 class="word"><span class="i">i</span>BEMS</h1>
-    <p class="tag">Building energy management for a real office.</p>
-    <p class="sub">Metering, control and load-shedding &mdash; on one Raspberry Pi, on the building's own network.</p>
+    <p class="tag">A building energy management framework.</p>
+    <p class="sub">Metering, control and load-shedding for <em>your</em> building &mdash; on the building's own network.</p>
   </div>
 
   <div class="panel">
@@ -59,14 +59,14 @@
             fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
     </svg>
     <div class="panel-head">
-      <span class="panel-title">Fleet</span>
-      <span class="panel-count">20 devices</span>
+      <span class="panel-title">Device classes</span>
+      <span class="panel-count">declared per site</span>
     </div>
     <div class="rows">
-      <div class="row"><span class="tiles" data-n="7" data-c="var(--blue)"></span><span class="lbl">7 &times; metering outlet</span></div>
-      <div class="row"><span class="tiles" data-n="7" data-c="var(--accent)"></span><span class="lbl">7 &times; lighting circuit</span></div>
-      <div class="row"><span class="tiles" data-n="4" data-c="var(--green)"></span><span class="lbl">4 &times; CT branch meter</span></div>
-      <div class="row"><span class="tiles" data-n="2" data-c="var(--purple)"></span><span class="lbl">air-conditioning &middot; outdoor sensor</span></div>
+      <div class="row"><span class="tiles" data-n="1" data-c="var(--blue)"></span><span class="lbl">metering outlets &mdash; switch and measure each socket</span></div>
+      <div class="row"><span class="tiles" data-n="1" data-c="var(--accent)"></span><span class="lbl">switched circuits &mdash; lighting, pumps, anything on/off</span></div>
+      <div class="row"><span class="tiles" data-n="1" data-c="var(--green)"></span><span class="lbl">CT branch meters &mdash; what totals are summed from</span></div>
+      <div class="row"><span class="tiles" data-n="1" data-c="var(--purple)"></span><span class="lbl">air-conditioning by IR, and sensors</span></div>
     </div>
   </div>
   <div class="rule"></div>

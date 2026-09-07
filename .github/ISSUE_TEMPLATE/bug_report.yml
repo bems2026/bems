@@ -18,7 +18,7 @@ body:
         - Ingest / scheduler / proxy (server/)
         - Node-RED bridge or the generated flow
         - Database, migrations, or a report
-        - Deployment scripts (scripts/) or replication
+        - Deployment scripts (scripts/), site definition, or replication
         - Not sure
     validations:
       required: true
@@ -35,9 +35,10 @@ body:
     attributes:
       label: How to reproduce it
       description: >
-        Against `npm run mock` if you can — it takes no hardware, and a fault that reproduces
-        there can be fixed by anyone. The mock has failure injection for exactly this:
-        `--500`, `--drop-ws`, `--stale=<id>`, `--cmd-fail=<id>`, `--poll-cadence=60`.
+        Against `npm run mock` if you can — it takes no hardware, it derives its fixture from
+        whatever site is configured, and a fault that reproduces there can be fixed by anyone.
+        The mock has failure injection for exactly this: `--500`, `--drop-ws`, `--stale=<id>`,
+        `--cmd-fail=<id>`, `--poll-cadence=60`.
       placeholder: |
         1. npm run mock -- --stale=co3
         2. npm run dev
@@ -49,8 +50,10 @@ body:
     id: where
     attributes:
       label: Where it ran
-      description: Workstation or the Pi, and `node -v`. CI runs Node 22 and 24 because the two have already disagreed.
-      placeholder: Pi, node v22.23.2
+      description: >
+        Workstation or a deployed machine, and `node -v`. CI runs Node 22 and 24 because the two
+        have already disagreed.
+      placeholder: 'Raspberry Pi, node v22.23.2'
 
   - type: textarea
     id: evidence
