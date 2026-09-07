@@ -21,6 +21,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TIMING, METERED, SITE, DEVICE_REGISTRY } from '../shared/registry.mjs';
 import { shapeDeviceRows, shapeAnomalyRows } from './shapeRows.mjs';
+import { buildHealthRow, isMissingScrubColumnError, withoutScrubColumns } from './healthRow.mjs';
 import { makeSupabaseClient } from './supabaseRest.mjs';
 import { appendToBuffer, readBuffer, writeBuffer, bufferCount } from './ingestBuffer.mjs';
 import { takeBufferedCommands, restoreUndrained } from './auditQueue.mjs';
@@ -198,25 +199,40 @@ async function writeOrBuffer(table, rows, onConflict) {
   }
 }
 
-async function updateHealth(ok, lastError = null) {
-  const row = {
-    id: 1,
-    // RM-027. phase20 gives this column a default so the migration could land on a running
-    // system, but a writer that knows its own site is what lets RM-030 drop that default.
-    // `onConflict` stays `id`: this table is a singleton per database, and `unique (site_id)`
-    // means only one row can exist per site anyway — changing the key here would buy nothing
-    // and is RM-030's business, alongside the primary key it defers.
-    site_id: SITE.id,
-    buffered_row_count: bufferCount(BUFFER_PATH),
-    last_error: ok ? null : lastError,
-  };
-  if (ok) row.last_success_at = new Date().toISOString();
+/**
+ * Whether this database has had `supabase/phase30_ingestion_scrub.sql` applied.
+ *
+ * `true` until something says otherwise, and settled by the first failure rather than by a
+ * probe at startup — a probe costs a query on every boot to answer a question that is
+ * permanently "yes" everywhere the migration has been applied. See
+ * `server/healthRow.mjs` for why the question has to be asked at all.
+ */
+let scrubColumnsPresent = true;
+
+async function updateHealth(ok, lastError = null, rejections = []) {
+  const row = buildHealthRow({
+    ok,
+    lastError,
+    rejections,
+    bufferedRowCount: bufferCount(BUFFER_PATH),
+    siteId: SITE.id,
+    nowIso: new Date().toISOString(),
+    withScrubColumns: scrubColumnsPresent,
+  });
   try {
     // Best-effort only — if Supabase is down this also fails, and that's fine: the next
     // successful tick corrects it. Not buffered; it's a derived status snapshot, not data.
     await supabase.upsert('ingestion_health', [row], { onConflict: 'id' });
-  } catch {
-    /* see comment above */
+  } catch (err) {
+    if (!isMissingScrubColumnError(err)) return; /* see comment above */
+    // Loud, and once. The whole point of the scrub counters is that discarding data silently
+    // is indistinguishable from not discarding it — a counter that silently fails to record
+    // has the identical defect one level up.
+    console.warn('[ibems-ingest] ingestion_health has no scrub columns — apply supabase/phase30_ingestion_scrub.sql. Recording health without them; the scrub itself is running and its rejections are in this journal.');
+    scrubColumnsPresent = false;
+    try {
+      await supabase.upsert('ingestion_health', [withoutScrubColumns(row)], { onConflict: 'id' });
+    } catch { /* the next tick corrects it, exactly as above */ }
   }
 }
 
@@ -246,8 +262,17 @@ async function tick() {
   await drainCommandAudit().catch((err) => console.error(`[ibems-ingest] command audit drain failed: ${err?.message ?? err}`));
 
   const stamp = new Date().toISOString();
+  // Logged whatever else this tick did, and at error level: a refused field is data this
+  // building produced and this system chose not to keep, so it belongs in the journal even on
+  // an otherwise healthy tick. Silence here would make the guard indistinguishable from its
+  // own absence, which is the thing it was built to end.
+  if (result.rejectionCount) {
+    console.error(`[ibems-ingest] ${stamp} scrub refused ${result.rejectionCount} field(s): ${result.rejections.map(String).join('; ')}`);
+  }
   if (result.ok) {
     console.log(`[ibems-ingest] ${stamp} wrote ${result.readingCount} readings${result.hasTotals ? ' + totals' : ''}${result.anomalyCount ? ` + ${result.anomalyCount} anomalies` : ''}`);
+  } else if (result.stage === 'payload') {
+    console.error(`[ibems-ingest] ${stamp} bridge answered with an unusable payload, nothing to write: ${result.error}`);
   } else if (result.stage === 'bridge') {
     // Distinguished from the Supabase case on purpose: these are different outages with
     // different fixes, and conflating them in the log is how a 2.4/5 GHz band mismatch ends

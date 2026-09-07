@@ -15,20 +15,26 @@ import { runIngestCycle } from './ingestCycle.mjs';
 import { readFileSync } from 'node:fs';
 import { SITE } from '../shared/registry.mjs';
 
+/** Pinned for the same reason as `server/ingest.test.mjs`: the cycle now scrubs, and a
+ * scrub that checks timestamps cannot be tested against a fixture that reads the wall clock. */
+const AT = '2026-08-16T09:00:00+08:00';
+const AT_MS = Date.parse(AT) + 1000;
+
 const LATEST = [
-  { device_id: 'mtr_co_yellow', ts: 't1', voltage: 231.4, current: 6.5, power_w: 746.5, energy_kwh_today: 0, online: true },
-  { device_id: 'co1', ts: 't1', voltage: 235.9, current: 0, power_w: 0, energy_kwh_today: 0.02, online: true },
-  { device_id: '_totals', ts: 't1', total_power_w: 746.5, avg_voltage: 233, phase_current: { red: 1, yellow: 2, blue: null } },
+  { device_id: 'mtr_co_yellow', ts: AT, voltage: 231.4, current: 6.5, power_w: 746.5, energy_kwh_today: 0, online: true },
+  { device_id: 'co1', ts: AT, voltage: 235.9, current: 0, power_w: 0, energy_kwh_today: 0.02, online: true },
+  { device_id: '_totals', ts: AT, total_power_w: 746.5, avg_voltage: 233, phase_current: { red: 1, yellow: 2, blue: null } },
 ];
 
 function harness({ fetchLatest, write, flushBuffer, detectAnomalies } = {}) {
-  const calls = { writes: [], health: [], flushes: 0 };
+  const calls = { writes: [], health: [], flushes: 0, rejections: [] };
   const io = {
     fetchLatest: fetchLatest ?? (async () => LATEST),
     flushBuffer: flushBuffer ?? (async () => { calls.flushes++; }),
     write: write ?? (async (table, rows, onConflict) => { calls.writes.push({ table, rows, onConflict }); }),
     detectAnomalies: detectAnomalies ?? (() => []),
-    updateHealth: async (ok, lastError) => { calls.health.push({ ok, lastError }); },
+    updateHealth: async (ok, lastError, rejections) => { calls.health.push({ ok, lastError }); calls.rejections.push(rejections); },
+    nowMs: AT_MS,
   };
   return { io, calls };
 }
@@ -65,7 +71,8 @@ test('updates ingestion_health when the BRIDGE is unreachable', async () => {
 test('a bridge failure writes nothing — no half-cycle, no fabricated rows', async () => {
   const { io, calls } = harness({ fetchLatest: async () => { throw new Error('ECONNREFUSED'); } });
   await runIngestCycle(io);
-  assert.deepEqual(calls.writes, []);
+  //  returns early on an empty array, so nothing reaches Supabase either way.
+  assert.deepEqual(calls.writes.flatMap((w) => w.rows), []);
 });
 
 test('distinguishes a bridge outage from a Supabase outage', async () => {
@@ -115,7 +122,7 @@ test('writes anomalies only when some were detected', async () => {
   await runIngestCycle(none.io);
   assert.equal(none.calls.writes.some((w) => w.table === 'anomalies'), false);
 
-  const some = harness({ detectAnomalies: () => [{ device_id: 'co1', ts: 't1', metric: 'power_w' }] });
+  const some = harness({ detectAnomalies: () => [{ device_id: 'co1', ts: AT, metric: 'power_w' }] });
   const result = await runIngestCycle(some.io);
   assert.equal(result.anomalyCount, 1);
   const row = some.calls.writes.find((w) => w.table === 'anomalies');
@@ -184,4 +191,101 @@ test('the site is taken from the site module, not spelled out a second time here
   // drift silently — which is the whole failure mode RM-027 exists to remove.
   const src = readFileSync(new URL('./ingestCycle.mjs', import.meta.url), 'utf8');
   assert.equal(/site_id:\s*'[a-z0-9-]+'/.test(src), false, 'site_id must not be a literal');
+});
+
+// ---------------------------------------------------------------------------
+// The scrub, seen from the cycle that runs it (phase30).
+// ---------------------------------------------------------------------------
+
+test('a refused field reaches updateHealth, so it cannot be discarded silently', async () => {
+  const { io, calls } = harness({
+    fetchLatest: async () => [{ device_id: 'lo_yel2', ts: AT, power_w: 36, energy_kwh_today: 3625.108, online: true }],
+  });
+  const result = await runIngestCycle(io);
+
+  assert.equal(result.rejectionCount, 1);
+  assert.equal(calls.rejections.at(-1).length, 1);
+  assert.match(String(calls.rejections.at(-1)[0]), /energy_kwh_today/);
+});
+
+test('a refused field is not an unhealthy cycle', async () => {
+  // The guard doing its job must not read as a database outage — that would put a red banner
+  // on the dashboard for a reading the system correctly declined to believe.
+  const { io, calls } = harness({
+    fetchLatest: async () => [{ device_id: 'lo_yel2', ts: AT, power_w: 36, energy_kwh_today: 3625.108, online: true }],
+  });
+  const result = await runIngestCycle(io);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.stage, null);
+  assert.deepEqual(calls.health.at(-1), { ok: true, lastError: null });
+});
+
+test('the row still gets written, with the bad field omitted rather than zeroed', async () => {
+  const { io, calls } = harness({
+    fetchLatest: async () => [{ device_id: 'lo_yel2', ts: AT, power_w: 36, energy_kwh_today: 3625.108, online: true }],
+  });
+  await runIngestCycle(io);
+
+  const [row] = calls.writes.find((w) => w.table === 'readings').rows;
+  assert.equal(row.energy_kwh_today, null);
+  assert.equal(row.power_w, 36);
+  assert.equal(row.online, true);
+});
+
+test('a clean cycle reports zero rejections rather than omitting the count', async () => {
+  // A missing field and a zero read the same to a `if (result.rejectionCount)`; they must not
+  // read the same to whoever is checking whether the guard is running at all.
+  const result = await runIngestCycle(harness().io);
+  assert.equal(result.rejectionCount, 0);
+  assert.deepEqual(result.rejections, []);
+});
+
+test('a malformed bridge body reaches updateHealth instead of escaping the cycle', async () => {
+  // The bug this file's header describes for the fetch path, which was still live one line
+  // below the fix for it: `splitLatestPayload` sat outside every try/catch, so a body that was
+  // not an array threw past `updateHealth` and out of `runIngestCycle` entirely.
+  const { io, calls } = harness({ fetchLatest: async () => ({ nope: true }) });
+  const result = await runIngestCycle(io);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.stage, 'payload');
+  assert.equal(calls.health.length, 1);
+  assert.equal(calls.health[0].ok, false);
+});
+
+test('an unusable payload is told apart from an unreachable bridge', async () => {
+  // Different faults, different fixes. Conflating them in the journal is how a band mismatch
+  // once looked like a database problem for a day.
+  const unreachable = await runIngestCycle(harness({ fetchLatest: async () => { throw new Error('ECONNREFUSED'); } }).io);
+  const unusable = await runIngestCycle(harness({ fetchLatest: async () => ({ nope: true }) }).io);
+  assert.equal(unreachable.stage, 'bridge');
+  assert.equal(unusable.stage, 'payload');
+});
+
+test('a row with an unusable timestamp is dropped without taking the others with it', async () => {
+  const { io, calls } = harness({
+    fetchLatest: async () => [
+      { device_id: 'co1', ts: 'NaN-NaN-NaNTNaN:NaN:NaN+08:00', power_w: 5, online: true },
+      { device_id: 'co2', ts: AT, power_w: 6, online: true },
+    ],
+  });
+  const result = await runIngestCycle(io);
+
+  assert.equal(result.readingCount, 1);
+  assert.deepEqual(calls.writes.find((w) => w.table === 'readings').rows.map((r) => r.device_id), ['co2']);
+  assert.equal(result.rejectionCount, 1);
+});
+
+test('a body that iterates but means nothing writes no rows, and says how many it refused', async () => {
+  // A JSON string body is iterable, so it does not throw — it yields one character per entry.
+  // Each has no timestamp, so every one is refused and nothing is written. Worth pinning:
+  // before the scrub this produced eight rows of pure nulls keyed on `undefined`.
+  const { io, calls } = harness({ fetchLatest: async () => 'not json' });
+  const result = await runIngestCycle(io);
+
+  assert.equal(result.readingCount, 0);
+  assert.equal(result.rejectionCount, 'not json'.length);
+  // `writeOrBuffer` returns early on an empty array, so nothing reaches Supabase either way.
+  assert.deepEqual(calls.writes.flatMap((w) => w.rows), []);
 });

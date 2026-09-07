@@ -1,8 +1,10 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-03 — the fleet, the energy path and the dispatch policy, measured on the
-live Pi over the tailnet. §0 leads with what that measurement found.
-**Audited at commit:** `e00ce71`
+**Last audited:** 2026-09-07 — the ingestion path, the telemetry bounds and the outlet energy
+accumulator, measured against 610,989 live readings and a three-minute watch of the running
+bridge. §0 leads with what that measurement found: **RM-047**, every outlet's daily energy
+fabricated, still live.
+**Audited at commit:** `3613e72`
 
 **2026-09-01, and it changes what §0 says.** The headline claim below — that there is no
 unblocked coding task left — was **wrong**, and it was wrong because the fault report that
@@ -60,6 +62,46 @@ other four and none needed changing.
 ---
 
 ## 0. Triage — what to do next
+
+### 2026-09-07 — every outlet's daily energy is fabricated, and it is the top of this list
+
+**RM-047.** All seven outlets accrue energy they have not used, every minute, and have done
+since the `add_ele` accumulator shipped. Measured on the live bridge over a three-minute watch
+with no flow change and no device connection:
+
+- **co5 drew 0 W for the entire window** while its `energy_kwh_today` rose by exactly 0.0280 kWh
+  once every 60 s — its `add_ele` value, stuck at 0.028 and re-added on every poll. That is a
+  fabricated 1.68 kW on a socket that is switched off.
+- **co1 accrued 1.460 kWh across 2026-09-06, a day it drew 0 W throughout.** 0.001 kWh × 1,440
+  polls = 1.44, which is the whole of it.
+- **co5 reported 72.427 kWh for 2026-09-06.** Its own power readings over the same day integrate
+  to **2.268 kWh**, and its highest power ever recorded is 674 W — 16.2 kWh is the most it could
+  physically consume in a day. Overstated 32-fold.
+
+**The mechanism, confirmed at the source.** `dpParserPlan.mjs`'s outlet tail does
+`if (fresh.add_ele !== undefined) energy += fresh.add_ele`. That is correct for a device-pushed
+`dp-refresh`, where `add_ele` is genuinely "energy since I last told you". It is wrong for the
+60 s poll, whose `data` event returns the device's whole retained dp table — including the last
+`add_ele` it ever reported. `node-red-contrib-tuya-smart-device` emits **byte-identical message
+shapes for both events** (`src/tuya-smart-device.js`: both `send` a bare
+`{payload:{data,deviceId,deviceName}}`), so nothing downstream can tell a fresh increment from
+its echo. The comment above the line — *"`add_ele` is energy SINCE THE LAST REPORT, so it
+accumulates"* — is true of the protocol and false of the transport.
+
+**Why the meters are unaffected:** `cz_ct_single`/`cz_ct_double` carry `today_acc_energy`
+(`semantic: 'cumulative_daily'`), which `buildLatest` prefers. Re-reading a cumulative register
+is harmless. `pc_outlet` has **no cumulative energy dp at all** — all 17 are switches,
+countdowns, coefficients, diagnostics and the one increment — so an outlet has no register to
+fall back to and the fix cannot simply mirror the meter path.
+
+**This is the operator's 2026-09-03 report — "the energy breakdown in analytics goes wrong" —
+still live.** The building total is not affected (`_totals` is computed from the four CT meters:
+11.44 kWh against the outlets' 71.4), so the fault is confined to the per-device breakdown,
+which is exactly the surface that was reported as wrong.
+
+**EX-166's scrub does not catch this and says so in its own header.** 72 kWh is inside a 100 kWh
+bound; a bound narrow enough to catch it would start discarding real readings. This is fixed
+where it is produced.
 
 ### 2026-09-03 — the power cycle was performed, and it is the top of this list now
 
@@ -289,9 +331,16 @@ Everything else is small, and the build order below is honest about size.
 
 ### Migrations authored but NOT applied
 
-Two SQL files are waiting on a hand-apply in the Supabase SQL editor. This project has no
+Three SQL files are waiting on a hand-apply in the Supabase SQL editor. This project has no
 migration runner and no tracker table, so this list is the record:
 
+- **`supabase/phase30_ingestion_scrub.sql`** — EX-166. Three additive columns on
+  `ingestion_health` recording what the scrub refused. **Unlike phase28 below, applying this is
+  not a prerequisite for deploying the daemon**, and that is deliberate: `updateHealth` detects
+  the missing columns from PostgREST's own error, says so once in the journal, and re-sends the
+  row without them, so `last_success_at` keeps moving either way
+  (`server/healthRow.mjs`, 13 tests). Until it is applied, the scrub still runs and its
+  rejections are still recorded — in the ingestion journal rather than in the database.
 - **`supabase/phase27_period_reports.sql`** — see RM-041.
 - **`supabase/phase28_reading_capabilities.sql`** — EX-147. Adds the promoted telemetry columns
   (`total_energy_kwh`, `warn_power_w`, `power_type`, `net_state`, `fault`) and a `capabilities`
@@ -1693,6 +1742,54 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       *"local failed (the bridge reports this device offline, so a local SET cannot reach it);
       recovered via cloud"*. That is `local-first` doing exactly what it is for, on a fleet that
       was flapping — and it is the reason the site is not on `local-only` yet.
+- [x] **EX-166** The ingestion path has an opinion about what it is storing. `shapeRows.mjs`'s
+      `splitLatestPayload` was seven `?? null` assignments — no type check, no finiteness check,
+      no range check, no timestamp check, nothing at all between the bridge and `readings`. That
+      is how 3,625 kWh for one day on a circuit averaging 36 W landed in Supabase on 2026-09-03
+      and had to be repaired by hand. The bridge grew a backstop for that one field afterwards
+      (`SITE.max_branch_kwh_per_day`, applied in `buildLatest`), but the bridge deploys separately
+      from this daemon and can be older than it, so the write path still checked nothing.
+      **Three rules, each the way round it is for a reason.** *Omit, never zero* — a refused field
+      becomes `null`, matching `buildLatest`'s `num()`; "no data" and "zero watts" render
+      differently and only one of them averages into an hourly rollup. *Never drop a row for a bad
+      value* — `online` carries the truth about the device and this series has no holes at all, so
+      one bad field must not cost the other six. *A row with no usable timestamp is not a row* —
+      `ts` is half the upsert key so it cannot be nulled, and substituting the receipt time would
+      fabricate **when**, which is the same class of harm as fabricating a value and much harder
+      to notice later.
+      **The timestamp rule is availability protection, not tidiness.** `iso8(NaN)` returns the
+      literal string `"NaN-NaN-NaNTNaN:NaN:NaN+08:00"`. Postgres rejects it with a 400,
+      `writeOrBuffer` appends the whole batch to the outage buffer, and `flushBuffer` replays that
+      buffer at the head of every subsequent cycle and re-persists the remainder on the first
+      error — so one permanently-invalid row sits at the head of the queue for ever and every
+      reading behind it stops reaching Supabase. A single malformed timestamp wedges ingestion
+      permanently, and it would read as a database outage.
+      **The bounds are sized against the building, measured, not guessed.** `SITE.telemetry_bounds`
+      and `max_building_kwh_per_day` are new; the vendor catalogue cannot serve here because it
+      declares ranges for settings and enums and **none** for `cur_power`, `cur_voltage` or
+      `cur_current`. Over 610,989 readings across 22 days the fleet's extremes are 241.8 V,
+      15.974 A, 3,091 W per device and 4,551 W for the building; every bound clears its measured
+      extreme with room, because the two errors are not symmetrical — a stored odd value is
+      visible and arguable, a discarded real one is gone.
+      **Verified on real data, not only on fixtures.** A full live day replayed through the real
+      module — 28,775 `readings` plus 1,440 `building_totals` — gives **0 rejections and 0 rows
+      dropped**; the current live payload gives 0 of 21. The 2026-09-03 value replayed through the
+      same path is omitted rather than zeroed, every other field on its row survives, and the
+      reason recorded is `lo_yel2.energy_kwh_today=3625.108 outside [0, 100]`. Six neuters of the
+      scrub and three of the wiring each fail the right tests.
+      **What it does NOT catch, stated in the module itself.** co5 reported 72.427 kWh for the
+      local day of 2026-09-06 against 2.268 kWh integrated from its own power — 32-fold, and
+      comfortably inside a 100 kWh bound. A bound wide enough to be safe cannot catch a value that
+      is merely wrong; narrowing it until it could would discard real readings. See RM-047, which
+      is the actual cause and is still live.
+      Also fixed here because the new code runs inside it: `splitLatestPayload` sat outside every
+      try/catch in `ingestCycle`, so a malformed bridge body threw straight past `updateHealth` —
+      the same fault that file's header describes for the fetch path, left standing one line below
+      the fix for it. It now has its own `payload` stage, told apart from `bridge` in the journal.
+      `server/scrubTelemetry.mjs` (+28 tests), `server/healthRow.mjs` (+13),
+      `server/shapeRows.mjs`, `server/ingestCycle.mjs` (+9), `server/ingest.mjs`,
+      `shared/sites/mmsu-nberic-care/site.mjs`, `supabase/phase30_ingestion_scrub.sql`
+
 - [x] **EX-165** Outlet parity: a socket reports what the RELAY is doing, and an unattended
       device-level command reaches both sockets. **Three defects, one cause — outlets were
       second-class on every path switches had already been fixed on**, and the operator found it
@@ -2529,6 +2626,49 @@ fall back to it).
       to Monday, a week and a month coexisting on one start date, upsert on regeneration, the
       derived 10080-minute expectation, an unknown period refused by both the function and the
       check constraint, and the building-energy distinction above.
+
+- [ ] **RM-047 (M)** **Outlet daily energy is fabricated on every poll — measured 2026-09-07,
+      still live on all seven.** The evidence is in §0; this is the fix, and it needs a decision
+      because none of the options is free.
+
+      **Why the obvious fix is not available.** The meter path works by preferring
+      `today_acc_energy`, a `cumulative_daily` register that is harmless to re-read. `pc_outlet`
+      has no cumulative energy dp — all 17 are switches, countdowns, coefficients, diagnostics
+      and the single `add_ele` increment — so there is nothing to difference against.
+
+      **Why the transport cannot be asked either.** `dp-refresh` (device push, changed dps) and
+      `data` (poll response, the whole retained dp table) leave
+      `node-red-contrib-tuya-smart-device` as byte-identical messages on the same output. There
+      is no downstream field, and subscribing to `dp-refresh` alone would lose the 60 s telemetry
+      cadence — measured, co1 took 1,460 additions in a day against 1,440 polls, so essentially
+      every packet reaching the accumulator is a poll.
+
+      **The options, in the order they should be considered:**
+      1. **Integrate power, and stop accumulating `add_ele`** — the path that was already the
+         fallback, and the one this outlet class shipped with before the increment change.
+         Cross-checked where both sources exist: over the same three-minute watch
+         `mtr_co_yellow`'s own counter advanced 0.028 kWh while its power integrates to ~0.030 —
+         within about 7%, against the 3,200% error being fixed. Needs a staleness guard so a
+         device that stops reporting cannot compound its last wattage, which is the documented
+         weakness of integration and the fault the increment change was reaching for.
+      2. **Accumulate only on a CHANGED `add_ele`.** Correct for the stuck-value case that
+         dominates today, but systematically under-counts a steady load, whose consecutive
+         genuine increments are equal — the failure would be quiet and in the flattering
+         direction, which is the worse kind.
+      3. Patch the vendor node to mark the event. Rejected on sight: it puts a local edit in
+         `~/.node-red/node_modules`, where nothing in this repository can verify it and a package
+         upgrade removes it silently — the same exposure shape as `findTimeout` and the broker
+         config.
+
+      **Recommendation: option 1**, with the staleness guard, and `add_ele` kept in
+      `capabilities` for cross-checking rather than for accumulating. It is a `dpParserPlan`
+      change, so it needs `fix-dp-parsers:pi` and touches the four hand-built source tabs — back
+      up `~/.node-red/flows.json` first.
+
+      **Historical rows are not repaired by any of this.** `readings.energy_kwh_today` for the
+      outlets is wrong from whenever the increment change was deployed; the four CT meters and
+      `building_totals` are unaffected. Decide separately whether to correct the history or to
+      mark the window, and do not quietly do neither.
 
 - [ ] **RM-042 (S)** Retire `monthly_reports`, `monthly_building_reports` and
       `generate_monthly_report`, and drop the second RPC call in `server/reports.mjs`. Blocked

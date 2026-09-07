@@ -50,10 +50,12 @@ export function msUntilNextTick(periodMs, nowMs = Date.now()) {
  *   flushBuffer: () => Promise<void>,
  *   write: (table: string, rows: object[], onConflict: string) => Promise<void>,
  *   detectAnomalies: (readings: object[]) => object[],
- *   updateHealth: (ok: boolean, lastError: string|null) => Promise<void>,
+ *   updateHealth: (ok: boolean, lastError: string|null, rejections: object[]) => Promise<void>,
+ *   nowMs?: number,
  * }} io
- * @returns {Promise<{ok: boolean, stage: 'bridge'|'supabase'|null, error: string|null,
- *                     readingCount: number, hasTotals: boolean, anomalyCount: number}>}
+ * @returns {Promise<{ok: boolean, stage: 'bridge'|'payload'|'supabase'|null, error: string|null,
+ *                     readingCount: number, hasTotals: boolean, anomalyCount: number,
+ *                     rejectionCount: number, readings: object[]}>}
  */
 export async function runIngestCycle(io) {
   let latest;
@@ -63,11 +65,26 @@ export async function runIngestCycle(io) {
     // The path that used to vanish. Record it before giving up, so `ingestion_health`
     // reflects the failure an operator is most likely to be looking for.
     const error = String(err);
-    await io.updateHealth(false, error);
-    return { ok: false, stage: 'bridge', error, readingCount: 0, hasTotals: false, anomalyCount: 0 };
+    await io.updateHealth(false, error, []);
+    return { ok: false, stage: 'bridge', error, readingCount: 0, hasTotals: false, anomalyCount: 0, rejectionCount: 0, rejections: [], readings: [] };
   }
 
-  const { readings, totals } = splitLatestPayload(latest);
+  // INSIDE a try, unlike before. `splitLatestPayload` sat bare between the two guarded
+  // sections, so a malformed bridge body threw straight past `updateHealth` and out of the
+  // cycle — the exact shape of the bug this file's header describes for the fetch path, left
+  // standing one line below the fix for it. It matters more now that the payload is scrubbed
+  // here rather than merely reshaped: this is where new code runs.
+  let readings, totals, rejections;
+  try {
+    ({ readings, totals, rejections } = splitLatestPayload(latest, io.nowMs ?? Date.now()));
+  } catch (err) {
+    const error = String(err);
+    await io.updateHealth(false, error, []);
+    // Its own stage, not 'bridge': "the bridge is unreachable" and "the bridge answered with
+    // something unusable" are different faults with different fixes, and the daemon's journal
+    // is where somebody goes to tell them apart.
+    return { ok: false, stage: 'payload', error, readingCount: 0, hasTotals: false, anomalyCount: 0, rejectionCount: 0, rejections: [], readings: [] };
+  }
 
   // Drain any backlog first so buffered rows land before this cycle's, preserving order.
   try {
@@ -107,7 +124,7 @@ export async function runIngestCycle(io) {
     }
   }
 
-  await io.updateHealth(ok, error);
+  await io.updateHealth(ok, error, rejections);
 
   return {
     ok,
@@ -116,6 +133,14 @@ export async function runIngestCycle(io) {
     readingCount: readings.length,
     hasTotals: Boolean(totals),
     anomalyCount: anomalyRows.length,
+    // Fields the scrub refused this tick. Deliberately NOT folded into `ok`: a refused field
+    // is the guard working, not the cycle failing, and conflating them would make a single
+    // bad reading look like a database outage.
+    rejectionCount: rejections.length,
+    // The rejections themselves, not just the tally: `ingestion_health` can only record these
+    // when Supabase is reachable, and a scrub firing DURING an outage is exactly when somebody
+    // will want to know what it threw away. The journal is the record that survives that.
+    rejections,
     // The rows themselves, for callers that need to judge the fleet rather than count it —
     // today the out-of-dashboard alarm (server/fleetAlarm.mjs). Returned rather than given its
     // own injected hook: this function's job is one cycle's worth of truth, and deciding what

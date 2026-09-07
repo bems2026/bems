@@ -22,17 +22,28 @@ import { splitLatestPayload, shapeDeviceRows, shapeAnomalyRows } from './shapeRo
 import { SITE } from '../shared/registry.mjs';
 import { appendToBuffer, readBuffer, writeBuffer, bufferCount } from './ingestBuffer.mjs';
 
+/**
+ * The instant these fixtures were taken, and one second later.
+ *
+ * Pinned because `splitLatestPayload` now checks that a row's timestamp could plausibly have
+ * been minted by the bridge it came from. Reading the wall clock inside the function would
+ * have made every test here start failing a week after it was written — which is the same
+ * fault as a bound sized against nothing, one layer up.
+ */
+const AT = '2026-08-16T09:00:00+08:00';
+const AT_MS = Date.parse(AT) + 1000;
+
 test('splitLatestPayload separates per-device readings from the _totals row', () => {
   const latest = [
-    { device_id: 'co3', ts: '2026-08-16T09:00:00+08:00', voltage: 221.4, current: 1.82, power_w: 402.1, energy_kwh_today: 3.11, online: true, state: 'on', socket_states: { 1: 'on', 2: 'off' } },
-    { device_id: '_totals', ts: '2026-08-16T09:00:00+08:00', energy_kwh_today: 12.41, energy_kwh_week: 61.88, energy_kwh_month: 204.3, total_power_w: 2951, avg_voltage: 223.1, phase_current: { red: 6.1, yellow: 4.9, blue: null } },
+    { device_id: 'co3', ts: AT, voltage: 221.4, current: 1.82, power_w: 402.1, energy_kwh_today: 3.11, online: true, state: 'on', socket_states: { 1: 'on', 2: 'off' } },
+    { device_id: '_totals', ts: AT, energy_kwh_today: 12.41, energy_kwh_week: 61.88, energy_kwh_month: 204.3, total_power_w: 2951, avg_voltage: 223.1, phase_current: { red: 6.1, yellow: 4.9, blue: null } },
   ];
 
-  const { readings, totals } = splitLatestPayload(latest);
+  const { readings, totals } = splitLatestPayload(latest, AT_MS);
 
   assert.equal(readings.length, 1);
   assert.deepEqual(readings[0], {
-    device_id: 'co3', ts: '2026-08-16T09:00:00+08:00',
+    device_id: 'co3', ts: AT,
     voltage: 221.4, current: 1.82, power_w: 402.1, energy_kwh_today: 3.11, online: true,
   });
   // state/socket_states must NOT appear — readings table has no such column (transient
@@ -41,7 +52,7 @@ test('splitLatestPayload separates per-device readings from the _totals row', ()
   assert.equal('socket_states' in readings[0], false);
 
   assert.deepEqual(totals, {
-    ts: '2026-08-16T09:00:00+08:00',
+    ts: AT,
     // RM-027: the row names its own site rather than leaning on phase20's column default. The
     // default is transitional and RM-030 drops it; this is what makes that drop a no-op.
     site_id: SITE.id,
@@ -53,22 +64,22 @@ test('splitLatestPayload separates per-device readings from the _totals row', ()
 
 test('splitLatestPayload preserves phase_current.blue as null, never coerces to 0', () => {
   const { totals } = splitLatestPayload([
-    { device_id: '_totals', ts: 't', phase_current: { red: 1, yellow: 2, blue: null } },
-  ]);
+    { device_id: '_totals', ts: AT, phase_current: { red: 1, yellow: 2, blue: null } },
+  ], AT_MS);
   assert.equal(totals.phase_current_blue, null);
 });
 
 test('splitLatestPayload defaults missing metering fields to null, not 0 (unmetered devices)', () => {
   const { readings } = splitLatestPayload([
-    { device_id: 'l3', ts: 't', online: true, state: 'on' }, // switch — no voltage/current/power/energy
-  ]);
+    { device_id: 'l3', ts: AT, online: true, state: 'on' }, // switch — no voltage/current/power/energy
+  ], AT_MS);
   assert.deepEqual(readings[0], {
-    device_id: 'l3', ts: 't', voltage: null, current: null, power_w: null, energy_kwh_today: null, online: true,
+    device_id: 'l3', ts: AT, voltage: null, current: null, power_w: null, energy_kwh_today: null, online: true,
   });
 });
 
 test('splitLatestPayload returns totals: null when no _totals entry is present', () => {
-  const { totals } = splitLatestPayload([{ device_id: 'l1', ts: 't', online: true }]);
+  const { totals } = splitLatestPayload([{ device_id: 'l1', ts: AT, online: true }], AT_MS);
   assert.equal(totals, null);
 });
 
@@ -86,7 +97,7 @@ test('shapeAnomalyRows maps a flagged detection into an anomalies table row', ()
   const rows = shapeAnomalyRows([
     {
       deviceId: 'mtr_arec_acu',
-      ts: '2026-08-16T09:00:00+08:00',
+      ts: AT,
       value: 350.5,
       detection: {
         isAnomaly: true, method: 'zscore', zScore: 4.1,
@@ -96,7 +107,7 @@ test('shapeAnomalyRows maps a flagged detection into an anomalies table row', ()
     },
   ]);
   assert.deepEqual(rows[0], {
-    device_id: 'mtr_arec_acu', ts: '2026-08-16T09:00:00+08:00', metric: 'power_w', value: 350.5,
+    device_id: 'mtr_arec_acu', ts: AT, metric: 'power_w', value: 350.5,
     baseline_mean: 120, baseline_stddev: 40, z_score: 4.1,
     iqr_lower: 20, iqr_upper: 220, method: 'zscore', sample_count: 20,
   });

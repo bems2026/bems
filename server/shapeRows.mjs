@@ -6,6 +6,7 @@
  * cheap to test without a live bridge or Supabase project (see `ingest.test.mjs`).
  */
 import { SITE } from '../shared/registry.mjs';
+import { scrubReading, scrubTotals, readingBounds, totalsBounds } from './scrubTelemetry.mjs';
 
 /**
  * Splits `GET /api/readings/latest`'s response (per-device rows + the `_totals`
@@ -13,14 +14,28 @@ import { SITE } from '../shared/registry.mjs';
  *
  * Deliberately drops `state`/`socket_states` — `docs/bridge-contract.md` documents these
  * as transient device state, not readings; the `readings` table has no such column.
+ *
+ * EVERY ROW IS SCRUBBED ON THE WAY THROUGH — see `server/scrubTelemetry.mjs`. Until then this
+ * function was seven `?? null` assignments that checked nothing, which is how 3,625 kWh on a
+ * 36 W circuit reached Supabase. A refused field becomes `null` and the row survives; a row
+ * whose timestamp cannot key it is dropped, and both are counted so nothing is discarded
+ * silently.
+ *
+ * `nowMs` is a parameter rather than a `Date.now()` read inside, so the timestamp window is
+ * testable against fixed fixtures instead of drifting out from under them.
+ *
+ * @returns {{readings: object[], totals: object|null, rejections: object[]}}
  */
-export function splitLatestPayload(latest) {
+export function splitLatestPayload(latest, nowMs = Date.now(), site = SITE) {
   const readings = [];
   let totals = null;
+  const rejections = [];
+  const rBounds = readingBounds(site);
+  const tBounds = totalsBounds(site);
 
   for (const entry of latest) {
     if (entry.device_id === '_totals') {
-      totals = {
+      const shaped = {
         ts: entry.ts,
         // RM-027. `building_totals.site_id` carries a column default so that phase20 could be
         // applied to a running system whose code did not yet send one — see the migration's own
@@ -38,9 +53,14 @@ export function splitLatestPayload(latest) {
         phase_current_yellow: entry.phase_current?.yellow ?? null,
         phase_current_blue: entry.phase_current?.blue ?? null,
       };
+      const scrubbed = scrubTotals(shaped, tBounds, nowMs);
+      rejections.push(...scrubbed.rejections);
+      // `null` here means the totals row had no usable timestamp, so it is skipped for this
+      // tick. The per-device readings above are unaffected — they carry their own `ts`.
+      totals = scrubbed.row;
       continue;
     }
-    readings.push({
+    const scrubbed = scrubReading({
       device_id: entry.device_id,
       ts: entry.ts,
       voltage: entry.voltage ?? null,
@@ -48,10 +68,12 @@ export function splitLatestPayload(latest) {
       power_w: entry.power_w ?? null,
       energy_kwh_today: entry.energy_kwh_today ?? null,
       online: !!entry.online,
-    });
+    }, rBounds, nowMs);
+    rejections.push(...scrubbed.rejections);
+    if (scrubbed.row) readings.push(scrubbed.row);
   }
 
-  return { readings, totals };
+  return { readings, totals, rejections };
 }
 
 /**

@@ -52,6 +52,54 @@ export const SITE = Object.freeze({
   max_branch_kwh_per_day: 100,
 
   /**
+   * The same question for the whole building, in kWh — the ceiling on `building_totals`.
+   *
+   * Not the branch figure times the branch count: the branches are not all running flat out on
+   * the same day, and a bound assembled that way describes an arithmetic possibility rather
+   * than a building. Sized against what this one does — its highest metered day in 22 days of
+   * recording is 21.8 kWh, and its highest instantaneous demand 4.55 kW, which sustained for
+   * a full day would be 109 kWh. 500 needs 20.8 kW held for 24 hours, which this office cannot
+   * do. `server/scrubTelemetry.mjs` multiplies this out for the weekly and monthly columns
+   * rather than making a site restate them, so raising this one number cannot leave a stale
+   * weekly ceiling behind that rejects the site's own real data.
+   */
+  max_building_kwh_per_day: 500,
+
+  /**
+   * What a single telemetry field may physically be here — the backstop `server/ingest.mjs`
+   * had none of.
+   *
+   * WHY THE VENDOR CATALOGUE CANNOT SERVE. `shared/deviceCapabilities.mjs` carries `min`/`max`
+   * for settings and diagnostics, and declares NONE for `cur_power`, `cur_voltage` or
+   * `cur_current` — the three that matter. The vendor describes its protocol; only the site
+   * knows what its own wiring can do.
+   *
+   * SIZED TO REJECT THE IMPOSSIBLE, NOT THE UNUSUAL. Measured over 610,989 readings across 22
+   * days, the fleet's extremes are 241.8 V, 15.974 A, 3,091 W per device and 4,551 W for the
+   * building. Every bound below clears its measured extreme with room to spare, because the
+   * two errors are not symmetrical: a stored odd value is visible and arguable, a discarded
+   * real one is gone. These exist to catch a register carrying garbage — the 3,625 kWh of
+   * 2026-09-03 — not to second-guess a busy afternoon.
+   *
+   * THE MINIMA ASSUME NO GENERATION. Volts, amps and watts are unsigned magnitudes from CT
+   * clamps on load circuits, so below zero is meaningless today. RM-026's inverter is the
+   * revision that changes it: export is real negative power, and it arrives on its own bridge
+   * rather than through these clamps — check that before widening anything here.
+   */
+  telemetry_bounds: Object.freeze({
+    /** A 230 V nominal LV installation. The devices themselves are rated to 250 V, so a
+     * reading above this is the meter lying, not the mains. */
+    voltage: Object.freeze({ min: 0, max: 300 }),
+    /** Per CT clamp, and reused for each phase total — the phase figures are these same
+     * clamps summed, so a bound one of them could breach alone would not be a bound. */
+    current: Object.freeze({ min: 0, max: 100 }),
+    /** One branch circuit. 25 kW is 100 A at 250 V — the current bound's own ceiling. */
+    power_w: Object.freeze({ min: 0, max: 25000 }),
+    /** The whole building's instantaneous demand. */
+    total_power_w: Object.freeze({ min: 0, max: 50000 }),
+  }),
+
+  /**
    * Which 3D scene pack renders for this site, or null for none. Consumed in RM-032; declared
    * now so the field does not have to be retrofitted into every site directory later.
    */
