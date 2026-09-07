@@ -1693,6 +1693,51 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       *"local failed (the bridge reports this device offline, so a local SET cannot reach it);
       recovered via cloud"*. That is `local-first` doing exactly what it is for, on a fleet that
       was flapping — and it is the reason the site is not on `local-only` yet.
+- [x] **EX-165** Outlet parity: a socket reports what the RELAY is doing, and an unattended
+      device-level command reaches both sockets. **Three defects, one cause — outlets were
+      second-class on every path switches had already been fixed on**, and the operator found it
+      by testing the building by hand on 2026-09-07 rather than by reading anything.
+      **What was reported:** Light Switch 7 passed all six of its tests including its schedule and
+      the wall switch syncing to the app. Outlet 5 passed manual and remote control, **its
+      schedule never fired**, and **pressing its button did not update the app**.
+      **1. Measured socket state (FI-023 for the class it left out).** The two branches sat
+      adjacent in `buildLatest`: the switch one prefers `lightStatus[n].on` over the commanded
+      value; the outlet one four lines below read `bems_outlets_state` alone — written by the
+      `Outlet Logic Hub` from an incoming COMMAND, never corrected by hardware. The measured value
+      was already arriving and being ignored: every outlet reports real `switch_1`/`switch_2`
+      booleans on `capabilities` every poll, verified across all seven the same day. Now preferred
+      per socket, falling back to commanded, `typeof === 'boolean'` rather than truthiness because
+      flow context survives restarts on disk. Four neuters each fail the right tests.
+      **2 and 3. `socket: null` on both unattended callers.** `resolveTarget` refuses a
+      dual-socket outlet without a socket — measured: `l7` at `socket:null` gives `ok:true`
+      target `L7`, `co5` gives `ok:false socket_required`. The Automation page cannot express a
+      socket at all (`supabaseConfig.ts:122` reads and writes `.is('socket', null)` exclusively),
+      and `shedPlan.mjs:62` hard-coded `socket: null` on every target. So **no outlet could be
+      scheduled and no outlet could be shed** — all seven, not just Outlet 5.
+      **The shed half was never reported because nobody had armed it, and it is the worse one.**
+      All 14 devices are tiered: `group_1` is the seven switches (~16 W of a 919 W demand),
+      `group_2` and `group_3` are all seven outlets — **561 W, 61% of metered demand**. RM-006c
+      calls arming auto-shed "one save from the Automation page"; doing that would have shed the
+      lighting, escalated through both outlet tiers, failed silently on every one, and stayed over
+      the 2.21 kW ceiling. The escalation ladder below the lighting tier was refusals.
+      `fanOutCommand` expands a device-level intent into per-target commands, honouring the rule
+      `shared/commands.mjs` has always stated — *"A UI wanting 'turn off Outlet 3' fans out to two
+      commands itself"* — which the Control page obeyed and the two unattended callers never did.
+      An already-targeted command passes through, checked with `!= null` rather than truthiness
+      because socket 0 is invalid but falsy. Each socket gets its own `fire()` and its own audit
+      row, so a partial failure reads as one dispatched and one failed. No migration:
+      `UNIQUE(device_id)` stays and `phase6_schedules_unique_fix.sql`'s reasoning holds.
+      **A GREEN TEST WAS ASSERTING A SCENARIO THE APP CANNOT PRODUCE, and that is why this
+      survived.** `scheduler.test.mjs`'s "an outlet schedule now fires too" passes
+      `dueNowRow({ device_id: 'co1', socket: 1 })` — it *supplies* a socket. `dueNowRow`'s own
+      default is `socket: null`, which is what the UI writes for every schedule. The test proved
+      outlet scheduling works given a socket, and nothing in the system could give it one. The new
+      test uses the shape the application actually emits; removing the fan-out fails it and leaves
+      the old one green.
+      `shared/buildLatest.mjs`, `shared/commands.mjs`, `server/scheduler.mjs`,
+      `test/outlet-measured-state.test.mjs` (9), `test/socket-fanout.test.mjs` (11),
+      `server/scheduler.test.mjs` (+2)
+
 - [x] **FI-023** A switch's `state` is what the RELAY is doing, not what was last asked of it.
       `buildLatest` derived it from `bems_lights_state`, which the flow's `Lighting Logic Hub`
       writes from an incoming COMMAND before forwarding it to the device — a record of intent,

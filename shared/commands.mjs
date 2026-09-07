@@ -60,6 +60,37 @@ export const ACU_MAX_C = 30;
  * reuse this unchanged. `acu_ir` has no legacy topic of its own (it was IR-controlled, not
  * relay-controlled) — `AC_POWER` is this contract's own synthetic key, not a ported one.
  */
+/**
+ * Expands one device-level intent into the per-target commands the hardware actually takes.
+ *
+ * WHY IT EXISTS. The rule above has always been that an outlet command must name a socket, and
+ * the Control page has always obeyed it by fanning out for itself. The two UNATTENDED callers
+ * never did: the Automation page cannot express a socket at all (`supabaseConfig.ts` reads and
+ * writes schedules `.is('socket', null)`), and `shedPlan.mjs` hard-coded `socket: null` on every
+ * target. `socket: null` resolves for a switch and is refused for an outlet, so schedules and
+ * auto-shed worked on lights and could never work on outlets.
+ *
+ * Found because the operator tested the building by hand on 2026-09-07: Light Switch 7 passed
+ * every test including its schedule, Outlet 5's schedule never fired. Tracing that found the shed
+ * path had the same defect and nobody had exercised it — all seven outlets are in shed tiers
+ * `group_2` and `group_3`, together 61% of metered demand.
+ *
+ * ALREADY-TARGETED COMMANDS PASS THROUGH. A command that names a socket is one the caller has
+ * already fanned out; expanding it again would double every relay operation the Control page
+ * issues. The check is `!= null` rather than truthiness because socket 0 is invalid but falsy,
+ * and a truthiness test would silently fan it out instead of letting validation refuse it.
+ *
+ * Returns an array so a caller can treat every command uniformly. Whole-outlet by design: both
+ * sockets always move together, which is what the Automation page's device-level UI means. Per
+ * socket independence would need `UNIQUE(device_id, socket)` and a socket picker — see the
+ * roadmap.
+ */
+export function fanOutCommand(cmd, device) {
+  if (!device || device.class !== 'outlet_dual') return [cmd];
+  if (cmd.socket != null) return [cmd];
+  return device.sockets.map((_, i) => ({ ...cmd, socket: i + 1 }));
+}
+
 export function resolveTarget(device, socket) {
   if (device.class === 'outlet_dual') return device.sockets[socket - 1];
   if (device.class === 'switch') return device.state_key;

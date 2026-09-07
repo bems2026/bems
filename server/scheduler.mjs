@@ -25,6 +25,7 @@
  */
 
 import { DEVICE_REGISTRY, SITE } from '../shared/registry.mjs';
+import { fanOutCommand } from '../shared/commands.mjs';
 import { dueCommands } from './schedulePlan.mjs';
 import { planShed } from './shedPlan.mjs';
 import { dispatchCommand, DISPATCH_CLASSES } from './dispatchLight.mjs';
@@ -234,7 +235,12 @@ async function tick() {
   lastFiredMinute = minute;
 
   const due = dueCommands(schedules, now, { dispatchableDeviceIds: DISPATCHABLE_DEVICE_IDS });
-  for (const cmd of due) {
+  // A schedule names a DEVICE; the hardware takes per-socket commands. The Automation page cannot
+  // express a socket at all, so before this every outlet schedule was refused `socket_required`
+  // and no outlet could ever be scheduled — reported from the building 2026-09-07. Each socket
+  // gets its own `fire()`, so each gets its own audit row and a partial failure reads as one
+  // socket dispatched and one failed rather than as one ambiguous result.
+  for (const cmd of due.flatMap((c) => fanOutCommand(c, DEVICE_REGISTRY.find((d) => d.id === c.device_id)))) {
     try {
       await fire(cmd);
     } catch (err) {
@@ -276,7 +282,10 @@ async function shedTick() {
   if (plan.shed.length === 0) return;
 
   console.warn(`[ibems-scheduler] DSM breach — shedding ${plan.tier}: ${plan.reason}`);
-  for (const cmd of plan.shed) {
+  // Same fan-out as the schedule path above, and this is the half that mattered more: every one
+  // of the seven outlets sits in shed tier group_2 or group_3, together 61% of metered demand.
+  // With `socket: null` the whole escalation ladder below the lighting tier was refusals.
+  for (const cmd of plan.shed.flatMap((c) => fanOutCommand(c, DEVICE_REGISTRY.find((d) => d.id === c.device_id)))) {
     try {
       await fire(cmd, `auto-shed ${plan.tier}: ${plan.reason}`);
     } catch (err) {

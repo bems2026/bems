@@ -242,6 +242,49 @@ test('an outlet schedule now fires too, routed to its wire target rather than a 
   assert.equal(r.lightRequests[0].url, '/outlet/CO1_1');
 });
 
+/**
+ * THE SHAPE THE APPLICATION ACTUALLY PRODUCES, which the test above does not.
+ *
+ * The test above passes `socket: 1`. `dueNowRow`'s own default is `socket: null`, and null is what
+ * the Automation page writes for EVERY schedule — `src/lib/supabaseConfig.ts` reads and writes
+ * `.is('socket', null)` exclusively and has no socket concept at all. So that test asserted a
+ * scenario the app cannot create: it was green while outlet scheduling was broken for all seven
+ * outlets, and stayed green for as long as nobody scheduled a real one.
+ *
+ * Reported from the building 2026-09-07: Light Switch 7's schedule fired, Outlet 5's never did.
+ * `socket: null` resolves to `state_key` for a switch and is refused `socket_required` for an
+ * outlet.
+ */
+test('a device-level outlet schedule — what the UI writes — fans out to both sockets', async () => {
+  await waitForRoomInMinute();
+  const r = await run(
+    { HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-token' },
+    dueNowRow({ device_id: 'co1' }), // socket defaults to null, exactly as the UI writes it
+    (s) => s.lightRequests.length >= 2 && s.commands.length >= 2,
+  );
+  assert.equal(r.commands.length, 2, 'one audit row per socket, not one ambiguous row per device');
+  assert.deepEqual(r.commands.map((c) => c.socket).sort(), [1, 2]);
+  for (const c of r.commands) assert.equal(c.status, 'dispatched');
+  assert.deepEqual(
+    r.lightRequests.map((q) => q.url).sort(),
+    ['/outlet/CO1_1', '/outlet/CO1_2'],
+    'both sockets must reach the wire',
+  );
+});
+
+test('a device-level SWITCH schedule still fires exactly once — the case that already worked', async () => {
+  // l7 is the control case: it passed all six of its tests on real hardware. The fan-out must not
+  // touch it.
+  await waitForRoomInMinute();
+  const r = await run(
+    { HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-token' },
+    dueNowRow({ device_id: 'l7' }),
+    (s) => s.lightRequests.length >= 1 && s.commands[0]?.status === 'dispatched',
+  );
+  assert.equal(r.commands.length, 1);
+  assert.equal(r.lightRequests[0].url, '/light/7');
+});
+
 test('refuses to start with the gate open and no light token', async () => {
   const r = await run({ HARDWARE_DISPATCH_ENABLED: 'true' }, dueNowRow(), /refusing to start/i);
   assert.match(r.out, /refusing to start/i);

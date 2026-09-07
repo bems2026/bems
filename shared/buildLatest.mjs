@@ -105,15 +105,25 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, st
     const staleAfter = typeof d.stale_after_ms === 'number' ? d.stale_after_ms : staleAfterMsByClass[d.class];
     if (typeof staleAfter === 'number') r.stale_after_ms = staleAfter;
 
+    // Everything the device reports beyond volts/amps/watts, decoded by the generated source-tab
+    // parser and keyed by its vendor capability code. Omitted entirely when the parser has not
+    // seen this device yet, so an older flow and a newer bridge still agree on every other field.
+    //
+    // Resolved HERE rather than inside the metered branch below, because the outlet state block
+    // further down needs it too — an outlet's measured relay state arrives as `switch_1`/
+    // `switch_2` on this same object. Hoisted for the same reason `switchHealth` is.
+    const dp = d.ctx
+      ? (() => {
+          const s = (d.class === 'outlet_dual' ? outlet.meters : energy.meters)[d.ctx] || {};
+          return s.dp && typeof s.dp === 'object' ? s.dp : null;
+        })()
+      : null;
+
     // --- metered devices ----------------------------------------------------
     if (d.ctx) {
       const src = (d.class === 'outlet_dual' ? outlet.meters : energy.meters)[d.ctx] || {};
       const v = num(src.v), c = num(src.c), p = num(src.p), e = num(src.e);
 
-      // Everything the device reports beyond volts/amps/watts, decoded by the generated source-tab
-      // parser and keyed by its vendor capability code. Omitted entirely when the parser has not
-      // seen this device yet, so an older flow and a newer bridge still agree on every other field.
-      const dp = src.dp && typeof src.dp === 'object' ? src.dp : null;
       if (dp && Object.keys(dp).length) r.capabilities = dp;
 
       // TODAY'S ENERGY, PREFERRING THE DEVICE'S OWN FIGURE.
@@ -289,8 +299,34 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, st
       const observed = measured && typeof measured.on === 'boolean' ? measured.on : undefined;
       r.state = (observed !== undefined ? observed : bool(lights[d.state_key])) ? 'on' : 'off';
     } else if (d.class === 'outlet_dual') {
-      const s1 = bool(outletStatus[d.sockets[0]]);
-      const s2 = bool(outletStatus[d.sockets[1]]);
+      /*
+       * THE SAME FIX AS THE SWITCH BRANCH ABOVE, for the class FI-023 left out.
+       *
+       * `outletStatus` is `bems_outlets_state.status`, which the flow's `Outlet Logic Hub` writes
+       * from an incoming COMMAND before forwarding it to the device. Nothing writes back what the
+       * relay did, so reading it as state means the app can never notice a socket switched at the
+       * outlet's own button, by a schedule, or by a command that silently failed — precisely what
+       * `bems_lights_state` did for lights until 2026-09-03.
+       *
+       * REPORTED FROM THE BUILDING 2026-09-07: pressing a light switch at the wall updates the
+       * app, pressing an outlet's button does not. Tested by hand, both ways. The asymmetry the
+       * operator felt is this asymmetry in the code.
+       *
+       * The measured value was already arriving and being ignored — `switch_1`/`switch_2` ride on
+       * `capabilities` on every poll, verified across all seven outlets the same day, because
+       * `outletPollPlan` asks every 60 s and the device pushes changes in between.
+       *
+       * Per socket, not per device: an outlet is two relays behind one label, and one can be
+       * pressed while the other is not. Preferred, not required — no decoded dp falls back to the
+       * commanded value, so an older flow and the mock are unaffected. `typeof === 'boolean'`
+       * rather than truthiness, because flow context survives restarts on disk and a half-written
+       * entry must read as absent, not as ON.
+       */
+      const measuredSocket = (code) => (dp && typeof dp[code] === 'boolean' ? dp[code] : undefined);
+      const m1 = measuredSocket('switch_1');
+      const m2 = measuredSocket('switch_2');
+      const s1 = m1 !== undefined ? m1 : bool(outletStatus[d.sockets[0]]);
+      const s2 = m2 !== undefined ? m2 : bool(outletStatus[d.sockets[1]]);
       r.socket_states = { 1: s1 ? 'on' : 'off', 2: s2 ? 'on' : 'off' };
       r.state = (s1 || s2) ? 'on' : 'off';
     } else if (d.class === 'acu_ir') {
