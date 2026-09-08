@@ -1,10 +1,10 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-07 — the ingestion path, the telemetry bounds and the outlet energy
+**Last audited:** 2026-09-08 — the ingestion path, the telemetry bounds and the outlet energy
 accumulator, measured against 610,989 live readings and a three-minute watch of the running
 bridge. §0 leads with what that measurement found: **RM-047**, every outlet's daily energy
 fabricated, still live.
-**Audited at commit:** `29c7be1`
+**Audited at commit:** `b5aa10b`
 
 **2026-09-01, and it changes what §0 says.** The headline claim below — that there is no
 unblocked coding task left — was **wrong**, and it was wrong because the fault report that
@@ -330,20 +330,10 @@ Everything else is small, and the build order below is honest about size.
 
 ### Migrations authored but NOT applied
 
-Two SQL files are waiting on a hand-apply in the Supabase SQL editor. This project has no
+One SQL file is waiting on a hand-apply in the Supabase SQL editor. This project has no
 migration runner and no tracker table, so this list is the record:
 
-- **`supabase/phase27_period_reports.sql`** — see RM-041.
-- **`supabase/phase28_reading_capabilities.sql`** — EX-147, and the daemon that fills it is
-  EX-167, deployed. Adds the promoted telemetry columns (`total_energy_kwh`, `warn_power_w`,
-  `power_type`, `net_state`, `fault`) and a `capabilities` jsonb for the long tail.
-  **THE SEQUENCING WARNING IN THAT FILE IS NOW OBSOLETE and is kept for its reasoning only.** It
-  says widening the daemon first would stop ingestion outright; the daemon now detects the
-  missing columns from PostgREST's own error, says so once naming this file, drops the six, and
-  keeps writing every pre-phase28 field — demonstrated live on 2026-09-07, when EX-167 was
-  deployed before this migration was applied and ingestion did not miss a tick. Applying it,
-  then restarting `ibems-ingest`, is all that is left; until then the four leading indicators
-  keep reaching the browser and being discarded, exactly as before.
+- **`supabase/phase27_period_reports.sql`** — see RM-041. **The only one left.**
 
 **`supabase/phase31_readings_hourly_time_weighted.sql` was applied 2026-09-07, and the DEPLOYED
 function was measured rather than taken on trust.** PostgREST cannot read a function's source,
@@ -2712,6 +2702,11 @@ fall back to it).
       Over the same window the old code would have given co1 0.24 kWh at zero watts and co5
       **6.7 kWh**. The few percent that remain are the expected drift between the parser's
       `Date.now()` deltas and this check's integration over the stored arrival time.
+      **AND IT SURVIVED ITS FIRST MIDNIGHT.** A new accumulator's first rollover is a real risk
+      point — EX-158 needed four before it was believed. Measured across local midnight into
+      2026-09-08: all seven outlets reset to exactly 0.0000 and are accruing in step with their
+      wattage. **co5's full day on 09-07 came to 1.15 kWh; 09-06, the last full day before the
+      fix, was 72.43.**
       Fleet back to 18/20
       after the Node-RED restart (the two out are `acu_main` and `sens_outside_temp`, both known),
       and ingestion ticking clean with zero scrub rejections.
@@ -2860,6 +2855,16 @@ fall back to it).
       pre-phase28 columns, `ingestion_health` is current, the outage buffer is empty and the
       scrub refused nothing. Without the guard this deploy would have stopped the building's
       history at that moment.
+
+      **phase28 APPLIED AND VERIFIED 2026-09-08.** Restarted `ibems-ingest` — the daemon settles
+      the missing-column question once per process — and the warning is gone. **18 of 20 devices
+      now record something that was being discarded every minute;** the two that do not are
+      `acu_main` and `sens_outside_temp`, both offline hardware that reports nothing. Checked
+      against the wire rather than merely for non-null: all four meters' stored
+      `total_energy_kwh` equals the live `total_energy{ch}` for their own channel exactly, their
+      `net_state` matches, and co5's 17 wire keys became 16 long-tail keys plus `fault` promoted
+      out — the no-second-copy rule holding in production. Zero scrub rejections, so nothing the
+      catalogue declares has drifted from what the hardware sends.
 
 - [x] **RM-050 (S) — `semantic` does some work. 2026-09-07.** The plan's Phase 6 was written
       against `dpParserPlan`, which hard-coded increment behaviour by matching the literal name
