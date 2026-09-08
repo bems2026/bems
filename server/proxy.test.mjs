@@ -542,30 +542,39 @@ test('a capability the catalogue refuses is rejected before anything is recorded
   }
 });
 
-test('a meter setting is recorded and dispatched, though a meter has no relay class', async () => {
+test('a meter setting now lands over the LAN, and the vendor is never asked — FI-022', async () => {
   // `DISPATCH_CLASSES` answers "which classes have a relay route" and correctly excludes meters.
   // A capability write is gated by the catalogue's writable allowlist instead, or every meter
   // setting would be refused on grounds that have nothing to do with it.
   //
-  // With no vendor cloud configured in this harness the dispatch cannot land — capability
-  // writes have no LAN endpoint yet — so the honest outcome is a recorded command and a 502
-  // that says which path was missing. What must NOT happen is a `dry_run`: that would mean the
-  // gate refused it, and the gate did not.
-  const { proxyUrl, supabaseState, cleanup } = await setup({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-light-token' });
+  // THIS TEST USED TO ASSERT `capability_needs_cloud`, and said why: "capability writes have no
+  // LAN endpoint yet". FI-022 built one, scoped to meters, so the honest outcome changed
+  // entirely: the write now LANDS over the LAN, and the vendor is never contacted.
+  const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch();
   try {
     const res = await fetch(`${proxyUrl}/api/command`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ device_id: 'mtr_lo_red', action: 'set', capability: 'warn_power', value: 1500 }),
     });
-    assert.equal(res.status, 502);
-    const body = await res.json();
-    assert.equal(body.code, 'capability_needs_cloud', 'names the missing path, not a generic failure');
+    assert.equal(res.status, 202, 'accepted over the LAN');
+
+    // It went to the capability endpoint with the capability's CANONICAL value — not a relay
+    // state, and not to the vendor. The flow node applies the divisor, so this side never has to
+    // agree with the catalogue about scale.
+    const attempt = lightState.requests.at(-1);
+    assert.equal(attempt.url, '/capability/mtr_lo_red');
+    // The proxy resolves to this meter's OWN channel code before dispatching; the flow node
+    // accepts either that or the base, because both are used by real callers.
+    assert.deepEqual(attempt.body, { capability: 'warn_power1', value: 1500 });
+    assert.equal(attempt.headers['x-auth-token'], 'test-light-token');
 
     const row = supabaseState.insertedCommands.at(-1);
-    assert.notEqual(row.status, 'dry_run', 'the gate allowed it; the transport is what failed');
+    assert.equal(row.status, 'dispatched');
     assert.equal(row.capability, 'warn_power1', 'resolved to this meter’s own channel');
     assert.equal(row.capability_value, 1500);
+    // `via` is what proves the vendor stayed out of it — the whole point of FI-022.
+    assert.notEqual(row.via, 'cloud');
 
     // ...and a RELAY command to the same meter is still refused, as it always was.
     const relay = await fetch(`${proxyUrl}/api/command`, {
@@ -575,6 +584,27 @@ test('a meter setting is recorded and dispatched, though a meter has no relay cl
     });
     assert.equal(relay.status, 400);
     assert.equal((await relay.json()).code, 'not_commandable');
+  } finally {
+    cleanup();
+  }
+});
+
+test('an OUTLET setting still falls through to the vendor cloud — the scope is meters', async () => {
+  // FI-022 is scoped deliberately: wiring capability nodes beside live relay control on the
+  // outlet and switch tabs is a different risk. An outlet's countdown therefore still has no LAN
+  // path, and the audit row must say so specifically rather than looking like a generic failure.
+  const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch();
+  try {
+    const before = lightState.requests.length;
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'co3', action: 'set', capability: 'child_lock', value: true }),
+    });
+    assert.equal(res.status, 502);
+    assert.equal((await res.json()).code, 'capability_needs_cloud');
+    assert.equal(lightState.requests.length, before, 'the LAN was not contacted for an outlet setting');
+    assert.notEqual(supabaseState.insertedCommands.at(-1).status, 'dry_run');
   } finally {
     cleanup();
   }

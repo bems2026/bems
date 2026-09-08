@@ -66,20 +66,45 @@ export function routeFor(device, cmd) {
 }
 
 /**
- * Capability writes have no LOCAL route yet, and saying so explicitly is the point.
+ * The local route for a capability write — FI-022's endpoint.
  *
- * The three routes above are hand-built `http in` nodes on the live flow's source tabs — the
- * same tabs `build-flow.mjs` deliberately does not generate. Adding a fourth means writing to
- * the live flow, which is an ask-first action and a plan module of its own (the shape
- * `dpParserPlan` already establishes). Until that exists, a capability write falls through to
- * the vendor cloud, which needs no flow change and works today.
+ * Deliberately NOT folded into `routeFor`: that function answers "how do I switch this thing",
+ * and every one of its three routes takes a relay state. A settings write is a different verb to
+ * a different endpoint with a different body, and giving it its own resolver is what keeps a
+ * caller from accidentally sending `{state: ...}` to it.
  *
- * A distinct reason rather than the generic `no_route`, because the two mean different things
- * to whoever reads the audit row: `no_route` is "this device class cannot be commanded at all",
- * this is "the LAN path for settings is not built yet, so the vendor carried it".
+ * The value is passed in CANONICAL units and the flow node applies the capability's own divisor,
+ * so this does not need the catalogue — and cannot disagree with it.
  */
-export function hasLocalCapabilityRoute() {
-  return false;
+export function capabilityRouteFor(device, cmd) {
+  if (!hasLocalCapabilityRoute(device) || !cmd?.capability) return null;
+  return {
+    path: `/capability/${device.id}`,
+    body: { capability: cmd.capability, value: cmd.value },
+  };
+}
+
+/**
+ * Whether a capability write can go over the LAN for THIS device — FI-022.
+ *
+ * IT USED TO BE `false` FOR EVERYTHING, and the reason was real: the three relay routes are
+ * hand-built `http in` nodes on tabs `build-flow.mjs` deliberately does not generate, and the
+ * relay chain cannot carry a capability write — traced on the live flow 2026-09-08, its
+ * `Auth + validate` coerces the payload with `Boolean(s)`, the router keys on `topic: L1..L7`,
+ * and each `Format CMD` is literally `{dps: 1, set: msg.payload}`. Every stage assumes a relay.
+ *
+ * `node-red-bridge/capabilityRoutePlan.mjs` adds a separate route, and scopes it to METERS. That
+ * scope is the answer here, not a flag: the Energy tab's devices are fed by no command path at
+ * all today and a CT meter has no relay, so the worst a bug can do is set a wrong alarm
+ * threshold. Outlets and switches would mean wiring beside live relay control, so they keep
+ * falling through to the vendor cloud — which needs no flow change and works.
+ *
+ * Asked per device rather than globally, because "the LAN path exists" is not a property of the
+ * system: it is a property of the device, and answering for all of them is how a route that
+ * serves four meters would start claiming to serve twenty devices.
+ */
+export function hasLocalCapabilityRoute(device) {
+  return device?.class === 'meter';
 }
 
 /**
@@ -91,14 +116,18 @@ export function hasLocalCapabilityRoute() {
  * Returns `{ok:true}` or `{ok:false, detail}` — never throws.
  */
 async function dispatchLocal(device, cmd, { bridgeHost, bridgePort, lightApiToken }) {
-  if (cmd?.action === 'set' && !hasLocalCapabilityRoute()) {
+  if (cmd?.action === 'set' && !hasLocalCapabilityRoute(device)) {
+    // A distinct reason rather than the generic `no_route`, because the two mean different things
+    // to whoever reads the audit row: `no_route` is "this device class cannot be commanded at
+    // all", this is "the LAN path for settings does not reach this device, so the vendor carried
+    // it". `dispatchWithFallback` treats both as a local failure and tries the cloud.
     return {
       ok: false,
       reason: 'no_local_capability_route',
-      detail: 'the bridge has no local endpoint for capability writes yet — see hasLocalCapabilityRoute',
+      detail: `no local capability route for ${device.class} — see hasLocalCapabilityRoute`,
     };
   }
-  const route = routeFor(device, cmd);
+  const route = cmd?.action === 'set' ? capabilityRouteFor(device, cmd) : routeFor(device, cmd);
   if (!route) return { ok: false, reason: 'no_route', detail: `no dispatch route for device class ${device.class}` };
 
   let res;
