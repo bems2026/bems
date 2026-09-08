@@ -4174,6 +4174,27 @@ body::before {
   color: var(--muted-2);
   line-height: 1.5;
 }
+/* RM-054 — the branch split summing to more than the building total it is part of. Same
+   language as .settings-warn: --warn on a --warn-soft fill, which this file's token block
+   measures at 4.65:1 over a card in light and 6.40:1 in dark. It sits inside .card
+   (--bg-surface), never directly on the page, so the plain --warn is the correct tier here
+   and --warn-on-page is not needed. */
+.analytics-energy-warn {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: start;
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-3);
+  border-radius: var(--r-inner);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: var(--fs-xs-lg);
+  line-height: 1.5;
+}
+.analytics-energy-warn svg {
+  flex: none;
+  margin-top: 2px;
+}
 .analytics-energy-split__title {
   font-size: var(--fs-sm);
   font-weight: 600;

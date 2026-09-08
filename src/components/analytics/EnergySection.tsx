@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { BatteryCharging } from 'lucide-react';
+import { AlertTriangle, BatteryCharging } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { InfoHint } from '@/components/ui/InfoHint';
 import type { Device, Reading, Totals } from '@/lib/types';
-import { shareOfTotal } from '@/lib/format';
+import { formatKwh, shareOfTotal } from '@/lib/format';
+import { energyDisagreement } from './energyDisagreement';
 
 type Period = 'today' | 'week' | 'month';
 
@@ -31,6 +32,12 @@ const PERIODS: { id: Period; label: string; tile: string; totalsKey: keyof Total
  * Each branch's share is computed against the sum of the branches shown, not against the
  * building total. Only the former is true by construction: the building's counters come
  * from its own legacy flow, whose week/month boundaries aren't knowable from here.
+ *
+ * The two still need not agree exactly — but they are no longer rendered side by side without
+ * ever being compared, which is what let RM-053 show a 5.4x contradiction on this card for a
+ * day. `energyDisagreement.ts` says when the difference has stopped being explicable, and
+ * carries the measurements its two thresholds are sized from; it is deliberately one-sided and
+ * deliberately silent when the building counter is absent.
  */
 export function EnergySection({ branchDevices }: { branchDevices: Device[] }) {
   const totals = useDeviceStore((s) => s.totals);
@@ -43,6 +50,9 @@ export function EnergySection({ branchDevices }: { branchDevices: Device[] }) {
     .filter((b): b is { id: string; name: string; kwh: number } => typeof b.kwh === 'number')
     .sort((a, b) => b.kwh - a.kwh);
   const branchSum = branches.reduce((sum, b) => sum + b.kwh, 0);
+  // Against THIS period's building counter — the tiles show all three, and comparing the split
+  // to the wrong one would manufacture a disagreement out of two correct numbers.
+  const disagreement = energyDisagreement(branchSum, (totals?.[active.totalsKey] as number | null | undefined) ?? null);
 
   return (
     <div className="analytics-cards-section">
@@ -52,7 +62,8 @@ export function EnergySection({ branchDevices }: { branchDevices: Device[] }) {
           Energy
           <InfoHint label="Where these energy figures come from">
             The three totals are the building's own running kWh counters, read straight from the bridge — the same figures Overview reports. The per-branch split is accumulated
-            separately by this bridge from each meter's daily counter, since no meter reports a longer period. The two come from different sources, so they need not agree exactly.
+            separately by this bridge from each meter's daily counter, since no meter reports a longer period. The two come from different sources, so they need not agree exactly —
+            but the branches are part of the building's load, so if they ever sum to well over it, the split below says so rather than showing both figures without comment.
           </InfoHint>
         </span>
         <span className="analytics-cards-section__tag">CONSUMED · kWh</span>
@@ -82,6 +93,17 @@ export function EnergySection({ branchDevices }: { branchDevices: Device[] }) {
           </div>
           {branches.length > 0 && <span className="analytics-energy-split__sum mono">{branchSum.toFixed(2)} kWh</span>}
         </div>
+        {disagreement && (
+          <p className="analytics-energy-warn" role="status">
+            <AlertTriangle size={15} aria-hidden="true" />
+            <span>
+              <strong>These two figures disagree.</strong> The branches below add up to {formatKwh(disagreement.branchSum)} against the
+              building's own counter for {active.tile.toLowerCase()}, {formatKwh(disagreement.total)}
+              {disagreement.ratio !== null && ` — ${disagreement.ratio.toFixed(1)}x it`}. The two are counted separately and need not
+              match exactly, but the branches are part of that same load, so a sum this far above it means one of them is wrong.
+            </span>
+          </p>
+        )}
         {branches.length === 0 ? (
           <p className="analytics-energy-empty">
             {period === 'today'

@@ -3,7 +3,8 @@
 **Last audited:** 2026-09-08 — the week/month energy accumulator, measured against the live
 bridge's own flow context and eight days of corrected history. §0 leads with what that
 measurement found: **RM-053**, two faults in the per-branch week/month split, both now fixed
-and the live figures repaired.
+and the live figures repaired — and now with **RM-054**, the comparison that would have made
+that fault visible on the page rather than leaving it to a person to notice.
 **Audited at commit:** `fa9430f`
 
 **2026-09-01, and it changes what §0 says.** The headline claim below — that there is no
@@ -62,6 +63,57 @@ other four and none needed changing.
 ---
 
 ## 0. Triage — what to do next
+
+### 2026-09-08 — the page renders two figures that disagree, and now it says so
+
+**RM-054.** RM-053 was visible on the Analytics energy breakdown for a day. What kept it
+invisible to the SYSTEM is that `src/components/analytics/EnergySection.tsx` renders two
+independently-derived quantities side by side and never compared them: the three tiles are the
+building's own legacy flow counters, the "By branch" rows are per-device figures accumulated by
+`node-red-bridge/energyAccumulator.mjs`. During the fault the branches summed to **99.546 kWh
+against a building week of 18.4 — 5.4x — and the page showed both without comment.** The
+component's own docblock said the two "need not agree exactly", which is true and was doing the
+work of an excuse.
+
+**WHAT IT DOES NOT DO IS THE POINT.** It does not try to make them equal. The boundaries differ,
+the derivations differ, and the branch sum falling SHORT of the building total is normal — a
+branch missing a reading is dropped from the sum, so under is where it is allowed to be. Only
+the branches summing to more than the building they are part of is a fact about the data rather
+than about what happened to be reporting, and that is the only direction the check looks.
+
+**THE THRESHOLD IS MEASURED, not chosen for being round.** Two bars, both of which must be
+cleared: a **25 %** proportional margin and a **0.5 kWh** absolute floor. Agreement between these
+two derivations, every figure from this building:
+
+| when | branches | building | branches/building |
+|---|---|---|---|
+| the week straight after RM-053's repair | 18.646 | 18.588 | **+0.31 %** |
+| month, live 2026-09-08 13:32 | 61.907 | 61.957 | −0.08 % |
+| week, same sample | 20.270 | 20.552 | −1.37 % |
+| today, same sample | 4.746 | 5.086 | −6.68 % |
+| today, the four meters' own 24 h power history integrated independently | 5.135 | 5.086 | +0.97 % |
+| `mtr_co_yellow`'s whole day, 2026-09-02 (RM-052) | 8.057 | 8.0437 | +0.16 % |
+
+The largest EXCESS ever measured healthy is about 1 %; the largest disagreement in either
+direction is 6.7 %. **25 % is ~3.7x that, and it is also a physical quantity**: the legacy
+two-second integrator behind the building counter accrues only while a meter reads healthy AND
+while Node-RED is running, whereas each meter's own register counts through both, so every outage
+lands in the branch sum and in nothing else. Over the 24 h before this was written the four
+meters read `online: false` for 1.0–1.5 % of samples — but outages here are bursty and
+maintenance stops Node-RED outright, as RM-053's own repair did. 25 % of a day is six hours of
+the building counter recording nothing, longer than any stop this project has performed, and
+`today` is the period where that share bites hardest.
+
+**The floor exists because a ratio alone would shout every night.** Minutes after local midnight
+both figures are a few watt-hours and any lag between them is a large multiple. 0.5 kWh is
+upwards of an hour of this whole building's load (799.5 W at the sample above, 377 W averaged
+across that day) — larger than any lag or rounding between the two derivations has produced, and
+under 1 % of the 100 kWh per branch per day the site declares as physically possible.
+
+**And it still catches what it was written for by two orders of magnitude:** RM-053's 99.546
+against 18.4 is 17x the ratio bar and 162x the absolute one, so a fault ten times smaller than
+that one still trips it. **A missing building total stays silent** — the tiles already say "No
+data", and an absent counter is not a zero one to compare against.
 
 ### 2026-09-08 — the week and month carried it after the day was fixed
 
@@ -3015,6 +3067,40 @@ fall back to it).
       so nothing there needed regenerating. Nothing reads `readings.energy_kwh_week`, so the
       contaminated column in stored history feeds no surface; it is left as the record of what
       was served. Fleet 18/20, five services active.
+
+- [x] **RM-054 (S) — the Analytics energy breakdown compares its two figures now. 2026-09-08.**
+      The evidence, the measured threshold and what it deliberately does not do are in §0. The
+      two quantities on that card were rendered side by side and never compared, which is how
+      RM-053 showed a 5.4x contradiction for a day; the check is one-sided (a branch sum below
+      the building total is normal and is never flagged), silent when the building counter is
+      null, and sized from measurement rather than a round number.
+
+      **The pure logic is its own module** — `energyDisagreement.ts`, not a helper inside the
+      component — because `eslint`'s `react-refresh/only-export-components` refuses a component
+      file that exports anything else. It caught that after `tsc`, `vite build` and 1,134 vitest
+      tests had all passed, which is the third time this project has recorded that ordering.
+
+      **The neuter pass changed the implementation, which is the part worth keeping.** Written
+      first as `branchSum > total * (1 + MARGIN)`, replacing the subtraction with `Math.abs`
+      failed **nothing** — no shortfall can clear a comparison against `branchSum` itself, so the
+      one-sidedness the whole design rests on was untested. Both bars now read off one signed
+      `excessKwh`, and that neuter fails a test.
+
+      11 new tests; **six neuters each fail the right ones** — dropping the absolute floor, the
+      proportional margin, the direction, the missing-total guard, the per-period total (the
+      split read against the wrong period's counter), and the zero-total ratio guard.
+
+      Contrast measured in a real browser on the composited fill rather than only on the tokens:
+      **4.90:1 light, 6.62:1 dark** for `--warn` on `--warn-soft` inside a card, both clearing AA.
+      `src/components/analytics/energyDisagreement.ts`,
+      `src/components/analytics/EnergySection.tsx`,
+      `src/components/analytics/EnergySection.test.tsx`, `src/index.css`
+
+      **NOT YET SEEN FIRING ON THE REAL PAGE.** The mock bridge seeds the building's week/month
+      baselines as the sum of its four branch meters on purpose — `mock-bridge/server.mjs` says a
+      discrepancy on screen should mean a real bug, not a fixture artefact — so the app can only
+      be observed staying quiet, which it does (19.92 against 19.92, no notice). The notice's
+      appearance is covered by the component tests and by a browser check of the real stylesheet.
 
 - [x] **EX-169 — the phase28 columns are finally ASKED something. 2026-09-08.** phase28 gave
       `readings` six columns and EX-167 started filling them every minute. Nothing read them —
