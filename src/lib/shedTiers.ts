@@ -108,10 +108,16 @@ export function summariseShed(
   return { rows, excluded, byTier, inertCount };
 }
 
+/**
+ * Why a device is not in the list, in the fewest words that are still true. Shortened on operator
+ * request (2026-09-08) — the aircon's read "reached by IR, which sends a command rather than
+ * cutting power — the compressor is deliberately never relay-cut", which explains the mechanism
+ * to someone who only needs to know it is not an oversight.
+ */
 function reasonNotSheddable(cls: DeviceClass): string {
-  if (cls === 'meter') return 'a meter measures a circuit; it has no relay to switch';
-  if (cls === 'sensor_temp_humidity') return 'a sensor reports; it switches nothing';
-  if (cls === 'acu_ir') return 'reached by IR, which sends a command rather than cutting power — the compressor is deliberately never relay-cut';
+  if (cls === 'meter') return 'a meter has no relay to switch';
+  if (cls === 'sensor_temp_humidity') return 'a sensor only reports; it switches nothing';
+  if (cls === 'acu_ir') return 'controlled by its remote, not a relay — its power is never cut';
   return 'this class has no relay';
 }
 

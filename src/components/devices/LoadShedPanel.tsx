@@ -17,6 +17,12 @@
  * — it is IR-commanded and the compressor is deliberately never power-cut. Leaving it silently
  * out of the list would read as an oversight; leaving it in would be a lie.
  *
+ * THE ON-SCREEN PROSE WAS CUT BACK on operator request (2026-09-08). What the panel SHOWS is now
+ * the tier counts, the unclassified count, and the per-device table; the arguments below stay here
+ * as the reasoning behind those numbers rather than as three paragraphs above them. The one that
+ * mattered most: a tier is PERMISSION, not size — it says a load may be dropped, not that it is
+ * large, and an outlet averaging a watt is four hundred the afternoon somebody plugs a kettle in.
+ *
  * IT IS HONEST ABOUT WHAT SHEDDING CAN REACH HERE. `npm run shed:profile` measured 919 W of
  * office-hours demand, of which everything a relay can switch is 29 W. That does not make tiers
  * pointless — a tier is PERMISSION, not size, and an outlet averaging 1 W is 400 W the afternoon
@@ -64,10 +70,9 @@ export function LoadShedPanel({ onClose }: { onClose?: () => void }) {
           <Zap size={16} className="title-icon" aria-hidden="true" />
           Load-shed tiers
           <InfoHint label="What a tier does">
-            When the building goes over its limit and auto-shed is on, the system switches off
-            <strong> one tier at a time</strong> — Group 1 first — re-measures, and only escalates
-            if still over. It <strong>never switches anything back on</strong>: restoring load
-            unattended is not recoverable by a person, so that is deliberately manual.
+            Over the limit, the system switches off <strong>one group at a time</strong>, Group 1
+            first, and only moves to the next if still over. It <strong>never switches anything
+            back on</strong> — turning load back on is a decision for a person.
           </InfoHint>
         </h2>
         {onClose && (
@@ -76,13 +81,6 @@ export function LoadShedPanel({ onClose }: { onClose?: () => void }) {
           </button>
         )}
       </div>
-
-      <p className="shed-panel__lede">
-        A tier is <strong>permission, not size</strong> — it says this load may be dropped, not
-        that it is large. An outlet averaging a watt is four hundred the afternoon somebody plugs
-        a kettle into it. Nothing without a tier is ever shed: an unclassified device is not a
-        volunteer.
-      </p>
 
       {saveError && (
         <p className="shed-panel__error" role="alert">
@@ -112,15 +110,15 @@ export function LoadShedPanel({ onClose }: { onClose?: () => void }) {
         <span className="shed-panel__unassigned-count">{summary.byTier.unassigned.total}</span>
         <span>
           {TIER_LABEL.unassigned}
-          {summary.byTier.unassigned.total > 0 && ' — an unclassified device is never shed, so these are not volunteers'}
+          {summary.byTier.unassigned.total > 0 && ' — these are never switched off'}
         </span>
       </p>
 
       {summary.inertCount > 0 && (
         <p className="shed-panel__warn" role="status">
-          {summary.inertCount} device{summary.inertCount === 1 ? ' has' : 's have'} a tier but no
-          dispatch path right now, so shedding would not reach {summary.inertCount === 1 ? 'it' : 'them'}.
-          The tier is saved and will work once the bridge reports that class as commandable.
+          {summary.inertCount} device{summary.inertCount === 1 ? '' : 's'} in a group cannot be reached
+          right now, so {summary.inertCount === 1 ? 'it' : 'they'} would be skipped. The group is saved and
+          works again once {summary.inertCount === 1 ? 'it comes' : 'they come'} back.
         </p>
       )}
 

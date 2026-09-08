@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-08 — **RM-059 to RM-062**, a UI/UX pass over the Devices and
+**Last audited:** 2026-09-08 — **RM-059 to RM-063**, a UI/UX pass over the Devices and
 Automation pages. **RM-062 is the one to read**: the Automation page claimed hardware dispatch
 was closed when it has been open, on the page that arms unattended load shedding. RM-061 came straight from the operator looking at what RM-059 shipped: the
 Details and Edit buttons sitting beside each other were the wrong shape, and the fix was not to
@@ -1564,6 +1564,21 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       are signed in with a limited local sign-in, which cannot save" — from a single shared constant
       so the sentence cannot drift across its three call sites, with the maintainer detail (which
       migration to check) moved into a comment where it belongs rather than onto the screen.
+- [x] **RM-063** **The Load-shed tiers panel says less.** Its lede — "A tier is permission, not
+      size … an unclassified device is not a volunteer" — was three sentences of argument sitting
+      above the numbers it was arguing for, and the operator asked for it gone. Removed outright.
+      The reasoning is not lost: it moved into `LoadShedPanel.tsx`'s docblock, where it explains the
+      counts to whoever changes them rather than to whoever reads them. The rest of the panel's
+      prose was cut to match — the ⓘ hint is two sentences instead of four, "an unclassified device
+      is never shed, so these are not volunteers" is "these are never switched off", and the inert
+      note drops "dispatch path" and "commandable" for "cannot be reached right now … works again
+      once they come back". `reasonNotSheddable` lost its mechanism lecture too: the aircon now
+      reads "controlled by its remote, not a relay — its power is never cut" rather than explaining
+      IR and compressors to someone who only needs to know the omission was deliberate. Dead
+      `.shed-panel__lede` rule removed. Browser-verified: the section is now a heading, four tier
+      counts, the unclassified line, and a collapsed list of what cannot be shed
+      — `src/components/devices/LoadShedPanel.tsx`, `src/lib/shedTiers.ts`, `src/index.css`,
+      tests updated to assert the meaning rather than the old phrasing.
 - [x] **EX-150** One relay control, replacing five. `SwitchesListCard`, `OutletsListCard`,
       `LightingMatrixCard`, `OutletPlanCard` and `MasterQuickActionsCard` each re-derived the same
       `controlView` → `busy`/`unknown`/`on` triple and then decided independently what `disabled`

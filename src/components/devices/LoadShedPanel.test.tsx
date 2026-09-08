@@ -40,7 +40,7 @@ describe('LoadShedPanel', () => {
     render(<LoadShedPanel onClose={() => {}} />);
     expect(screen.queryByLabelText(/tier for COOLER/i)).not.toBeInTheDocument();
     expect(screen.getByText(/cannot be shed at all/i)).toBeInTheDocument();
-    expect(screen.getByText(/never relay-cut/i)).toBeInTheDocument();
+    expect(screen.getByText(/its power is never cut/i)).toBeInTheDocument();
   });
 
   it('saves a tier as soon as it is chosen', () => {
@@ -75,7 +75,7 @@ describe('LoadShedPanel', () => {
     useDeviceStore.setState({ devices: [dev('sw-a')], latestReadings: { 'sw-a': on('sw-a') } });
     useDeviceConfigStore.setState({ saved: { 'sw-a': { ...emptyDeviceConfig('sw-a'), loadShedGroup: 'group_1' } } });
     render(<LoadShedPanel onClose={() => {}} />);
-    expect(await screen.findByRole('status')).toHaveTextContent(/no dispatch path/i);
+    expect(await screen.findByRole('status')).toHaveTextContent(/cannot be reached/i);
     expect(screen.getByText(/not commandable/i)).toBeInTheDocument();
   });
 
@@ -99,7 +99,7 @@ describe('LoadShedPanel', () => {
     // absence of a tier, and the panel says so on its own line.
     const unassigned = document.querySelector('.shed-panel__unassigned');
     expect(within(unassigned as HTMLElement).getByText('1')).toBeInTheDocument();
-    expect(unassigned?.textContent).toMatch(/never shed/);
+    expect(unassigned?.textContent).toMatch(/never switched off/);
     expect(document.querySelectorAll('.shed-panel__tally-item')).toHaveLength(4);
   });
 

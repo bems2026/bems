@@ -6312,12 +6312,6 @@ button.space-plan__pin {
   cursor: pointer;
   flex: none;
 }
-.shed-panel__lede {
-  margin: 0 0 var(--sp-4);
-  font-size: var(--fs-sm);
-  color: var(--muted-2);
-  line-height: 1.5;
-}
 .shed-panel__error {
   margin: 0 0 var(--sp-3);
   padding: var(--sp-3);

@@ -25,8 +25,8 @@ describe('what can be shed at all', () => {
     const s = summariseShed([dev('acu', 'acu_ir')], () => null, {}, ALL);
     expect(s.rows).toEqual([]);
     expect(s.excluded).toHaveLength(1);
-    expect(s.excluded[0].reason).toMatch(/IR/);
-    expect(s.excluded[0].reason).toMatch(/never relay-cut/);
+    expect(s.excluded[0].reason).toMatch(/remote/);
+    expect(s.excluded[0].reason).toMatch(/never cut/);
   });
 
   it('excludes meters and sensors with their own reasons', () => {
