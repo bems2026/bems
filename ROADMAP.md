@@ -1,10 +1,10 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-08 — the ingestion path, the telemetry bounds and the outlet energy
-accumulator, measured against 610,989 live readings and a three-minute watch of the running
-bridge. §0 leads with what that measurement found: **RM-047**, every outlet's daily energy
-fabricated, still live.
-**Audited at commit:** `b5aa10b`
+**Last audited:** 2026-09-08 — the week/month energy accumulator, measured against the live
+bridge's own flow context and eight days of corrected history. §0 leads with what that
+measurement found: **RM-053**, two faults in the per-branch week/month split, both now fixed
+and the live figures repaired.
+**Audited at commit:** `fa9430f`
 
 **2026-09-01, and it changes what §0 says.** The headline claim below — that there is no
 unblocked coding task left — was **wrong**, and it was wrong because the fault report that
@@ -62,6 +62,44 @@ other four and none needed changing.
 ---
 
 ## 0. Triage — what to do next
+
+### 2026-09-08 — the week and month carried it after the day was fixed
+
+**RM-053.** The operator reported the Analytics energy breakdown giving L.O Yellow a huge share
+— *"same scenario as before but this time is not in today but in weekly and monthly"*. They were
+right again, and again it was a different cause. Measured off the bridge's own flow context:
+
+| | week | month |
+|---|---|---|
+| **mtr_lo_yellow served** | **79.278 kWh** | **83.692 kWh** |
+| its real consumption | ~1.5 | ~5.6 |
+| its share of the four-branch split | **80 %** | **56 %** |
+
+**RM-052 fixed the day and the week inherited it.** `weekBase` was 78.977 = 1.475 + **77.502** —
+the day's bad peak, banked whole and to the milli-kWh. Repairing `energy_day_base` dropped the
+published daily figure from 77.502 back to 0.301, and the accumulator's rule *"the counter went
+backwards, so bank what it reached"* read that drop as a completed run. The same 77.502 would
+have folded at the next local midnight if nobody had touched it; the correction changed **when,
+not whether**.
+
+**THE ASYMMETRY IS THE LESSON, and it is why this needed its own guard rather than trust in the
+one upstream.** A wrong `energy_kwh_today` is transient — the next local midnight re-anchors it
+and the dashboard heals itself, which is exactly what people saw happen. A wrong `weekBase` is
+**durable**: it is a number this system wrote down and nothing recomputes. L.O Yellow's daily
+figure was correct within hours of the fault and its week was still wrong a day later. Any
+value a guard lets through, a downstream accumulator can make permanent.
+
+**And the accumulator was the one energy path nothing could execute.** It lived as a 15-line
+string constant inside `build-flow.mjs`. `energyDayBase.mjs` and `arrivalTracker.mjs` had both
+already been extracted for exactly this reason; this one had not, and it was carrying a **second
+fault nobody had noticed** — the period keys rolled *before* the completed day was folded, so
+the day that ended a week was zeroed out of that week and added to the next. Off by one day, on
+every device, at every boundary since it shipped. Measured exactly: `mtr_co_yellow`'s weekBase
+read 9.720 = Monday's 8.165 + Sunday's 1.555.
+
+**The independent check that says the repair is right:** the four branches now sum to 18.646 kWh
+for the week against the building's own separately-derived 18.588 — 0.3 % apart. Before the
+repair they summed to 99.546 against the same 18.4, and nothing anywhere compared the two.
 
 ### 2026-09-08 — L.O Yellow again, and the guard that was missing
 
@@ -2914,6 +2952,69 @@ fall back to it).
       The hardware registers still read 77.502 and 3,676 — the offsets are the device's and are
       not ours to clear. The baseline now excludes them rather than pretending the register is
       clean. Building total 2.48 kWh, fleet 18/20.
+
+- [x] **RM-053 (M) — the week/month accumulator no longer banks a counter's offset. 2026-09-08.**
+      The evidence is in §0. Two faults, both in a string constant that nothing could execute,
+      so the first act was to extract it to `node-red-bridge/energyAccumulator.mjs` and make the
+      **shipped source** the thing the tests run — the same move `energyDayBase.mjs` and
+      `arrivalTracker.mjs` already carry, and this is the third time it has paid.
+
+      **1. It accrues from bounded increments now, never from an unbounded absolute.** The rate
+      ceiling is the site's own `telemetry_bounds.power_w.max`, identical to RM-052's, because it
+      is the same physical fact one layer along: no branch can add more kW-hours in an hour than
+      it can draw. **Increments arriving on TOP of a bogus offset are still kept** — the register
+      kept counting real watt-hours either side of its jump, and refusing those would trade an
+      over-count for an under-count. A test pins that specifically.
+
+      **2. A completed day folds BEFORE the period keys roll.** It belongs to the week and month
+      it ended in. The old order zeroed it out of its own period and added it to the next.
+
+      **The backwards rule now banks the EXCESS, `max(0, banked - reported)`, and that single
+      expression separates the two things that look identical.** A device reboot leaves the
+      register near zero, so nearly all of the run is banked — the case the old rule existed for,
+      and it still works. A corrected baseline reports a figure that *supersedes* what we had, so
+      nothing is banked and nothing is double-counted. One neuter fails both of those tests at
+      once, which is how the suite proves it knows the difference.
+
+      Deliberately given up: at a day rollover the new day starts from zero rather than adopting
+      whatever the counter reads, because at that one moment a lagging counter still carries the
+      old day and adopting it would fold the day twice. The cost is the energy drawn between
+      local midnight and the first poll after it — tens of seconds. Under-counting a sliver is
+      the safe direction; §0 is what over-counting looks like.
+
+      11 tests; **six neuters each fail the right ones** — removing the rate check, restoring the
+      old key order, banking the whole run backwards, dropping the ceiling, dropping the
+      stored-shape upgrade, and accepting non-numeric figures.
+      `node-red-bridge/energyAccumulator.mjs`, `node-red-bridge/build-flow.mjs`,
+      `test/energy-accumulator.test.mjs`
+
+      **DEPLOYED AND THE LIVE STATE REPAIRED, 2026-09-08.** A diff against the running flow first
+      confirmed the change touched **exactly one node of 24** and no source tab, then
+      `deploy:pi --force --apply` after a backup, 298 nodes, 5/5 bridge checks. The bases already
+      banked needed repairing separately, and were **re-derived from the corrected `readings`
+      history** — the sum of each completed local day's peak — rather than back-computed from the
+      contaminated value, so the repair could not inherit the fault's arithmetic. Node-RED
+      stopped, backup beside the context file, 11 accumulators written:
+
+      | device | week before | after | month before | after |
+      |---|---|---|---|---|
+      | **mtr_lo_yellow** | **78.977** | **1.236** | **83.390** | **5.611** |
+      | mtr_co_yellow | 9.720 | 8.165 | 39.166 | 34.281 |
+      | mtr_arec_acu | 7.628 | 5.932 | 23.946 | 16.336 |
+      | mtr_lo_red | 0.279 | 0.191 | 1.437 | 0.933 |
+      | co5 | 180.916 | 1.150 | 413.430 | 6.382 |
+      | co1 / co3 / co6 | 19.3 / 3.9 / 44.5 | 0.5 / 0.0 / 0.7 | 47.4 / 43.1 / 102.2 | 0.7 / 0.4 / 1.9 |
+
+      The outlet rows are **RM-047's fabricated energy**, banked before that fix landed and never
+      recomputed — RM-047b corrected the stored history and could not reach flow context. They
+      are not what the operator reported, and they were 181 kWh of a week that was really 1.15.
+
+      Served immediately after: **L.O Yellow 80 % -> 8.2 % of the week, 56 % -> 9.8 % of the
+      month**; branch sum 18.646 against the building's independent 18.588. `period_reports` was
+      checked and is **clean** — no row above 100 kWh, and every one generated before the jump —
+      so nothing there needed regenerating. Nothing reads `readings.energy_kwh_week`, so the
+      contaminated column in stored history feeds no surface; it is left as the record of what
+      was served. Fleet 18/20, five services active.
 
 - [x] **EX-169 — the phase28 columns are finally ASKED something. 2026-09-08.** phase28 gave
       `readings` six columns and EX-167 started filling them every minute. Nothing read them —
