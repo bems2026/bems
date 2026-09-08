@@ -3437,6 +3437,22 @@ fall back to it).
       `src/components/analytics/EnergySection.tsx`,
       `src/components/overview/EnergyBreakdownCard.tsx`, `docs/bridge-contract.md`
 
+      **DEPLOYED 2026-09-08 15:50.** Backup beside `flows.json`, a diff confirming **exactly one
+      node of 41** changed (`Build latest readings`) and no source tab, 298 -> 298 nodes, 5/5
+      bridge checks. `dist` rebuilt, all three daemons restarted, two clean ingest cycles, zero
+      non-solarman errors. Measured live immediately after — every branch now carries its own
+      second opinion, and nothing is flagged:
+
+      | branch | served | its own integration | difference |
+      |---|---|---|---|
+      | `mtr_co_yellow` | 2.307 | 2.336 | −1.27 % |
+      | `mtr_lo_red` | 0.170 | 0.169 | +0.79 % |
+      | `mtr_arec_acu` | 4.066 | 4.015 | +1.26 % |
+      | `mtr_lo_yellow` | 0.303 | 0.302 | +0.31 % |
+
+      `co1` carries no `energy_kwh_today_integrated` at all, which is the outlet rule holding in
+      production rather than only in a test. Fleet 18 of 20.
+
 - [x] **EX-169 — the phase28 columns are finally ASKED something. 2026-09-08.** phase28 gave
       `readings` six columns and EX-167 started filling them every minute. Nothing read them —
       the same shape as the capabilities that reached the browser and were discarded before
