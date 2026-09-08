@@ -2850,6 +2850,23 @@ fall back to it).
       `node-red-bridge/energyDayBase.mjs`, `node-red-bridge/build-flow.mjs`,
       `test/energy-day-base.test.mjs` (+7)
 
+      **DEPLOYED AND THE LIVE STATE REPAIRED, 2026-09-08.** `deploy:pi --force --apply` after a
+      backup, 293 -> 293 nodes, 5/5 bridge checks. The fix guards FUTURE jumps; the offset already
+      banked in context needed repairing separately, so each meter's baseline was reset to
+      `counter - integrated` — the tracker's own seeding rule — with Node-RED stopped and a backup
+      beside the file. Measured immediately after:
+
+      | meter | before | after | integrates to |
+      |---|---|---|---|
+      | **mtr_lo_yellow** | **77.502** | **0.301** | 0.302 |
+      | mtr_co_yellow | 0.7856 (via the backstop) | 0.7916 | 0.697 |
+      | mtr_arec_acu | 1.300 | 1.3032 | — |
+      | mtr_lo_red | 0.087 | 0.086 | — |
+
+      The hardware registers still read 77.502 and 3,676 — the offsets are the device's and are
+      not ours to clear. The baseline now excludes them rather than pretending the register is
+      clean. Building total 2.48 kWh, fleet 18/20.
+
 - [x] **EX-169 — the phase28 columns are finally ASKED something. 2026-09-08.** phase28 gave
       `readings` six columns and EX-167 started filling them every minute. Nothing read them —
       the same shape as the capabilities that reached the browser and were discarded before
