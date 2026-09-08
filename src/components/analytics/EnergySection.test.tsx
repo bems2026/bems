@@ -1,7 +1,14 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup, within, fireEvent } from '@testing-library/react';
 import { EnergySection } from './EnergySection';
-import { energyDisagreement, DISAGREEMENT_MARGIN, DISAGREEMENT_FLOOR_KWH } from '@/lib/energyDisagreement';
+import {
+  energyDisagreement,
+  branchShortfalls,
+  DISAGREEMENT_MARGIN,
+  DISAGREEMENT_FLOOR_KWH,
+  BRANCH_SHORTFALL_MARGIN,
+  BRANCH_SHORTFALL_FLOOR_KWH,
+} from '@/lib/energyDisagreement';
 import { useDeviceStore } from '@/stores/deviceStore';
 import type { Device, Reading, Totals } from '@/lib/types';
 
@@ -266,6 +273,67 @@ describe('EnergySection — branch/total disagreement', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
+  /*
+   * RM-058 on the page. The fixture is the live fault: `mtr_arec_acu` served 2.652 kWh while the
+   * building's own integration of that same meter gave 2.993 over the same day.
+   */
+  it('names a branch that is reporting less energy than its own meter measured', () => {
+    useDeviceStore.setState({
+      totals: totals({ energy_kwh_today: 4.305, energy_kwh_today_integrated: 4.649 }),
+      latestReadings: {
+        mtr_a: reading('mtr_a', 2.652, { energy_kwh_today_integrated: 2.993 }),
+        mtr_b: reading('mtr_b', 1.653, { energy_kwh_today_integrated: 1.656 }),
+      },
+    });
+    render(<EnergySection branchDevices={BRANCHES} />);
+    const notice = screen.getByRole('status');
+    expect(notice).toHaveTextContent('C.O Yellow');
+    expect(notice).toHaveTextContent('2.65 kWh');
+    expect(notice).toHaveTextContent('2.99 kWh');
+    // The healthy branch is not named — 1.653 against 1.656 is 0.2%.
+    expect(notice).not.toHaveTextContent('L.O Red');
+  });
+
+  it('offers no per-branch verdict for week or month, because there is nothing to compare', () => {
+    // The legacy engine keeps a per-meter DAILY figure and no per-meter week or month, so a
+    // longer period has no second opinion. Silence is the honest answer, not a check that
+    // quietly compares today's integration against a week of register.
+    useDeviceStore.setState({
+      totals: totals({ energy_kwh_today: 4.305, energy_kwh_today_integrated: 4.649 }),
+      latestReadings: {
+        mtr_a: reading('mtr_a', 2.652, { energy_kwh_week: 20, energy_kwh_today_integrated: 2.993 }),
+        mtr_b: reading('mtr_b', 1.653, { energy_kwh_week: 10, energy_kwh_today_integrated: 1.656 }),
+      },
+    });
+    render(<EnergySection branchDevices={BRANCHES} />);
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Week' }));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('stays quiet when every branch agrees with its own measurement', () => {
+    // The four live branches at 15:35, post-repair, within ±1.4%.
+    useDeviceStore.setState({
+      totals: totals({ energy_kwh_today: 2.395, energy_kwh_today_integrated: 2.421 }),
+      latestReadings: {
+        mtr_a: reading('mtr_a', 2.228, { energy_kwh_today_integrated: 2.256 }),
+        mtr_b: reading('mtr_b', 0.167, { energy_kwh_today_integrated: 0.165 }),
+      },
+    });
+    render(<EnergySection branchDevices={BRANCHES} />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('stays quiet when the bridge sends no per-branch second opinion at all', () => {
+    // Older bridge, or an outlet: the field is absent and absent is not zero.
+    useDeviceStore.setState({
+      totals: totals({ energy_kwh_today: 4.305, energy_kwh_today_integrated: 4.649 }),
+      latestReadings: { mtr_a: reading('mtr_a', 2.652), mtr_b: reading('mtr_b', 1.653) },
+    });
+    render(<EnergySection branchDevices={BRANCHES} />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
   it('stays quiet when the building never counted the period it would compare against', () => {
     useDeviceStore.setState({
       totals: totals({ energy_kwh_week: null, energy_kwh_week_integrated: null }),
@@ -279,5 +347,108 @@ describe('EnergySection — branch/total disagreement', () => {
     // The tile for that period says so, and the split says nothing at all.
     expect(screen.getByText('No data')).toBeInTheDocument();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+});
+
+/*
+ * RM-058 — the direction RM-057 made meaningful, checked where it is loudest.
+ *
+ * Every figure is measured on this building. The healthy row is the four branches against their
+ * own two-second integration at 15:35 on 2026-09-08, after RM-056's fix and RM-056b's repair;
+ * the fault row is `mtr_arec_acu` earlier the same day, while the day-baseline tracker was still
+ * absorbing its consumption.
+ */
+describe('branchShortfalls', () => {
+  const br = (id: string, name: string, kwh: number, integrated?: number) => ({ id, name, kwh, integrated });
+
+  it('says nothing about the four branches as they actually read', () => {
+    // Live at 15:35, post-repair: -1.26%, +1.36%, +1.28%, +0.29%.
+    expect(
+      branchShortfalls([
+        br('mtr_co_yellow', 'C.O Yellow', 2.228, 2.256),
+        br('mtr_lo_red', 'L.O Red', 0.167, 0.165),
+        br('mtr_arec_acu', 'CARE ACU', 3.958, 3.908),
+        br('mtr_lo_yellow', 'L.O Yellow', 0.302, 0.301),
+      ]),
+    ).toEqual([]);
+  });
+
+  it('names the branch that RM-056 was quietly emptying', () => {
+    // 2026-09-08 13:32: the register-derived figure was 2.652 while the meter own power
+    // integrated to 2.993 over the same day. The building-level shortfall was 6.7% and went
+    // unnoticed; at the branch it is 11.4%.
+    const found = branchShortfalls([
+      br('mtr_arec_acu', 'CARE ACU', 2.652, 2.993),
+      br('mtr_co_yellow', 'C.O Yellow', 1.653, 1.656),
+    ]);
+    expect(found).toHaveLength(1);
+    expect(found[0].id).toBe('mtr_arec_acu');
+    expect(found[0].name).toBe('CARE ACU');
+    expect(found[0].missingKwh).toBeCloseTo(0.341, 3);
+    expect(found[0].fraction).toBeCloseTo(0.1139, 3);
+  });
+
+  it('ignores a branch reading ABOVE its integration — that is the other direction', () => {
+    // The integrator accrues only while the meter reads healthy and while Node-RED runs, so a
+    // branch ahead of it is expected. `energyDisagreement` is what watches that side.
+    expect(branchShortfalls([br('mtr_a', 'A', 12, 8)])).toEqual([]);
+  });
+
+  it('stays quiet while the absolute gap is too small to mean anything', () => {
+    // Minutes after midnight, and after any register lump: the register trails the integration
+    // by up to one lump (~0.015 kWh on the busiest branch here). A ratio alone would flag every
+    // branch every night.
+    expect(branchShortfalls([br('mtr_a', 'A', 0.02, 0.05)])).toEqual([]);
+    // Either side of the floor, expressed as a fraction of it rather than by subtracting it —
+    // `1 - 0.15` is 0.85 and `1 - 0.85` is 0.15000000000000002, so an exact-boundary assertion
+    // would be testing IEEE-754 rather than the rule.
+    expect(branchShortfalls([br('mtr_a', 'A', 1 - BRANCH_SHORTFALL_FLOOR_KWH * 0.99, 1)])).toEqual([]);
+    expect(branchShortfalls([br('mtr_a', 'A', 1 - BRANCH_SHORTFALL_FLOOR_KWH * 1.05, 1)])).toHaveLength(1);
+  });
+
+  it('stays quiet while the proportion is small, however many kWh that is', () => {
+    // 2 kWh short of 102 is 1.96%: a big branch on a long day, well inside what two derivations
+    // of the same circuit do. The absolute bar alone would flag it.
+    expect(branchShortfalls([br('mtr_a', 'A', 100, 102)])).toEqual([]);
+  });
+
+  it('holds its tongue at the margin and speaks just past it', () => {
+    const integrated = 10; // so the floor is cleared with room and only the ratio decides
+    expect(branchShortfalls([br('mtr_a', 'A', integrated * (1 - BRANCH_SHORTFALL_MARGIN), integrated)])).toEqual([]);
+    expect(branchShortfalls([br('mtr_a', 'A', integrated * (1 - BRANCH_SHORTFALL_MARGIN) - 0.01, integrated)])).toHaveLength(1);
+  });
+
+  it('skips a branch with no second opinion rather than assuming one', () => {
+    // An outlet has no cumulative register, so the bridge sends no integrated figure for it
+    // (RM-058), and a bridge older than that sends none at all. Absent is not zero.
+    expect(branchShortfalls([br('co1', 'Outlet 1', 5, undefined)])).toEqual([]);
+    expect(branchShortfalls([br('mtr_a', 'A', 5)])).toEqual([]);
+  });
+
+  it('reports the worst first, because that is the one to look at', () => {
+    const found = branchShortfalls([
+      br('mtr_a', 'A', 8, 10),
+      br('mtr_b', 'B', 2, 10),
+      br('mtr_c', 'C', 9.9, 10),
+    ]);
+    expect(found.map((f) => f.id)).toEqual(['mtr_b', 'mtr_a']);
+  });
+
+  it('refuses a period other than today, because there is no second opinion for one', () => {
+    // The legacy engine keeps a per-meter DAILY figure and no per-meter week or month. A week's
+    // register compared against today's integration would be two different questions, and this
+    // case is the only way that mistake is observable: a week register is always at least
+    // today's, so the comparison could never report a shortfall of its own accord.
+    const short = [{ id: 'mtr_a', name: 'A', kwh: 1, integrated: 5 }];
+    expect(branchShortfalls(short, 'today')).toHaveLength(1);
+    expect(branchShortfalls(short, 'week')).toEqual([]);
+    expect(branchShortfalls(short, 'month')).toEqual([]);
+  });
+
+  it('treats an integrated figure of zero as nothing to compare against', () => {
+    // A branch whose integration has not accrued yet cannot be short of it, and dividing by it
+    // would yield Infinity for a fraction the page would then try to render.
+    expect(branchShortfalls([br('mtr_a', 'A', 0, 0)])).toEqual([]);
+    expect(branchShortfalls([br('mtr_a', 'A', -1, 0)])).toEqual([]);
   });
 });

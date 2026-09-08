@@ -3,7 +3,7 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { CardLink } from '@/components/ui/CardLink';
 import { formatKwh, shareOfTotal } from '@/lib/format';
-import { energyDisagreement } from '@/lib/energyDisagreement';
+import { energyDisagreement, branchShortfalls } from '@/lib/energyDisagreement';
 
 /**
  * Today's consumed energy, split by branch — the "where did the kWh go" counterpart to
@@ -35,11 +35,20 @@ export function EnergyBreakdownCard() {
 
   const branches = devices
     .filter((d) => d.class === 'meter')
-    .map((d) => ({ id: d.id, name: d.display_name, kwh: readings[d.id]?.energy_kwh_today }))
-    .filter((b): b is { id: string; name: string; kwh: number } => typeof b.kwh === 'number')
+    .map((d) => ({
+      id: d.id,
+      name: d.display_name,
+      kwh: readings[d.id]?.energy_kwh_today,
+      integrated: readings[d.id]?.energy_kwh_today_integrated,
+    }))
+    .filter((b): b is { id: string; name: string; kwh: number; integrated: number | undefined } => typeof b.kwh === 'number')
     .sort((a, b) => b.kwh - a.kwh);
   const total = branches.reduce((sum, b) => sum + b.kwh, 0);
   const disagreement = energyDisagreement(total, integratedToday);
+  // RM-058, and this is the direction the figure above cannot see. A branch reading below its
+  // OWN power integration is energy measured and then lost; RM-056 did that to 11.4% of the
+  // aircon branch while the building-wide shortfall was 6.7% and went unnoticed for hours.
+  const shortfalls = branchShortfalls(branches);
 
   return (
     <div className="card">
@@ -76,6 +85,22 @@ export function EnergyBreakdownCard() {
                 while the building's own power integration over those same circuits gives {formatKwh(disagreement.total)}
                 {disagreement.ratio !== null && ` — ${disagreement.ratio.toFixed(1)}x less`}. They are measured differently and need not match
                 exactly, but a gap this size means one of the two is wrong.
+              </span>
+            </p>
+          )}
+          {shortfalls.length > 0 && (
+            <p className="energy-disagreement" role="status">
+              <AlertTriangle size={15} aria-hidden="true" />
+              <span>
+                <strong>
+                  {shortfalls.length === 1
+                    ? `${shortfalls[0].name} is reporting less than it measured.`
+                    : `${shortfalls.length} branches are reporting less than they measured.`}
+                </strong>{' '}
+                {shortfalls
+                  .map((s) => `${s.name} shows ${formatKwh(s.reported)} against ${formatKwh(s.integrated)} of its own power integrated over the same day (${Math.round(s.fraction * 100)}% missing)`)
+                  .join('; ')}
+                . A branch cannot have used less than its own meter recorded.
               </span>
             </p>
           )}

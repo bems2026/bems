@@ -64,6 +64,17 @@ export interface Reading {
    */
   energy_kwh_week?: number;
   energy_kwh_month?: number;
+  /**
+   * THIS METER'S OWN SECOND OPINION on today — RM-058. The building flow's two-second
+   * integration of this same meter's power, reset at local midnight: the same quantity as
+   * `energy_kwh_today`, derived the other way.
+   *
+   * Present only where the two are genuinely different numbers — a meter whose own cumulative
+   * register produced the reading. An outlet has no such register (RM-047), so its reading IS
+   * this figure and the field is absent rather than a copy that could never disagree. Absent
+   * also on a bridge older than RM-058; absent is not zero.
+   */
+  energy_kwh_today_integrated?: number;
   online: boolean;
   state: SwitchState | null;
   /** `outlet_dual` only. */

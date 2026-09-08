@@ -13,12 +13,13 @@ const meter = (id: string, name: string): Device => ({
   status: 'active',
 });
 
-const reading = (id: string, energy: number | undefined): Reading => ({
+const reading = (id: string, energy: number | undefined, integrated?: number): Reading => ({
   device_id: id,
   ts: new Date().toISOString(),
   online: true,
   state: null,
   ...(energy === undefined ? {} : { energy_kwh_today: energy }),
+  ...(integrated === undefined ? {} : { energy_kwh_today_integrated: integrated }),
 });
 
 const totals = (over: Partial<Totals> = {}): Totals => ({
@@ -128,6 +129,47 @@ describe('EnergyBreakdownCard', () => {
       devices: METERS,
       latestReadings: { ...LIVE, mtr_lo_yellow: reading('mtr_lo_yellow', 77.502) },
       totals: older,
+    });
+    render(<EnergyBreakdownCard />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  /*
+   * RM-058 — the direction the building-wide check cannot see. `mtr_arec_acu` served 2.652 kWh
+   * on 2026-09-08 while the building's integration of that same meter gave 2.993 over the same
+   * day: 11.4% at the branch, 6.7% at the building, and only one of those is loud enough to act
+   * on.
+   */
+  it('names a branch reporting less energy than its own meter measured', () => {
+    useDeviceStore.setState({
+      devices: METERS,
+      latestReadings: {
+        mtr_co_yellow: reading('mtr_co_yellow', 1.653, 1.656),
+        mtr_lo_red: reading('mtr_lo_red', 0.139, 0.138),
+        mtr_arec_acu: reading('mtr_arec_acu', 2.652, 2.993),
+        mtr_lo_yellow: reading('mtr_lo_yellow', 0.302, 0.301),
+      },
+      totals: totals({ energy_kwh_today: 4.746, energy_kwh_today_integrated: 5.088 }),
+    });
+    render(<EnergyBreakdownCard />);
+    const notice = screen.getByRole('status');
+    expect(notice).toHaveTextContent('CARE ACU');
+    expect(notice).toHaveTextContent('2.65 kWh');
+    expect(notice).toHaveTextContent('2.99 kWh');
+    expect(notice).not.toHaveTextContent('L.O Red');
+  });
+
+  it('stays quiet when every branch agrees with its own measurement', () => {
+    // The four live branches at 15:35, post-repair, within ±1.4%.
+    useDeviceStore.setState({
+      devices: METERS,
+      latestReadings: {
+        mtr_co_yellow: reading('mtr_co_yellow', 2.228, 2.256),
+        mtr_lo_red: reading('mtr_lo_red', 0.167, 0.165),
+        mtr_arec_acu: reading('mtr_arec_acu', 3.958, 3.908),
+        mtr_lo_yellow: reading('mtr_lo_yellow', 0.302, 0.301),
+      },
+      totals: totals({ energy_kwh_today: 6.655, energy_kwh_today_integrated: 6.63 }),
     });
     render(<EnergyBreakdownCard />);
     expect(screen.queryByRole('status')).not.toBeInTheDocument();

@@ -106,3 +106,104 @@ export function energyDisagreement(branchSum: number, total: number | null | und
   if (excessKwh <= total * DISAGREEMENT_MARGIN) return null;
   return { branchSum, total, excessKwh, ratio: total > 0 ? branchSum / total : null };
 }
+
+/**
+ * HOW FAR BELOW ITS OWN INTEGRATION A BRANCH MAY READ BEFORE THE PAGE NAMES IT — RM-058.
+ *
+ * THIS IS THE DIRECTION RM-057 MADE MEANINGFUL. While the building total came from a separate
+ * source, the branches were a subset of it and reading low was ordinary. Both figures now
+ * describe the same circuits, so a branch reading below its own two-second power integration is
+ * a claim that energy was measured and then lost — which is exactly what RM-056 was doing.
+ *
+ * AND IT IS CHECKED PER BRANCH BECAUSE THAT IS WHERE IT IS AUDIBLE. RM-056 took 38 % of
+ * `mtr_arec_acu` over one window and 11.4 % across the day, while the same fault at the building
+ * was 6.7 % — under any threshold worth setting, which is why a building-wide check missed it for
+ * hours and an operator's eye found it instead. Six times louder at the branch.
+ *
+ * WHY 5 %. Measured on this building at 15:35 on 2026-09-08, after RM-056's fix and RM-056b's
+ * repair — each branch against its own `<ctx>_energy`:
+ *
+ * | branch | register-derived | its own integration | difference |
+ * |---|---|---|---|
+ * | `mtr_co_yellow` | 2.228 | 2.256 | **−1.26 %** |
+ * | `mtr_lo_red` | 0.167 | 0.165 | +1.36 % |
+ * | `mtr_arec_acu` | 3.958 | 3.908 | +1.28 % |
+ * | `mtr_lo_yellow` | 0.302 | 0.301 | +0.29 % |
+ *
+ * So healthy sits inside ±1.4 %, and the largest healthy SHORTFALL is 1.26 %. The same meter
+ * under RM-056 read 2.652 against 2.993 — **11.4 % short**. 5 % is ~4x the healthy shortfall and
+ * less than half the fault, which is the widest gap the two measurements leave. Note the
+ * asymmetry against the 25 % on the excess side: that side has outages legitimately pushing it
+ * out, and this one does not.
+ *
+ * WHY 0.15 kWh, and why it is not the building's 0.5. A branch is a fraction of a building:
+ * `mtr_lo_red` consumed 0.167 kWh across that whole day, so a 0.5 kWh floor would switch this
+ * check off for three of the four branches. The register also trails the integration by up to one
+ * reporting lump — ~0.015 kWh on the busiest branch here — and that lag is bounded in kWh, not in
+ * percent, so early in the day it is a large fraction of a small number. 0.15 kWh is 10x that lag
+ * and 3x the largest difference measured above.
+ *
+ * WHAT IT HONESTLY CANNOT DO. It only guards branches drawing more than about 3 kWh a day, since
+ * below that the floor binds before the ratio does. On a branch consuming 0.17 kWh in a day no
+ * proportional test can separate a fault from lump lag, and firing nightly on the small branches
+ * would teach the operator to ignore it. RM-056 bit the BIGGEST branch — the fault scaled with
+ * lump size — so this guards where that class of fault lives.
+ *
+ * TODAY ONLY. `energy_kwh_today_integrated` exists per branch because the legacy engine keeps a
+ * per-meter daily figure; it keeps no per-meter week or month, so there is nothing to compare a
+ * longer period against and this is not offered for one.
+ */
+export const BRANCH_SHORTFALL_MARGIN = 0.05;
+export const BRANCH_SHORTFALL_FLOOR_KWH = 0.15;
+
+export interface BranchShortfall {
+  id: string;
+  name: string;
+  /** What the page is showing for this branch — its own register, less the day's baseline. */
+  reported: number;
+  /** The same meter's power, integrated by the building's own flow over the same day. */
+  integrated: number;
+  missingKwh: number;
+  /** The share of its own integration this branch is not reporting, 0..1. */
+  fraction: number;
+}
+
+/**
+ * The branches reading materially below their own power integration, worst first.
+ *
+ * ONE DIRECTION, the opposite of `energyDisagreement`'s. A branch reading ABOVE its integration
+ * is expected — the integrator accrues only while the meter reads healthy and while Node-RED is
+ * running, so every outage puts the register ahead — and that side is watched by the building-wide
+ * check with a margin sized for it.
+ *
+ * A branch with no integrated figure is SKIPPED, not assumed: an outlet has no cumulative
+ * register to disagree with, and a bridge older than RM-058 sends the field for nobody. An
+ * integration of zero is skipped too — nothing can be short of nothing, and the fraction would be
+ * a division by zero the page would then try to render.
+ */
+export function branchShortfalls(
+  branches: { id: string; name: string; kwh: number; integrated?: number | null }[],
+  period: 'today' | 'week' | 'month' = 'today',
+): BranchShortfall[] {
+  // TODAY ONLY, AND THE RULE LIVES HERE RATHER THAN AT THE CALL SITE — deliberately, because a
+  // caller-side `period === 'today' ? … : undefined` was unobservable: a week register is always
+  // at least today's, so comparing it against today's integration could never report a shortfall
+  // and neutering the guard failed no test. A rule no test can reach is a rule the suite is not
+  // holding. Here a direct call with 'week' is checkable, and it will matter the moment a
+  // per-branch week integration exists to compare against.
+  if (period !== 'today') return [];
+  const found: BranchShortfall[] = [];
+  for (const b of branches) {
+    const integrated = b.integrated;
+    if (typeof integrated !== 'number' || !Number.isFinite(integrated) || integrated <= 0) continue;
+    // ONE SIGNED QUANTITY, and both bars read off it — the same shape as `energyDisagreement`,
+    // and for the same reason: written as two separate comparisons against `kwh`, the direction
+    // would be a coincidence of both rather than a property of this function, and an `abs`
+    // slipped into it would fail no test.
+    const missingKwh = integrated - b.kwh;
+    if (missingKwh <= BRANCH_SHORTFALL_FLOOR_KWH) continue;
+    if (missingKwh <= integrated * BRANCH_SHORTFALL_MARGIN) continue;
+    found.push({ id: b.id, name: b.name, reported: b.kwh, integrated, missingKwh, fraction: missingKwh / integrated });
+  }
+  return found.sort((a, b) => b.missingKwh - a.missingKwh);
+}

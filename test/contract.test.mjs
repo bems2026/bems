@@ -798,3 +798,60 @@ test('a flow that names no building meters behaves exactly as it did before RM-0
   assert.equal(totals.energy_kwh_week, 61.88);
   assert.equal(totals.energy_kwh_month, 204.3);
 });
+
+// ---------------------------------------------------------------------------
+// RM-058 — each branch carries its OWN second opinion.
+// ---------------------------------------------------------------------------
+
+/**
+ * THE PER-BRANCH CROSS-CHECK, and it existed in the snapshot all along.
+ *
+ * `<ctx>_energy` is the legacy engine's two-second integration of THAT meter's power, reset at
+ * local midnight — the same quantity as `energy_kwh_today`, derived the other way. `buildLatest`
+ * already read it as the fallback when a meter has no register; it was never published, so the
+ * only cross-check the frontend could make was building-wide.
+ *
+ * That is exactly why RM-056 hid: `mtr_arec_acu` was 38 % short against its own power over a
+ * 36-minute window and the building-level shortfall was 6.7 %, under any threshold worth setting.
+ * Six times louder at the branch than at the building.
+ *
+ * PUBLISHED ONLY WHEN IT IS A DIFFERENT NUMBER. An outlet has no cumulative register at all
+ * (RM-047), so its `energy_kwh_today` IS this integrated value — emitting both would invite a
+ * comparison of a number with itself and imply a second measurement that does not exist.
+ */
+test('a meter publishes its own integrated figure beside its register-derived one', () => {
+  const snap = withAllMetersReporting();
+  // Give co_yel a register, so the published reading comes from it and `e` is the other view.
+  snap.energy.meters.co_yel.dp = { today_acc_energy1: 3.5 };
+  const built = buildLatest(snap, DEVICE_REGISTRY, PHASE_MAP, 1786000000000, 480, {}, undefined, {}, BUILDING_METER_IDS);
+  const row = built.find((r) => r.device_id === 'mtr_co_yellow');
+  assert.equal(row.energy_kwh_today, 3.5, 'the register wins, as RM-052 established');
+  assert.equal(row.energy_kwh_today_integrated, 3.11, "and `co_yel_energy` rides along as that meter's second opinion");
+});
+
+test('a meter with no register publishes no second opinion, because there is only one number', () => {
+  // No `dp`, so `energy_kwh_today` already IS the integrated figure. Publishing it twice would
+  // manufacture an agreement and invite a check that can never fail.
+  const built = buildLatest(withAllMetersReporting(), DEVICE_REGISTRY, PHASE_MAP, 1786000000000, 480, {}, undefined, {}, BUILDING_METER_IDS);
+  const row = built.find((r) => r.device_id === 'mtr_co_yellow');
+  assert.equal(row.energy_kwh_today, 3.11);
+  assert.equal('energy_kwh_today_integrated' in row, false);
+});
+
+test('an outlet never carries one — it has no register to disagree with', () => {
+  const built = buildLatest(withAllMetersReporting(), DEVICE_REGISTRY, PHASE_MAP, 1786000000000, 480, {}, undefined, {}, BUILDING_METER_IDS);
+  const row = built.find((r) => r.device_id === 'co1');
+  assert.ok(typeof row.energy_kwh_today === 'number', 'the outlet still reports its energy');
+  assert.equal('energy_kwh_today_integrated' in row, false);
+});
+
+test('the backstop still wins: a rejected register figure leaves no phantom second opinion', () => {
+  // `maxDailyKwh` makes buildLatest fall back to the integrated value. The published reading is
+  // then the integrated one, so a cross-check field would again compare a number with itself.
+  const snap = withAllMetersReporting();
+  snap.energy.meters.co_yel.dp = { today_acc_energy1: 3676 };
+  const built = buildLatest(snap, DEVICE_REGISTRY, PHASE_MAP, 1786000000000, 480, {}, 100, {}, BUILDING_METER_IDS);
+  const row = built.find((r) => r.device_id === 'mtr_co_yellow');
+  assert.equal(row.energy_kwh_today, 3.11, 'fell back to the integrated figure');
+  assert.equal('energy_kwh_today_integrated' in row, false);
+});

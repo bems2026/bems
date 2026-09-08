@@ -3381,21 +3381,61 @@ fall back to it).
       the summed figure instead. The two differ by ~0.3 % there, and nothing reads it that way
       today; it is written down so the first reader who does is not misled by it.
 
-- [ ] **RM-058 (S) — guard the SHORTFALL direction, once there is enough measurement to size it.**
-      RM-057 made both compared figures describe the same circuits, which removed the argument
-      that made `energyDisagreement` one-sided: the branches are no longer a subset of anything,
-      so registers running BELOW the integration is now meaningful rather than ordinary. It is
-      exactly what RM-056 looked like — 38 % missing on one branch, 6.7 % at the building — and
-      **the guard would not have caught it.**
+- [x] **RM-058 (M) — the shortfall direction is guarded, per branch. 2026-09-08.** RM-057 made
+      both compared figures describe the same circuits, which removed the argument that made
+      `energyDisagreement` one-sided: a branch reading BELOW its integration is no longer ordinary,
+      it is energy measured and then lost. That is exactly RM-056's signature, and nothing caught
+      it — an operator's eye did.
 
-      What is already measured, and what is missing: healthy agreement sits within ±1 % (six
-      samples across 2026-09-02 to 09-08, both directions), and the one known fault reached
-      −6.7 %. A 5 % shortfall margin with the existing 0.5 kWh floor would separate those — but
-      that is one fault sample, and these thresholds are the one thing in this file that has
-      always been sized from measurement rather than picked. Sizing it wants a few days of the
-      repaired system, or a per-branch comparison rather than a building-level one: RM-056 was
-      six times louder at the branch than at the building, so the per-branch form is probably the
-      right shape and needs an integrated figure per branch that the payload does not yet carry.
+      **THE PER-BRANCH FIGURE WAS THERE ALL ALONG.** `<ctx>_energy` is the legacy engine's
+      two-second integration of one meter's power, reset at local midnight. `buildLatest` already
+      read it as the fallback for a meter with no register; it was never published, so the only
+      cross-check the frontend could make was building-wide. **That is why RM-056 hid: 38 % of
+      `mtr_arec_acu` over a window and 11.4 % across the day, against 6.7 % at the building.**
+      Six times louder at the branch. It is published now as each row's
+      `energy_kwh_today_integrated` — **only where the two are genuinely different numbers**, so
+      an outlet (no cumulative register at all) and a register the backstop rejected carry
+      nothing rather than a copy of themselves that could never disagree.
+
+      **5 % and 0.15 kWh, both measured.** Each branch against its own integration at 15:35 on
+      2026-09-08, after RM-056's fix and RM-056b's repair:
+
+      | branch | register-derived | its own integration | difference |
+      |---|---|---|---|
+      | `mtr_co_yellow` | 2.228 | 2.256 | **−1.26 %** |
+      | `mtr_lo_red` | 0.167 | 0.165 | +1.36 % |
+      | `mtr_arec_acu` | 3.958 | 3.908 | +1.28 % |
+      | `mtr_lo_yellow` | 0.302 | 0.301 | +0.29 % |
+
+      Healthy sits inside ±1.4 %; the same meter under RM-056 read 2.652 against 2.993, **11.4 %
+      short**. 5 % is ~4x the largest healthy shortfall and less than half the fault — the widest
+      gap those two measurements leave. Deliberately tighter than the 25 % on the excess side,
+      because that side has outages legitimately pushing it out and this one does not. The floor
+      is 0.15 kWh rather than the building's 0.5: `mtr_lo_red` used 0.167 kWh in that whole day,
+      so 0.5 would switch the check off for three branches of four. 0.15 is 10x the register's
+      one-lump lag (~0.015 kWh on the busiest branch) and 3x the largest difference above.
+
+      **What it honestly cannot do**, stated in the code rather than discovered later: it only
+      guards branches drawing more than ~3 kWh a day, because below that the floor binds before
+      the ratio. On a 0.17 kWh day no proportional test separates a fault from lump lag, and
+      firing nightly on the small branches would teach the operator to ignore it. RM-056 bit the
+      BIGGEST branch — the fault scaled with lump size — so this guards where that class lives.
+
+      **THE NEUTER PASS CHANGED THE DESIGN AGAIN, the same way it did for RM-054.** The today-only
+      rule was written at the call site, and removing it failed **nothing**: a week's register is
+      always at least today's, so comparing it against today's integration can never report a
+      shortfall. A rule no test can reach is a rule the suite is not holding, so it moved into
+      `branchShortfalls` as a `period` argument, where a direct call with `'week'` is checkable.
+      **Seven neuters now each fail the right tests** — floor, margin, direction, the
+      missing-second-opinion guard, worst-first ordering, today-only, and publishing the field
+      where it would be a copy of the reading.
+
+      21 new tests. 1158 vitest, 959 bridge, 545 server, lint and build clean — `tsc` caught a
+      type predicate that vitest and eslint both passed, which is the fourth time that ordering
+      has paid.
+      `shared/buildLatest.mjs`, `src/lib/energyDisagreement.ts`, `src/lib/types.ts`,
+      `src/components/analytics/EnergySection.tsx`,
+      `src/components/overview/EnergyBreakdownCard.tsx`, `docs/bridge-contract.md`
 
 - [x] **EX-169 — the phase28 columns are finally ASKED something. 2026-09-08.** phase28 gave
       `readings` six columns and EX-167 started filling them every minute. Nothing read them —

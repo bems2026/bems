@@ -4,7 +4,7 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { InfoHint } from '@/components/ui/InfoHint';
 import type { Device, Reading, Totals } from '@/lib/types';
 import { formatKwh, shareOfTotal } from '@/lib/format';
-import { energyDisagreement } from '@/lib/energyDisagreement';
+import { energyDisagreement, branchShortfalls } from '@/lib/energyDisagreement';
 
 type Period = 'today' | 'week' | 'month';
 
@@ -50,8 +50,16 @@ export function EnergySection({ branchDevices }: { branchDevices: Device[] }) {
   const active = PERIODS.find((p) => p.id === period)!;
 
   const branches = branchDevices
-    .map((d) => ({ id: d.id, name: d.display_name, kwh: readings[d.id]?.[active.deviceKey] }))
-    .filter((b): b is { id: string; name: string; kwh: number } => typeof b.kwh === 'number')
+    .map((d) => ({
+      id: d.id,
+      name: d.display_name,
+      kwh: readings[d.id]?.[active.deviceKey],
+      // This meter's own integration of the same DAY. `branchShortfalls` is what refuses to
+      // compare it against a longer period's register — the rule lives there so a test can reach
+      // it, see its docblock.
+      integrated: readings[d.id]?.energy_kwh_today_integrated,
+    }))
+    .filter((b): b is { id: string; name: string; kwh: number; integrated: number | undefined } => typeof b.kwh === 'number')
     .sort((a, b) => b.kwh - a.kwh);
   const branchSum = branches.reduce((sum, b) => sum + b.kwh, 0);
   // Against THIS period's INTEGRATED counter, not the tile — RM-057. The tile is now the sum of
@@ -60,6 +68,10 @@ export function EnergySection({ branchDevices }: { branchDevices: Device[] }) {
   // measurement of the same circuits, and the period must be the matching one: comparing the
   // wrong period's figures would manufacture a disagreement out of two correct numbers.
   const disagreement = energyDisagreement(branchSum, (totals?.[active.integratedKey] as number | null | undefined) ?? null);
+  // THE OPPOSITE DIRECTION, ASKED PER BRANCH — RM-058. A branch reading below its OWN power
+  // integration is energy measured and then lost, which is what RM-056 was doing; at the
+  // building it was 6.7 % and invisible, at the branch 11.4 %.
+  const shortfalls = branchShortfalls(branches, active.id);
 
   return (
     <div className="analytics-cards-section">
@@ -109,6 +121,22 @@ export function EnergySection({ branchDevices }: { branchDevices: Device[] }) {
               {' '}{active.tile.toLowerCase()}, while the building's own power integration over those same circuits gives {formatKwh(disagreement.total)}
               {disagreement.ratio !== null && ` — ${disagreement.ratio.toFixed(1)}x less`}. They are measured differently and need not match exactly, but
               a gap this size means one of the two is wrong.
+            </span>
+          </p>
+        )}
+        {shortfalls.length > 0 && (
+          <p className="energy-disagreement" role="status">
+            <AlertTriangle size={15} aria-hidden="true" />
+            <span>
+              <strong>
+                {shortfalls.length === 1
+                  ? `${shortfalls[0].name} is reporting less than it measured.`
+                  : `${shortfalls.length} branches are reporting less than they measured.`}
+              </strong>{' '}
+              {shortfalls
+                .map((s) => `${s.name} shows ${formatKwh(s.reported)} against ${formatKwh(s.integrated)} of its own power integrated over the same day (${Math.round(s.fraction * 100)}% missing)`)
+                .join('; ')}
+              . A branch cannot have used less than its own meter recorded, so this is energy going missing between the meter and this page.
             </span>
           </p>
         )}

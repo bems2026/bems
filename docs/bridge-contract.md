@@ -226,6 +226,26 @@ would count the same watt-hours twice. What may be added is a fact about *wiring
 **Replication:** a second building writes its own `shared/sites/<id>/circuits.mjs` and its
 totals follow. Nothing needs hand-writing per site.
 
+#### `energy_kwh_today_integrated` — per METER, the same second opinion — RM-058
+
+Each metered device may also carry `energy_kwh_today_integrated`: `<ctx>_energy`, the legacy
+engine's two-second integration of **that meter's** power, reset at local midnight. Same quantity
+as the row's `energy_kwh_today`, derived the other way.
+
+**Present only where the two are different numbers** — a device whose own cumulative register
+produced the reading. An outlet has no such register (RM-047), so its reading already *is* this
+figure and the field is omitted rather than duplicated; likewise when the `max_branch_kwh_per_day`
+backstop rejected the register and fell back to the integrated value. Absent means "no second
+opinion", never zero.
+
+**Why per meter and not only per building:** RM-056 took 38 % of one branch over a window and
+11.4 % across the day, while the same fault measured building-wide was 6.7 % — under any
+threshold worth setting. Six times louder at the branch. `src/lib/energyDisagreement.ts`'s
+`branchShortfalls` reads it.
+
+**Today only.** The legacy engine keeps a per-meter daily figure and no per-meter week or month,
+so there is nothing to compare a longer period against and none is offered.
+
 #### `energy_kwh_*_integrated` — the independent cross-check
 
 The legacy flow's own two-second integration of the same circuits, read from

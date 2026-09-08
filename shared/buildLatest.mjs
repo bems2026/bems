@@ -192,12 +192,29 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, st
       if (maxDailyKwh !== undefined && eToday !== undefined && eToday > maxDailyKwh) {
         eToday = e !== undefined && e <= maxDailyKwh ? e : undefined;
       }
+      // DID THE METER'S OWN REGISTER WIN? That is what decides whether this device has TWO
+      // measurements of today or one, and it has to be asked after the backstop rather than
+      // before: a register the backstop rejected leaves the integrated value as the reading
+      // itself, and publishing it twice would manufacture an agreement.
+      const usedOwnRegister = ownDaily !== undefined && eToday === ownDaily;
       // Absent readings are omitted, never coerced to 0 — "no data" and "zero watts"
       // are different facts and the UI renders them differently.
       if (v !== undefined) r.voltage = v;
       if (c !== undefined) r.current = c;
       if (p !== undefined) r.power_w = p;
       if (eToday !== undefined) r.energy_kwh_today = eToday;
+      // THIS METER'S OWN SECOND OPINION — RM-058. `<ctx>_energy` is the legacy engine's
+      // two-second integration of THIS meter's power, reset at local midnight: the same quantity
+      // as the reading above, derived the other way. It was already read as the fallback and
+      // never published, so the only cross-check the frontend could make was building-wide — and
+      // that is precisely why RM-056 hid. `mtr_arec_acu` was 38 % short against its own power
+      // over one window while the building-level shortfall was 6.7 %, under any threshold worth
+      // setting. Six times louder at the branch than at the building.
+      //
+      // Only when the register won. An outlet has no cumulative register at all (RM-047), so its
+      // reading IS this figure; emitting both would imply a second measurement that does not
+      // exist and invite a comparison that can never fail.
+      if (usedOwnRegister && e !== undefined) r.energy_kwh_today_integrated = e;
       // Per-device week/month = the completed days this bridge has folded into its own
       // accumulator (`snap.energyAcc`, maintained by the Accumulate-energy step) plus the
       // live daily counter. Each meter only ever reports a DAILY figure, so anything
