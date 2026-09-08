@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { summariseShed, isSheddableClass, SHED_ORDER } from './shedTiers';
+import { summariseShed, isSheddableClass, SHED_ORDER, shedEligibleCount } from './shedTiers';
 import type { Device, DeviceClass, Reading } from './types';
 
 const dev = (id: string, cls: DeviceClass = 'switch'): Device => ({
@@ -91,5 +91,39 @@ describe('the summary a panel renders', () => {
   it('keeps rows in the order it was given, so the caller controls sorting', () => {
     const s = summariseShed([dev('b'), dev('a')], () => null, {}, ALL);
     expect(s.rows.map((r) => r.device.id)).toEqual(['b', 'a']);
+  });
+});
+
+describe('shedEligibleCount', () => {
+  const tally = (over = {}) => ({
+    group_1: { total: 0, effective: 0 },
+    group_2: { total: 0, effective: 0 },
+    group_3: { total: 0, effective: 0 },
+    never: { total: 0, effective: 0 },
+    unassigned: { total: 0, effective: 0 },
+    ...over,
+  });
+
+  it('counts devices assigned to a real shed tier', () => {
+    expect(shedEligibleCount(tally({ group_1: { total: 2, effective: 1 }, group_3: { total: 1, effective: 0 } }))).toBe(3);
+  });
+
+  /**
+   * `never` and `unassigned` are both refusals, and `shedPlan` treats them the same way: a
+   * device nobody classified is not a volunteer. Counting either would let auto-shed be armed
+   * over a fleet that can never be shed.
+   */
+  it('counts neither the protected tier nor the unclassified as eligible', () => {
+    expect(shedEligibleCount(tally({ never: { total: 5, effective: 0 }, unassigned: { total: 9, effective: 0 } }))).toBe(0);
+  });
+
+  /**
+   * Assignment, not dispatchability, and not on-ness. Those two are transient — a device that is
+   * off now may be on in an hour, and a bridge that cannot command a class now may report it
+   * later. Assignment is the only one whose absence makes auto-shed PERMANENTLY inert, which is
+   * the thing worth refusing to arm over. `inertCount` already reports the transient gap.
+   */
+  it('counts an assigned device even when nothing about it could act this minute', () => {
+    expect(shedEligibleCount(tally({ group_2: { total: 4, effective: 0 } }))).toBe(4);
   });
 });

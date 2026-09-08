@@ -23,15 +23,13 @@
  * somebody plugs a kettle in — but somebody planning around auto-shed should meet that number
  * here rather than after a breach.
  */
-import { useMemo } from 'react';
 import { Zap } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { InfoHint } from '@/components/ui/InfoHint';
-import { useDeviceStore } from '@/stores/deviceStore';
 import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
-import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
-import { LOAD_SHED_OPTIONS, effectiveConfig, resolveDisplayName, type LoadShedGroup } from '@/lib/deviceConfig';
-import { summariseShed, SHED_ORDER } from '@/lib/shedTiers';
+import { useShedSummary } from '@/hooks/useShedSummary';
+import { LOAD_SHED_OPTIONS, resolveDisplayName, type LoadShedGroup } from '@/lib/deviceConfig';
+import { SHED_ORDER } from '@/lib/shedTiers';
 
 const TIER_LABEL: Record<LoadShedGroup | 'unassigned', string> = {
   group_1: 'Group 1 — sheds first',
@@ -42,19 +40,14 @@ const TIER_LABEL: Record<LoadShedGroup | 'unassigned', string> = {
 };
 
 export function LoadShedPanel({ onClose }: { onClose?: () => void }) {
-  const devices = useDeviceStore((s) => s.devices);
-  const readings = useDeviceStore((s) => s.latestReadings);
   const saved = useDeviceConfigStore((s) => s.saved);
-  const draft = useDeviceConfigStore((s) => s.draft);
   const setDraftField = useDeviceConfigStore((s) => s.setDraftField);
   const save = useDeviceConfigStore((s) => s.save);
   const saveError = useDeviceConfigStore((s) => s.saveError);
-  const dispatchClasses = useCapabilitiesStore((s) => s.dispatchClasses);
 
-  const summary = useMemo(
-    () => summariseShed(devices, (id) => effectiveConfig(draft, saved, id).loadShedGroup, readings, dispatchClasses),
-    [devices, draft, saved, readings, dispatchClasses],
-  );
+  // The summary itself comes from `useShedSummary`, shared with `DsmThresholdsCard` — the card
+  // that arms the mechanism these tiers feed has to be asking the same question of the same data.
+  const summary = useShedSummary();
 
   /** Set and save in one step. A tier is a single choice from a fixed list, not a field somebody
    * is part-way through typing, so staging it behind a Save button would only create a state

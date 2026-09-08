@@ -7,9 +7,11 @@ import { DEVICE_CLASS_CATALOG, classesWhere } from '@/lib/deviceClassCatalog';
 import { pendingWrites } from '@/stores/contextStore';
 import { CalendarClock, Thermometer, ListTodo } from 'lucide-react';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { ScheduleRow } from './ScheduleRow';
+import { brokenScheduleCount } from './automationMath';
 import { DsmThresholdsCard } from './DsmThresholdsCard';
 import { LoadShedPanel } from '@/components/devices/LoadShedPanel';
 import type { DeviceClass } from '@/lib/types';
@@ -44,6 +46,10 @@ export function AutomationPage() {
   const filtered = schedFilter === 'All' ? schedulable : schedulable.filter((d) => d.class === schedFilter);
 
   const armedCount = schedulable.filter((d) => (draft[`global.schedule.${d.id}.armed`] ?? saved[`global.schedule.${d.id}.armed`]) === 'true').length;
+  // Counted over the EFFECTIVE context — draft on top of saved — so the summary reflects what is
+  // on screen, not what was last written. Same `{...saved, ...draft}` reading `DsmThresholdsCard`
+  // uses for its own live status.
+  const brokenCount = brokenScheduleCount(schedulable, { ...saved, ...draft });
 
   const armAll = () => {
     for (const d of filtered) setDraft(`global.schedule.${d.id}.armed`, 'true');
@@ -70,10 +76,17 @@ export function AutomationPage() {
 
   const triggerValue = Number(draft[TRIGGER_KEY] ?? saved[TRIGGER_KEY] ?? 24);
 
+  // Skeletons rather than a sentence, matching what Devices already does one tab away. This is
+  // the genuine pre-catalogue state (`devices.length === 0`) that `Skeleton.tsx` reserves itself
+  // for — not a device that HAS loaded and has no reading yet, which stays a real "—".
   if (devices.length === 0) {
     return (
       <div className="automation-page" aria-busy="true" aria-label="Loading automation">
-        <p className="section-placeholder">Waiting for the device catalogue…</p>
+        {Array.from({ length: 5 }, (_, i) => (
+          <div className="automation-sched-skeleton-row" key={i}>
+            <Skeleton height="14px" width="55%" />
+          </div>
+        ))}
       </div>
     );
   }
@@ -138,6 +151,21 @@ export function AutomationPage() {
               Arm all
             </button>
           </div>
+          {/*
+            ONE live region for the whole card, and the reason is `Arm all` directly above it: that
+            button stages `armed = true` across every filtered device in a single click, so a dozen
+            rows can start warning at once. Each row announcing itself was a dozen simultaneous
+            polite announcements; this says the fact once and the rows keep their own notes as the
+            arm switch's description. Omitted entirely at zero — a counter that is almost always
+            zero trains people to stop reading the line (the same rule as the unstable-device count
+            on Devices).
+          */}
+          {brokenCount > 0 && (
+            <p className="automation-schedules-broken" role="status">
+              {brokenCount} schedule{brokenCount === 1 ? '' : 's'} cannot run as configured — see the
+              note on {brokenCount === 1 ? 'that row' : 'those rows'}.
+            </p>
+          )}
           <p className="automation-schedules-sub">
             {schedulable.length} device{schedulable.length === 1 ? '' : 's'} declared for scheduling, staged to Supabase&apos;s schedules table.
             {notSchedulable.length > 0 && (
@@ -157,11 +185,16 @@ export function AutomationPage() {
           <div className="automation-sched-scroll" tabIndex={0} role="region" aria-label="Device schedules, scrolls horizontally">
             <div className="automation-sched-table">
               <div className="automation-sched-row automation-sched-row--head">
+                {/* Read across, a row is a rule: this device, on at, off at, on these days,
+                    armed or not. The captions say that; they used to be five bare nouns. Note
+                    each clock now repeats its own ON/OFF caption inline — deliberately, because
+                    this header row is `display: none` below 720px and the fields have to stay
+                    self-describing when it goes. */}
                 <span>DEVICE</span>
                 <span>ON</span>
                 <span>OFF</span>
-                <span>DAYS</span>
-                <span className="automation-sched-row__arm-label">ARM</span>
+                <span>ON THESE DAYS</span>
+                <span className="automation-sched-row__arm-label">ARMED</span>
               </div>
               {filtered.map((d) => (
                 <ScheduleRow key={d.id} device={d} />

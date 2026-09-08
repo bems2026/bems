@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseDays, formatDays, toggleDay, scheduleKey, nextUpSchedules, armedScheduleCount } from './automationMath';
+import { parseDays, formatDays, toggleDay, scheduleKey, nextUpSchedules, armedScheduleCount, scheduleProblems, SCHEDULE_PROBLEM_TEXT, brokenScheduleCount } from './automationMath';
 import type { Device } from '@/lib/types';
 
 const device = (id: string, display_name: string, deviceClass: Device['class']): Device => ({
@@ -102,5 +102,87 @@ describe('armedScheduleCount', () => {
 
   it('zero when nothing is armed', () => {
     expect(armedScheduleCount(devices, {})).toBe(0);
+  });
+});
+
+/**
+ * RM-060 — the footguns a schedule row can hold today without saying so.
+ *
+ * Each of these saves cleanly, reads as configured, and then does nothing at the hour somebody
+ * expected it to act. That is worse than a visible error: the schedule looks armed.
+ */
+describe('scheduleProblems', () => {
+  const rule = (over: Partial<Parameters<typeof scheduleProblems>[0]> = {}) => ({
+    armed: false, on: undefined, off: undefined, days: undefined, ...over,
+  });
+
+  it('finds nothing to say about a row nobody has touched', () => {
+    expect(scheduleProblems(rule())).toEqual([]);
+  });
+
+  it('flags a schedule armed with no day ticked — it can never fire', () => {
+    expect(scheduleProblems(rule({ armed: true, on: '07:00', days: '0000000' })))
+      .toContain('armed-without-days');
+  });
+
+  it('treats an absent days string the same as an empty one', () => {
+    expect(scheduleProblems(rule({ armed: true, on: '07:00' }))).toContain('armed-without-days');
+  });
+
+  it('flags a schedule armed with no ON time', () => {
+    expect(scheduleProblems(rule({ armed: true, off: '18:00', days: '1111100' })))
+      .toContain('armed-without-on-time');
+  });
+
+  it('says nothing about an unarmed row that is merely incomplete — that is a draft, not a fault', () => {
+    expect(scheduleProblems(rule({ on: '', days: '0000000' }))).toEqual([]);
+  });
+
+  it('flags an ON and OFF set to the same minute, which cannot mean anything', () => {
+    expect(scheduleProblems(rule({ armed: true, on: '07:00', off: '07:00', days: '1111100' })))
+      .toContain('same-on-and-off');
+  });
+
+  /**
+   * THE CASE THAT MUST STAY SILENT. An OFF earlier in the day than its ON is an overnight
+   * schedule — on at 18:00, off at 06:00 — which is exactly how a security light is configured.
+   * Warning on it would train the operator to ignore the warnings that matter.
+   */
+  it('does NOT flag an overnight schedule, where OFF is earlier in the day than ON', () => {
+    expect(scheduleProblems(rule({ armed: true, on: '18:00', off: '06:00', days: '1111111' }))).toEqual([]);
+  });
+
+  it('does NOT flag an ON with no OFF — switching on and leaving it is a real choice', () => {
+    expect(scheduleProblems(rule({ armed: true, on: '07:00', days: '1111100' }))).toEqual([]);
+  });
+
+  it('gives every problem it can report a human sentence', () => {
+    for (const code of ['armed-without-days', 'armed-without-on-time', 'same-on-and-off'] as const) {
+      expect(SCHEDULE_PROBLEM_TEXT[code]).toMatch(/\S/);
+    }
+  });
+});
+
+describe('brokenScheduleCount', () => {
+  const d = (id: string) => device(id, id.toUpperCase(), 'switch');
+
+  it('counts nothing for a fleet whose schedules are all sound', () => {
+    expect(brokenScheduleCount([d('l1')], {
+      'global.schedule.l1.armed': 'true', 'global.schedule.l1.on': '07:00', 'global.schedule.l1.days': '1111100',
+    })).toBe(0);
+  });
+
+  it('counts a row with two faults once, because it is one schedule to fix', () => {
+    // Armed, no days, and ON equal to OFF: two problems, one broken row.
+    expect(brokenScheduleCount([d('l1')], {
+      'global.schedule.l1.armed': 'true', 'global.schedule.l1.on': '07:00',
+      'global.schedule.l1.off': '07:00', 'global.schedule.l1.days': '0000000',
+    })).toBe(1);
+  });
+
+  it('counts each broken device, which is what "Arm all" can create in one click', () => {
+    const ctx: Record<string, string> = {};
+    for (const id of ['l1', 'l2', 'l3']) { ctx[`global.schedule.${id}.armed`] = 'true'; }
+    expect(brokenScheduleCount([d('l1'), d('l2'), d('l3')], ctx)).toBe(3);
   });
 });

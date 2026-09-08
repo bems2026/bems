@@ -1,11 +1,15 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-08 — **RM-059**, the Devices page's panels moved off the top of the
-fleet table into a floating layer, and before that the week/month energy accumulator, measured
-against the live bridge's own flow context and eight days of corrected history. RM-059 turned up
-three separate defects on the way — an enabled button wearing disabled styling at 2.3-2.6:1, a
-stylesheet invariant that had quietly lapsed, and the row action buttons having no touch-target
-minimum at all on a touchscreen kiosk. §0 leads with what that
+**Last audited:** 2026-09-08 — **RM-059 and RM-060**, a UI/UX pass over the Devices and
+Automation pages, and before that the week/month energy accumulator, measured against the live
+bridge's own flow context and eight days of corrected history. RM-060 started from a fault the
+operator reported in words rather than in a ticket: on a schedule row you cannot tell which clock
+turns the device on and which turns it off. That is true, it is worst on the kiosk (the column
+captions are `display: none` below 720px), and it is the kind of mistake that fires at the wrong
+hour rather than announcing itself. RM-059 moved the Devices panels off the top of the fleet
+table into a floating layer, and turned up three separate defects on the way — an enabled button
+wearing disabled styling at 2.3-2.6:1, a stylesheet invariant that had quietly lapsed, and the
+row action buttons having no touch-target minimum at all on a touchscreen kiosk. §0 leads with what that
 measurement found: **RM-053**, two faults in the per-branch week/month split, both now fixed
 and the live figures repaired — and now with **RM-054**, the comparison that would have made
 that fault visible on the page rather than leaving it to a person to notice. §0 then leads with
@@ -1444,6 +1448,54 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       `.automation-number-input` were missing too and are added. One dead selector removed
       (`.automation-shed-mode__switch`, zero uses since the control became a `quick-toggle`), along
       with `.enroll-wizard__cancel` and the panel chrome `OverlayPanel` now supplies.
+- [x] **RM-060** **You could not tell which clock on a schedule row turns the device on and which
+      turns it off.** `.automation-sched-row--head` is `display: none` below 720px — the CARE kiosk
+      and every phone — so beneath that width the two `type="time"` inputs were adjacent, identical,
+      and separated only by an `aria-label` a sighted operator never hears. Putting the office
+      lights' ON time into the OFF field is a silent, plausible mistake that then fires at the wrong
+      hour. Each clock now carries three channels: the word ON or OFF, a sunrise/sunset glyph, and a
+      coloured rail (`--good` / `--border-strong`). Colour is never the only carrier — that fails a
+      colour-blind operator and carries nothing under `prefers-contrast: high` — and the captions
+      stay at every width, not only where the header vanishes. Reported by the operator, 2026-09-08
+      — `src/components/automation/ScheduleRow.tsx` (+`.test.tsx`, 7 tests), `src/index.css`.
+      **Error prevention on the same page, since these all save silently today and only announce
+      themselves as behaviour that does not happen:**
+      `scheduleProblems` (pure, in `automationMath.ts`, 9 tests) flags a row armed with no day
+      ticked — `parseDays` returns all-false for an unset value, so a blank `days` string is a
+      schedule that will never run, and the symptom presents as broken hardware rather than an empty
+      field — a row armed with no ON time, and an ON equal to its OFF. It deliberately stays SILENT
+      on an OFF earlier in the day than its ON (that is an overnight schedule, which is how a
+      security light is configured), on an ON with no OFF (switching on and leaving it is a real
+      choice), and on an unarmed incomplete row (that is a draft). Warnings that cry wolf get
+      ignored.
+      `DsmThresholdsCard` gains inline validation before the save: a limit at or below the present
+      measured draw is breached the instant it is written, and a limit of zero is the same at its
+      extreme — worth its own sentence because `readDsmThresholds` is explicit that "no limit
+      configured" and "limit of 0" are different facts that look nearly identical on the form.
+      **And auto-shed can no longer be armed while no device carries a shed tier**, which would arm
+      a mechanism that can only ever do nothing while reading on the page as protection. Gated on
+      ASSIGNMENT via a new `shedEligibleCount` (`shedTiers.ts`), not on what could act this minute:
+      dispatchability and on-ness are transient and already reported as `inertCount`, but a tier
+      nobody set cannot resolve itself. Disabled-with-a-reason rather than hidden, because the panel
+      that fixes it is on this same page. The summary behind both the panel and the card is one
+      `useShedSummary` hook now, so the editor and the arming control cannot drift into disagreeing
+      about what is sheddable — `shedTiers.ts` opens by naming that exact failure.
+      **AN ANNOUNCEMENT STORM, CAUGHT IN REVIEW AND FIXED.** The per-row note shipped first as
+      `role="status"`, which was wrong for one specific reason: **`Arm all` stages `armed = true`
+      across every filtered device in a single click**, so a dozen quiet rows can start warning
+      simultaneously — a dozen polite live-region announcements a screen reader user can neither act
+      on nor skip. The row note is no longer a live region; it is now the arm switch's own
+      `aria-describedby` (two of its three cases are literally "armed without X", and the third only
+      matters once armed), and the *count* is announced once by a single summary on the card,
+      omitted entirely at zero. That is the shape WCAG guidance asks for — a summary that
+      COMPLEMENTS inline field errors rather than replacing them — and it is the same
+      "a counter that is almost always zero trains people to stop reading the line" rule EX-032b
+      applied to the Devices page's unstable count. `brokenScheduleCount` counts broken ROWS, not
+      problems: a row with two faults is one schedule to fix
+      — `AutomationPage.test.tsx` (4 tests, new)
+      — `src/components/automation/DsmThresholdsCard.tsx` (13 tests), `src/hooks/useShedSummary.ts`,
+      `src/lib/shedTiers.ts`. Automation's pre-catalogue state also becomes skeletons rather than a
+      sentence, matching Devices one tab away and staying inside `Skeleton.tsx`'s own rule.
 - [x] **EX-150** One relay control, replacing five. `SwitchesListCard`, `OutletsListCard`,
       `LightingMatrixCard`, `OutletPlanCard` and `MasterQuickActionsCard` each re-derived the same
       `controlView` → `busy`/`unknown`/`on` triple and then decided independently what `disabled`

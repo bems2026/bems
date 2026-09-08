@@ -4484,6 +4484,23 @@ body::before {
   padding: var(--sp-2) 0;
   border-bottom: 1px solid var(--border-faint);
 }
+/* The card's one summary of rows that cannot run — RM-060. Sits above the lede rather than
+   beside the ARMED count, because it is a problem and that is a fact. --warn on a card is
+   4.65:1; this is inside `.automation-schedules-card`. */
+.automation-schedules-broken {
+  margin: 0 0 var(--sp-2);
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+}
+/* Pre-catalogue loading rows, matching `.devices-table-skeleton-row` one tab away. */
+.automation-sched-skeleton-row {
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--border-faint);
+}
 .automation-sched-row--head {
   padding-bottom: 9px;
   border-bottom: 1px solid var(--border);
@@ -4525,6 +4542,40 @@ body::before {
   display: flex;
   justify-content: flex-end;
 }
+/*
+ * The two clocks, told apart — RM-060.
+ *
+ * The column captions live in `.automation-sched-row--head`, which is `display: none` below
+ * 720px: the CARE kiosk and every phone. Below that width these two inputs were adjacent,
+ * identical, and distinguished only by an `aria-label` a sighted operator never hears. Putting
+ * the office lights' ON time into the OFF field is a silent, plausible mistake that then fires
+ * at the wrong hour.
+ *
+ * THREE CHANNELS, DELIBERATELY. Word, glyph, and rail colour. Colour alone would fail a
+ * colour-blind operator and carry nothing under `prefers-contrast: high`; the word is what
+ * actually says which is which, and the other two make it scannable down twenty rows.
+ * --good measures 5.1:1 in light and is redefined for dark and high-contrast, so the caption
+ * clears AA as text in all three; --muted-2 is the 4.9:1 secondary tier.
+ */
+.automation-time-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.automation-time-field__cap {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font: 600 var(--fs-2xs) 'IBM Plex Mono', monospace;
+  letter-spacing: 0.06em;
+}
+.automation-time-field--on .automation-time-field__cap {
+  color: var(--good);
+}
+.automation-time-field--off .automation-time-field__cap {
+  color: var(--muted-2);
+}
 .automation-time-input {
   width: 100%;
   padding: 6px 8px;
@@ -4533,6 +4584,31 @@ body::before {
   font-size: var(--fs-xs);
   background: var(--field-bg);
   color: var(--txt);
+}
+/* The rail. `border-left-width` only, so the input's own box is unchanged and the two fields
+   stay exactly the same size as each other. */
+.automation-time-field--on .automation-time-input {
+  border-left: 3px solid var(--good);
+}
+.automation-time-field--off .automation-time-input {
+  border-left: 3px solid var(--border-strong);
+}
+/*
+ * A row that cannot do what it says. Spans the full five-column grid so it cannot disturb the
+ * columns, and sits on the row that is wrong rather than in a summary elsewhere — the same rule
+ * this app applies to failed writes. --warn is the card-surface amber (4.65:1 there); these rows
+ * are inside `.automation-schedules-card`, not on the page background, so it is the right one of
+ * the pair.
+ */
+.automation-sched-row__problem {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  padding: 5px 9px;
+  border-radius: var(--r-sm);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: var(--fs-2xs);
+  line-height: 1.45;
 }
 .automation-day-chips {
   display: flex;
@@ -4602,6 +4678,15 @@ body::before {
 .automation-dsm-field {
   margin-bottom: var(--sp-3);
 }
+/* A threshold that is wrong before it is saved — RM-060. Under the input it belongs to, and
+   wired to it with `aria-describedby` so it is announced as part of that field rather than as a
+   loose sentence somewhere on the card. */
+.automation-dsm-field__warn {
+  margin: 5px 0 0;
+  color: var(--warn);
+  font-size: var(--fs-2xs);
+  line-height: 1.45;
+}
 .automation-dsm-field__head {
   display: flex;
   justify-content: space-between;
@@ -4653,6 +4738,21 @@ body::before {
   color: var(--muted-2);
   margin: 2px 0 0;
   line-height: 1.4;
+}
+/*
+ * Why auto-shed cannot be armed — RM-060. Sits under the mode line rather than replacing it, so
+ * the control still explains what it WOULD do alongside why it currently will not.
+ * --warn is the card-surface amber (4.65:1); this card is a `.card`, so it is the right one of
+ * the --warn/--warn-on-page pair.
+ */
+.automation-shed-mode__blocked {
+  margin: var(--sp-2) 0 0;
+  padding: 5px 9px;
+  border-radius: var(--r-sm);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: var(--fs-2xs);
+  line-height: 1.45;
 }
 .automation-pending-empty {
   padding: var(--sp-4);
@@ -4972,7 +5072,10 @@ body::before {
   .automation-sched-row__device {
     flex: 1 1 100%;
   }
-  .automation-sched-row .automation-time-input {
+  /* Was `.automation-time-input`; the input is wrapped in a labelled field now, and it is the
+     WRAPPER that is the flex child of the stacked row. Targeting the input alone left the field
+     at its default `flex: 0 1 auto` on the wrapper and the two clocks stretched unevenly. */
+  .automation-sched-row .automation-time-field {
     flex: 0 1 auto;
   }
   .automation-day-chips {

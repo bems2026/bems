@@ -114,3 +114,20 @@ function reasonNotSheddable(cls: DeviceClass): string {
   if (cls === 'acu_ir') return 'reached by IR, which sends a command rather than cutting power — the compressor is deliberately never relay-cut';
   return 'this class has no relay';
 }
+
+/**
+ * How many devices are assigned to a real shed tier — the question "can auto-shed ever do
+ * anything here?" reduces to.
+ *
+ * WHY IT IS ASSIGNMENT AND NOT `effective`. `byTier[t].effective` also requires the device to be
+ * dispatchable and currently on, and both of those are transient: a device that is off now may be
+ * on in an hour, and a class the bridge cannot command yet may become commandable. Assignment is
+ * the only condition whose absence makes auto-shed PERMANENTLY inert, and that is the one worth
+ * refusing to arm over. The transient gap is already reported separately as `inertCount`.
+ *
+ * `never` and `unassigned` are both excluded, because `shedPlan` excludes both — "a device
+ * nobody classified is not a volunteer", and `never` is an explicit refusal.
+ */
+export function shedEligibleCount(byTier: ShedSummary['byTier']): number {
+  return SHED_ORDER.reduce((n, tier) => n + byTier[tier].total, 0);
+}
