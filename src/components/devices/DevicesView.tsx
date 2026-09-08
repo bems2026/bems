@@ -8,6 +8,7 @@ import { hasSwitchableState } from '@/lib/deviceClass';
 import { isReadingStale, measured } from '@/lib/staleness';
 import { countOnline } from '@/components/overview/overviewMath';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { OverlayPanel } from '@/components/ui/OverlayPanel';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { CLASS_ICON } from '@/lib/deviceIcons';
 import { DEVICE_CLASS_CATALOG, DEVICE_CLASS_ORDER } from '@/lib/deviceClassCatalog';
@@ -65,9 +66,11 @@ export function DevicesView() {
   const unstable = Object.values(connectivity).filter((r) => flapSeverity(r) !== 'steady' && flapSeverity(r) !== 'unknown');
   const [filter, setFilter] = useState<DeviceClass | 'all'>('all');
   const [editingId, setEditingId] = useState<string | null>(null);
-  // Which device's capability card is open. Rendered BESIDE the table rather than inside a row:
-  // the table is a strict nine-column ARIA grid and `DevicesView.test.tsx` asserts every row has
-  // exactly one cell per column header, so an expanding row would have to break that or fake it.
+  // Which device's capability card is open. Rendered in a floating `OverlayPanel`, never inside a
+  // row: the table is a strict nine-column ARIA grid and `DevicesView.test.tsx` asserts every row
+  // has exactly one cell per column header, so an expanding row would have to break that or fake
+  // it. It sat beside the table until RM-059; the reason it cannot be a row is unchanged, but
+  // "beside" also meant "above", which pushed the fleet off screen on the way in.
   const [detailId, setDetailId] = useState<string | null>(null);
   const [enrolling, setEnrolling] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -136,17 +139,20 @@ export function DevicesView() {
 
       {editingDevice && <DeviceMetaEditor device={editingDevice} onClose={() => setEditingId(null)} />}
       {detailDevice && (
-        <section className="devices-detail" aria-label={`${detailDevice.display_name} capabilities`}>
-          <div className="devices-detail__head">
-            <h3 className="devices-detail__title">What this device can do</h3>
-            <button type="button" className="devices-table__edit-btn" onClick={() => setDetailId(null)}>
-              Close
-            </button>
-          </div>
+        <OverlayPanel
+          className="devices-detail"
+          title={`${detailDevice.display_name} — what this device can do`}
+          onClose={() => setDetailId(null)}
+        >
           {/* Everything below is chosen by the device's capability schema, not by its class —
-              see `DeviceCard`. A device that lacks a capability renders nothing for it. */}
+              see `DeviceCard`. A device that lacks a capability renders nothing for it.
+
+              EX-149 capped `.device-card` at 46rem because this panel used to be the full page
+              width, which put each label a screen away from its value. The cap still applies and
+              `.overlay-panel` is sized to the same 46rem, so that geometry survives the move into
+              the floating layer rather than being re-solved here. */}
           <DeviceCard device={detailDevice} />
-        </section>
+        </OverlayPanel>
       )}
       {enrolling && <EnrollWizard onClose={() => setEnrolling(false)} />}
       {removingDevice && (
@@ -231,8 +237,29 @@ const DeviceRow = memo(function DeviceRow({ device, config, conn, onEdit, onDeta
         : 'devices-table__state--warn'
     : 'devices-table__state--neutral';
 
+  /**
+   * SEMANTIC STATE, so twenty-one rows read as a fleet instead of as two narrow columns to
+   * compare by eye.
+   *
+   * Only two marks, and only two on purpose. `--on` is the one state worth an accent: a relay
+   * that is closed and reporting. `--dim` covers everything the bridge cannot currently vouch
+   * for — offline and never-reported — which is the same "content dims, flag stays legible"
+   * treatment EX-013 established for staleness, applied a level up at the row.
+   *
+   * STALE IS DELIBERATELY NEITHER. A stale row already blanks its own numbers (`measured()`
+   * returns undefined past the reporting window) and carries a STALE badge in the Comm column;
+   * dimming it as well would be a third freshness signal on one row, which is the mistake FI-006
+   * caught in `LiveDemandCard`.
+   *
+   * An OFFLINE device is never drawn as energised whatever its last reading said — the reading
+   * is a claim about a moment that has passed, and `--dim` wins that argument.
+   */
+  const energised = comm === 'live' && reading?.state === 'on';
+  const unvouched = comm === 'offline' || comm === 'no-data';
+  const rowClass = `devices-table__row${energised ? ' devices-table__row--on' : ''}${unvouched ? ' devices-table__row--dim' : ''}`;
+
   return (
-    <div className="devices-table__row" role="row">
+    <div className={rowClass} role="row">
       <div className="devices-table__device" role="cell">
         <span className="devices-table__icon" aria-hidden="true">
           <Icon size={14} />

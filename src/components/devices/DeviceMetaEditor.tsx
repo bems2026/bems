@@ -1,5 +1,5 @@
-import { useEffect, useId, useRef } from 'react';
-import { Card } from '@/components/ui/Card';
+import { useId } from 'react';
+import { OverlayPanel } from '@/components/ui/OverlayPanel';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { FUNCTION_OPTIONS, functionsOf, DEFAULT_FUNCTIONS, type DeviceFunction } from '@/lib/deviceFunctions';
@@ -19,10 +19,13 @@ interface DeviceMetaEditorProps {
  * room, functional category, load-shed group, a display-name override, and notes, staged in
  * `deviceConfigStore` and written to Supabase's `device_config` table on confirm.
  *
- * A non-modal panel above the table, not a modal/drawer: the confirm gate below is ITSELF an
- * `aria-modal` alertdialog, and nesting one modal inside another means two competing Escape
- * handlers. This panel's own Escape handler defers to the confirm dialog while it's open (see
- * the effect below) rather than fighting it for the keypress.
+ * A floating `OverlayPanel`, not the in-flow panel this used to be. The old docblock argued a
+ * panel was safer than a modal because the confirm gate below is ITSELF an `aria-modal`
+ * alertdialog and nesting one inside another means two competing Escape handlers. The objection
+ * was real; keeping the editor in the document flow was not the only answer to it. `OverlayPanel`
+ * arbitrates the nesting once — `blockEscape` stands its own Escape handler and focus trap down
+ * while the confirm dialog is up — so the editor can float without the table it edits being
+ * pushed off screen underneath it.
  */
 export function DeviceMetaEditor({ device, onClose }: DeviceMetaEditorProps) {
   const draft = useDeviceConfigStore((s) => s.draft);
@@ -45,29 +48,10 @@ export function DeviceMetaEditor({ device, onClose }: DeviceMetaEditorProps) {
   const rooms = Array.from(new Set([...knownSpaceLabels(spaceNodes), ...recordedRoomLabels(saved)]));
   const hasDraft = draft[device.id] !== undefined;
 
-  const headingRef = useRef<HTMLHeadingElement>(null);
   const roomListId = useId();
   const spaceId = useId();
   const spaceHintId = useId();
   const { ask, modalProps } = useConfirm();
-
-  // Focus moves to the panel's own heading on open/device-switch — the non-trapping half of
-  // modal hygiene, without the trap: a screen reader user lands here, but Tab still reaches
-  // the rest of the page, on purpose.
-  useEffect(() => {
-    headingRef.current?.focus();
-  }, [device.id]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // The confirm dialog gets Escape first while it's open — ConfirmModal's own listener
-      // closes it. Closing the editor underneath at the same time would drop whatever the
-      // operator was about to confirm with no feedback at all.
-      if (e.key === 'Escape' && !modalProps.open) onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose, modalProps.open]);
 
   const field = (f: DeviceConfigField, value: string) => setDraftField(device.id, f, value);
 
@@ -93,16 +77,16 @@ export function DeviceMetaEditor({ device, onClose }: DeviceMetaEditorProps) {
     );
 
   return (
-    <Card className="device-meta-editor">
-      <div className="device-meta-editor__head">
-        <h2 className="card-title device-meta-editor__heading" tabIndex={-1} ref={headingRef}>
+    <OverlayPanel
+      className="device-meta-editor"
+      onClose={onClose}
+      blockEscape={modalProps.open}
+      title={
+        <>
           Edit metadata — {device.display_name} <span className="mono device-meta-editor__id">{device.id}</span>
-        </h2>
-        <button type="button" className="device-meta-editor__close" onClick={onClose}>
-          Close
-        </button>
-      </div>
-
+        </>
+      }
+    >
       <div className="device-meta-editor__grid">
         {/* htmlFor rather than the wrapping <label> the other fields use, deliberately: the
             hint below is a DESCRIPTION, and inside a label it would be folded into the select's
@@ -223,6 +207,6 @@ export function DeviceMetaEditor({ device, onClose }: DeviceMetaEditorProps) {
       </div>
 
       <ConfirmModal {...modalProps} />
-    </Card>
+    </OverlayPanel>
   );
 }

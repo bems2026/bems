@@ -1,7 +1,11 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-08 — the week/month energy accumulator, measured against the live
-bridge's own flow context and eight days of corrected history. §0 leads with what that
+**Last audited:** 2026-09-08 — **RM-059**, the Devices page's panels moved off the top of the
+fleet table into a floating layer, and before that the week/month energy accumulator, measured
+against the live bridge's own flow context and eight days of corrected history. RM-059 turned up
+three separate defects on the way — an enabled button wearing disabled styling at 2.3-2.6:1, a
+stylesheet invariant that had quietly lapsed, and the row action buttons having no touch-target
+minimum at all on a touchscreen kiosk. §0 leads with what that
 measurement found: **RM-053**, two faults in the per-branch week/month split, both now fixed
 and the live figures repaired — and now with **RM-054**, the comparison that would have made
 that fault visible on the page rather than leaving it to a person to notice. §0 then leads with
@@ -1377,8 +1381,10 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       refuses to write. Dual-channel meters get a tab per channel — and the pairing is refused
       when more than one candidate exists, because the registry carries no physical-device id to
       join on and guessing would put two unrelated branch circuits under one card. Reached from
-      the fleet table's Details button, rendered beside the table rather than inside a row because
-      that table is a strict nine-column ARIA grid whose row/column agreement is asserted by test
+      the fleet table's Details button, rendered outside the row because that table is a strict
+      nine-column ARIA grid whose row/column agreement is asserted by test. It sat BESIDE the
+      table until RM-059 moved it into a floating `OverlayPanel` — the reason it cannot be an
+      expanding row is unchanged; what changed is that "beside" also meant "above"
       — `src/components/devices/DeviceCard.tsx`, `capabilityWidgets.tsx`, `widgetRegistry.ts`,
       `DeviceCard.test.tsx` (16 tests).
       **VERIFIED IN A REAL BROWSER 2026-09-03**, against a scratch build talking to the mock
@@ -1397,6 +1403,47 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       HTML without parsing it — empty DOM, no asset requests — with Vulkan/dawn initialisation
       failing in its own log. **Firefox works**, driven over Marionette. No dependency was added;
       Node 22 has `net` and a built-in `WebSocket`. See `docs/pi-session-brief.md`
+- [x] **RM-059** The Devices page's four panels — Details, Edit, Add, Remove — move into a
+      floating `OverlayPanel` instead of rendering in normal flow above the fleet table. They had
+      pushed the table down the page, so opening one took the row being acted on off screen at the
+      moment it was acted on. `DeviceMetaEditor`'s docblock had argued a panel was safer than a
+      modal, because its own save gate is an `aria-modal` alertdialog and two Escape handlers
+      would fight over one keypress — a real objection, answered once in the primitive
+      (`blockEscape` stands the panel's Escape handler AND its focus trap down while a nested
+      dialog is up) rather than by keeping four panels in the document flow. Portals to `<body>`
+      for the same reason EX-143 found: `.card` and `.top-nav` carry `backdrop-filter`, which makes
+      them containing blocks for `position: fixed` descendants. Surface is `--pop-bg` (96%) rather
+      than `--glass` (75%) — a translucent panel over a scrim over the page is a composite nothing
+      has measured, and `--muted-2` sits at 4.9:1 with no margin to spend; `--pop-bg` is already in
+      `test/contrast.test.mjs`'s surface set. Row state comes with it: a left rail in `--good` for
+      a live, switched-on relay, and `--bg-surface-2` for offline/no-data. The demotion is a
+      SURFACE change, never `opacity`, which would drag every text token in the row below the ratio
+      the palette was computed at; stale is deliberately neither, because a stale row already
+      blanks its numbers and carries a STALE badge, and a third freshness signal on one row is the
+      mistake FI-006 caught in `LiveDemandCard`
+      — `src/components/ui/OverlayPanel.tsx` (+`.test.tsx`, 10 tests), `DevicesView.tsx`,
+      `DeviceMetaEditor.tsx`, `EnrollWizard.tsx`, `RemoveDevicePanel.tsx`, `src/index.css`.
+      **Three defects found while doing it, all fixed here:**
+      (1) **`+ Add device` was styled as a disabled control while being enabled.** Dashed
+      `--faintest` border, `color: var(--faint)` at 2.3-2.6:1, `cursor: not-allowed` — left over
+      from before EX-040b wired it to the enrolment wizard. The `--faint` token docblock cited this
+      very button as its one permitted `color:` use, "a genuinely disabled control, which WCAG
+      1.4.3 exempts"; the exemption had been covering an enabled control failing AA. Both the rule
+      and the button are corrected, and `--faint` now has no `color:` use at all.
+      (2) **The touch-target block had stopped being last in `index.css`.** Its own comment says it
+      is "deliberately the LAST rule block in this file", because `padding-block` loses to any
+      later same-specificity `padding` shorthand — and 2,354 lines had been appended after it.
+      Nothing had broken yet (checked: the two `padding-inline` selectors have no later rules), but
+      the invariant was gone. Moved back to the end, with the drift recorded in the comment.
+      (3) **The row action buttons were never in that block.** `.devices-table__edit-btn`,
+      `.devices-table__remove-btn` and `.devices-add-btn` had no coarse-pointer minimum — three
+      small buttons in one `0.6fr` cell on a kiosk touchscreen, flush against each other with no
+      gutter. They get `min-height: 44px` (height only: a 44px minimum WIDTH each would overflow
+      the column, and this block's own rule is that the largest target which does not steal a
+      neighbour's taps is the right one) plus a gap. `.automation-time-input` and
+      `.automation-number-input` were missing too and are added. One dead selector removed
+      (`.automation-shed-mode__switch`, zero uses since the control became a `quick-toggle`), along
+      with `.enroll-wizard__cancel` and the panel chrome `OverlayPanel` now supplies.
 - [x] **EX-150** One relay control, replacing five. `SwitchesListCard`, `OutletsListCard`,
       `LightingMatrixCard`, `OutletPlanCard` and `MasterQuickActionsCard` each re-derived the same
       `controlView` → `busy`/`unknown`/`on` triple and then decided independently what `disabled`

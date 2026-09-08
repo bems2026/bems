@@ -88,8 +88,11 @@
    * This rule went unenforced for a long time: 30 rules had it set as `color:` on real text,
    * mostly 9-10px mono caps labels — the app's smallest type at its lowest contrast. Those
    * are all on --muted-2 now (4.8-5.4:1 against the surfaces they actually sit on: --bg-inset,
-   * --border-faint, and the glass-over-page composite). The single remaining `color:` use is
-   * `.devices-add-btn`, a genuinely disabled control, which WCAG 1.4.3 exempts.
+   * --border-faint, and the glass-over-page composite). The last `color:` use was
+   * `.devices-add-btn`, exempted here as "a genuinely disabled control" — which it had stopped
+   * being: EX-040b wired that button to the enrolment wizard and left the disabled styling
+   * behind, so the exemption was covering an ENABLED control failing AA. It is on --muted now,
+   * and this token has no remaining `color:` use at all.
    *
    * If you are about to add another `color: var(--faint)`, the answer is almost certainly
    * --muted-2. */
@@ -2640,15 +2643,28 @@ body::before {
 /* The one place --faint survives as a text colour, and deliberately: this button is
    genuinely `disabled` (see DevicesView.tsx), and WCAG 1.4.3 exempts inactive controls from
    the contrast minimum. Reading as unavailable is the whole point of the treatment. */
+/*
+ * Styled as a live control, because it is one. This carried a disabled costume — dashed
+ * --faintest border, `color: var(--faint)`, `cursor: not-allowed` — from the era when
+ * enrolment could only happen on the Pi. EX-040b made the button real (it opens
+ * `EnrollWizard`, and `DevicesView.test.tsx` asserts it is enabled), but the CSS was never
+ * brought along, so the one control on this page that adds hardware looked broken and
+ * measured 2.3-2.6:1 while doing it. --faint is decoration-only by this file's own rule;
+ * on an enabled control it is simply an AA failure, not an exemption.
+ */
 .devices-add-btn {
-  border: 1px dashed var(--faintest);
-  background: var(--bg-inset);
-  color: var(--faint);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface);
+  color: var(--muted);
   border-radius: var(--r-inner);
   padding: 9px 14px;
   font: 600 var(--fs-xs-lg) inherit;
-  cursor: not-allowed;
+  cursor: pointer;
   white-space: nowrap;
+}
+.devices-add-btn:hover {
+  border-color: var(--accent);
+  color: var(--txt);
 }
 
 /* No padding — the table's own rows carry it and bleed to the card's edges. */
@@ -2682,6 +2698,33 @@ body::before {
 }
 .devices-table__row:first-child {
   border-top: none;
+}
+/*
+ * Row state — RM-059. Two marks only.
+ *
+ * `--on` is a left rail in --good, drawn as an inset shadow so it costs no layout and cannot
+ * shift the nine-column grid. It is a non-text indicator, which SC 1.4.11 holds to 3:1; --good
+ * measures 5.1:1 on white in light and is redefined for dark and for `prefers-contrast: high`,
+ * so it clears in all three.
+ *
+ * `--dim` deliberately does NOT set `opacity` on the row. Dimming a row that way would drag
+ * every text token in it below the ratio this palette was computed at — the demotion has to
+ * come from the surface, which is why it is --bg-surface-2 (a surface `test/contrast.test.mjs`
+ * already measures every text token against) rather than a translucent overlay. Only the class
+ * icon fades, and that is decoration.
+ *
+ * Colour is not the only channel for either: the Comm column already says LIVE / STALE /
+ * OFFLINE / NO DATA in words, and the State column says on / off. These marks make the fleet
+ * scannable; they are not what carries the meaning.
+ */
+.devices-table__row--on {
+  box-shadow: inset 3px 0 0 var(--good);
+}
+.devices-table__row--dim {
+  background: var(--bg-surface-2);
+}
+.devices-table__row--dim .devices-table__icon {
+  opacity: 0.5;
 }
 .devices-table__row--head {
   background: var(--bg-surface-2);
@@ -2922,23 +2965,10 @@ body::before {
  * deliberately NOT `.automation-number-input`/`.automation-time-input`, which hardcode a
  * light background with no dark-mode override.
  * ------------------------------------------------------------------------ */
-.device-meta-editor {
-  margin-bottom: var(--sp-4);
-}
-.device-meta-editor__head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  margin-bottom: var(--sp-4);
-}
-.device-meta-editor__heading {
-  margin: 0;
-}
-.device-meta-editor__heading:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-  border-radius: var(--r-sm);
+/* Wider than the default panel: this is a seven-field form whose grid wants two 220px columns
+   plus the functions fieldset, and 46rem makes the second column fight the first. */
+.overlay-panel.device-meta-editor {
+  width: min(52rem, 100%);
 }
 .device-meta-editor__id {
   font-size: var(--fs-xs);
@@ -4624,17 +4654,6 @@ body::before {
   margin: 2px 0 0;
   line-height: 1.4;
 }
-.automation-shed-mode__switch {
-  border: 1px solid rgb(245 158 11 / 0.45);
-  background: var(--bg-surface);
-  color: var(--warn);
-  border-radius: var(--r-sm);
-  padding: 8px 12px;
-  font: 700 var(--fs-xs) inherit;
-  cursor: pointer;
-  flex: none;
-}
-
 .automation-pending-empty {
   padding: var(--sp-4);
   text-align: center;
@@ -4681,130 +4700,6 @@ body::before {
  * cheaper than a mounted-but-skipped section, and it's why this block was deleted rather
  * than repointed at the new page components.
  */
-
-/* ---------------------------------------------------------------------------
- * Touch targets — enforced only where a coarse pointer is actually in use (the CARE
- * kiosk touchscreen, phones). Desktop keeps its compact chrome; a mouse doesn't need
- * 44px hit areas, and this is a data-dense view where that space matters.
- *
- * Deliberately the LAST rule block in this file. `min-width`/`min-height` survive
- * being placed anywhere (they constrain the box regardless of which `width`/`height`
- * wins the cascade), but `padding-block` does not — a later same-specificity `padding`
- * shorthand elsewhere silently overwrites it. See Phase L's history in git blame if this
- * block ever needs to move: positioned earlier in the file, `.nav-item` (the sidebar-era
- * predecessor of `.nav-tab`) measured 2px short of 44px for exactly this reason.
- * ------------------------------------------------------------------------ */
-@media (pointer: coarse) {
-  .nav-icon-btn,
-  .scene3d-inspector-close,
-  .scene3d-autorotate-btn,
-  .scene3d-edit-btn,
-  .control-master-btn,
-  .confirm-modal__cancel,
-  .confirm-modal__confirm,
-  .devices-filter-chip,
-  .analytics-scope-btn,
-  .automation-write-btn,
-  .automation-shed-mode__switch,
-  .automation-arm-all-btn {
-    min-width: 44px;
-    min-height: 44px;
-  }
-  .nav-tab,
-  .spatial-toggle__btn {
-    min-height: 44px;
-    padding-inline: var(--sp-5);
-  }
-
-  /* --- in-flow controls: just grow them ---------------------------------------------
-   * These sit in normal flow inside a card, so a taller box costs nothing but a slightly
-   * roomier row — which is what a touch surface wants anyway. Same treatment as the group
-   * above; they were simply never added to it.
-   */
-  .quick-btn,
-  .control-plan-btn,
-  .outlet-socket-toggle,
-  .alerts-popover__ack,
-  .analytics-energy-period,
-  .automation-filter-chip {
-    min-height: 44px;
-  }
-
-  /* --- tightly-packed / positioned controls: expand the hit area, not the symbol -----
-   * Everything below is either absolutely positioned on a scaled floor plan, sized to a
-   * spec (a 44x24 switch), or inline in a text run — growing the visible box would break
-   * the layout or the plan's spatial accuracy. A transparent, centred pseudo-element gives
-   * the finger a 44pt target while the drawn control stays exactly as designed.
-   *
-   * Sizes below 44px wide are deliberate, not oversights: where controls sit closer than
-   * 44px apart, a full-width expander would overlap its neighbour and steal that
-   * neighbour's taps — strictly worse than a target that is merely small. Each one is the
-   * largest area available without cross-talk.
-   */
-  .control-lamp::before,
-  .control-outlet-pin__half::before,
-  .automation-day-chip::before,
-  .quick-toggle::before,
-  .card-head-link::before,
-  .info-hint__btn::before,
-  .alerts-popover__close::before,
-  .analytics-legend__item::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 44px;
-    height: 44px;
-  }
-  /*
-   * The two halves of one puck are ~9-13px wide and share a centre line, so a centred
-   * expander on each would sit almost entirely on top of the other — and the right half,
-   * being later in the DOM, would win every tap meant for the left one. (Measured: the left
-   * half's effective target was 1x1px. Worse than doing nothing.)
-   *
-   * So each half's expander is anchored to the shared inner edge and grows *outward*: they
-   * tile rather than overlap. 22px each gives the pair a 44px span with no cross-talk.
-   *
-   * Height is capped at 34px for the same reason in the other axis. The closest pair of pins
-   * on this plan sits 36px apart vertically at the 375px viewport (co1/co2 are 0.9 m apart
-   * in the real room — see .control-outlet-plan's sizing note), so a full 44px-tall expander
-   * overhung its neighbour by 8px and, being later in the DOM, stole taps aimed at the pin
-   * above it. On controls that switch mains outlets, a target that quietly actuates the
-   * wrong device is worse than one that is merely small.
-   *
-   * Net effect per half: 9x18px -> 22x34px, about 4.5x the area. Short of the 44pt ideal,
-   * and it is the most this plan's real spacing allows without cross-talk. Reaching the full
-   * 44 would mean spreading the pins apart, which would make the floor plan lie about where
-   * the outlets are.
-   */
-  .control-outlet-pin__half::before {
-    width: 22px;
-    height: 34px;
-    left: auto;
-    right: auto;
-    transform: translateY(-50%);
-  }
-  .control-outlet-pin__half--left::before {
-    right: 0;
-  }
-  .control-outlet-pin__half--right::before {
-    left: 0;
-  }
-  /* Seven chips at a 25px pitch. A 44px-wide expander would overlap three neighbours; the
-     chip's own pitch is the honest maximum, and the height is where the real gain is. */
-  .automation-day-chip::before {
-    width: 25px;
-  }
-
-  .card-head-link,
-  .info-hint__btn,
-  .alerts-popover__close,
-  .analytics-legend__item,
-  .automation-day-chip {
-    position: relative;
-  }
-}
 
 /* ---------------------------------------------------------------------------
  * Login page — Phase 5 (architecture plan). Gates the app when Supabase is
@@ -5536,7 +5431,6 @@ fieldset.device-meta-editor__field > legend {
 /* Device enrolment panel. Sits above the fleet table, replacing nothing — the table stays
    visible so the ids already in use are readable while choosing a new one. */
 .enroll-wizard {
-  margin-bottom: 14px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -5592,16 +5486,6 @@ fieldset.device-meta-editor__field > legend {
 }
 .enroll-wizard__preview,
 .enroll-wizard__apply,
-.enroll-wizard__cancel {
-  font: inherit;
-  font-size: 0.82rem;
-  padding: 8px 14px;
-  border-radius: var(--r-sm, 6px);
-  border: 1px solid var(--border);
-  background: var(--bg-surface-2);
-  color: var(--txt);
-  cursor: pointer;
-}
 .enroll-wizard__apply {
   border-color: var(--accent);
   color: var(--accent);
@@ -5610,10 +5494,6 @@ fieldset.device-meta-editor__field > legend {
 .enroll-wizard__apply:disabled {
   opacity: 0.45;
   cursor: not-allowed;
-}
-.enroll-wizard__cancel {
-  margin-left: auto;
-  font-size: 0.78rem;
 }
 .enroll-wizard__result {
   padding: 10px 13px;
@@ -7123,23 +7003,17 @@ button.space-plan__pin {
 /* The capability card opened from the fleet table. A panel beside the table rather than an
    expanding row: the table is a strict nine-column ARIA grid whose row/column agreement is
    asserted by test, and an expanding row would have to break that or fake a cell. */
-.devices-detail {
-  margin-top: var(--sp-4);
-  padding: var(--sp-4);
-  background: var(--bg-surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r-card);
-}
-.devices-detail__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-2);
-  margin-bottom: var(--sp-3);
-}
-.devices-detail__title {
-  margin: 0;
-  font-size: var(--fs-sm);
+/*
+ * The Details panel is an `OverlayPanel` now, which carries the surface, the heading and the
+ * close control — so all this class still has to do is stop the card inside it from drawing a
+ * second one. `.device-card` was written to sit on a page; here the panel IS the card, and
+ * nesting the two gave two borders, two radii and two lots of padding around one device.
+ */
+.devices-detail .device-card {
+  border: none;
+  padding: 0;
+  background: transparent;
+  max-width: none;
 }
 
 /* The child-lock badge is also its control, so it needs to read as pressable without becoming a
@@ -7157,4 +7031,262 @@ button.space-plan__pin {
 .device-card__error {
   color: var(--bad);
   font-size: var(--fs-2xs);
+}
+
+
+/* ---------------------------------------------------------------------------
+ * OverlayPanel — the Devices page's floating layer (RM-059).
+ *
+ * WHAT IT REPLACES. Details, Edit, Add and Remove each rendered in normal flow ABOVE the
+ * fleet table, so opening any of them pushed the table down the page — the operator lost
+ * sight of the row at the exact moment they were acting on it. `DeviceMetaEditor`'s docblock
+ * argued a panel was safer than a modal because its own save confirmation is an `aria-modal`
+ * alertdialog and two Escape handlers would fight over one keypress. That was true, and the
+ * fix was to arbitrate the nesting once (`OverlayPanel`'s `blockEscape`) rather than to keep
+ * four panels in the document flow.
+ *
+ * THE SURFACE IS `--pop-bg`, NOT `--glass`, AND THAT IS A CONTRAST DECISION. Every ratio in
+ * this file's token comments was computed against surfaces this app actually composites —
+ * including the glass-over-page composite at ~rgb(251,252,253). A 75%-opaque panel over a
+ * scrim over the page is a fourth composite, measured nowhere, and `--muted-2` sits at 4.9:1
+ * with nothing to spare. `--pop-bg` is 96% and is what `.info-hint__pop`, `.alerts-popover`
+ * and `.account-menu` already float on: the blur and the lit top edge still read as glass,
+ * and the audited numbers stay true.
+ * ------------------------------------------------------------------------ */
+.overlay-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  /* Below `.confirm-modal-backdrop`'s 200 on purpose: a save confirmation opens INSIDE one of
+     these and has to sit above the panel that raised it, not behind it. */
+  z-index: 150;
+  background: rgb(15 23 42 / 0.45);
+  display: grid;
+  place-items: center;
+  padding: var(--sp-4);
+  /* The backdrop scrolls, not the panel — a panel taller than the viewport on the 800x480
+     kiosk would otherwise clip its own actions row with no way to reach it. */
+  overflow-y: auto;
+}
+.overlay-panel {
+  width: min(46rem, 100%);
+  /* Matches `.device-card`'s own cap, so EX-149's two-column geometry survives the move into
+     this layer rather than stretching back out to the full page width it was capped against. */
+  max-height: calc(100vh - var(--sp-4) * 2);
+  display: flex;
+  flex-direction: column;
+  background: var(--pop-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-modal), inset 0 1px 0 var(--card-lip);
+}
+.overlay-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.overlay-panel__title {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 800;
+  color: var(--txt);
+  min-width: 0;
+}
+/* Focus lands here on open. Without a visible ring the caret simply vanishes for a keyboard
+   user — the heading is not otherwise focusable, so nothing else marks the arrival. */
+.overlay-panel__title:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+  border-radius: var(--r-sm);
+}
+.overlay-panel__close {
+  flex: none;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--muted);
+  border-radius: var(--r-sm);
+  padding: 7px 13px;
+  font: 700 var(--fs-xs) inherit;
+  cursor: pointer;
+}
+.overlay-panel__close:hover {
+  border-color: var(--border-strong);
+  color: var(--txt);
+}
+.overlay-panel__body {
+  padding: var(--sp-5);
+  overflow-y: auto;
+  min-height: 0;
+}
+/*
+ * The panel IS the surface now. Its children were written as free-standing cards on a page,
+ * so without this a card sits inside a card: two borders, two shadows, two lots of padding.
+ * Scoped to a direct-ish descendant rather than `.overlay-panel .card` blanket-wide would be
+ * wrong the other way — `LoadShedPanel` and `DeviceCard` nest real cards inside these panels
+ * and those should keep their chrome. Only the panel's own root card is flattened.
+ */
+.overlay-panel__body > .card {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * Touch targets — enforced only where a coarse pointer is actually in use (the CARE
+ * kiosk touchscreen, phones). Desktop keeps its compact chrome; a mouse doesn't need
+ * 44px hit areas, and this is a data-dense view where that space matters.
+ *
+ * Deliberately the LAST rule block in this file — and it had stopped being: 2,354 lines were
+ * appended after it between Phase M and RM-059, quietly retiring the guarantee this comment
+ * asserts. Nothing had broken yet (the two `padding-inline` selectors below have no later
+ * rules — checked), but the invariant was gone, so the block was moved back to the end. If you
+ * add a section to this file, add it ABOVE this block.
+ *
+ * `min-width`/`min-height` survive
+ * being placed anywhere (they constrain the box regardless of which `width`/`height`
+ * wins the cascade), but `padding-block` does not — a later same-specificity `padding`
+ * shorthand elsewhere silently overwrites it. See Phase L's history in git blame if this
+ * block ever needs to move: positioned earlier in the file, `.nav-item` (the sidebar-era
+ * predecessor of `.nav-tab`) measured 2px short of 44px for exactly this reason.
+ * ------------------------------------------------------------------------ */
+@media (pointer: coarse) {
+  .nav-icon-btn,
+  .scene3d-inspector-close,
+  .scene3d-autorotate-btn,
+  .scene3d-edit-btn,
+  .control-master-btn,
+  .confirm-modal__cancel,
+  .confirm-modal__confirm,
+  .devices-filter-chip,
+  .analytics-scope-btn,
+  .automation-write-btn,
+  .automation-arm-all-btn,
+  /* The panel chrome RM-059 introduced, and the fleet control that adds hardware. */
+  .overlay-panel__close,
+  .devices-add-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .nav-tab,
+  .spatial-toggle__btn {
+    min-height: 44px;
+    padding-inline: var(--sp-5);
+  }
+
+  /* --- in-flow controls: just grow them ---------------------------------------------
+   * These sit in normal flow inside a card, so a taller box costs nothing but a slightly
+   * roomier row — which is what a touch surface wants anyway. Same treatment as the group
+   * above; they were simply never added to it.
+   */
+  .quick-btn,
+  .control-plan-btn,
+  .outlet-socket-toggle,
+  .alerts-popover__ack,
+  .analytics-energy-period,
+  .automation-filter-chip,
+  /*
+   * Height only for the two row buttons: the Edit column is `0.6fr` of a nine-column grid and
+   * already holds up to three controls, so a 44px MINIMUM WIDTH each would overflow the column
+   * on every row. Per this block's own rule about cross-talk, the largest target available
+   * without stealing a neighbour's taps is the right one — here that is the height.
+   */
+  .devices-table__edit-btn,
+  .devices-table__remove-btn,
+  /* The fields an operator sets schedules and shed limits with, on a touchscreen. */
+  .automation-time-input,
+  .automation-number-input {
+    min-height: 44px;
+  }
+  /*
+   * Details / Edit / Remove sat flush against each other in a flex cell with no gutter. Three
+   * adjacent 44px-tall targets with a 0px gap is precisely the cross-talk the pseudo-element
+   * group below exists to avoid; here the fix is simply to separate them.
+   */
+  .devices-table__edit-cell {
+    gap: var(--sp-2);
+  }
+
+  /* --- tightly-packed / positioned controls: expand the hit area, not the symbol -----
+   * Everything below is either absolutely positioned on a scaled floor plan, sized to a
+   * spec (a 44x24 switch), or inline in a text run — growing the visible box would break
+   * the layout or the plan's spatial accuracy. A transparent, centred pseudo-element gives
+   * the finger a 44pt target while the drawn control stays exactly as designed.
+   *
+   * Sizes below 44px wide are deliberate, not oversights: where controls sit closer than
+   * 44px apart, a full-width expander would overlap its neighbour and steal that
+   * neighbour's taps — strictly worse than a target that is merely small. Each one is the
+   * largest area available without cross-talk.
+   */
+  .control-lamp::before,
+  .control-outlet-pin__half::before,
+  .automation-day-chip::before,
+  .quick-toggle::before,
+  .card-head-link::before,
+  .info-hint__btn::before,
+  .alerts-popover__close::before,
+  .analytics-legend__item::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 44px;
+    height: 44px;
+  }
+  /*
+   * The two halves of one puck are ~9-13px wide and share a centre line, so a centred
+   * expander on each would sit almost entirely on top of the other — and the right half,
+   * being later in the DOM, would win every tap meant for the left one. (Measured: the left
+   * half's effective target was 1x1px. Worse than doing nothing.)
+   *
+   * So each half's expander is anchored to the shared inner edge and grows *outward*: they
+   * tile rather than overlap. 22px each gives the pair a 44px span with no cross-talk.
+   *
+   * Height is capped at 34px for the same reason in the other axis. The closest pair of pins
+   * on this plan sits 36px apart vertically at the 375px viewport (co1/co2 are 0.9 m apart
+   * in the real room — see .control-outlet-plan's sizing note), so a full 44px-tall expander
+   * overhung its neighbour by 8px and, being later in the DOM, stole taps aimed at the pin
+   * above it. On controls that switch mains outlets, a target that quietly actuates the
+   * wrong device is worse than one that is merely small.
+   *
+   * Net effect per half: 9x18px -> 22x34px, about 4.5x the area. Short of the 44pt ideal,
+   * and it is the most this plan's real spacing allows without cross-talk. Reaching the full
+   * 44 would mean spreading the pins apart, which would make the floor plan lie about where
+   * the outlets are.
+   */
+  .control-outlet-pin__half::before {
+    width: 22px;
+    height: 34px;
+    left: auto;
+    right: auto;
+    transform: translateY(-50%);
+  }
+  .control-outlet-pin__half--left::before {
+    right: 0;
+  }
+  .control-outlet-pin__half--right::before {
+    left: 0;
+  }
+  /* Seven chips at a 25px pitch. A 44px-wide expander would overlap three neighbours; the
+     chip's own pitch is the honest maximum, and the height is where the real gain is. */
+  .automation-day-chip::before {
+    width: 25px;
+  }
+
+  .card-head-link,
+  .info-hint__btn,
+  .alerts-popover__close,
+  .analytics-legend__item,
+  .automation-day-chip {
+    position: relative;
+  }
 }

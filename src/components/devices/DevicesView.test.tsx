@@ -181,6 +181,75 @@ describe('DevicesView', () => {
     expect(screen.getByRole('heading', { name: /Remove Outlet 8/ })).toBeInTheDocument();
   });
 
+  /**
+   * The regression this whole refactor exists to prevent. Details, Edit, Add and Remove used to
+   * render in normal flow ABOVE the table, so opening one pushed the fleet down the page — the
+   * operator lost the row at the exact moment they acted on it.
+   */
+  it('opens panels in a floating layer, so the fleet table never moves under the operator', () => {
+    useDeviceStore.setState({ devices: [device('co1', 'Outlet 1', 'outlet_dual')] });
+    const { container } = render(<DevicesView />);
+    const tableBefore = container.querySelector('.devices-table-card');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(container.contains(dialog)).toBe(false);
+    expect(container.querySelector('.devices-table-card')).toBe(tableBefore);
+  });
+
+  it('gives Details its own floating panel rather than a section above the table', () => {
+    useDeviceStore.setState({ devices: [device('co1', 'Outlet 1', 'outlet_dual')] });
+    const { container } = render(<DevicesView />);
+    fireEvent.click(screen.getByRole('button', { name: 'Details' }));
+    expect(container.contains(screen.getByRole('dialog'))).toBe(false);
+    expect(screen.getByRole('heading', { name: /Outlet 1/ })).toBeInTheDocument();
+  });
+
+  /**
+   * Semantic state, so twenty-one rows read as a fleet rather than as two narrow columns to
+   * compare by eye. A switched-on relay is the one state worth an accent; everything the bridge
+   * cannot currently vouch for is demoted instead.
+   */
+  it('marks a live, switched-on row so it reads as energised at a glance', () => {
+    useDeviceStore.setState({
+      devices: [device('l1', 'Light Switch 1', 'switch')],
+      latestReadings: { l1: { device_id: 'l1', ts: new Date().toISOString(), online: true, state: 'on' } },
+    });
+    render(<DevicesView />);
+    const row = screen.getByText('Light Switch 1').closest('.devices-table__row') as HTMLElement;
+    expect(row.className).toContain('devices-table__row--on');
+  });
+
+  it('does not mark a switched-OFF row as energised', () => {
+    useDeviceStore.setState({
+      devices: [device('l1', 'Light Switch 1', 'switch')],
+      latestReadings: { l1: { device_id: 'l1', ts: new Date().toISOString(), online: true, state: 'off' } },
+    });
+    render(<DevicesView />);
+    const row = screen.getByText('Light Switch 1').closest('.devices-table__row') as HTMLElement;
+    expect(row.className).not.toContain('devices-table__row--on');
+  });
+
+  it('demotes a row the bridge reports offline, instead of leaving it looking as live as the rest', () => {
+    useDeviceStore.setState({
+      devices: [device('l1', 'Light Switch 1', 'switch')],
+      latestReadings: { l1: { device_id: 'l1', ts: new Date().toISOString(), online: false, state: 'on' } },
+    });
+    render(<DevicesView />);
+    const row = screen.getByText('Light Switch 1').closest('.devices-table__row') as HTMLElement;
+    expect(row.className).toContain('devices-table__row--dim');
+    // An offline device is never energised on screen, whatever its last reading claimed.
+    expect(row.className).not.toContain('devices-table__row--on');
+  });
+
+  it('demotes a device that has reported nothing at all', () => {
+    useDeviceStore.setState({ devices: [device('l3', 'Light 3', 'switch')] });
+    render(<DevicesView />);
+    const row = screen.getByText('Light 3').closest('.devices-table__row') as HTMLElement;
+    expect(row.className).toContain('devices-table__row--dim');
+  });
+
   it('the add-device control opens the enrolment panel', () => {
     useDeviceStore.setState({ devices: [device('co1', 'Outlet 1', 'outlet_dual')] });
     render(<DevicesView />);
