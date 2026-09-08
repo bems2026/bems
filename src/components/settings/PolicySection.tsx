@@ -148,7 +148,7 @@ export function PolicySection() {
         {!canEdit && (
           <p className="policy-field__hint">
             {supabase === null
-              ? 'Supabase is not configured for this deployment, so the policy cannot be changed here.'
+              ? 'This deployment has no settings store configured, so the policy cannot be changed here.'
               : 'This is a local session. Changing a building policy needs a signed-in account, so the change can be attributed.'}
           </p>
         )}

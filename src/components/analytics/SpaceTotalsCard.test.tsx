@@ -89,12 +89,12 @@ describe('SpaceTotalsCard', () => {
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   });
 
-  it('says so when Supabase is not configured, instead of offering a control that always fails', () => {
+  it('says so when this deployment has no settings store, instead of offering a control that always fails', () => {
     // Learned from SpaceTreePanel, where this exact case shipped as a raw TypeError because the
     // unit tests mock the client as present. Covered here from the start rather than after.
     seed({ canEdit: false });
     render(<SpaceTotalsCard range="24h" />);
-    expect(screen.getByText(/not configured/i)).toBeInTheDocument();
+    expect(screen.getByText(/no (settings store|stored history) configured/i)).toBeInTheDocument();
     expect(fetchNodeTotals).not.toHaveBeenCalled();
   });
 

@@ -68,8 +68,8 @@ export function DeviceMetaEditor({ device }: DeviceMetaEditorProps) {
   const askSave = () =>
     ask(
       {
-        title: 'Save device metadata?',
-        body: `This writes room, category, load-shed group, display name, and notes for ${device.display_name} (${device.id}) to Supabase.`,
+        title: 'Save device details?',
+        body: `This saves the room, category, load-shed group, display name and notes for ${device.display_name} (${device.id}), recorded against your account.`,
         confirmLabel: 'Save metadata',
         tone: 'blue',
       },

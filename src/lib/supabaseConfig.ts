@@ -15,6 +15,12 @@
 import { supabase } from '@/config/supabase';
 import { scheduleKey } from '@/components/automation/automationMath';
 import type { ContextMap } from './types';
+
+/** The one refusal an operator actually hits and can act on: a break-glass sign-in has no
+ * account to attribute a write to, so row-level security rejects it — and PostgREST reports
+ * that rejection as an ordinary success with zero rows. Worded for the person, once, so the
+ * three call sites below cannot drift apart. */
+const BREAK_GLASS_HINT = 'you are signed in with a limited local sign-in, which cannot save. Sign in with your account to make changes.';
 import { SITE } from '@shared/siteConfig.mjs';
 
 const MAX_PHASE_KEY = 'global.dsm.max_phase_a';
@@ -47,7 +53,7 @@ function num(v: string | undefined): number | null {
  * `getLongHistory`; callers (`contextStore.ts`) must catch and surface this as the
  * store's existing `'error'` status rather than let it escape uncaught. */
 function requireSupabase() {
-  if (!supabase) throw new Error('Supabase is not configured (VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY unset)');
+  if (!supabase) throw new Error('Schedules and limits need a settings store, which this deployment has not configured.');
   return supabase;
 }
 
@@ -161,9 +167,12 @@ export async function writeScheduleContext(pending: ContextMap, merged: ContextM
     // error — `{error}` alone stays null even when nothing was actually written. Confirmed
     // live: a save reported "Wrote 8 keys" while both tables stayed completely untouched.
     const { data, error } = await client.from('schedules').upsert(rows, { onConflict: 'device_id' }).select('device_id');
-    if (error) throw new Error(`Supabase schedules write failed: ${error.message}`);
+    if (error) throw new Error(`Could not save the schedules: ${error.message}`);
     if ((data?.length ?? 0) !== rows.length) {
-      throw new Error(`Supabase schedules write affected ${data?.length ?? 0} of ${rows.length} row(s) — check that you're signed in with a real Supabase session, not a break-glass one.`);
+      // MAINTAINER NOTE: an affected-row count below what was sent means the write was refused by
+      // row-level security and reported as an ordinary success — the Phase 9 lesson. The operator
+      // cannot act on any of that, so the message says the one thing they can act on.
+      throw new Error(`Only ${data?.length ?? 0} of ${rows.length} schedule${rows.length === 1 ? '' : 's'} saved — ${BREAK_GLASS_HINT}`);
     }
   }
 
@@ -176,10 +185,13 @@ export async function writeScheduleContext(pending: ContextMap, merged: ContextM
       // that matches it.
       .eq('site_id', SITE.id)
       .select('site_id');
-    if (error) throw new Error(`Supabase dsm_thresholds write failed: ${error.message}`);
+    if (error) throw new Error(`Could not save the demand limits: ${error.message}`);
     if ((data?.length ?? 0) !== 1) {
       throw new Error(
-        `Supabase dsm_thresholds write matched no row for site ${SITE.id}. Check that you are signed in with a real Supabase session rather than a break-glass one, and that supabase/phase19_sites.sql and phase20_site_scoping.sql have both been applied.`,
+        // MAINTAINER NOTE: matching no row also happens when phase19_sites.sql / phase20_site_scoping.sql
+        // have not been applied for this site. That is a deployment fault, not something the person
+        // looking at the screen can fix, so it stays here rather than in the message.
+        `The demand limits were not saved — ${BREAK_GLASS_HINT}`,
       );
     }
   }

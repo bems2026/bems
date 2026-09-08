@@ -75,7 +75,7 @@ export const useSiteUiStore = create<SiteUiState>((set, get) => ({
    */
   setPref: async (key, value) => {
     if (!supabase) {
-      set({ error: 'Supabase is not configured for this deployment, so these cannot be changed here.' });
+      set({ error: 'This deployment has no settings store configured, so these cannot be changed here.' });
       return;
     }
     const before = get().prefs;

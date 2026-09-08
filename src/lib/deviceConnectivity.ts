@@ -75,7 +75,7 @@ export function flapSeverity(row: ConnectivityRow): FlapSeverity {
 
 /** Throws if Supabase is not configured — same contract as the other Supabase-backed modules. */
 export async function fetchDeviceConnectivity(windowHours = 24): Promise<Record<string, ConnectivityRow>> {
-  if (!supabase) throw new Error('Supabase is not configured');
+  if (!supabase) throw new Error('Connectivity history needs stored history, which this deployment has not configured.');
   const { data, error } = await supabase.rpc('device_connectivity', { p_window_hours: windowHours });
   if (error) throw new Error(`Connectivity fetch failed: ${error.message}`);
   return connectivityRowsToMap((data ?? []) as ConnectivityRow[]);

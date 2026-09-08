@@ -106,7 +106,7 @@ export function validateNewNode(node: NewNode, existing: readonly SpaceNode[]): 
 /** Throws rather than returning null, so a caller cannot silently treat "no Supabase" as "no
  * tree" — the same choice `supabaseDeviceConfig.ts` makes. */
 function requireSupabase() {
-  if (supabase === null) throw new Error('Supabase is not configured — the space tree needs it.');
+  if (supabase === null) throw new Error('Spaces need a settings store, which this deployment has not configured.');
   return supabase;
 }
 
@@ -121,7 +121,7 @@ export async function fetchSpaceNodes(): Promise<SpaceNode[]> {
     .from('space_nodes')
     .select('id,site_id,parent_id,kind,name,sort_order,attrs')
     .eq('site_id', SITE.id);
-  if (error) throw new Error(`Supabase space_nodes fetch failed: ${error.message}`);
+  if (error) throw new Error(`Could not load spaces: ${error.message}`);
   return (data ?? []).map(rowToSpaceNode);
 }
 
@@ -138,7 +138,7 @@ export async function insertSpaceNode(node: NewNode, actorUserId: string | null)
     })
     .select('id,site_id,parent_id,kind,name,sort_order,attrs')
     .single();
-  if (error) throw new Error(`Supabase space_nodes insert failed: ${error.message}`);
+  if (error) throw new Error(`Could not add that space: ${error.message}`);
   return rowToSpaceNode(data);
 }
 
@@ -152,9 +152,9 @@ export async function renameSpaceNode(id: string, name: string, actorUserId: str
     .update({ name: name.trim(), updated_by: actorUserId, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select('id');
-  if (error) throw new Error(`Supabase space_nodes rename failed: ${error.message}`);
+  if (error) throw new Error(`Could not rename that space: ${error.message}`);
   if ((data?.length ?? 0) !== 1) {
-    throw new Error('That rename matched no row — check you are signed in with a real Supabase session, not a break-glass one.');
+    throw new Error('That rename saved nothing — you are signed in with a limited local sign-in, which cannot save. Sign in with your account to make changes.');
   }
 }
 
@@ -177,9 +177,9 @@ export async function updateSpaceNodeAttrs(id: string, attrs: Record<string, unk
     .update({ attrs, updated_by: actorUserId, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select('id');
-  if (error) throw new Error(`Supabase space_nodes attrs update failed: ${error.message}`);
+  if (error) throw new Error(`Could not update that space: ${error.message}`);
   if ((data?.length ?? 0) !== 1) {
-    throw new Error('That change matched no row — check you are signed in with a real Supabase session, not a break-glass one.');
+    throw new Error('That change saved nothing — you are signed in with a limited local sign-in, which cannot save. Sign in with your account to make changes.');
   }
 }
 
@@ -194,5 +194,5 @@ export async function updateSpaceNodeAttrs(id: string, attrs: Record<string, unk
 export async function deleteSpaceNode(id: string): Promise<void> {
   const client = requireSupabase();
   const { error } = await client.from('space_nodes').delete().eq('id', id);
-  if (error) throw new Error(`Supabase space_nodes delete failed: ${error.message}`);
+  if (error) throw new Error(`Could not delete that space: ${error.message}`);
 }

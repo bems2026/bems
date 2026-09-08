@@ -181,7 +181,7 @@ export function ReportsPage() {
       <>
         <PageHeader title="Reports" sub="Weekly and monthly energy reports" />
         <p className="reports-note">
-          Reports are stored in Supabase, which is not configured in this build. Nothing to show — rather than an
+          Reports come from stored history, which is not configured in this build. Nothing to show — rather than an
           empty table that would look like a month with no consumption.
         </p>
       </>

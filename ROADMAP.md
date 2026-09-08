@@ -1,7 +1,8 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-08 — **RM-059, RM-060 and RM-061**, a UI/UX pass over the Devices and
-Automation pages. RM-061 came straight from the operator looking at what RM-059 shipped: the
+**Last audited:** 2026-09-08 — **RM-059 to RM-062**, a UI/UX pass over the Devices and
+Automation pages. **RM-062 is the one to read**: the Automation page claimed hardware dispatch
+was closed when it has been open, on the page that arms unattended load shedding. RM-061 came straight from the operator looking at what RM-059 shipped: the
 Details and Edit buttons sitting beside each other were the wrong shape, and the fix was not to
 restyle them but to notice that one device had three doors. One **Manage** button, one panel,
 three tabs. Before that, and before that the week/month energy accumulator, measured against the live
@@ -1538,6 +1539,31 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       A `toolbar` slot was added for the tablist, pinned between the heading and the scrolling
       body — tabs rendered inside `__body` scroll out of reach, which is the one piece of chrome
       that must not.
+- [x] **RM-062** **The Automation page was telling the operator that nothing it saved could reach
+      hardware, and that had been false for some time.** Two strings said it: the subtitle hint
+      ("nothing on the real bridge reads or acts on these yet — that arrives once hardware dispatch
+      opens") and the save confirmation ("hardware dispatch is still gated closed"). Measured on the
+      live Pi 2026-09-08: `HARDWARE_DISPATCH_ENABLED=true` in `server/.env`, and `ibems-scheduler`
+      logs `dispatch=OPEN schedulable=15 device(s)` at boot. So the one page that arms unattended
+      load shedding was describing itself as inert. The wording is now DERIVED from
+      `capabilitiesStore.hardwareDispatchEnabled` rather than asserted, and `null` is reported as
+      "not been confirmed yet" rather than collapsed to "closed" — the same distinction
+      `dispatchScope` already keeps. It also moved OUT of the ⓘ hint and onto the page: "Saved rules
+      switch real hardware here" is the most consequential sentence on the screen, and a hint you
+      have to open is where a footnote goes, not a warning
+      — `src/components/automation/AutomationPage.tsx`, `AutomationPage.test.tsx` (4 tests covering
+      open / closed / unknown / the confirmation).
+      **The word "Supabase" is gone from the UI.** It named the vendor where the operator needed the
+      consequence: "Write to Supabase" is now "Save changes", "Pending writes" is "Unsaved changes",
+      and the save gate says what saving does and who it is recorded against. 24 strings across 16
+      files, with a settled vocabulary — **"the account service"** for sign-in (already the wording
+      `AccountSection` used), **"a settings store"** for configuration, **"stored history"** for
+      readings and reports. The three RLS-refusal messages were the ones worth most care: PostgREST
+      reports a row-level-security rejection as an ordinary success with zero rows, so these are the
+      detectors from the Phase 9 lesson. They now say the one thing the operator can act on — "you
+      are signed in with a limited local sign-in, which cannot save" — from a single shared constant
+      so the sentence cannot drift across its three call sites, with the maintainer detail (which
+      migration to check) moved into a comment where it belongs rather than onto the screen.
 - [x] **EX-150** One relay control, replacing five. `SwitchesListCard`, `OutletsListCard`,
       `LightingMatrixCard`, `OutletPlanCard` and `MasterQuickActionsCard` each re-derived the same
       `controlView` → `busy`/`unknown`/`on` triple and then decided independently what `disabled`

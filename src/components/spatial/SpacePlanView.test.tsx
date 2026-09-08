@@ -181,13 +181,13 @@ describe('SpacePlanView — placing', () => {
     await waitFor(() => expect(placeOnPlan).toHaveBeenCalledWith('zz9', null));
   });
 
-  it('says why it cannot edit when Supabase is not configured, instead of offering a control that always fails', () => {
+  it('says why it cannot edit when this deployment has no settings store, instead of offering a control that always fails', () => {
     // Learned from SpaceTreePanel, where exactly this shipped as a raw TypeError because the
     // unit tests mock the client as present.
     seedTree({ canEdit: false });
     render(<SpacePlanView editable />);
     openLab();
-    expect(screen.getByText(/not configured/i)).toBeInTheDocument();
+    expect(screen.getByText(/no (settings store|stored history) configured/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /place Rack PDU/i })).not.toBeInTheDocument();
   });
 });

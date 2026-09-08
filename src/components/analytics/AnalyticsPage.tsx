@@ -131,7 +131,7 @@ export function AnalyticsPage() {
               Power, voltage, and current over the last {RANGE_WORDS[range]} for the 4 CHNT branch meters and the 7 individually-metered outlets, plus the building's energy consumed
               today, this week, and this month.{' '}
               {longRangeAvailable
-                ? 'Anything past 24 h reads from Supabase — the bridge itself only keeps a 24 h buffer.'
+                ? 'Anything past 24 h reads from stored history — the bridge itself only keeps a 24 h buffer.'
                 : ''}
             </InfoHint>
           </>

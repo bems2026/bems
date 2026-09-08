@@ -4520,6 +4520,20 @@ body::before {
   padding: var(--sp-2) 0;
   border-bottom: 1px solid var(--border-faint);
 }
+/*
+ * What saving actually causes, stated in the page subtitle — RM-062. Amber when saved rules
+ * really do move relays, because that is a live consequence rather than a status; muted when the
+ * gate is closed or unconfirmed, which is not news. --warn-on-page, not --warn: the page header
+ * sits directly on --bg-page, where plain --warn measures 4.15:1 and this one measures 4.90:1.
+ */
+.automation-dispatch-note--open {
+  color: var(--warn-on-page);
+}
+.automation-dispatch-note--closed,
+.automation-dispatch-note--unknown {
+  color: var(--muted);
+  font-weight: 600;
+}
 /* The card's one summary of rows that cannot run — RM-060. Sits above the lede rather than
    beside the ARMED count, because it is a problem and that is a fact. --warn on a card is
    4.65:1; this is inside `.automation-schedules-card`. */

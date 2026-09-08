@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useContextStore } from '@/stores/contextStore';
+import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
 import { useDevicesFor } from '@/hooks/useDevicesFor';
 import { DEVICE_CLASS_CATALOG, classesWhere } from '@/lib/deviceClassCatalog';
 import { pendingWrites } from '@/stores/contextStore';
@@ -17,6 +18,24 @@ import { LoadShedPanel } from '@/components/devices/LoadShedPanel';
 import type { DeviceClass } from '@/lib/types';
 
 const TRIGGER_KEY = 'global.trigger.care_acu_on';
+
+/**
+ * What saving actually causes, READ from the live gate rather than asserted.
+ *
+ * This page used to state, in two places, that "nothing on the real bridge reads or acts on
+ * these yet; hardware dispatch is still gated closed". That was true when it was written and is
+ * now false — `HARDWARE_DISPATCH_ENABLED` is `true` and `ibems-scheduler` logs `dispatch=OPEN`
+ * at boot. The page that arms unattended load shedding was telling the operator it was inert,
+ * which is the most expensive sentence in the app to get wrong.
+ *
+ * `null` is not "closed". It is an unanswered capability probe, and this says so rather than
+ * guessing — the same distinction `dispatchScope` and `capabilitiesStore` already keep.
+ */
+function dispatchConsequence(open: boolean | null): string {
+  if (open === true) return 'Saved rules switch real hardware here.';
+  if (open === false) return 'Saved rules do not reach any hardware on this deployment.';
+  return 'Whether saved rules reach hardware has not been confirmed yet.';
+}
 
 /**
  * The chips are derived from the catalog rather than hand-listed, so a new switchable class
@@ -38,6 +57,8 @@ export function AutomationPage() {
   const lastSave = useContextStore((s) => s.lastSave);
 
   const [schedFilter, setSchedFilter] = useState<SchedFilter>('All');
+  const dispatchOpen = useCapabilitiesStore((s) => s.hardwareDispatchEnabled);
+  const consequence = dispatchConsequence(dispatchOpen);
 
   // Membership is the device's declared `scheduling` function, not its class — so an outlet
   // that must never be switched unattended can be taken off this page without a code change.
@@ -66,9 +87,9 @@ export function AutomationPage() {
   const askSave = () =>
     ask(
       {
-        title: 'Write to Supabase?',
-        body: `This writes ${pendingEntries.length} pending key${pendingEntries.length === 1 ? '' : 's'} to Supabase — schedules, the trigger setpoint, and DSM thresholds. Nothing on the real bridge reads these yet; hardware dispatch is still gated closed.`,
-        confirmLabel: 'Write',
+        title: 'Save these changes?',
+        body: `This saves ${pendingEntries.length} change${pendingEntries.length === 1 ? '' : 's'} — schedules, the aircon trigger and the demand limits — and records them against your account. ${consequence}`,
+        confirmLabel: 'Save',
         tone: 'blue',
       },
       () => void save(),
@@ -97,9 +118,17 @@ export function AutomationPage() {
         title="DSM & Schedule Management"
         sub={
           <>
-            Staged, not yet dispatchable
-            <InfoHint label="What this means">
-              Saved here to Supabase and logged for audit, but nothing on the real bridge reads or acts on these yet — that arrives once hardware dispatch opens.
+            Changes are staged until you save —{' '}
+            {/* ON THE PAGE, not behind the ⓘ. "Saved rules switch real hardware here" is the most
+                consequential sentence on this screen; a hint you have to open is where you put a
+                footnote, not where you put the warning. */}
+            <strong className={`automation-dispatch-note automation-dispatch-note--${dispatchOpen === true ? 'open' : dispatchOpen === false ? 'closed' : 'unknown'}`}>
+              {consequence}
+            </strong>
+            <InfoHint label="What saving does">
+              Your edits stay on this page until you press <strong>Save changes</strong>. Saving records them
+              against your account for the audit trail, and the scheduler picks the new rules up within a
+              minute.
             </InfoHint>
           </>
         }
@@ -115,11 +144,11 @@ export function AutomationPage() {
                 // THE READER'S OWN CLOCK, deliberately. This is when THEY pressed save, not
                 // something that happened in the building — see `src/lib/siteTime.ts` for the
                 // distinction and why the building's facts do not use this frame.
-                ? `Wrote ${lastSave.count} key${lastSave.count === 1 ? '' : 's'} at ${new Date(lastSave.at).toLocaleTimeString(undefined, { hour12: false })}`
+                ? `Saved ${lastSave.count} change${lastSave.count === 1 ? '' : 's'} at ${new Date(lastSave.at).toLocaleTimeString(undefined, { hour12: false })}`
                 : ''}
             </p>
             <button type="button" className="automation-write-btn" disabled={pendingEntries.length === 0 || saveStatus === 'saving'} onClick={askSave}>
-              {saveStatus === 'saving' ? 'Writing…' : 'Write to Supabase'}
+              {saveStatus === 'saving' ? 'Saving…' : 'Save changes'}
             </button>
           </div>
         }
@@ -167,7 +196,7 @@ export function AutomationPage() {
             </p>
           )}
           <p className="automation-schedules-sub">
-            {schedulable.length} device{schedulable.length === 1 ? '' : 's'} declared for scheduling, staged to Supabase&apos;s schedules table.
+            {schedulable.length} device{schedulable.length === 1 ? '' : 's'} declared for scheduling.
             {notSchedulable.length > 0 && (
               <>
                 {' '}
@@ -241,10 +270,10 @@ export function AutomationPage() {
           <div className="card automation-pending-card">
             <h3 className="card-title">
               <ListTodo size={14} className="title-icon" aria-hidden="true" />
-              Pending writes
+              Unsaved changes
             </h3>
             {pendingEntries.length === 0 ? (
-              <p className="automation-pending-empty">Nothing changed since the last write</p>
+              <p className="automation-pending-empty">Nothing changed since the last save</p>
             ) : (
               <ul className="automation-pending-list">
                 {pendingEntries.map(([key, value]) => (

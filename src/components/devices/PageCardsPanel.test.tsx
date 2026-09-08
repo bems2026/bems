@@ -33,11 +33,11 @@ describe('PageCardsPanel', () => {
    * switch there is promising something it cannot do — the same distinction `spaceTreeStore`
    * draws with `canEdit`, and one that was found in a browser rather than by a test.
    */
-  it('disables the switches and says why when Supabase is not configured', () => {
+  it('disables the switches and says why when this deployment has no settings store', () => {
     useSiteUiStore.setState({ canEdit: false });
     render(<PageCardsPanel onClose={() => {}} />);
     expect(screen.getByRole('switch', { name: /3D model/ })).toBeDisabled();
-    expect(screen.getByText(/not configured/i)).toBeInTheDocument();
+    expect(screen.getByText(/no (settings store|stored history) configured/i)).toBeInTheDocument();
   });
 
   it('surfaces a save failure rather than leaving the switch looking successful', () => {

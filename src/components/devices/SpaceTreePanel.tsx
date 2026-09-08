@@ -111,7 +111,7 @@ export function SpaceTreePanel({ onClose }: { onClose?: () => void }) {
           outcome is an error. */}
       {!canEdit && (
         <p className="space-tree-panel__empty">
-          Supabase is not configured for this deployment, so spaces are read-only here.
+          This deployment has no settings store configured, so spaces are read-only here.
         </p>
       )}
 

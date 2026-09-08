@@ -101,12 +101,12 @@ describe('RoomShapeEditor', () => {
     expect(shape).toEqual({ kind: 'cells', cols: 4, rows: 2, on: [0, 1, 2, 3, 4, 5, 6, 7] });
   });
 
-  it('disables every control when Supabase is not configured, and says nothing — the page already did', () => {
+  it('disables every control when this deployment has no settings store, and says nothing — the page already did', () => {
     setup({}, { canEdit: false });
     expect(screen.getByRole('button', { name: 'Round' })).toBeDisabled();
     // Repeating the page's own explanation on every sub-panel is the noise that trains people to
     // ignore the flag.
-    expect(screen.queryByText(/not configured/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no (settings store|stored history|account service) configured/i)).not.toBeInTheDocument();
   });
 
   it('does not fire a second save while one is in flight', () => {
