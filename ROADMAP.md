@@ -107,11 +107,14 @@ lumps did not — measured sitting either side of the 0.0139 line.
 so the span the ceiling is computed over is the span the increment actually accrued in. RM-052's
 67.391 kWh jump is still caught at the same 2 s cadence — a test pins exactly that.
 
-**What this does NOT recover.** The day baseline re-anchors at local midnight, so today's
-absorbed 0.117+ kWh clears itself tonight — but `ACCUMULATE_ENERGY` banks the *published* daily
-figure into `weekBase`/`monthBase` at that same rollover, so an understated day becomes a
-permanently understated week and month. **This is the RM-053 asymmetry again, one layer up**: a
-wrong daily figure heals, and anything a downstream accumulator writes down does not.
+**What the fix does NOT recover, and why that needed a second act.** The day baseline re-anchors
+at local midnight, so the absorbed energy clears itself tonight — but `ACCUMULATE_ENERGY` banks
+the *published* daily figure into `weekBase`/`monthBase` at that same rollover, so an understated
+day becomes a permanently understated week and month. **This is the RM-053 asymmetry again, one
+layer up**: a wrong daily figure heals, and anything a downstream accumulator writes down does
+not. So the baseline was repaired too, at 14:44, before the rollover — **0.448 kWh returned to
+the aircon branch, and the branch sum now sits +0.28 % from the building's own counter against
+RM-053's +0.31 %.** See RM-056b in §2 for the method and every check it refused to skip.
 
 ### 2026-09-08 — the page renders two figures that disagree, and now it says so
 
@@ -3208,11 +3211,50 @@ fall back to it).
       0.340 kWh at 13:33, 0.462 at 14:09 (+0.122 in 36 min), 0.468 at 14:31 post-deploy, 0.468
       at 14:33. The two now track in parallel.
 
-      **What is NOT recovered, deliberately.** The ~0.47 kWh already absorbed today is still in
-      `mtr_arec_acu`'s baseline and will be banked into `weekBase`/`monthBase` at tonight's
-      rollover. Repairing it means writing flow context on a running system — the RM-052/RM-053
-      act — and was not authorised in this session. It is a one-day, one-branch understatement
-      and it stops there.
+      **THE ABSORBED ENERGY WAS REPAIRED TOO — RM-056b, 2026-09-08 14:44, before the rollover
+      could bank it.** The fix stops further absorption; it gives nothing back, and
+      `ACCUMULATE_ENERGY` banks the *published* daily figure into `weekBase`/`monthBase` at local
+      midnight, so an understated day would have become a permanently understated week and month.
+
+      **The value written was 0, and 0 was derived from physics, not from the contaminated
+      number.** Integrating each meter's own reported power since local midnight — the one
+      measure that owes this tracker nothing — settled which baselines were real:
+
+      | meter | counter | base held | counter − integrated | served − integrated |
+      |---|---|---|---|---|
+      | mtr_co_yellow | 3677.417 | 3675.479 | 3675.487 | **+0.007** |
+      | mtr_lo_red | 0.154 | 0.001 | 0.002 | **+0.001** |
+      | **mtr_arec_acu** | 3.506 | **0.448** | **+0.032** | **−0.415** |
+      | mtr_lo_yellow | 77.503 | 77.201 | 77.203 | **+0.002** |
+
+      Three of the four are already correct to within 0.007 kWh, and their baselines carry
+      genuine register offsets that had to be left alone. `mtr_arec_acu` is the opposite: its RAW
+      counter matches the independent integration to 0.032 kWh (0.9 %), so the counter did reset
+      at local midnight and its whole 0.448 baseline was absorbed consumption. Same rule as
+      RM-053's repair — derive the value from what the hardware physically did, never by
+      subtracting an estimate of the fault's own arithmetic.
+
+      **Method, and every check it refused to skip.** Node-RED stopped first so its shutdown
+      flushed context, backup taken *after* the flush, a script that aborts on any surprise (wrong
+      `dayKey`, a baseline that had moved since it was measured, another meter's baseline
+      changing, a value that did not survive the JSON round trip), written to a temp file that had
+      to parse from disk before it replaced anything. The file halved in size — Node-RED writes it
+      indented, the rewrite is compact — so a deep walk of both trees confirmed the claim rather
+      than assuming it: **24 context keys to 24, no shape changes, exactly ONE differing path in
+      2.85 MB.** The history ring buffers and every accumulator came through untouched.
+
+      **Verified after the restart:** `mtr_arec_acu` base 0.00000, served 3.577 = its counter, and
+      the other three baselines byte-identical including RM-052's 3675.479 and 77.201. Branch sum
+      **6.014 against the building's own 5.997 — +0.28 %**, which is RM-053's post-repair figure
+      (+0.31 %) to within a hundredth of a percent. 5/5 bridge checks, four services active, 18
+      devices online, and **zero non-solarman errors** in the log since the restart (the
+      `solarman-device` socket timeouts are the inverter and pre-date it — 76 of them in the six
+      hours before).
+
+      **What this cost:** the legacy two-second integrator does not run while Node-RED is stopped,
+      so the building's own counter under-counts by the ~2.5 minutes of downtime — a few
+      watt-hours at the ~700 W the building was drawing. Under-counting a sliver in the figure
+      that was already the more trusted one is the safe direction, and it is gone at midnight.
 
 - [x] **EX-169 — the phase28 columns are finally ASKED something. 2026-09-08.** phase28 gave
       `readings` six columns and EX-167 started filling them every minute. Nothing read them —
