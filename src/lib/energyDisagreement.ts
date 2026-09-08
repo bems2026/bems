@@ -1,14 +1,17 @@
 /**
- * RM-054 — when the per-branch split and the building's own counter stop being reconcilable.
+ * RM-054 — when a per-branch split and the building's own counter stop being reconcilable.
  *
- * `EnergySection` renders two independently-derived quantities side by side: the three tiles are
- * the building's own running kWh counters, integrated from power every two seconds by the legacy
- * flow, and the "By branch" rows are accumulated by the bridge from each meter's own cumulative
- * register (`node-red-bridge/energyAccumulator.mjs`). They are not expected to match — but until
- * RM-054 nothing compared them at all, which is how RM-053 put 99.546 kWh of branches next to a
- * building week of 18.4 and rendered both without comment for a day.
+ * Two surfaces render these two independently-derived quantities together: Analytics' Energy
+ * section (tiles vs "By branch") and Overview's Energy Breakdown (its headline is the branch sum,
+ * one card away from Live Demand's building counter). The tiles and Live Demand come from the
+ * building's own running kWh counters, integrated from power every two seconds by the legacy
+ * flow; the branch figures are each meter's own cumulative register, accumulated by the bridge
+ * (`node-red-bridge/energyAccumulator.mjs`). They are not expected to match — but until RM-054
+ * nothing compared them at all, which is how RM-053 put 99.546 kWh of branches next to a building
+ * week of 18.4 and rendered both without comment for a day.
  *
- * Its own tests live in `EnergySection.test.tsx`, next to the rendering they gate.
+ * In `lib/` rather than beside either card because both use it — RM-055. Its own tests live in
+ * `components/analytics/EnergySection.test.tsx`, next to the rendering they were written against.
  */
 
 /**

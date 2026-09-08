@@ -102,7 +102,23 @@ for (const k of Object.keys(meters)) {
         entry.base[code] = (bumped === undefined ? 0 : bumped) + (val - before.val);
       }
     }
-    seen[code] = { val: val, at: Date.now() };
+    // THE SPAN IS SINCE THE COUNTER LAST CHANGED, NOT SINCE THIS NODE LAST RAN — RM-056, and
+    // getting this wrong deleted real energy for as long as the rate check has existed.
+    //
+    // This node is on the READ path (bridge/read-latest), so it runs on the 2 s WS push inject
+    // and on every HTTP GET of /api/readings/latest — a cadence set by how many people are
+    // looking at the dashboard. A meter's counter is on its own clock: mtr_arec_acu advances in
+    // lumps of ~0.012-0.015 kWh every ~30 s. Timestamping every RUN made the span 2 s and the
+    // ceiling 25 kW x 2 s = 0.0139 kWh, so an ordinary lump read as an impossible jump and was
+    // absorbed — and a baseline is durable, so that energy never came back. Measured 2026-09-08:
+    // mtr_arec_acu's baseline grew 0.117 kWh between 13:33 and 14:09 while its own daily
+    // register, its own lifetime register and its own power channel all agreed on 0.308.
+    // The three smaller branches lost nothing, because their lumps fit under the ceiling.
+    //
+    // Timestamping the last CHANGE makes the span the one the increment actually accrued over,
+    // which is what a rate bound needs to mean anything. It also stops the fault scaling with
+    // the number of clients: more readers used to mean a tighter ceiling and more deletion.
+    if (before === undefined || val !== before.val) seen[code] = { val: val, at: Date.now() };
     entry.seen = seen;
 
     const prev = entry.base[code];

@@ -4174,12 +4174,14 @@ body::before {
   color: var(--muted-2);
   line-height: 1.5;
 }
-/* RM-054 — the branch split summing to more than the building total it is part of. Same
-   language as .settings-warn: --warn on a --warn-soft fill, which this file's token block
-   measures at 4.65:1 over a card in light and 6.40:1 in dark. It sits inside .card
-   (--bg-surface), never directly on the page, so the plain --warn is the correct tier here
-   and --warn-on-page is not needed. */
-.analytics-energy-warn {
+/* RM-054 — a branch split summing to more than the building total it is part of. Not prefixed
+   for either page: Analytics' Energy section and Overview's Energy Breakdown both render it
+   (RM-055), from one shared check in `lib/energyDisagreement.ts`.
+   Same language as .settings-warn: --warn on a --warn-soft fill, which this file's token block
+   measures at 4.65:1 over a card in light and 6.40:1 in dark; measured in a browser on the
+   real composite at 4.90:1 and 6.62:1. It sits inside .card (--bg-surface), never directly on
+   the page, so the plain --warn is the correct tier here and --warn-on-page is not needed. */
+.energy-disagreement {
   display: flex;
   gap: var(--sp-3);
   align-items: start;
@@ -4191,7 +4193,7 @@ body::before {
   font-size: var(--fs-xs-lg);
   line-height: 1.5;
 }
-.analytics-energy-warn svg {
+.energy-disagreement svg {
   flex: none;
   margin-top: 2px;
 }

@@ -4,7 +4,10 @@
 bridge's own flow context and eight days of corrected history. §0 leads with what that
 measurement found: **RM-053**, two faults in the per-branch week/month split, both now fixed
 and the live figures repaired — and now with **RM-054**, the comparison that would have made
-that fault visible on the page rather than leaving it to a person to notice.
+that fault visible on the page rather than leaving it to a person to notice. §0 then leads with
+**RM-056**, found by chasing the operator's report that Overview's two "today" figures disagreed:
+the rate guard RM-052 added was sizing its ceiling by the gap between dashboard reads, and had
+been deleting a third of the aircon branch's real consumption.
 **Audited at commit:** `fa9430f`
 
 **2026-09-01, and it changes what §0 says.** The headline claim below — that there is no
@@ -63,6 +66,52 @@ other four and none needed changing.
 ---
 
 ## 0. Triage — what to do next
+
+### 2026-09-08 — the rate guard was deleting real energy, and the operator's "unsynced" report is what found it
+
+**RM-056, and it is the one that matters on this page.** The operator reported Overview's Live
+Demand "Today" and Energy Breakdown's "kWh today" disagreeing, and the same on Analytics. Both
+were true — see RM-055 for the labelling half — but chasing *why* they disagreed found a fault in
+the bridge, not in the frontend.
+
+**The day baseline was absorbing real consumption, permanently.** Measured on the live bridge:
+
+| | 13:33 | 14:09 | Δ |
+|---|---|---|---|
+| `mtr_arec_acu`'s own `today_acc_energy1` | 2.983 | 3.291 | **+0.308** |
+| its own `total_energy1` (lifetime) | 43.069 | 43.377 | **+0.308** |
+| its own power channel, integrated over the window | — | — | **+0.308** |
+| **what the bridge published** | 2.652 | 2.843 | **+0.191** |
+| its day baseline | 0.33079 | 0.44779 | **+0.117 — the missing energy** |
+
+The meter agreed with itself three ways to the milli-kWh. The bridge threw 38 % of it away.
+
+**THE MECHANISM IS A CLOCK MISMATCH, and it is the instructive part.** RM-052 added a rate
+ceiling — no branch can add more kW-hours than `telemetry_bounds.power_w.max` allows in the
+elapsed time — and it measured "elapsed" as *the gap since this node last ran*. But
+`Energy day baseline` sits on the READ path (`bridge/read-latest`), so it runs on the 2 s WS push
+and on every HTTP GET of `/api/readings/latest`. **The meter's counter is on a completely
+different clock**: `mtr_arec_acu` advances in lumps of ~0.012–0.015 kWh every ~30 s. A 2 s gap
+puts the ceiling at 25 kW × 2 s = **0.0139 kWh**, so an ordinary lump reads as an impossible jump
+and is absorbed into the baseline — and a baseline is durable, so nothing gives it back.
+
+**It scaled with how many people were looking at the dashboard.** Every extra client shortens the
+read gap and tightens the ceiling. Watching the page harder deleted more energy from it.
+
+**Why only the aircon.** The ceiling is per-lump, so it bites the branch whose lumps are biggest.
+Over the same 24 h the other three published 99 %, 100 % and 100 % of their own registers;
+`mtr_arec_acu`, the only branch above ~500 W, published 62 %. Its 0.012 lumps pass and its 0.015
+lumps did not — measured sitting either side of the 0.0139 line.
+
+**The fix is one line and the guard survives it:** timestamp the last CHANGE, not the last read,
+so the span the ceiling is computed over is the span the increment actually accrued in. RM-052's
+67.391 kWh jump is still caught at the same 2 s cadence — a test pins exactly that.
+
+**What this does NOT recover.** The day baseline re-anchors at local midnight, so today's
+absorbed 0.117+ kWh clears itself tonight — but `ACCUMULATE_ENERGY` banks the *published* daily
+figure into `weekBase`/`monthBase` at that same rollover, so an understated day becomes a
+permanently understated week and month. **This is the RM-053 asymmetry again, one layer up**: a
+wrong daily figure heals, and anything a downstream accumulator writes down does not.
 
 ### 2026-09-08 — the page renders two figures that disagree, and now it says so
 
@@ -3101,6 +3150,52 @@ fall back to it).
       discrepancy on screen should mean a real bug, not a fixture artefact — so the app can only
       be observed staying quiet, which it does (19.92 against 19.92, no notice). The notice's
       appearance is covered by the component tests and by a browser check of the real stylesheet.
+
+- [x] **RM-055 (S) — Overview's two "today" figures stop wearing the same label. 2026-09-08.**
+      The operator's report. `LiveDemandCard`'s "Today" is `_totals.energy_kwh_today`, the
+      building's own counter; `EnergyBreakdownCard`'s headline is the SUM OF THE BRANCH METERS'
+      registers. Two different quantities, one card apart, both saying only "today" — 4.75
+      against 5.09 when this was written.
+
+      **Relabelling was the fix, not changing either number.** The sum of the rows shown is the
+      only figure that card can honestly headline (its shares are computed against it), and the
+      building's own counter is the only figure Live Demand can. What was wrong was the naming.
+      The headline now reads `kWh today · branches`, and the InfoHint says in as many words why
+      it differs from Live Demand's.
+
+      RM-054's one-sided check now runs on this card too, so the Overview is not silent either.
+      The check moved to `src/lib/energyDisagreement.ts` — two feature areas use it — and its CSS
+      lost its page prefix with it (`.energy-disagreement`).
+
+      7 new tests, and the card had none before: the split, the label, the quiet direction, the
+      fault shape, a null `totals`, a null day counter, and the empty state.
+      `src/components/overview/EnergyBreakdownCard.tsx`,
+      `src/components/overview/EnergyBreakdownCard.test.tsx`, `src/lib/energyDisagreement.ts`,
+      `src/components/analytics/EnergySection.tsx`, `src/index.css`
+
+- [x] **RM-056 (M) — the rate ceiling is measured against the counter's clock, not the reader's.
+      2026-09-08.** The evidence is in §0, and it is the root cause of what RM-055 relabelled.
+      `Energy day baseline` runs on the read path, so its idea of "elapsed time" was the gap
+      between WS pushes and HTTP GETs — 2 s — while the meter it guards reports in ~30 s lumps.
+      Every lump above 25 kW × 2 s = 0.0139 kWh was absorbed into the baseline as an impossible
+      jump. `mtr_arec_acu` was publishing 62 % of its own register; the other three, whose lumps
+      fit under the ceiling, lost nothing.
+
+      **`seen[code]` is now written only when the value CHANGES**, so the span is the one the
+      increment accrued over. That is the whole fix.
+
+      3 new tests, **three neuters each fail the right ones** — restoring the per-read timestamp
+      (both new lump tests fail), removing the rate check (all three jump tests fail), and making
+      the ceiling ignore elapsed time (the ten-minutes-later jump fails). 24 tests in that file,
+      933 across the bridge suite.
+      `node-red-bridge/energyDayBase.mjs`, `node-red-bridge/bridge-flow.json`,
+      `test/energy-day-base.test.mjs`
+
+      **NOT YET DEPLOYED — it needs a live flow write.** The generated flow is regenerated and
+      the drift check passes, but writing it to the running bridge is the authority boundary
+      `docs/pi-session-brief.md` draws, so it waits to be asked for. Until then the live bridge
+      keeps absorbing, and tonight's rollover banks the understated day into `weekBase` and
+      `monthBase`, where it becomes permanent.
 
 - [x] **EX-169 — the phase28 columns are finally ASKED something. 2026-09-08.** phase28 gave
       `readings` six columns and EX-167 started filling them every minute. Nothing read them —

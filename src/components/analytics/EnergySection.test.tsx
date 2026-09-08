@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup, within, fireEvent } from '@testing-library/react';
 import { EnergySection } from './EnergySection';
-import { energyDisagreement, DISAGREEMENT_MARGIN, DISAGREEMENT_FLOOR_KWH } from './energyDisagreement';
+import { energyDisagreement, DISAGREEMENT_MARGIN, DISAGREEMENT_FLOOR_KWH } from '@/lib/energyDisagreement';
 import { useDeviceStore } from '@/stores/deviceStore';
 import type { Device, Reading, Totals } from '@/lib/types';
 
@@ -139,7 +139,7 @@ describe('EnergySection', () => {
  *
  * Every figure below is measured on this building, not invented: the healthy pairs come from
  * the live bridge and from RM-053's post-repair reading, the fault pair is what the page
- * actually showed during RM-053. See the constants' own docblock in EnergySection.tsx.
+ * actually showed during RM-053. See the constants' own docblock in `lib/energyDisagreement.ts`.
  */
 describe('energyDisagreement', () => {
   it('says nothing when the branch sum falls short of the building total — the normal direction', () => {

@@ -1,0 +1,122 @@
+import { describe, it, expect, afterEach } from 'vitest';
+import { render, screen, cleanup, within } from '@testing-library/react';
+import { EnergyBreakdownCard } from './EnergyBreakdownCard';
+import { useDeviceStore } from '@/stores/deviceStore';
+import type { Device, Reading, Totals } from '@/lib/types';
+
+const meter = (id: string, name: string): Device => ({
+  id,
+  display_name: name,
+  class: 'meter',
+  room: null,
+  dps_map: 'type_a',
+  status: 'active',
+});
+
+const reading = (id: string, energy: number | undefined): Reading => ({
+  device_id: id,
+  ts: new Date().toISOString(),
+  online: true,
+  state: null,
+  ...(energy === undefined ? {} : { energy_kwh_today: energy }),
+});
+
+const totals = (over: Partial<Totals> = {}): Totals => ({
+  device_id: '_totals',
+  ts: new Date().toISOString(),
+  energy_kwh_today: 5.086,
+  energy_kwh_week: 20.552,
+  energy_kwh_month: 61.957,
+  total_power_w: 799.5,
+  avg_voltage: 229.3,
+  phase_current: { red: 5.3, yellow: 4.2, blue: null },
+  ...over,
+});
+
+/* The four CT meters of this building, with the live figures they served on 2026-09-08 13:32. */
+const METERS = [meter('mtr_co_yellow', 'C.O Yellow'), meter('mtr_lo_red', 'L.O Red'), meter('mtr_arec_acu', 'CARE ACU'), meter('mtr_lo_yellow', 'L.O Yellow')];
+const LIVE: Record<string, Reading> = {
+  mtr_co_yellow: reading('mtr_co_yellow', 1.653),
+  mtr_lo_red: reading('mtr_lo_red', 0.139),
+  mtr_arec_acu: reading('mtr_arec_acu', 2.652),
+  mtr_lo_yellow: reading('mtr_lo_yellow', 0.302),
+};
+
+afterEach(() => {
+  cleanup();
+  useDeviceStore.setState({ devices: [], latestReadings: {}, totals: null, history: {} });
+});
+
+describe('EnergyBreakdownCard', () => {
+  it('splits today by branch, largest first, as a share of the branches shown', () => {
+    useDeviceStore.setState({ devices: METERS, latestReadings: LIVE, totals: totals() });
+    render(<EnergyBreakdownCard />);
+    const rows = document.querySelectorAll('.breakdown-row');
+    expect(rows).toHaveLength(4);
+    expect(within(rows[0] as HTMLElement).getByText('CARE ACU')).toBeInTheDocument();
+    expect(screen.getByText('4.75')).toBeInTheDocument();
+  });
+
+  /*
+   * RM-055. This headline is the SUM OF THE BRANCHES, and Live Demand's "Today" one card away
+   * is the building's own counter — two different quantities. On 2026-09-08 they read 4.75 and
+   * 5.09, and both said only "today", which is what the operator reported as being out of sync.
+   * The label is the fix: the number is right, its name was not.
+   */
+  it('names the headline as the branch sum, not as the building total', () => {
+    useDeviceStore.setState({ devices: METERS, latestReadings: LIVE, totals: totals() });
+    render(<EnergyBreakdownCard />);
+    const headline = document.querySelector('.breakdown-total');
+    expect(headline).toHaveTextContent('4.75');
+    expect(headline).toHaveTextContent(/kWh today · branches/);
+  });
+
+  it('stays quiet when the branches sum to less than the building total — the normal direction', () => {
+    // The live case: 4.746 against 5.086, the branches 6.7% under.
+    useDeviceStore.setState({ devices: METERS, latestReadings: LIVE, totals: totals() });
+    render(<EnergyBreakdownCard />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('says so when the branches sum to more than the building total can explain', () => {
+    // RM-053's shape, on the day figure: one branch carrying an offset nothing cleared.
+    useDeviceStore.setState({
+      devices: METERS,
+      latestReadings: { ...LIVE, mtr_lo_yellow: reading('mtr_lo_yellow', 77.502) },
+      totals: totals(),
+    });
+    render(<EnergyBreakdownCard />);
+    const notice = screen.getByRole('status');
+    expect(notice).toHaveTextContent('81.95 kWh');
+    expect(notice).toHaveTextContent('5.09 kWh');
+  });
+
+  it('has nothing to compare against before the first totals frame, and does not assume', () => {
+    useDeviceStore.setState({
+      devices: METERS,
+      latestReadings: { ...LIVE, mtr_lo_yellow: reading('mtr_lo_yellow', 77.502) },
+      totals: null,
+    });
+    render(<EnergyBreakdownCard />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    // The split itself still renders — the comparison is missing, not the data.
+    expect(document.querySelectorAll('.breakdown-row')).toHaveLength(4);
+  });
+
+  it('has nothing to compare against when the building never counted today', () => {
+    useDeviceStore.setState({
+      devices: METERS,
+      latestReadings: { ...LIVE, mtr_lo_yellow: reading('mtr_lo_yellow', 77.502) },
+      totals: totals({ energy_kwh_today: null }),
+    });
+    render(<EnergyBreakdownCard />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('waits rather than charting an empty split', () => {
+    useDeviceStore.setState({ devices: METERS, latestReadings: {}, totals: totals() });
+    render(<EnergyBreakdownCard />);
+    expect(screen.getByText(/Waiting for branch meter readings/)).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+});

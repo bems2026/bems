@@ -333,3 +333,96 @@ test('a backwards move still re-anchors, and is not confused with a jump', () =>
   );
   assert.ok(0.2 - base.co_yel.today_acc_energy1 >= 0, 'never negative');
 });
+
+// ---------------------------------------------------------------------------
+// RM-056 — the rate ceiling was being measured against the wrong clock.
+// Measured on the live bridge 2026-09-08.
+// ---------------------------------------------------------------------------
+
+/**
+ * THE CEILING SPANS THE COUNTER'S ACCRUAL, NOT THE GAP BETWEEN READS.
+ *
+ * This node runs on the READ path — `bridge/read-latest`, driven by the 2 s WS push inject and
+ * by every HTTP GET of `/api/readings/latest`. A meter's counter is on its own clock entirely:
+ * `mtr_arec_acu` advances in lumps of ~0.012 kWh every ~30 s. Sizing the ceiling by the gap
+ * between reads makes it `25 kW x 2 s = 0.0139 kWh`, so an ordinary lump of real consumption
+ * reads as an impossible jump and is absorbed into the baseline — which deletes it from the
+ * published figure permanently, because nothing recomputes a baseline.
+ *
+ * MEASURED, not deduced. Between 13:33 and 14:09 on 2026-09-08, `mtr_arec_acu`'s baseline grew
+ * 0.33079 -> 0.44779 while its own `today_acc_energy1` advanced 0.308 kWh and its own
+ * `total_energy1` advanced by the identical 0.308 — the meter agreeing with itself to the
+ * milli-kWh, and its own power channel integrating to 0.308 over the same window. The bridge
+ * published 0.191 of it. The other three meters draw less, so their lumps land under the
+ * ceiling and they lost nothing: 99%, 100% and 100% of their own registers came through.
+ *
+ * IT GETS WORSE THE MORE THE DASHBOARD IS WATCHED, which is the part that makes it insidious:
+ * every extra client shortens the read gap, and the ceiling shrinks with it.
+ *
+ * The fix is to timestamp the last CHANGE rather than the last read, so the window the ceiling
+ * is computed over is the window the increment actually accrued in.
+ */
+test('a lump of real consumption is not deleted because the reads were 2 s apart', () => {
+  const store = {};
+  const t0 = Date.parse('2026-09-08T02:00:00Z');
+  runEnergyDayBase(store, snapOf({ co_yel: RATE_METER({ today_acc_energy1: 1.0 }, { e: '1.0' }) }), t0, OFFSET);
+  // The WS push, thirty times over the next minute, with the counter not yet moving.
+  for (let i = 1; i <= 29; i++) {
+    runEnergyDayBase(store, snapOf({ co_yel: RATE_METER({ today_acc_energy1: 1.0 }, { e: '1.0' }) }), t0 + i * 2000, OFFSET);
+  }
+  // The meter now reports the minute it accrued: 0.05 kWh at 3 kW — the exact figure
+  // `an ordinary minute of real consumption is NOT treated as a jump` already declares legal.
+  const base = runEnergyDayBase(
+    store,
+    snapOf({ co_yel: RATE_METER({ today_acc_energy1: 1.05 }, { e: '1.05', p: '3000' }) }),
+    t0 + 60_000,
+    OFFSET,
+  );
+  assert.equal(base.co_yel.today_acc_energy1, 0, 'a real minute was absorbed into the baseline and lost');
+});
+
+test("the ACU's measured lump survives the read cadence that was eating it", () => {
+  // The live case to the number: ~0.015 kWh arriving every ~30 s at 585 W, read every 2 s.
+  const store = {};
+  const t0 = Date.parse('2026-09-08T05:33:00Z');
+  let counter = 2.983;
+  // Seeded with the integrated figure equal to the counter, so the baseline starts at exactly 0
+  // and anything it holds later is energy this tracker took away.
+  runEnergyDayBase(store, snapOf({ arec: RATE_METER({ today_acc_energy1: counter }, { e: '2.983' }) }), t0, OFFSET);
+  let at = t0;
+  for (let lump = 0; lump < 8; lump++) {
+    for (let i = 0; i < 14; i++) {
+      at += 2000; // the WS push, counter unchanged
+      runEnergyDayBase(store, snapOf({ arec: RATE_METER({ today_acc_energy1: counter }, { e: '2.983' }) }), at, OFFSET);
+    }
+    // The lump lands on the NEXT read, 2 s after the last one — which is the whole point. Handing
+    // it to the same timestamp as the previous read makes the elapsed span zero, and the source
+    // treats an unmeasurable span as no bound at all, so the fault hides.
+    at += 2000;
+    counter = Math.round((counter + 0.015) * 1000) / 1000;
+    runEnergyDayBase(store, snapOf({ arec: RATE_METER({ today_acc_energy1: counter }, { e: '2.983', p: '585' }) }), at, OFFSET);
+  }
+  const base = runEnergyDayBase(store, snapOf({ arec: RATE_METER({ today_acc_energy1: counter }, { e: '2.983' }) }), at + 2000, OFFSET);
+  assert.equal(base.arec.today_acc_energy1, 0, `the baseline ate ${base.arec.today_acc_energy1} kWh of real consumption`);
+  // Eight lumps of 0.015 is 0.12 kWh, and every milli-kWh of it must reach the page.
+  assert.ok(Math.abs((counter - base.arec.today_acc_energy1) - 3.103) < 1e-6, `served ${counter - base.arec.today_acc_energy1}, expected 3.103`);
+});
+
+test('a jump still re-anchors when the reads are 2 s apart', () => {
+  // The guard RM-052 added must survive the fix: the same 2 s cadence, but the counter's
+  // advance is genuinely beyond what the branch can draw over the window it accrued in.
+  const store = {};
+  const t0 = Date.parse('2026-09-08T02:00:00Z');
+  runEnergyDayBase(store, snapOf({ lo_yel2: RATE_METER({ today_acc_energy2: 0.111 }, { e: '0.111' }) }), t0, OFFSET);
+  for (let i = 1; i <= 29; i++) {
+    runEnergyDayBase(store, snapOf({ lo_yel2: RATE_METER({ today_acc_energy2: 0.111 }, { e: '0.111' }) }), t0 + i * 2000, OFFSET);
+  }
+  const base = runEnergyDayBase(
+    store,
+    snapOf({ lo_yel2: RATE_METER({ today_acc_energy2: 67.391 }, { e: '0.111', p: '49.1' }) }),
+    t0 + 60_000,
+    OFFSET,
+  );
+  const served = 67.391 - base.lo_yel2.today_acc_energy2;
+  assert.ok(Math.abs(served - 0.111) < 1e-6, `expected the morning to survive at 0.111, got ${served}`);
+});

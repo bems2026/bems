@@ -4,7 +4,7 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { InfoHint } from '@/components/ui/InfoHint';
 import type { Device, Reading, Totals } from '@/lib/types';
 import { formatKwh, shareOfTotal } from '@/lib/format';
-import { energyDisagreement } from './energyDisagreement';
+import { energyDisagreement } from '@/lib/energyDisagreement';
 
 type Period = 'today' | 'week' | 'month';
 
@@ -94,7 +94,7 @@ export function EnergySection({ branchDevices }: { branchDevices: Device[] }) {
           {branches.length > 0 && <span className="analytics-energy-split__sum mono">{branchSum.toFixed(2)} kWh</span>}
         </div>
         {disagreement && (
-          <p className="analytics-energy-warn" role="status">
+          <p className="energy-disagreement" role="status">
             <AlertTriangle size={15} aria-hidden="true" />
             <span>
               <strong>These two figures disagree.</strong> The branches below add up to {formatKwh(disagreement.branchSum)} against the
