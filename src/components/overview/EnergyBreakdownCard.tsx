@@ -14,24 +14,24 @@ import { energyDisagreement } from '@/lib/energyDisagreement';
  * section carries the same split with week/month periods; this is the Overview-sized view of
  * it, so the "Details" link goes there rather than duplicating the toggle here.
  *
- * THE HEADLINE IS THE BRANCH SUM, AND IT SAYS SO — RM-055. `LiveDemandCard`, one card away on
- * this same page, shows `_totals.energy_kwh_today`: the building's own counter, integrated from
- * power by the legacy flow rather than summed from the meters' registers. The two are different
- * quantities and they do not match — 4.75 against 5.09 when this was written — and both used to
- * be labelled only "today", which is exactly what the operator read as the page contradicting
- * itself. Relabelling was the fix rather than changing either number: the sum of the rows shown
- * is the only figure this card can honestly headline, and the building's own counter is the only
- * figure Live Demand can. What was wrong was the naming, not the arithmetic.
+ * THE HEADLINE AND `LiveDemandCard`'S "TODAY" ARE THE SAME NUMBER — RM-057. They were not:
+ * this card summed the branch meters' registers while Live Demand, one card away, showed the
+ * legacy flow's separately-integrated counter, and they read 4.75 against 5.09. RM-055
+ * relabelled this one "kWh today · branches" to stop the two sharing a name; RM-057 removed the
+ * reason for the label instead, by making `_totals` the sum of these same meters at the bridge.
+ * So the plain label is correct again, and `EnergyBreakdownCard.test.tsx` pins that the
+ * qualifier does not come back while the derivation stays shared.
  *
- * And when the branches sum to more than the building they are part of by more than the two
- * derivations can explain, this says so — the same one-sided check Analytics' Energy section
- * runs, from `lib/energyDisagreement.ts`, which carries the measurements its thresholds are
- * sized from.
+ * The comparison did not go away with it, it moved: `_totals.energy_kwh_today_integrated` still
+ * carries the legacy integration of the same circuits, and that is what this checks against.
+ * Checking against the headline would now be checking a number against itself. The rule is
+ * `lib/energyDisagreement.ts`, shared with Analytics' Energy section, which carries the
+ * measurements its thresholds are sized from.
  */
 export function EnergyBreakdownCard() {
   const devices = useDeviceStore((s) => s.devices);
   const readings = useDeviceStore((s) => s.latestReadings);
-  const buildingToday = useDeviceStore((s) => s.totals?.energy_kwh_today) ?? null;
+  const integratedToday = useDeviceStore((s) => s.totals?.energy_kwh_today_integrated) ?? null;
 
   const branches = devices
     .filter((d) => d.class === 'meter')
@@ -39,7 +39,7 @@ export function EnergyBreakdownCard() {
     .filter((b): b is { id: string; name: string; kwh: number } => typeof b.kwh === 'number')
     .sort((a, b) => b.kwh - a.kwh);
   const total = branches.reduce((sum, b) => sum + b.kwh, 0);
-  const disagreement = energyDisagreement(total, buildingToday);
+  const disagreement = energyDisagreement(total, integratedToday);
 
   return (
     <div className="card">
@@ -52,9 +52,9 @@ export function EnergyBreakdownCard() {
             longer-period accumulators are reported.
             <br />
             <br />
-            <strong>Why this differs from Live Demand's "Today".</strong> That figure is the building's own running counter, which the flow integrates from power every two
-            seconds. This one is the meters' own energy registers added up. They measure the same four circuits by two different routes, so they run a few percent apart; if the
-            branches ever sum to well above the building's figure, this card says so rather than leaving both numbers on screen without comment.
+            <strong>This total and Live Demand's "Today" are the same figure</strong> — both are these branch meters added up, so the page cannot show two answers to one
+            question. The building's own flow also integrates the same circuits from power, second by second, as an independent second opinion; it is not shown here, but if the
+            two ever drift further apart than they can explain, this card says so rather than leaving it to be noticed.
           </InfoHint>
         </h3>
         <CardLink to="analytics" label="View the full energy breakdown on Analytics" />
@@ -66,18 +66,16 @@ export function EnergyBreakdownCard() {
         <>
           <div className="breakdown-total">
             <span className="breakdown-total__value mono">{total.toFixed(2)}</span>
-            {/* "· branches" is what stops this reading as the building's own figure. Not "four
-                branches": how many a site has is that site's business, not this card's. */}
-            <span className="breakdown-total__unit">kWh today · branches</span>
+            <span className="breakdown-total__unit">kWh today</span>
           </div>
           {disagreement && (
             <p className="energy-disagreement" role="status">
               <AlertTriangle size={15} aria-hidden="true" />
               <span>
-                <strong>These branches outrun the building.</strong> They add up to {formatKwh(disagreement.branchSum)} against the building's own
-                counter for today, {formatKwh(disagreement.total)}
-                {disagreement.ratio !== null && ` — ${disagreement.ratio.toFixed(1)}x it`}. The branches are part of that same load, so a sum this
-                far above it means one of the two is wrong.
+                <strong>Two measurements of the same circuits disagree.</strong> These branches add up to {formatKwh(disagreement.branchSum)} today,
+                while the building's own power integration over those same circuits gives {formatKwh(disagreement.total)}
+                {disagreement.ratio !== null && ` — ${disagreement.ratio.toFixed(1)}x less`}. They are measured differently and need not match
+                exactly, but a gap this size means one of the two is wrong.
               </span>
             </p>
           )}

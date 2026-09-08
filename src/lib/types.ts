@@ -116,9 +116,26 @@ export interface Reading {
 export interface Totals {
   device_id: '_totals';
   ts: string;
+  /**
+   * Consumed energy — THE SUM OF THE BUILDING'S BRANCH METERS (RM-057), so this figure and the
+   * per-branch split on Analytics are the same arithmetic done once. `null` when any branch has
+   * no figure yet: a building total short by a whole circuit, with nothing on screen saying so,
+   * is the shape of every energy fault this project has had.
+   */
   energy_kwh_today: number | null;
   energy_kwh_week: number | null;
   energy_kwh_month: number | null;
+  /**
+   * The same three circuits as measured the OTHER way — the legacy flow's two-second integration
+   * of power. Optional because a bridge older than RM-057 does not send it.
+   *
+   * Not for display. It is the only independent measurement of the same load this system has, so
+   * it is what `lib/energyDisagreement.ts` compares the sum against; without it that check would
+   * be comparing a number with itself.
+   */
+  energy_kwh_today_integrated?: number | null;
+  energy_kwh_week_integrated?: number | null;
+  energy_kwh_month_integrated?: number | null;
   total_power_w: number | null;
   avg_voltage: number | null;
   phase_current: { red: number | null; yellow: number | null; blue: null };

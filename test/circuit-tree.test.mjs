@@ -11,9 +11,9 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { derivePhaseMap, circuitPath, meteredCircuits, PHASES } from '../shared/circuits.mjs';
+import { derivePhaseMap, circuitPath, meteredCircuits, buildingMeterIds, PHASES } from '../shared/circuits.mjs';
 import { CIRCUITS } from '../shared/sites/mmsu-nberic-care/circuits.mjs';
-import { PHASE_MAP, DEVICE_REGISTRY } from '../shared/registry.mjs';
+import { PHASE_MAP, DEVICE_REGISTRY, BUILDING_METER_IDS } from '../shared/registry.mjs';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -149,5 +149,82 @@ test('every metered circuit is named by the device that measures it, so the two 
       circuit.name,
       `${meter.id} says it is on "${meter.branch_circuit}" but measures the circuit named "${circuit.name}"`,
     );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// RM-057 — the building total is derived from this tree, not hand-written.
+// ---------------------------------------------------------------------------
+
+/**
+ * WHICH METERS ADD UP TO THE WHOLE BUILDING.
+ *
+ * The topmost metered circuits, and "topmost" is the whole of it: a meter that sits UNDER
+ * another meter is already counted by its parent, so adding it double-counts. This building
+ * makes that concrete — `co_yellow` is the convenience-outlets branch and the seven outlet
+ * devices plug into it, so summing branches and outlets together would count the same watt-hours
+ * twice. It is also why this cannot be "every device of class meter": that set is a fact about
+ * hardware, and this is a question about wiring.
+ *
+ * Derived rather than declared so a second site gets its building total by writing its own
+ * `circuits.mjs` and nothing else — the same move `derivePhaseMap` made for PHASE_MAP.
+ */
+test('the building total is the topmost metered circuits, so nothing is counted twice', () => {
+  const ids = buildingMeterIds(CIRCUITS);
+  assert.deepEqual(
+    [...ids].sort(),
+    ['mtr_arec_acu', 'mtr_co_yellow', 'mtr_lo_red', 'mtr_lo_yellow'],
+    'this building is metered at its four branches and nowhere else',
+  );
+});
+
+test('a meter under another meter is left out, because its parent already counts it', () => {
+  const tree = [
+    { id: 'entrance', parent_id: null, kind: 'service_entrance', meter_device_id: null },
+    { id: 'main', parent_id: 'entrance', kind: 'panel', meter_device_id: 'mtr_main' },
+    { id: 'sub', parent_id: 'main', kind: 'branch', meter_device_id: 'mtr_sub' },
+    { id: 'leaf', parent_id: 'sub', kind: 'branch', meter_device_id: 'mtr_leaf' },
+  ];
+  assert.deepEqual(buildingMeterIds(tree), ['mtr_main']);
+});
+
+test('unmetered levels are transparent — the meters below them are still the top', () => {
+  // This site's own shape: service entrance and panel carry no meter, so the branches under
+  // them are the topmost metered circuits and the total is their sum.
+  const tree = [
+    { id: 'entrance', parent_id: null, kind: 'service_entrance', meter_device_id: null },
+    { id: 'panel', parent_id: 'entrance', kind: 'panel', meter_device_id: null },
+    { id: 'a', parent_id: 'panel', kind: 'branch', meter_device_id: 'mtr_a' },
+    { id: 'b', parent_id: 'panel', kind: 'branch', meter_device_id: 'mtr_b' },
+  ];
+  assert.deepEqual(buildingMeterIds(tree).sort(), ['mtr_a', 'mtr_b']);
+});
+
+test('a metered circuit whose parent is unknown still counts, rather than vanishing', () => {
+  // A tree mid-edit, or a row referring to a circuit nobody wrote. Dropping the meter would
+  // silently shrink the building; keeping it is visible and recoverable.
+  const tree = [{ id: 'orphan', parent_id: 'nowhere', kind: 'branch', meter_device_id: 'mtr_x' }];
+  assert.deepEqual(buildingMeterIds(tree), ['mtr_x']);
+});
+
+test('a cycle cannot hang the derivation', () => {
+  const tree = [
+    { id: 'a', parent_id: 'b', kind: 'branch', meter_device_id: 'mtr_a' },
+    { id: 'b', parent_id: 'a', kind: 'branch', meter_device_id: 'mtr_b' },
+  ];
+  const ids = buildingMeterIds(tree);
+  assert.ok(Array.isArray(ids), 'returned rather than looping forever');
+});
+
+test('the registry exports the derived list, not a second hand-written copy', () => {
+  assert.deepEqual([...BUILDING_METER_IDS].sort(), [...buildingMeterIds(CIRCUITS)].sort());
+});
+
+test('every building meter is a real, metered device in the registry', () => {
+  const byId = new Map(DEVICE_REGISTRY.map((d) => [d.id, d]));
+  for (const id of BUILDING_METER_IDS) {
+    const device = byId.get(id);
+    assert.ok(device, `${id} is named by a circuit but is not in the registry`);
+    assert.ok(device.ctx, `${id} has no context key, so it reports no energy to sum`);
   }
 });

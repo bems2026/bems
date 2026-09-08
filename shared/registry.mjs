@@ -69,7 +69,7 @@ export { SITE } from './siteConfig.mjs';
  *
  * Through `siteConfig.mjs`, not straight from the site directory: that file is the ONE place
  * naming which building this deployment is, and this module used to name it a second time. */
-import { derivePhaseMap } from './circuits.mjs';
+import { derivePhaseMap, buildingMeterIds } from './circuits.mjs';
 import { CIRCUITS } from './siteConfig.mjs';
 export { CIRCUITS };
 
@@ -97,6 +97,21 @@ export { BUILT_IN_DEVICES };
  * must render that as "not metered", never as a real zero reading.
  */
 export const PHASE_MAP = derivePhaseMap(CIRCUITS);
+
+/**
+ * The meters that add up to the whole building — RM-057, and the same derivation story as
+ * `PHASE_MAP` one field along.
+ *
+ * The building's energy totals are the SUM OF THESE, and that is what makes the headline figure
+ * and the per-branch split one number rather than two that have to be reconciled. Before RM-057
+ * the totals came from `bems_energy_*`, a hand-built flow node that names this site's four
+ * context keys and that nothing in this repository generates or verifies — so a second building
+ * had to hand-write its own before its totals meant anything.
+ *
+ * `shared/circuits.mjs` explains why this is the topmost metered circuits and not every device of
+ * class `meter`: the outlets plug into a branch that is already counted.
+ */
+export const BUILDING_METER_IDS = buildingMeterIds(CIRCUITS);
 
 /** Timing constants. Derived from the live flow's actual tick rates — see docs/bridge-contract.md. */
 export const TIMING = {

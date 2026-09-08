@@ -56,6 +56,17 @@ export function splitLatestPayload(latest, nowMs = Date.now(), site = SITE) {
         energy_kwh_today: entry.energy_kwh_today ?? null,
         energy_kwh_week: entry.energy_kwh_week ?? null,
         energy_kwh_month: entry.energy_kwh_month ?? null,
+        // RM-057. These three ARE the sum of the branch meters from that release on; before it
+        // they were the legacy flow's integration of the same circuits. The integrated figure
+        // now has columns of its own, so both measurements are stored rather than one replacing
+        // the other, and `coalesce(*_integrated, *)` reads as one continuous integrated series
+        // across the changeover — see the migration, which also records that nothing reads it
+        // that way yet.
+        // Requires `supabase/phase32_building_totals_summed.sql`: writing a column that does not
+        // exist fails the whole insert, so apply the migration before deploying this.
+        energy_kwh_today_integrated: entry.energy_kwh_today_integrated ?? null,
+        energy_kwh_week_integrated: entry.energy_kwh_week_integrated ?? null,
+        energy_kwh_month_integrated: entry.energy_kwh_month_integrated ?? null,
         total_power_w: entry.total_power_w ?? null,
         avg_voltage: entry.avg_voltage ?? null,
         // phase_current.blue is intentionally null, not 0 — no Blue-phase meter installed.

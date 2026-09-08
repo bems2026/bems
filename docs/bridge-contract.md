@@ -192,6 +192,9 @@ per-device list without needing a second endpoint):
   "energy_kwh_today": 12.41,
   "energy_kwh_week": 61.88,
   "energy_kwh_month": 204.3,
+  "energy_kwh_today_integrated": 12.35,
+  "energy_kwh_week_integrated": 61.60,
+  "energy_kwh_month_integrated": 203.9,
   "total_power_w": 2951.0,
   "avg_voltage": 223.1,
   "phase_current": { "red": 6.1, "yellow": 4.9, "blue": null }
@@ -202,12 +205,44 @@ per-device list without needing a second endpoint):
 `currentBlue = 0` because no Blue-phase meter is installed. The UI must render this as
 "not metered".
 
-Totals read from `bems_energy_today` / `bems_energy_week` / `bems_energy_month`.
+#### Consumed energy is the SUM OF THE BRANCH METERS — RM-057
 
-> **Known upstream quirk, not a bridge bug:** `bems_energy_today` sums only the four CT
-> meters. The seven outlet accumulators (`co1_energy`…`co7_energy`) are excluded from the
-> building total, and are not reset by `Midnight Auto-Reset` either. The bridge reports what
-> the flow computes; correcting the flow is out of scope for Stage 1.
+`energy_kwh_today` / `_week` / `_month` are the sum of this site's building meters: the
+topmost metered circuits of the declared electrical tree, derived by
+`buildingMeterIds()` in `shared/circuits.mjs` and threaded into `buildLatest` at build time.
+They are the same figures the per-branch split on Analytics lists out, so **the headline and the
+split are one number and cannot disagree.**
+
+**All or nothing.** A period is `null` when *any* building meter is missing its figure — a
+building total short by a whole circuit, with nothing to say so, is the shape of every energy
+fault this project has had. Week and month are therefore `null` on a freshly deployed bridge
+until each branch has completed a day (`ACCUMULATE_ENERGY`), which the UI renders as "not
+counted yet".
+
+**Why not every device of class `meter`:** the outlets plug into a branch that is already
+counted. `co_yellow` is the convenience-outlets branch, so summing branches and outlets together
+would count the same watt-hours twice. What may be added is a fact about *wiring*.
+
+**Replication:** a second building writes its own `shared/sites/<id>/circuits.mjs` and its
+totals follow. Nothing needs hand-writing per site.
+
+#### `energy_kwh_*_integrated` — the independent cross-check
+
+The legacy flow's own two-second integration of the same circuits, read from
+`bems_energy_today` / `bems_energy_week` / `bems_energy_month`. **This is what the totals used to
+be**, and it is kept because it is the only measurement of that load derived a second, separate
+way. Not for display: `src/lib/energyDisagreement.ts` compares the sum against it, and without it
+that check would compare a number with itself.
+
+Absent from a bridge older than RM-057. Consumers must treat absent as "no comparison available",
+never as zero.
+
+> **The upstream quirk this used to carry is now moot for the headline figure.**
+> `bems_energy_today` sums only the four CT meters — the seven outlet accumulators
+> (`co1_energy`…`co7_energy`) are excluded from it and are not reset by `Midnight Auto-Reset`
+> either. That still describes `energy_kwh_*_integrated`, and it is *correct* rather than a
+> quirk under RM-057's rule: the outlets are downstream of a branch that is already counted.
+> The bridge still reports what the flow computes for that field.
 
 ---
 

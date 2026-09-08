@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import { DEVICE_REGISTRY, PHASE_MAP, publicDevices, SITE } from '../shared/registry.mjs';
+import { DEVICE_REGISTRY, PHASE_MAP, publicDevices, SITE, BUILDING_METER_IDS } from '../shared/registry.mjs';
 import { buildLatest } from '../shared/buildLatest.mjs';
 import { COMMAND_ROUTE, ACCEPTED_STATUS, validateCommand, buildAck } from '../shared/commands.mjs';
 import { CONTEXT_ROUTE, CONTEXT_ACCEPTED_STATUS, validateContextWrite, buildContextAck } from '../shared/context.mjs';
@@ -689,4 +689,112 @@ test('the ring still omits rather than zeroes the optional readings', () => {
   // adding a fourth field is exactly when someone reaches for a default.
   const ring = flow.find((n) => n.name === 'Append to history ring');
   assert.equal(/p\.(voltage|current|online) = 0/.test(ring.func), false);
+});
+
+// ---------------------------------------------------------------------------
+// RM-057 — the building's energy totals ARE the sum of its branch meters.
+// ---------------------------------------------------------------------------
+
+/**
+ * ONE SOURCE OF TRUTH FOR CONSUMED ENERGY.
+ *
+ * Until RM-057 the three building totals came from `bems_energy_*` — the legacy flow's own
+ * two-second integration of power — while the per-branch split came from each meter's own
+ * register. Two derivations of the SAME four circuits, rendered side by side on two pages, and
+ * they disagreed by a few tenths of a percent on a good day and by 5.4x during RM-053. The
+ * operator reported it three times before it was taken as a design fault rather than a bug.
+ *
+ * Now the total is the sum of the branches, so the headline figure and the split cannot
+ * disagree: it is the same arithmetic, done once.
+ *
+ * The legacy figure is still published, as `energy_kwh_*_integrated`. It is no longer the
+ * headline, but it is the only INDEPENDENT measurement of the same circuits this system has, and
+ * without it the disagreement guard RM-054 added would compare a number against itself.
+ */
+const withAllMetersReporting = (over = {}) => {
+  const snap = snapshot();
+  snap.energy.meters.lo_yel2 = { v: '219.0', c: '1.100', p: '240.0', e: '2.5000', h: true };
+  return { ...snap, ...over };
+};
+
+test('the building total is the sum of the branch meters, not a separately integrated figure', () => {
+  const built = buildLatest(withAllMetersReporting(), DEVICE_REGISTRY, PHASE_MAP, 1786000000000, 480, {}, undefined, {}, BUILDING_METER_IDS);
+  const totals = built.find((r) => r.device_id === '_totals');
+  // 3.11 (co_yel) + 5.0 (lo_red) + 9.0 (arec) + 2.5 (lo_yel2)
+  assert.equal(totals.energy_kwh_today, 19.61);
+  // And it is the same arithmetic the page does, which is the whole point.
+  const branchSum = BUILDING_METER_IDS.reduce(
+    (sum, id) => sum + built.find((r) => r.device_id === id).energy_kwh_today,
+    0,
+  );
+  assert.ok(Math.abs(totals.energy_kwh_today - branchSum) < 1e-9, 'the headline and the split are one number');
+});
+
+test('the legacy integrated counter is still published, as the independent cross-check', () => {
+  const built = buildLatest(withAllMetersReporting(), DEVICE_REGISTRY, PHASE_MAP, 1786000000000, 480, {}, undefined, {}, BUILDING_METER_IDS);
+  const totals = built.find((r) => r.device_id === '_totals');
+  assert.equal(totals.energy_kwh_today_integrated, 12.41);
+  assert.equal(totals.energy_kwh_week_integrated, 61.88);
+  assert.equal(totals.energy_kwh_month_integrated, 204.3);
+});
+
+test('a branch with no reading makes the total null, never a quietly smaller building', () => {
+  // The default snapshot's `lo_yel2` reports nothing at all. Summing the other three would
+  // publish a building total that is short by a whole circuit, with nothing on screen saying so
+  // — the failure mode RM-047 and RM-053 both had.
+  const built = buildLatest(snapshot(), DEVICE_REGISTRY, PHASE_MAP, 1786000000000, 480, {}, undefined, {}, BUILDING_METER_IDS);
+  const totals = built.find((r) => r.device_id === '_totals');
+  assert.equal(totals.energy_kwh_today, null);
+  // The integrated figure is unaffected — it is measured elsewhere and still means something.
+  assert.equal(totals.energy_kwh_today_integrated, 12.41);
+});
+
+test('week and month read "not counted yet" until every branch has an accumulated figure', () => {
+  // A freshly deployed bridge has no `energyAcc` at all, so no branch has a week or a month.
+  const built = buildLatest(withAllMetersReporting(), DEVICE_REGISTRY, PHASE_MAP, 1786000000000, 480, {}, undefined, {}, BUILDING_METER_IDS);
+  const totals = built.find((r) => r.device_id === '_totals');
+  assert.equal(totals.energy_kwh_week, null);
+  assert.equal(totals.energy_kwh_month, null);
+});
+
+test('week and month are the sum of the branches once the accumulator has them all', () => {
+  const snap = withAllMetersReporting({
+    energyAcc: {
+      mtr_co_yellow: { weekBase: 10, monthBase: 40 },
+      mtr_lo_red: { weekBase: 20, monthBase: 80 },
+      mtr_arec_acu: { weekBase: 30, monthBase: 120 },
+      mtr_lo_yellow: { weekBase: 5, monthBase: 20 },
+    },
+  });
+  const built = buildLatest(snap, DEVICE_REGISTRY, PHASE_MAP, 1786000000000, 480, {}, undefined, {}, BUILDING_METER_IDS);
+  const totals = built.find((r) => r.device_id === '_totals');
+  // Each branch's week is its banked base plus today: (10+3.11)+(20+5)+(30+9)+(5+2.5)
+  assert.equal(totals.energy_kwh_week, 84.61);
+  // And the month the same way: 260 banked across the four, plus today's 19.61.
+  assert.equal(totals.energy_kwh_month, 279.61);
+});
+
+test('one branch missing its week leaves the building week null, not three-quarters of a building', () => {
+  const snap = withAllMetersReporting({
+    energyAcc: {
+      mtr_co_yellow: { weekBase: 10, monthBase: 40 },
+      mtr_lo_red: { weekBase: 20, monthBase: 80 },
+      mtr_arec_acu: { weekBase: 30, monthBase: 120 },
+      // mtr_lo_yellow has not completed a day yet
+    },
+  });
+  const built = buildLatest(snap, DEVICE_REGISTRY, PHASE_MAP, 1786000000000, 480, {}, undefined, {}, BUILDING_METER_IDS);
+  const totals = built.find((r) => r.device_id === '_totals');
+  assert.equal(totals.energy_kwh_week, null);
+  assert.equal(totals.energy_kwh_month, null);
+});
+
+test('a flow that names no building meters behaves exactly as it did before RM-057', () => {
+  // An older deployed bridge passes nothing here. It must keep serving the legacy figure rather
+  // than suddenly reporting null — the same rule `maxDailyKwh` follows for an undeclared bound.
+  const built = buildLatest(withAllMetersReporting(), DEVICE_REGISTRY, PHASE_MAP, 1786000000000);
+  const totals = built.find((r) => r.device_id === '_totals');
+  assert.equal(totals.energy_kwh_today, 12.41);
+  assert.equal(totals.energy_kwh_week, 61.88);
+  assert.equal(totals.energy_kwh_month, 204.3);
 });

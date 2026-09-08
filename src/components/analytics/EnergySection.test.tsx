@@ -196,9 +196,19 @@ describe('energyDisagreement', () => {
 });
 
 describe('EnergySection — branch/total disagreement', () => {
+  /*
+   * RM-057 changed what this compares. The tiles now show the SUM of the branches, so comparing
+   * the split against them would compare a number with itself. The independent figure is
+   * `*_integrated` — the legacy flow's two-second integration of the same circuits.
+   */
   const disagreeing = () =>
     useDeviceStore.setState({
-      totals: totals({ energy_kwh_today: 5.086, energy_kwh_week: 18.4 }),
+      totals: totals({
+        energy_kwh_today: 4.7,
+        energy_kwh_week: 99.546,
+        energy_kwh_today_integrated: 5.086,
+        energy_kwh_week_integrated: 18.4,
+      }),
       latestReadings: {
         mtr_a: reading('mtr_a', 3.1, { energy_kwh_week: 79.278 }),
         mtr_b: reading('mtr_b', 1.6, { energy_kwh_week: 20.268 }),
@@ -226,8 +236,13 @@ describe('EnergySection — branch/total disagreement', () => {
    */
   it('reads each period against its own total, not one period against another', () => {
     useDeviceStore.setState({
-      // A fresh week, so the day IS the week — but the building counted 5.086 for the day.
-      totals: totals({ energy_kwh_today: 5.086, energy_kwh_week: 18.4 }),
+      // A fresh week, so the day IS the week — but the integrator counted 5.086 for the day.
+      totals: totals({
+        energy_kwh_today: 20,
+        energy_kwh_week: 20,
+        energy_kwh_today_integrated: 5.086,
+        energy_kwh_week_integrated: 18.4,
+      }),
       latestReadings: {
         mtr_a: reading('mtr_a', 15, { energy_kwh_week: 15 }),
         mtr_b: reading('mtr_b', 5, { energy_kwh_week: 5 }),
@@ -244,7 +259,7 @@ describe('EnergySection — branch/total disagreement', () => {
 
   it('stays quiet when the branches sum to less than the building total', () => {
     useDeviceStore.setState({
-      totals: totals({ energy_kwh_today: 5.086 }),
+      totals: totals({ energy_kwh_today: 4.746, energy_kwh_today_integrated: 5.086 }),
       latestReadings: { mtr_a: reading('mtr_a', 1.652), mtr_b: reading('mtr_b', 3.094) },
     });
     render(<EnergySection branchDevices={BRANCHES} />);
@@ -253,7 +268,7 @@ describe('EnergySection — branch/total disagreement', () => {
 
   it('stays quiet when the building never counted the period it would compare against', () => {
     useDeviceStore.setState({
-      totals: totals({ energy_kwh_week: null }),
+      totals: totals({ energy_kwh_week: null, energy_kwh_week_integrated: null }),
       latestReadings: {
         mtr_a: reading('mtr_a', 3.1, { energy_kwh_week: 79.278 }),
         mtr_b: reading('mtr_b', 1.6, { energy_kwh_week: 20.268 }),

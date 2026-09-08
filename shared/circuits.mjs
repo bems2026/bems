@@ -83,3 +83,47 @@ export function circuitPath(circuits, id) {
   }
   return chain.reverse();
 }
+
+/**
+ * The meters whose readings ADD UP TO THE WHOLE BUILDING — RM-057.
+ *
+ * The topmost metered circuits: every metered circuit that has no metered ancestor. That single
+ * rule is what makes the sum a total rather than an over-count, and this building shows why it
+ * cannot be "every device of class meter". `co_yellow` is the convenience-outlets branch and the
+ * seven outlet devices plug into it, so a set chosen by hardware class would count the same
+ * watt-hours at the branch and again at the socket. What may be added together is a fact about
+ * WIRING, and wiring is what this file describes.
+ *
+ * A metered sub-panel is therefore counted once, at the sub-panel, and the branches beneath it
+ * are left out — they are detail within a figure already counted, not extra load.
+ *
+ * Derived rather than declared, so a second site gets its building total by writing its own
+ * `circuits.mjs` and changing nothing else. That is the same move `derivePhaseMap` made, and it
+ * retires the last thing the hand-built `Calculate 3-Phase Totals` node knew that this
+ * repository did not.
+ *
+ * An orphan — a metered circuit whose parent is not in the tree — is KEPT. A tree mid-edit is
+ * the likely cause, and dropping the meter would quietly shrink the building total with nothing
+ * to show for it; keeping it is visible, and visible is recoverable.
+ */
+export function buildingMeterIds(circuits) {
+  const byId = new Map(circuits.map((c) => [c.id, c]));
+  const metered = (c) => typeof c?.meter_device_id === 'string' && c.meter_device_id.length > 0;
+  const out = [];
+  for (const circuit of meteredCircuits(circuits)) {
+    let cursor = circuit.parent_id ? byId.get(circuit.parent_id) : undefined;
+    // `seen` and the depth cap are the same guard `circuitPath` carries: a cycle in hand-written
+    // data must not hang a function the bridge calls on every read.
+    const seen = new Set([circuit.id]);
+    let covered = false;
+    let depth = 0;
+    while (cursor && !seen.has(cursor.id) && depth <= MAX_CIRCUIT_DEPTH) {
+      if (metered(cursor)) { covered = true; break; }
+      seen.add(cursor.id);
+      cursor = cursor.parent_id ? byId.get(cursor.parent_id) : undefined;
+      depth++;
+    }
+    if (!covered) out.push(circuit.meter_device_id);
+  }
+  return out;
+}

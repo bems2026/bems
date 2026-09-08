@@ -82,7 +82,7 @@ export const STALE_READING_MS = 600000;
  *        behaviour, where the code was a literal assembled here.
  * @returns {Array} one entry per device, plus a trailing `_totals` entry
  */
-export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, staleAfterMsByClass = {}, maxDailyKwh = undefined, dailyEnergyCodeByDevice = {}) {
+export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, staleAfterMsByClass = {}, maxDailyKwh = undefined, dailyEnergyCodeByDevice = {}, buildingMeterIds = []) {
   const energy = snap.energy || { meters: {}, totals: {} };
   const outlet = snap.outlet || { meters: {}, state: {} };
   const lights = (snap.switch || {}).state || {};
@@ -396,12 +396,57 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, st
   const t = energy.totals || {};
   const today = num(t.today), week = num(t.week), month = num(t.month);
 
+  // CONSUMED ENERGY IS THE SUM OF THE BUILDING'S OWN BRANCH METERS — RM-057.
+  //
+  // `buildingMeterIds` is the topmost metered circuits of the site's declared electrical tree
+  // (`shared/circuits.mjs`), threaded in at build time for the same reason `PHASE_MAP` and
+  // `maxDailyKwh` are: this function is inlined verbatim into a Node-RED node and may not import.
+  //
+  // WHY THIS REPLACED THE FLOW'S OWN COUNTERS. `bems_energy_*` integrates power every two
+  // seconds; each branch row is that meter's own register. Both describe the same four circuits,
+  // and rendering them side by side without ever comparing them is what let RM-053 show a 5.4x
+  // contradiction for a day and RM-056 hide a 38% under-count behind a 6.7% building-level one.
+  // Summing the branches makes the headline and the split the same arithmetic done once, so
+  // there is nothing left to reconcile.
+  //
+  // WHY NOT EVERY METER: the outlets plug into a branch that is already counted. `circuits.mjs`
+  // carries that reasoning, because it is a fact about wiring rather than about hardware.
+  //
+  // ALL OR NOTHING, deliberately. A branch with no figure yields `null` for the whole building
+  // rather than a sum that is short by a circuit — an under-count with nothing on screen to say
+  // so is the shape of every energy fault this project has had. The UI already renders null as
+  // "No data", which is the honest answer to "what did the building use".
+  //
+  // An empty list means an older deployed flow that passes nothing: fall back to the legacy
+  // counters and behave exactly as before, the same rule `maxDailyKwh` follows.
+  function branchSum(field) {
+    if (!buildingMeterIds.length) return undefined;
+    let sum = 0;
+    for (const id of buildingMeterIds) {
+      const v = byId[id] ? num(byId[id][field]) : undefined;
+      if (v === undefined) return null;
+      sum += v;
+    }
+    return Math.round(sum * 1000) / 1000;
+  }
+  const sumToday = branchSum('energy_kwh_today');
+  const sumWeek = branchSum('energy_kwh_week');
+  const sumMonth = branchSum('energy_kwh_month');
+  const pick = (summed, legacy) => (summed === undefined ? (legacy === undefined ? null : legacy) : summed);
+
   out.push({
     device_id: '_totals',
     ts: iso8(nowMs, offsetMinutes),
-    energy_kwh_today: today === undefined ? null : today,
-    energy_kwh_week: week === undefined ? null : week,
-    energy_kwh_month: month === undefined ? null : month,
+    energy_kwh_today: pick(sumToday, today),
+    energy_kwh_week: pick(sumWeek, week),
+    energy_kwh_month: pick(sumMonth, month),
+    // The legacy two-second integration of the same circuits, kept because it is the only
+    // INDEPENDENT measurement of them this system has. Not the headline any more, but the thing
+    // the disagreement guard compares the sum against — without it that guard would be checking
+    // a number against itself, and the fault class it exists for has now bitten three times.
+    energy_kwh_today_integrated: today === undefined ? null : today,
+    energy_kwh_week_integrated: week === undefined ? null : week,
+    energy_kwh_month_integrated: month === undefined ? null : month,
     total_power_w: pSeen ? Math.round(totalP * 10) / 10 : null,
     avg_voltage: vCount ? Math.round((vSum / vCount) * 10) / 10 : null,
     // blue is null, not 0. No Blue-phase meter is installed; `Calculate 3-Phase Totals`

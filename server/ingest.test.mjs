@@ -61,9 +61,30 @@ test('splitLatestPayload separates per-device readings from the _totals row', ()
     // default is transitional and RM-030 drops it; this is what makes that drop a no-op.
     site_id: SITE.id,
     energy_kwh_today: 12.41, energy_kwh_week: 61.88, energy_kwh_month: 204.3,
+    // RM-057 — the independent cross-check is stored beside the headline figures. This fixture's
+    // payload carries none, and absent must reach the database as null rather than as a zero
+    // that would read as "the building's own integration measured nothing".
+    energy_kwh_today_integrated: null, energy_kwh_week_integrated: null, energy_kwh_month_integrated: null,
     total_power_w: 2951, avg_voltage: 223.1,
     phase_current_red: 6.1, phase_current_yellow: 4.9, phase_current_blue: null,
   });
+});
+
+test('splitLatestPayload stores the RM-057 cross-check when the bridge sends it', () => {
+  const { totals } = splitLatestPayload([
+    {
+      device_id: '_totals', ts: AT,
+      energy_kwh_today: 6.014, energy_kwh_week: 21.6, energy_kwh_month: 63.23,
+      energy_kwh_today_integrated: 5.997, energy_kwh_week_integrated: 21.53, energy_kwh_month_integrated: 62.93,
+      phase_current: { red: 1, yellow: 2, blue: null },
+    },
+  ], AT_MS);
+  // The live figures from 2026-09-08: the branch sum leads the integration by ~0.3%, which is
+  // the healthy relationship. Both are kept, because only one of them is independent.
+  assert.equal(totals.energy_kwh_today, 6.014);
+  assert.equal(totals.energy_kwh_today_integrated, 5.997);
+  assert.equal(totals.energy_kwh_week_integrated, 21.53);
+  assert.equal(totals.energy_kwh_month_integrated, 62.93);
 });
 
 test('splitLatestPayload preserves phase_current.blue as null, never coerces to 0', () => {

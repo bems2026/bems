@@ -34,7 +34,7 @@
 import { writeFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { DEVICE_REGISTRY, PHASE_MAP, STALE_AFTER_MS_BY_CLASS, TIMING, publicDevices, SITE, DAILY_ENERGY_CODE_BY_DEVICE } from '../shared/registry.mjs';
+import { DEVICE_REGISTRY, PHASE_MAP, STALE_AFTER_MS_BY_CLASS, TIMING, publicDevices, SITE, DAILY_ENERGY_CODE_BY_DEVICE, BUILDING_METER_IDS } from '../shared/registry.mjs';
 import { TRACK_ARRIVALS_SRC } from './arrivalTracker.mjs';
 import { energyDayBaseSrc } from './energyDayBase.mjs';
 import { energyAccumulatorSrc } from './energyAccumulator.mjs';
@@ -173,8 +173,13 @@ const MAX_BRANCH_KWH_PER_DAY = ${JSON.stringify(SITE.max_branch_kwh_per_day)};
 // cumulative_daily semantic rather than from a name assembled inside buildLatest.
 // (No backticks in this comment: it is inside a template literal.)
 const DAILY_ENERGY_CODE = ${JSON.stringify(DAILY_ENERGY_CODE_BY_DEVICE)};
+// The meters that add up to the whole building — the topmost metered circuits of this site's
+// declared electrical tree, derived in shared/circuits.mjs. Threaded in for the same reason
+// PHASE_MAP is: buildLatest is inlined here verbatim and may not import. A second site changes
+// its own circuits file and this follows, which is what retires the hand-built totals node.
+const BUILDING_METERS = ${JSON.stringify(BUILDING_METER_IDS)};
 
-msg.payload = buildLatest(msg.snapshot || {}, REG, PHASE_MAP, Date.now(), ${SITE.utc_offset_minutes}, STALE_AFTER_MS_BY_CLASS, MAX_BRANCH_KWH_PER_DAY, DAILY_ENERGY_CODE);
+msg.payload = buildLatest(msg.snapshot || {}, REG, PHASE_MAP, Date.now(), ${SITE.utc_offset_minutes}, STALE_AFTER_MS_BY_CLASS, MAX_BRANCH_KWH_PER_DAY, DAILY_ENERGY_CODE, BUILDING_METERS);
 msg.headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
 return msg;`;
 

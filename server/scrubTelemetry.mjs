@@ -122,6 +122,12 @@ export function totalsBounds(site) {
     bounds.energy_kwh_today = { min: 0, max: day };
     bounds.energy_kwh_week = { min: 0, max: day * WEEK_DAYS };
     bounds.energy_kwh_month = { min: 0, max: day * MONTH_DAYS };
+    // RM-057's independent cross-check measures the same building over the same period, so it
+    // is held to the same ceilings. Bounding one and not the other would let the figure the
+    // disagreement guard reads be the one nothing checks.
+    bounds.energy_kwh_today_integrated = bounds.energy_kwh_today;
+    bounds.energy_kwh_week_integrated = bounds.energy_kwh_week;
+    bounds.energy_kwh_month_integrated = bounds.energy_kwh_month;
   }
   return bounds;
 }
@@ -178,6 +184,8 @@ const READING_FIELDS = ['voltage', 'current', 'power_w', 'energy_kwh_today'];
 /** The numeric columns of `building_totals`. `ts` and `site_id` are not telemetry. */
 const TOTALS_FIELDS = [
   'energy_kwh_today', 'energy_kwh_week', 'energy_kwh_month',
+  // RM-057 — the legacy integration of the same circuits, kept as the independent cross-check.
+  'energy_kwh_today_integrated', 'energy_kwh_week_integrated', 'energy_kwh_month_integrated',
   'total_power_w', 'avg_voltage',
   'phase_current_red', 'phase_current_yellow', 'phase_current_blue',
 ];

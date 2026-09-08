@@ -1,14 +1,25 @@
 /**
- * RM-054 — when a per-branch split and the building's own counter stop being reconcilable.
+ * RM-054 — when the two ways this building measures its own consumption stop agreeing.
  *
- * Two surfaces render these two independently-derived quantities together: Analytics' Energy
- * section (tiles vs "By branch") and Overview's Energy Breakdown (its headline is the branch sum,
- * one card away from Live Demand's building counter). The tiles and Live Demand come from the
- * building's own running kWh counters, integrated from power every two seconds by the legacy
- * flow; the branch figures are each meter's own cumulative register, accumulated by the bridge
- * (`node-red-bridge/energyAccumulator.mjs`). They are not expected to match — but until RM-054
- * nothing compared them at all, which is how RM-053 put 99.546 kWh of branches next to a building
- * week of 18.4 and rendered both without comment for a day.
+ * WHAT IS COMPARED, AND IT CHANGED AT RM-057. The branch figures are each meter's own cumulative
+ * register, accumulated by the bridge (`node-red-bridge/energyAccumulator.mjs`). They used to be
+ * compared against the building's headline counter — but since RM-057 that headline IS their sum,
+ * so the comparison would be a number against itself. The independent figure is
+ * `_totals.energy_kwh_*_integrated`: the legacy flow's two-second integration of the same
+ * circuits, kept in the payload for exactly this purpose. Nothing compared them at all before
+ * RM-054, which is how RM-053 put 99.546 kWh of branches next to a building week of 18.4 and
+ * rendered both without comment for a day.
+ *
+ * ONE DIRECTION, AND RM-057 WEAKENED THE ARGUMENT FOR THAT — recorded here rather than quietly
+ * left as it was. The original reasoning was that the branches are a SUBSET of the building's
+ * load, so exceeding it is impossible and falling short is ordinary. Both figures now describe
+ * the same four circuits, so that asymmetry is gone and a shortfall means something too: it is
+ * precisely RM-056's signature, where the day-baseline tracker absorbed a third of one branch's
+ * real consumption and the building-level shortfall was only 6.7%. **This function would not have
+ * caught it, and does not catch it now.** The excess direction stays guarded because it is the
+ * one with a measured tolerance; the shortfall direction needs a margin sized from more than a
+ * single fault, and inventing one here would be the round number this file's thresholds exist to
+ * avoid. ROADMAP RM-058 carries the measurements that would size it.
  *
  * In `lib/` rather than beside either card because both use it — RM-055. Its own tests live in
  * `components/analytics/EnergySection.test.tsx`, next to the rendering they were written against.
@@ -70,17 +81,18 @@ export interface EnergyDisagreement {
  * The branches summing to MORE than the building they are part of, by more than the two
  * derivations can explain.
  *
- * ONE DIRECTION ONLY, and that is the whole design. The branch rows are a subset of the
- * building's load and any row missing a reading is dropped from the sum, so falling short is
- * ordinary and gets no comment; only exceeding is a fact about the data rather than about what
- * happened to be reporting. RM-053's `weekBase` of 78.977 kWh against a real 1.5 could only ever
- * have shown up on this side.
+ * ONE DIRECTION ONLY. The integration misses time by construction — it accrues only while a
+ * meter reads healthy and while Node-RED is running, whereas the registers count through both —
+ * so the registers running AHEAD of it is expected and tolerated up to a measured margin.
+ * RM-053's `weekBase` of 78.977 kWh against a real 1.5 showed up on this side. The other side is
+ * discussed in the file header: it is meaningful since RM-057 and deliberately not guarded yet.
  *
- * A MISSING TOTAL IS NOT A ZERO ONE. `null` means the building never counted that period — the
- * tiles already say "No data" — so there is nothing to compare against and this returns nothing
- * rather than treating the absence as the smaller side of a comparison. An honest 0, on the
- * other hand, IS a comparison, and a week of branch consumption standing against it is exactly
- * the kind of contradiction worth surfacing.
+ * A MISSING TOTAL IS NOT A ZERO ONE. `null` or absent means the building's integration never
+ * counted that period — or that the bridge predates RM-057 and sends no independent figure at
+ * all — so there is nothing to compare against and this returns nothing rather than treating the
+ * absence as the smaller side of a comparison. An honest 0, on the other hand, IS a comparison,
+ * and a week of branch consumption standing against it is exactly the kind of contradiction
+ * worth surfacing.
  */
 export function energyDisagreement(branchSum: number, total: number | null | undefined): EnergyDisagreement | null {
   if (typeof total !== 'number' || !Number.isFinite(total)) return null;

@@ -8,36 +8,40 @@ import { energyDisagreement } from '@/lib/energyDisagreement';
 
 type Period = 'today' | 'week' | 'month';
 
-const PERIODS: { id: Period; label: string; tile: string; totalsKey: keyof Totals; deviceKey: keyof Reading }[] = [
-  { id: 'today', label: 'Today', tile: 'TODAY', totalsKey: 'energy_kwh_today', deviceKey: 'energy_kwh_today' },
-  { id: 'week', label: 'Week', tile: 'THIS WEEK', totalsKey: 'energy_kwh_week', deviceKey: 'energy_kwh_week' },
-  { id: 'month', label: 'Month', tile: 'THIS MONTH', totalsKey: 'energy_kwh_month', deviceKey: 'energy_kwh_month' },
+const PERIODS: { id: Period; label: string; tile: string; totalsKey: keyof Totals; integratedKey: keyof Totals; deviceKey: keyof Reading }[] = [
+  { id: 'today', label: 'Today', tile: 'TODAY', totalsKey: 'energy_kwh_today', integratedKey: 'energy_kwh_today_integrated', deviceKey: 'energy_kwh_today' },
+  { id: 'week', label: 'Week', tile: 'THIS WEEK', totalsKey: 'energy_kwh_week', integratedKey: 'energy_kwh_week_integrated', deviceKey: 'energy_kwh_week' },
+  { id: 'month', label: 'Month', tile: 'THIS MONTH', totalsKey: 'energy_kwh_month', integratedKey: 'energy_kwh_month_integrated', deviceKey: 'energy_kwh_month' },
 ];
 
 /**
  * Building energy consumed, over the three windows the bridge actually counts.
  *
- * Today/week/month come from the edge buffer's own running counters (`_totals`), not from
- * anything summed client-side — they're the same three figures Overview's `LiveDemandCard`
- * shows, read from one source so the two pages can't disagree. Each is rendered as "No
- * data" when the bridge reports null rather than as 0: an uncounted period and a period
- * that genuinely consumed nothing are different facts.
+ * THE TILES AND THE SPLIT ARE ONE NUMBER NOW — RM-057. Both are the sum of the building's
+ * branch meters: the tiles read `_totals`, which the bridge computes as exactly that sum
+ * (`shared/buildLatest.mjs`), and the rows below are the same meters listed out. They cannot
+ * disagree, because it is the same arithmetic done once. Until RM-057 the tiles came from the
+ * legacy flow's own two-second integration instead, and the operator reported the two figures
+ * as out of sync three times before that was read as a design fault rather than a bug.
  *
- * The per-branch split is accumulated by the bridge itself (`ACCUMULATE_ENERGY` in
- * build-flow.mjs), because a meter only ever reports a daily counter. On a freshly
- * deployed bridge the week and month accumulators are empty until whole days have rolled
- * over, so those periods legitimately have nothing to show — that renders as an explicit
- * "not counted yet", never as zeroes.
+ * Each is rendered as "No data" when the bridge reports null rather than as 0: an uncounted
+ * period and a period that genuinely consumed nothing are different facts. A period is null
+ * whenever ANY branch is missing its figure — a building total short by a whole circuit, with
+ * nothing on screen saying so, is the shape of every energy fault this project has had.
  *
- * Each branch's share is computed against the sum of the branches shown, not against the
- * building total. Only the former is true by construction: the building's counters come
- * from its own legacy flow, whose week/month boundaries aren't knowable from here.
+ * The per-branch week/month are accumulated by the bridge itself (`ACCUMULATE_ENERGY` in
+ * build-flow.mjs), because a meter only ever reports a daily counter. On a freshly deployed
+ * bridge those accumulators are empty until whole days have rolled over, so both the tile and
+ * the split legitimately have nothing to show — an explicit "not counted yet", never zeroes.
  *
- * The two still need not agree exactly — but they are no longer rendered side by side without
- * ever being compared, which is what let RM-053 show a 5.4x contradiction on this card for a
- * day. `energyDisagreement.ts` says when the difference has stopped being explicable, and
- * carries the measurements its two thresholds are sized from; it is deliberately one-sided and
- * deliberately silent when the building counter is absent.
+ * Each branch's share is computed against the sum of the branches shown, which is now the same
+ * denominator as the tile.
+ *
+ * WHAT IS STILL COMPARED, and why it is not the tile. `_totals` also carries
+ * `energy_kwh_*_integrated`: the legacy integration of the same circuits, the only INDEPENDENT
+ * measurement of them this system has. `lib/energyDisagreement.ts` compares the split against
+ * that, which is what keeps the RM-053 guard meaningful — comparing the split to the tile would
+ * now be comparing a number with itself.
  */
 export function EnergySection({ branchDevices }: { branchDevices: Device[] }) {
   const totals = useDeviceStore((s) => s.totals);
@@ -50,9 +54,12 @@ export function EnergySection({ branchDevices }: { branchDevices: Device[] }) {
     .filter((b): b is { id: string; name: string; kwh: number } => typeof b.kwh === 'number')
     .sort((a, b) => b.kwh - a.kwh);
   const branchSum = branches.reduce((sum, b) => sum + b.kwh, 0);
-  // Against THIS period's building counter — the tiles show all three, and comparing the split
-  // to the wrong one would manufacture a disagreement out of two correct numbers.
-  const disagreement = energyDisagreement(branchSum, (totals?.[active.totalsKey] as number | null | undefined) ?? null);
+  // Against THIS period's INTEGRATED counter, not the tile — RM-057. The tile is now the sum of
+  // these same branches, so comparing the split to it would compare a number with itself and the
+  // check could never fire. The legacy two-second integration is the only independent
+  // measurement of the same circuits, and the period must be the matching one: comparing the
+  // wrong period's figures would manufacture a disagreement out of two correct numbers.
+  const disagreement = energyDisagreement(branchSum, (totals?.[active.integratedKey] as number | null | undefined) ?? null);
 
   return (
     <div className="analytics-cards-section">
@@ -61,9 +68,10 @@ export function EnergySection({ branchDevices }: { branchDevices: Device[] }) {
           <BatteryCharging size={14} className="title-icon" aria-hidden="true" />
           Energy
           <InfoHint label="Where these energy figures come from">
-            The three totals are the building's own running kWh counters, read straight from the bridge — the same figures Overview reports. The per-branch split is accumulated
-            separately by this bridge from each meter's daily counter, since no meter reports a longer period. The two come from different sources, so they need not agree exactly —
-            but the branches are part of the building's load, so if they ever sum to well over it, the split below says so rather than showing both figures without comment.
+            The three totals are the sum of this building's branch meters — the same meters listed below, added up by the bridge, so the headline and the split are one figure and
+            not two that have to be reconciled. Overview reports the same number. Each meter's week and month are accumulated by the bridge from its daily counter, since no meter
+            reports a longer period, so a period reads "not counted yet" until every branch has one. The building's own power integration measures the same circuits a second,
+            independent way; if the two ever drift further apart than they can explain, the split below says so rather than leaving it to be noticed.
           </InfoHint>
         </span>
         <span className="analytics-cards-section__tag">CONSUMED · kWh</span>
@@ -97,10 +105,10 @@ export function EnergySection({ branchDevices }: { branchDevices: Device[] }) {
           <p className="energy-disagreement" role="status">
             <AlertTriangle size={15} aria-hidden="true" />
             <span>
-              <strong>These two figures disagree.</strong> The branches below add up to {formatKwh(disagreement.branchSum)} against the
-              building's own counter for {active.tile.toLowerCase()}, {formatKwh(disagreement.total)}
-              {disagreement.ratio !== null && ` — ${disagreement.ratio.toFixed(1)}x it`}. The two are counted separately and need not
-              match exactly, but the branches are part of that same load, so a sum this far above it means one of them is wrong.
+              <strong>Two measurements of the same circuits disagree.</strong> The branches below add up to {formatKwh(disagreement.branchSum)} for
+              {' '}{active.tile.toLowerCase()}, while the building's own power integration over those same circuits gives {formatKwh(disagreement.total)}
+              {disagreement.ratio !== null && ` — ${disagreement.ratio.toFixed(1)}x less`}. They are measured differently and need not match exactly, but
+              a gap this size means one of the two is wrong.
             </span>
           </p>
         )}

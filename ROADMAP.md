@@ -5,9 +5,11 @@ bridge's own flow context and eight days of corrected history. §0 leads with wh
 measurement found: **RM-053**, two faults in the per-branch week/month split, both now fixed
 and the live figures repaired — and now with **RM-054**, the comparison that would have made
 that fault visible on the page rather than leaving it to a person to notice. §0 then leads with
-**RM-056**, found by chasing the operator's report that Overview's two "today" figures disagreed:
-the rate guard RM-052 added was sizing its ceiling by the gap between dashboard reads, and had
-been deleting a third of the aircon branch's real consumption.
+**RM-057**, the operator's own proposal: the building's energy totals are the sum of its branch
+meters now, derived from the site's declared circuit tree, so the headline figure and the
+per-branch split are one number instead of two derivations that had to be reconciled. Getting
+there went through **RM-056** — the rate guard RM-052 added was sizing its ceiling by the gap
+between dashboard reads, and had been deleting a third of the aircon branch's real consumption.
 **Audited at commit:** `fa9430f`
 
 **2026-09-01, and it changes what §0 says.** The headline claim below — that there is no
@@ -66,6 +68,52 @@ other four and none needed changing.
 ---
 
 ## 0. Triage — what to do next
+
+### 2026-09-08 — the building total is the sum of its branches now, and that was the operator's idea
+
+**RM-057.** After RM-056 the three periods still did not match: month 63.23 against 62.93, week
+21.60 against 21.53, today 6.09 against 6.06 — all small, all the same sign, and all real. The
+operator asked the question that had not been asked in three rounds of fixing this: *"why not
+make it one source of truth"*, with every meter's consumption added up to give the building
+figure, and a site declaring its own meters so the next building can do the same.
+
+That is the right answer, and it was reachable at any point in the previous three faults.
+
+**WHAT WAS WRONG WAS THE ARCHITECTURE, NOT THE ARITHMETIC.** The totals came from
+`bems_energy_*` — the legacy flow's own two-second integration — while the per-branch split came
+from each meter's own register. **Two derivations of the same four circuits**, rendered side by
+side on two pages. Every energy fault this project has had lived in the gap between them:
+RM-053's 5.4x, RM-047's fabricated outlet energy, RM-056's 38 % absorption showing as a 6.7 %
+building-level shortfall. The totals are now the sum of the branch meters, so the headline figure
+and the split are the same arithmetic done once and **cannot** disagree. Measured against the
+mock immediately after: TODAY 26.53 / branch sum 26.53, WEEK 344.29 / 344.29, MONTH 1535.89 /
+1535.89, and Overview's Live Demand and Energy Breakdown both 26.51.
+
+**WHICH METERS ADD UP TO A BUILDING IS A FACT ABOUT WIRING.** Not "every device of class
+`meter`": `co_yellow` is the convenience-outlets branch and the seven outlet devices plug into
+it, so that set would count the same watt-hours at the branch and again at the socket.
+`buildingMeterIds()` takes the **topmost metered circuits** of the declared tree — every metered
+circuit with no metered ancestor — which counts a metered sub-panel once and leaves the branches
+beneath it as detail. Derived from `shared/sites/<id>/circuits.mjs`, so **a second building gets
+its totals by writing its own circuits file and changing nothing else.** That retires the last
+thing `Calculate 3-Phase Totals` knew that this repository did not, and it is the replication
+answer the operator asked for.
+
+**ALL OR NOTHING, deliberately.** A period is null when any branch lacks a figure. A building
+total short by a whole circuit with nothing on screen saying so is the shape of every fault
+above; the UI already renders null as "No data" and the split as "not counted yet".
+
+**THE OLD FIGURE IS KEPT, AND THAT IS THE LOAD-BEARING PART.** `energy_kwh_*_integrated` still
+carries the legacy integration of the same circuits. It is no longer the headline, but it is the
+only INDEPENDENT measurement of that load this system has — and RM-054's guard, pointed at the
+summed total, would compare a number against itself. It now compares the split against the
+integrated figure instead. Stored too (`phase32`), so both series survive.
+
+**AND IT COST THE GUARD ITS ONE-SIDEDNESS ARGUMENT — see RM-058.** The old reasoning was that
+the branches are a SUBSET of the building, so exceeding it is suspicious and falling short is
+ordinary. Both figures now describe the same circuits, so a shortfall means something too — it
+is exactly RM-056's signature. That direction is **not guarded**, and sizing it from one fault
+would be the round number these thresholds exist to avoid.
 
 ### 2026-09-08 — the rate guard was deleting real energy, and the operator's "unsynced" report is what found it
 
@@ -3255,6 +3303,53 @@ fall back to it).
       so the building's own counter under-counts by the ~2.5 minutes of downtime — a few
       watt-hours at the ~700 W the building was drawing. Under-counting a sliver in the figure
       that was already the more trusted one is the safe direction, and it is gone at midnight.
+
+- [x] **RM-057 (L) — one source of truth for consumed energy. 2026-09-08.** The operator's
+      proposal; the evidence and the reasoning are in §0. The building's today/week/month are now
+      the sum of the site's building meters, so the headline and the per-branch split are one
+      number. The old integrated figure rides alongside as `energy_kwh_*_integrated` — the only
+      independent measurement left, and what the RM-054 guard now compares against.
+
+      **`buildingMeterIds()` is the whole idea in one function**: the topmost metered circuits of
+      the declared tree. Not class `meter` — the outlets are downstream of a branch already
+      counted, and what may be added together is a fact about wiring. A second site writes its
+      own `circuits.mjs` and its totals follow.
+
+      Threaded into `buildLatest` at build time exactly as `PHASE_MAP` is, so the bridge, the
+      mock and the tests all run one implementation. An older flow that passes no meter list
+      falls back to the legacy counters and behaves precisely as before — a test pins that.
+
+      13 new tests (6 on the derivation, 7 on the totals), all suites green: 948 bridge, 545
+      server, 1142 vitest, lint and build clean. Verified against the running app, all three
+      periods: 26.53/26.53, 344.29/344.29, 1535.89/1535.89, and Overview 26.51 in both cards.
+      RM-055's "· branches" label was **removed** — it existed to separate two figures that are
+      now one, and a test pins that it does not come back.
+      `shared/circuits.mjs`, `shared/registry.mjs`, `shared/buildLatest.mjs`,
+      `node-red-bridge/build-flow.mjs`, `mock-bridge/server.mjs`, `server/shapeRows.mjs`,
+      `server/scrubTelemetry.mjs`, `supabase/phase32_building_totals_summed.sql`,
+      `src/lib/types.ts`, `src/lib/energyDisagreement.ts`, the two energy cards,
+      `docs/bridge-contract.md`
+
+      **Apply `phase32` BEFORE deploying the server.** `shapeRows` names the new columns on every
+      totals insert and PostgREST fails the whole row when a named column is missing — so an
+      unmigrated database plus new server code stores no totals at all, silently. The reverse
+      order is safe.
+
+- [ ] **RM-058 (S) — guard the SHORTFALL direction, once there is enough measurement to size it.**
+      RM-057 made both compared figures describe the same circuits, which removed the argument
+      that made `energyDisagreement` one-sided: the branches are no longer a subset of anything,
+      so registers running BELOW the integration is now meaningful rather than ordinary. It is
+      exactly what RM-056 looked like — 38 % missing on one branch, 6.7 % at the building — and
+      **the guard would not have caught it.**
+
+      What is already measured, and what is missing: healthy agreement sits within ±1 % (six
+      samples across 2026-09-02 to 09-08, both directions), and the one known fault reached
+      −6.7 %. A 5 % shortfall margin with the existing 0.5 kWh floor would separate those — but
+      that is one fault sample, and these thresholds are the one thing in this file that has
+      always been sized from measurement rather than picked. Sizing it wants a few days of the
+      repaired system, or a per-branch comparison rather than a building-level one: RM-056 was
+      six times louder at the branch than at the building, so the per-branch form is probably the
+      right shape and needs an integrated figure per branch that the payload does not yet carry.
 
 - [x] **EX-169 — the phase28 columns are finally ASKED something. 2026-09-08.** phase28 gave
       `readings` six columns and EX-167 started filling them every minute. Nothing read them —

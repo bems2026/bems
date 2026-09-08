@@ -24,9 +24,14 @@ const reading = (id: string, energy: number | undefined): Reading => ({
 const totals = (over: Partial<Totals> = {}): Totals => ({
   device_id: '_totals',
   ts: new Date().toISOString(),
-  energy_kwh_today: 5.086,
-  energy_kwh_week: 20.552,
-  energy_kwh_month: 61.957,
+  // RM-057: the building figure IS the branch sum. The independently-integrated one rides
+  // alongside it, and that is what the disagreement check reads.
+  energy_kwh_today: 4.746,
+  energy_kwh_week: 20.27,
+  energy_kwh_month: 61.907,
+  energy_kwh_today_integrated: 5.086,
+  energy_kwh_week_integrated: 20.552,
+  energy_kwh_month_integrated: 61.957,
   total_power_w: 799.5,
   avg_voltage: 229.3,
   phase_current: { red: 5.3, yellow: 4.2, blue: null },
@@ -58,17 +63,18 @@ describe('EnergyBreakdownCard', () => {
   });
 
   /*
-   * RM-055. This headline is the SUM OF THE BRANCHES, and Live Demand's "Today" one card away
-   * is the building's own counter — two different quantities. On 2026-09-08 they read 4.75 and
-   * 5.09, and both said only "today", which is what the operator reported as being out of sync.
-   * The label is the fix: the number is right, its name was not.
+   * RM-055 relabelled this headline "kWh today · branches" because it was the branch sum
+   * standing next to Live Demand's separately-derived building counter. RM-057 made them the
+   * same number, so the qualifier now distinguishes nothing and the plain label is correct
+   * again. Pinned so the qualifier cannot come back while the derivation stays shared.
    */
-  it('names the headline as the branch sum, not as the building total', () => {
+  it('names the headline plainly, because it is the building figure now', () => {
     useDeviceStore.setState({ devices: METERS, latestReadings: LIVE, totals: totals() });
     render(<EnergyBreakdownCard />);
     const headline = document.querySelector('.breakdown-total');
     expect(headline).toHaveTextContent('4.75');
-    expect(headline).toHaveTextContent(/kWh today · branches/);
+    expect(headline).toHaveTextContent(/kWh today/);
+    expect(headline).not.toHaveTextContent(/branches/);
   });
 
   it('stays quiet when the branches sum to less than the building total — the normal direction', () => {
@@ -107,7 +113,21 @@ describe('EnergyBreakdownCard', () => {
     useDeviceStore.setState({
       devices: METERS,
       latestReadings: { ...LIVE, mtr_lo_yellow: reading('mtr_lo_yellow', 77.502) },
-      totals: totals({ energy_kwh_today: null }),
+      totals: totals({ energy_kwh_today_integrated: null }),
+    });
+    render(<EnergyBreakdownCard />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('stays quiet against a bridge too old to send the independent figure', () => {
+    // A deployed bridge predating RM-057 sends no `*_integrated` field at all. Absent is not
+    // zero, and inventing a comparison against `undefined` would shout on every frame.
+    const older = totals();
+    delete older.energy_kwh_today_integrated;
+    useDeviceStore.setState({
+      devices: METERS,
+      latestReadings: { ...LIVE, mtr_lo_yellow: reading('mtr_lo_yellow', 77.502) },
+      totals: older,
     });
     render(<EnergyBreakdownCard />);
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
