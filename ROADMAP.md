@@ -2800,6 +2800,58 @@ fall back to it).
       touching it — and the original is backed up beside the file.
       Device IDs stay in that workbook and are not reproduced here.
 
+- [x] **EX-169 — the phase28 columns are finally ASKED something. 2026-09-08.** phase28 gave
+      `readings` six columns and EX-167 started filling them every minute. Nothing read them —
+      the same shape as the capabilities that reached the browser and were discarded before
+      EX-167, one layer along. Its migration names four questions; three are now answerable and
+      the fourth has a query:
+
+      | question | answered by |
+      |---|---|
+      | Which branch tripped its power warning, and when? | `fetchTroubleEpisodes`, kind `power_warn` |
+      | Did this outlet report a fault before it went dark? | `fetchTroubleEpisodes`, kind `fault` |
+      | Was it on the cloud or the local network when it stopped answering? | `fetchLastNetState` |
+      | What is this meter's lifetime total? | `energyBetween` / `fetchEnergyBetween` |
+
+      **THE ANSWER IS NOT A ROW LIST, and that is the whole design.** `readings` holds one row per
+      device per minute, and on a healthy fleet every one says the same thing — returning rows
+      returns thousands of identical answers to "when did this go wrong". The queries ask only
+      for the abnormal (`fault <> 0`, `power_type = warn`, `net_state = no_net`) and fold
+      consecutive rows into EPISODES: began here, ended here, lasted this long.
+
+      **The only real decision is where one episode ends**, and it is not "the value changed". A
+      device that reports a fault, goes off the air for two hours, returns still faulted and is
+      fixed an hour later did not have one three-hour fault — it had two, and the hole between
+      them is part of the story. `EPISODE_GAP_MS` (15 min) splits them, the same reasoning as
+      `MAX_INTEGRATION_GAP_MS` and phase31's cap.
+
+      **Two refusals worth naming.** `local_net` is NOT degraded — this site is `local-first`, so
+      the LAN is where the system WANTS its devices, and flagging it would have put every meter in
+      the trouble list on day one; only `no_net` is trouble, and a test says so. And
+      `energyBetween` **refuses to difference across a counter reset**: phase28 stores the
+      lifetime total raw because it is "monotonic except across a device reset", so a decrease
+      makes the difference not a quantity of electricity. Both tempting answers — a negative
+      number, or its absolute value — are fabrications, so it returns `null` with a reason, the
+      same choice the scrub makes for an impossible field.
+
+      Surfaced in the alerts popover, worded to keep one distinction: **every other row there is
+      this system's inference** — a watchdog, a z-score, a fleet heuristic — **and these are the
+      device's own report**. Where they disagree the device is the one wired to the circuit. A
+      fault bitmap is decoded to English (`over-current`, not `1`), with a test asserting the
+      label map covers exactly the bits the catalogue declares, so a vendor adding one fails there
+      rather than showing an operator a raw code.
+
+      **Nothing abnormal exists on this fleet** — checked the same day: zero rows with
+      `fault <> 0`, zero `power_type = warn`, zero `net_state = no_net`. So every fixture is
+      constructed and the empty result is a first-class case; verified in the running app, the
+      popover reads *"Nothing outstanding"* rather than showing a spurious row. Polled at five
+      minutes rather than the anomaly store's one, because an episode sits in a seven-day window
+      and changes on the order of days. Four neuters each fail the right test, including adding
+      `local_net` to the degraded set.
+      `src/lib/capabilityEpisodes.ts` (+20), `src/lib/supabaseCapabilityHistory.ts` (+12),
+      `src/stores/capabilityTroubleStore.ts`, `src/hooks/useLiveConnection.ts`,
+      `src/components/layout/AlertsPopover.tsx` (+3)
+
 - [x] **EX-168 — a diagnostic is not a setting, and the catalogue always said which is which.
       2026-09-08.** Found by opening the running app rather than by reading code. A meter's card
       rendered:

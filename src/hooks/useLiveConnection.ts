@@ -9,6 +9,7 @@ import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
 import { useSpaceTreeStore } from '@/stores/spaceTreeStore';
 import { useSiteUiStore } from '@/stores/siteUiStore';
 import { useAnomaliesStore } from '@/stores/anomaliesStore';
+import { useCapabilityTroubleStore } from '@/stores/capabilityTroubleStore';
 
 /**
  * Mounts the live data pipeline once for the app's lifetime: fetches the static device
@@ -65,6 +66,9 @@ export function useLiveConnection(): void {
     // than lazily on the popover's first open — same "load once at the root" reasoning as
     // every other store above. Keeps polling itself afterward (see anomaliesStore.ts).
     void useAnomaliesStore.getState().load();
+    // phase28's columns, asked the questions they were stored for. Same lifecycle as the
+    // anomalies store; a much slower poll, because an episode changes on the order of days.
+    void useCapabilityTroubleStore.getState().load();
 
     // The spatial tree (RM-028). Loaded here for the same reason as deviceConfigStore: a
     // device's placement is a label any page could adopt, and a second load path would be a

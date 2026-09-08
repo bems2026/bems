@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { Bell, AlertTriangle, X } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useAnomaliesStore } from '@/stores/anomaliesStore';
+import { useCapabilityTroubleStore } from '@/stores/capabilityTroubleStore';
+import { describeEpisode } from '@/lib/capabilityEpisodes';
 import { useCommandStore } from '@/stores/commandStore';
 import { isReadingStale, staleWindowLabel } from '@/lib/staleness';
 import { latestAnomalyPerDevice, isAnomalyCurrent } from '@/lib/anomalies';
@@ -41,6 +43,7 @@ export function AlertsPopover() {
   const devices = useDeviceStore((s) => s.devices);
   const latestReadings = useDeviceStore((s) => s.latestReadings);
   const anomalyRows = useAnomaliesStore((s) => s.rows);
+  const troubleEpisodes = useCapabilityTroubleStore((s) => s.episodes);
   const { rows: connectivity } = useDeviceConnectivity(24);
   const cloudRecoveries = useCommandStore((s) => s.cloudRecoveries);
   const [open, setOpen] = useState(false);
@@ -142,9 +145,40 @@ export function AlertsPopover() {
     [cloudRecoveries, devices],
   );
 
+  /**
+   * What a device SAID about itself, from phase28's stored columns — a fault bitmap, a power
+   * warning the device raised itself, or a spell reporting no network at all.
+   *
+   * DIFFERENT IN KIND FROM THE ROWS ABOVE, which is why it is worth its own list. Everything
+   * else here is this system's inference: a watchdog deciding a reading is stale, a z-score
+   * calling power abnormal, a fleet heuristic. These are the DEVICE's own report, and where the
+   * two disagree the device is the one wired to the circuit.
+   *
+   * Historical rather than current, and the text says so. An episode that ended yesterday is
+   * still worth reading — "did this outlet report a fault before it went dark" is the question
+   * phase28 was applied to answer, and the answer is only ever in the past.
+   */
+  const troubleItems: AlertItem[] = useMemo(
+    () =>
+      troubleEpisodes.map((e) => {
+        const device = devices.find((d) => d.id === e.device_id);
+        const { title, body } = describeEpisode(e, device?.display_name ?? e.device_id);
+        return {
+          // Namespaced and stamped: one device can have several episodes, of different kinds,
+          // and `deviceId` is this list's React key and its Ack identity.
+          deviceId: `trouble:${e.kind}:${e.device_id}:${e.from}`,
+          title,
+          body,
+          meta: `${e.device_id} · reported by the device`,
+          kind: 'anomaly' as const,
+        };
+      }),
+    [troubleEpisodes, devices],
+  );
+
   const allItems = useMemo(
-    () => [...fleetItems, ...cloudItems, ...staleItems, ...anomalyItems],
-    [fleetItems, cloudItems, staleItems, anomalyItems],
+    () => [...fleetItems, ...cloudItems, ...staleItems, ...anomalyItems, ...troubleItems],
+    [fleetItems, cloudItems, staleItems, anomalyItems, troubleItems],
   );
   const visible = allItems.filter((item) => !acked.has(item.deviceId));
 

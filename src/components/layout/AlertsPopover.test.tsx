@@ -4,6 +4,7 @@ import { AlertsPopover } from './AlertsPopover';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useAnomaliesStore } from '@/stores/anomaliesStore';
 import { useCommandStore } from '@/stores/commandStore';
+import { useCapabilityTroubleStore } from '@/stores/capabilityTroubleStore';
 import type { Device } from '@/lib/types';
 
 // The bell reads fleet connectivity through this hook; the real one talks to Supabase.
@@ -40,6 +41,7 @@ afterEach(() => {
   useAnomaliesStore.setState({ rows: [], status: 'idle' });
   connectivity.rows = {};
   useCommandStore.setState({ pending: {}, cloudRecoveries: {} });
+  useCapabilityTroubleStore.setState({ episodes: [], status: 'idle' });
 });
 
 describe('AlertsPopover — merged staleness + anomaly sources', () => {
@@ -171,5 +173,56 @@ describe('AlertsPopover cloud fallback', () => {
     fireEvent.click(within(cloudRow).getByRole('button', { name: /Ack/i }));
     expect(screen.queryByText(/vendor cloud/)).not.toBeInTheDocument();
     expect(screen.getByText('Outlet 3 in COMM FAULT')).toBeInTheDocument();
+  });
+});
+
+describe('AlertsPopover — what the DEVICE reported, from phase28 history', () => {
+  const fresh = { co3: { device_id: 'co3', ts: new Date().toISOString(), online: true, state: null, power_w: 10 } };
+
+  it('shows a fault the outlet raised itself, decoded, not as a bitmap', () => {
+    useDeviceStore.setState({ devices: [outlet], latestReadings: fresh });
+    useCapabilityTroubleStore.setState({
+      status: 'ready',
+      episodes: [{
+        device_id: 'co3', kind: 'fault', value: 1,
+        from: '2026-09-08T09:00:00Z', to: '2026-09-08T09:04:00Z', samples: 5,
+      }],
+    });
+    render(<AlertsPopover />);
+    fireEvent.click(screen.getByRole('button', { name: /Alerts/ }));
+    expect(screen.getByText('Outlet 3 reported a fault')).toBeInTheDocument();
+    expect(screen.getByText(/over-current/)).toBeInTheDocument();
+    // The meta line says whose claim this is — every other row here is this system's inference.
+    expect(screen.getByText('co3 · reported by the device')).toBeInTheDocument();
+  });
+
+  it('a healthy fleet adds nothing — an empty episode list is the normal case', () => {
+    // Checked on the live database 2026-09-08: zero abnormal rows of any kind. If this feature
+    // ever put a row on screen for a healthy fleet it would be worse than not having it.
+    useDeviceStore.setState({ devices: [outlet], latestReadings: fresh });
+    useCapabilityTroubleStore.setState({ episodes: [], status: 'ready' });
+    render(<AlertsPopover />);
+    expect(screen.getByLabelText('Alerts')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Alerts/ }));
+    expect(screen.getByText('Nothing outstanding')).toBeInTheDocument();
+  });
+
+  it('two episodes on one device are two rows, each acknowledgeable on its own', () => {
+    // `deviceId` is this list's React key AND its Ack identity, so a device with a fault and a
+    // power warning would collapse into one row — or worse, share a key — if it were not
+    // namespaced per episode.
+    useDeviceStore.setState({ devices: [outlet], latestReadings: fresh });
+    useCapabilityTroubleStore.setState({
+      status: 'ready',
+      episodes: [
+        { device_id: 'co3', kind: 'fault', value: 1, from: '2026-09-08T09:00:00Z', to: '2026-09-08T09:04:00Z', samples: 5 },
+        { device_id: 'co3', kind: 'fault', value: 4, from: '2026-09-08T11:00:00Z', to: '2026-09-08T11:02:00Z', samples: 3 },
+      ],
+    });
+    render(<AlertsPopover />);
+    expect(screen.getByLabelText('Alerts, 2 unacknowledged')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Alerts/ }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ack' })[0]);
+    expect(screen.getAllByRole('button', { name: 'Ack' })).toHaveLength(1);
   });
 });
