@@ -63,6 +63,32 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
+### 2026-09-08 — L.O Yellow again, and the guard that was missing
+
+**RM-052.** The operator reported today's energy wrong again on L.O Yellow — *"same scenario as
+before"*, and they were right about the shape and it was a different cause. Measured the same
+morning:
+
+- **`mtr_lo_yellow` served 77.502 kWh for a day that integrates to 0.302** — 256x, on a circuit
+  whose peak was 251 W. 77.5 kWh needs 3.2 kW held for 24 h.
+- The day baseline was **correct**. Every meter's base was banked at 0 at local midnight, when
+  every counter genuinely read 0. `energy_day_base` confirms it.
+- phase28's `capabilities` jsonb — one hour old, and the first time this history has ever
+  existed — showed `today_acc_energy2` flat at 77.502 while the circuit drew power.
+- The stored series gave the exact moment: **0.111 -> 67.391 at 18:36 while drawing 49.1 W**,
+  then 67.398 -> 77.317 ten minutes later. Two discrete register jumps, mid-day.
+
+**The tracker re-anchored on a day rollover and on a counter going BACKWARDS. It had nothing to
+say about one going forward implausibly** — which is exactly what this fleet's channel-2 register
+does. The baseline was taken before the offset appeared, so `val - base` carried it through.
+
+**AND IT SLIPPED UNDER THE EXISTING BACKSTOP, which is the instructive part.** The SAME physical
+meter's channel 1 jumped to **3,676 kWh** the same day, was caught by `max_branch_kwh_per_day`
+(100), fell back to the integrated value and read correctly all along — 0.74 against 0.697
+integrated. Channel 2's 77.5 is *under* 100, so nothing rejected it. That is precisely the limit
+`server/scrubTelemetry.mjs`'s own header states: a bound wide enough to be safe cannot catch a
+value that is merely wrong. Only a bound on the RATE can, and the site already declares one.
+
 ### 2026-09-07 — every outlet was fabricating its daily energy. Fixed; see RM-047
 
 All seven outlets accrued energy they had not used, every minute, from whenever the `add_ele`
@@ -2799,6 +2825,30 @@ fall back to it).
       blocks. **Nothing was lost** — every TRIES cell in the workbook was empty, checked before
       touching it — and the original is backed up beside the file.
       Device IDs stay in that workbook and are not reproduced here.
+
+- [x] **RM-052 (M) — a daily counter that jumps FORWARD now re-anchors too. 2026-09-08.**
+      The evidence is in §0. `energyDayBase` had two re-anchor events — the local day rolling
+      over, and the counter going backwards — and a register that acquires an offset in the
+      middle of a day trips neither.
+
+      **The new rule is a rate, not a bound, and that distinction is the fix.** No branch here can
+      draw more than `SITE.telemetry_bounds.power_w.max`, so none can add more kW-hours than that
+      in an hour. A counter that advances faster has not measured electricity, whatever the
+      figure. The ceiling is threaded in from the site at build time, like the UTC offset and the
+      daily bound before it — a site that declares no bounds keeps the tracker's default.
+
+      **The jump is ABSORBED into the baseline, not rejected**, so today's published figure
+      carries straight on from where it was rather than restarting at zero on a dashboard
+      somebody is watching. That is the same courtesy the first-sight seeding already pays, and
+      **the neuter round is what proved the test knew the difference**: setting the base to the
+      counter also makes the figure "small", and the first version of the assertion accepted it.
+      Tightened to require the morning's 0.111 kWh to survive intact, after which that neuter
+      fails like the other two.
+
+      Three neuters each fail the right tests: removing the check, making the ceiling absolute
+      rather than per-hour, and clobbering the base instead of absorbing the delta.
+      `node-red-bridge/energyDayBase.mjs`, `node-red-bridge/build-flow.mjs`,
+      `test/energy-day-base.test.mjs` (+7)
 
 - [x] **EX-169 — the phase28 columns are finally ASKED something. 2026-09-08.** phase28 gave
       `readings` six columns and EX-167 started filling them every minute. Nothing read them —

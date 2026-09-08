@@ -198,3 +198,138 @@ test('an outlet is untouched — it has no today_acc_energy and keeps its own ac
     .find((r) => r.device_id === 'co1');
   assert.ok(Math.abs(row.energy_kwh_today - 3.713) < 1e-6);
 });
+
+// ---------------------------------------------------------------------------
+// A counter that jumps FORWARD mid-day. Measured on the live meter 2026-09-08.
+// ---------------------------------------------------------------------------
+
+/**
+ * THE THIRD RE-ANCHOR EVENT, and the one that was missing.
+ *
+ * The tracker re-anchored on a day rollover and on a counter going BACKWARDS. It had nothing to
+ * say about a counter going forward implausibly, and that is what this fleet's channel-2
+ * register actually did — twice in ten minutes, on 2026-09-08:
+ *
+ *     18:36:00   served 0.111 -> 67.391 kWh   at 49.1 W
+ *     18:46:53   served 67.398 -> 77.317 kWh  at 43.0 W
+ *
+ * The day baseline was banked correctly at local midnight, when every counter read 0. The
+ * register then acquired an offset in the middle of the day, and `val - base` carried it
+ * straight through. 77.5 kWh on a circuit whose whole day integrates to 0.302.
+ *
+ * IT SLIPPED UNDER THE EXISTING BACKSTOP, which is the point. `max_branch_kwh_per_day` is 100,
+ * so `buildLatest` did not reject it — the same channel's sibling jumped to 3,676 the same day
+ * and WAS rejected, falling back to the integrated value and reading correctly all along. A
+ * bound wide enough to be safe cannot catch a value that is merely wrong; only a bound on the
+ * RATE can.
+ *
+ * The rate is a physical fact the site already declares: `telemetry_bounds.power_w.max`. No
+ * branch here can draw more than that, so no branch can add more than that many kW-hours in an
+ * hour, and a counter that does has not measured electricity.
+ */
+const RATE_METER = (dp, over = {}) => meter({ dp, ...over });
+
+test('a counter that jumps beyond what the branch could physically draw re-anchors', () => {
+  // The measured case, to the number. 0.111 kWh in, then the register reports 67.391.
+  const store = {};
+  const t0 = Date.parse('2026-09-08T02:00:00Z');
+  runEnergyDayBase(store, snapOf({ lo_yel2: RATE_METER({ today_acc_energy2: 0.111 }, { e: '0.111' }) }), t0, OFFSET);
+  const base = runEnergyDayBase(
+    store,
+    snapOf({ lo_yel2: RATE_METER({ today_acc_energy2: 67.391 }, { e: '0.111', p: '49.1' }) }),
+    t0 + 60_000,
+    OFFSET,
+  );
+  // ABSORBED, NOT CLOBBERED — and the difference is the whole reason to absorb. Setting the
+  // baseline to the counter would also make the figure "small", by throwing the morning away and
+  // restarting today at zero on a dashboard somebody is watching. It must carry ON from 0.111.
+  assert.ok(base.lo_yel2.today_acc_energy2 > 67, `base absorbed the jump, got ${base.lo_yel2.today_acc_energy2}`);
+  const served = 67.391 - base.lo_yel2.today_acc_energy2;
+  assert.ok(Math.abs(served - 0.111) < 1e-6, `expected the morning to survive at 0.111, got ${served}`);
+});
+
+test('a second jump ten minutes later is absorbed too', () => {
+  // Both of the real jumps, in sequence. One re-anchor must not leave the next one unguarded.
+  const store = {};
+  const t0 = Date.parse('2026-09-08T02:00:00Z');
+  runEnergyDayBase(store, snapOf({ lo_yel2: RATE_METER({ today_acc_energy2: 0.111 }, { e: '0.111' }) }), t0, OFFSET);
+  runEnergyDayBase(store, snapOf({ lo_yel2: RATE_METER({ today_acc_energy2: 67.391 }, { e: '0.111' }) }), t0 + 60_000, OFFSET);
+  const base = runEnergyDayBase(
+    store,
+    snapOf({ lo_yel2: RATE_METER({ today_acc_energy2: 77.317 }, { e: '0.120' }) }),
+    t0 + 660_000,
+    OFFSET,
+  );
+  // Continuous across BOTH jumps: the morning's 0.111 plus whatever the integrator credits.
+  const served = 77.317 - base.lo_yel2.today_acc_energy2;
+  assert.ok(Math.abs(served - 0.111) < 1e-6, `expected 0.111 to survive two jumps, got ${served}`);
+});
+
+test('an ordinary minute of real consumption is NOT treated as a jump', () => {
+  // The regression that matters. A branch drawing 3 kW adds 0.05 kWh a minute, which must pass.
+  const store = {};
+  const t0 = Date.parse('2026-09-08T02:00:00Z');
+  runEnergyDayBase(store, snapOf({ co_yel: RATE_METER({ today_acc_energy1: 1.0 }, { e: '1.0' }) }), t0, OFFSET);
+  const base = runEnergyDayBase(
+    store,
+    snapOf({ co_yel: RATE_METER({ today_acc_energy1: 1.05 }, { e: '1.05', p: '3000' }) }),
+    t0 + 60_000,
+    OFFSET,
+  );
+  assert.equal(base.co_yel.today_acc_energy1, 0, 'the baseline did not move');
+});
+
+test('even the largest load the site permits passes in a normal tick', () => {
+  // `telemetry_bounds.power_w.max` is 25 kW. A full minute of that is 0.417 kWh, and refusing it
+  // would make the guard fire on the very load it is sized around.
+  const store = {};
+  const t0 = Date.parse('2026-09-08T02:00:00Z');
+  runEnergyDayBase(store, snapOf({ co_yel: RATE_METER({ today_acc_energy1: 0 }, { e: '0' }) }), t0, OFFSET);
+  const base = runEnergyDayBase(
+    store,
+    snapOf({ co_yel: RATE_METER({ today_acc_energy1: 0.41 }, { e: '0.41' }) }),
+    t0 + 60_000,
+    OFFSET,
+  );
+  assert.equal(base.co_yel.today_acc_energy1, 0);
+});
+
+test('a long gap between observations allows a proportionally larger increase', () => {
+  // The bound is a RATE. After an hour off the air, an hour's worth of consumption is legitimate,
+  // and treating it as a jump would zero a real hour every time the bridge restarted.
+  const store = {};
+  const t0 = Date.parse('2026-09-08T02:00:00Z');
+  runEnergyDayBase(store, snapOf({ co_yel: RATE_METER({ today_acc_energy1: 0 }, { e: '0' }) }), t0, OFFSET);
+  const base = runEnergyDayBase(
+    store,
+    snapOf({ co_yel: RATE_METER({ today_acc_energy1: 6 }, { e: '6' }) }),
+    t0 + 3600_000,
+    OFFSET,
+  );
+  assert.equal(base.co_yel.today_acc_energy1, 0, '6 kWh in an hour is under a 25 kW ceiling');
+});
+
+test('the first sight of a counter is never a jump — there is nothing to compare it to', () => {
+  const store = {};
+  const base = runEnergyDayBase(
+    store,
+    snapOf({ lo_yel2: RATE_METER({ today_acc_energy2: 3625.021 }, { e: '0.8' }) }),
+    Date.parse('2026-09-08T02:00:00Z'),
+    OFFSET,
+  );
+  // Seeded from the integrated figure, exactly as before — the existing first-sight rule.
+  assert.ok(Math.abs((3625.021 - base.lo_yel2.today_acc_energy2) - 0.8) < 1e-6);
+});
+
+test('a backwards move still re-anchors, and is not confused with a jump', () => {
+  const store = {};
+  const t0 = Date.parse('2026-09-08T02:00:00Z');
+  runEnergyDayBase(store, snapOf({ co_yel: RATE_METER({ today_acc_energy1: 5 }, { e: '5' }) }), t0, OFFSET);
+  const base = runEnergyDayBase(
+    store,
+    snapOf({ co_yel: RATE_METER({ today_acc_energy1: 0.2 }, { e: '0.2' }) }),
+    t0 + 60_000,
+    OFFSET,
+  );
+  assert.ok(0.2 - base.co_yel.today_acc_energy1 >= 0, 'never negative');
+});

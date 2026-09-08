@@ -401,7 +401,11 @@ const buildFn = fn(BRIDGE_TAB, 'Build latest readings', BUILD_LATEST.trim(), 990
 // energy meters already in the snapshot, and buildLatest needs its output in the SAME pass —
 // unlike `energyAcc`, which is a tick behind by construction because it consumes the built rows.
 // See node-red-bridge/energyDayBase.mjs for why a daily counter cannot be trusted as an absolute.
-const dayBaseFn = fn(BRIDGE_TAB, 'Energy day baseline', energyDayBaseSrc(SITE.utc_offset_minutes).trim(), 900, 380, [[buildFn.id]]);
+// The kW ceiling is the site's own declared bound on a single branch — the rate a counter may
+// not exceed without having acquired an offset rather than measured electricity. A site that
+// declares no bounds keeps the tracker's own default.
+const MAX_BRANCH_KW = (SITE.telemetry_bounds?.power_w?.max ?? 25000) / 1000;
+const dayBaseFn = fn(BRIDGE_TAB, 'Energy day baseline', energyDayBaseSrc(SITE.utc_offset_minutes, MAX_BRANCH_KW).trim(), 900, 380, [[buildFn.id]]);
 // Arrival tracking sits immediately before the build step and after every collector, because
 // it needs the energy meters already in the snapshot and buildLatest needs its output.
 const arrFn = fn(BRIDGE_TAB, 'Track meter arrivals', TRACK_ARRIVALS.trim(), 900, 320, [[dayBaseFn.id]]);
