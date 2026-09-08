@@ -25,13 +25,15 @@
  * device — an HTTP 200 means the flow accepted the message, not that a register moved. This
  * project has twice been burned by a 2xx that changed nothing.
  */
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { loadDotEnv, createAdminClient } from './nodeRedAdmin.mjs';
 import {
   planCapabilityRoute, applyCapabilityRoute, validateCapabilityRoute, NODE_IDS,
 } from './capabilityRoutePlan.mjs';
 import { DEVICE_REGISTRY } from '../shared/registry.mjs';
 
-loadDotEnv();
+loadDotEnv(join(dirname(fileURLToPath(import.meta.url)), '..'));
 
 const arg = (n, d) => {
   const hit = process.argv.find((a) => a.startsWith(`--${n}=`));
