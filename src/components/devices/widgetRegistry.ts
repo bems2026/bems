@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react';
-import { READ_ONLY_SETTINGS, type ResolvedCapabilities } from '@/lib/capabilitySchema';
+import { READ_ONLY_SETTINGS, OPERATOR_DIAGNOSTICS, type ResolvedCapabilities } from '@/lib/capabilitySchema';
 import type { Device } from '@/lib/types';
 import {
   RelayWidget,
@@ -9,6 +9,7 @@ import {
   WarnPowerWidget,
   CountdownWidget,
   FaultWidget,
+  DiagnosticsWidget,
   SettingsWidget,
   type WidgetProps,
 } from './capabilityWidgets';
@@ -51,6 +52,13 @@ export const CAPABILITY_WIDGETS: CapabilityWidget[] = [
   { id: 'warn_power', when: (caps) => caps.declares('warn_power'), Component: WarnPowerWidget },
   { id: 'countdown', when: (caps) => caps.declares('countdown_1'), Component: CountdownWidget },
   { id: 'fault', when: (caps) => caps.declares('fault'), Component: FaultWidget },
+  {
+    // Before the settings row, not after: what the device is doing now outranks how it is
+    // configured to behave later, and these two were inside that row until 2026-09-08.
+    id: 'diagnostics',
+    when: (caps) => OPERATOR_DIAGNOSTICS.some((d) => caps.declares(d)),
+    Component: DiagnosticsWidget,
+  },
   {
     id: 'settings',
     when: (caps) => READ_ONLY_SETTINGS.some((s) => caps.declares(s)),

@@ -275,3 +275,60 @@ describe('DeviceCard — writing a capability', () => {
     expect(row.textContent).toContain('memory');
   });
 });
+
+describe('DeviceCard — a diagnostic is not a setting', () => {
+  // The defect, seen on the running app 2026-09-08: a meter's card rendered
+  // "Device settings   net state cloud_net   device state working". Both are
+  // `semantic: 'diagnostic'`, and cz_ct_* declares none of the five real read-only settings — so
+  // the whole row was mislabelled. See src/lib/capabilitySemantics.test.ts.
+
+  it('shows a meter what it reports about itself, not under Device settings', () => {
+    mount(meter1, [meter1], {
+      [meter1.id]: reading(meter1.id, { net_state: 'cloud_net', device_state1: 'working' }),
+    });
+    expect(screen.getByText(/reported by the device/i)).toBeInTheDocument();
+    expect(screen.getByText('cloud_net')).toBeInTheDocument();
+    expect(screen.getByText('working')).toBeInTheDocument();
+  });
+
+  it('and a meter no longer renders a Device settings row at all', () => {
+    // It has no settings to show. The row existed only because two diagnostics were in the list.
+    mount(meter1, [meter1], {
+      [meter1.id]: reading(meter1.id, { net_state: 'cloud_net', device_state1: 'working' }),
+    });
+    expect(screen.queryByText(/device settings/i)).not.toBeInTheDocument();
+  });
+
+  it('a light switch still shows its settings, and reports no diagnostics', () => {
+    // The other half: tdq_switch declares the five settings and none of the diagnostics, so this
+    // is the case that must NOT have changed.
+    mount(light, [light], {
+      [light.id]: reading(light.id, { relay_status: 'off', switch_type: 'flip', cycle_time: '' }),
+    });
+    expect(screen.getByText(/device settings/i)).toBeInTheDocument();
+    expect(screen.queryByText(/reported by the device/i)).not.toBeInTheDocument();
+  });
+
+  it('calls out no_net, and leaves the healthy values plain', () => {
+    // phase28: a device that goes dark from no_net was already in trouble; one that goes dark
+    // from cloud_net more likely lost the local segment. Only one of those is worth an alarm.
+    mount(meter1, [meter1], {
+      [meter1.id]: reading(meter1.id, { net_state: 'no_net', device_state1: 'working' }),
+    });
+    expect(screen.getByText('no_net')).toHaveClass('device-card__diagnostic--bad');
+    expect(screen.getByText('working')).not.toHaveClass('device-card__diagnostic--bad');
+  });
+
+  it('channel 2 of the same physical meter reads its own device_state', () => {
+    mount(meter2, [meter2], {
+      [meter2.id]: reading(meter2.id, { net_state: 'cloud_net', device_state1: 'working', device_state2: 'idle' }),
+    });
+    expect(screen.getByText('idle')).toBeInTheDocument();
+    expect(screen.queryByText('working')).not.toBeInTheDocument();
+  });
+
+  it('renders a dash when the device declares a diagnostic but has not reported it', () => {
+    mount(meter1, [meter1], { [meter1.id]: reading(meter1.id, { net_state: 'cloud_net' }) });
+    expect(screen.getByText(/reported by the device/i)).toBeInTheDocument();
+  });
+});

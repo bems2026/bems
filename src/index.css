@@ -7027,6 +7027,14 @@ button.space-plan__pin {
 .device-card__muted {
   color: var(--muted);
 }
+/* `no_net` only. A device that goes dark having last reported no_net was already in trouble,
+   and that decides whether somebody drives to the office — see phase28's migration. `--bad` is
+   used rather than a new value because it is one of the tokens `test/contrast.test.mjs` already
+   measures against the card surface in both themes. */
+.device-card__diagnostic--bad {
+  color: var(--bad);
+  font-weight: 600;
+}
 .device-card__empty {
   margin: 0;
   color: var(--muted);

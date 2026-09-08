@@ -25,6 +25,13 @@ export interface CapabilityMeta {
   /** The channel-agnostic name components ask for, e.g. `cur_power`. */
   base: string;
   kind: 'bool' | 'value' | 'enum' | 'string' | 'bitmap';
+  /**
+   * What KIND of fact this is, straight from the catalogue: `setting`, `diagnostic`, `instant`,
+   * `increment`, `cumulative_daily` or `cumulative_total`. Carried through so a component can
+   * ask rather than infer — a hand-written list standing in for this is what rendered two
+   * diagnostics under "Device settings" until 2026-09-08.
+   */
+  semantic: string;
   /** Canonical unit after scaling: `V`, `A`, `W`, `kWh`, `s`, or `''` for dimensionless. */
   unit: string | null;
   min?: number;
@@ -62,6 +69,7 @@ interface RawCapability {
   dp: number;
   access: 'ro' | 'rw';
   kind: CapabilityMeta['kind'];
+  semantic: string;
   unit?: string;
   min?: number;
   max?: number;
@@ -125,6 +133,7 @@ export function capabilitiesOf(device: Device | undefined, reading: Reading | un
       code: raw.code,
       base: raw.base,
       kind: raw.kind,
+      semantic: raw.semantic,
       unit: canonicalUnitFor(raw) as string | null,
       min: raw.min,
       max: raw.max,
@@ -171,14 +180,21 @@ export function faultFlags(caps: ResolvedCapabilities): string[] {
 /**
  * The settings this system reads and deliberately does not write.
  *
- * Every one of these is `writable: false` in the catalogue, and each installs unattended
- * switching or reports link state INSIDE the device — where the Supabase scheduler and the
- * command audit trail cannot see or override it. Surfacing them matters precisely because they
- * are invisible otherwise: an operator wondering why a light turned itself off has nowhere else
- * to look.
+ * Every one of these is `writable: false` in the catalogue and `semantic: 'setting'`, and each
+ * installs unattended switching INSIDE the device — where the Supabase scheduler and the command
+ * audit trail can neither see nor override it. Surfacing them matters precisely because they are
+ * invisible otherwise: an operator wondering why a light turned itself off has nowhere else to
+ * look.
  *
  * A list rather than a filter on `writable`, because it also fixes the ORDER they read in, and
  * because not every unwritable capability belongs in this group — `cur_power` is unwritable too.
+ *
+ * IT USED TO CARRY `net_state` AND `device_state`, and its own docblock said so: "installs
+ * unattended switching **or reports link state**". Those are two different facts, and the second
+ * is not a setting — the catalogue calls both of them `diagnostic`. The result on screen was a
+ * meter whose only "Device settings" row contained nothing but diagnostics. See
+ * `OPERATOR_DIAGNOSTICS`, and `capabilitySemantics.test.ts`, which now fails if either comes
+ * back.
  */
 export const READ_ONLY_SETTINGS = [
   'relay_status',
@@ -186,6 +202,25 @@ export const READ_ONLY_SETTINGS = [
   'switch_inching',
   'cycle_time',
   'random_time',
-  'net_state',
-  'device_state',
 ] as const;
+
+/**
+ * What the device says about ITSELF, as opposed to how it is configured.
+ *
+ * `net_state` is how the device believed it was reaching the world, and phase28's migration says
+ * what it is for: a device that goes dark having last reported `no_net` was already in trouble,
+ * while one that goes dark from `cloud_net` more likely lost the local segment — "that
+ * distinction is what decides whether somebody has to drive to the office". `device_state` is
+ * the meter's own verdict on its channel.
+ *
+ * CURATED, NOT DERIVED, and the distinction is the point. `semantic` answers "setting or
+ * diagnostic", which is a fact about the protocol and belongs in the catalogue. It cannot answer
+ * "is this worth a human's attention", which is a product judgement — and `voltage_coe`,
+ * `electric_coe`, `power_coe`, `electricity_coe`, `test_bit` and `sync_request` are all
+ * `diagnostic` and all noise on a device card. They keep reaching the browser and are stored in
+ * phase28's `capabilities` jsonb; they are simply not put in front of anyone.
+ *
+ * `fault` and `power_type` are diagnostics too and are deliberately absent: each already has its
+ * own widget, and listing them here would report the same fact twice.
+ */
+export const OPERATOR_DIAGNOSTICS = ['net_state', 'device_state'] as const;

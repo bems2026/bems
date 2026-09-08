@@ -328,12 +328,13 @@ Everything else is small, and the build order below is honest about size.
   two weeks (RM-020), so their averages mean nothing and their tiers should be set on what they
   feed rather than on what they have measured.
 
-### Migrations authored but NOT applied
+### Migrations — all applied
 
-One SQL file is waiting on a hand-apply in the Supabase SQL editor. This project has no
-migration runner and no tracker table, so this list is the record:
-
-- **`supabase/phase27_period_reports.sql`** — see RM-041. **The only one left.**
+**Every migration in this repository is applied.** `phase27_period_reports.sql` was applied
+2026-09-08, the last of them; the section that listed pending files is gone because the list is
+empty. `period_reports` holds 80 rows and `period_building_reports` 4, regenerated at the moment
+of applying — which means they were built from the outlet energy AFTER RM-047b's correction
+rather than the inflated figures, so August's per-device totals are the corrected ones.
 
 **`supabase/phase31_readings_hourly_time_weighted.sql` was applied 2026-09-07, and the DEPLOYED
 function was measured rather than taken on trust.** PostgREST cannot read a function's source,
@@ -2798,6 +2799,52 @@ fall back to it).
       blocks. **Nothing was lost** — every TRIES cell in the workbook was empty, checked before
       touching it — and the original is backed up beside the file.
       Device IDs stay in that workbook and are not reproduced here.
+
+- [x] **EX-168 — a diagnostic is not a setting, and the catalogue always said which is which.
+      2026-09-08.** Found by opening the running app rather than by reading code. A meter's card
+      rendered:
+
+          [gear]  Device settings     net state cloud_net    device state working
+
+      Both are `semantic: 'diagnostic'`. Neither is configuration. And on a meter that row
+      contained **nothing else** — `cz_ct_*` declares none of the five real read-only settings —
+      so the entire row was mislabelled, under a gear icon, among things like `switch_type` and
+      `random_time`.
+
+      **Why it is not a wording nit.** phase28's own migration says what `net_state` is for: *"A
+      device that goes dark having last reported `no_net` was already in trouble; one that goes
+      dark from `cloud_net` more likely lost the local segment. That distinction is what decides
+      whether somebody has to drive to the office."* Filing that under settings puts the one field
+      answering that question into the list a reader skims past.
+
+      **The cause is RM-050's, one layer up:** a hand-written list standing in for a fact the
+      catalogue already declares. `READ_ONLY_SETTINGS`'s own docblock admitted it — *"each
+      installs unattended switching **or reports link state** inside the device"* — two different
+      things named in one sentence and rendered in one row. `CapabilityMeta` now carries
+      `semantic`, the settings list keeps only the five true settings, and `OPERATOR_DIAGNOSTICS`
+      holds the two that describe the device rather than configure it.
+
+      **Curated, not derived, and that distinction is the point.** `semantic` answers "setting or
+      diagnostic" — a fact about the protocol, and the catalogue's business. It cannot answer "is
+      this worth a human's attention", which is a product judgement: `voltage_coe`,
+      `electric_coe`, `power_coe`, `electricity_coe`, `test_bit` and `sync_request` are all
+      `diagnostic` and all noise on a card, so they stay in phase28's jsonb where they are kept
+      but not shown. `fault` and `power_type` are excluded too — each already has a widget, and
+      listing them again would report one fact twice.
+
+      `no_net` is called out in `--bad` (an existing token `test/contrast.test.mjs` already
+      measures in both themes); `local_net` and `cloud_net` read plain, because only one of the
+      three is a problem.
+
+      **Verified in the running app, both halves.** The meter now shows *"Reported by the device —
+      net state cloud_net · device state working"* and **no** settings row; a light switch still
+      shows *"Device settings"* and **no** diagnostics row — that half had to not change. Three
+      neuters each fail the right tests, including putting the two back in the settings list.
+      `npm run build` caught two type errors in the new test that vitest's type-stripping missed,
+      which is the third time this project's own advice about running it has paid.
+      `src/lib/capabilitySchema.ts`, `src/components/devices/capabilityWidgets.tsx`,
+      `src/components/devices/widgetRegistry.ts`, `src/index.css`,
+      `src/lib/capabilitySemantics.test.ts` (13), `src/components/devices/DeviceCard.test.tsx` (+6)
 
 - [x] **EX-167 — the daemon keeps what the devices report beyond volts, amps and watts.
       2026-09-07.** Four questions could not be asked of the history at all, and all four were

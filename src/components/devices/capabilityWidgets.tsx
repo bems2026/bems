@@ -1,11 +1,11 @@
 import { useState, type ReactNode } from 'react';
-import { Gauge, Lock, LockOpen, AlertTriangle, Timer, Settings2, Zap } from 'lucide-react';
+import { Gauge, Lock, LockOpen, AlertTriangle, Timer, Settings2, Zap, Radio } from 'lucide-react';
 import { MetricValue } from '@/components/ui/MetricValue';
 import { Sparkline } from '@/components/ui/Sparkline';
 import { useDeviceStore, historyFor } from '@/stores/deviceStore';
 import { measured } from '@/lib/staleness';
 import { formatNumber, MISSING } from '@/lib/format';
-import { faultFlags, READ_ONLY_SETTINGS } from '@/lib/capabilitySchema';
+import { faultFlags, READ_ONLY_SETTINGS, OPERATOR_DIAGNOSTICS } from '@/lib/capabilitySchema';
 import { useCapabilityStore, writeFor } from '@/stores/capabilityStore';
 import type { ResolvedCapabilities } from '@/lib/capabilitySchema';
 import type { CapabilityValue, Device, Reading } from '@/lib/types';
@@ -297,6 +297,44 @@ export function FaultWidget({ caps }: WidgetProps) {
  * see or override it. Showing them matters precisely because they are invisible otherwise: an
  * operator wondering why a light turned itself off has nowhere else to look.
  */
+/**
+ * What the device says about ITSELF — its own link state and channel status.
+ *
+ * SPLIT OUT OF `SettingsWidget` ON 2026-09-08, because these are not settings. Both are
+ * `semantic: 'diagnostic'` in the catalogue, and on a meter — which declares none of the five
+ * real read-only settings — the whole "Device settings" row consisted of nothing but these two,
+ * under a gear icon, next to things like `switch_type`.
+ *
+ * `no_net` is called out rather than merely printed. phase28's migration is explicit about why:
+ * a device that goes dark having last reported `no_net` was already in trouble, while one that
+ * goes dark from `cloud_net` more likely lost the local segment — "that distinction is what
+ * decides whether somebody has to drive to the office". A value that changes the answer to that
+ * question should not read like a preference.
+ */
+export function DiagnosticsWidget({ caps }: WidgetProps) {
+  const shown = OPERATOR_DIAGNOSTICS.filter((d) => caps.declares(d));
+
+  return (
+    <Row icon={<Radio size={14} aria-hidden="true" />} label="Reported by the device">
+      <span className="device-card__kv device-card__kv--wrap">
+        {shown.map((base) => {
+          const v = caps.value(base);
+          const text = v === undefined || v === '' ? MISSING : String(v);
+          // Only `no_net` is a problem. `local_net` is the path this system prefers, and
+          // `cloud_net` is normal for a device that also talks to the vendor.
+          const bad = base === 'net_state' && v === 'no_net';
+          return (
+            <span key={base} className="device-card__setting">
+              <span className="device-card__muted">{base.replace(/_/g, ' ')}</span>{' '}
+              <span className={bad ? 'device-card__diagnostic--bad' : undefined}>{text}</span>
+            </span>
+          );
+        })}
+      </span>
+    </Row>
+  );
+}
+
 export function SettingsWidget({ caps }: WidgetProps) {
   const shown = READ_ONLY_SETTINGS.filter((s) => caps.declares(s));
 
