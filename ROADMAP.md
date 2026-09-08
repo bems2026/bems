@@ -3330,10 +3330,37 @@ fall back to it).
       `src/lib/types.ts`, `src/lib/energyDisagreement.ts`, the two energy cards,
       `docs/bridge-contract.md`
 
-      **Apply `phase32` BEFORE deploying the server.** `shapeRows` names the new columns on every
-      totals insert and PostgREST fails the whole row when a named column is missing — so an
-      unmigrated database plus new server code stores no totals at all, silently. The reverse
-      order is safe.
+      **REHEARSED BEFORE IT WENT NEAR THE LIVE PROJECT.** This repo has no migration runner —
+      phase files are pasted into the SQL editor by hand — so `supabase/rehearse.sh` applied all
+      32 in order against PostgreSQL 16 in a container on the Pi: **phase32 ok, all six functions
+      still behaved.** `test/phase32-building-totals-summed-schema.test.mjs` pins what a
+      rehearsal cannot — the six columns stay nullable and undefaulted, the hourly rollup carries
+      them too, they are idempotent, and the apply-before-deploy ordering stays recorded. Three
+      neuters fail it.
+
+      **DEPLOYED 2026-09-08 15:26, frontend and flow.** Backup beside `flows.json`, a diff
+      confirming the change touched **exactly one node of 41** (`Build latest readings`) and no
+      source tab, dry run 4/4 tabs matched and 298 -> 298 nodes, then `--force --apply`. 5/5
+      bridge checks. `dist` rebuilt at 15:27:04, `ibems-proxy` and `ibems-scheduler` restarted at
+      15:27 for the `shared/` change. No errors in any unit's log. Measured immediately after,
+      live:
+
+      | period | branches | total served | integrated cross-check | branches vs integrated |
+      |---|---|---|---|---|
+      | today | 6.552 | **6.552** | 6.531 | +0.32 % |
+      | week | 22.076 | **22.076** | 21.997 | +0.36 % |
+      | month | 63.713 | **63.713** | 63.402 | +0.49 % |
+
+      Exact on all three, which is the whole point, with the independent figure a few tenths of a
+      percent behind — the healthy relationship. Fleet 18 of 20.
+
+      **`ibems-ingest` was deliberately NOT restarted**, and that is the one step left.
+      `shapeRows` names the new columns on every totals insert and PostgREST fails the whole row
+      when a named column is missing — so an unmigrated database plus new server code stores **no
+      totals at all**, silently, until someone reads `ingestion_health`. It is still running the
+      pre-RM-057 code, which writes the old column set from the new payload: the summed figure
+      lands in `energy_kwh_today` and history stays continuous, just without the cross-check
+      columns. **Apply `phase32`, then restart it.** The reverse order is safe; this order is not.
 
 - [ ] **RM-058 (S) — guard the SHORTFALL direction, once there is enough measurement to size it.**
       RM-057 made both compared figures describe the same circuits, which removed the argument
