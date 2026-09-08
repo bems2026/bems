@@ -126,21 +126,42 @@ describe('DevicesView', () => {
     expect(within(row).getAllByRole('cell').length).toBe(headerCount);
   });
 
-  it('opens the metadata editor for the row whose Edit button was clicked', () => {
-    useDeviceStore.setState({ devices: [device('co1', 'Outlet 1', 'outlet_dual'), device('l1', 'Light Switch 1', 'switch')] });
+  /**
+   * ONE button per row. Details, Edit and Remove were three controls in a `0.6fr` column opening
+   * three surfaces that all answered questions about the same device.
+   */
+  it('gives each row exactly one action button, whatever the device', () => {
+    useDeviceStore.setState({ devices: [device('co1', 'Outlet 1', 'outlet_dual'), device('co8', 'Outlet 8', 'outlet_dual')] });
     render(<DevicesView />);
-    const row = screen.getByText('Light Switch 1').closest('[role="row"]') as HTMLElement;
-    fireEvent.click(within(row).getByRole('button', { name: 'Edit' }));
-    expect(screen.getByRole('heading', { name: /Light Switch 1/ })).toBeInTheDocument();
+    for (const name of ['Outlet 1', 'Outlet 8']) {
+      const row = screen.getByText(name).closest('[role="row"]') as HTMLElement;
+      const cell = row.querySelector('.devices-table__edit-cell') as HTMLElement;
+      expect(within(cell).getAllByRole('button')).toHaveLength(1);
+    }
   });
 
-  it('closes the editor when its own Close button is clicked', () => {
+  it('names that button after its own device, so twenty rows of "Manage" stay distinguishable', () => {
+    useDeviceStore.setState({ devices: [device('l1', 'Light Switch 1', 'switch')] });
+    render(<DevicesView />);
+    expect(screen.getByRole('button', { name: 'Manage Light Switch 1' })).toBeInTheDocument();
+  });
+
+  it('opens the panel for the row whose button was clicked', () => {
+    useDeviceStore.setState({ devices: [device('co1', 'Outlet 1', 'outlet_dual'), device('l1', 'Light Switch 1', 'switch')] });
+    render(<DevicesView />);
+    fireEvent.click(screen.getByRole('button', { name: 'Manage Light Switch 1' }));
+    expect(screen.getByRole('heading', { name: /Light Switch 1/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Capabilities' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Metadata' })).toBeInTheDocument();
+  });
+
+  it('closes the panel when its Close button is clicked', () => {
     useDeviceStore.setState({ devices: [device('co1', 'Outlet 1', 'outlet_dual')] });
     render(<DevicesView />);
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-    expect(screen.getByRole('heading', { name: /Outlet 1/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Manage Outlet 1' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-    expect(screen.queryByRole('heading', { name: /Outlet 1/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('shows a recorded room/category as a meta line under the device name', () => {
@@ -163,22 +184,26 @@ describe('DevicesView', () => {
    * rather than deleted: that the control actually opens the wizard is the thing worth
    * guarding, and a disabled button is exactly the kind of regression that goes unnoticed.
    */
-  it('offers Remove only for an enrolled device, never for a built-in one', () => {
+  it('offers the Remove tab only for an enrolled device, never for a built-in one', () => {
     // The built-in devices are hand-written in registry.mjs and no script can remove them. A
-    // disabled button would invite the click and then explain itself; showing none is honest.
+    // disabled tab would invite the click and then explain itself; showing none is honest.
     useDeviceStore.setState({ devices: [device('co1', 'Outlet 1', 'outlet_dual'), device('co8', 'Outlet 8', 'outlet_dual')] });
     render(<DevicesView />);
-    const builtIn = screen.getByText('Outlet 1').closest('[role="row"]') as HTMLElement;
-    const enrolled = screen.getByText('Outlet 8').closest('[role="row"]') as HTMLElement;
-    expect(within(builtIn).queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument();
-    expect(within(enrolled).getByRole('button', { name: 'Remove' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Manage Outlet 1' }));
+    expect(screen.queryByRole('tab', { name: 'Remove' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Manage Outlet 8' }));
+    expect(screen.getByRole('tab', { name: 'Remove' })).toBeInTheDocument();
   });
 
-  it('opens the removal panel for the row whose Remove was clicked', () => {
+  it('reaches the removal flow through that tab', () => {
     useDeviceStore.setState({ devices: [device('co8', 'Outlet 8', 'outlet_dual')] });
     render(<DevicesView />);
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
-    expect(screen.getByRole('heading', { name: /Remove Outlet 8/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Manage Outlet 8' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Remove' }));
+    expect(screen.getByText(/Checking what this would remove/i)).toBeInTheDocument();
   });
 
   /**
@@ -191,19 +216,19 @@ describe('DevicesView', () => {
     const { container } = render(<DevicesView />);
     const tableBefore = container.querySelector('.devices-table-card');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Manage Outlet 1' }));
 
     const dialog = screen.getByRole('dialog');
     expect(container.contains(dialog)).toBe(false);
     expect(container.querySelector('.devices-table-card')).toBe(tableBefore);
   });
 
-  it('gives Details its own floating panel rather than a section above the table', () => {
+  it('opens on Capabilities, so the common case is a glance rather than a form', () => {
     useDeviceStore.setState({ devices: [device('co1', 'Outlet 1', 'outlet_dual')] });
-    const { container } = render(<DevicesView />);
-    fireEvent.click(screen.getByRole('button', { name: 'Details' }));
-    expect(container.contains(screen.getByRole('dialog'))).toBe(false);
-    expect(screen.getByRole('heading', { name: /Outlet 1/ })).toBeInTheDocument();
+    render(<DevicesView />);
+    fireEvent.click(screen.getByRole('button', { name: 'Manage Outlet 1' }));
+    expect(screen.getByRole('tab', { name: 'Capabilities' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Metadata' })).toHaveAttribute('aria-selected', 'false');
   });
 
   /**

@@ -45,7 +45,7 @@ describe('DeviceMetaEditor', () => {
 
     it('offers every node by full path, so two rooms with one name stay distinguishable', () => {
       seedTree();
-      render(<DeviceMetaEditor device={outlet()} onClose={vi.fn()} />);
+      render(<DeviceMetaEditor device={outlet()} />);
       const select = screen.getByLabelText('Space');
       expect([...select.querySelectorAll('option')].map((o) => o.textContent)).toEqual([
         'Not placed',
@@ -56,30 +56,29 @@ describe('DeviceMetaEditor', () => {
 
     it('staging a placement enables Save', () => {
       seedTree();
-      render(<DeviceMetaEditor device={outlet()} onClose={vi.fn()} />);
+      render(<DeviceMetaEditor device={outlet()} />);
       fireEvent.change(screen.getByLabelText('Space'), { target: { value: 'r' } });
       expect(screen.getByRole('button', { name: 'Save metadata' })).toBeEnabled();
     });
 
     it('says so when there is no tree yet, rather than showing an empty picker', () => {
       useSpaceTreeStore.setState({ nodes: [], status: 'ready', canEdit: true });
-      render(<DeviceMetaEditor device={outlet()} onClose={vi.fn()} />);
+      render(<DeviceMetaEditor device={outlet()} />);
       expect(screen.getByLabelText('Space')).toBeDisabled();
       expect(screen.getByText(/no spaces defined/i)).toBeInTheDocument();
     });
   });
 
-  it('pre-fills fields from the saved config and focuses the heading', () => {
+  it('pre-fills fields from the saved config', () => {
     useDeviceConfigStore.setState({ saved: { co1: { ...emptyDeviceConfig('co1'), room: 'CARE Office', category: 'outlet' } } });
-    render(<DeviceMetaEditor device={outlet()} onClose={vi.fn()} />);
+    render(<DeviceMetaEditor device={outlet()} />);
 
     expect(screen.getByLabelText('Room')).toHaveValue('CARE Office');
     expect(screen.getByLabelText('Category')).toHaveValue('outlet');
-    expect(screen.getByRole('heading', { name: /Outlet 1/ })).toHaveFocus();
   });
 
   it('disables Save until a field is actually edited', () => {
-    render(<DeviceMetaEditor device={outlet()} onClose={vi.fn()} />);
+    render(<DeviceMetaEditor device={outlet()} />);
     expect(screen.getByRole('button', { name: 'Save metadata' })).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText('Room'), { target: { value: 'Lab 2' } });
@@ -88,7 +87,7 @@ describe('DeviceMetaEditor', () => {
 
   it('asks for confirmation naming the device, then writes and reports success', async () => {
     vi.mocked(supabaseDeviceConfig.writeDeviceConfig).mockResolvedValue(undefined);
-    render(<DeviceMetaEditor device={outlet()} onClose={vi.fn()} />);
+    render(<DeviceMetaEditor device={outlet()} />);
 
     fireEvent.change(screen.getByLabelText('Room'), { target: { value: 'Lab 2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save metadata' }));
@@ -107,7 +106,7 @@ describe('DeviceMetaEditor', () => {
 
   it('shows the store save error inline when the write fails', async () => {
     vi.mocked(supabaseDeviceConfig.writeDeviceConfig).mockRejectedValue(new Error('affected 0 rows'));
-    render(<DeviceMetaEditor device={outlet()} onClose={vi.fn()} />);
+    render(<DeviceMetaEditor device={outlet()} />);
 
     fireEvent.change(screen.getByLabelText('Room'), { target: { value: 'Lab 2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save metadata' }));
@@ -116,23 +115,4 @@ describe('DeviceMetaEditor', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('affected 0 rows');
   });
 
-  it('closes on Escape when no confirm dialog is open', () => {
-    const onClose = vi.fn();
-    render(<DeviceMetaEditor device={outlet()} onClose={onClose} />);
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(onClose).toHaveBeenCalledTimes(1);
-  });
-
-  it('lets Escape close the confirm dialog first, without also closing the editor underneath it', () => {
-    const onClose = vi.fn();
-    render(<DeviceMetaEditor device={outlet()} onClose={onClose} />);
-    fireEvent.change(screen.getByLabelText('Room'), { target: { value: 'Lab 2' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save metadata' }));
-    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
-
-    fireEvent.keyDown(document, { key: 'Escape' });
-
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-    expect(onClose).not.toHaveBeenCalled();
-  });
 });

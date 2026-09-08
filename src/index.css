@@ -2847,7 +2847,15 @@ body::before {
   display: flex;
   justify-content: flex-end;
 }
-.devices-table__edit-btn {
+/*
+ * ONE control per row — RM-061. This column held `Details`, `Edit` and (for an enrolled device)
+ * `Remove`: three buttons flush against each other in a `0.6fr` track, opening three surfaces
+ * that all answered questions about the same device. They are `DevicePanel`'s tabs now, and the
+ * destructive one is a tab styled in --bad rather than a button that only turns red on hover —
+ * inside a panel it is no longer sitting in a table where a red control at rest would read as a
+ * wall of warnings.
+ */
+.devices-table__manage-btn {
   border: 1px solid var(--border);
   background: var(--bg-surface-2);
   color: var(--muted-2);
@@ -2857,38 +2865,9 @@ body::before {
   cursor: pointer;
   white-space: nowrap;
 }
-.devices-table__edit-btn:hover {
+.devices-table__manage-btn:hover {
   border-color: var(--border-strong);
   color: var(--txt);
-}
-
-/*
- * Removal sits beside Edit and is styled the same until hovered, where it goes red. A
- * destructive control that is red at rest turns the table into a wall of warnings and
- * trains people to ignore the colour; the tone belongs on the intent to click, not on the
- * resting state. The confirm dialog behind it carries the real weight.
- * Only rendered for enrolled devices — see DevicesView.
- */
-.devices-table__remove-btn {
-  border: 1px solid var(--border);
-  background: var(--bg-surface-2);
-  color: var(--muted-2);
-  border-radius: var(--r-sm);
-  padding: 5px 11px;
-  font: 600 var(--fs-xxs) inherit;
-  cursor: pointer;
-  white-space: nowrap;
-  margin-left: 6px;
-}
-.devices-table__remove-btn:hover {
-  border-color: var(--bad);
-  color: var(--bad);
-}
-/* --bad measures under AA on this surface in dark; --red-bright is the theme own lighter
-   red, already used for the same reason elsewhere in this file. */
-:root[data-theme='dark'] .devices-table__remove-btn:hover {
-  color: var(--red-bright);
-  border-color: var(--red-bright);
 }
 
 /*
@@ -2965,10 +2944,67 @@ body::before {
  * deliberately NOT `.automation-number-input`/`.automation-time-input`, which hardcode a
  * light background with no dark-mode override.
  * ------------------------------------------------------------------------ */
-/* Wider than the default panel: this is a seven-field form whose grid wants two 220px columns
-   plus the functions fieldset, and 46rem makes the second column fight the first. */
-.overlay-panel.device-meta-editor {
+/*
+ * Wider than the default panel: the Metadata tab is a seven-field form whose grid wants two
+ * 220px columns plus the functions fieldset, and 46rem makes the second column fight the first.
+ */
+.overlay-panel.device-panel {
   width: min(52rem, 100%);
+}
+.device-panel__id {
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+  font-weight: 500;
+}
+/*
+ * The panel's own tabs — RM-061.
+ *
+ * DELIBERATELY A DIFFERENT SHAPE FROM `.device-card__tab`. A dual-channel meter renders channel
+ * tabs INSIDE the Capabilities tab, so two tablists can be on screen at once; drawing them the
+ * same way would say they are peers when one is nested in the other. These are underlined and
+ * sit on the panel's edge; the channel pills stay pills.
+ */
+.device-panel__tabs {
+  display: flex;
+  gap: var(--sp-1);
+  border-bottom: 1px solid var(--border);
+}
+.device-panel__tab {
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  padding: 8px 12px;
+  margin-bottom: -1px;
+  font: 700 var(--fs-xs-lg) inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.device-panel__tab:hover {
+  color: var(--txt);
+}
+.device-panel__tab--on {
+  color: var(--txt);
+  border-bottom-color: var(--accent);
+}
+/* Remove reads as destructive before it is opened, not after. --bad is 5.9-6.5:1 as text. */
+.device-panel__tab--danger {
+  color: var(--bad);
+  margin-left: auto;
+}
+.device-panel__tab--danger.device-panel__tab--on {
+  color: var(--bad);
+  border-bottom-color: var(--bad);
+}
+/*
+ * The panel IS the card now. `.device-card` was written to sit on a page, so without this the
+ * Capabilities tab drew a second border, radius and padding inside the panel's own.
+ */
+.device-panel .device-card {
+  border: none;
+  padding: 0;
+  background: transparent;
+  max-width: none;
 }
 .device-meta-editor__id {
   font-size: var(--fs-xs);
@@ -7106,19 +7142,6 @@ button.space-plan__pin {
 /* The capability card opened from the fleet table. A panel beside the table rather than an
    expanding row: the table is a strict nine-column ARIA grid whose row/column agreement is
    asserted by test, and an expanding row would have to break that or fake a cell. */
-/*
- * The Details panel is an `OverlayPanel` now, which carries the surface, the heading and the
- * close control — so all this class still has to do is stop the card inside it from drawing a
- * second one. `.device-card` was written to sit on a page; here the panel IS the card, and
- * nesting the two gave two borders, two radii and two lots of padding around one device.
- */
-.devices-detail .device-card {
-  border: none;
-  padding: 0;
-  background: transparent;
-  max-width: none;
-}
-
 /* The child-lock badge is also its control, so it needs to read as pressable without becoming a
    different shape from the read-only badges beside it. */
 .device-card__badge-button {
@@ -7144,9 +7167,9 @@ button.space-plan__pin {
  * fleet table, so opening any of them pushed the table down the page — the operator lost
  * sight of the row at the exact moment they were acting on it. `DeviceMetaEditor`'s docblock
  * argued a panel was safer than a modal because its own save confirmation is an `aria-modal`
- * alertdialog and two Escape handlers would fight over one keypress. That was true, and the
- * fix was to arbitrate the nesting once (`OverlayPanel`'s `blockEscape`) rather than to keep
- * four panels in the document flow.
+ * alertdialog and two Escape handlers would fight over one keypress. That was true, and the fix
+ * was to arbitrate the nesting once — `OverlayPanel` detects a nested dialog in its own subtree
+ * and stands down — rather than to keep four panels in the document flow.
  *
  * THE SURFACE IS `--pop-bg`, NOT `--glass`, AND THAT IS A CONTRAST DECISION. Every ratio in
  * this file's token comments was computed against surfaces this app actually composites —
@@ -7220,6 +7243,11 @@ button.space-plan__pin {
 .overlay-panel__close:hover {
   border-color: var(--border-strong);
   color: var(--txt);
+}
+/* Pinned between the heading and the scrolling body — see `OverlayPanel`'s `toolbar` prop. */
+.overlay-panel__toolbar {
+  flex: none;
+  padding: var(--sp-3) var(--sp-5) 0;
 }
 .overlay-panel__body {
   padding: var(--sp-5);
@@ -7297,13 +7325,13 @@ button.space-plan__pin {
   .analytics-energy-period,
   .automation-filter-chip,
   /*
-   * Height only for the two row buttons: the Edit column is `0.6fr` of a nine-column grid and
-   * already holds up to three controls, so a 44px MINIMUM WIDTH each would overflow the column
-   * on every row. Per this block's own rule about cross-talk, the largest target available
-   * without stealing a neighbour's taps is the right one — here that is the height.
+   * Height only. The Manage column is `0.6fr` of a nine-column grid, so a 44px minimum WIDTH
+   * would overflow it on every row; per this block's own rule about cross-talk, the largest
+   * target that does not steal a neighbour's taps is the right one, and here that is the height.
+   * The panel's tabs get the same treatment for the same reason — they sit side by side.
    */
-  .devices-table__edit-btn,
-  .devices-table__remove-btn,
+  .devices-table__manage-btn,
+  .device-panel__tab,
   /* The fields an operator sets schedules and shed limits with, on a touchscreen. */
   .automation-time-input,
   .automation-number-input {

@@ -1,5 +1,4 @@
 import { useId } from 'react';
-import { OverlayPanel } from '@/components/ui/OverlayPanel';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { FUNCTION_OPTIONS, functionsOf, DEFAULT_FUNCTIONS, type DeviceFunction } from '@/lib/deviceFunctions';
@@ -11,7 +10,6 @@ import type { Device } from '@/lib/types';
 
 interface DeviceMetaEditorProps {
   device: Device;
-  onClose: () => void;
 }
 
 /**
@@ -19,15 +17,17 @@ interface DeviceMetaEditorProps {
  * room, functional category, load-shed group, a display-name override, and notes, staged in
  * `deviceConfigStore` and written to Supabase's `device_config` table on confirm.
  *
- * A floating `OverlayPanel`, not the in-flow panel this used to be. The old docblock argued a
- * panel was safer than a modal because the confirm gate below is ITSELF an `aria-modal`
- * alertdialog and nesting one inside another means two competing Escape handlers. The objection
- * was real; keeping the editor in the document flow was not the only answer to it. `OverlayPanel`
- * arbitrates the nesting once — `blockEscape` stands its own Escape handler and focus trap down
- * while the confirm dialog is up — so the editor can float without the table it edits being
- * pushed off screen underneath it.
+ * ONE TAB OF `DevicePanel`, not a panel in its own right. This rendered in normal flow above the
+ * fleet table (which pushed the table off screen), then briefly owned its own `OverlayPanel`, and
+ * is now the Metadata tab beside Capabilities and Remove — because "what can this device do" and
+ * "what is it called and where is it" are two questions about ONE device, and they had become two
+ * buttons crammed side by side into a 0.6fr column.
+ *
+ * The Escape-nesting problem the first version of this docblock described is real and still
+ * handled — the save gate below is an `aria-modal` alertdialog — but it belongs entirely to
+ * `OverlayPanel` now, which sees the nested dialog in the DOM rather than being told about it.
  */
-export function DeviceMetaEditor({ device, onClose }: DeviceMetaEditorProps) {
+export function DeviceMetaEditor({ device }: DeviceMetaEditorProps) {
   const draft = useDeviceConfigStore((s) => s.draft);
   const saved = useDeviceConfigStore((s) => s.saved);
   const setDraftField = useDeviceConfigStore((s) => s.setDraftField);
@@ -77,16 +77,7 @@ export function DeviceMetaEditor({ device, onClose }: DeviceMetaEditorProps) {
     );
 
   return (
-    <OverlayPanel
-      className="device-meta-editor"
-      onClose={onClose}
-      blockEscape={modalProps.open}
-      title={
-        <>
-          Edit metadata — {device.display_name} <span className="mono device-meta-editor__id">{device.id}</span>
-        </>
-      }
-    >
+    <div className="device-meta-editor">
       <div className="device-meta-editor__grid">
         {/* htmlFor rather than the wrapping <label> the other fields use, deliberately: the
             hint below is a DESCRIPTION, and inside a label it would be folded into the select's
@@ -207,6 +198,6 @@ export function DeviceMetaEditor({ device, onClose }: DeviceMetaEditorProps) {
       </div>
 
       <ConfirmModal {...modalProps} />
-    </OverlayPanel>
+    </div>
   );
 }

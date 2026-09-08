@@ -48,12 +48,60 @@ describe('OverlayPanel', () => {
    * The nesting rule. A save confirmation opens INSIDE this panel and is itself an `aria-modal`
    * alertdialog with its own Escape handler. Without this, one keypress dismisses both — the
    * operator loses the confirmation and the form underneath it in a single stroke.
+   *
+   * Detected from the DOM rather than declared by a prop: the panel can SEE a nested dialog, so
+   * asking every caller to remember to tell it was a rule three components had to re-implement
+   * (and `DevicePanel` would have had to plumb up through three children to satisfy).
    */
-  it('yields Escape to a nested dialog while blockEscape is set', () => {
+  it('yields Escape to a nested dialog rendered inside it, with no prop to set', () => {
     const onClose = vi.fn();
-    render(<OverlayPanel title="Details" onClose={onClose} blockEscape><p>body</p></OverlayPanel>);
+    render(
+      <OverlayPanel title="Details" onClose={onClose}>
+        <div role="alertdialog" aria-modal="true" aria-label="Confirm">are you sure?</div>
+      </OverlayPanel>,
+    );
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('takes Escape back once the nested dialog goes away', () => {
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <OverlayPanel title="Details" onClose={onClose}>
+        <div role="alertdialog" aria-modal="true" aria-label="Confirm">are you sure?</div>
+      </OverlayPanel>,
+    );
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+
+    rerender(<OverlayPanel title="Details" onClose={onClose}><p>body</p></OverlayPanel>);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The trap collects real tab stops, not every button. A roving-tabindex tablist (see
+   * `DevicePanel`) parks its inactive tabs at `tabindex="-1"`, and a disabled button is not
+   * focusable either — counting those made the trap's "first" element something Tab can never
+   * reach, so Shift+Tab from the real first control went nowhere.
+   */
+  it('skips tabindex=-1 and disabled controls when cycling', () => {
+    render(
+      <OverlayPanel title="Details" onClose={vi.fn()}>
+        <button type="button">real</button>
+        {/* Both AFTER the real control on purpose: as the last elements they become the trap's
+            boundary, which is the only position where counting them actually breaks Tab. */}
+        <button type="button" tabIndex={-1}>roving</button>
+        <button type="button" disabled>disabled</button>
+      </OverlayPanel>,
+    );
+    const close = screen.getByRole('button', { name: 'Close' });
+    const real = screen.getByRole('button', { name: 'real' });
+    real.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(close).toHaveFocus();
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(real).toHaveFocus();
   });
 
   it('closes on a click outside the panel, but not on one inside it', () => {

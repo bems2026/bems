@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { removeDevice, type RemoveResult } from '@/lib/removeDevice';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
-import { OverlayPanel } from '@/components/ui/OverlayPanel';
 import { useConfirm } from '@/components/ui/useConfirm';
 import type { Device } from '@/lib/types';
 
@@ -19,11 +18,9 @@ import type { Device } from '@/lib/types';
  */
 export function RemoveDevicePanel({
   device,
-  onClose,
   onRemoved,
 }: {
   device: Device;
-  onClose: () => void;
   onRemoved: () => void;
 }) {
   const { ask, modalProps } = useConfirm();
@@ -68,12 +65,7 @@ export function RemoveDevicePanel({
   const applied = result?.stage === 'applied';
 
   return (
-    <OverlayPanel
-      className="enroll-wizard"
-      title={`Remove ${device.display_name}`}
-      onClose={onClose}
-      blockEscape={modalProps.open}
-    >
+    <div className="enroll-wizard">
 
       {busy && !result && <p className="enroll-wizard__note">Checking what this would remove…</p>}
 
@@ -129,6 +121,6 @@ export function RemoveDevicePanel({
       )}
 
       <ConfirmModal {...modalProps} />
-    </OverlayPanel>
+    </div>
   );
 }

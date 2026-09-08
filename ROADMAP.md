@@ -1,7 +1,10 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-08 — **RM-059 and RM-060**, a UI/UX pass over the Devices and
-Automation pages, and before that the week/month energy accumulator, measured against the live
+**Last audited:** 2026-09-08 — **RM-059, RM-060 and RM-061**, a UI/UX pass over the Devices and
+Automation pages. RM-061 came straight from the operator looking at what RM-059 shipped: the
+Details and Edit buttons sitting beside each other were the wrong shape, and the fix was not to
+restyle them but to notice that one device had three doors. One **Manage** button, one panel,
+three tabs. Before that, and before that the week/month energy accumulator, measured against the live
 bridge's own flow context and eight days of corrected history. RM-060 started from a fault the
 operator reported in words rather than in a ticket: on a schedule row you cannot tell which clock
 turns the device on and which turns it off. That is true, it is worst on the kiosk (the column
@@ -1496,6 +1499,45 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       — `src/components/automation/DsmThresholdsCard.tsx` (13 tests), `src/hooks/useShedSummary.ts`,
       `src/lib/shedTiers.ts`. Automation's pre-catalogue state also becomes skeletons rather than a
       sentence, matching Devices one tab away and staying inside `Skeleton.tsx`'s own rule.
+- [x] **RM-061** **One button per fleet row, and one panel with tabs behind it.** Each row carried
+      `Details`, `Edit` and — for an enrolled device — `Remove`: three buttons flush against each
+      other in a `0.6fr` track of a nine-column grid, opening three separate surfaces that all
+      answered questions about the same device. RM-059 had already had to give them a height-only
+      touch target because a 44px minimum WIDTH each would overflow the column, which was the
+      column telling us what the operator then said out loud. The row now has a single **Manage**
+      button (accessible name carries the device — twenty rows of "Manage" tell a screen reader
+      user nothing), and `DevicePanel` holds **Capabilities / Metadata / Remove** as tabs.
+      Tabs rather than one longer panel because these are not sections of a document: capabilities
+      are read live and change every couple of seconds, metadata is a form you submit, and removal
+      is destructive with its own dry-run preview — stacking them would make the common case
+      scroll past the rare one, and Remove is not something to scroll past. **Only the active tab
+      is mounted**, so the live-reading subscription and the removal preview are not both running
+      while you type in the other. **Remove is absent, not disabled, for a built-in device** — the
+      same judgement `DevicesView` already made about the button it replaces.
+      `role="tablist"` is honoured rather than decorative: roving tabindex (one tab stop, not
+      three) plus Left/Right/Home/End. The panel's tabs are deliberately a DIFFERENT shape from
+      `.device-card__tab`, because a dual-channel meter renders channel tabs *inside* the
+      Capabilities tab and two tablists can be on screen at once — drawing them alike would say
+      they were peers
+      — `src/components/devices/DevicePanel.tsx` (+`.test.tsx`, 10 tests), `DevicesView.tsx`,
+      `DeviceMetaEditor.tsx` and `RemoveDevicePanel.tsx` (both now body-only, their panel chrome
+      removed), `src/index.css`.
+      **Two changes to `OverlayPanel` fell out of it, both simplifications:**
+      (1) **`blockEscape` is gone.** It was a prop every caller had to remember to pass so the
+      panel would stand down while a nested `ConfirmModal` was up — a rule three components
+      re-implemented and which `DevicePanel` would have had to plumb up through three children to
+      satisfy. The panel can simply SEE the dialog (`ConfirmModal` renders in normal flow inside
+      `children`), so it reads the DOM at keypress time instead. It cannot fall out of sync the
+      way a prop can, and the callers got shorter.
+      (2) **The focus trap counted controls Tab can never reach.** It collected every `button`,
+      including `tabindex="-1"` and `disabled` ones — so the new roving-tabindex tablist would
+      have put the trap's boundary on an element that is not a tab stop. Now filtered on
+      `tabIndex >= 0 && !disabled`. Found by writing the test badly first: the initial version put
+      the unreachable buttons in the MIDDLE of the panel, where the boundary logic never sees
+      them, and passed against the broken code.
+      A `toolbar` slot was added for the tablist, pinned between the heading and the scrolling
+      body — tabs rendered inside `__body` scroll out of reach, which is the one piece of chrome
+      that must not.
 - [x] **EX-150** One relay control, replacing five. `SwitchesListCard`, `OutletsListCard`,
       `LightingMatrixCard`, `OutletPlanCard` and `MasterQuickActionsCard` each re-derived the same
       `controlView` → `busy`/`unknown`/`on` triple and then decided independently what `disabled`

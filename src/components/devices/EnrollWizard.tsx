@@ -79,7 +79,7 @@ export function EnrollWizard({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <OverlayPanel className="enroll-wizard" title="Add device" onClose={onClose} blockEscape={modalProps.open}>
+    <OverlayPanel className="enroll-wizard" title="Add device" onClose={onClose}>
       <label className="enroll-wizard__field">
         <span>Vendor device</span>
         <select value={vendorId ?? ''} onChange={(e) => setVendorId(e.target.value || null)}>
