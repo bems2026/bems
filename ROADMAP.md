@@ -3354,13 +3354,32 @@ fall back to it).
       Exact on all three, which is the whole point, with the independent figure a few tenths of a
       percent behind — the healthy relationship. Fleet 18 of 20.
 
-      **`ibems-ingest` was deliberately NOT restarted**, and that is the one step left.
-      `shapeRows` names the new columns on every totals insert and PostgREST fails the whole row
-      when a named column is missing — so an unmigrated database plus new server code stores **no
-      totals at all**, silently, until someone reads `ingestion_health`. It is still running the
-      pre-RM-057 code, which writes the old column set from the new payload: the summed figure
-      lands in `energy_kwh_today` and history stays continuous, just without the cross-check
-      columns. **Apply `phase32`, then restart it.** The reverse order is safe; this order is not.
+      **`phase32` applied by the operator and `ibems-ingest` restarted 15:31:33** — in that
+      order, because the reverse fails silently: `shapeRows` names the new columns on every
+      totals insert and PostgREST rejects the whole row for a column that does not exist, so an
+      unmigrated database plus new server code stores **no totals at all** until somebody reads
+      `ingestion_health`. **Checked rather than trusted before the restart:** a read-only GET
+      against each of the six columns, run on the Pi so the service-role key never left it — six
+      HTTP 200s. Two clean cycles immediately after (`wrote 20 readings + totals`), no errors in
+      any unit.
+
+      **The changeover is legible in the stored rows**, which is the best evidence it worked:
+
+      | ts (UTC) | `energy_kwh_today` | `energy_kwh_today_integrated` |
+      |---|---|---|
+      | 07:33:00 | 6.619 | 6.597 |
+      | 07:31:35 | 6.600 | 6.579 |
+      | 07:31:00 | 6.591 | **null** |
+      | 07:29:00 | 6.575 | **null** |
+
+      **One impurity, recorded rather than smoothed over.** The flow deployed at 15:26 and the
+      ingest daemon restarted at 15:31, so for those five minutes `energy_kwh_today` already held
+      the SUMMED figure while the integrated column was still null. Rows before 15:26 hold the
+      integrated figure in that column, as they always did. So
+      `coalesce(energy_kwh_today_integrated, energy_kwh_today)` — the continuous-integrated-series
+      rule the migration documents — is exact everywhere except those five rows, where it returns
+      the summed figure instead. The two differ by ~0.3 % there, and nothing reads it that way
+      today; it is written down so the first reader who does is not misled by it.
 
 - [ ] **RM-058 (S) — guard the SHORTFALL direction, once there is enough measurement to size it.**
       RM-057 made both compared figures describe the same circuits, which removed the argument
