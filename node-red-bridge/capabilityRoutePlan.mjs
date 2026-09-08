@@ -22,8 +22,7 @@
  * WHAT IT ADDS, all on the Energy tab, all NEW — no existing node is modified:
  *
  *     [http in POST /capability/:deviceId] -> [Capability auth + write] -+-> [Capability router] -> the 3 tuya nodes
- *                                                                       +-> [Capability 200] -> [http response]
- *                                                        (error output) ---------------------------^
+ *                                                        (reply, error) -+-> [http response]
  *
  * THE ROUTER KEYS ON THE PHYSICAL DEVICE, NOT THE LOGICAL ONE. `mtr_co_yellow` and
  * `mtr_lo_yellow` are two channels of ONE meter and share a single tuya node; they differ only
@@ -47,7 +46,6 @@ export const NODE_IDS = Object.freeze({
   httpIn: 'bems_cap_in',
   auth: 'bems_cap_auth',
   router: 'bems_cap_router',
-  ok: 'bems_cap_ok',
   response: 'bems_cap_res',
 });
 
@@ -136,7 +134,7 @@ const TOKEN = env.get('LIGHT_API_TOKEN');
 if (!TOKEN || msg.req.headers['x-auth-token'] !== TOKEN) {
     msg.statusCode = 401;
     msg.payload = { ok: false, error: 'unauthorized' };
-    return [null, msg];
+    return [null, null, msg];
 }
 
 const target = TARGETS[msg.req.params.deviceId];
@@ -146,7 +144,7 @@ if (!target) {
     // vendor cloud on a failure here rather than giving up.
     msg.statusCode = 404;
     msg.payload = { ok: false, error: 'no local capability route for this device' };
-    return [null, msg];
+    return [null, null, msg];
 }
 
 const body = msg.payload || {};
@@ -154,37 +152,40 @@ const cap = target.caps[body.capability];
 if (!cap) {
     msg.statusCode = 400;
     msg.payload = { ok: false, error: 'capability is not writable on this device' };
-    return [null, msg];
+    return [null, null, msg];
 }
 
 let value = body.value;
 if (cap.kind === 'bool') {
-    if (typeof value !== 'boolean') { msg.statusCode = 400; msg.payload = { ok: false, error: 'expected a boolean' }; return [null, msg]; }
+    if (typeof value !== 'boolean') { msg.statusCode = 400; msg.payload = { ok: false, error: 'expected a boolean' }; return [null, null, msg]; }
 } else if (cap.kind === 'enum') {
-    if (!cap.range || cap.range.indexOf(value) < 0) { msg.statusCode = 400; msg.payload = { ok: false, error: 'value is not in the declared range' }; return [null, msg]; }
+    if (!cap.range || cap.range.indexOf(value) < 0) { msg.statusCode = 400; msg.payload = { ok: false, error: 'value is not in the declared range' }; return [null, null, msg]; }
 } else {
-    if (typeof value !== 'number' || !isFinite(value)) { msg.statusCode = 400; msg.payload = { ok: false, error: 'expected a finite number' }; return [null, msg]; }
+    if (typeof value !== 'number' || !isFinite(value)) { msg.statusCode = 400; msg.payload = { ok: false, error: 'expected a finite number' }; return [null, null, msg]; }
     // The vendor's own bounds, never a second set written here. Refusing out of range locally
     // is what keeps a slider from asking the hardware for something it will reject silently.
-    if (cap.min !== undefined && value < cap.min) { msg.statusCode = 400; msg.payload = { ok: false, error: 'below the declared minimum' }; return [null, msg]; }
-    if (cap.max !== undefined && value > cap.max) { msg.statusCode = 400; msg.payload = { ok: false, error: 'above the declared maximum' }; return [null, msg]; }
+    if (cap.min !== undefined && value < cap.min) { msg.statusCode = 400; msg.payload = { ok: false, error: 'below the declared minimum' }; return [null, null, msg]; }
+    if (cap.max !== undefined && value > cap.max) { msg.statusCode = 400; msg.payload = { ok: false, error: 'above the declared maximum' }; return [null, null, msg]; }
     // Canonical units in, raw wire units out — the divisor is the capability's own scale.
     value = Math.round(value * cap.divisor);
 }
 
-// The physical device, which is NOT the logical one: two channels of one meter share a node and
-// differ only in dp. Routing on this is what keeps a write off the neighbouring branch circuit.
-msg.topic = target.route;
-msg.payload = { dps: cap.dp, set: value };
-msg.capabilityWrite = { device: msg.req.params.deviceId, capability: body.capability, dp: cap.dp };
-return [msg, null];`;
-}
-
-/** The 200 body. Separate node so the reply does not wait on the device, matching the relay route. */
-export const OK_SRC = `// ${CAPABILITY_ROUTE_MARKER}
+// A FRESH MESSAGE FOR THE DEVICE, carrying nothing but what it needs.
+//
+// Forwarding \`msg\` itself does not work, and the failure is silent from the caller's side: an
+// http-in message holds \`req\` and \`res\`, which are circular, and the tuya node serialises what
+// it is given. Measured on the live meter 2026-09-08 — the endpoint answered HTTP 200 while the
+// node logged \`Converting circular structure to JSON\` and the register never moved. The reply
+// keeps \`res\`; the device branch keeps neither.
+//
+// \`topic\` is the PHYSICAL device, which is not the logical one: two channels of one meter share
+// a node and differ only in dp. Routing on this is what keeps a write off the neighbouring
+// branch circuit.
+const accepted = { device: msg.req.params.deviceId, capability: body.capability, dp: cap.dp };
 msg.statusCode = 200;
-msg.payload = { ok: true, accepted: msg.capabilityWrite };
-return msg;`;
+msg.payload = { ok: true, accepted: accepted };
+return [{ topic: target.route, payload: { dps: cap.dp, set: value } }, msg, null];`;
+}
 
 /**
  * The nodes to add, and where they wire.
@@ -206,19 +207,16 @@ export function planCapabilityRoute(flows, { registry, tabId }) {
     },
     {
       ...common, id: NODE_IDS.auth, type: 'function', name: 'Capability auth + write',
-      func: authSrc(targets), outputs: 2, noerr: 0, initialize: '', finalize: '', libs: [],
-      x: 400, y: 640, wires: [[NODE_IDS.router, NODE_IDS.ok], [NODE_IDS.response]],
+      // Three outputs: the device, the success reply, the error reply. The device branch must
+      // NOT carry the http-in message — see the source's own note on circular structures.
+      func: authSrc(targets), outputs: 3, noerr: 0, initialize: '', finalize: '', libs: [],
+      x: 400, y: 640, wires: [[NODE_IDS.router], [NODE_IDS.response], [NODE_IDS.response]],
     },
     {
       ...common, id: NODE_IDS.router, type: 'switch', name: 'Capability router',
       property: 'topic', propertyType: 'msg', outputs: routes.length, checkall: 'false', repair: false,
       rules: routes.map((r) => ({ t: 'eq', v: r, vt: 'str' })),
       x: 660, y: 620, wires: routes.map((r) => [r]),
-    },
-    {
-      ...common, id: NODE_IDS.ok, type: 'function', name: 'Capability 200',
-      func: OK_SRC, outputs: 1, noerr: 0, initialize: '', finalize: '', libs: [],
-      x: 660, y: 700, wires: [[NODE_IDS.response]],
     },
     {
       ...common, id: NODE_IDS.response, type: 'http response', name: 'Capability reply',

@@ -95,8 +95,9 @@ function authFor() {
 }
 
 test('a valid write becomes the one message shape a tuya node takes', () => {
-  const [ok, err] = run(authFor(), req('mtr_co_yellow', { capability: 'warn_power', value: 1500 }));
-  assert.equal(err, null);
+  const [dev, reply] = run(authFor(), req('mtr_co_yellow', { capability: 'warn_power', value: 1500 }));
+  assert.equal(reply.statusCode, 200);
+  const ok = dev;
   assert.deepEqual(ok.payload, { dps: 111, set: 1500 });
   assert.equal(ok.topic, 't_yellow');
 });
@@ -108,20 +109,21 @@ test('channel 2 writes its own register through the same node', () => {
 });
 
 test('a bad token is refused before anything is resolved', () => {
-  const [ok, err] = run(authFor(), req('mtr_co_yellow', { capability: 'warn_power', value: 1500 }, { 'x-auth-token': 'wrong' }));
-  assert.equal(ok, null);
+  const [dev, reply, err] = run(authFor(), req('mtr_co_yellow', { capability: 'warn_power', value: 1500 }, { 'x-auth-token': 'wrong' }));
+  assert.equal(dev, null);
+  assert.equal(reply, null);
   assert.equal(err.statusCode, 401);
 });
 
 test('a device with no local route is a 404, so the caller can fall back to the cloud', () => {
   // `dispatchLight` tries local first and falls back on failure. A 404 says "not here", which is
   // exactly what should send an outlet's countdown to the vendor rather than failing the write.
-  const [, err] = run(authFor(), req('co5', { capability: 'countdown_1', value: 60 }));
+  const [, , err] = run(authFor(), req('co5', { capability: 'countdown_1', value: 60 }));
   assert.equal(err.statusCode, 404);
 });
 
 test('a capability the catalogue does not mark writable is refused', () => {
-  const [, err] = run(authFor(), req('mtr_co_yellow', { capability: 'cur_power', value: 5 }));
+  const [, , err] = run(authFor(), req('mtr_co_yellow', { capability: 'cur_power', value: 5 }));
   assert.equal(err.statusCode, 400);
   assert.match(err.payload.error, /not writable/);
 });
@@ -130,7 +132,7 @@ test('the vendor bounds are enforced here, not just in the UI', () => {
   // warn_power is declared 200..50000. A slider is not the only caller, and a value the device
   // would silently reject is worse than one refused with a reason.
   for (const value of [199, 50001]) {
-    const [, err] = run(authFor(), req('mtr_co_yellow', { capability: 'warn_power', value }));
+    const [, , err] = run(authFor(), req('mtr_co_yellow', { capability: 'warn_power', value }));
     assert.equal(err.statusCode, 400, `${value} refused`);
   }
   for (const value of [200, 50000]) {
@@ -141,13 +143,13 @@ test('the vendor bounds are enforced here, not just in the UI', () => {
 
 test('a non-numeric value is refused rather than coerced', () => {
   for (const value of ['1500', null, true, NaN]) {
-    const [, err] = run(authFor(), req('mtr_co_yellow', { capability: 'warn_power', value }));
+    const [, , err] = run(authFor(), req('mtr_co_yellow', { capability: 'warn_power', value }));
     assert.equal(err.statusCode, 400, JSON.stringify(value));
   }
 });
 
 test('an enum value outside the declared range is refused', () => {
-  const [, err] = run(authFor(), req('mtr_co_yellow', { capability: 'sync_response', value: 'nonsense' }));
+  const [, , err] = run(authFor(), req('mtr_co_yellow', { capability: 'sync_response', value: 'nonsense' }));
   assert.equal(err.statusCode, 400);
 });
 
@@ -241,5 +243,25 @@ test('channel 2 accepts ITS code and not the other channel’s', () => {
   assert.deepEqual(run(src, req('mtr_lo_yellow', { capability: 'warn_power2', value: 900 }))[0].payload, { dps: 121, set: 900 });
   // `warn_power1` is not a capability of this logical device — accepting it would write the
   // neighbouring branch circuit's threshold through the shared instrument.
-  assert.equal(run(src, req('mtr_lo_yellow', { capability: 'warn_power1', value: 900 }))[1].statusCode, 400);
+  assert.equal(run(src, req('mtr_lo_yellow', { capability: 'warn_power1', value: 900 }))[2].statusCode, 400);
+});
+
+test('the DEVICE branch carries nothing but topic and payload', () => {
+  // MEASURED ON THE LIVE METER 2026-09-08, and the reason this is asserted rather than assumed:
+  // forwarding the http-in message to a tuya node makes it log
+  // "Converting circular structure to JSON" and drop the write, while the endpoint still answers
+  // HTTP 200. The caller sees success and the register never moves — the exact failure this
+  // project's own deploy notes warn about twice over.
+  const [dev, reply] = run(authFor(), req('mtr_co_yellow', { capability: 'warn_power', value: 1500 }));
+  assert.deepEqual(Object.keys(dev).sort(), ['payload', 'topic']);
+  assert.equal(dev.req, undefined, 'no request object');
+  assert.equal(dev.res, undefined, 'no response object');
+  // ...while the reply keeps what it needs to answer.
+  assert.ok(reply.req, 'the reply branch still has the request');
+  assert.equal(reply.statusCode, 200);
+});
+
+test('the device branch is JSON-serialisable, which is what the tuya node requires', () => {
+  const [dev] = run(authFor(), req('mtr_lo_red', { capability: 'warn_power', value: 1500 }));
+  assert.doesNotThrow(() => JSON.stringify(dev));
 });
