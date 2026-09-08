@@ -3191,11 +3191,28 @@ fall back to it).
       `node-red-bridge/energyDayBase.mjs`, `node-red-bridge/bridge-flow.json`,
       `test/energy-day-base.test.mjs`
 
-      **NOT YET DEPLOYED — it needs a live flow write.** The generated flow is regenerated and
-      the drift check passes, but writing it to the running bridge is the authority boundary
-      `docs/pi-session-brief.md` draws, so it waits to be asked for. Until then the live bridge
-      keeps absorbing, and tonight's rollover banks the understated day into `weekBase` and
-      `monthBase`, where it becomes permanent.
+      **DEPLOYED 2026-09-08 14:29.** A diff against the previous generated flow first confirmed
+      the change touched **exactly one node of 41** — `Energy day baseline` — and no source tab.
+      Backup beside `flows.json`, dry run (4/4 source tabs matched, no id collisions,
+      298 -> 298 nodes), then `deploy:pi --force --apply`. 5/5 bridge checks. **Flow context
+      survived the write**: all four baselines came back intact, including RM-052's banked
+      3675.479 and 77.201 offsets. Fleet 18 online, four services active, no errors in the log.
+
+      **Verified live, not just in tests.** 60 back-to-back reads of `/api/readings/latest` were
+      fired at the bridge — precisely the stress that used to shrink the ceiling — spanning a
+      0.012 kWh counter advance. The published figure took **all 0.012 and the baseline did not
+      move**. Before the fix that read cadence put the ceiling near 0.007 kWh and the lump would
+      have been absorbed.
+
+      **And the gap stopped growing.** Branch sum against the building's own counter:
+      0.340 kWh at 13:33, 0.462 at 14:09 (+0.122 in 36 min), 0.468 at 14:31 post-deploy, 0.468
+      at 14:33. The two now track in parallel.
+
+      **What is NOT recovered, deliberately.** The ~0.47 kWh already absorbed today is still in
+      `mtr_arec_acu`'s baseline and will be banked into `weekBase`/`monthBase` at tonight's
+      rollover. Repairing it means writing flow context on a running system — the RM-052/RM-053
+      act — and was not authorised in this session. It is a one-day, one-branch understatement
+      and it stops there.
 
 - [x] **EX-169 — the phase28 columns are finally ASKED something. 2026-09-08.** phase28 gave
       `readings` six columns and EX-167 started filling them every minute. Nothing read them —
