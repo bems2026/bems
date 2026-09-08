@@ -2826,6 +2826,54 @@ fall back to it).
       touching it — and the original is backed up beside the file.
       Device IDs stay in that workbook and are not reproduced here.
 
+- [x] **FI-022 — capability writes reach the meters over the LAN. 2026-09-08.**
+      `hasLocalCapabilityRoute()` returned `false` for everything, so a power-alarm threshold went
+      to the vendor cloud even though the device sits on the Pi's own 2.4 GHz segment. The site
+      declares `dispatch: 'local-first'`; that was true of relays and untrue of settings.
+
+      **It could not reuse the relay route**, which is why this needed a plan module rather than a
+      flag. Traced on the live flow: `Auth + validate` coerces the payload with `Boolean(s)`, the
+      router keys on `topic: L1..L7`, and each `Format CMD` is literally
+      `{dps: 1, set: msg.payload}`. Every stage assumes a relay.
+
+      **SCOPED TO THE METERS, deliberately.** The three tuya nodes on the Energy tab are fed today
+      by nothing but `Discovery back-off` and `Stale address recovery` — no command path to
+      disturb — and **a CT meter has no relay**, so the worst a bug can do is set a wrong alarm
+      threshold. Outlets and switches would mean ~20 nodes wired beside live relay control, which
+      is a different risk; their settings still fall through to the cloud, and a test says so.
+
+      **The device is resolved from the flow's WIRING, never from names.** The live flow calls one
+      meter's node `AREC ACU` while the registry calls that device `CARE ACU` — name matching
+      would have mis-targeted it and nothing would have said so. Two logical meters correctly
+      resolve to the *same* instrument and differ only by dp: **111 for channel 1, 121 for
+      channel 2**, which is what keeps a write off the neighbouring branch circuit.
+
+      **The validator asserts the invariant that makes the write safe:** every pre-existing node
+      is byte-identical afterwards, and every routing target is a tuya node that already existed.
+      A router naming three devices in its `wires` does not modify them — a node's inputs are not
+      part of it — so "nothing the building depends on changed" is checkable exactly.
+
+      **TWO REAL BUGS, BOTH FOUND BY RUNNING IT RATHER THAN READING IT.**
+      1. `server/proxy.mjs` resolves a write to the channel code `warn_power1` before dispatching,
+         while the catalogue and the frontend talk in bases. A table keyed by one of them made
+         every real write fail as *"not writable"* — caught by the proxy integration test, which
+         had to be rewritten anyway because its premise (*"capability writes have no LAN endpoint
+         yet"*) was the thing being removed.
+      2. **The endpoint answered HTTP 200 and the register never moved.** The tuya node logged
+         `Converting circular structure to JSON`: an http-in message holds `req` and `res`, which
+         are circular, and the node serialises what it is given. This is precisely the failure the
+         project's deploy notes warn about twice, and it was found by reading the value back off
+         the device. The auth node now emits a fresh `{topic, payload}` for the device and keeps
+         the HTTP objects on the reply branch only; two tests pin it.
+
+      **VERIFIED ON THE HARDWARE.** `warn_power1` on `mtr_lo_red` read `None` before and **1500
+      after**, reported back by the meter itself with no error in the node log. That circuit draws
+      14–54 W, so a 1,500 W alarm threshold is inert — it was chosen to be observable without
+      changing any behaviour.
+      `node-red-bridge/capabilityRoutePlan.mjs`, `node-red-bridge/add-capability-route.mjs`,
+      `server/dispatchLight.mjs`, `test/capability-route-plan.test.mjs` (25),
+      `server/proxy.test.mjs` (2 rewritten), `npm run capability-route:pi`
+
 - [x] **RM-052 (M) — a daily counter that jumps FORWARD now re-anchors too. 2026-09-08.**
       The evidence is in §0. `energyDayBase` had two re-anchor events — the local day rolling
       over, and the counter going backwards — and a register that acquires an offset in the
