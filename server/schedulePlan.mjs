@@ -11,7 +11,7 @@
  * rotation through this module's own surface, and that assertion is worth keeping where the
  * scheduling rules are.
  *
- * SINCE RM-059 a device holds MANY schedule rows, each naming its own socket. That changes
+ * SINCE RM-066 a device holds MANY schedule rows, each naming its own socket. That changes
  * almost nothing in `dueCommands` — it always looped rows and always carried `row.socket`
  * through — and changes two things around it, both of which live in `resolveDue`.
  */

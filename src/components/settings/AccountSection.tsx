@@ -35,7 +35,7 @@ export function AccountSection() {
 
       {mode === null && (
         <p className="space-plan__note">
-          No session. Supabase is not configured for this deployment, so the app is running without sign-in.
+          No session. This deployment has no account service configured, so the app is running without sign-in.
         </p>
       )}
 

@@ -32,7 +32,7 @@ const useAcu = () => useDeviceStore((s) => primaryOfClass(s.devices, 'acu_ir'));
  * `undefined` from the store means "not answered"; `null` means "answered, and this site has no
  * policy at all". Only the first should fall back to the build.
  *
- * Since RM-061 this number does NOT narrow the selector — it is the coldest ROOM TEMPERATURE the
+ * Since RM-068 this number does NOT narrow the selector — it is the coldest ROOM TEMPERATURE the
  * building permits an automatic rule to aim for, and a manual setpoint below it is warned about
  * rather than refused. It is read here only to write that warning.
  */
@@ -64,7 +64,7 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
   // where the room actually is rather than a fixed guess.
   const roomFloorC = useRoomTargetFloor();
   /** Every whole degree the IR library holds a code for. The building's comfort policy no
-   * longer narrows this (RM-061): that number is about the ROOM, and hiding options was never
+   * longer narrows this (RM-068): that number is about the ROOM, and hiding options was never
    * enforcement — `validateCommand` is, and it now warns here rather than refusing. */
   const setpoints = useMemo(() => setpointOptions(), []);
   const [chosen, setSetpointC] = useState<number>(() => seedSetpoint(reading?.setpoint_c));

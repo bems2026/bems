@@ -5,6 +5,7 @@ import { validateEnrollment, ENROLLABLE_CLASSES } from '@shared/enrollment.mjs';
 import { DEVICE_CLASS_CATALOG } from '@/lib/deviceClassCatalog';
 import { enrollDevice, type EnrollResult } from '@/lib/enroll';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { OverlayPanel } from '@/components/ui/OverlayPanel';
 import { useConfirm } from '@/components/ui/useConfirm';
 import type { DeviceClass } from '@/lib/types';
 
@@ -67,25 +68,18 @@ export function EnrollWizard({ onClose }: { onClose: () => void }) {
 
   if (status === 'unconfigured') {
     return (
-      <div className="card enroll-wizard">
-        <h3 className="card-title">Add device</h3>
+      <OverlayPanel className="enroll-wizard" title="Add device" onClose={onClose}>
         <p className="enroll-wizard__note">
           Enrolment needs the vendor cloud, which is not configured on this deployment — the local key
           has to come from somewhere. Devices can still be added from the Pi with{' '}
           <code>npm run enroll:pi</code>.
         </p>
-        <button type="button" className="enroll-wizard__cancel" onClick={onClose}>Close</button>
-      </div>
+      </OverlayPanel>
     );
   }
 
   return (
-    <div className="card enroll-wizard">
-      <div className="card-head">
-        <h3 className="card-title">Add device</h3>
-        <button type="button" className="enroll-wizard__cancel" onClick={onClose}>Cancel</button>
-      </div>
-
+    <OverlayPanel className="enroll-wizard" title="Add device" onClose={onClose}>
       <label className="enroll-wizard__field">
         <span>Vendor device</span>
         <select value={vendorId ?? ''} onChange={(e) => setVendorId(e.target.value || null)}>
@@ -163,7 +157,7 @@ export function EnrollWizard({ onClose }: { onClose: () => void }) {
 
       {result && <EnrollResultView result={result} />}
       <ConfirmModal {...modalProps} />
-    </div>
+    </OverlayPanel>
   );
 }
 

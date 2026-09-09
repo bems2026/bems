@@ -31,14 +31,14 @@ beforeEach(() => {
 describe('RemoveDevicePanel', () => {
   it('previews on open, so nothing is ever removed without showing what goes first', async () => {
     remove.fn.mockResolvedValue(okDryRun);
-    render(<RemoveDevicePanel device={device('co8', 'Outlet 8')} onClose={() => {}} onRemoved={() => {}} />);
+    render(<RemoveDevicePanel device={device('co8', 'Outlet 8')} onRemoved={() => {}} />);
     expect(remove.fn).toHaveBeenCalledWith('co8', false);
     expect(await screen.findByText(/271 → 269/)).toBeInTheDocument();
   });
 
   it('names the flow nodes that would disappear rather than only counting them', async () => {
     remove.fn.mockResolvedValue(okDryRun);
-    render(<RemoveDevicePanel device={device('co8', 'Outlet 8')} onClose={() => {}} onRemoved={() => {}} />);
+    render(<RemoveDevicePanel device={device('co8', 'Outlet 8')} onRemoved={() => {}} />);
     expect(await screen.findByText(/Outlet 8 Unified Parser/)).toBeInTheDocument();
   });
 
@@ -46,13 +46,13 @@ describe('RemoveDevicePanel', () => {
     // `readings` is keyed by device_id, so removal does not delete what the device measured.
     // Someone hesitating over this button is usually hesitating about exactly that.
     remove.fn.mockResolvedValue(okDryRun);
-    render(<RemoveDevicePanel device={device('co8', 'Outlet 8')} onClose={() => {}} onRemoved={() => {}} />);
+    render(<RemoveDevicePanel device={device('co8', 'Outlet 8')} onRemoved={() => {}} />);
     expect(await screen.findByText(/readings are keyed by device id/i)).toHaveTextContent(/kept/i);
   });
 
   it('will not remove until a preview has actually succeeded', async () => {
     remove.fn.mockResolvedValue({ ok: false, stage: 'plan', problems: ['co8 has no enrolled nodes in this flow'], summary: null });
-    render(<RemoveDevicePanel device={device('co8', 'Outlet 8')} onClose={() => {}} onRemoved={() => {}} />);
+    render(<RemoveDevicePanel device={device('co8', 'Outlet 8')} onRemoved={() => {}} />);
     expect(await screen.findByRole('alert')).toHaveTextContent(/plan step/);
     expect(screen.getByRole('button', { name: 'Remove' })).toBeDisabled();
   });
@@ -64,14 +64,14 @@ describe('RemoveDevicePanel', () => {
       problems: ['"co1" is a built-in device, hand-written in shared/registry.mjs — only enrolled devices can be removed from here'],
       summary: null,
     });
-    render(<RemoveDevicePanel device={device('co1', 'Outlet 1')} onClose={() => {}} onRemoved={() => {}} />);
+    render(<RemoveDevicePanel device={device('co1', 'Outlet 1')} onRemoved={() => {}} />);
     expect(await screen.findByText(/built-in device/)).toBeInTheDocument();
   });
 
   it('applies only after confirmation, and reports back when it is done', async () => {
     remove.fn.mockResolvedValue(okDryRun);
     const onRemoved = vi.fn();
-    render(<RemoveDevicePanel device={device('co8', 'Outlet 8')} onClose={() => {}} onRemoved={onRemoved} />);
+    render(<RemoveDevicePanel device={device('co8', 'Outlet 8')} onRemoved={onRemoved} />);
     await screen.findByText(/271 → 269/);
 
     remove.fn.mockResolvedValue({ ...okDryRun, stage: 'applied' });
@@ -85,7 +85,7 @@ describe('RemoveDevicePanel', () => {
 
   it('does not call the server at all when the confirmation is dismissed', async () => {
     remove.fn.mockResolvedValue(okDryRun);
-    render(<RemoveDevicePanel device={device('co8', 'Outlet 8')} onClose={() => {}} onRemoved={() => {}} />);
+    render(<RemoveDevicePanel device={device('co8', 'Outlet 8')} onRemoved={() => {}} />);
     await screen.findByText(/271 → 269/);
     remove.fn.mockClear();
 

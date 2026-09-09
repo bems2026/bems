@@ -21,7 +21,7 @@
  *
  * TABLE CONSTRAINTS ARE THE THIRD, AND THIS FILE MISSED THEM FOR THIRTEEN PHASES.
  * `alter table ... add constraint` has no IF NOT EXISTS form either, and it is the statement
- * `phase6_schedules_unique_fix.sql` used — the very constraint RM-059 had to drop. Added when
+ * `phase6_schedules_unique_fix.sql` used — the very constraint RM-066 had to drop. Added when
  * phase33 and phase34 arrived carrying several apiece; the check that would have caught the
  * original is now here.
  *

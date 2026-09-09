@@ -600,14 +600,14 @@ test('a setpoint on anything other than the ACU is rejected rather than ignored'
  * university's energy-efficiency policy quoted in the funded project plan ("not lower than
  * 25 degrees"). A different site has a different rule, or none.
  *
- * SINCE RM-061 IT IS NOT ENFORCED HERE AT ALL. The number is a statement about the ROOM, and
+ * SINCE RM-068 IT IS NOT ENFORCED HERE AT ALL. The number is a statement about the ROOM, and
  * it is enforced where rules are written and where the closed loop decides. What this function
  * does is attach a WARNING, which rides on the command into the audit note — so the fact
  * survives instead of the command being refused. `ACU_MIN_C`/`ACU_MAX_C` remain the only hard
  * bound, because below them there is no IR code to send at all.
  */
 test('the room-comfort policy WARNS about a low setpoint, and no longer refuses it', () => {
-  // RM-061 reversed this deliberately. The number stopped being a bound on the commanded
+  // RM-068 reversed this deliberately. The number stopped being a bound on the commanded
   // setpoint and became the coldest ROOM TEMPERATURE an automatic rule may aim for, because the
   // setpoint is the lever a closed loop moves: a loop that may never ask for 22 cannot hold a
   // room at 24 on a hot afternoon, and a person who needs 18 for an hour had no way to ask.

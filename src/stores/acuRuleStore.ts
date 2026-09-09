@@ -33,7 +33,7 @@ interface AcuRuleState {
 }
 
 /**
- * Closed-loop aircon rules — RM-062.
+ * Closed-loop aircon rules — RM-069.
  *
  * Saves on change, per rule, like `scheduleStore` and for the same reason: a list you add to and
  * delete from is the wrong shape for staged writes, because a queued deletion reads as one that

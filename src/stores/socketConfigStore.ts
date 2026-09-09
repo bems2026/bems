@@ -21,7 +21,7 @@ interface SocketConfigState {
 }
 
 /**
- * `socket_config` — one tier per relay rather than per outlet, RM-060.
+ * `socket_config` — one tier per relay rather than per outlet, RM-067.
  *
  * SAVES ON CHANGE, no staged draft. `deviceConfigStore`'s load-shed editor already worked this
  * way and the reasoning carries: choosing a tier from a select IS the confirmation, and a panel

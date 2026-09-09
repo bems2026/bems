@@ -211,7 +211,7 @@ export function SpacePlanView({ editable = false }: { editable?: boolean }) {
 
       {editable && !configured && (
         <p className="space-plan__note">
-          Supabase is not configured for this deployment, so positions cannot be edited here.
+          This deployment has no settings store configured, so positions cannot be edited here.
         </p>
       )}
 

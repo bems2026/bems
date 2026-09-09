@@ -268,7 +268,7 @@ describe('ControlPage', () => {
 
 describe('ACU setpoint', () => {
   it('offers the WHOLE IR library range — the site policy no longer narrows it', () => {
-    // RM-061. The building's number is about the ROOM, not about this knob: a closed loop needs
+    // RM-068. The building's number is about the ROOM, not about this knob: a closed loop needs
     // the cold end of the range to hold a room at 24 on a hot afternoon, and a person who needs
     // 18 for an hour is entitled to ask. Below-policy choices are warned about, not hidden.
     useDeviceStore.setState({ devices: [acu()] });
@@ -348,7 +348,7 @@ describe('ACU setpoint', () => {
     });
     render(<ControlPage />);
     const value = Number((screen.getByLabelText('SETPOINT') as HTMLSelectElement).value);
-    // The unit's own last-known setpoint, whatever it is — RM-061 removed the clamp that used
+    // The unit's own last-known setpoint, whatever it is — RM-068 removed the clamp that used
     // to drag this up to the policy floor.
     expect(value).toBe(21);
   });

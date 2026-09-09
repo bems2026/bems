@@ -1,7 +1,7 @@
 /**
  * The week, in the one encoding this system uses.
  *
- * WHY THIS FILE EXISTS. Until RM-059 there were two implementations of `parseDays` — one in
+ * WHY THIS FILE EXISTS. Until RM-066 there were two implementations of `parseDays` — one in
  * `src/components/automation/automationMath.ts` and one in `server/schedulePlan.mjs` — each
  * carrying a comment saying it mirrored the other exactly. Two copies of a rule that must
  * agree is the shape of defect this repo has already paid for elsewhere (see `shared/

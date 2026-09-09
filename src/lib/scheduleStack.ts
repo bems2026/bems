@@ -29,7 +29,7 @@ export const MINUTES_PER_DAY = 1440;
  * the Control page has always shown them that way (`RelayToggle variant="socket"`). Everything
  * else contributes one, with a null socket.
  *
- * This is the change RM-059 is really about: before it, the Automation page could not express
+ * This is the change RM-066 is really about: before it, the Automation page could not express
  * a socket at all, so both halves of every outlet moved together whether that made sense or not.
  */
 export interface ScheduleTarget {
@@ -117,7 +117,7 @@ export function ruleProblem(rule: Schedule, device: Device | undefined, dispatch
  * Conflicts — rules that fire, but not the way they read
  * ======================================================================== */
 
-export type ConflictKind = 'collision' | 'duplicate' | 'overnight';
+export type ConflictKind = 'collision' | 'duplicate' | 'overnight' | 'same-on-and-off';
 
 export interface StackConflict {
   kind: ConflictKind;
@@ -135,7 +135,10 @@ export interface StackConflict {
  * 08:00 "on" never happened.
  *
  * `overnight` is informational, NOT an error. `on 22:00 / off 06:00` is a legitimate and common
- * rule; it just does not read left-to-right, and the timeline draws it wrapping past midnight.
+ * rule — it is how a security light is meant to be configured — it just does not read
+ * left-to-right, and the timeline draws it wrapping past midnight. RM-067 reached the same
+ * conclusion independently and its reasoning is worth keeping: a warning that cries wolf on a
+ * correct configuration gets ignored on an incorrect one.
  */
 export function stackConflicts(stack: Schedule[]): StackConflict[] {
   const armed = stack.filter((s) => s.enabled);
@@ -157,7 +160,11 @@ export function stackConflicts(stack: Schedule[]): StackConflict[] {
     });
   }
   for (const [key, slot] of events) {
-    if (slot.on.length > 0 && slot.off.length > 0) {
+    // DIFFERENT rules. A single rule whose own ON and OFF are the same minute lands in both
+    // lists, and reporting that as "two rules act at 08:00" is wrong about the count and sends
+    // the reader looking for a second rule. It has its own kind below.
+    const across = slot.on.some((id) => slot.off.some((other) => other !== id));
+    if (across) {
       const [day, time] = key.split('|');
       out.push({
         kind: 'collision',
@@ -183,7 +190,13 @@ export function stackConflicts(stack: Schedule[]): StackConflict[] {
   for (const rule of armed) {
     const on = minutesOfDay(rule.on ?? '');
     const off = minutesOfDay(rule.off ?? '');
-    if (on !== null && off !== null && off <= on) {
+    if (on === null || off === null) continue;
+    // From RM-067. A zero-length instruction: the daemon checks `off` second, so the two resolve
+    // to OFF and the ON the operator wrote never happens. Deterministic rather than broken, which
+    // is why it is a conflict to warn about here and not an `unfireable` reason the daemon skips.
+    if (on === off) {
+      out.push({ kind: 'same-on-and-off', ruleIds: [rule.id], message: `ON and OFF are both ${rule.on}. The scheduler resolves that to OFF, so this rule never switches anything on.` });
+    } else if (off < on) {
       out.push({ kind: 'overnight', ruleIds: [rule.id], message: `Runs overnight: on at ${rule.on}, off at ${rule.off} the next morning.` });
     }
   }

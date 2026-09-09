@@ -26,7 +26,7 @@ import { SITE } from '../shared/siteConfig.mjs';
  * `policy_source: 'build'` beside it is the load-bearing half: with no SUPABASE_URL in the test
  * environment the proxy must fall back to what it was built with rather than dropping the floor.
  */
-// RM-061: read through `roomTargetFloorC` rather than off a key name, so this keeps holding
+// RM-068: read through `roomTargetFloorC` rather than off a key name, so this keeps holding
 // after the contract migration removes the legacy one.
 const BUILD_FLOOR = roomTargetFloorC(SITE.policy);
 import nodeCrypto from 'node:crypto';
@@ -965,7 +965,7 @@ test('dispatch open + ACU command: routed to /acu as an IR code, not a relay sta
  * dashboard at all: a curl, a stale tab, or a scheduled rule written before the policy existed.
  */
 test('an ACU setpoint below the room-comfort policy is DISPATCHED, warned about, and recorded', async () => {
-  // RM-061 reversed this. The policy number stopped being a bound on the commanded setpoint —
+  // RM-068 reversed this. The policy number stopped being a bound on the commanded setpoint —
   // it is the coldest ROOM TEMPERATURE the building permits an automatic rule to aim for — so a
   // person asking for 18 for an hour is no longer refused. The fact is not lost: it comes back
   // in the ack and it is written into the audit note, which is the only place it can survive.

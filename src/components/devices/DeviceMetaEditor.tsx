@@ -1,5 +1,4 @@
-import { useEffect, useId, useRef } from 'react';
-import { Card } from '@/components/ui/Card';
+import { useId } from 'react';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { FUNCTION_OPTIONS, functionsOf, DEFAULT_FUNCTIONS, type DeviceFunction } from '@/lib/deviceFunctions';
@@ -11,7 +10,6 @@ import type { Device } from '@/lib/types';
 
 interface DeviceMetaEditorProps {
   device: Device;
-  onClose: () => void;
 }
 
 /**
@@ -19,12 +17,17 @@ interface DeviceMetaEditorProps {
  * room, functional category, load-shed group, a display-name override, and notes, staged in
  * `deviceConfigStore` and written to Supabase's `device_config` table on confirm.
  *
- * A non-modal panel above the table, not a modal/drawer: the confirm gate below is ITSELF an
- * `aria-modal` alertdialog, and nesting one modal inside another means two competing Escape
- * handlers. This panel's own Escape handler defers to the confirm dialog while it's open (see
- * the effect below) rather than fighting it for the keypress.
+ * ONE TAB OF `DevicePanel`, not a panel in its own right. This rendered in normal flow above the
+ * fleet table (which pushed the table off screen), then briefly owned its own `OverlayPanel`, and
+ * is now the Metadata tab beside Capabilities and Remove — because "what can this device do" and
+ * "what is it called and where is it" are two questions about ONE device, and they had become two
+ * buttons crammed side by side into a 0.6fr column.
+ *
+ * The Escape-nesting problem the first version of this docblock described is real and still
+ * handled — the save gate below is an `aria-modal` alertdialog — but it belongs entirely to
+ * `OverlayPanel` now, which sees the nested dialog in the DOM rather than being told about it.
  */
-export function DeviceMetaEditor({ device, onClose }: DeviceMetaEditorProps) {
+export function DeviceMetaEditor({ device }: DeviceMetaEditorProps) {
   const draft = useDeviceConfigStore((s) => s.draft);
   const saved = useDeviceConfigStore((s) => s.saved);
   const setDraftField = useDeviceConfigStore((s) => s.setDraftField);
@@ -45,29 +48,10 @@ export function DeviceMetaEditor({ device, onClose }: DeviceMetaEditorProps) {
   const rooms = Array.from(new Set([...knownSpaceLabels(spaceNodes), ...recordedRoomLabels(saved)]));
   const hasDraft = draft[device.id] !== undefined;
 
-  const headingRef = useRef<HTMLHeadingElement>(null);
   const roomListId = useId();
   const spaceId = useId();
   const spaceHintId = useId();
   const { ask, modalProps } = useConfirm();
-
-  // Focus moves to the panel's own heading on open/device-switch — the non-trapping half of
-  // modal hygiene, without the trap: a screen reader user lands here, but Tab still reaches
-  // the rest of the page, on purpose.
-  useEffect(() => {
-    headingRef.current?.focus();
-  }, [device.id]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // The confirm dialog gets Escape first while it's open — ConfirmModal's own listener
-      // closes it. Closing the editor underneath at the same time would drop whatever the
-      // operator was about to confirm with no feedback at all.
-      if (e.key === 'Escape' && !modalProps.open) onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose, modalProps.open]);
 
   const field = (f: DeviceConfigField, value: string) => setDraftField(device.id, f, value);
 
@@ -84,8 +68,8 @@ export function DeviceMetaEditor({ device, onClose }: DeviceMetaEditorProps) {
   const askSave = () =>
     ask(
       {
-        title: 'Save device metadata?',
-        body: `This writes room, category, load-shed group, display name, and notes for ${device.display_name} (${device.id}) to Supabase.`,
+        title: 'Save device details?',
+        body: `This saves the room, category, load-shed group, display name and notes for ${device.display_name} (${device.id}), recorded against your account.`,
         confirmLabel: 'Save metadata',
         tone: 'blue',
       },
@@ -93,16 +77,7 @@ export function DeviceMetaEditor({ device, onClose }: DeviceMetaEditorProps) {
     );
 
   return (
-    <Card className="device-meta-editor">
-      <div className="device-meta-editor__head">
-        <h2 className="card-title device-meta-editor__heading" tabIndex={-1} ref={headingRef}>
-          Edit metadata — {device.display_name} <span className="mono device-meta-editor__id">{device.id}</span>
-        </h2>
-        <button type="button" className="device-meta-editor__close" onClick={onClose}>
-          Close
-        </button>
-      </div>
-
+    <div className="device-meta-editor">
       <div className="device-meta-editor__grid">
         {/* htmlFor rather than the wrapping <label> the other fields use, deliberately: the
             hint below is a DESCRIPTION, and inside a label it would be folded into the select's
@@ -223,6 +198,6 @@ export function DeviceMetaEditor({ device, onClose }: DeviceMetaEditorProps) {
       </div>
 
       <ConfirmModal {...modalProps} />
-    </Card>
+    </div>
   );
 }

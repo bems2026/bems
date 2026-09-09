@@ -132,7 +132,7 @@ export const SITE = Object.freeze({
      * The coldest ROOM TEMPERATURE this building permits an automatic rule to aim for, from
      * the university's energy-efficiency policy.
      *
-     * NOT a bound on the setpoint sent to the aircon, and RM-061 is the change that made that
+     * NOT a bound on the setpoint sent to the aircon, and RM-068 is the change that made that
      * distinction matter. `ACU_MIN_C`/`ACU_MAX_C` in `shared/commands.mjs` are what the IR
      * library holds codes for — a hardware capability, identical at every site — and they are
      * the only hard bound on a command. This is a statement about the ROOM, enforced where
@@ -149,7 +149,7 @@ export const SITE = Object.freeze({
     acu_min_room_target_c: 24,
 
     /**
-     * The pre-RM-061 name for the value above, kept for the length of the rename window.
+     * The pre-RM-068 name for the value above, kept for the length of the rename window.
      *
      * `shared/sitePolicy.mjs`'s `roomTargetFloorC` prefers the new key and falls back to this
      * one, so a daemon or a browser bundle of either vintage reads a correct number while

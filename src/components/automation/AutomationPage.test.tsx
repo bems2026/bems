@@ -10,7 +10,7 @@ import { useAcuRuleStore } from '@/stores/acuRuleStore';
 import type { Device } from '@/lib/types';
 
 /**
- * The page's first component coverage. It had none at all before RM-059 — which is part of
+ * The page's first component coverage. It had none at all before RM-066 — which is part of
  * how it went months telling the operator "nothing on the real bridge reads these yet" while
  * `server/scheduler.mjs` was firing its rows at real relays. The reach assertions below are
  * the ones that matter most; the rest is structure.
@@ -46,32 +46,12 @@ afterEach(() => {
   useCapabilitiesStore.setState({ dispatchClasses: null, hardwareDispatchEnabled: null });
 });
 
-describe('AutomationPage — the reach statement', () => {
-  it('says firings are DRY RUNS while the dispatch gate is closed', () => {
-    useCapabilitiesStore.setState({ dispatchClasses: [] });
-    render(<AutomationPage />);
-    expect(screen.getByText(/dry runs — dispatch is closed/i)).toBeInTheDocument();
-    expect(screen.queryByText(/switch real hardware/i)).not.toBeInTheDocument();
-  });
-
-  it('says it SWITCHES REAL HARDWARE once the gate reports open', () => {
-    // The old copy said "Staged, not yet dispatchable" unconditionally, which had been false
-    // since the scheduler daemon shipped. This is the assertion that stops it coming back.
-    useCapabilitiesStore.setState({ dispatchClasses: ['switch', 'outlet_dual'] });
-    render(<AutomationPage />);
-    expect(screen.getByText(/switch real hardware/i)).toBeInTheDocument();
-  });
-
-  it('treats a not-yet-loaded capabilities response as closed, never as open', () => {
-    // `null` means the proxy has not answered. Claiming hardware dispatch is open before being
-    // told so is the one direction of this mistake that can hurt somebody.
-    useCapabilitiesStore.setState({ dispatchClasses: null });
-    render(<AutomationPage />);
-    // Both the page header and the Overview card say it, and they must agree — a page that
-    // hedged in one place and not the other would be read as whichever the reader saw first.
-    expect(screen.getAllByText(/dispatch is closed/i).length).toBeGreaterThanOrEqual(2);
-  });
-});
+/**
+ * My own two-state reach suite lived here and was removed in the merge, not lost: RM-062's
+ * three-state version supersedes it and is asserted under "what saving actually does" below.
+ * Two suites checking the same sentence with different expectations is how one of them ends up
+ * quietly deleted later by whoever hits the failure.
+ */
 
 describe('AutomationPage — strategy tabs', () => {
   it('offers the four strategy categories', () => {
@@ -109,7 +89,7 @@ describe('AutomationPage — strategy tabs', () => {
     expect(screen.getAllByText('Light Switch 1').length).toBeGreaterThan(0);
   });
 
-  it('lists an OUTLET as two targets, one per socket — the point of RM-059', () => {
+  it('lists an OUTLET as two targets, one per socket — the point of RM-066', () => {
     render(<AutomationPage />);
     fireEvent.click(screen.getByRole('tab', { name: /Time-Driven/ }));
     // S1 appears twice — in the target list and as the heading of the stack it opened.
@@ -136,7 +116,7 @@ describe('AutomationPage — strategies that are not installed', () => {
   });
 
   it('the aircon loop is a real feature on that tab now, not a coming-soon card', () => {
-    // RM-062 built it. This fixture has no `acu_ir` device, so the panel says exactly that
+    // RM-069 built it. This fixture has no `acu_ir` device, so the panel says exactly that
     // rather than offering a rule against nothing.
     render(<AutomationPage />);
     fireEvent.click(screen.getByRole('tab', { name: /Event-Driven/ }));
@@ -155,7 +135,7 @@ describe('AutomationPage — strategies that are not installed', () => {
 describe('AutomationPage — the dead ambient trigger is gone', () => {
   it('no longer offers a control that nothing on the server reads', () => {
     // `global.trigger.care_acu_on` round-tripped browser -> Supabase -> browser for months and
-    // no `server/` file ever read it. RM-062 replaces it with a real controller.
+    // no `server/` file ever read it. RM-069 replaces it with a real controller.
     render(<AutomationPage />);
     for (const tab of ['Overview', 'Time-Driven', 'State-Driven', 'Event-Driven']) {
       fireEvent.click(screen.getByRole('tab', { name: new RegExp(tab) }));
@@ -173,8 +153,65 @@ describe('AutomationPage — pending writes', () => {
     expect(screen.getByText('global.dsm.max_total_kw')).toBeInTheDocument();
   });
 
-  it('the write button is disabled with nothing staged', () => {
+  it('the save button is disabled with nothing staged', () => {
     render(<AutomationPage />);
-    expect(screen.getByRole('button', { name: /write to supabase/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled();
+  });
+});
+
+
+/* ===========================================================================
+ * From RM-061/RM-062, kept through the merge.
+ *
+ * The vocabulary rule is theirs and it is right: an operator does not care which database this
+ * is, so naming the vendor in a button makes the store the subject of a sentence that is really
+ * about the building. It cost a rename here ("Write to Supabase" -> "Save changes") and a pass
+ * over every error string this page can surface.
+ * ======================================================================== */
+
+describe('AutomationPage — vocabulary', () => {
+  it('never says "Supabase" anywhere on the page', () => {
+    useContextStore.setState({ saved: {}, draft: { 'global.dsm.max_total_kw': '2.21' } });
+    const { container } = render(<AutomationPage />);
+    expect(container.textContent).not.toMatch(/supabase/i);
+  });
+
+  it('offers a plainly-named save control', () => {
+    useContextStore.setState({ saved: {}, draft: { 'global.dsm.max_total_kw': '2.21' } });
+    render(<AutomationPage />);
+    expect(screen.getByRole('button', { name: /save changes/i })).toBeEnabled();
+  });
+});
+
+describe('AutomationPage — what saving actually does', () => {
+  it('says saved rules DO switch real hardware when dispatch is open', () => {
+    useCapabilitiesStore.setState({ hardwareDispatchEnabled: true });
+    render(<AutomationPage />);
+    expect(screen.getByText(/Saved rules switch real hardware here/i)).toBeInTheDocument();
+  });
+
+  it('says they reach nothing when dispatch is positively closed', () => {
+    useCapabilitiesStore.setState({ hardwareDispatchEnabled: false });
+    render(<AutomationPage />);
+    expect(screen.getByText(/do not reach any hardware/i)).toBeInTheDocument();
+  });
+
+  it('claims NEITHER while the gate state is still unknown', () => {
+    // `null` is an unanswered capability probe, not a closed gate. Collapsing it into "closed"
+    // looks safe and states something the page does not know.
+    useCapabilitiesStore.setState({ hardwareDispatchEnabled: null });
+    render(<AutomationPage />);
+    expect(screen.getByText(/has not been confirmed yet/i)).toBeInTheDocument();
+    expect(screen.queryByText(/switch real hardware here/i)).not.toBeInTheDocument();
+  });
+
+  it('carries the same sentence into the save confirmation, not just onto the page', () => {
+    // The dialog reuses the page's string rather than rephrasing it — a second wording is a
+    // second place for the two to disagree about what pressing Save causes.
+    useCapabilitiesStore.setState({ hardwareDispatchEnabled: true });
+    useContextStore.setState({ saved: {}, draft: { 'global.dsm.max_total_kw': '2.21' } });
+    render(<AutomationPage />);
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    expect(within(screen.getByRole('alertdialog')).getByText(/Saved rules switch real hardware here/i)).toBeInTheDocument();
   });
 });

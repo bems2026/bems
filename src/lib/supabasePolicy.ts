@@ -1,5 +1,5 @@
 /**
- * Changing this building's room-comfort policy — RM-038, redefined by RM-061.
+ * Changing this building's room-comfort policy — RM-038, redefined by RM-068.
  *
  * WHY AN RPC AND NOT AN UPDATE. `sites` grants SELECT to authenticated and deliberately no
  * UPDATE (phase19), because the same row decides whether commands may leave the building for a
@@ -7,7 +7,7 @@
  * refuse the dispatch mode cannot be written; `set_acu_min_setpoint`
  * (supabase/phase26_policy_setpoint.sql) is a `security definer` function that touches one key.
  *
- * WHAT THIS NUMBER IS. Since RM-061 it is the coldest ROOM TEMPERATURE this building permits an
+ * WHAT THIS NUMBER IS. Since RM-068 it is the coldest ROOM TEMPERATURE this building permits an
  * automatic rule to aim for — not a bound on the setpoint commanded to the aircon. It is
  * enforced where rules are written (`upsert_acu_rule`) and where the closed loop decides
  * (`server/acuLoopPlan.mjs`). A MANUAL setpoint below it is no longer refused: `validateCommand`
@@ -48,7 +48,7 @@ export async function setAcuMinRoomTarget(floorC: number | null): Promise<number
   if (!isValidFloor(floorC)) {
     throw new Error(`The floor must be a whole number between ${FLOOR_MIN_C} and ${FLOOR_MAX_C}, or empty.`);
   }
-  // phase35's function. The pre-RM-061 `set_acu_min_setpoint` still exists and delegates here,
+  // phase35's function. The pre-RM-068 `set_acu_min_setpoint` still exists and delegates here,
   // so a browser tab holding the old bundle keeps working for the length of the rename window.
   const { data, error } = await supabase.rpc('set_acu_min_room_target', {
     p_site_id: SITE.id,

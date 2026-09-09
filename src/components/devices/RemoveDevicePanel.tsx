@@ -18,11 +18,9 @@ import type { Device } from '@/lib/types';
  */
 export function RemoveDevicePanel({
   device,
-  onClose,
   onRemoved,
 }: {
   device: Device;
-  onClose: () => void;
   onRemoved: () => void;
 }) {
   const { ask, modalProps } = useConfirm();
@@ -67,11 +65,7 @@ export function RemoveDevicePanel({
   const applied = result?.stage === 'applied';
 
   return (
-    <div className="card enroll-wizard">
-      <div className="card-head">
-        <h3 className="card-title">Remove {device.display_name}</h3>
-        <button type="button" className="enroll-wizard__cancel" onClick={onClose}>Close</button>
-      </div>
+    <div className="enroll-wizard">
 
       {busy && !result && <p className="enroll-wizard__note">Checking what this would remove…</p>}
 

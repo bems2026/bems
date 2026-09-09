@@ -1,14 +1,36 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-09 — the Automation page, rebuilt. Four items land together and they
-are one change: **RM-059** makes schedules stackable and per-socket, **RM-060** does the same for
-load-shed tiers, **RM-061** redefines the aircon policy from a bound on the commanded setpoint
-into the coldest ROOM temperature a rule may aim for, and **RM-062** is the closed-loop
-controller that redefinition was needed for. §0 leads with what the work found rather than with
-what it built: the page had been telling operators for months that *"nothing on the real bridge
-reads or acts on these yet"* while `server/scheduler.mjs` was switching relays on its rows —
-a control surface understating its own reach, which is a safety defect rather than stale copy.
-**Audited at commit:** `c072cf2` plus the RM-059..062 working tree
+**Last audited:** 2026-09-09 — **RM-059 to RM-069**, two parallel lines of work on the same
+pages, merged. **RM-062 is the one to read**: the Automation page claimed hardware dispatch was
+closed when it has been open, on the page that arms unattended load shedding. It was found twice
+independently, from different directions — once by measuring the live Pi
+(`HARDWARE_DISPATCH_ENABLED=true`, `dispatch=OPEN` at boot) and once by reading §0's own
+instruction to arm shedding *from that page*. RM-062's three-state sentence is the one that
+shipped, because "not confirmed yet" is a different fact from "closed" and the alternative
+collapsed them.
+
+RM-059 to RM-065 were a UI/UX pass over Devices and Automation. RM-061 came straight from the
+operator looking at what RM-059 shipped: Details and Edit beside each other were the wrong shape,
+and the fix was not to restyle them but to notice that one device had three doors — one
+**Manage** button, one panel, three tabs. RM-060 started from a fault reported in words rather
+than a ticket: on a schedule row you cannot tell which clock turns the device on and which turns
+it off, worst on the kiosk where the column captions are `display: none` below 720px. RM-059
+moved the Devices panels into a floating layer and turned up three defects on the way — an
+enabled button wearing disabled styling at 2.3-2.6:1, a lapsed stylesheet invariant, and row
+actions with no touch-target minimum on a touchscreen kiosk. RM-063 cut what the load-shed panel
+says; RM-065 gave a schedule a Clear control and removed the ambient trigger.
+
+RM-066 to RM-069 rebuilt what those pages could EXPRESS. A device could hold exactly one
+schedule, enforced in the database, so writing a second window silently replaced the first; and
+the page could not name a socket at all, so an outlet's two relays could never be scheduled
+apart. Schedules are a stackable per-socket list now (RM-066), load-shed tiers follow (RM-067),
+the aircon policy stops bounding the commanded setpoint and becomes the coldest permitted ROOM
+temperature (RM-068), and RM-069 is the closed-loop controller that redefinition was needed for
+— the thing RM-065 deferred when it removed the slider, noting that wiring it "stays a decision,
+not a task". It is setpoint-only: it never powers a unit on or off, which is that concern
+answered rather than overridden.
+
+**Audited at commit:** `5d9ebbf` merged with `4713ef7`
 
 **2026-09-01, and it changes what §0 says.** The headline claim below — that there is no
 unblocked coding task left — was **wrong**, and it was wrong because the fault report that
@@ -95,9 +117,9 @@ to what the deployment actually reports, and `null` (not yet answered) counts as
   UNIQUE is the same one-rule-per-thing blocker one level down.
 - **The "Ambient Trigger Setpoint" slider was dead.** `global.trigger.care_acu_on` round-tripped
   browser → Supabase → browser for months; a whole-repo grep found no `server/` file that read it.
-  RM-062 replaces it and `phase35` drops the column.
+  RM-069 replaces it and `phase35` drops the column.
 
-**What was NOT verified, and cannot be here.** RM-062's controller has never run against
+**What was NOT verified, and cannot be here.** RM-069's controller has never run against
 hardware: `acu_main` and `sens_outside_temp` have never been paired (RM-016), so every rule
 correctly holds on `acu_offline`. Its proof is a first-order room model driven for 200 ticks in
 `server/acuLoopPlan.test.mjs`, asserting the setpoint settles rather than hunts, plus a second run
@@ -1420,8 +1442,10 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       refuses to write. Dual-channel meters get a tab per channel — and the pairing is refused
       when more than one candidate exists, because the registry carries no physical-device id to
       join on and guessing would put two unrelated branch circuits under one card. Reached from
-      the fleet table's Details button, rendered beside the table rather than inside a row because
-      that table is a strict nine-column ARIA grid whose row/column agreement is asserted by test
+      the fleet table's Details button, rendered outside the row because that table is a strict
+      nine-column ARIA grid whose row/column agreement is asserted by test. It sat BESIDE the
+      table until RM-059 moved it into a floating `OverlayPanel` — the reason it cannot be an
+      expanding row is unchanged; what changed is that "beside" also meant "above"
       — `src/components/devices/DeviceCard.tsx`, `capabilityWidgets.tsx`, `widgetRegistry.ts`,
       `DeviceCard.test.tsx` (16 tests).
       **VERIFIED IN A REAL BROWSER 2026-09-03**, against a scratch build talking to the mock
@@ -1440,6 +1464,226 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       HTML without parsing it — empty DOM, no asset requests — with Vulkan/dawn initialisation
       failing in its own log. **Firefox works**, driven over Marionette. No dependency was added;
       Node 22 has `net` and a built-in `WebSocket`. See `docs/pi-session-brief.md`
+- [x] **RM-059** The Devices page's four panels — Details, Edit, Add, Remove — move into a
+      floating `OverlayPanel` instead of rendering in normal flow above the fleet table. They had
+      pushed the table down the page, so opening one took the row being acted on off screen at the
+      moment it was acted on. `DeviceMetaEditor`'s docblock had argued a panel was safer than a
+      modal, because its own save gate is an `aria-modal` alertdialog and two Escape handlers
+      would fight over one keypress — a real objection, answered once in the primitive
+      (`blockEscape` stands the panel's Escape handler AND its focus trap down while a nested
+      dialog is up) rather than by keeping four panels in the document flow. Portals to `<body>`
+      for the same reason EX-143 found: `.card` and `.top-nav` carry `backdrop-filter`, which makes
+      them containing blocks for `position: fixed` descendants. Surface is `--pop-bg` (96%) rather
+      than `--glass` (75%) — a translucent panel over a scrim over the page is a composite nothing
+      has measured, and `--muted-2` sits at 4.9:1 with no margin to spend; `--pop-bg` is already in
+      `test/contrast.test.mjs`'s surface set. Row state comes with it: a left rail in `--good` for
+      a live, switched-on relay, and `--bg-surface-2` for offline/no-data. The demotion is a
+      SURFACE change, never `opacity`, which would drag every text token in the row below the ratio
+      the palette was computed at; stale is deliberately neither, because a stale row already
+      blanks its numbers and carries a STALE badge, and a third freshness signal on one row is the
+      mistake FI-006 caught in `LiveDemandCard`
+      — `src/components/ui/OverlayPanel.tsx` (+`.test.tsx`, 10 tests), `DevicesView.tsx`,
+      `DeviceMetaEditor.tsx`, `EnrollWizard.tsx`, `RemoveDevicePanel.tsx`, `src/index.css`.
+      **Three defects found while doing it, all fixed here:**
+      (1) **`+ Add device` was styled as a disabled control while being enabled.** Dashed
+      `--faintest` border, `color: var(--faint)` at 2.3-2.6:1, `cursor: not-allowed` — left over
+      from before EX-040b wired it to the enrolment wizard. The `--faint` token docblock cited this
+      very button as its one permitted `color:` use, "a genuinely disabled control, which WCAG
+      1.4.3 exempts"; the exemption had been covering an enabled control failing AA. Both the rule
+      and the button are corrected, and `--faint` now has no `color:` use at all.
+      (2) **The touch-target block had stopped being last in `index.css`.** Its own comment says it
+      is "deliberately the LAST rule block in this file", because `padding-block` loses to any
+      later same-specificity `padding` shorthand — and 2,354 lines had been appended after it.
+      Nothing had broken yet (checked: the two `padding-inline` selectors have no later rules), but
+      the invariant was gone. Moved back to the end, with the drift recorded in the comment.
+      (3) **The row action buttons were never in that block.** `.devices-table__edit-btn`,
+      `.devices-table__remove-btn` and `.devices-add-btn` had no coarse-pointer minimum — three
+      small buttons in one `0.6fr` cell on a kiosk touchscreen, flush against each other with no
+      gutter. They get `min-height: 44px` (height only: a 44px minimum WIDTH each would overflow
+      the column, and this block's own rule is that the largest target which does not steal a
+      neighbour's taps is the right one) plus a gap. `.automation-time-input` and
+      `.automation-number-input` were missing too and are added. One dead selector removed
+      (`.automation-shed-mode__switch`, zero uses since the control became a `quick-toggle`), along
+      with `.enroll-wizard__cancel` and the panel chrome `OverlayPanel` now supplies.
+- [x] **RM-060** **You could not tell which clock on a schedule row turns the device on and which
+      turns it off.** `.automation-sched-row--head` is `display: none` below 720px — the CARE kiosk
+      and every phone — so beneath that width the two `type="time"` inputs were adjacent, identical,
+      and separated only by an `aria-label` a sighted operator never hears. Putting the office
+      lights' ON time into the OFF field is a silent, plausible mistake that then fires at the wrong
+      hour. Each clock now carries three channels: the word ON or OFF, a sunrise/sunset glyph, and a
+      coloured rail (`--good` / `--border-strong`). Colour is never the only carrier — that fails a
+      colour-blind operator and carries nothing under `prefers-contrast: high` — and the captions
+      stay at every width, not only where the header vanishes. Reported by the operator, 2026-09-08
+      — `src/components/automation/ScheduleRow.tsx` (+`.test.tsx`, 7 tests), `src/index.css`.
+      **Error prevention on the same page, since these all save silently today and only announce
+      themselves as behaviour that does not happen:**
+      `scheduleProblems` (pure, in `automationMath.ts`, 9 tests) flags a row armed with no day
+      ticked — `parseDays` returns all-false for an unset value, so a blank `days` string is a
+      schedule that will never run, and the symptom presents as broken hardware rather than an empty
+      field — a row armed with no ON time, and an ON equal to its OFF. It deliberately stays SILENT
+      on an OFF earlier in the day than its ON (that is an overnight schedule, which is how a
+      security light is configured), on an ON with no OFF (switching on and leaving it is a real
+      choice), and on an unarmed incomplete row (that is a draft). Warnings that cry wolf get
+      ignored.
+      `DsmThresholdsCard` gains inline validation before the save: a limit at or below the present
+      measured draw is breached the instant it is written, and a limit of zero is the same at its
+      extreme — worth its own sentence because `readDsmThresholds` is explicit that "no limit
+      configured" and "limit of 0" are different facts that look nearly identical on the form.
+      **And auto-shed can no longer be armed while no device carries a shed tier**, which would arm
+      a mechanism that can only ever do nothing while reading on the page as protection. Gated on
+      ASSIGNMENT via a new `shedEligibleCount` (`shedTiers.ts`), not on what could act this minute:
+      dispatchability and on-ness are transient and already reported as `inertCount`, but a tier
+      nobody set cannot resolve itself. Disabled-with-a-reason rather than hidden, because the panel
+      that fixes it is on this same page. The summary behind both the panel and the card is one
+      `useShedSummary` hook now, so the editor and the arming control cannot drift into disagreeing
+      about what is sheddable — `shedTiers.ts` opens by naming that exact failure.
+      **AN ANNOUNCEMENT STORM, CAUGHT IN REVIEW AND FIXED.** The per-row note shipped first as
+      `role="status"`, which was wrong for one specific reason: **`Arm all` stages `armed = true`
+      across every filtered device in a single click**, so a dozen quiet rows can start warning
+      simultaneously — a dozen polite live-region announcements a screen reader user can neither act
+      on nor skip. The row note is no longer a live region; it is now the arm switch's own
+      `aria-describedby` (two of its three cases are literally "armed without X", and the third only
+      matters once armed), and the *count* is announced once by a single summary on the card,
+      omitted entirely at zero. That is the shape WCAG guidance asks for — a summary that
+      COMPLEMENTS inline field errors rather than replacing them — and it is the same
+      "a counter that is almost always zero trains people to stop reading the line" rule EX-032b
+      applied to the Devices page's unstable count. `brokenScheduleCount` counts broken ROWS, not
+      problems: a row with two faults is one schedule to fix
+      — `AutomationPage.test.tsx` (4 tests, new)
+      — `src/components/automation/DsmThresholdsCard.tsx` (13 tests), `src/hooks/useShedSummary.ts`,
+      `src/lib/shedTiers.ts`. Automation's pre-catalogue state also becomes skeletons rather than a
+      sentence, matching Devices one tab away and staying inside `Skeleton.tsx`'s own rule.
+- [x] **RM-061** **One button per fleet row, and one panel with tabs behind it.** Each row carried
+      `Details`, `Edit` and — for an enrolled device — `Remove`: three buttons flush against each
+      other in a `0.6fr` track of a nine-column grid, opening three separate surfaces that all
+      answered questions about the same device. RM-059 had already had to give them a height-only
+      touch target because a 44px minimum WIDTH each would overflow the column, which was the
+      column telling us what the operator then said out loud. The row now has a single **Manage**
+      button (accessible name carries the device — twenty rows of "Manage" tell a screen reader
+      user nothing), and `DevicePanel` holds **Capabilities / Metadata / Remove** as tabs.
+      Tabs rather than one longer panel because these are not sections of a document: capabilities
+      are read live and change every couple of seconds, metadata is a form you submit, and removal
+      is destructive with its own dry-run preview — stacking them would make the common case
+      scroll past the rare one, and Remove is not something to scroll past. **Only the active tab
+      is mounted**, so the live-reading subscription and the removal preview are not both running
+      while you type in the other. **Remove is absent, not disabled, for a built-in device** — the
+      same judgement `DevicesView` already made about the button it replaces.
+      `role="tablist"` is honoured rather than decorative: roving tabindex (one tab stop, not
+      three) plus Left/Right/Home/End. The panel's tabs are deliberately a DIFFERENT shape from
+      `.device-card__tab`, because a dual-channel meter renders channel tabs *inside* the
+      Capabilities tab and two tablists can be on screen at once — drawing them alike would say
+      they were peers
+      — `src/components/devices/DevicePanel.tsx` (+`.test.tsx`, 10 tests), `DevicesView.tsx`,
+      `DeviceMetaEditor.tsx` and `RemoveDevicePanel.tsx` (both now body-only, their panel chrome
+      removed), `src/index.css`.
+      **Two changes to `OverlayPanel` fell out of it, both simplifications:**
+      (1) **`blockEscape` is gone.** It was a prop every caller had to remember to pass so the
+      panel would stand down while a nested `ConfirmModal` was up — a rule three components
+      re-implemented and which `DevicePanel` would have had to plumb up through three children to
+      satisfy. The panel can simply SEE the dialog (`ConfirmModal` renders in normal flow inside
+      `children`), so it reads the DOM at keypress time instead. It cannot fall out of sync the
+      way a prop can, and the callers got shorter.
+      (2) **The focus trap counted controls Tab can never reach.** It collected every `button`,
+      including `tabindex="-1"` and `disabled` ones — so the new roving-tabindex tablist would
+      have put the trap's boundary on an element that is not a tab stop. Now filtered on
+      `tabIndex >= 0 && !disabled`. Found by writing the test badly first: the initial version put
+      the unreachable buttons in the MIDDLE of the panel, where the boundary logic never sees
+      them, and passed against the broken code.
+      A `toolbar` slot was added for the tablist, pinned between the heading and the scrolling
+      body — tabs rendered inside `__body` scroll out of reach, which is the one piece of chrome
+      that must not.
+- [x] **RM-062** **The Automation page was telling the operator that nothing it saved could reach
+      hardware, and that had been false for some time.** Two strings said it: the subtitle hint
+      ("nothing on the real bridge reads or acts on these yet — that arrives once hardware dispatch
+      opens") and the save confirmation ("hardware dispatch is still gated closed"). Measured on the
+      live Pi 2026-09-08: `HARDWARE_DISPATCH_ENABLED=true` in `server/.env`, and `ibems-scheduler`
+      logs `dispatch=OPEN schedulable=15 device(s)` at boot. So the one page that arms unattended
+      load shedding was describing itself as inert. The wording is now DERIVED from
+      `capabilitiesStore.hardwareDispatchEnabled` rather than asserted, and `null` is reported as
+      "not been confirmed yet" rather than collapsed to "closed" — the same distinction
+      `dispatchScope` already keeps. It also moved OUT of the ⓘ hint and onto the page: "Saved rules
+      switch real hardware here" is the most consequential sentence on the screen, and a hint you
+      have to open is where a footnote goes, not a warning
+      — `src/components/automation/AutomationPage.tsx`, `AutomationPage.test.tsx` (4 tests covering
+      open / closed / unknown / the confirmation).
+      **The word "Supabase" is gone from the UI.** It named the vendor where the operator needed the
+      consequence: "Write to Supabase" is now "Save changes", "Pending writes" is "Unsaved changes",
+      and the save gate says what saving does and who it is recorded against. 24 strings across 16
+      files, with a settled vocabulary — **"the account service"** for sign-in (already the wording
+      `AccountSection` used), **"a settings store"** for configuration, **"stored history"** for
+      readings and reports. The three RLS-refusal messages were the ones worth most care: PostgREST
+      reports a row-level-security rejection as an ordinary success with zero rows, so these are the
+      detectors from the Phase 9 lesson. They now say the one thing the operator can act on — "you
+      are signed in with a limited local sign-in, which cannot save" — from a single shared constant
+      so the sentence cannot drift across its three call sites, with the maintainer detail (which
+      migration to check) moved into a comment where it belongs rather than onto the screen.
+- [x] **RM-063** **The Load-shed tiers panel says less.** Its lede — "A tier is permission, not
+      size … an unclassified device is not a volunteer" — was three sentences of argument sitting
+      above the numbers it was arguing for, and the operator asked for it gone. Removed outright.
+      The reasoning is not lost: it moved into `LoadShedPanel.tsx`'s docblock, where it explains the
+      counts to whoever changes them rather than to whoever reads them. The rest of the panel's
+      prose was cut to match — the ⓘ hint is two sentences instead of four, "an unclassified device
+      is never shed, so these are not volunteers" is "these are never switched off", and the inert
+      note drops "dispatch path" and "commandable" for "cannot be reached right now … works again
+      once they come back". `reasonNotSheddable` lost its mechanism lecture too: the aircon now
+      reads "controlled by its remote, not a relay — its power is never cut" rather than explaining
+      IR and compressors to someone who only needs to know the omission was deliberate. Dead
+      `.shed-panel__lede` rule removed. Browser-verified: the section is now a heading, four tier
+      counts, the unclassified line, and a collapsed list of what cannot be shed
+      — `src/components/devices/LoadShedPanel.tsx`, `src/lib/shedTiers.ts`, `src/index.css`,
+      tests updated to assert the meaning rather than the old phrasing.
+- [x] **RM-065** **Two of the three gaps RM-062 found on the Automation page, and the third
+      deliberately not built.**
+
+      **A schedule can be cleared.** Live on 2026-09-08 the table held seven rows, none enabled,
+      several junk — `l6` was on 16:23 / off 16:22 with no day selected. Every field could be blanked
+      by hand; nothing offered to do it at once. The control **stages** the blanks rather than
+      deleting the row, and that is the design rather than a shortcut: a row of empty fields with
+      `armed` off is already precisely what "no schedule" means to `server/scheduler.mjs`, so it
+      needs no delete path against the settings store, and it goes through the page's own Save gate
+      so the change is reviewable in Unsaved changes and attributable when it lands. Disarming is
+      part of clearing — a blank rule left armed is exactly the "armed, but no day is selected" fault
+      RM-060 warns about. Shown only on a row that has something to clear.
+
+      **The ambient trigger setpoint is gone.** Nothing consumed `care_acu_trigger_c`: no daemon and
+      no flow node read it, grepped across `server/`, `shared/` and `node-red-bridge/`. It was first
+      labelled "Recorded only"; the operator's answer was that a control which does nothing should
+      not be on the page at all, which is this project's own house rule. Removed: the heading, the
+      slider, and the storage plumbing.
+
+      **THE PLUMBING HAD TO GO IN BOTH DIRECTIONS AT ONCE, and that is the part worth keeping.**
+      `dsmRowFrom` always sent `care_acu_trigger_c: num(merged[TRIGGER_KEY])` in the demand-limits
+      `.update()`. Removing only the READ would have left `merged[TRIGGER_KEY]` undefined,
+      `num(undefined)` returns `null`, and the next time anyone saved an unrelated demand limit the
+      stored setpoint would have been silently wiped — data loss with no error, from a save nobody
+      would connect to it. Dropping the column from the payload as well means the `.update()` never
+      names it and the value stays exactly as it is in the database (27 °C), for whoever builds the
+      rule. **Wiring that rule stays a decision, not a task:** it means transmitting aircon ON
+      unattended, which carries the weight of arming auto-shed, and this project's standing rule is
+      that shedding is automatic and restoring is not.
+
+      **BUILT AND THEN REMOVED BEFORE IT SHIPPED: a per-row "last ran" line.** The third gap was
+      that nothing said whether a schedule actually fired, though every dispatch has been recorded
+      in `commands` with `source: 'schedule'` all along (108 rows on 2026-09-09). It was built —
+      a pure shaper, a Supabase read, a hook, a line under each armed row — and on seeing it the
+      operator cut it: a line under every device is the furniture this page had spent three commits
+      removing. Recorded because the reasoning survives the code. The rows are still written and
+      still readable; if the question is worth answering it belongs somewhere you go to ask it, not
+      under every device.
+
+      **A LAYOUT FAULT IN THE CLEAR CONTROL, FOUND BY MEASURING IT (2026-09-09).** The arm column
+      was `56px`, sized when it held only the 44px toggle. Adding the Clear button beside it made
+      the pair **75px** — measured in Firefox at 1440px: the button rendered at `x=685` while its
+      own grid track started at `x=704`, so it overflowed by 19px and sat on top of the day chips,
+      where a tap could land on the wrong control. It shipped that way. The track is `80px` now
+      (23 + 8 + 44), and the 8px separation is what adjacent touch targets need — it had been coming
+      from a flex `gap` of 4px PLUS a leftover 4px `margin-right`, two mechanisms doing one job.
+      Re-measured at 1440x960, 800x480 and, in a sized iframe, 375 and 320px: no page overflow, no
+      cell overflow, the button inside its own track, 8px gap at every width.
+
+      Eight orphaned CSS rules went with the two removals
+      — `src/components/automation/AutomationPage.tsx`, `ScheduleRow.tsx`,
+      `src/lib/supabaseConfig.ts`, `src/index.css`, tests updated to guard the absences.
 - [x] **EX-150** One relay control, replacing five. `SwitchesListCard`, `OutletsListCard`,
       `LightingMatrixCard`, `OutletPlanCard` and `MasterQuickActionsCard` each re-derived the same
       `controlView` → `busy`/`unknown`/`on` triple and then decided independently what `disabled`
@@ -2651,7 +2895,7 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 ## 2. Current roadmap (active execution)
 
 
-### The Automation page — RM-059 to RM-062 (built 2026-09-09, migrations not applied)
+### What the Automation page can express — RM-066 to RM-069 (migrations not applied)
 
 Organised by WHAT MAKES A RULE FIRE, which is the distinction an operator reasons about and the
 one the trade already names: Time-Driven (the clock), State-Driven (a measured quantity),
@@ -2661,7 +2905,7 @@ strategy with no field devices gets a card inside its own category naming what i
 because several are blocked on a purchase order rather than on code and the person reading the
 page is the one who can raise it.
 
-- [x] **RM-059** Schedules become a stackable, per-socket list. `supabase/phase33_schedules_stackable.sql`
+- [x] **RM-066** Schedules become a stackable, per-socket list. `supabase/phase33_schedules_stackable.sql`
       drops `unique (device_id)` — `id` is the only identity now, so `upsert()` leaves the table
       entirely and writes are insert / update-by-id / delete-by-id. A DELETE policy is added
       (`schedules` had none, because clearing one row used to be a write of nulls). The migration
@@ -2687,7 +2931,7 @@ page is the one who can raise it.
       carries only the DSM singleton, which is genuinely one row of settings and for which the
       flat context map is still the right shape.
 
-- [x] **RM-060** Load-shed tiers become per socket. `supabase/phase34_socket_config.sql` adds
+- [x] **RM-067** Load-shed tiers become per socket. `supabase/phase34_socket_config.sql` adds
       `socket_config`, PK `(device_id, socket)` — a sibling table rather than a `sockets jsonb`
       column on `device_config`, because `supabaseDeviceConfig.ts` builds WHOLE-ROW upserts and a
       jsonb column there would be erased by an unrelated notes edit, invisibly, surfacing only the
@@ -2701,7 +2945,7 @@ page is the one who can raise it.
       "3 devices" while the shedder sheds 5 sockets is exactly the believed-but-wrong UI
       `shedTiers.ts` refuses to ship.
 
-- [x] **RM-061** `acu_min_setpoint_c` becomes `acu_min_room_target_c`, and its meaning changes with
+- [x] **RM-068** `acu_min_setpoint_c` becomes `acu_min_room_target_c`, and its meaning changes with
       its name. It was a bound on the setpoint COMMANDED to the aircon; `validateCommand` refused
       anything below it. That is untenable once the setpoint is the LEVER a closed loop moves — a
       loop that may never ask for 22 cannot hold a room at 24 on a hot afternoon, and a person who
@@ -2716,7 +2960,7 @@ page is the one who can raise it.
       leave the contraction to a later file. `shared/sitePolicy.mjs` reads new-then-old, so at no
       point is neither key readable.
 
-- [x] **RM-062** Closed-loop aircon control. An operator sets a ROOM target and names a sensor; the
+- [x] **RM-069** Closed-loop aircon control. An operator sets a ROOM target and names a sensor; the
       controller steps the aircon's setpoint 1 °C at a time toward it, rate-limited, inside an
       active window. `supabase/phase36_acu_rules.sql` adds `acu_rules`, `acu_loop_state` and
       `commands.target_c` — without that last column a row recording a setpoint change did not say
@@ -5978,13 +6222,13 @@ may not.
 ## 4. Known contradictions & doc drift
 
 
-**Resolved 2026-09-09 by RM-059..062:**
+**Resolved 2026-09-09 by RM-066..069:**
 
 | Was | Now |
 |---|---|
 | `FI-022` appeared as both `- [ ]` and `- [x]` in this file | Ticked. The later entry was the true one; the checkbox was never updated when the work landed. |
 | `AutomationPage.tsx` told operators nothing it saved reached hardware | It reads its reach from `/api/capabilities` and says which state the deployment is in. |
-| `shared/commands.mjs` pointed at a roadmap entry for per-socket scheduling that did not exist | RM-059 exists, and the note's suggested `UNIQUE(device_id, socket)` was wrong — that is the same blocker one level down. |
+| `shared/commands.mjs` pointed at a roadmap entry for per-socket scheduling that did not exist | RM-066 exists, and the note's suggested `UNIQUE(device_id, socket)` was wrong — that is the same blocker one level down. |
 | `test/socket-fanout.test.mjs`'s header asserted two caller facts | Both are now false by design; the header is corrected in place. |
 | `test/migration-idempotency.test.mjs` counted only `create policy` and `create trigger` | It counts `alter table … add constraint` too — the statement `phase6_schedules_unique_fix.sql` itself used. It immediately flagged `phase27`, which turned out to guard its constraints the other legal way (`pg_constraint` lookup), so that form is recognised too. |
 

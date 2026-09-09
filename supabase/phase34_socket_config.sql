@@ -1,4 +1,4 @@
--- Phase 34: a shed tier per SOCKET, not per outlet — RM-060.
+-- Phase 34: a shed tier per SOCKET, not per outlet — RM-067.
 --
 -- WHY A SIBLING TABLE AND NOT A COLUMN ON device_config. Two reasons, and the second decides it.
 --
@@ -36,7 +36,7 @@ create table if not exists socket_config (
   -- only in TypeScript — phase7's rule, for the same reason.
   load_shed_group text check (load_shed_group is null or load_shed_group in ('group_1','group_2','group_3','never')),
 
-  -- What is plugged into it. Not required by RM-060; included because the migration is the
+  -- What is plugged into it. Not required by RM-067; included because the migration is the
   -- expensive part and a per-socket screen is unreadable without it ("Socket 2" vs "Kettle").
   label           text check (label is null or char_length(label) <= 60),
 

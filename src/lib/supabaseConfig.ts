@@ -1,5 +1,5 @@
 /**
- * DSM-thresholds config — architecture plan Phase 6, narrowed by RM-059. Reads and writes
+ * DSM-thresholds config — architecture plan Phase 6, narrowed by RM-066. Reads and writes
  * Supabase's `dsm_thresholds` table directly from the browser (RLS-gated to `authenticated`,
  * same pattern as `supabaseHistory.ts`'s Phase 4 reads — no general CRUD backend needed).
  *
@@ -7,8 +7,15 @@
  * (`global.schedule.<id>.<field>`) that Node-RED's global context used and that this app kept
  * deliberately through the Supabase migration so the components did not have to change. That
  * key shape can hold exactly ONE rule per device — there is nowhere to put the second one — so
- * RM-059 moved schedules to `supabaseSchedules.ts` as ordinary rows with ids, and the
+ * RM-066 moved schedules to `supabaseSchedules.ts` as ordinary rows with ids, and the
  * translation layer here shrank to the DSM half it still serves.
+ *
+ * `care_acu_trigger_c` IS NEITHER READ NOR WRITTEN — RM-065 removed the ambient-trigger slider
+ * because nothing consumed the value, and both halves had to go together: dropping only the read
+ * would have left `dsmRowFrom` sending `num(undefined)` — `null` — so the next demand-limit save
+ * would have silently wiped the stored setpoint. RM-065 left the column out of the payload so
+ * the value survived "for whoever builds the rule"; RM-069 is that rule, so `phase35` drops the
+ * column outright. Nothing here names it either way.
  *
  * `contextStore.ts`'s `load`/`save` internals are the only callers.
  */
@@ -16,6 +23,12 @@
 import { supabase } from '@/config/supabase';
 import type { ContextMap } from './types';
 import { SITE } from '@shared/siteConfig.mjs';
+
+/** The one refusal an operator actually hits and can act on: a break-glass sign-in has no
+ * account to attribute a write to, so row-level security rejects it — and PostgREST reports
+ * that rejection as an ordinary success with zero rows. Worded for the person, once, so the
+ * call sites below cannot drift apart. */
+const BREAK_GLASS_HINT = 'you are signed in with a limited local sign-in, which cannot save. Sign in with your account to make changes.';
 
 const MAX_PHASE_KEY = 'global.dsm.max_phase_a';
 const MAX_TOTAL_KEY = 'global.dsm.max_total_kw';
@@ -37,7 +50,7 @@ function num(v: string | undefined): number | null {
  * `getLongHistory`; callers (`contextStore.ts`) must catch and surface this as the
  * store's existing `'error'` status rather than let it escape uncaught. */
 function requireSupabase() {
-  if (!supabase) throw new Error('Supabase is not configured (VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY unset)');
+  if (!supabase) throw new Error('Schedules and limits need a settings store, which this deployment has not configured.');
   return supabase;
 }
 
@@ -82,7 +95,7 @@ export async function fetchScheduleContext(): Promise<ContextMap> {
     .select('max_phase_current,max_total_kw,auto_shed')
     .eq('site_id', SITE.id)
     .maybeSingle();
-  if (thresholds.error) throw new Error(`Supabase dsm_thresholds fetch failed: ${thresholds.error.message}`);
+  if (thresholds.error) throw new Error(`Could not read the demand limits: ${thresholds.error.message}`);
   return dsmRowToContext(thresholds.data);
 }
 
@@ -107,14 +120,12 @@ export async function writeScheduleContext(pending: ContextMap, merged: ContextM
     // that constraint and replaced it with `unique (site_id)`, so this is the write that matches.
     .eq('site_id', SITE.id)
     .select('site_id');
-  if (error) throw new Error(`Supabase dsm_thresholds write failed: ${error.message}`);
+  if (error) throw new Error(`Could not save the demand limits: ${error.message}`);
   // .select() and a row-count check are load-bearing, not decoration: PostgREST reports an RLS
   // policy silently matching zero rows as a plain 200 with an EMPTY array, so `{error}` alone
   // stays null even when nothing was written. Confirmed live — a save once reported success
   // while both tables stayed completely untouched.
   if ((data?.length ?? 0) !== 1) {
-    throw new Error(
-      `Supabase dsm_thresholds write matched no row for site ${SITE.id}. Check that you are signed in with a real Supabase session rather than a break-glass one, and that supabase/phase19_sites.sql and phase20_site_scoping.sql have both been applied.`,
-    );
+    throw new Error(`The demand limits were not saved — ${BREAK_GLASS_HINT}`);
   }
 }

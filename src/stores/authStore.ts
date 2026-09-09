@@ -88,7 +88,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signInWithPassword: async (email, password) => {
-    if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+    if (!supabase) return { ok: false, error: 'No account service is configured for this deployment.' };
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) return { ok: false, error: error.message };
@@ -99,7 +99,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // supabase-js throws (rather than returning {error}) on a network-level failure —
       // this is the caller's signal to offer the break-glass local-login path instead of
       // just "wrong password."
-      return { ok: false, error: 'Cannot reach Supabase — check your internet connection.', networkError: true };
+      return { ok: false, error: 'Cannot reach the account service — check your internet connection.', networkError: true };
     }
   },
 

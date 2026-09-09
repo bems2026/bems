@@ -531,7 +531,7 @@ async function handleCommand(req, res, token) {
   });
 
   /**
-   * A below-policy setpoint is RECORDED, not refused — RM-061.
+   * A below-policy setpoint is RECORDED, not refused — RM-068.
    *
    * `validateCommand` used to return 400 `below_policy_floor` for these and the command never
    * happened, so there was nothing to record. Now it accepts and warns, which means the audit
@@ -770,7 +770,7 @@ const server = http.createServer(async (req, res) => {
       // necessarily the one in the browser's bundle: an operator can change it without a
       // redeploy, and a setpoint selector built from a stale build value would offer a degree
       // that comes back as a 400 — which reads as a bug rather than as a policy.
-      // RM-061: this number means the coldest ROOM TARGET now, not the coldest commandable
+      // RM-068: this number means the coldest ROOM TARGET now, not the coldest commandable
       // setpoint. Both keys are served for one release so a kiosk still running the pre-rename
       // bundle does not lose its value the moment phase35 lands.
       acu_min_room_target_c: roomTargetFloorC(livePolicy.current()),

@@ -60,7 +60,7 @@ describe('NextUpCard', () => {
   });
 
   it('counts armed RULES, not armed devices — one device can hold several', () => {
-    // The number this card showed before RM-059 was "devices with something armed", which
+    // The number this card showed before RM-066 was "devices with something armed", which
     // stopped being answerable the moment a device could hold five rules.
     useDeviceStore.setState({ devices: [light('l1', 'Light Switch 1')] });
     useScheduleStore.setState({

@@ -17,7 +17,7 @@
  * — it is IR-commanded and the compressor is deliberately never power-cut. Leaving it silently
  * out of the list would read as an oversight; leaving it in would be a lie.
  *
- * SINCE RM-060 A ROW IS A SOCKET, NOT A DEVICE. An outlet is two relays behind one label, and
+ * SINCE RM-067 A ROW IS A SOCKET, NOT A DEVICE. An outlet is two relays behind one label, and
  * one of them can be a fridge while the other is a kettle — tiering them together was a
  * limitation of where the tier was stored, never a statement about the building. The tallies
  * therefore count SHED POINTS, and they changed in the same commit as `shedTiers.ts` and
@@ -30,16 +30,14 @@
  * somebody plugs a kettle in — but somebody planning around auto-shed should meet that number
  * here rather than after a breach.
  */
-import { useMemo } from 'react';
 import { Zap } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { InfoHint } from '@/components/ui/InfoHint';
-import { useDeviceStore } from '@/stores/deviceStore';
 import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
 import { useSocketConfigStore, socketKey } from '@/stores/socketConfigStore';
-import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
-import { LOAD_SHED_OPTIONS, effectiveConfig, resolveDisplayName, resolveShedTier, type LoadShedGroup } from '@/lib/deviceConfig';
-import { summariseShed, SHED_ORDER } from '@/lib/shedTiers';
+import { useShedSummary } from '@/hooks/useShedSummary';
+import { LOAD_SHED_OPTIONS, resolveDisplayName, type LoadShedGroup } from '@/lib/deviceConfig';
+import { SHED_ORDER } from '@/lib/shedTiers';
 
 const TIER_LABEL: Record<LoadShedGroup | 'unassigned', string> = {
   group_1: 'Group 1 — sheds first',
@@ -50,38 +48,18 @@ const TIER_LABEL: Record<LoadShedGroup | 'unassigned', string> = {
 };
 
 export function LoadShedPanel({ onClose }: { onClose?: () => void }) {
-  const devices = useDeviceStore((s) => s.devices);
-  const readings = useDeviceStore((s) => s.latestReadings);
   const saved = useDeviceConfigStore((s) => s.saved);
-  const draft = useDeviceConfigStore((s) => s.draft);
   const setDraftField = useDeviceConfigStore((s) => s.setDraftField);
   const save = useDeviceConfigStore((s) => s.save);
   const saveError = useDeviceConfigStore((s) => s.saveError);
-  const dispatchClasses = useCapabilitiesStore((s) => s.dispatchClasses);
 
-  const socketConfigs = useSocketConfigStore((s) => s.saved);
   const setSocketTier = useSocketConfigStore((s) => s.setTier);
   const socketErrors = useSocketConfigStore((s) => s.rowError);
 
-  const summary = useMemo(
-    () =>
-      summariseShed(
-        devices,
-        // `resolveShedTier` is the ONE place socket-over-device precedence is decided; the
-        // device-level view still comes through `effectiveConfig` so an unsaved draft in the
-        // metadata editor is reflected here exactly as it was before.
-        (id, socket) =>
-          resolveShedTier(
-            id,
-            socket,
-            { [id]: { loadShedGroup: effectiveConfig(draft, saved, id).loadShedGroup } },
-            socketConfigs,
-          ),
-        readings,
-        dispatchClasses,
-      ),
-    [devices, draft, saved, socketConfigs, readings, dispatchClasses],
-  );
+  // The summary itself comes from `useShedSummary`, shared with `DsmThresholdsCard` — the card
+  // that arms the mechanism these tiers feed has to be asking the same question of the same data.
+  // Socket-over-device precedence lives inside that hook, so both callers inherit it.
+  const summary = useShedSummary();
 
   /** Set and save in one step. A tier is a single choice from a fixed list, not a field somebody
    * is part-way through typing, so staging it behind a Save button would only create a state
@@ -105,10 +83,9 @@ export function LoadShedPanel({ onClose }: { onClose?: () => void }) {
           <Zap size={16} className="title-icon" aria-hidden="true" />
           Load-shed tiers
           <InfoHint label="What a tier does">
-            When the building goes over its limit and auto-shed is on, the system switches off
-            <strong> one tier at a time</strong> — Group 1 first — re-measures, and only escalates
-            if still over. It <strong>never switches anything back on</strong>: restoring load
-            unattended is not recoverable by a person, so that is deliberately manual.
+            Over the limit, the system switches off <strong>one group at a time</strong>, Group 1
+            first, and only moves to the next if still over. It <strong>never switches anything
+            back on</strong> — turning load back on is a decision for a person.
           </InfoHint>
         </h2>
         {onClose && (
@@ -117,13 +94,6 @@ export function LoadShedPanel({ onClose }: { onClose?: () => void }) {
           </button>
         )}
       </div>
-
-      <p className="shed-panel__lede">
-        A tier is <strong>permission, not size</strong> — it says this load may be dropped, not
-        that it is large. An outlet averaging a watt is four hundred the afternoon somebody plugs
-        a kettle into it. Nothing without a tier is ever shed: an unclassified device is not a
-        volunteer.
-      </p>
 
       {saveError && (
         <p className="shed-panel__error" role="alert">
@@ -153,15 +123,15 @@ export function LoadShedPanel({ onClose }: { onClose?: () => void }) {
         <span className="shed-panel__unassigned-count">{summary.byTier.unassigned.total}</span>
         <span>
           {TIER_LABEL.unassigned}
-          {summary.byTier.unassigned.total > 0 && ' — an unclassified relay is never shed, so these are not volunteers'}
+          {summary.byTier.unassigned.total > 0 && ' — these are never switched off'}
         </span>
       </p>
 
       {summary.inertCount > 0 && (
         <p className="shed-panel__warn" role="status">
-          {summary.inertCount} relay{summary.inertCount === 1 ? ' has' : 's have'} a tier but no
-          dispatch path right now, so shedding would not reach {summary.inertCount === 1 ? 'it' : 'them'}.
-          The tier is saved and will work once the bridge reports that class as commandable.
+          {summary.inertCount} relay{summary.inertCount === 1 ? '' : 's'} in a group cannot be reached
+          right now, so {summary.inertCount === 1 ? 'it' : 'they'} would be skipped. The group is saved and
+          works again once {summary.inertCount === 1 ? 'it comes' : 'they come'} back.
         </p>
       )}
 

@@ -101,7 +101,7 @@ export function coerceLoadShedGroup(value: string | null): LoadShedGroup | null 
 }
 
 /**
- * The tier that governs one relay — RM-060.
+ * The tier that governs one relay — RM-067.
  *
  * SOCKET ROW WINS, DEVICE ROW IS THE FALLBACK, and this is the ONLY place that order is
  * decided. `shedTiers.ts`, the shed panel and `server/shedPlan.mjs`'s `shedTargets` all apply

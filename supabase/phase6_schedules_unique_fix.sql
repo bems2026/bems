@@ -1,5 +1,5 @@
 -- ############################################################################
--- SUPERSEDED BY supabase/phase33_schedules_stackable.sql (RM-059).
+-- SUPERSEDED BY supabase/phase33_schedules_stackable.sql (RM-066).
 --
 -- The reasoning below was correct when it was written and its conclusion is now the blocker:
 -- `unique (device_id)` means one rule per device, so writing a second schedule silently

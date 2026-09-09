@@ -21,7 +21,7 @@ const filterLabel = (f: SchedFilter) => (f === 'All' ? 'All' : DEVICE_CLASS_CATA
  * its two sockets are independent relays and always have been at the hardware. The Control page
  * has shown them that way since it was written; this page could not, because the schedules table
  * held one row per device and the client filtered `socket` out of existence on both read and
- * write. That is the gap RM-059 closes.
+ * write. That is the gap RM-066 closes.
  *
  * A master/detail split rather than one long table: a stack needs vertical room for its rules,
  * its conflicts and its week strip, and twenty of those stacked down one page is unreadable.

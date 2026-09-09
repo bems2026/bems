@@ -1,6 +1,8 @@
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useContextStore } from '@/stores/contextStore';
+import { useShedSummary } from '@/hooks/useShedSummary';
 import { readDsmThresholds, maxPhaseNow, totalKwNow } from '@/lib/dsm';
+import { shedEligibleCount } from '@/lib/shedTiers';
 import { isReadingExpired } from '@/lib/staleness';
 
 const MAX_PHASE_KEY = 'global.dsm.max_phase_a';
@@ -20,6 +22,31 @@ const STATUS_CLASS = {
   'no-limit': 'automation-dsm-field__unknown',
   'no-reading': 'automation-dsm-field__unknown',
 } as const;
+
+/**
+ * RM-060 — what is wrong with a threshold, said BEFORE it is saved.
+ *
+ * Both cases are accepted silently today and only announce themselves afterwards, as a BREACHED
+ * status the operator then has to work backwards from. A limit at or below the present draw is
+ * breached the instant it is written; with auto-shed armed, that is load dropping immediately.
+ * A limit of zero is the same thing at its extreme, and it is worth its own sentence because
+ * `readDsmThresholds` is explicit that "no limit configured" and "limit of 0" are different
+ * facts — an empty field reads as the former and a typed 0 as the latter, and the two look
+ * almost identical on the form.
+ *
+ * Returns null for the ordinary case, so a healthy card renders nothing rather than a reassuring
+ * line — this project's own rule about elements that announce the absence of a problem.
+ */
+function thresholdWarning(raw: string, now: number | null, unit: string): string | null {
+  if (raw.trim() === '') return null;
+  const limit = Number(raw);
+  if (!Number.isFinite(limit)) return null;
+  if (limit === 0) return `A limit of zero is breached by any load at all — leave the field empty for "no limit".`;
+  if (now !== null && limit <= now) {
+    return `This is at or below the ${now} ${unit} the building is drawing now, so it is breached the moment it is saved.`;
+  }
+  return null;
+}
 
 /** These thresholds no longer drive an Overview banner (removed per the bento-grid
  * revision — DSM breach is not in the current Overview design), but stay configurable and
@@ -65,6 +92,25 @@ export function DsmThresholdsCard() {
   const powerStatus = status(thresholds.maxTotalKw, kwNow);
   const autoShedDraftValue = effective(AUTO_SHED_KEY) === 'true';
 
+  /**
+   * THE ONE REFUSAL ON THIS CARD. Auto-shed switches load off unattended and — by this project's
+   * standing rule — never switches it back. Arming it over a fleet where no device carries a shed
+   * tier arms a mechanism that can only ever do nothing, while reading on the page as protection.
+   * `shedPlan` would find nothing to act on; this says so before the save rather than after a
+   * breach that quietly does not respond.
+   *
+   * Gated on ASSIGNMENT, not on what could act this minute. Dispatchability and on-ness are both
+   * transient and `LoadShedPanel` already reports that gap as `inertCount`; a tier nobody has set
+   * is the only one of the three that cannot resolve itself.
+   *
+   * Deliberately disabled-with-a-reason rather than hidden. Hiding it would hide the capability,
+   * and unlike the Remove button on `DevicesView` the fix here is one the operator can act on
+   * immediately — the panel that fixes it is on this same page.
+   */
+  const shed = useShedSummary();
+  const eligible = shedEligibleCount(shed.byTier);
+  const cannotArm = eligible === 0;
+
   return (
     <div className="card automation-dsm-card">
       <h3 className="card-title">DSM Thresholds</h3>
@@ -79,6 +125,7 @@ export function DsmThresholdsCard() {
         status={phaseStatus}
         value={effective(MAX_PHASE_KEY)}
         step={0.1}
+        warning={thresholdWarning(effective(MAX_PHASE_KEY), phaseNow === null ? null : Number(phaseNow.toFixed(1)), 'A')}
         onChange={(v) => setDraft(MAX_PHASE_KEY, v)}
       />
       <ThresholdField
@@ -87,6 +134,7 @@ export function DsmThresholdsCard() {
         status={powerStatus}
         value={effective(MAX_TOTAL_KEY)}
         step={0.01}
+        warning={thresholdWarning(effective(MAX_TOTAL_KEY), kwNow === null ? null : Number(kwNow.toFixed(2)), 'kW')}
         onChange={(v) => setDraft(MAX_TOTAL_KEY, v)}
       />
 
@@ -96,6 +144,12 @@ export function DsmThresholdsCard() {
             On breach: {autoShedDraftValue ? 'arm automatic shed' : 'warn and wait for manual override'}
           </p>
           <p className="automation-shed-mode__sub">Auto-shed is a decision point — confirm before anything cuts power unattended.</p>
+          {cannotArm && (
+            <p className="automation-shed-mode__blocked" role="status">
+              Cannot be armed: no device has a shed tier, so there would be nothing to switch off.
+              Assign one under <strong>Load-shed tiers</strong> below.
+            </p>
+          )}
         </div>
         {/*
           Was a plain button labelled "Switch" — a verb with no object, which told you neither
@@ -108,6 +162,7 @@ export function DsmThresholdsCard() {
           role="switch"
           aria-checked={autoShedDraftValue}
           aria-labelledby="dsm-auto-shed-label"
+          disabled={cannotArm && !autoShedDraftValue}
           className={`quick-toggle${autoShedDraftValue ? ' quick-toggle--on' : ''}`}
           onClick={() => setDraft(AUTO_SHED_KEY, String(!autoShedDraftValue))}
         >
@@ -137,6 +192,7 @@ function ThresholdField({
   status,
   value,
   step,
+  warning,
   onChange,
 }: {
   id: string;
@@ -144,6 +200,8 @@ function ThresholdField({
   status: 'breached' | 'ok' | 'no-limit' | 'no-reading';
   value: string;
   step: number;
+  /** Null for the ordinary case — a healthy field says nothing rather than saying it is fine. */
+  warning: string | null;
   onChange: (value: string) => void;
 }) {
   return (
@@ -161,8 +219,16 @@ function ThresholdField({
         className="automation-number-input"
         value={value}
         placeholder="not set"
+        aria-describedby={warning ? `${id}-warn` : undefined}
         onChange={(e) => onChange(e.target.value)}
       />
+      {/* `role="status"` (polite), not alert: the operator is mid-edit on a draft that has not
+          been written anywhere, so this should wait its turn rather than interrupt typing. */}
+      {warning && (
+        <p id={`${id}-warn`} className="automation-dsm-field__warn" role="status">
+          {warning}
+        </p>
+      )}
     </div>
   );
 }

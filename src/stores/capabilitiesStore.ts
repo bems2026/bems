@@ -32,14 +32,14 @@ interface CapabilitiesState {
   dispatchPolicy: string | null;
   cloudFallbackConfigured: boolean | null;
   /**
-   * The coldest ROOM TARGET this building permits — RM-038, redefined by RM-061.
+   * The coldest ROOM TARGET this building permits — RM-038, redefined by RM-068.
    *
    * NOT the build's own `SITE.policy` value: an operator can change it without a redeploy, so a
    * screen built from the build value would state a policy that is no longer in force. `null`
    * means no policy at all, or that the proxy has not answered yet; `policySource` tells them
    * apart.
    *
-   * Since RM-061 this no longer narrows the setpoint selector — the number is about the ROOM,
+   * Since RM-068 this no longer narrows the setpoint selector — the number is about the ROOM,
    * and a manual setpoint below it is warned about rather than refused.
    */
   acuMinRoomTargetC: number | null;
@@ -82,7 +82,7 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
           auditBufferPending: typeof audit_buffer_pending === 'number' ? audit_buffer_pending : null,
           dispatchPolicy: typeof dispatch_policy === 'string' ? dispatch_policy : null,
           cloudFallbackConfigured: typeof cloud_fallback_configured === 'boolean' ? cloud_fallback_configured : null,
-          // New key preferred, old key as the fallback, for the length of the RM-061 rename
+          // New key preferred, old key as the fallback, for the length of the RM-068 rename
           // window — a proxy that predates phase35 still serves only the old one.
           acuMinRoomTargetC: typeof acu_min_room_target_c === 'number' ? acu_min_room_target_c : typeof acu_min_setpoint_c === 'number' ? acu_min_setpoint_c : null,
           policySource: typeof policy_source === 'string' ? policy_source : null,

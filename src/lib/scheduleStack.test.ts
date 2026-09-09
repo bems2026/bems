@@ -54,7 +54,7 @@ const rule = (over: Partial<Schedule> = {}): Schedule => ({
 const DISPATCHABLE = new Set(['l1', 'co5', 'acu_main']);
 
 describe('scheduleTargets', () => {
-  it('splits an outlet into one target per socket — the whole point of RM-059', () => {
+  it('splits an outlet into one target per socket — the whole point of RM-066', () => {
     expect(scheduleTargets([CO5]).map((t) => t.name)).toEqual(['Outlet 5 · S1', 'Outlet 5 · S2']);
   });
 
@@ -171,6 +171,20 @@ describe('stackConflicts', () => {
   it('calls an overnight rule overnight rather than an error, because it is legitimate', () => {
     const overnight = stackConflicts([rule({ on: '22:00', off: '06:00' })]);
     expect(overnight.map((c) => c.kind)).toEqual(['overnight']);
+  });
+
+  it('flags ON and OFF at the same time — the rule never switches anything on', () => {
+    // From RM-067, rehomed here. The daemon checks `off` second, so the two resolve to OFF and
+    // the ON the operator wrote never happens. Deterministic rather than broken, which is why it
+    // is a conflict and not an `unfireable` reason.
+    const same = stackConflicts([rule({ on: '08:00', off: '08:00' })]);
+    expect(same.map((c) => c.kind)).toEqual(['same-on-and-off']);
+    expect(same[0].message).toMatch(/resolves that to OFF/);
+  });
+
+  it('does not ALSO call a same-time rule overnight — one fault, one message', () => {
+    const same = stackConflicts([rule({ on: '08:00', off: '08:00' })]);
+    expect(same.filter((c) => c.kind === 'overnight')).toHaveLength(0);
   });
 
   it('ignores disarmed rules entirely', () => {

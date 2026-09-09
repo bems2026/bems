@@ -54,7 +54,7 @@ interface DeviceConfigWriteRow {
  * `requireSupabase`; callers must catch and surface this as the store's existing `'error'`
  * status rather than let it escape uncaught. */
 function requireSupabase() {
-  if (!supabase) throw new Error('Supabase is not configured (VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY unset)');
+  if (!supabase) throw new Error('Device details need a settings store, which this deployment has not configured.');
   return supabase;
 }
 
@@ -119,7 +119,7 @@ export function deviceConfigToRow(config: DeviceConfig, actorUserId: string | nu
 export async function fetchDeviceConfigs(): Promise<Record<string, DeviceConfig>> {
   const client = requireSupabase();
   const { data, error } = await client.from('device_config').select('device_id,space_node_id,plan_x,plan_y,plan_fixtures,room,category,load_shed_group,display_name_override,notes,functions');
-  if (error) throw new Error(`Supabase device_config fetch failed: ${error.message}`);
+  if (error) throw new Error(`Could not load device details: ${error.message}`);
   return deviceConfigsToMap(data ?? []);
 }
 
@@ -140,11 +140,11 @@ export async function writeDeviceConfig(config: DeviceConfig, actorUserId: strin
   const { data, error } = await client.from('device_config').upsert(row, { onConflict: 'device_id' }).select('device_id');
   if (error) {
     if (error.code === '23503') {
-      throw new Error(`Supabase device_config write failed: device ${config.deviceId} hasn't synced into the devices table yet — wait for the next ingest cycle and try again.`);
+      throw new Error(`Could not save: ${config.deviceId} has not been recorded yet — wait for the next reading cycle and try again.`);
     }
-    throw new Error(`Supabase device_config write failed: ${error.message}`);
+    throw new Error(`Could not save device details: ${error.message}`);
   }
   if ((data?.length ?? 0) !== 1) {
-    throw new Error(`Supabase device_config write for ${config.deviceId} affected 0 rows — check that you're signed in with a real Supabase session, not a break-glass one.`);
+    throw new Error(`Nothing was saved for ${config.deviceId} — you are signed in with a limited local sign-in, which cannot save. Sign in with your account to make changes.`);
   }
 }

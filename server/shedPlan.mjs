@@ -18,7 +18,7 @@
  * Nothing is ever shed unless it was explicitly assigned to a tier. "Protected" (`never`) and
  * unassigned targets are both left alone — a relay nobody classified is not a volunteer.
  *
- * SINCE RM-060 THE UNIT IS A SOCKET, NOT A DEVICE. An outlet is two relays behind one label and
+ * SINCE RM-067 THE UNIT IS A SOCKET, NOT A DEVICE. An outlet is two relays behind one label and
  * one may be a fridge while the other is a kettle; tiering them together was a limitation of
  * where the tier was stored, never a statement about the building. Three consequences, each
  * marked below: targets are enumerated per socket, "is it on" is read per socket, and every
@@ -36,7 +36,7 @@ export const SHED_TIERS = ['group_1', 'group_2', 'group_3'];
  *
  * One entry per socket for an `outlet_dual`, one with `socket: null` for everything else. The
  * socket's own tier wins; the device-level tier is the fallback, which is what keeps a
- * pre-RM-060 configuration behaving exactly as it did — phase34's backfill writes those rows
+ * pre-RM-067 configuration behaving exactly as it did — phase34's backfill writes those rows
  * explicitly, and this fallback covers the window before it is applied.
  *
  * @param {{devices: Array, configs: Record<string,string|null>,

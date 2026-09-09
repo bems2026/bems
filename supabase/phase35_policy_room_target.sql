@@ -1,10 +1,10 @@
--- Phase 35: `acu_min_setpoint_c` becomes `acu_min_room_target_c` — RM-061.
+-- Phase 35: `acu_min_setpoint_c` becomes `acu_min_room_target_c` — RM-068.
 --
 -- WHAT THE NUMBER MEANT, AND WHAT IT MEANS NOW. It was a bound on the setpoint COMMANDED to the
 -- aircon: `validateCommand` refused anything below it with 400 `below_policy_floor`, and the
 -- Control page simply did not offer those degrees. That reading became untenable once the
 -- setpoint stopped being the thing a person sets and became the CONTROL LEVER a closed loop
--- moves (RM-062) — a loop that may never ask for 22 cannot hold a room at 24 on a hot afternoon,
+-- moves (RM-069) — a loop that may never ask for 22 cannot hold a room at 24 on a hot afternoon,
 -- and a person who genuinely needs 18 for an hour had no way to ask.
 --
 -- It now means the coldest ROOM TEMPERATURE this building permits an automatic rule to aim for.
@@ -24,7 +24,7 @@
 -- on the Automation page that NOTHING on the server ever read — a whole-repo grep found it in
 -- the browser, in one mapping file and in two mock-bridge key tests, and in no `server/` file at
 -- all. The value round-tripped browser -> Supabase -> browser for months and acted on nothing.
--- RM-062's real controller replaces it.
+-- RM-069's real controller replaces it.
 --
 -- Apply once, by hand, in the Supabase SQL editor.
 --
@@ -106,7 +106,7 @@ $fn$;
 -- ---------------------------------------------------------------------------
 -- 3. The OLD writer is REDEFINED, not dropped, and KEEPS ITS RETURN TYPE.
 --
---    A browser tab still holding the pre-RM-061 bundle calls this one. Dropping it would break
+--    A browser tab still holding the pre-RM-068 bundle calls this one. Dropping it would break
 --    that tab; leaving it writing only the stale key would let the two keys drift. Delegating
 --    does neither.
 --
@@ -145,5 +145,5 @@ alter table dsm_thresholds drop column if exists care_acu_trigger_c;
 comment on function public.set_acu_min_room_target(text, int) is
   'Sets the coldest ROOM TEMPERATURE this site permits an automatic rule to aim for. NOT a bound '
   'on the setpoint commanded to the aircon - that is ACU_MIN_C/ACU_MAX_C in shared/commands.mjs, '
-  'a hardware fact. Writes the legacy acu_min_setpoint_c key too for the length of the RM-061 '
+  'a hardware fact. Writes the legacy acu_min_setpoint_c key too for the length of the RM-068 '
   'rename window.';

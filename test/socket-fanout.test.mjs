@@ -26,7 +26,7 @@
  * one, and stay over the 2.21 kW ceiling.
  *
  * ============================================================================
- * BOTH CALLER FACTS ABOVE STOPPED BEING TRUE ON 2026-09-09 (RM-059, RM-060), and this header is
+ * BOTH CALLER FACTS ABOVE STOPPED BEING TRUE ON 2026-09-09 (RM-066, RM-067), and this header is
  * kept rather than rewritten because the reasoning is why `fanOutCommand` exists at all.
  *
  *   - The Automation page expresses a socket now. `supabase/phase33_schedules_stackable.sql`

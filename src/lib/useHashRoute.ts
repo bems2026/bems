@@ -11,7 +11,7 @@ import { useCallback, useEffect, useState } from 'react';
  * in-page `<a href="#analytics">`-style nav button needs no change — clicking one changes
  * `location.hash`, which is exactly what this hook listens for.
  *
- * SINCE RM-059 the hash may carry a second segment: `#automation/time` names a page AND a tab
+ * SINCE RM-066 the hash may carry a second segment: `#automation/time` names a page AND a tab
  * inside it. This hook still returns the page; `useHashSubRoute` below owns the rest. Splitting
  * on `/` here rather than matching the whole hash is what makes a tab deep-linkable and
  * survive a reload, and it does not weaken the skip-link rule documented below — `#main-content`

@@ -17,7 +17,7 @@ export interface SiteUiRow {
 }
 
 function requireSupabase() {
-  if (supabase === null) throw new Error('Supabase is not configured — site preferences need it.');
+  if (supabase === null) throw new Error('Site preferences need a settings store, which this deployment has not configured.');
   return supabase;
 }
 

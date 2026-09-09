@@ -1,4 +1,4 @@
--- Phase 36: closed-loop aircon control — RM-062.
+-- Phase 36: closed-loop aircon control — RM-069.
 --
 -- WHAT THIS REPLACES. An "Ambient Trigger Setpoint" slider on the Automation page wrote
 -- `dsm_thresholds.care_acu_trigger_c`, and NOTHING on the server ever read it: the value
@@ -8,7 +8,7 @@
 -- WHAT IT DOES. An operator sets a ROOM TEMPERATURE target and names a sensor to read. The
 -- controller compares the sensor against the target and steps the aircon's SETPOINT — one
 -- degree at a time, rate-limited — until the room reaches the target. The setpoint is the lever,
--- not the goal; that distinction is what RM-061 renamed `acu_min_setpoint_c` to record.
+-- not the goal; that distinction is what RM-068 renamed `acu_min_setpoint_c` to record.
 --
 -- WHAT IT DELIBERATELY CANNOT DO, and the whole safety posture in one line:
 --
@@ -237,7 +237,7 @@ begin
       using errcode = 'check_violation';
   end if;
 
-  -- The policy in force, new key preferred and the pre-RM-061 key as the fallback — the same
+  -- The policy in force, new key preferred and the pre-RM-068 key as the fallback — the same
   -- expand-and-contract window `shared/sitePolicy.mjs` reads through. A site with neither key
   -- has no policy.
   select coalesce((policy ->> 'acu_min_room_target_c')::numeric,
@@ -328,7 +328,7 @@ revoke execute on function public.set_acu_rule_enabled(uuid, boolean) from publi
 grant execute on function public.set_acu_rule_enabled(uuid, boolean) to authenticated, service_role;
 
 comment on table acu_rules is
-  'Closed-loop aircon rules — RM-062. The operator sets a ROOM temperature target and a sensor; '
+  'Closed-loop aircon rules — RM-069. The operator sets a ROOM temperature target and a sensor; '
   'the controller steps the aircon SETPOINT toward it. Setpoint-only: no rule can power a unit '
   'on or off. Written only through upsert_acu_rule / set_acu_rule_enabled.';
 

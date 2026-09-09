@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { dsmRowToContext, dsmRowFrom } from './supabaseConfig';
 
 /**
- * The schedule half of this module went in RM-059. It mapped `schedules` rows to and from flat
+ * The schedule half of this module went in RM-066. It mapped `schedules` rows to and from flat
  * `global.schedule.<id>.<field>` context keys, a shape that can hold exactly one rule per device
- * — which is the limitation RM-059 removed. Schedules are ordinary rows with ids now; their
+ * — which is the limitation RM-066 removed. Schedules are ordinary rows with ids now; their
  * coverage lives in `src/lib/scheduleStack.test.ts` and `src/stores/scheduleStore.ts`'s callers.
  *
  * What remains here is the DSM singleton, which is genuinely one row of settings and for which
@@ -31,7 +31,7 @@ describe('dsmRowToContext', () => {
   });
 
   it('no longer carries the ambient trigger — phase35 drops the column it came from', () => {
-    // `care_acu_trigger_c` backed a slider that no server file ever read. RM-062's controller
+    // `care_acu_trigger_c` backed a slider that no server file ever read. RM-069's controller
     // replaces it; leaving the key mapped here would keep a dead value round-tripping.
     const ctx = dsmRowToContext({ max_phase_current: 30, max_total_kw: 5.5, auto_shed: true });
     expect(Object.keys(ctx).some((k) => k.startsWith('global.trigger.'))).toBe(false);

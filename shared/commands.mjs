@@ -18,7 +18,7 @@
  *     degree "16".."30" — so an on/off-only command could only ever mean "on at whatever
  *     temperature someone last picked", which no UI can honestly display. The bounds here are
  *     not a policy choice: they are exactly the keys the live flow's IR library holds, and a
- *     value outside them would resolve to no code at all. Since RM-061 they are the ONLY bound
+ *     value outside them would resolve to no code at all. Since RM-068 they are the ONLY bound
  *     on a setpoint: the site's comfort policy is a statement about the ROOM, and it returns a
  *     `warnings` entry rather than refusing — see the note at the `target_c` check below.
  *   - `action: 'set'` is the SECOND verb, added once devices turned out to hold more than a
@@ -206,7 +206,7 @@ export function validateCommand(body, registry, policy = {}) {
     }
 
     /**
-     * THE SITE'S POLICY NO LONGER REFUSES THIS COMMAND — RM-061.
+     * THE SITE'S POLICY NO LONGER REFUSES THIS COMMAND — RM-068.
      *
      * It used to. `policy.acu_min_setpoint_c` was read as a bound on the COMMANDED SETPOINT and
      * anything below it came back 400 `below_policy_floor`. That reading became untenable once

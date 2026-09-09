@@ -1,5 +1,5 @@
 /**
- * The `schedules` table, as a real list — RM-059.
+ * The `schedules` table, as a real list — RM-066.
  *
  * WHAT REPLACED WHAT. Until phase33 a device had exactly one schedule, enforced by
  * `unique (device_id)`, and this app expressed it as flat `global.schedule.<id>.<field>` keys
@@ -60,7 +60,7 @@ interface ScheduleRow {
 const SELECT = 'id,device_id,socket,rule,enabled,label,updated_by,updated_at,created_at';
 
 function requireSupabase() {
-  if (!supabase) throw new Error('Supabase is not configured (VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY unset)');
+  if (!supabase) throw new Error('Schedules need a settings store, which this deployment has not configured.');
   return supabase;
 }
 
@@ -109,12 +109,13 @@ export async function fetchSchedules(): Promise<Schedule[]> {
   // No `.is('socket', null)` — that filter is what made per-socket scheduling invisible to the
   // app for as long as it existed.
   const { data, error } = await client.from('schedules').select(SELECT);
-  if (error) throw new Error(`Supabase schedules fetch failed: ${error.message}`);
+  if (error) throw new Error(`Could not read the schedules: ${error.message}`);
   return (data ?? []).map((r) => scheduleFromRow(r as ScheduleRow));
 }
 
-const NOT_SIGNED_IN =
-  'check that you are signed in with a real Supabase session, not a break-glass one';
+/** The one refusal an operator actually hits and can act on, worded for the person. Matches
+ * `supabaseConfig.ts`'s `BREAK_GLASS_HINT` verbatim so the page speaks with one voice. */
+const NOT_SIGNED_IN = 'you are signed in with a limited local sign-in, which cannot save. Sign in with your account to make changes.';
 
 export async function insertSchedule(draft: Omit<Schedule, 'id' | 'updatedBy' | 'updatedAt' | 'createdAt'>): Promise<Schedule> {
   const client = requireSupabase();
@@ -126,8 +127,8 @@ export async function insertSchedule(draft: Omit<Schedule, 'id' | 'updatedBy' | 
     throw new Error('Cannot save a schedule without a signed-in user: an unattributed rule would never fire.');
   }
   const { data, error } = await client.from('schedules').insert(scheduleToRow(draft, actorUserId)).select(SELECT);
-  if (error) throw new Error(`Supabase schedule insert failed: ${error.message}`);
-  if ((data?.length ?? 0) !== 1) throw new Error(`Supabase schedule insert returned no row — ${NOT_SIGNED_IN}.`);
+  if (error) throw new Error(`Could not add the schedule: ${error.message}`);
+  if ((data?.length ?? 0) !== 1) throw new Error(`The schedule was not added — ${NOT_SIGNED_IN}`);
   return scheduleFromRow(data![0] as ScheduleRow);
 }
 
@@ -138,8 +139,8 @@ export async function updateSchedule(id: string, draft: Omit<Schedule, 'id' | 'u
     throw new Error('Cannot save a schedule without a signed-in user: an unattributed rule would never fire.');
   }
   const { data, error } = await client.from('schedules').update(scheduleToRow(draft, actorUserId)).eq('id', id).select(SELECT);
-  if (error) throw new Error(`Supabase schedule update failed: ${error.message}`);
-  if ((data?.length ?? 0) !== 1) throw new Error(`Supabase schedule update for ${id} affected 0 rows — ${NOT_SIGNED_IN}.`);
+  if (error) throw new Error(`Could not save the schedule: ${error.message}`);
+  if ((data?.length ?? 0) !== 1) throw new Error(`The schedule was not saved — ${NOT_SIGNED_IN}`);
   return scheduleFromRow(data![0] as ScheduleRow);
 }
 
@@ -157,10 +158,10 @@ export async function updateSchedule(id: string, draft: Omit<Schedule, 'id' | 'u
 export async function deleteSchedule(id: string): Promise<void> {
   const client = requireSupabase();
   const { data, error } = await client.from('schedules').delete().eq('id', id).select('id');
-  if (error) throw new Error(`Supabase schedule delete failed: ${error.message}`);
+  if (error) throw new Error(`Could not delete the schedule: ${error.message}`);
   if ((data?.length ?? 0) !== 1) {
     // Without this check a blocked delete looks like a success: the row leaves the screen and
     // the rule keeps switching the building on its old timetable.
-    throw new Error(`Supabase schedule delete for ${id} affected 0 rows — ${NOT_SIGNED_IN}.`);
+    throw new Error(`The schedule was not deleted — ${NOT_SIGNED_IN}`);
   }
 }

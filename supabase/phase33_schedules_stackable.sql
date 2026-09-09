@@ -1,4 +1,4 @@
--- Phase 33: many schedules per device, each naming its own socket — RM-059.
+-- Phase 33: many schedules per device, each naming its own socket — RM-066.
 --
 -- WHAT THIS UNDOES AND WHY. supabase/phase6_schedules_unique_fix.sql added
 -- `unique (device_id)` on the reasoning that "this app never actually varies `socket` for

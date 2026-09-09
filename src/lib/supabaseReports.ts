@@ -93,7 +93,7 @@ export function formatMonth(month: string): string {
 
 function requireSupabase() {
   if (!supabase) {
-    throw new Error('Supabase is not configured (VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY unset)');
+    throw new Error('Reports need stored history, which this deployment has not configured.');
   }
   return supabase;
 }
@@ -107,7 +107,7 @@ export async function getReportMonths(): Promise<MonthlyBuildingReport[]> {
     .select('*')
     .order('month', { ascending: false })
     .limit(240);
-  if (error) throw new Error(`Supabase report list failed: ${error.message}`);
+  if (error) throw new Error(`Could not list reports: ${error.message}`);
   return (data ?? []) as MonthlyBuildingReport[];
 }
 
@@ -120,7 +120,7 @@ export async function getDeviceReports(month: string): Promise<MonthlyDeviceRepo
     .eq('month', month)
     .order('energy_kwh', { ascending: false, nullsFirst: false })
     .limit(500);
-  if (error) throw new Error(`Supabase report fetch failed for ${month}: ${error.message}`);
+  if (error) throw new Error(`Could not load the report for ${month}: ${error.message}`);
   return (data ?? []) as MonthlyDeviceReport[];
 }
 
@@ -192,7 +192,7 @@ export async function getReportPeriods(period: ReportPeriod): Promise<PeriodBuil
     .eq('period', period)
     .order('period_start', { ascending: false })
     .limit(period === 'week' ? 520 : 240);
-  if (error) throw new Error(`Supabase report list failed: ${error.message}`);
+  if (error) throw new Error(`Could not list reports: ${error.message}`);
   return (data ?? []) as PeriodBuildingReport[];
 }
 
@@ -206,6 +206,6 @@ export async function getDevicePeriodReports(period: ReportPeriod, start: string
     .eq('period_start', start)
     .order('energy_kwh', { ascending: false, nullsFirst: false })
     .limit(500);
-  if (error) throw new Error(`Supabase report fetch failed for ${period} ${start}: ${error.message}`);
+  if (error) throw new Error(`Could not load the ${period} report starting ${start}: ${error.message}`);
   return (data ?? []) as PeriodDeviceReport[];
 }

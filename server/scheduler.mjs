@@ -81,12 +81,12 @@ let schedules = [];
 let thresholds = { maxPhaseA: null, maxTotalKw: null, autoShed: false };
 let shedActor = null;
 let shedGroups = {};
-/** device id -> { [socket]: tier }. RM-060: an outlet is two relays and one may be a fridge
+/** device id -> { [socket]: tier }. RM-067: an outlet is two relays and one may be a fridge
  * while the other is a kettle. `shedGroups` above stays as the device-level fallback. */
 let socketShedGroups = {};
 
 /**
- * RM-062's closed-loop aircon controller.
+ * RM-069's closed-loop aircon controller.
  *
  * `acuState` is the AUTHORITATIVE copy for the life of the process, seeded from `acu_loop_state`
  * at startup and written through on every step. Read once rather than per tick for the same
@@ -109,7 +109,7 @@ let stopping = false;
 let lastFiredMinute = null;
 
 async function refreshSchedules() {
-  // No `&socket=is.null` any more: RM-059 made the socket meaningful, so filtering it out here
+  // No `&socket=is.null` any more: RM-066 made the socket meaningful, so filtering it out here
   // would hide every per-socket rule the Automation page writes. No `enabled` filter either,
   // deliberately — the startup line reports the true row count, and `unfireableRows` below can
   // only report on rows it can see.
@@ -120,7 +120,7 @@ async function refreshSchedules() {
   /**
    * Armed rules that can never fire, counted out loud.
    *
-   * Every one of these skips predates RM-059 and each was survivable when a device held ONE
+   * Every one of these skips predates RM-066 and each was survivable when a device held ONE
    * row: an unattributed schedule meant a whole device went quiet and somebody noticed. In a
    * stack of five it is one rule of five, which nobody does. This line is the whole of that
    * failure's voice on the Pi; the Automation page renders the same reasons per rule.
@@ -148,7 +148,7 @@ async function refreshDsmConfig() {
   if (!cRes.ok) throw new Error(`device_config fetch failed: HTTP ${cRes.status}`);
   // A deployment that has not applied phase34 yet answers 404 here. That is not a reason to
   // stop shedding: `shedTargets` falls back to the device-level tier for any socket with no
-  // row, which is exactly the pre-RM-060 behaviour. Logged once per refresh, never fatal.
+  // row, which is exactly the pre-RM-067 behaviour. Logged once per refresh, never fatal.
   if (!sRes.ok) console.warn(`[ibems-scheduler] socket_config unreadable (HTTP ${sRes.status}) — falling back to device-level shed tiers`);
   const row = (await tRes.json())[0] ?? {};
   thresholds = {
@@ -167,7 +167,7 @@ async function refreshDsmConfig() {
 }
 
 /**
- * The aircon rules and what the controller remembers about each — RM-062.
+ * The aircon rules and what the controller remembers about each — RM-069.
  *
  * A deployment that has not applied phase36 answers 404 for both. That is not fatal and not even
  * noteworthy on most sites: no rules means no loop, which is exactly what a site without the
@@ -445,7 +445,7 @@ async function shedTick() {
   // Same fan-out as the schedule path above, and this is the half that mattered more: every one
   // of the seven outlets sits in shed tier group_2 or group_3, together 61% of metered demand.
   // With `socket: null` the whole escalation ladder below the lighting tier was refusals.
-  // NO `fanOutCommand` HERE ANY MORE. Since RM-060 `planShed` enumerates targets per socket and
+  // NO `fanOutCommand` HERE ANY MORE. Since RM-067 `planShed` enumerates targets per socket and
   // every command it emits already names one, so expanding again would be a no-op today and a
   // second place that can double a target tomorrow. The scheduling path lost its own copy for
   // exactly the same reason; the expansion now happens in precisely one place per path.
@@ -459,7 +459,7 @@ async function shedTick() {
 }
 
 /**
- * The closed-loop aircon pass — RM-062.
+ * The closed-loop aircon pass — RM-069.
  *
  * Runs inside this daemon rather than as a second service, and that is a decision rather than
  * convenience. This process already polls `/api/readings/latest` every cycle, already owns its

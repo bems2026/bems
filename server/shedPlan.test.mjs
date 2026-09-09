@@ -7,7 +7,7 @@ const totals = (over = {}) => ({ total_power_w: 9000, phase_current: { red: 10, 
 const on = (ids) => Object.fromEntries(ids.map((id) => [id, { state: 'on' }]));
 
 /**
- * `devices` became a required input in RM-060: shed targets are enumerated per SOCKET now, and
+ * `devices` became a required input in RM-067: shed targets are enumerated per SOCKET now, and
  * only the registry knows how many an outlet has. The five switches below keep every test
  * written before that change meaning exactly what it meant.
  */
@@ -113,7 +113,7 @@ test('attributes each shed command to whoever configured the thresholds, and mar
 
 
 /* ===========================================================================
- * RM-060 — the shed unit is a SOCKET, not a device.
+ * RM-067 — the shed unit is a SOCKET, not a device.
  * ======================================================================== */
 
 const outletBase = {

@@ -88,7 +88,7 @@ export const useSpaceTreeStore = create<SpaceTreeState>((set, get) => ({
    * rather than Postgres error codes. The constraints remain the authority. */
   add: async (node) => {
     if (!supabase) {
-      set({ error: 'Supabase is not configured for this deployment, so spaces cannot be edited here.' });
+      set({ error: 'This deployment has no settings store configured, so spaces cannot be edited here.' });
       return;
     }
     const check = validateNewNode(node, get().nodes);
@@ -111,7 +111,7 @@ export const useSpaceTreeStore = create<SpaceTreeState>((set, get) => ({
    * miss as a plain 200, so "no error" is not the same as "it was written". */
   rename: async (id, name) => {
     if (!supabase) {
-      set({ error: 'Supabase is not configured for this deployment, so spaces cannot be edited here.' });
+      set({ error: 'This deployment has no settings store configured, so spaces cannot be edited here.' });
       return;
     }
     set({ mutating: true, error: null });
@@ -139,7 +139,7 @@ export const useSpaceTreeStore = create<SpaceTreeState>((set, get) => ({
    */
   setShape: async (id, plan) => {
     if (!supabase) {
-      set({ error: 'Supabase is not configured for this deployment, so the plan cannot be edited here.' });
+      set({ error: 'This deployment has no settings store configured, so the plan cannot be edited here.' });
       return;
     }
     const node = get().nodes.find((n) => n.id === id);
@@ -167,7 +167,7 @@ export const useSpaceTreeStore = create<SpaceTreeState>((set, get) => ({
    */
   remove: async (id) => {
     if (!supabase) {
-      set({ error: 'Supabase is not configured for this deployment, so spaces cannot be edited here.' });
+      set({ error: 'This deployment has no settings store configured, so spaces cannot be edited here.' });
       return;
     }
     set({ mutating: true, error: null });

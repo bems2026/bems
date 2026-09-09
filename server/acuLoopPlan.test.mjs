@@ -1,5 +1,5 @@
 /**
- * The closed-loop aircon controller — RM-062.
+ * The closed-loop aircon controller — RM-069.
  *
  * Every branch is pinned here because none of it can be exercised on this site's hardware:
  * `acu_main` and `sens_outside_temp` have never been paired (RM-016), so a live rule holds on

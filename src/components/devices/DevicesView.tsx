@@ -14,10 +14,8 @@ import { DEVICE_CLASS_CATALOG, DEVICE_CLASS_ORDER } from '@/lib/deviceClassCatal
 import { useDeviceConnectivity } from '@/hooks/useDeviceConnectivity';
 import { flapSeverity, type ConnectivityRow } from '@/lib/deviceConnectivity';
 import { metaSummary, type DeviceConfig } from '@/lib/deviceConfig';
-import { DeviceMetaEditor } from './DeviceMetaEditor';
-import { DeviceCard } from './DeviceCard';
+import { DevicePanel } from './DevicePanel';
 import { EnrollWizard } from './EnrollWizard';
-import { RemoveDevicePanel } from './RemoveDevicePanel';
 import { SegmentPresenceNote } from './SegmentPresenceNote';
 import { ENROLLED_DEVICES } from '@shared/registry.enrolled.mjs';
 import type { Device, DeviceClass, Reading } from '@/lib/types';
@@ -64,20 +62,18 @@ export function DevicesView() {
   const { rows: connectivity } = useDeviceConnectivity(24);
   const unstable = Object.values(connectivity).filter((r) => flapSeverity(r) !== 'steady' && flapSeverity(r) !== 'unknown');
   const [filter, setFilter] = useState<DeviceClass | 'all'>('all');
-  const [editingId, setEditingId] = useState<string | null>(null);
-  // Which device's capability card is open. Rendered BESIDE the table rather than inside a row:
-  // the table is a strict nine-column ARIA grid and `DevicesView.test.tsx` asserts every row has
-  // exactly one cell per column header, so an expanding row would have to break that or fake it.
-  const [detailId, setDetailId] = useState<string | null>(null);
+  // ONE id, because there is now one panel. `Details` and `Edit` were separate buttons opening
+  // separate surfaces, plus `Remove` for enrolled devices — three doors onto one device, packed
+  // into a `0.6fr` column. They are `DevicePanel`'s three tabs now. Nothing may be rendered
+  // inside a row: the table is a strict nine-column ARIA grid and `DevicesView.test.tsx` asserts
+  // every row has exactly one cell per column header, so an expanding row would break that.
+  const [openId, setOpenId] = useState<string | null>(null);
   const [enrolling, setEnrolling] = useState(false);
-  const [removingId, setRemovingId] = useState<string | null>(null);
-  const removingDevice = removingId ? (devices.find((d) => d.id === removingId) ?? null) : null;
   // Only enrolled devices can be removed. The built-in ones are hand-written in registry.mjs,
   // and no button is shown for them at all — a disabled control invites a click and then
   // explains itself, which is worse than an absent one for something irreversible-looking.
   const enrolledIds = useMemo(() => new Set((ENROLLED_DEVICES as { id: string }[]).map((d) => d.id)), []);
-  const editingDevice = editingId ? (devices.find((d) => d.id === editingId) ?? null) : null;
-  const detailDevice = detailId ? (devices.find((d) => d.id === detailId) ?? null) : null;
+  const openDevice = openId ? (devices.find((d) => d.id === openId) ?? null) : null;
 
   const filtered = useMemo(() => {
     const list = filter === 'all' ? devices : devices.filter((d) => d.class === filter);
@@ -134,33 +130,19 @@ export function DevicesView() {
         }
       />
 
-      {editingDevice && <DeviceMetaEditor device={editingDevice} onClose={() => setEditingId(null)} />}
-      {detailDevice && (
-        <section className="devices-detail" aria-label={`${detailDevice.display_name} capabilities`}>
-          <div className="devices-detail__head">
-            <h3 className="devices-detail__title">What this device can do</h3>
-            <button type="button" className="devices-table__edit-btn" onClick={() => setDetailId(null)}>
-              Close
-            </button>
-          </div>
-          {/* Everything below is chosen by the device's capability schema, not by its class —
-              see `DeviceCard`. A device that lacks a capability renders nothing for it. */}
-          <DeviceCard device={detailDevice} />
-        </section>
-      )}
-      {enrolling && <EnrollWizard onClose={() => setEnrolling(false)} />}
-      {removingDevice && (
-        <RemoveDevicePanel
-          key={removingDevice.id}
-          device={removingDevice}
-          onClose={() => setRemovingId(null)}
-          // Nothing to refetch here: the fleet list is polled from the bridge, which reads the
-          // flow that was just written, so the row clears itself on the next poll. The panel
-          // stays open on purpose so its "Removed." result and the redeploy note stay readable.
+      {openDevice && (
+        <DevicePanel
+          key={openDevice.id}
+          device={openDevice}
+          canRemove={enrolledIds.has(openDevice.id)}
+          onClose={() => setOpenId(null)}
+          // Nothing to refetch: the fleet list is polled from the bridge, which reads the flow
+          // that was just written, so the row clears itself on the next poll. The panel stays
+          // open on purpose so its "Removed." result and the redeploy note stay readable.
           onRemoved={() => {}}
         />
       )}
-
+      {enrolling && <EnrollWizard onClose={() => setEnrolling(false)} />}
       <div className="devices-table-card">
         {/* A scroll container needs to be keyboard-scrollable, which means focusable — and a
             focusable region needs an accessible name. Same reasoning as the `role="table"`
@@ -188,10 +170,10 @@ export function DevicesView() {
               <span role="columnheader">Last seen</span>
               <span role="columnheader">Comm</span>
               <span role="columnheader">State</span>
-              <span role="columnheader">Edit</span>
+              <span role="columnheader">Manage</span>
             </div>
             {filtered.map((d) => (
-              <DeviceRow key={d.id} device={d} config={configs[d.id]} conn={connectivity[d.id]} onEdit={() => setEditingId(d.id)} onDetail={() => setDetailId(d.id)} onRemove={enrolledIds.has(d.id) ? () => setRemovingId(d.id) : undefined} />
+              <DeviceRow key={d.id} device={d} config={configs[d.id]} conn={connectivity[d.id]} onOpen={() => setOpenId(d.id)} />
             ))}
           </div>
         </div>
@@ -217,7 +199,7 @@ export function DevicesView() {
  * no longer has to hold the whole map to hand rows their data, and a row re-renders for its
  * own device rather than for any device.
  */
-const DeviceRow = memo(function DeviceRow({ device, config, conn, onEdit, onDetail, onRemove }: { device: Device; config: DeviceConfig | undefined; conn: ConnectivityRow | undefined; onEdit: () => void; onDetail: () => void; onRemove?: () => void }) {
+const DeviceRow = memo(function DeviceRow({ device, config, conn, onOpen }: { device: Device; config: DeviceConfig | undefined; conn: ConnectivityRow | undefined; onOpen: () => void }) {
   const reading = useDeviceStore((s) => s.latestReadings[device.id]);
   const switchable = hasSwitchableState(device.class);
   const comm = commState(reading);
@@ -231,8 +213,29 @@ const DeviceRow = memo(function DeviceRow({ device, config, conn, onEdit, onDeta
         : 'devices-table__state--warn'
     : 'devices-table__state--neutral';
 
+  /**
+   * SEMANTIC STATE, so twenty-one rows read as a fleet instead of as two narrow columns to
+   * compare by eye.
+   *
+   * Only two marks, and only two on purpose. `--on` is the one state worth an accent: a relay
+   * that is closed and reporting. `--dim` covers everything the bridge cannot currently vouch
+   * for — offline and never-reported — which is the same "content dims, flag stays legible"
+   * treatment EX-013 established for staleness, applied a level up at the row.
+   *
+   * STALE IS DELIBERATELY NEITHER. A stale row already blanks its own numbers (`measured()`
+   * returns undefined past the reporting window) and carries a STALE badge in the Comm column;
+   * dimming it as well would be a third freshness signal on one row, which is the mistake FI-006
+   * caught in `LiveDemandCard`.
+   *
+   * An OFFLINE device is never drawn as energised whatever its last reading said — the reading
+   * is a claim about a moment that has passed, and `--dim` wins that argument.
+   */
+  const energised = comm === 'live' && reading?.state === 'on';
+  const unvouched = comm === 'offline' || comm === 'no-data';
+  const rowClass = `devices-table__row${energised ? ' devices-table__row--on' : ''}${unvouched ? ' devices-table__row--dim' : ''}`;
+
   return (
-    <div className="devices-table__row" role="row">
+    <div className={rowClass} role="row">
       <div className="devices-table__device" role="cell">
         <span className="devices-table__icon" aria-hidden="true">
           <Icon size={14} />
@@ -268,17 +271,12 @@ const DeviceRow = memo(function DeviceRow({ device, config, conn, onEdit, onDeta
         {stateText}
       </span>
       <span className="devices-table__edit-cell" role="cell">
-        <button type="button" className="devices-table__edit-btn" onClick={onDetail}>
-          Details
+        {/* One control, named for what it opens rather than for one of the things inside it.
+            The accessible name carries the device, because twenty rows of "Manage" tell a screen
+            reader user nothing about which row they are on. */}
+        <button type="button" className="devices-table__manage-btn" aria-label={`Manage ${device.display_name}`} onClick={onOpen}>
+          Manage
         </button>
-        <button type="button" className="devices-table__edit-btn" onClick={onEdit}>
-          Edit
-        </button>
-        {onRemove && (
-          <button type="button" className="devices-table__remove-btn" onClick={onRemove}>
-            Remove
-          </button>
-        )}
       </span>
     </div>
   );

@@ -1,6 +1,6 @@
 /**
  * The building's operating rules — RM-038. Today that means one: the coldest room temperature
- * an automatic aircon rule may aim for (redefined by RM-061).
+ * an automatic aircon rule may aim for (redefined by RM-068).
  *
  * WHY THIS EXISTS. The floor comes from the university's energy-efficiency policy, and a
  * university policy changes. It used to live only in `shared/sites/<id>/site.mjs`, compiled into
@@ -151,7 +151,7 @@ export function PolicySection() {
         {!canEdit && (
           <p className="policy-field__hint">
             {supabase === null
-              ? 'Supabase is not configured for this deployment, so the policy cannot be changed here.'
+              ? 'This deployment has no settings store configured, so the policy cannot be changed here.'
               : 'This is a local session. Changing a building policy needs a signed-in account, so the change can be attributed.'}
           </p>
         )}

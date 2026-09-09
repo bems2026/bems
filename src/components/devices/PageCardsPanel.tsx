@@ -72,7 +72,7 @@ export function PageCardsPanel({ onClose }: { onClose?: () => void }) {
 
       {!canEdit && (
         <p className="devices-watchdog-note">
-          Supabase is not configured for this deployment, so these cannot be changed here. Both cards stay visible.
+          This deployment has no settings store configured, so these cannot be changed here. Both cards stay visible.
         </p>
       )}
       {error && <p className="devices-watchdog-note">Could not save: {error}</p>}

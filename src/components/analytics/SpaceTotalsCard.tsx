@@ -98,7 +98,7 @@ export function SpaceTotalsCard({ range }: { range: AnalyticsRange }) {
 
       {!configured && (
         <p className="space-totals-card__note">
-          Supabase is not configured for this deployment, so per-space totals are unavailable here.
+          This deployment has no stored history configured, so per-space totals are unavailable here.
         </p>
       )}
 

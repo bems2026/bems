@@ -1,5 +1,5 @@
 /**
- * `resolveDue` and `unfireableRows` — RM-059's stackable, per-socket scheduling.
+ * `resolveDue` and `unfireableRows` — RM-066's stackable, per-socket scheduling.
  *
  * Kept beside `schedulePlan.test.mjs` rather than inside it because those sixteen tests pin
  * `dueCommands`'s RAW matching and must keep passing unchanged; these pin what is built on top

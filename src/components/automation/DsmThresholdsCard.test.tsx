@@ -3,7 +3,17 @@ import { render, screen, cleanup } from '@testing-library/react';
 import { DsmThresholdsCard } from './DsmThresholdsCard';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useContextStore } from '@/stores/contextStore';
-import type { Totals } from '@/lib/types';
+import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
+import { emptyDeviceConfig } from '@/lib/deviceConfig';
+import type { Device, Totals } from '@/lib/types';
+
+/** `sockets` is not decoration: since RM-067 the shed unit is a SOCKET, and the socket list is
+ * what says how many relays a device has. A fixture without one is a device that cannot exist. */
+const outlet = (id: string): Device =>
+  ({
+    id, display_name: id.toUpperCase(), class: 'outlet_dual', room: null, dps_map: null, status: 'active',
+    sockets: [`${id.toUpperCase()}_1`, `${id.toUpperCase()}_2`],
+  }) as Device;
 
 const NOW = Date.parse('2026-08-31T10:00:00Z');
 
@@ -29,6 +39,7 @@ afterEach(() => {
   cleanup();
   useDeviceStore.setState({ devices: [], latestReadings: {}, totals: null, history: {} });
   useContextStore.setState({ saved: {}, draft: {}, status: 'idle', saveStatus: 'idle', saveError: null });
+  useDeviceConfigStore.setState({ saved: {}, draft: {}, status: 'idle', saveStatus: 'idle', saveError: null, lastSave: null });
 });
 
 describe('DsmThresholdsCard', () => {
@@ -85,5 +96,65 @@ describe('DsmThresholdsCard', () => {
     useDeviceStore.setState({ totals: totalsAt('2026-08-31T09:58:30Z', 9000, 25) });
     render(<DsmThresholdsCard />);
     expect(screen.queryAllByText('BREACHED').length).toBeGreaterThan(0);
+  });
+
+  /**
+   * RM-060 — error prevention, before the save rather than after the relay moves.
+   */
+  describe('validation', () => {
+    it('warns when a total-draw limit is set at or below what the building is drawing right now', () => {
+      useDeviceStore.setState({ totals: totalsAt('2026-08-31T09:59:50Z', 1234, 3.2) });
+      // 1.23 kW measured; a 1.00 kW cap breaches the moment it is saved.
+      useContextStore.setState({ saved: { 'global.dsm.max_total_kw': '2.21' }, draft: { 'global.dsm.max_total_kw': '1.00' } });
+      render(<DsmThresholdsCard />);
+      expect(screen.getByText(/below the 1\.23 kW the building is drawing now/i)).toBeInTheDocument();
+    });
+
+    it('warns when a phase limit is set at or below the measured phase current', () => {
+      useDeviceStore.setState({ totals: totalsAt('2026-08-31T09:59:50Z', 1234, 3.2) });
+      useContextStore.setState({ saved: {}, draft: { 'global.dsm.max_phase_a': '3.2' } });
+      render(<DsmThresholdsCard />);
+      expect(screen.getByText(/below the 3\.2 A/i)).toBeInTheDocument();
+    });
+
+    it('warns that a threshold of zero sheds continuously rather than reading as "no limit"', () => {
+      useContextStore.setState({ saved: {}, draft: { 'global.dsm.max_total_kw': '0' } });
+      render(<DsmThresholdsCard />);
+      expect(screen.getByText(/zero/i)).toBeInTheDocument();
+    });
+
+    it('says nothing about a limit comfortably above the present draw', () => {
+      useDeviceStore.setState({ totals: totalsAt('2026-08-31T09:59:50Z', 1234, 3.2) });
+      useContextStore.setState({ saved: { 'global.dsm.max_phase_a': '15.4', 'global.dsm.max_total_kw': '2.21' }, draft: {} });
+      const { container } = render(<DsmThresholdsCard />);
+      expect(container.querySelectorAll('.automation-dsm-field__warn').length).toBe(0);
+    });
+
+    /**
+     * The one refusal on this card. Auto-shed switches load off unattended and never switches it
+     * back — so arming it over a fleet where nothing carries a shed tier is arming a mechanism
+     * that can only ever do nothing, while reading on the page as protection.
+     */
+    it('refuses to arm auto-shed while no device carries a shed tier, and says what to do', () => {
+      useDeviceStore.setState({ devices: [outlet('co1')] });
+      render(<DsmThresholdsCard />);
+      expect(screen.getByRole('switch')).toBeDisabled();
+      expect(screen.getByText(/no device has a shed tier/i)).toBeInTheDocument();
+    });
+
+    it('allows arming once a device is assigned to a tier', () => {
+      useDeviceStore.setState({ devices: [outlet('co1')] });
+      useDeviceConfigStore.setState({ saved: { co1: { ...emptyDeviceConfig('co1'), loadShedGroup: 'group_1' } } });
+      render(<DsmThresholdsCard />);
+      expect(screen.getByRole('switch')).toBeEnabled();
+      expect(screen.queryByText(/no device has a shed tier/i)).not.toBeInTheDocument();
+    });
+
+    it('does not count a device explicitly protected from shedding as something to shed', () => {
+      useDeviceStore.setState({ devices: [outlet('co1')] });
+      useDeviceConfigStore.setState({ saved: { co1: { ...emptyDeviceConfig('co1'), loadShedGroup: 'never' } } });
+      render(<DsmThresholdsCard />);
+      expect(screen.getByRole('switch')).toBeDisabled();
+    });
   });
 });

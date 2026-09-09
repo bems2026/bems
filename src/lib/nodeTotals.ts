@@ -65,7 +65,7 @@ export function coverageOf(t: Pick<NodeTotals, 'sampleCount' | 'onlineSampleCoun
 }
 
 function requireSupabase() {
-  if (supabase === null) throw new Error('Supabase is not configured — per-space totals need it.');
+  if (supabase === null) throw new Error('Per-space totals need stored history, which this deployment has not configured.');
   return supabase;
 }
 
@@ -80,7 +80,7 @@ export async function fetchNodeTotals(nodeId: string, since: Date, until: Date =
     p_since: since.toISOString(),
     p_until: until.toISOString(),
   });
-  if (error) throw new Error(`Supabase node_totals failed: ${error.message}`);
+  if (error) throw new Error(`Could not load per-space totals: ${error.message}`);
   // The function returns exactly one row. An empty array would mean the node does not exist —
   // reported as such rather than defaulted to zeroes, which would invent a reading.
   const row = Array.isArray(data) ? data[0] : data;

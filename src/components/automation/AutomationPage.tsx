@@ -5,10 +5,10 @@ import { useContextStore, pendingWrites } from '@/stores/contextStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
 import { useDevicesFor } from '@/hooks/useDevicesFor';
-import { dispatchScope } from '@/components/control/dispatchScope';
 import { useHashSubRoute } from '@/lib/useHashRoute';
 import { CalendarClock, ListTodo, LayoutDashboard, Gauge, Thermometer } from 'lucide-react';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { Tabs, TabPanel, type TabDef } from '@/components/ui/Tabs';
@@ -35,6 +35,18 @@ import { LoadShedPanel } from '@/components/devices/LoadShedPanel';
  * the absence legible, and several of them are blocked on a purchase rather than on code.
  */
 
+/**
+ * What saving actually causes, READ from the live gate rather than asserted — RM-062.
+ *
+ * `null` is not "closed". It is an unanswered capability probe, and this says so rather than
+ * guessing — the same distinction `dispatchScope` and `capabilitiesStore` already keep.
+ */
+function dispatchConsequence(open: boolean | null): string {
+  if (open === true) return 'Saved rules switch real hardware here.';
+  if (open === false) return 'Saved rules do not reach any hardware on this deployment.';
+  return 'Whether saved rules reach hardware has not been confirmed yet.';
+}
+
 type TabId = 'overview' | 'time' | 'state' | 'events';
 const TAB_IDS: TabId[] = ['overview', 'time', 'state', 'events'];
 
@@ -46,7 +58,6 @@ export function AutomationPage() {
   const saveStatus = useContextStore((s) => s.saveStatus);
   const saveError = useContextStore((s) => s.saveError);
   const lastSave = useContextStore((s) => s.lastSave);
-  const dispatchClasses = useCapabilitiesStore((s) => s.dispatchClasses);
 
   const [tab, setTab] = useHashSubRoute('automation', TAB_IDS, 'overview');
 
@@ -55,7 +66,7 @@ export function AutomationPage() {
   const { included: schedulableDevices, excluded: notSchedulable } = useDevicesFor('scheduling');
   const schedulable = useMemo(() => [...schedulableDevices].sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true })), [schedulableDevices]);
 
-  // Counted from the schedules themselves rather than from a per-device flag: since RM-059 a
+  // Counted from the schedules themselves rather than from a per-device flag: since RM-066 a
   // device can hold five rules with three of them armed, and "how many devices have something
   // armed" stopped being the number anyone wants.
   const schedules = useScheduleStore((s) => s.schedules);
@@ -67,21 +78,22 @@ export function AutomationPage() {
   useUnsavedDraftGuard(pendingEntries.length);
 
   /**
-   * What this page actually reaches, read from the deployment rather than asserted.
+   * What saving actually causes, READ from the live gate rather than asserted — RM-062.
    *
-   * Until RM-059 the header read "Staged, not yet dispatchable" and the save dialog said
-   * "nothing on the real bridge reads these yet". Both had been false since EX-047:
-   * `server/scheduler.mjs` fires these rows through the audited command path, and ROADMAP's
-   * own triage tells the operator to arm real hardware shedding *from this page*. A control
-   * surface that understates its reach is a safety defect, not a copy nit — it invites
-   * somebody to experiment on a live building.
+   * The page used to state in two places that "nothing on the real bridge reads or acts on these
+   * yet; hardware dispatch is still gated closed". That was true when written and false by the
+   * time anyone read it: `HARDWARE_DISPATCH_ENABLED` is `true` on the Pi and `ibems-scheduler`
+   * logs `dispatch=OPEN` at boot. The page that arms unattended load shedding was telling the
+   * operator it was inert, which is the most expensive sentence in this app to get wrong.
    *
-   * `dispatchScope` is reused rather than re-derived so this page and the Control page cannot
-   * disagree about whether the gate is open; `null` (not yet loaded) counts as closed there,
-   * which is the right way round for a claim about hardware.
+   * THREE STATES, NOT TWO. `null` is an unanswered capability probe, not a closed gate, and
+   * saying so is more honest than the safe-looking collapse into "closed" — that collapse states
+   * something the page does not know. The confirm dialog below still treats unknown as
+   * not-confirmed rather than as open, which is the direction that matters for a warning.
    */
-  const scope = dispatchScope(schedulable, dispatchClasses);
-  const dispatching = scope.state !== 'closed';
+  const dispatchOpen = useCapabilitiesStore((s) => s.hardwareDispatchEnabled);
+  const consequence = dispatchConsequence(dispatchOpen);
+  const dispatching = dispatchOpen === true;
 
   // Gated: this flushes every staged edit at once, including anything "Arm all" just staged
   // across every schedulable device — one click here can be a lot more than the single field
@@ -89,11 +101,12 @@ export function AutomationPage() {
   const askSave = () =>
     ask(
       {
-        title: 'Write to Supabase?',
-        body: dispatching
-          ? `This writes ${pendingEntries.length} pending key${pendingEntries.length === 1 ? '' : 's'} to Supabase. Armed rules are read by the scheduler daemon and DO switch real hardware, through the gated, audited command path.`
-          : `This writes ${pendingEntries.length} pending key${pendingEntries.length === 1 ? '' : 's'} to Supabase. Hardware dispatch is closed on this deployment, so the scheduler records each firing as a dry run rather than switching anything.`,
-        confirmLabel: 'Write',
+        title: 'Save these changes?',
+        // The consequence sentence is the SAME string the page shows, deliberately: a dialog that
+        // rephrased it would be a second place for the two to disagree about what saving does.
+        body: `${pendingEntries.length} change${pendingEntries.length === 1 ? '' : 's'} will be saved and recorded against your account. ${consequence}`,
+        confirmLabel: 'Save',
+        // Red only when it is confirmed that this reaches hardware. Unknown is not open.
         tone: dispatching ? 'red' : 'blue',
       },
       () => void save(),
@@ -102,7 +115,11 @@ export function AutomationPage() {
   if (devices.length === 0) {
     return (
       <div className="automation-page" aria-busy="true" aria-label="Loading automation">
-        <p className="section-placeholder">Waiting for the device catalogue…</p>
+        {Array.from({ length: 5 }, (_, i) => (
+          <div className="automation-sched-skeleton-row" key={i}>
+            <Skeleton height="14px" width="55%" />
+          </div>
+        ))}
       </div>
     );
   }
@@ -120,11 +137,16 @@ export function AutomationPage() {
         title="Automation"
         sub={
           <>
-            {dispatching ? 'Armed rules switch real hardware' : 'Armed rules run as dry runs — dispatch is closed'}
+            {/* ON THE PAGE, not behind the ⓘ. "Saved rules switch real hardware here" is the most
+                consequential sentence on this screen; a hint you have to open is where you put a
+                footnote, not where you put the warning. */}
+            <strong className={`automation-dispatch-note automation-dispatch-note--${dispatchOpen === true ? 'open' : dispatchOpen === false ? 'closed' : 'unknown'}`}>
+              {consequence}
+            </strong>
             <InfoHint label="What this means">
-              {dispatching
-                ? 'Rules saved here are read by the scheduler daemon on the Pi and dispatched through the same gated, audited path the Control page uses. Every firing writes a row to the command audit trail, whether it succeeded or not.'
-                : 'Rules saved here are read by the scheduler daemon and evaluated on schedule, but this deployment’s hardware-dispatch gate is closed — so each firing is recorded as a dry run in the command audit trail and no relay moves.'}
+              Rules saved here are read by the scheduler daemon on the Pi and dispatched through the same gated,
+              audited path the Control page uses. Every firing writes a row to the command audit trail, whether it
+              succeeded or not — and whether it moved a relay or was recorded as a dry run.
             </InfoHint>
           </>
         }
@@ -140,11 +162,11 @@ export function AutomationPage() {
                 ? // THE READER'S OWN CLOCK, deliberately. This is when THEY pressed save, not
                   // something that happened in the building — see `src/lib/siteTime.ts` for the
                   // distinction and why the building's facts do not use this frame.
-                  `Wrote ${lastSave.count} key${lastSave.count === 1 ? '' : 's'} at ${new Date(lastSave.at).toLocaleTimeString(undefined, { hour12: false })}`
+                  `Saved ${lastSave.count} change${lastSave.count === 1 ? '' : 's'} at ${new Date(lastSave.at).toLocaleTimeString(undefined, { hour12: false })}`
                 : ''}
             </p>
             <button type="button" className="automation-write-btn" disabled={pendingEntries.length === 0 || saveStatus === 'saving'} onClick={askSave}>
-              {saveStatus === 'saving' ? 'Writing…' : 'Write to Supabase'}
+              {saveStatus === 'saving' ? 'Saving…' : 'Save changes'}
             </button>
           </div>
         }
@@ -187,7 +209,7 @@ export function AutomationPage() {
               title="Duty cycling"
               what="Rotate a group of loads on and off in turn to hold a demand ceiling without ever fully dropping any one of them."
               blockedOn="per-socket runtime history, which starts accumulating once per-socket scheduling lands."
-              roadmapId="RM-059"
+              roadmapId="RM-066"
             />
           </div>
         </div>
@@ -202,10 +224,10 @@ export function AutomationPage() {
       <div className="card automation-pending-card">
         <h3 className="card-title">
           <ListTodo size={14} className="title-icon" aria-hidden="true" />
-          Pending writes
+          Unsaved changes
         </h3>
         {pendingEntries.length === 0 ? (
-          <p className="automation-pending-empty">Nothing changed since the last write</p>
+          <p className="automation-pending-empty">Nothing changed since the last save</p>
         ) : (
           <ul className="automation-pending-list">
             {pendingEntries.map(([key, value]) => (
@@ -223,7 +245,7 @@ export function AutomationPage() {
 }
 
 /**
- * Staged edits live in `contextStore.draft` and reach Supabase only via "Write to Supabase".
+ * Staged edits live in `contextStore.draft` and reach the store only via "Save changes".
  * A reload or a closed tab drops all of them, and "Arm all" can stage a dozen keys in a single
  * click, so the amount silently lost is not small. `beforeunload` is the only mechanism
  * browsers offer for that exit; the prompt shown is the browser's own generic one, as its text

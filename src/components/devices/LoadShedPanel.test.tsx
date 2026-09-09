@@ -14,7 +14,7 @@ const setSocketTier = vi.fn();
 
 /** Ids this build has never seen, so nothing here passes because of one building's names.
  *
- * An `outlet_dual` carries a real `sockets` pair, as every registry entry does: since RM-060
+ * An `outlet_dual` carries a real `sockets` pair, as every registry entry does: since RM-067
  * the socket list is what says how many relays a device has, and a fixture without one would
  * be testing a device that cannot exist. */
 const dev = (id: string, cls: DeviceClass = 'switch'): Device =>
@@ -44,7 +44,7 @@ beforeEach(() => {
 
 describe('LoadShedPanel', () => {
   it('offers a tier for every relay — one per SOCKET on a dual outlet', () => {
-    // RM-060: an outlet is two relays behind one label, and one may be a fridge while the other
+    // RM-067: an outlet is two relays behind one label, and one may be a fridge while the other
     // is a kettle. A single control for both was a limitation of where the tier was stored.
     useDeviceStore.setState({ devices: [dev('sw-a'), dev('plug-b', 'outlet_dual')] });
     render(<LoadShedPanel onClose={() => {}} />);
@@ -60,7 +60,7 @@ describe('LoadShedPanel', () => {
     render(<LoadShedPanel onClose={() => {}} />);
     expect(screen.queryByLabelText(/tier for COOLER/i)).not.toBeInTheDocument();
     expect(screen.getByText(/cannot be shed at all/i)).toBeInTheDocument();
-    expect(screen.getByText(/never relay-cut/i)).toBeInTheDocument();
+    expect(screen.getByText(/its power is never cut/i)).toBeInTheDocument();
   });
 
   it('saves a tier as soon as it is chosen', () => {
@@ -95,7 +95,7 @@ describe('LoadShedPanel', () => {
     useDeviceStore.setState({ devices: [dev('sw-a')], latestReadings: { 'sw-a': on('sw-a') } });
     useDeviceConfigStore.setState({ saved: { 'sw-a': { ...emptyDeviceConfig('sw-a'), loadShedGroup: 'group_1' } } });
     render(<LoadShedPanel onClose={() => {}} />);
-    expect(await screen.findByRole('status')).toHaveTextContent(/no dispatch path/i);
+    expect(await screen.findByRole('status')).toHaveTextContent(/cannot be reached/i);
     expect(screen.getByText(/not commandable/i)).toBeInTheDocument();
   });
 
@@ -119,7 +119,7 @@ describe('LoadShedPanel', () => {
     // absence of a tier, and the panel says so on its own line.
     const unassigned = document.querySelector('.shed-panel__unassigned');
     expect(within(unassigned as HTMLElement).getByText('1')).toBeInTheDocument();
-    expect(unassigned?.textContent).toMatch(/never shed/);
+    expect(unassigned?.textContent).toMatch(/never switched off/);
     expect(document.querySelectorAll('.shed-panel__tally-item')).toHaveLength(4);
   });
 
@@ -137,7 +137,7 @@ describe('LoadShedPanel', () => {
   });
 });
 
-describe('LoadShedPanel — per socket (RM-060)', () => {
+describe('LoadShedPanel — per socket (RM-067)', () => {
   it('writes a socket tier to socket_config, not to the device row', () => {
     useDeviceStore.setState({ devices: [dev('plug-b', 'outlet_dual')] });
     render(<LoadShedPanel onClose={() => {}} />);

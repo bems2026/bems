@@ -30,7 +30,7 @@ function startFakeSupabase(scheduleRows, dsm = { max_phase_current: null, max_to
       for await (const chunk of req) raw += chunk;
       if (req.url.startsWith('/rest/v1/schedules')) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        // RM-059: a device holds MANY rows, so this takes an array. A single row is still
+        // RM-066: a device holds MANY rows, so this takes an array. A single row is still
         // accepted and wrapped, so the twenty-one tests written before stacking existed did
         // not all have to grow a pair of brackets to keep meaning what they meant.
         const rows = Array.isArray(scheduleRows) ? scheduleRows : scheduleRows ? [scheduleRows] : [];
@@ -166,7 +166,7 @@ function dueNowRow(over = {}) {
   const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const days = new Array(7).fill('0');
   days[(now.getDay() + 6) % 7] = '1';
-  // `id` is load-bearing since RM-059: the daemon puts it in the audit note so a firing can be
+  // `id` is load-bearing since RM-066: the daemon puts it in the audit note so a firing can be
   // traced back to one rule out of a stack of five.
   return { id: 'sched-1', device_id: 'l1', socket: null, rule: { on: hhmm, days: days.join('') }, enabled: true, updated_by: '11111111-1111-1111-1111-111111111111', ...over };
 }
@@ -537,7 +537,7 @@ test('the scheduler buffers to its OWN file, never the proxy\'s', async () => {
 });
 
 /* ===========================================================================
- * RM-059 — stackable, per-socket schedules, at daemon level.
+ * RM-066 — stackable, per-socket schedules, at daemon level.
  *
  * The pure resolution is covered exhaustively in `resolveDue.test.mjs`. These spawn the real
  * process, because the defect they guard against was never in the maths — it was in the
@@ -660,7 +660,7 @@ test('a rule that is no longer served stops firing — the in-memory list is rep
 
 
 /* ===========================================================================
- * RM-060 — per-socket load shedding, at daemon level.
+ * RM-067 — per-socket load shedding, at daemon level.
  * ======================================================================== */
 
 const OVER_LIMIT = { max_phase_current: 1, max_total_kw: 0.1, auto_shed: true, updated_by: '22222222-2222-2222-2222-222222222222' };
@@ -734,7 +734,7 @@ test('a Protected socket is never shed even while its neighbour is', async () =>
 
 
 /* ===========================================================================
- * RM-062 — the closed-loop aircon controller, at daemon level.
+ * RM-069 — the closed-loop aircon controller, at daemon level.
  *
  * The decision logic is covered exhaustively in `acuLoopPlan.test.mjs`, which is where it has
  * to be: `acu_main` has never been paired (RM-016), so none of it can be exercised on this

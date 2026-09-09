@@ -96,7 +96,7 @@ describe('SpaceTreePanel', () => {
     // The unit tests mock supabase as truthy, so they could never have caught it.
     seed({ canEdit: false, nodes: [] });
     render(<SpaceTreePanel onClose={() => {}} />);
-    expect(screen.getByText(/not configured/i)).toBeInTheDocument();
+    expect(screen.getByText(/no (settings store|stored history|account service) configured/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /add top-level space/i })).toBeDisabled();
   });
 

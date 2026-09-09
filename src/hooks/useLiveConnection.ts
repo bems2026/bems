@@ -56,17 +56,17 @@ export function useLiveConnection(): void {
     // reads the schedule keys regardless of which page is currently active.
     void useContextStore.getState().load();
 
-    // The schedules themselves, which left `contextStore`'s flat key map in RM-059 because that
+    // The schedules themselves, which left `contextStore`'s flat key map in RM-066 because that
     // shape cannot hold more than one rule per device. Same reason it loads here: Overview's
     // Active Schedules card reads them whichever page is showing.
     void useScheduleStore.getState().load();
 
-    // Per-socket shed tiers (RM-060). Loaded beside the device-level ones for the same reason
+    // Per-socket shed tiers (RM-067). Loaded beside the device-level ones for the same reason
     // they are: the shed panel resolves one from the other, and a panel that rendered before
     // half of that pair had arrived would show device tiers as though no socket overrode them.
     void useSocketConfigStore.getState().load();
 
-    // Closed-loop aircon rules (RM-062). Loaded here for the same reason as the rest: the
+    // Closed-loop aircon rules (RM-069). Loaded here for the same reason as the rest: the
     // Automation overview counts them whichever tab is showing.
     void useAcuRuleStore.getState().load();
 

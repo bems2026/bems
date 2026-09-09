@@ -1,5 +1,5 @@
 /**
- * Closed-loop aircon rules and what the controller remembers about each — RM-062, phase36.
+ * Closed-loop aircon rules and what the controller remembers about each — RM-069, phase36.
  *
  * WRITES GO THROUGH AN RPC, NOT AN UPSERT, and that is the same argument
  * `supabasePolicy.ts` already makes: `acu_rules` grants SELECT and DELETE to `authenticated`
@@ -55,7 +55,7 @@ const RULE_SELECT =
 const STATE_SELECT = 'rule_id,commanded_c,last_step_at,last_direction,last_reason,last_evaluated_at,alert_kind,alert_since';
 
 function requireSupabase() {
-  if (!supabase) throw new Error('Supabase is not configured (VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY unset)');
+  if (!supabase) throw new Error('Aircon rules need a settings store, which this deployment has not configured.');
   return supabase;
 }
 
@@ -109,7 +109,7 @@ export async function fetchAcuRules(): Promise<{ rules: AcuRule[]; state: Record
   ]);
   if (rules.error) {
     if (rules.error.code === '42P01') return { rules: [], state: {} };
-    throw new Error(`Supabase acu_rules fetch failed: ${rules.error.message}`);
+    throw new Error(`Could not read the aircon rules: ${rules.error.message}`);
   }
   const byRule: Record<string, AcuLoopState> = {};
   for (const row of state.data ?? []) {
@@ -148,7 +148,7 @@ export async function saveAcuRule(draft: AcuRuleDraft): Promise<AcuRule> {
   });
   if (error) throw new Error(error.message);
   const row = Array.isArray(data) ? data[0] : data;
-  if (!row) throw new Error('upsert_acu_rule returned nothing — check that supabase/phase36_acu_rules.sql has been applied.');
+  if (!row) throw new Error('The rule was not saved — aircon rules are not set up on this deployment yet (supabase/phase36_acu_rules.sql has not been applied).');
   return acuRuleFromRow(row);
 }
 
@@ -157,17 +157,17 @@ export async function setAcuRuleEnabled(id: string, enabled: boolean): Promise<A
   const { data, error } = await client.rpc('set_acu_rule_enabled', { p_id: id, p_enabled: enabled });
   if (error) throw new Error(error.message);
   const row = Array.isArray(data) ? data[0] : data;
-  if (!row) throw new Error('set_acu_rule_enabled returned nothing');
+  if (!row) throw new Error('The rule was not armed — nothing came back from the store.');
   return acuRuleFromRow(row);
 }
 
 export async function deleteAcuRule(id: string): Promise<void> {
   const client = requireSupabase();
   const { data, error } = await client.from('acu_rules').delete().eq('id', id).select('id');
-  if (error) throw new Error(`Supabase acu rule delete failed: ${error.message}`);
+  if (error) throw new Error(`Could not delete the rule: ${error.message}`);
   // PostgREST reports an RLS-blocked delete as a plain 200 with an empty array, so without this
   // the rule would vanish from the page and keep stepping the setpoint.
   if ((data?.length ?? 0) !== 1) {
-    throw new Error(`Supabase acu rule delete for ${id} affected 0 rows — check that you are signed in with a real Supabase session, not a break-glass one.`);
+    throw new Error(`The rule was not deleted — you are signed in with a limited local sign-in, which cannot save. Sign in with your account to make changes.`);
   }
 }

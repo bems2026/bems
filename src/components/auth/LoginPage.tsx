@@ -41,7 +41,7 @@ export function LoginPage() {
         </div>
         <h1 className="login-page__title">iBEMS Dashboard</h1>
         <p className="login-page__sub">
-          {localMode ? 'Local session — LAN only, remote access unavailable while Supabase is unreachable.' : 'Sign in to continue.'}
+          {localMode ? 'Local session — LAN only, remote access unavailable while the account service is unreachable.' : 'Sign in to continue.'}
         </p>
 
         <form onSubmit={handleSubmit} className="login-page__form">
@@ -77,7 +77,7 @@ export function LoginPage() {
             }}
           >
             <WifiOff size={13} aria-hidden="true" />
-            Supabase unreachable — try local sign-in instead
+            Account service unreachable — try local sign-in instead
           </button>
         )}
         {localMode && (

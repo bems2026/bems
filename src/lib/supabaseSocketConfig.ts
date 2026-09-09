@@ -1,5 +1,5 @@
 /**
- * `socket_config` — per-socket operator metadata, phase34 / RM-060.
+ * `socket_config` — per-socket operator metadata, phase34 / RM-067.
  *
  * Mirrors `supabaseDeviceConfig.ts` deliberately: same shape, same row-count check, same
  * attribution rule. The one difference is the conflict target, which is the composite primary
@@ -37,7 +37,7 @@ export type SocketConfigMap = Record<string, Record<number, SocketConfig>>;
 const SELECT = 'device_id,socket,load_shed_group,label';
 
 function requireSupabase() {
-  if (!supabase) throw new Error('Supabase is not configured (VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY unset)');
+  if (!supabase) throw new Error('Load-shed tiers need a settings store, which this deployment has not configured.');
   return supabase;
 }
 
@@ -75,7 +75,7 @@ export function socketConfigToRow(cfg: SocketConfig, actorUserId: string | null)
  *
  * A deployment that has not applied phase34 answers `42P01` (undefined table). That is not an
  * error worth surfacing to an operator: `resolveShedTier` falls back to the device-level tier
- * for any socket with no row, which is exactly the pre-RM-060 behaviour. Returning empty keeps
+ * for any socket with no row, which is exactly the pre-RM-067 behaviour. Returning empty keeps
  * the panel working and the tiers correct until the migration lands.
  */
 export async function fetchSocketConfigs(): Promise<SocketConfigMap> {
@@ -83,7 +83,7 @@ export async function fetchSocketConfigs(): Promise<SocketConfigMap> {
   const { data, error } = await client.from('socket_config').select(SELECT);
   if (error) {
     if (error.code === '42P01') return {};
-    throw new Error(`Supabase socket_config fetch failed: ${error.message}`);
+    throw new Error(`Could not read the per-socket tiers: ${error.message}`);
   }
   return socketConfigsToMap((data ?? []) as SocketConfigRow[]);
 }
@@ -96,16 +96,16 @@ export async function writeSocketConfig(cfg: SocketConfig, actorUserId: string |
     .select('device_id');
   if (error) {
     if (error.code === '23503') {
-      throw new Error(`Supabase socket_config write failed: device ${cfg.deviceId} hasn't synced into the devices table yet — wait for the next ingest cycle and try again.`);
+      throw new Error(`${cfg.deviceId} has not finished being added yet — wait for the next device sync and try again.`);
     }
     if (error.code === '42P01') {
-      throw new Error('Supabase socket_config write failed: the table does not exist. Apply supabase/phase34_socket_config.sql.');
+      throw new Error('Per-socket tiers are not set up on this deployment yet — supabase/phase34_socket_config.sql has not been applied.');
     }
-    throw new Error(`Supabase socket_config write failed: ${error.message}`);
+    throw new Error(`Could not save the tier: ${error.message}`);
   }
   // PostgREST reports an RLS policy matching zero rows as a plain 200 with an EMPTY array, so
   // `{error}` alone stays null even when nothing was written.
   if ((data?.length ?? 0) !== 1) {
-    throw new Error(`Supabase socket_config write for ${cfg.deviceId} socket ${cfg.socket} affected 0 rows — check that you're signed in with a real Supabase session, not a break-glass one.`);
+    throw new Error(`The tier was not saved — you are signed in with a limited local sign-in, which cannot save. Sign in with your account to make changes.`);
   }
 }

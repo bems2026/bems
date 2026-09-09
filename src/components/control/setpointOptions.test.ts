@@ -3,7 +3,7 @@ import { setpointOptions, seedSetpoint, setpointWarning, DEFAULT_SETPOINT_C } fr
 import { ACU_MIN_C, ACU_MAX_C } from '@shared/commands.mjs';
 
 /**
- * RM-061 removed a bound from this module rather than adding one.
+ * RM-068 removed a bound from this module rather than adding one.
  *
  * The site's comfort policy used to narrow the selector, because it was read as a limit on the
  * setpoint COMMANDED to the aircon and `validateCommand` refused anything below it. That number

@@ -53,7 +53,7 @@ const draftOf = (s: Schedule): ScheduleDraft => ({
 });
 
 /**
- * The `schedules` table, as a list of rules with ids — RM-059.
+ * The `schedules` table, as a list of rules with ids — RM-066.
  *
  * WHY THIS STORE EXISTS RATHER THAN MORE OF `contextStore`. Schedules used to live in the same
  * flat `ContextMap` as the DSM thresholds, keyed `global.schedule.<device>.<field>` — Node-RED's
@@ -63,7 +63,7 @@ const draftOf = (s: Schedule): ScheduleDraft => ({
  * the `global.dsm.*` half unchanged.
  *
  * IT SAVES IMMEDIATELY, which is the other deliberate difference. The staged draft plus one
- * "Write to Supabase" button is a reasonable model for a handful of threshold fields; it is a
+ * "Save changes" button is a reasonable model for a handful of threshold fields; it is a
  * poor one for a list you add to and delete from, because a queued deletion reads as already
  * done. `deviceConfigStore`'s load-shed tiers already save on change for the same reason. The
  * page keeps the staged model for thresholds, so both models are present on it — each on the

@@ -79,6 +79,6 @@ export async function fetchAutomationActivity(limit = 25, sinceHours = 24): Prom
   if (error?.code === '42703') {
     ({ data, error } = await query(SELECT.replace(',target_c', '')));
   }
-  if (error) throw new Error(`Supabase automation activity fetch failed for ${sources}: ${error.message}`);
+  if (error) throw new Error(`Could not read what automation did for ${sources}: ${error.message}`);
   return (data ?? []).map(automationEventFromRow);
 }

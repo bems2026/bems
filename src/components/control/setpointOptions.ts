@@ -1,7 +1,7 @@
 /**
  * Which aircon setpoints this site's selector offers, where it opens, and when to say something.
  *
- * ONE BOUND NOW, NOT TWO — RM-061.
+ * ONE BOUND NOW, NOT TWO — RM-068.
  *
  * `ACU_MIN_C`/`ACU_MAX_C` (`shared/commands.mjs`) are the whole degrees the live flow's IR
  * library actually holds codes for. A hardware fact, identical at every site, and anything

@@ -1,10 +1,10 @@
 /**
  * Reading the site policy, in the one place that knows what its keys mean.
  *
- * WHY THIS EXISTS — RM-061 redefined a number without moving it. `acu_min_setpoint_c` used to
+ * WHY THIS EXISTS — RM-068 redefined a number without moving it. `acu_min_setpoint_c` used to
  * be a bound on the SETPOINT COMMANDED to the aircon: `validateCommand` refused anything below
  * it, and the Control page's selector simply did not offer those degrees. That reading was
- * always slightly wrong about the building, and it became load-bearing wrong once RM-062's
+ * always slightly wrong about the building, and it became load-bearing wrong once RM-069's
  * closed-loop controller arrived: the setpoint is the CONTROL LEVER, and a loop that may never
  * ask for 22 cannot hold a room at 24 on a hot afternoon.
  *
@@ -43,7 +43,7 @@ export function roomTargetFloorC(policy) {
 /**
  * Whether a manually chosen setpoint is below the building's room-comfort policy.
  *
- * A WARNING, NOT A REFUSAL, and that is the decision RM-061 records. The old behaviour refused
+ * A WARNING, NOT A REFUSAL, and that is the decision RM-068 records. The old behaviour refused
  * the command server-side; an operator who genuinely needs 18 °C for an hour then has no way to
  * ask for it, and the number they are fighting is one about the ROOM rather than about the
  * knob. The refusal is replaced by a warning the UI shows and the audit trail records — so the

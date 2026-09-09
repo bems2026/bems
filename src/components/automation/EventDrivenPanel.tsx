@@ -12,7 +12,7 @@ import type { Device } from '@/lib/types';
 /**
  * Event-driven automation: rules that fire on what a sensor reads rather than on the clock.
  *
- * Today that is one strategy — closed-loop aircon setpoint control (RM-062). The other two in
+ * Today that is one strategy — closed-loop aircon setpoint control (RM-069). The other two in
  * this category have no field devices at all, and say which ones.
  *
  * THE PAGE IS HONEST ABOUT BEING DORMANT HERE. `acu_main` and `sens_outside_temp` have never

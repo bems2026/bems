@@ -5,7 +5,7 @@
  * `server/shedPlan.mjs`, which is the thing that actually switches power; a UI that showed a
  * different set than the shedder acts on would be worse than no UI, because it would be believed.
  *
- * SINCE RM-060 THE UNIT IS A SOCKET. `shedPlan.shedTargets` enumerates one target per socket of
+ * SINCE RM-067 THE UNIT IS A SOCKET. `shedPlan.shedTargets` enumerates one target per socket of
  * a dual outlet, so this does too — and the counts below therefore mean SHED POINTS, not
  * devices. That distinction is the whole reason this file and the panel changed in the same
  * commit: a panel still saying "3 devices" while the shedder sheds 5 sockets would be exactly
@@ -149,9 +149,32 @@ export function summariseShed(
   return { rows, excluded, byTier, inertCount };
 }
 
+/**
+ * Why a device is not in the list, in the fewest words that are still true. Shortened on operator
+ * request (2026-09-08) — the aircon's read "reached by IR, which sends a command rather than
+ * cutting power — the compressor is deliberately never relay-cut", which explains the mechanism
+ * to someone who only needs to know it is not an oversight.
+ */
 function reasonNotSheddable(cls: DeviceClass): string {
-  if (cls === 'meter') return 'a meter measures a circuit; it has no relay to switch';
-  if (cls === 'sensor_temp_humidity') return 'a sensor reports; it switches nothing';
-  if (cls === 'acu_ir') return 'reached by IR, which sends a command rather than cutting power — the compressor is deliberately never relay-cut';
+  if (cls === 'meter') return 'a meter has no relay to switch';
+  if (cls === 'sensor_temp_humidity') return 'a sensor only reports; it switches nothing';
+  if (cls === 'acu_ir') return 'controlled by its remote, not a relay — its power is never cut';
   return 'this class has no relay';
+}
+
+/**
+ * How many devices are assigned to a real shed tier — the question "can auto-shed ever do
+ * anything here?" reduces to.
+ *
+ * WHY IT IS ASSIGNMENT AND NOT `effective`. `byTier[t].effective` also requires the device to be
+ * dispatchable and currently on, and both of those are transient: a device that is off now may be
+ * on in an hour, and a class the bridge cannot command yet may become commandable. Assignment is
+ * the only condition whose absence makes auto-shed PERMANENTLY inert, and that is the one worth
+ * refusing to arm over. The transient gap is already reported separately as `inertCount`.
+ *
+ * `never` and `unassigned` are both excluded, because `shedPlan` excludes both — "a device
+ * nobody classified is not a volunteer", and `never` is an explicit refusal.
+ */
+export function shedEligibleCount(byTier: ShedSummary['byTier']): number {
+  return SHED_ORDER.reduce((n, tier) => n + byTier[tier].total, 0);
 }

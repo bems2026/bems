@@ -3,7 +3,7 @@
  *
  * These assertions used to exist twice — in `src/components/automation/automationMath.test.ts`
  * and in `server/schedulePlan.test.mjs` — against two implementations that claimed to mirror
- * each other. RM-059 collapsed both into `shared/scheduleDays.mjs`; this is the suite that
+ * each other. RM-066 collapsed both into `shared/scheduleDays.mjs`; this is the suite that
  * holds it. `server/schedulePlan.test.mjs` keeps its own rotation assertions on purpose, as a
  * check that composing this module into the scheduling rules did not lose the rotation.
  */
