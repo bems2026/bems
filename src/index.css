@@ -4514,7 +4514,11 @@ body::before {
   /* minmax(0, ...) rather than a bare fr: an `fr` track's default minimum is `auto`, i.e. its
      content, so the 7 day chips (154px + gaps) held the 4th track open and pushed the whole
      row past its card. Measured at 375px before this: 341px of overflow. */
-  grid-template-columns: minmax(0, 1.5fr) 86px 86px minmax(0, 1fr) 56px;
+  /* Last track was 56px, sized for the arm toggle alone. RM-065 put a Clear control beside it
+     and the pair measured 75px — the button overflowed its own track by 19px and sat on top of
+     the day chips (measured in Firefox at 1440px: clear at x=685, track starting at x=704).
+     80px holds 23 + 8 + 44 with the 8px separation adjacent touch targets need. */
+  grid-template-columns: minmax(0, 1.5fr) 86px 86px minmax(0, 1fr) 80px;
   gap: var(--sp-2);
   align-items: center;
   padding: var(--sp-2) 0;
@@ -4589,7 +4593,8 @@ body::before {
   color: var(--muted-2);
 }
 .automation-sched-row__arm {
-  gap: var(--sp-1);
+  /* 8px, not 4: these are two adjacent touch targets and one of them empties a rule. */
+  gap: var(--sp-2);
   display: flex;
   justify-content: flex-end;
 }
@@ -4657,7 +4662,6 @@ body::before {
   color: var(--muted-2);
   border-radius: var(--r-sm);
   padding: 4px;
-  margin-right: var(--sp-1);
   cursor: pointer;
 }
 .automation-sched-row__clear:hover {

@@ -99,7 +99,7 @@ export function ScheduleRow({ device }: { device: Device }) {
             title="Clear this schedule"
             onClick={clear}
           >
-            <Eraser size={13} aria-hidden="true" />
+            <Eraser size={14} aria-hidden="true" />
           </button>
         )}
         <button

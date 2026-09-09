@@ -1616,7 +1616,19 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       operator cut it: a line under every device is the furniture this page had spent three commits
       removing. Recorded because the reasoning survives the code. The rows are still written and
       still readable; if the question is worth answering it belongs somewhere you go to ask it, not
-      under every device. Eight orphaned CSS rules went with the two removals
+      under every device.
+
+      **A LAYOUT FAULT IN THE CLEAR CONTROL, FOUND BY MEASURING IT (2026-09-09).** The arm column
+      was `56px`, sized when it held only the 44px toggle. Adding the Clear button beside it made
+      the pair **75px** — measured in Firefox at 1440px: the button rendered at `x=685` while its
+      own grid track started at `x=704`, so it overflowed by 19px and sat on top of the day chips,
+      where a tap could land on the wrong control. It shipped that way. The track is `80px` now
+      (23 + 8 + 44), and the 8px separation is what adjacent touch targets need — it had been coming
+      from a flex `gap` of 4px PLUS a leftover 4px `margin-right`, two mechanisms doing one job.
+      Re-measured at 1440x960, 800x480 and, in a sized iframe, 375 and 320px: no page overflow, no
+      cell overflow, the button inside its own track, 8px gap at every width.
+
+      Eight orphaned CSS rules went with the two removals
       — `src/components/automation/AutomationPage.tsx`, `ScheduleRow.tsx`,
       `src/lib/supabaseConfig.ts`, `src/index.css`, tests updated to guard the absences.
 - [x] **EX-150** One relay control, replacing five. `SwitchesListCard`, `OutletsListCard`,
