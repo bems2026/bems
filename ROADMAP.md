@@ -127,12 +127,37 @@ where the room cannot be cooled to target and the loop walks to the 16 °C floor
 exactly once. That is the only evidence that exists and this entry says so rather than implying
 a live test.
 
-**Four migrations are ready and NONE is applied:** `phase33_schedules_stackable.sql`,
-`phase34_socket_config.sql`, `phase35_policy_room_target.sql`, `phase36_acu_rules.sql`.
-**phase33's deploy order is load-bearing**: ship the frontend and restart the daemons FIRST.
-Old code against the new schema fails on `ON CONFLICT (device_id)` and breaks every schedule save
-from a kiosk still serving the old `./dist`; new code against the old schema only refuses a
-second rule per device. Both fail loudly, so this is a choice rather than a rescue.
+**All four migrations are APPLIED to the live project** (2026-09-09):
+`phase33_schedules_stackable.sql`, `phase34_socket_config.sql`, `phase35_policy_room_target.sql`,
+`phase36_acu_rules.sql`. **phase33's deploy order is load-bearing and was followed**: the frontend
+was rebuilt and both daemons restarted FIRST, then the SQL was run. Old code against the new schema
+fails on `ON CONFLICT (device_id)` and breaks every schedule save from a kiosk still serving the old
+`./dist`; new code against the old schema only refuses a second rule per device. Both fail loudly,
+so the ordering was a choice rather than a rescue.
+
+**What the live database says, read back rather than assumed.** phase33's split turned 7 rows into
+**17**: `acu_main|null`, `l1|null`, `l4|null`, `l6|null`, `l7|null`, and both sockets of co1–co5 and
+co7 — each outlet's single whole-outlet rule became one rule per relay, sourcing the count from
+`devices.sockets` rather than a hardcoded 2. `socket_config` backfilled from the device tiers,
+including `co6`, which has a tier but no schedule. `sites.policy` now holds both
+`acu_min_room_target_c` and `acu_min_setpoint_c` at 24 (expand, not yet contract), and
+`dsm_thresholds.care_acu_trigger_c` is gone. `ibems-scheduler` restarted onto it clean —
+`loaded 17 schedule row(s)`, with no `socket_config unreadable` and no `acu_rules unreadable`
+warning, which is what proves phase34 and phase36 are actually being read rather than merely
+present. **Stacking was then proved on the live table**: a second rule was inserted for `l1`
+(2 rows), then deleted (204, back to 1) — the insert impossible before phase33 and the delete
+impossible before its new DELETE policy.
+
+Idempotency was proved by EXECUTION, not by reading the files. **`supabase/reapply.sh`** (new, the
+sibling of `rehearse.sh`) takes a throwaway Postgres 16 container through `schema.sql` plus every
+`phaseNN` in order, seeds a pre-phase33 whole-outlet row, and then applies phase33–36 a SECOND time.
+The second pass is the interesting one — every constraint, policy, index and column already exists
+and the split has already happened. It produced 3 schedule rows rather than 5, did not stamp over
+the `socket_config` backfill, and left both policy keys present and equal. `rehearse.sh` cannot show
+this: it applies each file once against a fresh database, so every `drop … if exists` finds nothing
+and no guard is ever exercised. Several phase headers say "RE-RUNNING IS SAFE"; until now that was a
+claim with no test behind it, which matters because with no migration runner the recovery from
+"did this one already go in?" is to run it again.
 
 ### 2026-09-08 — the building total is the sum of its branches now, and that was the operator's idea
 
@@ -2895,7 +2920,7 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 ## 2. Current roadmap (active execution)
 
 
-### What the Automation page can express — RM-066 to RM-069 (migrations not applied)
+### What the Automation page can express — RM-066 to RM-069 (migrations applied 2026-09-09)
 
 Organised by WHAT MAKES A RULE FIRE, which is the distinction an operator reasons about and the
 one the trade already names: Time-Driven (the clock), State-Driven (a measured quantity),

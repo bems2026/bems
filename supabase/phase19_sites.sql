@@ -63,8 +63,14 @@ drop policy if exists sites_select_authenticated on sites;
 create policy sites_select_authenticated on sites
   for select using (auth.role() = 'authenticated');
 
--- The current deployment. Must stay in step with `shared/sites/mmsu-nberic-care/site.mjs`;
--- `test/phase19-sites-schema.test.mjs` reads that module and fails if the two drift.
+-- The current deployment. This seed is HISTORY, not the current policy: `on conflict do nothing`
+-- means it has no effect on a database that already holds this row, and since phase26 the floor
+-- is live state edited through `set_acu_min_setpoint`. The site module has since been corrected
+-- to the university's actual 24 and this seed deliberately still says 25 — see
+-- `test/phase19-sites-schema.test.mjs`, which dropped its equality check for that reason and now
+-- asserts only that a floor is seeded and that it is a temperature the hardware has a code for.
+-- Do not edit this value to agree with the module; that is how two databases stop agreeing about
+-- what has been applied.
 insert into sites (id, display_name, timezone, utc_offset_minutes, policy)
 values (
   'mmsu-nberic-care',
