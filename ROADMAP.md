@@ -2998,6 +2998,34 @@ the *condition* and which the *consequence*, which is the entire content of a ru
 - [x] **RM-071g** `ScheduleStackCard` had **no component test at all** — part of how this page
       once shipped claiming it was not dispatchable while the daemon fired its rows at real
       relays. It has 16 now.
+- [x] **RM-071h** Spacing, headings and the rest of the touch floor, from a heuristic pass the
+      operator asked for after spotting the first one by eye.
+      **"Unsaved changes" had no CSS rule at all** — `.automation-pending-card` was a modifier
+      that styled nothing — so it sat flush against the tab panel with a measured **0px** gap and
+      two card borders touching, which reads as an overlap. It is the only block on the page that
+      lost its spacing, because `AutomationPage` returns a fragment: every sibling carries its own
+      trailing margin (header 20px, tab strip 16px) and `.tabs__panel` carries none, a tab panel
+      normally being the last thing on a page. Now 20px, matching the page's own major-boundary
+      value rather than the tighter 16px that binds the tabs to their panel.
+      **The heading outline skipped a level and had an outlier.** `Card`'s contract is page h1 →
+      section h2 → card h3, and this page had no h2 at all; meanwhile `LoadShedPanel` hand-wrote
+      an `h2` that read to a screen reader as the PARENT of the cards either side of it, which is
+      false — they are siblings. Each tab panel now carries an `sr-only` h2 (the tab strip already
+      says it visually; the heading is for the outline, which is how many screen-reader users
+      navigate). Zero skips on all four tabs.
+      **Four more controls were under the 44px floor**, found by measuring rather than assuming:
+      `.schedule-rule__delete` at **30×30** — a destructive control on a touchscreen — plus the
+      "Add schedule" CTA at 37px, the ACU number inputs (only `select` had been covered), and the
+      shed panel's 18px `<summary>`. That last one takes padding rather than `min-height`, because
+      a `<summary>` is `display: list-item` and a min-height would strand the disclosure triangle
+      at the top of a 44px box. All four tabs now measure clear; desktop chrome is unchanged.
+      **Two pieces of drift cleaned:** a comment in the touch block describing the per-row "clear
+      schedule" control, deleted with `ScheduleRow.tsx` in the RM-066 merge; and a redundant
+      `:focus-visible` override RM-071 itself had added, duplicating the global rule that the Tabs
+      section a few hundred lines up explicitly warns against overriding locally.
+      *Not a finding, recorded so it is not re-raised:* a sweep using `el.focus()` reports ~30
+      controls with no focus ring. That is a measurement artifact — programmatic focus does not
+      match `:focus-visible`. The global rule at `index.css:470` covers everything.
 
 **Tailwind was asked for and deliberately not used.** It is imported at `index.css:1` and has
 **zero** utility classes across all 86 styled components; `test/design-tokens.test.mjs` and

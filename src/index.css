@@ -4603,6 +4603,25 @@ body::before {
   font-size: var(--fs-2xs);
   line-height: 1.45;
 }
+/*
+ * "Unsaved changes" had NO RULE AT ALL — `.automation-pending-card` was a modifier that styled
+ * nothing — so it sat flush against the tab panel above it with a measured 0px gap and the two
+ * card borders touching, which reads as an overlap.
+ *
+ * WHY IT WAS THE ONLY BLOCK THAT LOST ITS SPACING. `AutomationPage` returns a fragment, so the
+ * header, tabs, panel and this card are all direct children of `.app-content`, which is
+ * `display: block` with no gap. Every other block carries its own trailing margin — the header
+ * 20px, the tab strip 16px — and `.tabs__panel` carries none, because a tab panel is normally
+ * the last thing on a page. This card is the first thing in the app to follow one.
+ *
+ * 20px, matching the header-to-tabs gap rather than the tighter 16px between the tabs and their
+ * own panel: that 16px binds two halves of one control, and this is a section boundary — the
+ * point where the page leaves the tabbed region entirely. Same 4pt scale, no new value invented.
+ */
+.automation-pending-card {
+  margin-top: var(--sp-5);
+}
+
 .automation-pending-empty {
   padding: var(--sp-4);
   text-align: center;
@@ -5639,10 +5658,11 @@ body::before {
 .automation-overview__log > summary:hover {
   border-color: var(--border-strong);
 }
-.automation-overview__log > summary:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
+/* No focus ring here. RM-071 added one that duplicated the global `:focus-visible` rule near the
+   top of this file exactly — which is the thing the Tabs section warns about a few hundred lines
+   up: "a local override is how a component ends up with a ring that passes on a card and fails on
+   the page background". Duplicating it today is harmless and becomes a divergence the first time
+   the global value is tuned. */
 .automation-overview__log[open] > summary {
   margin-bottom: var(--sp-3);
 }
@@ -8146,7 +8166,11 @@ button.space-plan__pin {
   .automation-write-btn,
   /* The panel chrome RM-059 introduced, and the fleet control that adds hardware. */
   .overlay-panel__close,
-  .devices-add-btn {
+  .devices-add-btn,
+  /* RM-071: a 30x30 icon button that DELETES a schedule rule, on a touchscreen. Square and in
+     normal flow beside the arm switch, so it grows rather than needing a hit-area expander —
+     the switch's own expander is 44 wide and the row's 8px gap keeps them from cross-talking. */
+  .schedule-rule__delete {
     min-width: 44px;
     min-height: 44px;
   }
@@ -8178,10 +8202,41 @@ button.space-plan__pin {
    */
   .devices-table__manage-btn,
   .device-panel__tab,
-  /* The new per-row control that empties a schedule — a 13px icon in a 4px box otherwise. */
+  /* RM-071. `schedule-stack__add` is the primary CTA for adding a rule and measured 37px; the
+     ACU inputs were covered for `select` only, so the room target and step interval — the two
+     numbers an operator actually types on the kiosk — were never in this block. */
+  .schedule-stack__add,
+  .acu-rule__field input,
+  .acu-rule__action input,
   /* The fields an operator sets schedules and shed limits with, on a touchscreen. */
   .automation-number-input {
     min-height: 44px;
+  }
+
+  /*
+   * Width too, for this one. The group above is height-only because width is content-driven and
+   * forcing it can break a row — but a filter chip row wraps, and the shortest label ("All")
+   * measured 40px wide against a 44px floor. Nothing else in that group has a label short
+   * enough to fall under it.
+   */
+  .automation-filter-chip {
+    min-width: 44px;
+  }
+
+  /*
+   * The `<details>` toggle in the shed panel — an 18px-tall summary, the smallest target on the
+   * Automation page once everything above was fixed.
+   *
+   * PADDING, NOT `min-height`: a `<summary>` is `display: list-item`, so a min-height would leave
+   * the text and its disclosure triangle top-aligned in a 44px box with a gap underneath them.
+   * Padding grows the box around the row and keeps the marker with its label.
+   *
+   * `padding-block` is safe HERE specifically, for the reason this block's own header gives: it
+   * is the last rule block in the file, so no later `padding` shorthand can silently overwrite
+   * it. That is not true anywhere else in this stylesheet.
+   */
+  .shed-panel__excluded > summary {
+    padding-block: 13px;
   }
   /*
    * Details / Edit / Remove sat flush against each other in a flex cell with no gutter. Three

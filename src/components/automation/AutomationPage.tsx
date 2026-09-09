@@ -182,14 +182,27 @@ export function AutomationPage() {
       <Tabs tabs={tabs} activeId={tab} onChange={setTab} label="Automation strategies" className="automation-tabs" />
 
       <TabPanel tabId="overview" activeId={tab}>
+      {/* EACH PANEL CARRIES THE SECTION HEADING, screen-reader only.
+       *
+       * `Card`'s contract is page h1 -> section h2 -> card h3, and this page had NO h2 at all:
+       * it went straight from the "Automation" h1 to the cards' h3s, so a screen reader's
+       * heading outline showed a skipped level and four tabs' worth of cards with nothing
+       * naming the section they belonged to.
+       *
+       * Hidden rather than drawn because the tab strip already states this visually — the
+       * heading is for the outline, which is how many screen-reader users navigate a page.
+       */}
+        <h2 className="sr-only">Overview</h2>
         <AutomationOverview devices={schedulable} schedules={schedules} armedCount={armedCount} dispatching={dispatching} onGoToTab={setTab} />
       </TabPanel>
 
       <TabPanel tabId="time" activeId={tab}>
+        <h2 className="sr-only">Time-Driven automation</h2>
         <TimeDrivenPanel devices={schedulable} notSchedulable={notSchedulable} />
       </TabPanel>
 
       <TabPanel tabId="state" activeId={tab}>
+        <h2 className="sr-only">State-Driven automation</h2>
         <div className="automation-grid">
           <div className="automation-side">
             <DsmThresholdsCard />
@@ -215,6 +228,7 @@ export function AutomationPage() {
       </TabPanel>
 
       <TabPanel tabId="events" activeId={tab}>
+        <h2 className="sr-only">Event-Driven automation</h2>
         <EventDrivenPanel devices={devices} />
       </TabPanel>
 

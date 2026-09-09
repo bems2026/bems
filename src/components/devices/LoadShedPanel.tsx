@@ -79,7 +79,10 @@ export function LoadShedPanel({ onClose }: { onClose?: () => void }) {
   return (
     <Card className="shed-panel">
       <div className="shed-panel__head">
-        <h2 className="card-title">
+        {/* h3, not h2: `Card`'s own contract is page h1 -> section h2 -> card h3, and every card
+            beside this one on the Automation page is an h3. As an h2 it read to a screen reader as
+            the PARENT of the cards above and below it, which is false — they are siblings. */}
+        <h3 className="card-title">
           <Zap size={16} className="title-icon" aria-hidden="true" />
           Load-shed tiers
           <InfoHint label="What a tier does">
@@ -87,7 +90,7 @@ export function LoadShedPanel({ onClose }: { onClose?: () => void }) {
             first, and only moves to the next if still over. It <strong>never switches anything
             back on</strong> — turning load back on is a decision for a person.
           </InfoHint>
-        </h2>
+        </h3>
         {onClose && (
           <button type="button" className="shed-panel__close" onClick={onClose}>
             Close
