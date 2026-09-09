@@ -147,10 +147,24 @@ warning, which is what proves phase34 and phase36 are actually being read rather
 present. **Stacking was then proved on the live table**: a second rule was inserted for `l1`
 (2 rows), then deleted (204, back to 1). The insert is the load-bearing half — `unique (device_id)`
 is a constraint, not a policy, so it would have refused that row whatever key was used, and it did
-not. **The delete does NOT prove the new DELETE policy**, because that check used the service-role
-key, which bypasses RLS entirely; `schedules_delete_authenticated` is verified only by phase33
-applying without error, and the browser path is exercised the first time an operator removes a rule
-from the page.
+not. That delete did **not** prove the new DELETE policy, because it used the service-role key,
+which bypasses RLS entirely.
+
+**The browser path is now exercised, by the operator rather than by a test.** Between 22:41:16 and
+22:41:51 local on 2026-09-09 the table went from 17 rows to 21 through a signed-in session: rules
+created for `co6|1`, `co6|2`, `l2`, `l3` and `l5` — the five relays that had a shed tier but no
+schedule — one every two seconds, each attributed to the operator's user id; `co1|1` updated; and
+`acu_main`'s rule **deleted**, which is `schedules_delete_authenticated` doing its job under an
+`authenticated` JWT. (The deletion is inferred rather than logged — `schedules` has no delete
+audit — but the row was present in the verified 22:11 listing, absent afterwards, and no
+service-role caller touched it.) Insert, update and delete from the page are all now real.
+
+**Per-socket dispatch is proved on hardware, not just in tests.** At 22:40:04 and 22:41:06 a rule on
+`co1` socket 1 fired `off` then `on`, and `commands` holds **one row each, `socket: 1`, with no
+paired socket-2 row**. Compare 16:26–16:27 the same day, before the migration: every outlet firing
+wrote a matched pair, because one `socket: null` row fanned out to both relays. The audit note also
+changed shape — `schedule 05b5bce2-… due` where it used to read `schedule due` — so a firing now
+names the rule that caused it.
 
 Idempotency was proved by EXECUTION, not by reading the files. **`supabase/reapply.sh`** (new, the
 sibling of `rehearse.sh`) takes a throwaway Postgres 16 container through `schema.sql` plus every
