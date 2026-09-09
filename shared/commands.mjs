@@ -18,7 +18,9 @@
  *     degree "16".."30" — so an on/off-only command could only ever mean "on at whatever
  *     temperature someone last picked", which no UI can honestly display. The bounds here are
  *     not a policy choice: they are exactly the keys the live flow's IR library holds, and a
- *     value outside them would resolve to no code at all.
+ *     value outside them would resolve to no code at all. Since RM-061 they are the ONLY bound
+ *     on a setpoint: the site's comfort policy is a statement about the ROOM, and it returns a
+ *     `warnings` entry rather than refusing — see the note at the `target_c` check below.
  *   - `action: 'set'` is the SECOND verb, added once devices turned out to hold more than a
  *     relay: a child lock, an auto-off countdown, an over-power alarm threshold. It carries a
  *     `capability` and a `value` instead of a socket, and every bound it enforces comes from
@@ -36,6 +38,7 @@
 
 import { iso8 } from './buildLatest.mjs';
 import { capabilityForDevice, validateCapabilityValue } from './deviceCapabilities.mjs';
+import { setpointPolicyWarning } from './sitePolicy.mjs';
 
 export const COMMAND_ROUTE = '/api/command';
 
@@ -173,6 +176,10 @@ export function validateCommand(body, registry, policy = {}) {
     };
   }
 
+  /** Advisory findings that do not refuse the command. Empty for every relay command, so a
+   * caller that has never seen the field still gets a byte-identical result. */
+  const warnings = [];
+
   const hasSockets = device.class === 'outlet_dual';
   if (hasSockets) {
     if (socket === undefined) {
@@ -199,33 +206,32 @@ export function validateCommand(body, registry, policy = {}) {
     }
 
     /**
-     * The site's own floor, layered on top of the hardware bound above.
+     * THE SITE'S POLICY NO LONGER REFUSES THIS COMMAND — RM-061.
      *
-     * TWO DIFFERENT FACTS. `ACU_MIN_C` is what the IR library has codes for and is identical
-     * everywhere; this is what the building permits, and here it comes from the university's
-     * energy-efficiency policy. A site with no such rule omits it and gets the hardware bound.
+     * It used to. `policy.acu_min_setpoint_c` was read as a bound on the COMMANDED SETPOINT and
+     * anything below it came back 400 `below_policy_floor`. That reading became untenable once
+     * the setpoint stopped being the thing an operator sets and became the CONTROL LEVER a
+     * closed loop moves: a loop that may never ask for 22 cannot hold a room at 24 on a hot
+     * afternoon, and a person who genuinely needs 18 for an hour had no way to ask.
      *
-     * Checked SECOND on purpose, so a policy can only ever narrow the range. A site that set a
-     * floor below `ACU_MIN_C` is still refused by the check above, which is correct: there is
-     * no code to send.
+     * The number now means the coldest ROOM TEMPERATURE this building permits an automatic rule
+     * to aim for — enforced where rules are written (`upsert_acu_rule`) and where the loop
+     * decides (`server/acuLoopPlan.mjs`), which is where a statement about the room belongs.
      *
-     * Enforced here rather than by omitting options from a dropdown, because this function is
-     * what every dispatch path goes through — manual, scheduled and auto-shed alike — and a UI
-     * that hides an option is not enforcement.
+     * What replaces the refusal here is a WARNING that travels with the command: `buildAck`
+     * returns it to the caller and `server/proxy.mjs` folds it into the audit note, so a
+     * below-policy setpoint is recorded rather than merely prevented. `ACU_MIN_C`/`ACU_MAX_C`
+     * above are unchanged and remain the only hard bound — they are a hardware fact, and a
+     * degree outside them resolves to no IR code at all.
      */
-    const floor = policy && policy.acu_min_setpoint_c;
-    if (typeof floor === 'number' && target_c < floor) {
-      return {
-        ok: false,
-        status: 400,
-        code: 'below_policy_floor',
-        error: `target_c must be at least ${floor} at this site`,
-      };
-    }
+    const policyWarning = setpointPolicyWarning(target_c, policy);
+    if (policyWarning) warnings.push(policyWarning);
   }
 
   const target = resolveTarget(device, socket);
-  return { ok: true, cmd: { command_id, device_id, socket, action, target, target_c } };
+  // On `cmd`, not beside it: `buildAck` and the proxy's audit both take the command object, and
+  // a warning that travels separately is one a caller can forget to carry.
+  return { ok: true, cmd: { command_id, device_id, socket, action, target, target_c, ...(warnings.length > 0 ? { warnings } : {}) } };
 }
 
 /**
@@ -245,6 +251,10 @@ export function buildAck(cmd, atMs) {
     confirmation: 'none',
     note: 'commanded state only — this device does not report relay state back',
   };
+  // Advisory findings, present only when there are any — so a command that trips no policy
+  // produces exactly the ack it always did. A client that only logs the body still gets the
+  // fact, which is the same argument `note` already makes.
+  if (cmd.warnings && cmd.warnings.length > 0) ack.warnings = cmd.warnings;
   // Added only for a capability write, so a relay ack is byte-identical to what it always was
   // and no existing reader meets a field it has never seen.
   if (cmd.action === 'set') {

@@ -24,6 +24,25 @@
  * (~16 W), `group_2` and `group_3` are all seven outlets (561 W, 61% of metered demand). Arming
  * auto-shed would shed the lighting, escalate through both outlet tiers, fail silently on every
  * one, and stay over the 2.21 kW ceiling.
+ *
+ * ============================================================================
+ * BOTH CALLER FACTS ABOVE STOPPED BEING TRUE ON 2026-09-09 (RM-059, RM-060), and this header is
+ * kept rather than rewritten because the reasoning is why `fanOutCommand` exists at all.
+ *
+ *   - The Automation page expresses a socket now. `supabase/phase33_schedules_stackable.sql`
+ *     dropped `unique (device_id)`, the client no longer filters `.is('socket', null)`, and an
+ *     outlet appears as two independently schedulable targets.
+ *   - `server/shedPlan.mjs` enumerates shed targets PER SOCKET and every command it emits already
+ *     names one, so `server/scheduler.mjs` no longer calls `fanOutCommand` on either path.
+ *
+ * `fanOutCommand` ITSELF IS UNCHANGED and every assertion below still holds. It is now the
+ * safety net rather than the mechanism: a legacy or hand-written `socket: null` outlet row must
+ * still expand to both relays rather than going inert. The expansion happens inside
+ * `server/schedulePlan.mjs`'s `resolveDue`, where it is followed by a per-target collapse —
+ * because a legacy row surviving beside its two migrated children is three distinct keys, and
+ * expanding after a collapse turns that into four dispatches for two relays. See `resolveDue`'s
+ * docblock and the two regression tests in `server/resolveDue.test.mjs`.
+ * ============================================================================
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

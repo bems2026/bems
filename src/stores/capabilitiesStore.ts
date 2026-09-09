@@ -32,15 +32,17 @@ interface CapabilitiesState {
   dispatchPolicy: string | null;
   cloudFallbackConfigured: boolean | null;
   /**
-   * The aircon floor the NEXT command will actually be validated against — RM-038.
+   * The coldest ROOM TARGET this building permits — RM-038, redefined by RM-061.
    *
-   * NOT `SITE.policy.acu_min_setpoint_c`, which is what this bundle was BUILT with. An operator
-   * can change the floor without a redeploy, so a selector built from the build value would
-   * offer a degree that comes back as a 400 — which reads as a bug rather than as a policy.
-   * `null` means no policy floor, or that the proxy has not answered yet; `policySource` tells
-   * them apart.
+   * NOT the build's own `SITE.policy` value: an operator can change it without a redeploy, so a
+   * screen built from the build value would state a policy that is no longer in force. `null`
+   * means no policy at all, or that the proxy has not answered yet; `policySource` tells them
+   * apart.
+   *
+   * Since RM-061 this no longer narrows the setpoint selector — the number is about the ROOM,
+   * and a manual setpoint below it is warned about rather than refused.
    */
-  acuMinSetpointC: number | null;
+  acuMinRoomTargetC: number | null;
   /** `'database'` when the proxy read the live row, `'build'` when it fell back. A page showing
    * a floor it got from the build during an outage should be able to say so. */
   policySource: string | null;
@@ -59,7 +61,7 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
   auditBufferPending: null,
   dispatchPolicy: null,
   cloudFallbackConfigured: null,
-  acuMinSetpointC: null,
+  acuMinRoomTargetC: null,
   policySource: null,
 
   // Same retry-with-backoff shape as useLiveConnection.ts's device-catalogue fetch — a
@@ -69,7 +71,7 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
     retry.cancel();
     const attempt = async (): Promise<void> => {
       try {
-        const { hardware_dispatch_enabled, dispatch_classes, audit_buffer_pending, dispatch_policy, cloud_fallback_configured, acu_min_setpoint_c, policy_source } = await getCapabilities();
+        const { hardware_dispatch_enabled, dispatch_classes, audit_buffer_pending, dispatch_policy, cloud_fallback_configured, acu_min_room_target_c, acu_min_setpoint_c, policy_source } = await getCapabilities();
         retry.succeeded();
         set({
           hardwareDispatchEnabled: hardware_dispatch_enabled,
@@ -80,7 +82,9 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
           auditBufferPending: typeof audit_buffer_pending === 'number' ? audit_buffer_pending : null,
           dispatchPolicy: typeof dispatch_policy === 'string' ? dispatch_policy : null,
           cloudFallbackConfigured: typeof cloud_fallback_configured === 'boolean' ? cloud_fallback_configured : null,
-          acuMinSetpointC: typeof acu_min_setpoint_c === 'number' ? acu_min_setpoint_c : null,
+          // New key preferred, old key as the fallback, for the length of the RM-061 rename
+          // window — a proxy that predates phase35 still serves only the old one.
+          acuMinRoomTargetC: typeof acu_min_room_target_c === 'number' ? acu_min_room_target_c : typeof acu_min_setpoint_c === 'number' ? acu_min_setpoint_c : null,
           policySource: typeof policy_source === 'string' ? policy_source : null,
         });
       } catch {

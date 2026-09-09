@@ -11,19 +11,19 @@ import { useAuthStore } from '@/stores/authStore';
  */
 
 vi.mock('@/config/supabase', () => ({ supabase: { rpc: vi.fn() } }));
-const setAcuMinSetpoint = vi.fn();
+const setAcuMinRoomTarget = vi.fn();
 vi.mock('@/lib/supabasePolicy', async (orig) => ({
   ...(await orig<typeof import('@/lib/supabasePolicy')>()),
-  setAcuMinSetpoint: (...args: unknown[]) => setAcuMinSetpoint(...args),
+  setAcuMinRoomTarget: (...args: unknown[]) => setAcuMinRoomTarget(...args),
 }));
 
 const load = vi.fn().mockResolvedValue(undefined);
 
 beforeEach(() => {
-  setAcuMinSetpoint.mockReset().mockResolvedValue(24);
+  setAcuMinRoomTarget.mockReset().mockResolvedValue(24);
   load.mockClear();
   useAuthStore.setState({ status: 'authenticated', mode: 'supabase', email: 'operator@example.test' });
-  useCapabilitiesStore.setState({ acuMinSetpointC: 25, policySource: 'database', load });
+  useCapabilitiesStore.setState({ acuMinRoomTargetC: 25, policySource: 'database', load });
 });
 
 afterEach(() => {
@@ -31,7 +31,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const field = () => screen.getByLabelText(/Coldest aircon setpoint/i) as HTMLInputElement;
+const field = () => screen.getByLabelText(/Coldest room temperature/i) as HTMLInputElement;
 
 describe('PolicySection', () => {
   it('shows the floor the bridge is actually applying', () => {
@@ -43,14 +43,14 @@ describe('PolicySection', () => {
     // The field is DERIVED from what is in force until it is touched. Holding a stale number and
     // then saving it would silently revert another operator's change.
     render(<PolicySection />);
-    useCapabilitiesStore.setState({ acuMinSetpointC: 22 });
+    useCapabilitiesStore.setState({ acuMinRoomTargetC: 22 });
     await waitFor(() => expect(field().value).toBe('22'));
   });
 
   it('stops following once it has been typed in, so an edit is not yanked away mid-keystroke', async () => {
     render(<PolicySection />);
     fireEvent.change(field(), { target: { value: '18' } });
-    useCapabilitiesStore.setState({ acuMinSetpointC: 22 });
+    useCapabilitiesStore.setState({ acuMinRoomTargetC: 22 });
     await waitFor(() => expect(field().value).toBe('18'));
   });
 
@@ -58,7 +58,7 @@ describe('PolicySection', () => {
     render(<PolicySection />);
     fireEvent.change(field(), { target: { value: '24' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(setAcuMinSetpoint).toHaveBeenCalledWith(24));
+    await waitFor(() => expect(setAcuMinRoomTarget).toHaveBeenCalledWith(24));
     // Not trusted from the write: the floor that matters is the one the PROXY now applies, and
     // that is a different process with its own cache.
     expect(load).toHaveBeenCalled();
@@ -68,7 +68,7 @@ describe('PolicySection', () => {
     render(<PolicySection />);
     fireEvent.change(field(), { target: { value: '' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(setAcuMinSetpoint).toHaveBeenCalledWith(null));
+    await waitFor(() => expect(setAcuMinRoomTarget).toHaveBeenCalledWith(null));
   });
 
   it('refuses a value the hardware has no code for, before asking the server', () => {
@@ -76,7 +76,7 @@ describe('PolicySection', () => {
     fireEvent.change(field(), { target: { value: '12' } });
     expect(screen.getByRole('alert')).toHaveTextContent(/between 16 and 30/);
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
-    expect(setAcuMinSetpoint).not.toHaveBeenCalled();
+    expect(setAcuMinRoomTarget).not.toHaveBeenCalled();
   });
 
   it('will not save what is already in force', () => {
@@ -101,7 +101,7 @@ describe('PolicySection', () => {
   });
 
   it('surfaces a refusal from the database instead of looking like it worked', async () => {
-    setAcuMinSetpoint.mockRejectedValue(new Error('permission denied for function set_acu_min_setpoint'));
+    setAcuMinRoomTarget.mockRejectedValue(new Error('permission denied for function set_acu_min_setpoint'));
     render(<PolicySection />);
     fireEvent.change(field(), { target: { value: '24' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));

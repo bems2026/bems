@@ -4,6 +4,9 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { useConnectionStore } from '@/stores/connectionStore';
 import { useCommandStore } from '@/stores/commandStore';
 import { useContextStore } from '@/stores/contextStore';
+import { useScheduleStore } from '@/stores/scheduleStore';
+import { useSocketConfigStore } from '@/stores/socketConfigStore';
+import { useAcuRuleStore } from '@/stores/acuRuleStore';
 import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
 import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
 import { useSpaceTreeStore } from '@/stores/spaceTreeStore';
@@ -52,6 +55,20 @@ export function useLiveConnection(): void {
     // Loaded here, not lazily on Automation's mount — Overview's Active Schedules card
     // reads the schedule keys regardless of which page is currently active.
     void useContextStore.getState().load();
+
+    // The schedules themselves, which left `contextStore`'s flat key map in RM-059 because that
+    // shape cannot hold more than one rule per device. Same reason it loads here: Overview's
+    // Active Schedules card reads them whichever page is showing.
+    void useScheduleStore.getState().load();
+
+    // Per-socket shed tiers (RM-060). Loaded beside the device-level ones for the same reason
+    // they are: the shed panel resolves one from the other, and a panel that rendered before
+    // half of that pair had arrived would show device tiers as though no socket overrode them.
+    void useSocketConfigStore.getState().load();
+
+    // Closed-loop aircon rules (RM-062). Loaded here for the same reason as the rest: the
+    // Automation overview counts them whichever tab is showing.
+    void useAcuRuleStore.getState().load();
 
     // Loaded here, not lazily on Control's mount, so the dispatch banner's very first
     // render is already accurate instead of defaulting open for one frame.

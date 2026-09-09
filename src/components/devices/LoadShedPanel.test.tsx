@@ -3,18 +3,34 @@ import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-li
 import { LoadShedPanel } from './LoadShedPanel';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
+import { useSocketConfigStore } from '@/stores/socketConfigStore';
 import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
 import { emptyDeviceConfig } from '@/lib/deviceConfig';
 import type { Device, DeviceClass, Reading } from '@/lib/types';
 
 const save = vi.fn();
 const setDraftField = vi.fn();
+const setSocketTier = vi.fn();
 
-/** Ids this build has never seen, so nothing here passes because of one building's names. */
-const dev = (id: string, cls: DeviceClass = 'switch'): Device => ({
-  id, display_name: id.toUpperCase(), class: cls, room: null, dps_map: null, status: 'active',
-});
+/** Ids this build has never seen, so nothing here passes because of one building's names.
+ *
+ * An `outlet_dual` carries a real `sockets` pair, as every registry entry does: since RM-060
+ * the socket list is what says how many relays a device has, and a fixture without one would
+ * be testing a device that cannot exist. */
+const dev = (id: string, cls: DeviceClass = 'switch'): Device =>
+  ({
+    id,
+    display_name: id.toUpperCase(),
+    class: cls,
+    room: null,
+    dps_map: null,
+    status: 'active',
+    ...(cls === 'outlet_dual' ? { sockets: [`${id.toUpperCase()}_1`, `${id.toUpperCase()}_2`] } : {}),
+  }) as Device;
 const on = (id: string): Reading => ({ device_id: id, ts: new Date().toISOString(), online: true, state: 'on' });
+/** An outlet reading with per-socket measured state — what `buildLatest` emits for a dual outlet. */
+const sockets = (id: string, s1: 'on' | 'off', s2: 'on' | 'off'): Reading =>
+  ({ device_id: id, ts: new Date().toISOString(), online: true, state: s1 === 'on' || s2 === 'on' ? 'on' : 'off', socket_states: { 1: s1, 2: s2 } }) as Reading;
 
 beforeEach(() => {
   cleanup();
@@ -23,14 +39,18 @@ beforeEach(() => {
   useDeviceStore.setState({ devices: [], latestReadings: {}, totals: null, history: {} });
   useDeviceConfigStore.setState({ saved: {}, draft: {}, status: 'ready', saveStatus: 'idle', saveError: null, lastSave: null, save, setDraftField });
   useCapabilitiesStore.setState({ dispatchClasses: ['switch', 'outlet_dual'] });
+  useSocketConfigStore.setState({ saved: {}, status: 'ready', busy: {}, rowError: {}, setTier: setSocketTier });
 });
 
 describe('LoadShedPanel', () => {
-  it('offers a tier for every relay-controlled device', () => {
+  it('offers a tier for every relay — one per SOCKET on a dual outlet', () => {
+    // RM-060: an outlet is two relays behind one label, and one may be a fridge while the other
+    // is a kettle. A single control for both was a limitation of where the tier was stored.
     useDeviceStore.setState({ devices: [dev('sw-a'), dev('plug-b', 'outlet_dual')] });
     render(<LoadShedPanel onClose={() => {}} />);
     expect(screen.getByLabelText(/tier for SW-A/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/tier for PLUG-B/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/tier for PLUG-B · S1/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/tier for PLUG-B · S2/i)).toBeInTheDocument();
   });
 
   it('does not offer a tier for the aircon, and says why', () => {
@@ -114,5 +134,49 @@ describe('LoadShedPanel', () => {
     useDeviceStore.setState({ devices: [dev('ct', 'meter')] });
     render(<LoadShedPanel onClose={() => {}} />);
     expect(screen.getByText(/nothing to shed/i)).toBeInTheDocument();
+  });
+});
+
+describe('LoadShedPanel — per socket (RM-060)', () => {
+  it('writes a socket tier to socket_config, not to the device row', () => {
+    useDeviceStore.setState({ devices: [dev('plug-b', 'outlet_dual')] });
+    render(<LoadShedPanel onClose={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/tier for PLUG-B · S2/i), { target: { value: 'group_1' } });
+    expect(setSocketTier).toHaveBeenCalledWith('plug-b', 2, 'group_1');
+    expect(setDraftField).not.toHaveBeenCalled();
+  });
+
+  it('a single-relay device still writes its DEVICE row — two tables, one gesture', () => {
+    useDeviceStore.setState({ devices: [dev('sw-a')] });
+    render(<LoadShedPanel onClose={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/tier for SW-A/i), { target: { value: 'group_2' } });
+    expect(setDraftField).toHaveBeenCalledWith('sw-a', 'loadShedGroup', 'group_2');
+    expect(setSocketTier).not.toHaveBeenCalled();
+  });
+
+  it('a socket tier overrides the device tier for that socket only', () => {
+    useDeviceStore.setState({ devices: [dev('plug-b', 'outlet_dual')] });
+    useDeviceConfigStore.setState({ saved: { 'plug-b': { ...emptyDeviceConfig('plug-b'), loadShedGroup: 'group_3' } } });
+    useSocketConfigStore.setState({ saved: { 'plug-b': { 1: { deviceId: 'plug-b', socket: 1, loadShedGroup: 'group_1', label: null } } } });
+    render(<LoadShedPanel onClose={() => {}} />);
+    expect((screen.getByLabelText(/tier for PLUG-B · S1/i) as HTMLSelectElement).value).toBe('group_1');
+    expect((screen.getByLabelText(/tier for PLUG-B · S2/i) as HTMLSelectElement).value).toBe('group_3', );
+  });
+
+  it('reads "on" PER SOCKET — one socket drawing does not make its neighbour sheddable', () => {
+    // The device-level `state` is derived as `s1 || s2`, so using it here would show an already
+    // off relay as one that would act.
+    useDeviceStore.setState({ devices: [dev('plug-b', 'outlet_dual')], latestReadings: { 'plug-b': sockets('plug-b', 'on', 'off') } });
+    useSocketConfigStore.setState({ saved: { 'plug-b': { 1: { deviceId: 'plug-b', socket: 1, loadShedGroup: 'group_1', label: null }, 2: { deviceId: 'plug-b', socket: 2, loadShedGroup: 'group_1', label: null } } } });
+    render(<LoadShedPanel onClose={() => {}} />);
+    // Two points carry group_1; exactly one of them could act right now.
+    expect(screen.getByText(/1 would act now/i)).toBeInTheDocument();
+  });
+
+  it('a failed socket write is reported next to the control that caused it', () => {
+    useDeviceStore.setState({ devices: [dev('plug-b', 'outlet_dual')] });
+    useSocketConfigStore.setState({ rowError: { 'plug-b:1': 'Supabase socket_config write failed: nope' } });
+    render(<LoadShedPanel onClose={() => {}} />);
+    expect(screen.getByRole('alert')).toHaveTextContent(/socket_config write failed/i);
   });
 });

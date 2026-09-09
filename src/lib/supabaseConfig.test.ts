@@ -1,94 +1,57 @@
 import { describe, it, expect } from 'vitest';
-import { scheduleRowsToContext, dsmRowToContext, scheduleRowsFor, dsmRowFrom } from './supabaseConfig';
+import { dsmRowToContext, dsmRowFrom } from './supabaseConfig';
 
-describe('scheduleRowsToContext', () => {
-  it('maps a full schedule row to the flat context keys the UI reads', () => {
-    const ctx = scheduleRowsToContext([{ device_id: 'l3', rule: { on: '18:00', off: '06:00', days: '1111100' }, enabled: true }]);
-    expect(ctx).toEqual({
-      'global.schedule.l3.on': '18:00',
-      'global.schedule.l3.off': '06:00',
-      'global.schedule.l3.days': '1111100',
-      'global.schedule.l3.armed': 'true',
-    });
-  });
-
-  it('omits on/off/days keys the rule never set, rather than fabricating empty strings', () => {
-    const ctx = scheduleRowsToContext([{ device_id: 'l3', rule: {}, enabled: false }]);
-    expect(ctx).toEqual({ 'global.schedule.l3.armed': 'false' });
-  });
-
-  it('handles a null rule the same as an empty one', () => {
-    const ctx = scheduleRowsToContext([{ device_id: 'co1', rule: null, enabled: false }]);
-    expect(ctx).toEqual({ 'global.schedule.co1.armed': 'false' });
-  });
-
-  it('returns an empty map for no rows', () => {
-    expect(scheduleRowsToContext([])).toEqual({});
-  });
-});
+/**
+ * The schedule half of this module went in RM-059. It mapped `schedules` rows to and from flat
+ * `global.schedule.<id>.<field>` context keys, a shape that can hold exactly one rule per device
+ * — which is the limitation RM-059 removed. Schedules are ordinary rows with ids now; their
+ * coverage lives in `src/lib/scheduleStack.test.ts` and `src/stores/scheduleStore.ts`'s callers.
+ *
+ * What remains here is the DSM singleton, which is genuinely one row of settings and for which
+ * the flat map is still the right shape.
+ */
 
 describe('dsmRowToContext', () => {
-  it('maps a full threshold row, including the ACU trigger setpoint', () => {
-    const ctx = dsmRowToContext({ max_phase_current: 30, max_total_kw: 5.5, auto_shed: true, care_acu_trigger_c: 28 });
+  it('maps a full threshold row to the flat context keys the card reads', () => {
+    const ctx = dsmRowToContext({ max_phase_current: 30, max_total_kw: 5.5, auto_shed: true });
     expect(ctx).toEqual({
       'global.dsm.max_phase_a': '30',
       'global.dsm.max_total_kw': '5.5',
       'global.dsm.auto_shed': 'true',
-      'global.trigger.care_acu_on': '28',
     });
   });
 
   it('omits an unset (null) threshold rather than showing a fabricated 0 or empty string', () => {
-    const ctx = dsmRowToContext({ max_phase_current: null, max_total_kw: null, auto_shed: false, care_acu_trigger_c: null });
+    const ctx = dsmRowToContext({ max_phase_current: null, max_total_kw: null, auto_shed: false });
     expect(ctx).toEqual({ 'global.dsm.auto_shed': 'false' });
   });
 
   it('returns an empty map when no row exists yet', () => {
     expect(dsmRowToContext(null)).toEqual({});
   });
+
+  it('no longer carries the ambient trigger — phase35 drops the column it came from', () => {
+    // `care_acu_trigger_c` backed a slider that no server file ever read. RM-062's controller
+    // replaces it; leaving the key mapped here would keep a dead value round-tripping.
+    const ctx = dsmRowToContext({ max_phase_current: 30, max_total_kw: 5.5, auto_shed: true });
+    expect(Object.keys(ctx).some((k) => k.startsWith('global.trigger.'))).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
 // Attribution.
 //
-// `schedules.updated_by` and `dsm_thresholds.updated_by` are how server/scheduler.mjs
-// decides who a resulting command is attributed to. Without them every row a real user saves
-// is skipped, because `commands.requested_by` is NOT NULL and inventing a user would put a
-// fiction in the one table meant to be trustworthy. This file wrote neither until now.
+// `dsm_thresholds.updated_by` is how `server/shedPlan.mjs` decides who a shed command is
+// attributed to; without it `planShed` returns an idle plan, because `commands.requested_by` is
+// NOT NULL and inventing a user would put a fiction in the one table meant to be trustworthy.
+// That is precisely why RM-006c needs a save from a signed-in session and not a flag flip.
 // ---------------------------------------------------------------------------
-
-describe('scheduleRowsFor', () => {
-  const merged = {
-    'global.schedule.l1.on': '08:00',
-    'global.schedule.l1.off': '18:00',
-    'global.schedule.l1.days': '1111100',
-    'global.schedule.l1.armed': 'true',
-  };
-
-  it('stamps the signed-in user, so the schedule can actually fire later', () => {
-    expect(scheduleRowsFor(new Set(['l1']), merged, 'user-42')[0].updated_by).toBe('user-42');
-  });
-
-  it('carries the rule and armed state through unchanged', () => {
-    const row = scheduleRowsFor(new Set(['l1']), merged, 'user-42')[0];
-    expect(row.device_id).toBe('l1');
-    expect(row.enabled).toBe(true);
-    expect(row.rule).toEqual({ on: '08:00', off: '18:00', days: '1111100' });
-  });
-
-  it('refreshes updated_at — the column only defaults on insert and these are upserts over existing rows', () => {
-    expect(typeof scheduleRowsFor(new Set(['l1']), merged, 'user-42')[0].updated_at).toBe('string');
-  });
-
-  it('passes a null actor through rather than inventing one; the caller decides whether that is acceptable', () => {
-    expect(scheduleRowsFor(new Set(['l1']), merged, null)[0].updated_by).toBeNull();
-  });
-});
 
 describe('dsmRowFrom', () => {
   it('stamps the signed-in user and refreshes updated_at', () => {
     const row = dsmRowFrom({ 'global.dsm.max_total_kw': '5' }, 'user-42');
     expect(row.updated_by).toBe('user-42');
+    // The column only defaults on INSERT and this is an update over a row that already exists.
     expect(typeof row.updated_at).toBe('string');
   });
 
@@ -97,5 +60,9 @@ describe('dsmRowFrom', () => {
     expect(row.max_phase_current).toBeNull();
     expect(row.max_total_kw).toBeNull();
     expect(row.auto_shed).toBe(false);
+  });
+
+  it('passes a null actor through rather than inventing one; the caller decides whether that is acceptable', () => {
+    expect(dsmRowFrom({}, null).updated_by).toBeNull();
   });
 });

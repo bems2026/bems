@@ -150,6 +150,11 @@ export const BUILT_IN_DEVICES = [
     capability_profile: null, // IR, not dps — see `profileFor`
     ctx: null,
     state_ctx: 'ac_dash_state', // { power, setTemp, roomTemp, humidity, outTemp }
+    // What its `roomTemp` is a temperature OF. Return air is the air drawn over the coil, not
+    // the air in the room, so a closed-loop rule aimed at 24 settles the room somewhat warmer
+    // than 24 — by however much the unit's own draw-down is. Recorded here rather than left to
+    // be discovered, because the rule editor states it where the choice is made.
+    measures: 'return_air',
     status: 'active',
   },
 
@@ -164,6 +169,10 @@ export const BUILT_IN_DEVICES = [
     ctx: null,
     state_ctx: 'ac_dash_state',
     state_field: 'outTemp',
+    // OUTDOOR air, which is what `outTemp` means and what this device's name says. It is a
+    // temperature source, so a picker will offer it — and a rule closed on it can never reach a
+    // room target, because cooling the room does not change the weather. The editor says so.
+    measures: 'outdoor_air',
     status: 'active',
   },
 ];

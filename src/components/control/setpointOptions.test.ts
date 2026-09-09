@@ -1,58 +1,80 @@
 import { describe, it, expect } from 'vitest';
-import { setpointOptions, seedSetpoint } from './setpointOptions';
+import { setpointOptions, seedSetpoint, setpointWarning, DEFAULT_SETPOINT_C } from './setpointOptions';
+import { ACU_MIN_C, ACU_MAX_C } from '@shared/commands.mjs';
 
 /**
- * RM-027 — the selector must not offer a value the server will refuse.
+ * RM-061 removed a bound from this module rather than adding one.
  *
- * Two bounds, and keeping them distinct is the point. The IR library's range is a hardware
- * fact, identical at every site. The policy floor is the operator's rule and narrows it. A
- * dropdown offering 18 at a site whose floor is 25 produces a 400 and looks like a bug.
+ * The site's comfort policy used to narrow the selector, because it was read as a limit on the
+ * setpoint COMMANDED to the aircon and `validateCommand` refused anything below it. That number
+ * now means the coldest ROOM TEMPERATURE an automatic rule may aim for, so it says nothing about
+ * what a person may ask for by hand — and the selector offers the full hardware range with
+ * `setpointWarning` supplying the sentence that used to be a 400.
  */
+
 describe('setpointOptions', () => {
-  it('offers the full IR range when the site declares no floor', () => {
-    expect(setpointOptions(null)).toEqual([16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]);
+  it('offers every whole degree the IR library holds a code for, ascending', () => {
+    const out = setpointOptions();
+    expect(out[0]).toBe(ACU_MIN_C);
+    expect(out[out.length - 1]).toBe(ACU_MAX_C);
+    expect(out).toHaveLength(ACU_MAX_C - ACU_MIN_C + 1);
+    expect([...out].sort((a, b) => a - b)).toEqual(out);
   });
 
-  it('starts at the policy floor when the site declares one', () => {
-    expect(setpointOptions(25)).toEqual([25, 26, 27, 28, 29, 30]);
+  it('offers 16 °C — the degree the old policy floor used to hide', () => {
+    // The regression that matters: a closed loop cannot hold a room at 24 on a hot afternoon if
+    // the coldest thing it may ask for is 24.
+    expect(setpointOptions()).toContain(16);
   });
 
-  it('includes the floor itself — the bound is inclusive, matching validateCommand', () => {
-    expect(setpointOptions(25)[0]).toBe(25);
-  });
-
-  it('never offers less than the IR library has codes for, whatever the policy says', () => {
-    // A floor below the hardware minimum cannot widen the range: there is no code to send.
-    expect(setpointOptions(10)[0]).toBe(16);
-  });
-
-  it('never returns an empty list, even for an absurd floor', () => {
-    // An empty <select> is a dead control. Better to offer the single warmest legal value.
-    expect(setpointOptions(99)).toEqual([30]);
+  it('is every whole degree with no gaps', () => {
+    const out = setpointOptions();
+    expect(out.every((c, i) => i === 0 || c === out[i - 1] + 1)).toBe(true);
   });
 });
 
 describe('seedSetpoint', () => {
-  it('opens at the device reading when that reading is a legal option', () => {
-    expect(seedSetpoint(27, 25)).toBe(27);
+  it('opens on the unit last known setpoint, so the control shows where the room actually is', () => {
+    expect(seedSetpoint(22)).toBe(22);
   });
 
-  it('rounds a fractional reading to the nearest whole degree', () => {
-    expect(seedSetpoint(26.4, 25)).toBe(26);
+  it('rounds a fractional reading to a degree the hardware can be told', () => {
+    expect(seedSetpoint(23.4)).toBe(23);
   });
 
-  it('falls back to the floor when the last reading is below policy', () => {
-    // The ACU genuinely can be sitting at 22 — set by remote, or before the policy existed.
-    // Seeding the selector there would preselect a value the server refuses.
-    expect(seedSetpoint(22, 25)).toBe(25);
+  it('opens on a value the OLD policy floor would have refused, because nothing refuses it now', () => {
+    expect(seedSetpoint(18)).toBe(18);
   });
 
-  it('falls back to the default when there is no reading at all', () => {
-    expect(seedSetpoint(undefined, 25)).toBe(25);
-    expect(seedSetpoint(null, null)).toBe(25);
+  it('falls back to the retired dashboard default when nothing is known', () => {
+    expect(seedSetpoint(null)).toBe(DEFAULT_SETPOINT_C);
+    expect(seedSetpoint(undefined)).toBe(DEFAULT_SETPOINT_C);
+    expect(seedSetpoint(Number.NaN)).toBe(DEFAULT_SETPOINT_C);
   });
 
-  it('keeps the pre-RM-027 default of 25 when no policy applies', () => {
-    expect(seedSetpoint(undefined, null)).toBe(25);
+  it('falls back for a reading outside the hardware range — there is no code to send', () => {
+    expect(seedSetpoint(5)).toBe(DEFAULT_SETPOINT_C);
+    expect(seedSetpoint(40)).toBe(DEFAULT_SETPOINT_C);
+  });
+});
+
+describe('setpointWarning', () => {
+  it('says nothing when the choice is at or above the policy', () => {
+    expect(setpointWarning(24, 24)).toBeNull();
+    expect(setpointWarning(26, 24)).toBeNull();
+  });
+
+  it('says nothing when the site declares no policy at all', () => {
+    expect(setpointWarning(16, null)).toBeNull();
+    expect(setpointWarning(16, undefined)).toBeNull();
+  });
+
+  it('names the policy value and says the command is still allowed and recorded', () => {
+    // The meaning of the number changed, so the sentence has to explain it — an operator who
+    // remembers it as "the coldest you may set" would otherwise read this as a bug.
+    const msg = setpointWarning(18, 24);
+    expect(msg).toMatch(/24°C room-comfort policy/);
+    expect(msg).toMatch(/allowed/);
+    expect(msg).toMatch(/audit trail/);
   });
 });

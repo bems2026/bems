@@ -11,9 +11,10 @@ import { InfoHint } from '@/components/ui/InfoHint';
 import { SimulatedBadge } from './SimulatedBadge';
 import { useControlLog } from './controlLog';
 import { formatWithUnit } from '@/lib/format';
-import { setpointOptions, seedSetpoint } from './setpointOptions';
+import { setpointOptions, seedSetpoint, setpointWarning } from './setpointOptions';
 import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
 import { SITE } from '@shared/registry.mjs';
+import { roomTargetFloorC } from '@shared/sitePolicy.mjs';
 
 /** The site's aircon, found by capability rather than by this building's name for it — FI-016.
  * `null` at a site with no IR-commandable unit, which the card renders as "no aircon" rather
@@ -29,12 +30,16 @@ const useAcu = () => useDeviceStore((s) => primaryOfClass(s.devices, 'acu_ir'));
  * and for the same reason.
  *
  * `undefined` from the store means "not answered"; `null` means "answered, and this site has no
- * policy floor". Only the first should fall back to the build.
+ * policy at all". Only the first should fall back to the build.
+ *
+ * Since RM-061 this number does NOT narrow the selector — it is the coldest ROOM TEMPERATURE the
+ * building permits an automatic rule to aim for, and a manual setpoint below it is warned about
+ * rather than refused. It is read here only to write that warning.
  */
-function useSetpointFloor(): number | null | undefined {
-  const live = useCapabilitiesStore((s) => s.acuMinSetpointC);
+function useRoomTargetFloor(): number | null | undefined {
+  const live = useCapabilitiesStore((s) => s.acuMinRoomTargetC);
   const source = useCapabilitiesStore((s) => s.policySource);
-  return source === null ? SITE.policy.acu_min_setpoint_c : live;
+  return source === null ? roomTargetFloorC(SITE.policy) : live;
 }
 
 /**
@@ -57,24 +62,20 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
   const { ask, modalProps } = useConfirm();
   // Seeded from the ACU's last known setpoint when there is one, so the control opens showing
   // where the room actually is rather than a fixed guess.
-  const floorC = useSetpointFloor();
-  /** The degrees this SITE may command: the IR library's range, narrowed by the building's own
-   * policy floor. Derived in `setpointOptions.ts`, which is where the reasoning lives and which
-   * is tested separately — `validateCommand` refuses the same values server-side, and that is
-   * the enforcement; this only stops the selector offering a guaranteed 400. */
-  const setpoints = useMemo(() => setpointOptions(floorC), [floorC]);
-  const [chosen, setSetpointC] = useState<number>(() => seedSetpoint(reading?.setpoint_c, floorC));
+  const roomFloorC = useRoomTargetFloor();
+  /** Every whole degree the IR library holds a code for. The building's comfort policy no
+   * longer narrows this (RM-061): that number is about the ROOM, and hiding options was never
+   * enforcement — `validateCommand` is, and it now warns here rather than refusing. */
+  const setpoints = useMemo(() => setpointOptions(), []);
+  const [chosen, setSetpointC] = useState<number>(() => seedSetpoint(reading?.setpoint_c));
 
-  /**
-   * A floor raised while this card is open leaves the selector on a degree that is no longer
-   * permitted, and the next send would come back a 400 — which reads as a bug rather than as a
-   * policy. So the value in force is DERIVED: if what was chosen is still offered it stands,
-   * and otherwise the nearest degree that is.
-   *
-   * Derived rather than corrected in an effect, so there is no render where the selector shows
-   * a value the send would refuse.
-   */
-  const setpointC = setpoints.includes(chosen) ? chosen : seedSetpoint(chosen, floorC);
+  /** Still derived rather than corrected in an effect, so there is never a render showing a
+   * degree the hardware has no code for. */
+  const setpointC = setpoints.includes(chosen) ? chosen : seedSetpoint(chosen);
+
+  /** Said out loud when the choice is below the building's policy. Not a refusal — the command
+   * goes, and `server/proxy.mjs` writes the same fact into the audit note. */
+  const policyNote = setpointWarning(setpointC, roomFloorC);
 
   const view = controlView(reading, pending);
   const busy = view.kind === 'pending';
@@ -158,6 +159,14 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
             </select>
             <span className="control-ir-setpoint__hint">applies to the next ON command</span>
           </div>
+          {/* Below the building's room-comfort policy. Said here rather than refused: the number
+              is about the room, and somebody who needs 18 °C for an hour is entitled to ask.
+              `role="status"` (polite) — it is a note, not an error. */}
+          {policyNote && (
+            <p className="control-ir-setpoint__policy" role="status">
+              {policyNote}
+            </p>
+          )}
         </div>
 
         <div className="control-ir-unit__actions">

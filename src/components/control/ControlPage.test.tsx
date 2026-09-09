@@ -267,23 +267,23 @@ describe('ControlPage', () => {
 // ---------------------------------------------------------------------------
 
 describe('ACU setpoint', () => {
-  it('offers the IR library range narrowed by this site policy floor, and nothing outside it', () => {
-    // RM-027: the ceiling is what the IR library has codes for, the floor is the operator's
-    // rule. Read from SITE rather than hardcoded, so a site with a different policy - or none -
-    // does not have to rewrite this test in order to add itself.
+  it('offers the WHOLE IR library range — the site policy no longer narrows it', () => {
+    // RM-061. The building's number is about the ROOM, not about this knob: a closed loop needs
+    // the cold end of the range to hold a room at 24 on a hot afternoon, and a person who needs
+    // 18 for an hour is entitled to ask. Below-policy choices are warned about, not hidden.
     useDeviceStore.setState({ devices: [acu()] });
     render(<ControlPage />);
     const select = screen.getByLabelText('SETPOINT') as HTMLSelectElement;
     const values = [...select.options].map((o) => Number(o.value));
-    expect(values).toEqual(setpointOptions(SITE.policy.acu_min_setpoint_c));
+    expect(values).toEqual(setpointOptions());
     expect(values[values.length - 1]).toBe(30);
-    expect(Math.min(...values)).toBeGreaterThanOrEqual(16);
+    expect(Math.min(...values)).toBe(16);
   });
 
   it('offers nothing the server would refuse - every option survives validateCommand', () => {
-    // This is the whole reason for narrowing the list. A selectable option that comes back as
-    // a 400 reads as a bug rather than as a policy, so assert the two agree by construction
-    // rather than by both having been edited on the same day.
+    // Still true, and now for a simpler reason: the only bound left is the hardware one, which
+    // is exactly what this list is built from. A selectable option that came back as a 400
+    // would read as a bug rather than as a policy.
     useDeviceStore.setState({ devices: [acu()] });
     render(<ControlPage />);
     const select = screen.getByLabelText('SETPOINT') as HTMLSelectElement;
@@ -348,7 +348,9 @@ describe('ACU setpoint', () => {
     });
     render(<ControlPage />);
     const value = Number((screen.getByLabelText('SETPOINT') as HTMLSelectElement).value);
-    expect(value).toBeGreaterThanOrEqual(SITE.policy.acu_min_setpoint_c ?? 16);
+    // The unit's own last-known setpoint, whatever it is — RM-061 removed the clamp that used
+    // to drag this up to the policy floor.
+    expect(value).toBe(21);
   });
 });
 

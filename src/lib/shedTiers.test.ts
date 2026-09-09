@@ -93,3 +93,80 @@ describe('the summary a panel renders', () => {
     expect(s.rows.map((r) => r.device.id)).toEqual(['b', 'a']);
   });
 });
+
+/* ===========================================================================
+ * RM-060 — the unit is a socket. Each case here is paired with one in
+ * `server/shedPlan.test.mjs`; that pairing is the whole reason this file exists.
+ * ======================================================================== */
+
+const outlet = (id: string): Device =>
+  ({
+    id,
+    display_name: id.toUpperCase(),
+    class: 'outlet_dual',
+    room: null,
+    dps_map: null,
+    status: 'active',
+    sockets: [`${id.toUpperCase()}_1`, `${id.toUpperCase()}_2`],
+  }) as Device;
+
+const socketReading = (id: string, s1: 'on' | 'off', s2: 'on' | 'off'): Reading =>
+  ({
+    device_id: id,
+    ts: new Date().toISOString(),
+    online: true,
+    state: s1 === 'on' || s2 === 'on' ? 'on' : 'off',
+    socket_states: { 1: s1, 2: s2 },
+  }) as Reading;
+
+describe('per-socket shed rows', () => {
+  it('an outlet contributes ONE ROW PER SOCKET, named and keyed distinctly', () => {
+    const s = summariseShed([outlet('co1')], () => null, {}, ALL);
+    expect(s.rows.map((r) => r.key)).toEqual(['co1:1', 'co1:2']);
+    expect(s.rows.map((r) => r.name)).toEqual(['CO1 · S1', 'CO1 · S2']);
+    expect(s.rows.map((r) => r.socket)).toEqual([1, 2]);
+  });
+
+  it('a single-relay device still contributes one row with a null socket', () => {
+    const s = summariseShed([dev('a')], () => null, {}, ALL);
+    expect(s.rows).toHaveLength(1);
+    expect(s.rows[0]).toMatchObject({ socket: null, key: 'a', name: 'A' });
+  });
+
+  it('takes the socket count from the registry, never a hard-coded 2', () => {
+    // `Device['sockets']` is a two-tuple, so this cannot be expressed without going through
+    // `unknown`. The registry it comes from is plain JavaScript and the live flow is hand-edited,
+    // so the runtime guard is real and worth pinning.
+    const single = { ...outlet('co9'), sockets: ['CO9_1'] } as unknown as Device;
+    expect(summariseShed([single], () => null, {}, ALL).rows).toHaveLength(1);
+  });
+
+  it('passes the socket to tierOf, so the two sockets can carry different tiers', () => {
+    const s = summariseShed([outlet('co1')], (_id, socket) => (socket === 1 ? 'group_1' : 'never'), {}, ALL);
+    expect(s.rows.map((r) => r.tier)).toEqual(['group_1', 'never']);
+  });
+
+  it('reads "on" PER SOCKET, not from the derived device state', () => {
+    // `buildLatest` derives the device `state` as `s1 || s2`. Using it here would mark an
+    // already-off relay as one that would act, every time its neighbour was drawing.
+    const s = summariseShed([outlet('co1')], () => 'group_1', { co1: socketReading('co1', 'on', 'off') }, ALL);
+    expect(s.rows.map((r) => r.on)).toEqual([true, false]);
+    expect(s.byTier.group_1).toEqual({ total: 2, effective: 1 });
+  });
+
+  it('a reading with no socket_states is NOT assumed on', () => {
+    const s = summariseShed([outlet('co1')], () => 'group_1', { co1: on('co1') }, ALL);
+    expect(s.rows.every((r) => r.on === false)).toBe(true);
+    expect(s.byTier.group_1.effective).toBe(0);
+  });
+
+  it('counts SHED POINTS, not devices — the number the panel must also say', () => {
+    const s = summariseShed([outlet('co1'), dev('a')], () => 'group_1', { co1: socketReading('co1', 'on', 'on'), a: on('a') }, ALL);
+    expect(s.byTier.group_1).toEqual({ total: 3, effective: 3 });
+  });
+
+  it('counts an inert socket once per socket, not once per device', () => {
+    const s = summariseShed([outlet('co1')], () => 'group_1', { co1: socketReading('co1', 'on', 'on') }, []);
+    expect(s.inertCount).toBe(2);
+  });
+});

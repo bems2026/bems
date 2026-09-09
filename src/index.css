@@ -4682,6 +4682,849 @@ body::before {
  * than repointed at the new page components.
  */
 
+/* ============================================================================
+ * TABS (src/components/ui/Tabs.tsx) — RM-059
+ *
+ * Visually a sibling of `.nav-tabs` above and deliberately so: the top strip switches PAGES,
+ * this one switches views inside one page, and a reader should recognise the relationship
+ * without mistaking one for the other. Hence the same pill language at a smaller weight and
+ * on a recessed ground, rather than a new idiom.
+ *
+ * No focus ring here — the global `:focus-visible` rule near the top of this file owns that,
+ * and a local override is how a component ends up with a ring that passes on a card and fails
+ * on the page background.
+ * ========================================================================= */
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: var(--sp-4);
+  background: var(--glass-2);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-pill);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+.tabs__tab {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 7px 16px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted);
+  font: 600 var(--fs-xs-lg) inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+.tabs__tab:hover {
+  color: var(--txt);
+}
+.tabs__tab--active {
+  background: var(--bg-surface);
+  color: var(--txt);
+  box-shadow: 0 2px 10px rgb(30 41 59 / 0.1);
+}
+/* Same reasoning as `.nav-tab--active`: a light-tuned shadow barely reads on a dark pill. */
+:root[data-theme='dark'] .tabs__tab--active {
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.5);
+}
+.tabs__tab:active {
+  transform: scale(0.98);
+}
+.tabs__icon {
+  opacity: 0.85;
+}
+.tabs__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: var(--fs-3xs);
+  font-weight: 700;
+  line-height: 18px;
+}
+/* The panel is a focus stop (see TabPanel) so its content is reachable even when it holds no
+   focusable element. It must not draw a permanent outline for that. */
+.tabs__panel:focus {
+  outline: none;
+}
+
+/* ============================================================================
+ * AUTOMATION — OVERVIEW TAB
+ * ========================================================================= */
+.automation-overview {
+  display: grid;
+  gap: var(--sp-4);
+}
+.automation-overview__tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--sp-3);
+}
+.automation-overview__tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.automation-overview__tile:hover {
+  border-color: var(--border-strong);
+}
+.automation-overview__tile:active {
+  transform: scale(0.99);
+}
+.automation-overview__tile-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-2);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.automation-overview__tile-value {
+  color: var(--txt);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  line-height: var(--lh-tight);
+}
+.automation-overview__tile-detail {
+  color: var(--muted-2);
+  font-size: var(--fs-xs);
+}
+
+/* The reach statement. Amber rather than red when live: this is not an error, it is the page
+   telling you it has real authority — the tone should read as "pay attention", not "something
+   broke". Green would be worse still; there is nothing reassuring about it. */
+.automation-overview__reach--live {
+  border-color: var(--warn);
+  background: var(--warn-soft);
+}
+.automation-overview__reach-body {
+  margin: var(--sp-2) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-base);
+}
+.automation-overview__next-list {
+  list-style: none;
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.automation-overview__next-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 7px var(--sp-2);
+  border-radius: var(--r-sm);
+}
+.automation-overview__next-row:nth-child(odd) {
+  background: var(--bg-inset);
+}
+.automation-overview__next-icon {
+  display: inline-flex;
+  color: var(--muted-2);
+}
+.automation-overview__next-name {
+  color: var(--txt);
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.automation-overview__next-time {
+  color: var(--accent-text);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================================
+ * COMING-SOON CARDS (src/components/automation/ComingSoonCard.tsx)
+ *
+ * Muted, never disabled-looking: these describe real strategies with real blockers, and
+ * several are unblocked by a purchase order rather than by code. Greying them out would say
+ * "ignore this", which is the opposite of the intent.
+ * ========================================================================= */
+.coming-soon-card {
+  border-style: dashed;
+}
+.coming-soon-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.coming-soon-card__pill {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--chip-bg);
+  color: var(--muted-2);
+  font-size: var(--fs-3xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.coming-soon-card__what {
+  margin: var(--sp-2) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-base);
+}
+.coming-soon-card__blocked {
+  margin: var(--sp-2) 0 0;
+  color: var(--muted-2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-base);
+}
+.coming-soon-card__blocked-label {
+  color: var(--warn-on-page);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.coming-soon-card__id {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  background: var(--bg-inset);
+  color: var(--muted-2);
+  font-size: var(--fs-3xs);
+}
+
+/* ============================================================================
+ * TIME-DRIVEN AUTOMATION (RM-059) — target list, rule stack, week strip
+ *
+ * A master/detail split rather than one long table. A stack needs vertical room for its rules,
+ * its conflicts and its week strip; twenty of those down one page is unreadable, and the flat
+ * five-column table this replaces could only ever show one rule per device anyway.
+ * ========================================================================= */
+.time-driven {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .time-driven {
+    grid-template-columns: 1fr;
+  }
+}
+.time-driven__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.time-driven__filters {
+  margin: var(--sp-2) 0;
+  flex-wrap: wrap;
+}
+.time-driven__dead {
+  margin: var(--sp-2) 0 0;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  background: var(--warn-soft);
+  color: var(--warn-on-page);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+.time-driven__list {
+  list-style: none;
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  max-height: 460px;
+  overflow-y: auto;
+}
+.time-driven__target {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--txt);
+  font: 600 var(--fs-sm) inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.time-driven__target:hover {
+  background: var(--bg-inset);
+}
+.time-driven__target--active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.time-driven__target-icon {
+  display: inline-flex;
+  color: var(--muted-2);
+}
+.time-driven__target--active .time-driven__target-icon {
+  color: inherit;
+}
+.time-driven__target-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* An armed rule that can never fire. Loud on purpose: in a stack of five this is the
+   difference between the fault being noticed and it being invisible. */
+.time-driven__target-dead {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--r-pill);
+  background: var(--warn);
+  color: var(--bg-surface);
+  font-size: var(--fs-3xs);
+  font-weight: 800;
+}
+.time-driven__target-count {
+  color: var(--muted-2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.time-driven__target--active .time-driven__target-count {
+  color: inherit;
+}
+.time-driven__detail {
+  display: grid;
+  gap: var(--sp-4);
+  align-content: start;
+}
+
+/* --- the stack itself ----------------------------------------------------------------- */
+.schedule-stack__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.schedule-stack__sub {
+  margin: 2px 0 0;
+  color: var(--muted-2);
+  font-size: var(--fs-xs);
+}
+.schedule-stack__add {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font: 600 var(--fs-xs-lg) inherit;
+  cursor: pointer;
+}
+.schedule-stack__add:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.schedule-stack__empty,
+.schedule-stack__error {
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-base);
+}
+.schedule-stack__empty {
+  color: var(--muted);
+}
+.schedule-stack__error {
+  color: var(--bad);
+}
+.schedule-stack__list {
+  list-style: none;
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sp-2);
+}
+.schedule-stack__conflicts {
+  list-style: none;
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.schedule-stack__conflict {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-base);
+}
+/* A collision changes what happens; an overnight run or a duplicate only changes how it reads.
+   Different weights, because treating them alike teaches people to ignore both. */
+.schedule-stack__conflict--collision {
+  background: var(--warn-soft);
+  color: var(--warn-on-page);
+}
+.schedule-stack__conflict--duplicate,
+.schedule-stack__conflict--overnight {
+  background: var(--bg-inset);
+  color: var(--muted);
+}
+
+/* --- one rule ------------------------------------------------------------------------- */
+.schedule-rule {
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-inner);
+  background: var(--bg-surface-2);
+}
+/* Disarmed is a state somebody chose, so it reads as quiet — never as broken. */
+.schedule-rule--disarmed {
+  opacity: 0.72;
+}
+.schedule-rule--conflicted {
+  border-color: var(--warn);
+}
+.schedule-rule__main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.schedule-rule__label {
+  flex: 1 1 140px;
+  min-width: 110px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--field-bg);
+  color: var(--txt);
+  font: 600 var(--fs-sm) inherit;
+}
+.schedule-rule__time {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.schedule-rule__time-label {
+  color: var(--muted-2);
+  font-size: var(--fs-3xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.schedule-rule__time input {
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--field-bg);
+  color: var(--txt);
+  font: 600 var(--fs-xs-lg) inherit;
+}
+.schedule-rule__days {
+  display: inline-flex;
+  gap: 3px;
+}
+.schedule-rule__delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted-2);
+  cursor: pointer;
+}
+.schedule-rule__delete:hover:not(:disabled) {
+  border-color: var(--red);
+  color: var(--bad);
+}
+.schedule-rule__delete:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.schedule-rule__problem,
+.schedule-rule__error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-base);
+}
+.schedule-rule__problem {
+  color: var(--warn-on-page);
+}
+.schedule-rule__error {
+  color: var(--bad);
+}
+
+/* --- the week strip ------------------------------------------------------------------- */
+.week-timeline {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border-faint);
+}
+.week-timeline__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+.week-timeline__title {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.week-timeline__total {
+  color: var(--accent-text);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+.week-timeline__note,
+.week-timeline__warn {
+  margin: 0;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-base);
+}
+.week-timeline__note {
+  color: var(--muted-2);
+}
+.week-timeline__warn {
+  margin-bottom: var(--sp-2);
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  background: var(--warn-soft);
+  color: var(--warn-on-page);
+}
+.week-timeline__grid {
+  display: grid;
+  gap: 3px;
+}
+.week-timeline__hours {
+  position: relative;
+  height: 12px;
+  margin-left: 22px;
+}
+/* NOT `--faint`: that token is decoration only, never text — this file says so where it is
+   defined, and an axis label is text a reader is expected to use. */
+.week-timeline__hour {
+  position: absolute;
+  transform: translateX(-50%);
+  color: var(--muted-2);
+  font-size: var(--fs-2xs);
+}
+.week-timeline__hour:first-child {
+  transform: none;
+}
+.week-timeline__hour:last-child {
+  transform: translateX(-100%);
+}
+.week-timeline__row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+}
+.week-timeline__day {
+  color: var(--muted);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+}
+.week-timeline__track {
+  position: relative;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--bg-inset);
+  overflow: hidden;
+}
+.week-timeline__span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+/* ============================================================================
+ * EVENT-DRIVEN AUTOMATION (RM-062) — aircon rule cards and their live status
+ *
+ * The status strip is the load-bearing part of this block. On this site every rule holds on
+ * `acu_offline`, so what a reader mostly sees here is a sentence explaining why nothing is
+ * happening — and it has to read as an explanation rather than as an error.
+ * ========================================================================= */
+.event-driven__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.acu-rule--disarmed {
+  opacity: 0.78;
+}
+.acu-rule__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.acu-rule__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+.acu-rule__field {
+  display: grid;
+  gap: 4px;
+}
+.acu-rule__field > span:first-child {
+  color: var(--muted-2);
+  font-size: var(--fs-3xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.acu-rule__field select,
+.acu-rule__field input {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--field-bg);
+  color: var(--txt);
+  font: 600 var(--fs-sm) inherit;
+}
+.acu-rule__inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.acu-rule__unit {
+  color: var(--muted-2);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+/* The measurement caveat. Amber rather than red: choosing return air or outdoor air is not an
+   error, it is a choice with a consequence the operator should know before making it. */
+.acu-rule__caveat {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: var(--sp-3) 0 0;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  background: var(--warn-soft);
+  color: var(--warn-on-page);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-base);
+}
+
+.acu-rule__window {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border-faint);
+}
+.acu-rule__window-label {
+  color: var(--muted-2);
+  font-size: var(--fs-3xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* The written reason that unlocks a sub-policy target. Deliberately prominent: the reason IS
+   the audit, and a field that looked optional would be treated as optional. */
+.acu-rule__override {
+  margin-top: var(--sp-3);
+  padding: var(--sp-2);
+  border: 1px solid var(--warn);
+  border-radius: var(--r-inner);
+  background: var(--warn-soft);
+}
+.acu-rule__override-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 var(--sp-2);
+  color: var(--warn-on-page);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: var(--lh-base);
+}
+.acu-rule__override-input {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--field-bg);
+  color: var(--txt);
+  font: 400 var(--fs-sm) inherit;
+  resize: vertical;
+}
+
+/* --- the live status strip ------------------------------------------------------------- */
+.acu-status {
+  margin-top: var(--sp-2);
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--bg-inset);
+}
+.acu-status--idle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.acu-status--alert {
+  border: 1px solid var(--warn);
+}
+.acu-status__line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--txt);
+  font-size: var(--fs-sm);
+}
+.acu-status__when {
+  color: var(--muted-2);
+  font-weight: 400;
+}
+.acu-status__reason {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-base);
+}
+.acu-status__alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: var(--sp-2) 0 0;
+  color: var(--warn-on-page);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: var(--lh-base);
+}
+
+/* ============================================================================
+ * AUTOMATION ACTIVITY (RM-059..062) — what the unattended paths actually did
+ *
+ * A `dry_run` row must not read as a failure: it is the honest record of a firing that happened
+ * with the dispatch gate closed, and it is the row that proves the gate works. Neutral, not red.
+ * ========================================================================= */
+.automation-activity__list {
+  list-style: none;
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.automation-activity__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 7px var(--sp-2);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+}
+.automation-activity__row:nth-child(odd) {
+  background: var(--bg-inset);
+}
+.automation-activity__time {
+  color: var(--muted-2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.automation-activity__what {
+  color: var(--txt);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.automation-activity__socket {
+  color: var(--muted-2);
+}
+.automation-activity__source {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.automation-activity__status {
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-3xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.automation-activity__status--good {
+  background: var(--green-soft);
+  color: var(--good);
+}
+.automation-activity__status--neutral {
+  background: var(--chip-bg);
+  color: var(--muted);
+}
+.automation-activity__status--warn {
+  background: var(--warn-soft);
+  color: var(--warn-on-page);
+}
+.automation-activity__status--bad {
+  background: var(--red-soft);
+  color: var(--bad);
+}
+.automation-overview__next-action {
+  color: var(--muted-2);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.next-up-action {
+  color: var(--muted-2);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+}
+
 /* ---------------------------------------------------------------------------
  * Touch targets — enforced only where a coarse pointer is actually in use (the CARE
  * kiosk touchscreen, phones). Desktop keeps its compact chrome; a mouse doesn't need
@@ -4711,6 +5554,7 @@ body::before {
     min-height: 44px;
   }
   .nav-tab,
+  .tabs__tab,
   .spatial-toggle__btn {
     min-height: 44px;
     padding-inline: var(--sp-5);
@@ -4722,6 +5566,10 @@ body::before {
    * above; they were simply never added to it.
    */
   .quick-btn,
+  .acu-rule__field select,
+  .schedule-stack__add,
+  .schedule-rule__delete,
+  .time-driven__target,
   .control-plan-btn,
   .outlet-socket-toggle,
   .alerts-popover__ack,

@@ -1,74 +1,103 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useDeviceStore } from '@/stores/deviceStore';
-import { useContextStore } from '@/stores/contextStore';
+import { useContextStore, pendingWrites } from '@/stores/contextStore';
+import { useScheduleStore } from '@/stores/scheduleStore';
+import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
 import { useDevicesFor } from '@/hooks/useDevicesFor';
-import { DEVICE_CLASS_CATALOG, classesWhere } from '@/lib/deviceClassCatalog';
-import { pendingWrites } from '@/stores/contextStore';
-import { CalendarClock, Thermometer, ListTodo } from 'lucide-react';
+import { dispatchScope } from '@/components/control/dispatchScope';
+import { useHashSubRoute } from '@/lib/useHashRoute';
+import { CalendarClock, ListTodo, LayoutDashboard, Gauge, Thermometer } from 'lucide-react';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { InfoHint } from '@/components/ui/InfoHint';
-import { ScheduleRow } from './ScheduleRow';
+import { Tabs, TabPanel, type TabDef } from '@/components/ui/Tabs';
 import { DsmThresholdsCard } from './DsmThresholdsCard';
+import { ComingSoonCard } from './ComingSoonCard';
+import { TimeDrivenPanel } from './TimeDrivenPanel';
+import { EventDrivenPanel } from './EventDrivenPanel';
+import { AutomationOverview } from './AutomationOverview';
 import { LoadShedPanel } from '@/components/devices/LoadShedPanel';
-import type { DeviceClass } from '@/lib/types';
-
-const TRIGGER_KEY = 'global.trigger.care_acu_on';
 
 /**
- * The chips are derived from the catalog rather than hand-listed, so a new switchable class
- * gets a filter without anyone editing this page. The failure it replaces was silent: a
- * missing chip simply means those devices can never be filtered to.
+ * The Automation page — organised by WHAT MAKES A RULE FIRE, which is the distinction an
+ * operator actually reasons about and the one the building-automation trade already names:
+ *
+ *   Time-Driven    the clock            schedules
+ *   State-Driven   a measured quantity  DSM thresholds and load shedding
+ *   Event-Driven   a sensor reading     closed-loop aircon setpoint control
+ *
+ * Grouping by device, or by card type, was the alternative and it is worse: "why did the
+ * lights go off?" is answered by the trigger, not by the thing that was switched.
+ *
+ * A strategy with no field devices installed gets a `ComingSoonCard` inside its own category
+ * rather than being hidden or dumped in a separate graveyard tab — the category is what makes
+ * the absence legible, and several of them are blocked on a purchase rather than on code.
  */
-type SchedFilter = 'All' | DeviceClass;
-const SCHED_FILTERS: SchedFilter[] = ['All', ...classesWhere('switchable')];
-const filterLabel = (f: SchedFilter) => (f === 'All' ? 'All' : DEVICE_CLASS_CATALOG[f].label);
+
+type TabId = 'overview' | 'time' | 'state' | 'events';
+const TAB_IDS: TabId[] = ['overview', 'time', 'state', 'events'];
 
 export function AutomationPage() {
   const devices = useDeviceStore((s) => s.devices);
   const saved = useContextStore((s) => s.saved);
   const draft = useContextStore((s) => s.draft);
-  const setDraft = useContextStore((s) => s.setDraft);
   const save = useContextStore((s) => s.save);
   const saveStatus = useContextStore((s) => s.saveStatus);
   const saveError = useContextStore((s) => s.saveError);
   const lastSave = useContextStore((s) => s.lastSave);
+  const dispatchClasses = useCapabilitiesStore((s) => s.dispatchClasses);
 
-  const [schedFilter, setSchedFilter] = useState<SchedFilter>('All');
+  const [tab, setTab] = useHashSubRoute('automation', TAB_IDS, 'overview');
 
   // Membership is the device's declared `scheduling` function, not its class — so an outlet
   // that must never be switched unattended can be taken off this page without a code change.
   const { included: schedulableDevices, excluded: notSchedulable } = useDevicesFor('scheduling');
   const schedulable = useMemo(() => [...schedulableDevices].sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true })), [schedulableDevices]);
-  const filtered = schedFilter === 'All' ? schedulable : schedulable.filter((d) => d.class === schedFilter);
 
-  const armedCount = schedulable.filter((d) => (draft[`global.schedule.${d.id}.armed`] ?? saved[`global.schedule.${d.id}.armed`]) === 'true').length;
-
-  const armAll = () => {
-    for (const d of filtered) setDraft(`global.schedule.${d.id}.armed`, 'true');
-  };
+  // Counted from the schedules themselves rather than from a per-device flag: since RM-059 a
+  // device can hold five rules with three of them armed, and "how many devices have something
+  // armed" stopped being the number anyone wants.
+  const schedules = useScheduleStore((s) => s.schedules);
+  const armedCount = schedules.filter((r) => r.enabled).length;
 
   const pending = pendingWrites(draft, saved);
   const pendingEntries = Object.entries(pending);
   const { ask, modalProps } = useConfirm();
   useUnsavedDraftGuard(pendingEntries.length);
 
-  // Gated: this flushes every staged edit at once, including anything "Arm all" just
-  // staged across every schedulable device — one click here can be a lot more than the
-  // single field the user was last looking at.
+  /**
+   * What this page actually reaches, read from the deployment rather than asserted.
+   *
+   * Until RM-059 the header read "Staged, not yet dispatchable" and the save dialog said
+   * "nothing on the real bridge reads these yet". Both had been false since EX-047:
+   * `server/scheduler.mjs` fires these rows through the audited command path, and ROADMAP's
+   * own triage tells the operator to arm real hardware shedding *from this page*. A control
+   * surface that understates its reach is a safety defect, not a copy nit — it invites
+   * somebody to experiment on a live building.
+   *
+   * `dispatchScope` is reused rather than re-derived so this page and the Control page cannot
+   * disagree about whether the gate is open; `null` (not yet loaded) counts as closed there,
+   * which is the right way round for a claim about hardware.
+   */
+  const scope = dispatchScope(schedulable, dispatchClasses);
+  const dispatching = scope.state !== 'closed';
+
+  // Gated: this flushes every staged edit at once, including anything "Arm all" just staged
+  // across every schedulable device — one click here can be a lot more than the single field
+  // the user was last looking at.
   const askSave = () =>
     ask(
       {
         title: 'Write to Supabase?',
-        body: `This writes ${pendingEntries.length} pending key${pendingEntries.length === 1 ? '' : 's'} to Supabase — schedules, the trigger setpoint, and DSM thresholds. Nothing on the real bridge reads these yet; hardware dispatch is still gated closed.`,
+        body: dispatching
+          ? `This writes ${pendingEntries.length} pending key${pendingEntries.length === 1 ? '' : 's'} to Supabase. Armed rules are read by the scheduler daemon and DO switch real hardware, through the gated, audited command path.`
+          : `This writes ${pendingEntries.length} pending key${pendingEntries.length === 1 ? '' : 's'} to Supabase. Hardware dispatch is closed on this deployment, so the scheduler records each firing as a dry run rather than switching anything.`,
         confirmLabel: 'Write',
-        tone: 'blue',
+        tone: dispatching ? 'red' : 'blue',
       },
       () => void save(),
     );
-
-  const triggerValue = Number(draft[TRIGGER_KEY] ?? saved[TRIGGER_KEY] ?? 24);
 
   if (devices.length === 0) {
     return (
@@ -78,15 +107,24 @@ export function AutomationPage() {
     );
   }
 
+  const tabs: TabDef[] = [
+    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'time', label: 'Time-Driven', icon: CalendarClock, badge: armedCount > 0 ? armedCount : undefined },
+    { id: 'state', label: 'State-Driven', icon: Gauge },
+    { id: 'events', label: 'Event-Driven', icon: Thermometer },
+  ];
+
   return (
     <>
       <PageHeader
-        title="DSM & Schedule Management"
+        title="Automation"
         sub={
           <>
-            Staged, not yet dispatchable
+            {dispatching ? 'Armed rules switch real hardware' : 'Armed rules run as dry runs — dispatch is closed'}
             <InfoHint label="What this means">
-              Saved here to Supabase and logged for audit, but nothing on the real bridge reads or acts on these yet — that arrives once hardware dispatch opens.
+              {dispatching
+                ? 'Rules saved here are read by the scheduler daemon on the Pi and dispatched through the same gated, audited path the Control page uses. Every firing writes a row to the command audit trail, whether it succeeded or not.'
+                : 'Rules saved here are read by the scheduler daemon and evaluated on schedule, but this deployment’s hardware-dispatch gate is closed — so each firing is recorded as a dry run in the command audit trail and no relay moves.'}
             </InfoHint>
           </>
         }
@@ -99,10 +137,10 @@ export function AutomationPage() {
                 alert: it's good news, so it should wait its turn rather than interrupt. */}
             <p className="automation-write-confirm" role="status">
               {saveStatus === 'idle' && lastSave
-                // THE READER'S OWN CLOCK, deliberately. This is when THEY pressed save, not
-                // something that happened in the building — see `src/lib/siteTime.ts` for the
-                // distinction and why the building's facts do not use this frame.
-                ? `Wrote ${lastSave.count} key${lastSave.count === 1 ? '' : 's'} at ${new Date(lastSave.at).toLocaleTimeString(undefined, { hour12: false })}`
+                ? // THE READER'S OWN CLOCK, deliberately. This is when THEY pressed save, not
+                  // something that happened in the building — see `src/lib/siteTime.ts` for the
+                  // distinction and why the building's facts do not use this frame.
+                  `Wrote ${lastSave.count} key${lastSave.count === 1 ? '' : 's'} at ${new Date(lastSave.at).toLocaleTimeString(undefined, { hour12: false })}`
                 : ''}
             </p>
             <button type="button" className="automation-write-btn" disabled={pendingEntries.length === 0 || saveStatus === 'saving'} onClick={askSave}>
@@ -119,111 +157,65 @@ export function AutomationPage() {
         </p>
       )}
 
-      <div className="automation-grid">
-        <div className="card automation-schedules-card">
-          <div className="automation-schedules-head">
-            <span className="card-title">
-              <CalendarClock size={14} className="title-icon" aria-hidden="true" />
-              Device Schedules
-            </span>
-            <span className="automation-armed-count mono">{armedCount} ARMED</span>
-            <div className="automation-filter-group">
-              {SCHED_FILTERS.map((f) => (
-                <button key={f} type="button" className={`automation-filter-chip${schedFilter === f ? ' automation-filter-chip--active' : ''}`} aria-pressed={schedFilter === f} onClick={() => setSchedFilter(f)}>
-                  {filterLabel(f)}
-                </button>
-              ))}
-            </div>
-            <button type="button" className="automation-arm-all-btn" onClick={armAll}>
-              Arm all
-            </button>
-          </div>
-          <p className="automation-schedules-sub">
-            {schedulable.length} device{schedulable.length === 1 ? '' : 's'} declared for scheduling, staged to Supabase&apos;s schedules table.
-            {notSchedulable.length > 0 && (
-              <>
-                {' '}
-                <InfoHint label={`Why ${notSchedulable.length} devices are not listed`}>
-                  {notSchedulable.map((d) => d.display_name).join(', ')} — these have no{' '}
-                  <strong>scheduling</strong> function set. That is configuration, not an omission: change it on the
-                  Devices page, under Edit.
-                </InfoHint>
-              </>
-            )}
-          </p>
+      <Tabs tabs={tabs} activeId={tab} onChange={setTab} label="Automation strategies" className="automation-tabs" />
 
-          {/* Focusable so the horizontal scroll is reachable from the keyboard, named so that
-              focus stop means something. Same treatment as Devices' table scroller. */}
-          <div className="automation-sched-scroll" tabIndex={0} role="region" aria-label="Device schedules, scrolls horizontally">
-            <div className="automation-sched-table">
-              <div className="automation-sched-row automation-sched-row--head">
-                <span>DEVICE</span>
-                <span>ON</span>
-                <span>OFF</span>
-                <span>DAYS</span>
-                <span className="automation-sched-row__arm-label">ARM</span>
-              </div>
-              {filtered.map((d) => (
-                <ScheduleRow key={d.id} device={d} />
-              ))}
-            </div>
-          </div>
+      <TabPanel tabId="overview" activeId={tab}>
+        <AutomationOverview devices={schedulable} schedules={schedules} armedCount={armedCount} dispatching={dispatching} onGoToTab={setTab} />
+      </TabPanel>
 
-          <h3 className="automation-section-title">
-            <Thermometer size={14} className="title-icon" aria-hidden="true" />
-            Ambient Trigger Setpoints
-          </h3>
-          <p className="automation-schedules-sub">IR blaster rules driven by the paired climate sensor.</p>
-          <div className="automation-trigger-card">
-            <div className="automation-trigger-card__head">
-              <span>Transmit the aircon ON above</span>
-              <span className="automation-trigger-card__value mono">{triggerValue}°C</span>
-            </div>
-            <input
-              type="range"
-              min={20}
-              max={32}
-              step={0.5}
-              value={triggerValue}
-              onChange={(e) => setDraft(TRIGGER_KEY, e.target.value)}
-              className="automation-trigger-card__slider"
-              aria-label="Aircon ambient trigger setpoint"
+      <TabPanel tabId="time" activeId={tab}>
+        <TimeDrivenPanel devices={schedulable} notSchedulable={notSchedulable} />
+      </TabPanel>
+
+      <TabPanel tabId="state" activeId={tab}>
+        <div className="automation-grid">
+          <div className="automation-side">
+            <DsmThresholdsCard />
+            {/* Moved here from the Devices toolbar. The tiers are what auto-shed acts on when a
+                DSM threshold above is breached, so the rule and the thing it switches now sit on
+                one page — they were two clicks and a page apart, on a page about a device list. */}
+            <LoadShedPanel />
+          </div>
+          <div className="automation-side">
+            <ComingSoonCard
+              title="Solar-surplus load scheduling"
+              what="Move deferrable load into the hours the array is actually exporting, instead of into the hours somebody guessed."
+              blockedOn="the Deye/Solarman logger, which is not on the device network — a census of the segment found no non-Tuya host but the router."
+              roadmapId="RM-026"
             />
-            <div className="automation-trigger-card__scale">
-              <span>20 °C</span>
-              <span>{TRIGGER_KEY}</span>
-              <span>32 °C</span>
-            </div>
+            <ComingSoonCard
+              title="Duty cycling"
+              what="Rotate a group of loads on and off in turn to hold a demand ceiling without ever fully dropping any one of them."
+              blockedOn="per-socket runtime history, which starts accumulating once per-socket scheduling lands."
+              roadmapId="RM-059"
+            />
           </div>
         </div>
+      </TabPanel>
 
-        <div className="automation-side">
-          <DsmThresholdsCard />
+      <TabPanel tabId="events" activeId={tab}>
+        <EventDrivenPanel devices={devices} />
+      </TabPanel>
 
-          {/* Moved here from the Devices toolbar. The tiers are what auto-shed acts on when a
-              DSM threshold above is breached, so the rule and the thing it switches now sit on
-              one page — they were two clicks and a page apart, on a page about a device list. */}
-          <LoadShedPanel />
-
-          <div className="card automation-pending-card">
-            <h3 className="card-title">
-              <ListTodo size={14} className="title-icon" aria-hidden="true" />
-              Pending writes
-            </h3>
-            {pendingEntries.length === 0 ? (
-              <p className="automation-pending-empty">Nothing changed since the last write</p>
-            ) : (
-              <ul className="automation-pending-list">
-                {pendingEntries.map(([key, value]) => (
-                  <li className="automation-pending-row" key={key}>
-                    <span className="automation-pending-row__key mono">{key}</span>
-                    <span className="automation-pending-row__value mono">{value}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
+      {/* Page-scoped, not tab-scoped: a staged edit made on one tab is still unwritten while
+          you are reading another, and hiding it there is how it gets lost. */}
+      <div className="card automation-pending-card">
+        <h3 className="card-title">
+          <ListTodo size={14} className="title-icon" aria-hidden="true" />
+          Pending writes
+        </h3>
+        {pendingEntries.length === 0 ? (
+          <p className="automation-pending-empty">Nothing changed since the last write</p>
+        ) : (
+          <ul className="automation-pending-list">
+            {pendingEntries.map(([key, value]) => (
+              <li className="automation-pending-row" key={key}>
+                <span className="automation-pending-row__key mono">{key}</span>
+                <span className="automation-pending-row__value mono">{value}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
       <ConfirmModal {...modalProps} />
     </>
@@ -231,11 +223,11 @@ export function AutomationPage() {
 }
 
 /**
- * Staged edits live in `contextStore.draft` and reach Node-RED only via "Write to Node-RED
- * context". A reload or a closed tab drops all of them, and "Arm all" can stage a dozen keys
- * in a single click, so the amount silently lost is not small. `beforeunload` is the only
- * mechanism browsers offer for that exit; the prompt shown is the browser's own generic one,
- * as its text hasn't been author-controllable for years — hence no message here.
+ * Staged edits live in `contextStore.draft` and reach Supabase only via "Write to Supabase".
+ * A reload or a closed tab drops all of them, and "Arm all" can stage a dozen keys in a single
+ * click, so the amount silently lost is not small. `beforeunload` is the only mechanism
+ * browsers offer for that exit; the prompt shown is the browser's own generic one, as its text
+ * hasn't been author-controllable for years — hence no message here.
  *
  * Scoped to reload/close on purpose, and NOT extended to in-app navigation, for two reasons
  * found while testing this:
@@ -249,6 +241,10 @@ export function AutomationPage() {
  *     route change synchronously, unmounting this page and removing any listener it had
  *     added *before that listener is ever invoked*. Measured: the handler ran zero times on
  *     the real navigation path.
+ *
+ * Switching TABS is not navigation and does not unmount the page, so the guard is unaffected
+ * by them — which is also why the tab writes the hash with `replaceState` rather than
+ * assigning it (see `useHashSubRoute`).
  */
 function useUnsavedDraftGuard(pendingCount: number) {
   useEffect(() => {

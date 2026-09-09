@@ -129,19 +129,33 @@ export const SITE = Object.freeze({
   /** @type {SitePolicy} Operating rules for this building. */
   policy: Object.freeze({
     /**
-     * The coldest setpoint this building permits, from the university's energy-efficiency
-     * policy ("not lower than 25 degrees").
+     * The coldest ROOM TEMPERATURE this building permits an automatic rule to aim for, from
+     * the university's energy-efficiency policy.
      *
-     * NOT the same fact as `ACU_MIN_C` in `shared/commands.mjs`, and the distinction is
-     * load-bearing: that one is what the IR library actually has codes for — a hardware
-     * capability — while this is what the operator allows. A site with no such rule sets this
-     * to null and gets the hardware bound alone.
+     * NOT a bound on the setpoint sent to the aircon, and RM-061 is the change that made that
+     * distinction matter. `ACU_MIN_C`/`ACU_MAX_C` in `shared/commands.mjs` are what the IR
+     * library holds codes for — a hardware capability, identical at every site — and they are
+     * the only hard bound on a command. This is a statement about the ROOM, enforced where
+     * rules are written (`upsert_acu_rule`) and where the loop decides
+     * (`server/acuLoopPlan.mjs`). A manual setpoint below it is warned about and recorded, not
+     * refused: see `shared/sitePolicy.mjs`.
+     *
+     * 24, not 25: the operator states this is what the university's policy says. Corrected
+     * 2026-09-01. This is only the DEFAULT — RM-038 made the live value a `sites` row the
+     * bridge reads and a settings screen can change, so a revision needs no code change. It
+     * applies to a fresh deployment, and to this one whenever the database cannot be read (see
+     * `server/livePolicy.mjs` for why the fallback runs in that direction).
      */
-    // 24, not 25: the operator states this is what the university's policy says. Corrected
-    // 2026-09-01. This is now only the DEFAULT — RM-038 made the live floor a `sites` row the
-    // bridge reads and a settings screen can change, so a future revision needs no code change.
-    // This value applies to a fresh deployment, and to this one whenever the database cannot be
-    // read (see `server/livePolicy.mjs` for why the fallback runs in that direction).
+    acu_min_room_target_c: 24,
+
+    /**
+     * The pre-RM-061 name for the value above, kept for the length of the rename window.
+     *
+     * `shared/sitePolicy.mjs`'s `roomTargetFloorC` prefers the new key and falls back to this
+     * one, so a daemon or a browser bundle of either vintage reads a correct number while
+     * phase35 and the code deploy land in whichever order they land. Removed by the contract
+     * migration once every deployment reads the new key.
+     */
     acu_min_setpoint_c: 24,
 
     /**

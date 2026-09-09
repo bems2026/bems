@@ -1,16 +1,14 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-08 — the week/month energy accumulator, measured against the live
-bridge's own flow context and eight days of corrected history. §0 leads with what that
-measurement found: **RM-053**, two faults in the per-branch week/month split, both now fixed
-and the live figures repaired — and now with **RM-054**, the comparison that would have made
-that fault visible on the page rather than leaving it to a person to notice. §0 then leads with
-**RM-057**, the operator's own proposal: the building's energy totals are the sum of its branch
-meters now, derived from the site's declared circuit tree, so the headline figure and the
-per-branch split are one number instead of two derivations that had to be reconciled. Getting
-there went through **RM-056** — the rate guard RM-052 added was sizing its ceiling by the gap
-between dashboard reads, and had been deleting a third of the aircon branch's real consumption.
-**Audited at commit:** `fa9430f`
+**Last audited:** 2026-09-09 — the Automation page, rebuilt. Four items land together and they
+are one change: **RM-059** makes schedules stackable and per-socket, **RM-060** does the same for
+load-shed tiers, **RM-061** redefines the aircon policy from a bound on the commanded setpoint
+into the coldest ROOM temperature a rule may aim for, and **RM-062** is the closed-loop
+controller that redefinition was needed for. §0 leads with what the work found rather than with
+what it built: the page had been telling operators for months that *"nothing on the real bridge
+reads or acts on these yet"* while `server/scheduler.mjs` was switching relays on its rows —
+a control surface understating its own reach, which is a safety defect rather than stale copy.
+**Audited at commit:** `c072cf2` plus the RM-059..062 working tree
 
 **2026-09-01, and it changes what §0 says.** The headline claim below — that there is no
 unblocked coding task left — was **wrong**, and it was wrong because the fault report that
@@ -68,6 +66,51 @@ other four and none needed changing.
 ---
 
 ## 0. Triage — what to do next
+
+
+### 2026-09-09 — the Automation page said it could not do what it was doing
+
+**The defect worth leading with is not a bug, it is a claim.** `AutomationPage.tsx` carried
+*"Staged, not yet dispatchable"* in its header and *"nothing on the real bridge reads these yet;
+hardware dispatch is still gated closed"* in its save dialog. Both had been false since EX-047
+shipped the scheduler daemon: those rows are read every 15 s and fired through the audited
+command path. §0 of this very file simultaneously instructed the operator to *"open the
+Automation page signed in, turn auto-shed on, and save"* in order to arm real hardware shedding.
+A page that understates its reach invites somebody to experiment on a live building.
+
+It now reads its reach from `/api/capabilities` through the same `dispatchScope` the Control page
+uses — so it says "armed rules switch real hardware" or "dry runs — dispatch is closed" according
+to what the deployment actually reports, and `null` (not yet answered) counts as closed.
+
+**Three structural limits went with it.**
+
+- **A device could hold exactly one schedule**, enforced by `unique (device_id)`. Writing a second
+  window silently REPLACED the first, with nothing on screen to say the first had gone. Reported
+  from use. `phase33` drops the constraint and makes `id` the only identity.
+- **The page could not express a socket at all.** `supabaseConfig.ts` wrote `socket: null` and read
+  `.is('socket', null)`, so an outlet's two relays could never be scheduled apart even though
+  `shared/commands.mjs` has always insisted an outlet command must name one. `shared/commands.mjs`
+  said this needed *"`UNIQUE(device_id, socket)` and a socket picker — see the roadmap"*, and no
+  such roadmap entry existed. It does now, and the note was wrong about the constraint: per-socket
+  UNIQUE is the same one-rule-per-thing blocker one level down.
+- **The "Ambient Trigger Setpoint" slider was dead.** `global.trigger.care_acu_on` round-tripped
+  browser → Supabase → browser for months; a whole-repo grep found no `server/` file that read it.
+  RM-062 replaces it and `phase35` drops the column.
+
+**What was NOT verified, and cannot be here.** RM-062's controller has never run against
+hardware: `acu_main` and `sens_outside_temp` have never been paired (RM-016), so every rule
+correctly holds on `acu_offline`. Its proof is a first-order room model driven for 200 ticks in
+`server/acuLoopPlan.test.mjs`, asserting the setpoint settles rather than hunts, plus a second run
+where the room cannot be cooled to target and the loop walks to the 16 °C floor, stops, and alerts
+exactly once. That is the only evidence that exists and this entry says so rather than implying
+a live test.
+
+**Four migrations are ready and NONE is applied:** `phase33_schedules_stackable.sql`,
+`phase34_socket_config.sql`, `phase35_policy_room_target.sql`, `phase36_acu_rules.sql`.
+**phase33's deploy order is load-bearing**: ship the frontend and restart the daemons FIRST.
+Old code against the new schema fails on `ON CONFLICT (device_id)` and breaks every schedule save
+from a kiosk still serving the old `./dist`; new code against the old schema only refuses a
+second rule per device. Both fail loudly, so this is a choice rather than a rescue.
 
 ### 2026-09-08 — the building total is the sum of its branches now, and that was the operator's idea
 
@@ -1660,7 +1703,7 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       optimistic machinery is typed for `SwitchState` and reconciled against relay readings —
       `src/stores/capabilityStore.ts`, `src/components/devices/capabilityWidgets.tsx`,
       `DeviceCard.test.tsx`
-- [ ] **FI-022** Capability writes have no LOCAL route — they reach hardware only through the
+- [x] **FI-022** Capability writes have no LOCAL route — they reach hardware only through the
       vendor cloud. The three existing dispatch routes (`/light/:id`, `/outlet/:target`, `/acu`)
       are hand-built `http in` nodes on the source tabs, and a fourth means writing to the live
       flow: a plan module in the shape `dpParserPlan` already establishes, plus a generator
@@ -1668,6 +1711,10 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       `DISPATCH_POLICY=local-only` cannot write settings at all, and one without internet cannot
       either — both fail honestly, with `capability_needs_cloud` naming the missing path.
       `server/dispatchLight.mjs`'s `hasLocalCapabilityRoute()` is the single place that says so
+      **RESOLVED 2026-09-09 — this entry contradicted itself.** It stood as `- [ ]` here while
+      `- [x] **FI-022 — capability writes reach the meters over the LAN. 2026-09-08.**` stood
+      further down the same file. The later entry is the true one; this checkbox was simply never
+      ticked when the work landed. Ticked now. Found by RM-059's audit, not by anything failing.
 
 - [x] **EX-157** A 60 s poller for the light switches, closing the half of FI-013 that fix left
       out. A `tdq` switch volunteers its relay state when it changes and essentially nothing else,
@@ -2602,6 +2649,110 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 ---
 
 ## 2. Current roadmap (active execution)
+
+
+### The Automation page — RM-059 to RM-062 (built 2026-09-09, migrations not applied)
+
+Organised by WHAT MAKES A RULE FIRE, which is the distinction an operator reasons about and the
+one the trade already names: Time-Driven (the clock), State-Driven (a measured quantity),
+Event-Driven (a sensor reading). Grouping by device was the alternative and it is worse — "why
+did the lights go off?" is answered by the trigger, not by the thing that was switched. A
+strategy with no field devices gets a card inside its own category naming what it is blocked on,
+because several are blocked on a purchase order rather than on code and the person reading the
+page is the one who can raise it.
+
+- [x] **RM-059** Schedules become a stackable, per-socket list. `supabase/phase33_schedules_stackable.sql`
+      drops `unique (device_id)` — `id` is the only identity now, so `upsert()` leaves the table
+      entirely and writes are insert / update-by-id / delete-by-id. A DELETE policy is added
+      (`schedules` had none, because clearing one row used to be a write of nulls). The migration
+      splits every whole-outlet row into one row per socket inside a single atomic `DO` block:
+      a half-applied split would leave a parent AND its two children, which at the next matching
+      minute is four dispatches to two relays.
+      **The fan-out moved into `server/schedulePlan.mjs`'s new `resolveDue`**, because the ORDER
+      matters and a caller must not be able to get it wrong: match → fan out → collapse per
+      `(device_id, socket)`, with `off` winning any collision across rows as it already did within
+      one. Collapsing first cannot merge a legacy `socket: null` row with its two siblings — they
+      are three genuinely different keys — and the daemon's old `flatMap(fanOutCommand)` then
+      expanded one of them into four commands. Two regression tests pin that, at plan and daemon
+      level. `unfireableRows` counts armed rules that can never fire and the daemon logs it: with
+      one row per device an unattributed schedule was a whole device going quiet and somebody
+      noticed; in a stack of five it is one rule, and nobody does.
+      Evidence: `server/resolveDue.test.mjs` (30), `server/scheduler.test.mjs`,
+      `src/lib/scheduleStack.test.ts` (34), `src/components/automation/AutomationPage.test.tsx`.
+      **Deleted with it:** `src/components/automation/ScheduleRow.tsx` and the schedule half of
+      `src/lib/supabaseConfig.ts` (`scheduleRowsToContext`, `scheduleRowsFor`, `scheduleKey`).
+      They were orphaned the moment the stack editor replaced the flat table — no production
+      caller, only their own tests — and leaving them beside a roadmap entry claiming the page
+      was rebuilt would have been the kind of drift §4 exists to catch. `supabaseConfig.ts` now
+      carries only the DSM singleton, which is genuinely one row of settings and for which the
+      flat context map is still the right shape.
+
+- [x] **RM-060** Load-shed tiers become per socket. `supabase/phase34_socket_config.sql` adds
+      `socket_config`, PK `(device_id, socket)` — a sibling table rather than a `sockets jsonb`
+      column on `device_config`, because `supabaseDeviceConfig.ts` builds WHOLE-ROW upserts and a
+      jsonb column there would be erased by an unrelated notes edit, invisibly, surfacing only the
+      next time the building went over its limit. `device_config.load_shed_group` stays as the
+      fallback, so a site without the migration behaves exactly as before; `resolveShedTier` in
+      `src/lib/deviceConfig.ts` is the single place that precedence is decided.
+      `planShed` now enumerates targets per socket and reads `socket_states` rather than the
+      derived device `state` — an outlet with one socket on and one off sheds ONE relay, not two —
+      so `scheduler.mjs`'s `fanOutCommand` on the shed path is gone rather than merely redundant.
+      The panel's tallies changed in the same commit and now count SHED POINTS: a panel saying
+      "3 devices" while the shedder sheds 5 sockets is exactly the believed-but-wrong UI
+      `shedTiers.ts` refuses to ship.
+
+- [x] **RM-061** `acu_min_setpoint_c` becomes `acu_min_room_target_c`, and its meaning changes with
+      its name. It was a bound on the setpoint COMMANDED to the aircon; `validateCommand` refused
+      anything below it. That is untenable once the setpoint is the LEVER a closed loop moves — a
+      loop that may never ask for 22 cannot hold a room at 24 on a hot afternoon, and a person who
+      needs 18 for an hour had no way to ask. It now means the coldest ROOM temperature an
+      automatic rule may aim for. `ACU_MIN_C`/`ACU_MAX_C` (16..30) remain the only hard bound on a
+      command, because below them there is no IR code to send at all.
+      A manual setpoint below the policy is **warned about and recorded**, not refused: the warning
+      rides on the command and `server/proxy.mjs` folds it into the audit note, so the fact
+      survives instead of the command being prevented. `supabase/phase35_policy_room_target.sql`
+      does the rename as expand-and-contract — copy the key, redefine the old writer to delegate
+      (its return type is reproduced exactly, because `create or replace` cannot change one), and
+      leave the contraction to a later file. `shared/sitePolicy.mjs` reads new-then-old, so at no
+      point is neither key readable.
+
+- [x] **RM-062** Closed-loop aircon control. An operator sets a ROOM target and names a sensor; the
+      controller steps the aircon's setpoint 1 °C at a time toward it, rate-limited, inside an
+      active window. `supabase/phase36_acu_rules.sql` adds `acu_rules`, `acu_loop_state` and
+      `commands.target_c` — without that last column a row recording a setpoint change did not say
+      which setpoint, since `target` resolves to the literal `AC_POWER`.
+      **The safety posture, which is the aircon equivalent of "auto-shed sheds, it never restores":
+      the loop may change how cold a running aircon is asked to be; it may never change whether the
+      building is being cooled.** No branch emits an `off`, none acts unless the unit reports on,
+      and losing the loop leaves the unit running at its last setpoint.
+      `acu_loop_state` is a TABLE and not a variable for one specific reason: the unit restarts on
+      failure every 10 s, and an in-memory last-step time would let a crash loop walk the setpoint
+      from 30 to 16 in under three minutes.
+      **Not verified against hardware and cannot be** — see §0. `holds` is output rather than
+      diagnostics: every idle rule renders a sentence saying why, because on this site the only
+      branch reached is `acu_offline` and "configured and nothing is happening" must not be
+      indistinguishable from a bug.
+      Evidence: `server/acuLoopPlan.test.mjs` (41, including two closed-loop simulations),
+      `server/scheduler.test.mjs`, `test/acu-vocabulary.test.mjs`,
+      `src/components/automation/EventDrivenPanel.test.tsx`.
+
+- [x] **The Automation page had zero component coverage** before this, which is part of how the
+      false dispatch claim survived so long. It now has `AutomationPage.test.tsx` and
+      `EventDrivenPanel.test.tsx`, and the reach assertions are the ones that matter: a
+      not-yet-loaded capabilities response counts as CLOSED, never as open.
+
+- [x] **A reusable `Tabs`** (`src/components/ui/Tabs.tsx`) — the app's first real tablist. The two
+      that predate it make `role="tab"`'s promise about the keyboard and keep none of it: no arrow
+      keys, and every tab its own Tab stop. `DeviceCard`'s channel switcher is a candidate to
+      replace with it. Tabs are deep-linkable (`#automation/time`) through `useHashSubRoute`, which
+      writes with `replaceState` — four arrow presses must not cost four back presses.
+
+- [x] **One implementation of the week, not two.** `parseDays`/`appDayIndex` lived in
+      `automationMath.ts` AND `server/schedulePlan.mjs`, each with a comment claiming it mirrored
+      the other. They are now `shared/scheduleDays.mjs`. Likewise `shared/scheduleRules.mjs` (why a
+      rule can never fire) and `shared/acuLoopVocabulary.mjs` (why the loop is idle) are shared
+      rather than mirrored — `shedTiers.ts`/`shedPlan.mjs` remains the older mirror-and-test
+      pattern, and this is the cheaper one where `shared/` can hold the rule.
 
 ### Customisable floor plans — RM-035 to RM-037
 
@@ -5825,6 +5976,17 @@ may not.
 ---
 
 ## 4. Known contradictions & doc drift
+
+
+**Resolved 2026-09-09 by RM-059..062:**
+
+| Was | Now |
+|---|---|
+| `FI-022` appeared as both `- [ ]` and `- [x]` in this file | Ticked. The later entry was the true one; the checkbox was never updated when the work landed. |
+| `AutomationPage.tsx` told operators nothing it saved reached hardware | It reads its reach from `/api/capabilities` and says which state the deployment is in. |
+| `shared/commands.mjs` pointed at a roadmap entry for per-socket scheduling that did not exist | RM-059 exists, and the note's suggested `UNIQUE(device_id, socket)` was wrong — that is the same blocker one level down. |
+| `test/socket-fanout.test.mjs`'s header asserted two caller facts | Both are now false by design; the header is corrected in place. |
+| `test/migration-idempotency.test.mjs` counted only `create policy` and `create trigger` | It counts `alter table … add constraint` too — the statement `phase6_schedules_unique_fix.sql` itself used. It immediately flagged `phase27`, which turned out to guard its constraints the other legal way (`pg_constraint` lookup), so that form is recognised too. |
 
 | # | Contradiction | Sources | Believed |
 |---|---|---|---|

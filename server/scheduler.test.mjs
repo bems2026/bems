@@ -21,16 +21,20 @@ let nextPort = 21400;
  * row's final state — a strictly stronger assertion than before, since it now proves the
  * whole record -> dispatch -> record-outcome sequence rather than just the opening insert.
  */
-function startFakeSupabase(scheduleRow, dsm = { max_phase_current: null, max_total_kw: null, auto_shed: false, updated_by: null }, deviceConfig = [], failCommandInsert = false, dropCommandWrites = false) {
+function startFakeSupabase(scheduleRows, dsm = { max_phase_current: null, max_total_kw: null, auto_shed: false, updated_by: null }, deviceConfig = [], failCommandInsert = false, dropCommandWrites = false, socketConfig = null, acuRules = null, acuState = []) {
   return new Promise((resolve) => {
     const port = nextPort++;
-    const state = { commands: [] };
+    const state = { commands: [], acuStateWrites: [] };
     const server = http.createServer(async (req, res) => {
       let raw = '';
       for await (const chunk of req) raw += chunk;
       if (req.url.startsWith('/rest/v1/schedules')) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify(scheduleRow ? [scheduleRow] : []));
+        // RM-059: a device holds MANY rows, so this takes an array. A single row is still
+        // accepted and wrapped, so the twenty-one tests written before stacking existed did
+        // not all have to grow a pair of brackets to keep meaning what they meant.
+        const rows = Array.isArray(scheduleRows) ? scheduleRows : scheduleRows ? [scheduleRows] : [];
+        return res.end(JSON.stringify(rows));
       }
       if (req.url.startsWith('/rest/v1/dsm_thresholds')) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -39,6 +43,36 @@ function startFakeSupabase(scheduleRow, dsm = { max_phase_current: null, max_tot
       if (req.url.startsWith('/rest/v1/device_config')) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify(deviceConfig));
+      }
+      if (req.url.startsWith('/rest/v1/acu_rules')) {
+        // `null` means the table does not exist — a deployment that has not applied phase36.
+        // No rules is the right outcome there, and it must not be fatal.
+        if (acuRules === null) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          return res.end('{"message":"relation does not exist"}');
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify(acuRules));
+      }
+      if (req.url.startsWith('/rest/v1/acu_loop_state')) {
+        if (req.method === 'POST') {
+          state.acuStateWrites.push(JSON.parse(raw));
+          res.writeHead(201, { 'Content-Type': 'application/json' });
+          return res.end('[]');
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify(acuState));
+      }
+      if (req.url.startsWith('/rest/v1/socket_config')) {
+        // `null` means the table does not exist — a deployment that has not applied phase34.
+        // The daemon must fall back to device-level tiers rather than stop shedding, so the
+        // default here is deliberately the un-migrated case.
+        if (socketConfig === null) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          return res.end('{"message":"relation \\"socket_config\\" does not exist"}');
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify(socketConfig));
       }
       if (req.url.startsWith('/rest/v1/commands')) {
         // An OUTAGE, not a refusal: hang up the socket so `fetch` throws with no status at
@@ -113,13 +147,28 @@ async function waitForRoomInMinute(needMs = 15_000) {
   if (msLeft < needMs) await new Promise((r) => setTimeout(r, msLeft + 250));
 }
 
+/** The minute the test is running in, as the app stores it. */
+function nowHhmm() {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+}
+
+/** Today, as the app's 7-char Mon..Sun day mask. */
+function todayMask() {
+  const days = new Array(7).fill('0');
+  days[(new Date().getDay() + 6) % 7] = '1';
+  return days.join('');
+}
+
 /** A schedule whose `on` time is the minute the test runs in, so it is due immediately. */
 function dueNowRow(over = {}) {
   const now = new Date();
   const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const days = new Array(7).fill('0');
   days[(now.getDay() + 6) % 7] = '1';
-  return { device_id: 'l1', socket: null, rule: { on: hhmm, days: days.join('') }, enabled: true, updated_by: '11111111-1111-1111-1111-111111111111', ...over };
+  // `id` is load-bearing since RM-059: the daemon puts it in the audit note so a firing can be
+  // traced back to one rule out of a stack of five.
+  return { id: 'sched-1', device_id: 'l1', socket: null, rule: { on: hhmm, days: days.join('') }, enabled: true, updated_by: '11111111-1111-1111-1111-111111111111', ...over };
 }
 
 /**
@@ -142,7 +191,7 @@ function dueNowRow(over = {}) {
 const CYCLE_DONE = /first cycle complete/;
 
 async function run(env, scheduleRow, until = CYCLE_DONE, opts = {}) {
-  const sb = await startFakeSupabase(scheduleRow, opts.dsm, opts.deviceConfig, opts.failCommandInsert, opts.dropCommandWrites);
+  const sb = await startFakeSupabase(scheduleRow, opts.dsm, opts.deviceConfig, opts.failCommandInsert, opts.dropCommandWrites, opts.socketConfig ?? null, opts.acuRules ?? null, opts.acuState ?? []);
   const light = await startFakeLight(opts.latest);
   const child = spawn(process.execPath, [SCHEDULER], {
     env: {
@@ -166,7 +215,7 @@ async function run(env, scheduleRow, until = CYCLE_DONE, opts = {}) {
   child.stdout.on('data', (c) => { out += c.toString(); });
   child.stderr.on('data', (c) => { out += c.toString(); });
 
-  const snapshot = () => ({ commands: sb.state.commands, lightRequests: light.state.requests, out });
+  const snapshot = () => ({ commands: sb.state.commands, lightRequests: light.state.requests, acuStateWrites: sb.state.acuStateWrites, out });
   const holds = () => {
     const s = snapshot();
     return until instanceof RegExp ? until.test(s.out) : until(s);
@@ -485,4 +534,349 @@ test('the scheduler buffers to its OWN file, never the proxy\'s', async () => {
 
   assert.equal(readBuffer(schedulerPath).length, 1);
   assert.equal(readBuffer(proxyPath).length, 0, "the proxy's buffer must be untouched");
+});
+
+/* ===========================================================================
+ * RM-059 — stackable, per-socket schedules, at daemon level.
+ *
+ * The pure resolution is covered exhaustively in `resolveDue.test.mjs`. These spawn the real
+ * process, because the defect they guard against was never in the maths — it was in the
+ * daemon fanning out a second time after the planner had already done it.
+ * ======================================================================== */
+
+const OPEN = { HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-token' };
+
+test('two stacked rules colliding in one minute produce exactly ONE command, and it is off', async () => {
+  await waitForRoomInMinute();
+  const hhmm = nowHhmm();
+  const days = todayMask();
+  const stack = [
+    dueNowRow({ id: 'a', rule: { on: hhmm, days } }),
+    dueNowRow({ id: 'b', rule: { off: hhmm, days } }),
+  ];
+  const r = await run(OPEN, stack, (s) => s.commands.length >= 1 && s.commands[0].status);
+
+  assert.equal(r.commands.length, 1, `one target, one command — got ${JSON.stringify(r.commands.map((c) => c.action))}`);
+  assert.equal(r.commands[0].action, 'off', 'off fails safe, so off wins across rows as well as within one');
+  assert.equal(r.lightRequests.length, 1);
+  assert.deepEqual(r.lightRequests[0].body, { state: false });
+});
+
+test('a per-socket outlet schedule hits that socket and never the other one', async () => {
+  await waitForRoomInMinute();
+  const row = dueNowRow({ id: 's2', device_id: 'co5', socket: 2 });
+  const r = await run(OPEN, [row], (s) => s.lightRequests.length >= 1);
+
+  assert.equal(r.lightRequests.length, 1, 'one socket named, one relay touched');
+  assert.equal(r.lightRequests[0].url, '/outlet/CO5_2');
+  assert.equal(r.commands.length, 1);
+  assert.equal(r.commands[0].socket, 2);
+});
+
+test('two per-socket rules on one outlet each get their own wire target and audit row', async () => {
+  await waitForRoomInMinute();
+  const hhmm = nowHhmm();
+  const days = todayMask();
+  const rows = [
+    dueNowRow({ id: 's1', device_id: 'co5', socket: 1, rule: { on: hhmm, days } }),
+    dueNowRow({ id: 's2', device_id: 'co5', socket: 2, rule: { off: hhmm, days } }),
+  ];
+  const r = await run(OPEN, rows, (s) => s.lightRequests.length >= 2);
+
+  assert.deepEqual(r.lightRequests.map((q) => q.url).sort(), ['/outlet/CO5_1', '/outlet/CO5_2']);
+  // The sockets genuinely move in opposite directions — the whole point of per-socket rules.
+  const byUrl = Object.fromEntries(r.lightRequests.map((q) => [q.url, q.body]));
+  assert.deepEqual(byUrl['/outlet/CO5_1'], { state: true });
+  assert.deepEqual(byUrl['/outlet/CO5_2'], { state: false });
+  assert.deepEqual(r.commands.map((c) => c.socket).sort(), [1, 2]);
+});
+
+test('REGRESSION: a legacy whole-outlet row beside its two migrated children fires TWICE, not four times', async () => {
+  // The exact shape an interrupted phase33 migration, a restored backup, or a hand edit leaves
+  // behind. Before the fan-out moved inside `resolveDue`, the daemon expanded the null row
+  // AFTER any collapse and sent four commands to two relays: idempotent at the relay, but the
+  // audit trail then claims four commands the operator never configured, and it doubles
+  // traffic to a fleet whose inbound socket-table exhaustion is a documented fault.
+  await waitForRoomInMinute();
+  const hhmm = nowHhmm();
+  const days = todayMask();
+  const rows = [
+    dueNowRow({ id: 'legacy', device_id: 'co5', socket: null, rule: { off: hhmm, days } }),
+    dueNowRow({ id: 'child1', device_id: 'co5', socket: 1, rule: { off: hhmm, days } }),
+    dueNowRow({ id: 'child2', device_id: 'co5', socket: 2, rule: { off: hhmm, days } }),
+  ];
+  const r = await run(OPEN, rows, (s) => s.lightRequests.length >= 2, { settleMs: 900 });
+
+  assert.equal(r.lightRequests.length, 2, `two relays, two requests — got ${JSON.stringify(r.lightRequests.map((q) => q.url))}`);
+  assert.equal(r.commands.length, 2, 'and two audit rows, not four');
+  assert.deepEqual(r.commands.map((c) => c.socket).sort(), [1, 2]);
+});
+
+test('a legacy whole-outlet row on its own still fans out — code ahead of the migration must not go inert', async () => {
+  await waitForRoomInMinute();
+  const r = await run(OPEN, [dueNowRow({ id: 'legacy', device_id: 'co5', socket: null })], (s) => s.lightRequests.length >= 2);
+  assert.deepEqual(r.lightRequests.map((q) => q.url).sort(), ['/outlet/CO5_1', '/outlet/CO5_2']);
+});
+
+test('one unattributed rule in a stack does not silence its sibling', async () => {
+  await waitForRoomInMinute();
+  const hhmm = nowHhmm();
+  const days = todayMask();
+  const rows = [
+    dueNowRow({ id: 'dead', updated_by: null, rule: { on: hhmm, days } }),
+    dueNowRow({ id: 'live', rule: { on: hhmm, days } }),
+  ];
+  const r = await run(OPEN, rows, (s) => s.lightRequests.length >= 1, { settleMs: 900 });
+
+  assert.equal(r.commands.length, 1, 'exactly the attributed one');
+  assert.equal(r.commands[0].requested_by, '11111111-1111-1111-1111-111111111111');
+});
+
+test('names the rule in the audit note, so a firing traces back to one rule out of five', async () => {
+  await waitForRoomInMinute();
+  const r = await run({}, [dueNowRow({ id: 'rule-xyz' })], (s) => s.commands.length >= 1 && s.commands[0].status);
+  assert.match(r.commands[0].note, /rule-xyz/);
+});
+
+test('counts armed rules that can never fire, out loud, at every refresh', async () => {
+  // In a stack, a dead rule is one of five rather than a whole device going quiet — so it needs
+  // a voice. Two faults here: no attribution, and a socket the outlet does not have.
+  const rows = [
+    dueNowRow({ id: 'a', updated_by: null }),
+    dueNowRow({ id: 'b', device_id: 'co5', socket: 3 }),
+  ];
+  const r = await run({}, rows, /can never fire/, { allowTimeout: true });
+  assert.match(r.out, /2 armed rule\(s\) can never fire/);
+  assert.match(r.out, /no_attribution=1/);
+  assert.match(r.out, /socket_not_on_device=1/);
+});
+
+test('a rule that is no longer served stops firing — the in-memory list is replaced, not merged', async () => {
+  // The delete path's daemon-side proof: removing a row from `schedules` must actually stop it.
+  const r = await run({}, [], CYCLE_DONE);
+  assert.equal(r.commands.length, 0);
+  assert.equal(r.lightRequests.length, 0);
+});
+
+
+/* ===========================================================================
+ * RM-060 — per-socket load shedding, at daemon level.
+ * ======================================================================== */
+
+const OVER_LIMIT = { max_phase_current: 1, max_total_kw: 0.1, auto_shed: true, updated_by: '22222222-2222-2222-2222-222222222222' };
+const TOTALS_OVER = { device_id: '_totals', total_power_w: 9000, phase_current: { red: 10, yellow: 12, blue: null } };
+const bothSocketsOn = (id) => ({ device_id: id, socket_states: { 1: 'on', 2: 'on' } });
+
+test('sheds ONE socket when only that socket carries the tier', async () => {
+  const r = await run({ ...OPEN }, [], (s) => s.lightRequests.length >= 1, {
+    dsm: OVER_LIMIT,
+    socketConfig: [{ device_id: 'co1', socket: 2, load_shed_group: 'group_1' }],
+    latest: [TOTALS_OVER, bothSocketsOn('co1')],
+    settleMs: 900,
+  });
+  assert.deepEqual(r.lightRequests.map((q) => q.url), ['/outlet/CO1_2'], 'socket 1 must not be touched');
+  assert.equal(r.commands.length, 1);
+  assert.equal(r.commands[0].socket, 2);
+  assert.equal(r.commands[0].source, 'dsm_autoshed');
+});
+
+test('a DEVICE-level tier still sheds both sockets when socket_config has no rows for it', async () => {
+  const r = await run({ ...OPEN }, [], (s) => s.lightRequests.length >= 2, {
+    dsm: OVER_LIMIT,
+    deviceConfig: [{ device_id: 'co1', load_shed_group: 'group_1' }],
+    socketConfig: [],
+    latest: [TOTALS_OVER, bothSocketsOn('co1')],
+    settleMs: 900,
+  });
+  assert.deepEqual(r.lightRequests.map((q) => q.url).sort(), ['/outlet/CO1_1', '/outlet/CO1_2']);
+  assert.deepEqual(r.commands.map((c) => c.socket).sort(), [1, 2]);
+});
+
+test('an un-migrated deployment (no socket_config table) still sheds on device-level tiers', async () => {
+  // phase34 may land after the code. Falling back is correct; going silent is not.
+  const r = await run({ ...OPEN }, [], (s) => s.lightRequests.length >= 2, {
+    dsm: OVER_LIMIT,
+    deviceConfig: [{ device_id: 'co1', load_shed_group: 'group_1' }],
+    socketConfig: null,
+    latest: [TOTALS_OVER, bothSocketsOn('co1')],
+    settleMs: 900,
+  });
+  assert.deepEqual(r.lightRequests.map((q) => q.url).sort(), ['/outlet/CO1_1', '/outlet/CO1_2']);
+  assert.match(r.out, /socket_config unreadable/, 'and says so once per refresh rather than failing quietly');
+});
+
+test('every shed audit row for an outlet names a socket — none carries socket: null', async () => {
+  const r = await run({ ...OPEN }, [], (s) => s.commands.length >= 2, {
+    dsm: OVER_LIMIT,
+    socketConfig: [
+      { device_id: 'co1', socket: 1, load_shed_group: 'group_1' },
+      { device_id: 'co1', socket: 2, load_shed_group: 'group_1' },
+    ],
+    latest: [TOTALS_OVER, bothSocketsOn('co1')],
+    settleMs: 900,
+  });
+  assert.ok(r.commands.length >= 2);
+  assert.ok(r.commands.every((c) => c.socket === 1 || c.socket === 2), JSON.stringify(r.commands.map((c) => c.socket)));
+});
+
+test('a Protected socket is never shed even while its neighbour is', async () => {
+  const r = await run({ ...OPEN }, [], (s) => s.lightRequests.length >= 1, {
+    dsm: OVER_LIMIT,
+    socketConfig: [
+      { device_id: 'co1', socket: 1, load_shed_group: 'group_1' },
+      { device_id: 'co1', socket: 2, load_shed_group: 'never' },
+    ],
+    latest: [TOTALS_OVER, bothSocketsOn('co1')],
+    settleMs: 900,
+  });
+  assert.deepEqual(r.lightRequests.map((q) => q.url), ['/outlet/CO1_1']);
+});
+
+
+/* ===========================================================================
+ * RM-062 — the closed-loop aircon controller, at daemon level.
+ *
+ * The decision logic is covered exhaustively in `acuLoopPlan.test.mjs`, which is where it has
+ * to be: `acu_main` has never been paired (RM-016), so none of it can be exercised on this
+ * site's hardware. These spawn the real process and check the wiring — that a step reaches the
+ * bridge as an IR setpoint, that it is audited with its degrees, and that a failed audit does
+ * not leave the rate limiter thinking a step happened.
+ * ======================================================================== */
+
+const ACU_USER = '33333333-3333-3333-3333-333333333333';
+
+/** A rule whose window is open right now, whatever time the suite runs at. */
+const acuRule = (over = {}) => ({
+  id: 'acu-r1',
+  acu_device_id: 'acu_main',
+  sensor_device_id: 'acu_main',
+  target_c: 24,
+  deadband_c: 0.5,
+  step_c: 1,
+  min_step_interval_s: 600,
+  manual_hold_s: 600,
+  days: '1111111',
+  window_start: '00:00',
+  window_end: '23:59',
+  enabled: true,
+  label: null,
+  override_reason: null,
+  updated_by: ACU_USER,
+  ...over,
+});
+
+/** The aircon on, at a known setpoint, reporting a room that is too warm. */
+const acuHot = (setpoint = 25, room = 27) => ({
+  device_id: 'acu_main',
+  ts: new Date().toISOString(),
+  online: true,
+  state: 'on',
+  setpoint_c: setpoint,
+  room_temp_c: room,
+});
+
+test('a hot room steps the setpoint DOWN, reaching the bridge as an IR degree', async () => {
+  const r = await run({ ...OPEN }, [], (s) => s.lightRequests.length >= 1, {
+    acuRules: [acuRule()],
+    acuState: [{ rule_id: 'acu-r1', commanded_c: 25, last_step_at: null, last_direction: null, alert_kind: null }],
+    latest: [acuHot(25, 27)],
+    settleMs: 900,
+  });
+  assert.equal(r.lightRequests[0].url, '/acu');
+  assert.deepEqual(r.lightRequests[0].body, { mode: '24' }, 'one degree down from 25');
+});
+
+test('the audit row records WHICH setpoint, the source, and who the rule belongs to', async () => {
+  // `target` resolves to the literal AC_POWER for an aircon, so without `target_c` a row saying
+  // "the loop changed the setpoint" would not say to what.
+  const r = await run({ ...OPEN }, [], (s) => s.commands.length >= 1 && s.commands[0].status, {
+    acuRules: [acuRule()],
+    acuState: [{ rule_id: 'acu-r1', commanded_c: 25 }],
+    latest: [acuHot(25, 27)],
+    settleMs: 900,
+  });
+  assert.equal(r.commands[0].target_c, 24);
+  assert.equal(r.commands[0].source, 'acu_loop');
+  assert.equal(r.commands[0].requested_by, ACU_USER);
+  assert.equal(r.commands[0].action, 'on');
+  assert.match(r.commands[0].note, /acu loop rule acu-r1/);
+});
+
+test('it records the step it took, so a restart cannot re-arm the rate limiter', async () => {
+  const r = await run({ ...OPEN }, [], (s) => s.acuStateWrites.some((w) => w.last_step_at), {
+    acuRules: [acuRule()],
+    acuState: [{ rule_id: 'acu-r1', commanded_c: 25 }],
+    latest: [acuHot(25, 27)],
+    settleMs: 900,
+  });
+  const step = r.acuStateWrites.find((w) => w.last_step_at);
+  assert.equal(step.rule_id, 'acu-r1');
+  assert.equal(step.commanded_c, 24);
+  assert.equal(step.last_direction, 'down');
+});
+
+test('a step whose audit row cannot be written does NOT stamp last_step_at', async () => {
+  // Rate-limiting the retry of a step that never happened would leave the room hot for ten
+  // minutes because of a database blip.
+  const r = await run({ ...OPEN }, [], /NOT fired/, {
+    acuRules: [acuRule()],
+    acuState: [{ rule_id: 'acu-r1', commanded_c: 25 }],
+    latest: [acuHot(25, 27)],
+    failCommandInsert: true,
+    allowTimeout: true,
+    settleMs: 900,
+  });
+  assert.equal(r.lightRequests.length, 0, 'and nothing reached the hardware');
+  assert.equal(r.acuStateWrites.some((w) => w.last_step_at && w.commanded_c === 24), false);
+});
+
+test('an aircon that reports OFF is left alone, and the reason is recorded', async () => {
+  const r = await run({ ...OPEN }, [], (s) => s.acuStateWrites.some((w) => w.last_reason), {
+    acuRules: [acuRule()],
+    acuState: [{ rule_id: 'acu-r1', commanded_c: 25 }],
+    latest: [{ ...acuHot(25, 30), state: 'off' }],
+    settleMs: 900,
+  });
+  assert.equal(r.lightRequests.length, 0);
+  assert.equal(r.acuStateWrites.find((w) => w.last_reason).last_reason, 'acu_off');
+});
+
+test('an OFFLINE aircon holds — the branch this site actually reaches today', async () => {
+  const r = await run({ ...OPEN }, [], (s) => s.acuStateWrites.some((w) => w.last_reason), {
+    acuRules: [acuRule()],
+    acuState: [{ rule_id: 'acu-r1', commanded_c: 25 }],
+    latest: [{ ...acuHot(25, 30), online: false }],
+    settleMs: 900,
+  });
+  assert.equal(r.lightRequests.length, 0);
+  assert.equal(r.acuStateWrites.find((w) => w.last_reason).last_reason, 'acu_offline');
+});
+
+test('a disabled rule does nothing at all', async () => {
+  const r = await run({ ...OPEN }, [], CYCLE_DONE, {
+    acuRules: [acuRule({ enabled: false })],
+    latest: [acuHot(25, 30)],
+    settleMs: 700,
+  });
+  assert.equal(r.lightRequests.length, 0);
+  assert.equal(r.commands.length, 0);
+});
+
+test('a deployment without phase36 runs the scheduler normally and never mentions the loop', async () => {
+  await waitForRoomInMinute();
+  const r = await run({ ...OPEN }, [dueNowRow()], (s) => s.lightRequests.length >= 1, { acuRules: null });
+  assert.equal(r.lightRequests[0].url, '/light/1', 'the schedule still fires');
+  assert.equal(r.commands.every((c) => c.source !== 'acu_loop'), true);
+});
+
+test('at the 16C floor it holds, warns once, and records the alert', async () => {
+  const r = await run({ ...OPEN }, [], /acu loop alert/, {
+    acuRules: [acuRule()],
+    acuState: [{ rule_id: 'acu-r1', commanded_c: 16, alert_kind: null }],
+    latest: [acuHot(16, 30)],
+    settleMs: 900,
+  });
+  assert.equal(r.lightRequests.length, 0, 'it does not keep trying below the floor');
+  assert.match(r.out, /floor/i);
+  assert.equal(r.acuStateWrites.some((w) => w.alert_kind === 'floor_reached'), true);
 });

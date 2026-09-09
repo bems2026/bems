@@ -25,9 +25,10 @@
  */
 
 import { DEVICE_REGISTRY, SITE } from '../shared/registry.mjs';
-import { fanOutCommand } from '../shared/commands.mjs';
-import { dueCommands } from './schedulePlan.mjs';
+import { resolveDue, unfireableRows } from './schedulePlan.mjs';
 import { planShed } from './shedPlan.mjs';
+import { planSetpoint } from './acuLoopPlan.mjs';
+import { createNotifier } from './notify.mjs';
 import { dispatchCommand, DISPATCH_CLASSES } from './dispatchLight.mjs';
 import { auditedDispatch } from './auditedDispatch.mjs';
 import { createBufferedAudit } from './auditQueue.mjs';
@@ -64,6 +65,11 @@ if (HARDWARE_DISPATCH_ENABLED && !LIGHT_API_TOKEN) {
  * moment its endpoint exists, and never claim to cover one that does not. */
 const DISPATCHABLE_DEVICE_IDS = DEVICE_REGISTRY.filter((d) => DISPATCH_CLASSES.includes(d.class)).map((d) => d.id);
 
+/** The registry keyed by id, built once. `resolveDue` needs each device's class and socket list
+ * to expand a whole-outlet rule and to refuse a socket the device does not have; a linear
+ * `find()` per command was fine for one row per device and is not for a stack. */
+const DEVICE_BY_ID = new Map(DEVICE_REGISTRY.map((d) => [d.id, d]));
+
 const sb = (path, init = {}) =>
   fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...init,
@@ -75,27 +81,75 @@ let schedules = [];
 let thresholds = { maxPhaseA: null, maxTotalKw: null, autoShed: false };
 let shedActor = null;
 let shedGroups = {};
+/** device id -> { [socket]: tier }. RM-060: an outlet is two relays and one may be a fridge
+ * while the other is a kettle. `shedGroups` above stays as the device-level fallback. */
+let socketShedGroups = {};
+
+/**
+ * RM-062's closed-loop aircon controller.
+ *
+ * `acuState` is the AUTHORITATIVE copy for the life of the process, seeded from `acu_loop_state`
+ * at startup and written through on every step. Read once rather than per tick for the same
+ * reason `livePolicy` is: a controller that stops deciding because Supabase blinked is worse
+ * than one deciding from a value a minute old.
+ *
+ * A rule whose state could NOT be read at startup is seeded with `last_step_at = process start`,
+ * not null. That makes the loop wait one full interval before its first step, which is strictly
+ * safer than assuming it has never stepped and strictly better than refusing to control at all
+ * during an outage.
+ */
+let acuRules = [];
+let acuState = {};
+/** Newest non-loop command per aircon, for the manual/schedule hold. */
+let acuRecentCommands = {};
+const PROCESS_STARTED_AT = new Date().toISOString();
+const notify = createNotifier(process.env);
 let stopping = false;
 /** Guards against firing the same minute twice if a tick runs long or the clock jitters. */
 let lastFiredMinute = null;
 
 async function refreshSchedules() {
-  const res = await sb('schedules?select=device_id,socket,rule,enabled,updated_by&socket=is.null');
+  // No `&socket=is.null` any more: RM-059 made the socket meaningful, so filtering it out here
+  // would hide every per-socket rule the Automation page writes. No `enabled` filter either,
+  // deliberately — the startup line reports the true row count, and `unfireableRows` below can
+  // only report on rows it can see.
+  const res = await sb('schedules?select=id,device_id,socket,rule,enabled,updated_by,label');
   if (!res.ok) throw new Error(`schedules fetch failed: HTTP ${res.status} ${await res.text().catch(() => '')}`);
   schedules = await res.json();
+
+  /**
+   * Armed rules that can never fire, counted out loud.
+   *
+   * Every one of these skips predates RM-059 and each was survivable when a device held ONE
+   * row: an unattributed schedule meant a whole device went quiet and somebody noticed. In a
+   * stack of five it is one rule of five, which nobody does. This line is the whole of that
+   * failure's voice on the Pi; the Automation page renders the same reasons per rule.
+   */
+  const dead = unfireableRows(schedules, { deviceById: DEVICE_BY_ID, dispatchableDeviceIds: DISPATCHABLE_DEVICE_IDS });
+  if (dead.length > 0) {
+    const byReason = {};
+    for (const d of dead) byReason[d.reason] = (byReason[d.reason] ?? 0) + 1;
+    const summary = Object.entries(byReason).map(([r, n]) => `${r}=${n}`).join(', ');
+    console.warn(`[ibems-scheduler] ${dead.length} armed rule(s) can never fire: ${summary}`);
+  }
 }
 
 /** DSM limits plus each device's shed tier. Both are operator configuration, re-read on the
  * same cadence as schedules so a change made in the app takes effect without a restart. */
 async function refreshDsmConfig() {
-  const [tRes, cRes] = await Promise.all([
+  const [tRes, cRes, sRes] = await Promise.all([
     // RM-027: by site, not by the id=1 the singleton constraint used to guarantee. That
     // constraint is gone; `unique (site_id)` replaced it, and this is the matching read.
     sb(`dsm_thresholds?select=max_phase_current,max_total_kw,auto_shed,updated_by&site_id=eq.${SITE.id}`),
     sb('device_config?select=device_id,load_shed_group'),
+    sb('socket_config?select=device_id,socket,load_shed_group'),
   ]);
   if (!tRes.ok) throw new Error(`dsm_thresholds fetch failed: HTTP ${tRes.status}`);
   if (!cRes.ok) throw new Error(`device_config fetch failed: HTTP ${cRes.status}`);
+  // A deployment that has not applied phase34 yet answers 404 here. That is not a reason to
+  // stop shedding: `shedTargets` falls back to the device-level tier for any socket with no
+  // row, which is exactly the pre-RM-060 behaviour. Logged once per refresh, never fatal.
+  if (!sRes.ok) console.warn(`[ibems-scheduler] socket_config unreadable (HTTP ${sRes.status}) — falling back to device-level shed tiers`);
   const row = (await tRes.json())[0] ?? {};
   thresholds = {
     maxPhaseA: row.max_phase_current ?? null,
@@ -104,6 +158,94 @@ async function refreshDsmConfig() {
   };
   shedActor = row.updated_by ?? null;
   shedGroups = Object.fromEntries((await cRes.json()).map((r) => [r.device_id, r.load_shed_group ?? null]));
+
+  const socketRows = sRes.ok ? await sRes.json() : [];
+  socketShedGroups = {};
+  for (const r of socketRows) {
+    (socketShedGroups[r.device_id] ??= {})[r.socket] = r.load_shed_group ?? null;
+  }
+}
+
+/**
+ * The aircon rules and what the controller remembers about each — RM-062.
+ *
+ * A deployment that has not applied phase36 answers 404 for both. That is not fatal and not even
+ * noteworthy on most sites: no rules means no loop, which is exactly what a site without the
+ * migration should get. Logged once per refresh so it is not silent.
+ */
+async function refreshAcuRules() {
+  const [rRes, sRes] = await Promise.all([
+    sb('acu_rules?select=id,acu_device_id,sensor_device_id,target_c,deadband_c,step_c,min_step_interval_s,manual_hold_s,days,window_start,window_end,enabled,label,override_reason,updated_by'),
+    sb('acu_loop_state?select=rule_id,commanded_c,last_step_at,last_direction,alert_kind,alert_since'),
+  ]);
+
+  if (!rRes.ok) {
+    if (acuRules.length > 0) console.warn(`[ibems-scheduler] acu_rules unreadable (HTTP ${rRes.status}) — keeping the ${acuRules.length} rule(s) already loaded`);
+    return;
+  }
+  acuRules = await rRes.json();
+  if (acuRules.length === 0) return;
+
+  const rows = sRes.ok ? await sRes.json() : [];
+  const seen = new Map(rows.map((r) => [r.rule_id, r]));
+  const next = {};
+  for (const rule of acuRules) {
+    const row = seen.get(rule.id);
+    next[rule.id] = row
+      ? {
+          commanded_c: row.commanded_c ?? null,
+          last_step_at: row.last_step_at ?? null,
+          last_direction: row.last_direction ?? null,
+          alert_kind: row.alert_kind ?? null,
+          // Carried forward: a write that failed earlier in this process must keep holding the
+          // rule until one succeeds, and a config refresh is not evidence that it will.
+          writable: acuState[rule.id]?.writable !== false,
+        }
+      : {
+          commanded_c: acuState[rule.id]?.commanded_c ?? null,
+          // Process start, NOT null. See the note on `acuState`.
+          last_step_at: acuState[rule.id]?.last_step_at ?? PROCESS_STARTED_AT,
+          last_direction: acuState[rule.id]?.last_direction ?? null,
+          alert_kind: acuState[rule.id]?.alert_kind ?? null,
+          writable: acuState[rule.id]?.writable !== false,
+        };
+  }
+  acuState = next;
+
+  // The newest command per aircon, whatever asked for it. One query for every rule rather than
+  // one per rule, and only the aircons any rule names.
+  const acuIds = [...new Set(acuRules.map((r) => r.acu_device_id))];
+  if (acuIds.length > 0) {
+    const list = acuIds.map((id) => `"${id}"`).join(',');
+    const cRes = await sb(`commands?select=device_id,source,requested_at&device_id=in.(${list})&order=requested_at.desc&limit=50`);
+    if (cRes.ok) {
+      const rows2 = await cRes.json();
+      const newest = {};
+      for (const row of rows2) if (!newest[row.device_id]) newest[row.device_id] = row;
+      acuRecentCommands = newest;
+    }
+  }
+}
+
+/** Persists one rule's controller state. Best-effort, but a FAILURE IS REMEMBERED: a step that
+ * was not recorded is a step that would be repeated after the next restart, so the rule holds on
+ * `state_unwritable` until a write succeeds. */
+async function writeAcuState(ruleId, patch) {
+  const body = { rule_id: ruleId, ...patch, updated_at: new Date().toISOString() };
+  try {
+    const res = await sb('acu_loop_state?on_conflict=rule_id', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    acuState[ruleId] = { ...acuState[ruleId], ...patch, writable: true };
+    return true;
+  } catch (err) {
+    console.error(`[ibems-scheduler] could not record acu loop state for ${ruleId}: ${String(err)}`);
+    acuState[ruleId] = { ...acuState[ruleId], writable: false };
+    return false;
+  }
 }
 
 /** The live reading, straight from the bridge rather than via Supabase — shedding should react
@@ -208,6 +350,13 @@ async function fire(cmd, reasonNote) {
       action: cmd.action,
       requested_by: cmd.requested_by,
       source: cmd.source,
+      // phase36. `target` resolves to the literal 'AC_POWER' for an aircon, so without this a
+      // setpoint change has no field saying which setpoint — and for a loop writing dozens of
+      // rows a day that is the whole content of the row. Sent unconditionally: on a database
+      // that lacks the column PostgREST refuses the insert, `auditedDispatch` refuses to
+      // dispatch what it could not record, and the loop is inert and loud. That is the correct
+      // failure direction, and it is why this is NOT covered by the drop-the-column retry.
+      ...(cmd.target_c === undefined ? {} : { target_c: cmd.target_c }),
     },
     dispatchEnabled: HARDWARE_DISPATCH_ENABLED,
     dispatchClasses: DISPATCH_CLASSES,
@@ -223,9 +372,11 @@ async function fire(cmd, reasonNote) {
 
   if (result.auditFailure) {
     console.error(`[ibems-scheduler] ${cmd.device_id} NOT fired — could not record the command: ${result.auditFailure}`);
-    return;
+    // `false`, not undefined: the aircon loop must not stamp a step it did not take.
+    return false;
   }
   console.log(`[ibems-scheduler] ${cmd.device_id} -> ${cmd.action} (${result.status})`);
+  return true;
 }
 
 async function tick() {
@@ -234,15 +385,22 @@ async function tick() {
   if (minute === lastFiredMinute) return;
   lastFiredMinute = minute;
 
-  const due = dueCommands(schedules, now, { dispatchableDeviceIds: DISPATCHABLE_DEVICE_IDS });
-  // A schedule names a DEVICE; the hardware takes per-socket commands. The Automation page cannot
-  // express a socket at all, so before this every outlet schedule was refused `socket_required`
-  // and no outlet could ever be scheduled — reported from the building 2026-09-07. Each socket
-  // gets its own `fire()`, so each gets its own audit row and a partial failure reads as one
-  // socket dispatched and one failed rather than as one ambiguous result.
-  for (const cmd of due.flatMap((c) => fanOutCommand(c, DEVICE_REGISTRY.find((d) => d.id === c.device_id)))) {
+  /**
+   * The fan-out used to happen HERE, as `due.flatMap(fanOutCommand)`. It moved inside
+   * `resolveDue` because the ORDER matters and a caller must not be able to get it wrong:
+   * match -> fan out -> collapse per (device_id, socket). Collapsing before the expansion
+   * leaves a legacy `socket: null` outlet row and its two migrated siblings as three distinct
+   * keys, which then expand into four dispatches for two relays — idempotent at the relay, but
+   * it lies in the audit trail and doubles traffic to a fleet whose inbound socket-table
+   * exhaustion is a documented fault. See `resolveDue`'s docblock and its two regression tests.
+   *
+   * Each socket still gets its own `fire()`, so each gets its own audit row and a partial
+   * failure reads as one socket dispatched and one failed rather than as one ambiguous result.
+   */
+  const due = resolveDue(schedules, now, { dispatchableDeviceIds: DISPATCHABLE_DEVICE_IDS, deviceById: DEVICE_BY_ID });
+  for (const cmd of due) {
     try {
-      await fire(cmd);
+      await fire(cmd, cmd.schedule_id ? `schedule ${cmd.schedule_id} due` : 'schedule due');
     } catch (err) {
       console.error(`[ibems-scheduler] error firing ${cmd.device_id}:`, String(err));
     }
@@ -266,7 +424,9 @@ async function shedTick() {
   const plan = planShed({
     thresholds,
     totals: latest.totals,
+    devices: DEVICE_REGISTRY,
     configs: shedGroups,
+    socketConfigs: socketShedGroups,
     readings: latest.readings,
     dispatchableDeviceIds: DISPATCHABLE_DEVICE_IDS,
     actorUserId: shedActor,
@@ -285,12 +445,104 @@ async function shedTick() {
   // Same fan-out as the schedule path above, and this is the half that mattered more: every one
   // of the seven outlets sits in shed tier group_2 or group_3, together 61% of metered demand.
   // With `socket: null` the whole escalation ladder below the lighting tier was refusals.
-  for (const cmd of plan.shed.flatMap((c) => fanOutCommand(c, DEVICE_REGISTRY.find((d) => d.id === c.device_id)))) {
+  // NO `fanOutCommand` HERE ANY MORE. Since RM-060 `planShed` enumerates targets per socket and
+  // every command it emits already names one, so expanding again would be a no-op today and a
+  // second place that can double a target tomorrow. The scheduling path lost its own copy for
+  // exactly the same reason; the expansion now happens in precisely one place per path.
+  for (const cmd of plan.shed) {
     try {
       await fire(cmd, `auto-shed ${plan.tier}: ${plan.reason}`);
     } catch (err) {
       console.error(`[ibems-scheduler] error shedding ${cmd.device_id}:`, String(err));
     }
+  }
+}
+
+/**
+ * The closed-loop aircon pass — RM-062.
+ *
+ * Runs inside this daemon rather than as a second service, and that is a decision rather than
+ * convenience. This process already polls `/api/readings/latest` every cycle, already owns its
+ * own audit buffer (one file per writer is non-negotiable — see the note on
+ * SCHEDULER_AUDIT_BUFFER_PATH), and already wires `auditedDispatch`. Decisively: the controller
+ * and the schedule loop INTERACT — a schedule that switches the ACU off must stop the loop
+ * stepping — and in one process that is a variable, while across two it is a race with no way to
+ * order it. A second systemd unit is also one more thing that is silently not enabled after a
+ * rebuild.
+ *
+ * Its own try/catch at the call site, like `shedTick`, so a fault here cannot take the schedule
+ * loop down with it.
+ */
+async function acuTick() {
+  if (acuRules.length === 0) return;
+
+  let latest;
+  try {
+    latest = await fetchLatest();
+  } catch (err) {
+    console.error('[ibems-scheduler] could not read latest for the aircon loop:', String(err));
+    return;
+  }
+
+  const now = new Date();
+  const plan = planSetpoint({
+    rules: acuRules,
+    readings: latest.readings,
+    now,
+    state: acuState,
+    policy: SITE.policy,
+    deviceById: DEVICE_BY_ID,
+    dispatchableDeviceIds: DISPATCHABLE_DEVICE_IDS,
+    recentCommands: acuRecentCommands,
+  });
+
+  // An observed setpoint that is not the one we commanded is ADOPTED as the new base rather than
+  // stepped from — otherwise the next step moves the room from a number that is no longer true.
+  for (const h of plan.holds) {
+    if (h.reason === 'setpoint_changed_externally') {
+      const observed = Number(String(h.detail).match(/observed (\d+)/)?.[1]);
+      if (Number.isFinite(observed)) await writeAcuState(h.rule_id, { commanded_c: observed, last_step_at: now.toISOString(), last_direction: null });
+    }
+  }
+
+  for (const alert of plan.alerts) {
+    // Edge-triggered by the planner, so this fires once per transition rather than every tick.
+    if (alert.transition === 'raised') console.warn(`[ibems-scheduler] acu loop alert: ${alert.message}`);
+    else console.log(`[ibems-scheduler] acu loop alert cleared: ${alert.kind} (rule ${alert.rule_id})`);
+    await writeAcuState(alert.rule_id, {
+      alert_kind: alert.transition === 'raised' ? alert.kind : null,
+      alert_since: alert.transition === 'raised' ? now.toISOString() : null,
+    });
+    if (alert.transition === 'raised') notify(alert.message);
+  }
+
+  for (const action of plan.actions) {
+    try {
+      const result = await fire(
+        { device_id: action.device_id, socket: null, action: 'on', target_c: action.target_c, requested_by: action.requested_by, source: 'acu_loop' },
+        `acu loop rule ${action.rule_id}: room ${action.room_c}C vs target — setpoint ${action.from_c}->${action.target_c}C`,
+      );
+      // Recorded ONLY when the command was really accepted. Stamping `last_step_at` for a step
+      // that never dispatched would rate-limit the retry of a step that never happened.
+      if (result !== false) {
+        await writeAcuState(action.rule_id, {
+          commanded_c: action.target_c,
+          last_step_at: now.toISOString(),
+          last_direction: action.direction,
+          last_reason: null,
+          last_evaluated_at: now.toISOString(),
+        });
+      }
+    } catch (err) {
+      console.error(`[ibems-scheduler] error stepping ${action.device_id}:`, String(err));
+    }
+  }
+
+  // Why each idle rule is idle, so "configured and nothing is happening" is never
+  // indistinguishable from a bug. Written through, not logged per tick.
+  for (const h of plan.holds) {
+    if (acuState[h.rule_id]?.last_reason === h.reason) continue;
+    await writeAcuState(h.rule_id, { last_reason: h.reason, last_evaluated_at: now.toISOString() });
   }
 }
 
@@ -302,6 +554,7 @@ async function main() {
   try {
     await refreshSchedules();
     await refreshDsmConfig();
+    await refreshAcuRules();
     const tiered = Object.values(shedGroups).filter((g) => g && g !== 'never').length;
     console.log(
       `[ibems-scheduler] loaded ${schedules.length} schedule row(s); auto-shed ${thresholds.autoShed ? 'ON' : 'off'}, ` +
@@ -314,6 +567,7 @@ async function main() {
   setInterval(() => {
     refreshSchedules().catch((err) => console.error('[ibems-scheduler] schedule refresh failed:', String(err)));
     refreshDsmConfig().catch((err) => console.error('[ibems-scheduler] DSM config refresh failed:', String(err)));
+    refreshAcuRules().catch((err) => console.error('[ibems-scheduler] acu rule refresh failed:', String(err)));
   }, REFRESH_MS);
 
   // Checked every 15s rather than once a minute so a schedule is never missed because the
@@ -324,6 +578,7 @@ async function main() {
     try {
       await tick();
       await shedTick();
+      await acuTick();
     } catch (err) {
       console.error('[ibems-scheduler] tick error:', String(err));
     }

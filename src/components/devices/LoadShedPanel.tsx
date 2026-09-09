@@ -17,6 +17,13 @@
  * — it is IR-commanded and the compressor is deliberately never power-cut. Leaving it silently
  * out of the list would read as an oversight; leaving it in would be a lie.
  *
+ * SINCE RM-060 A ROW IS A SOCKET, NOT A DEVICE. An outlet is two relays behind one label, and
+ * one of them can be a fridge while the other is a kettle — tiering them together was a
+ * limitation of where the tier was stored, never a statement about the building. The tallies
+ * therefore count SHED POINTS, and they changed in the same commit as `shedTiers.ts` and
+ * `server/shedPlan.mjs`: a panel still saying "3 devices" while the shedder sheds 5 sockets
+ * would be precisely the believed-but-wrong UI this file exists to avoid.
+ *
  * IT IS HONEST ABOUT WHAT SHEDDING CAN REACH HERE. `npm run shed:profile` measured 919 W of
  * office-hours demand, of which everything a relay can switch is 29 W. That does not make tiers
  * pointless — a tier is PERMISSION, not size, and an outlet averaging 1 W is 400 W the afternoon
@@ -29,8 +36,9 @@ import { Card } from '@/components/ui/Card';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
+import { useSocketConfigStore, socketKey } from '@/stores/socketConfigStore';
 import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
-import { LOAD_SHED_OPTIONS, effectiveConfig, resolveDisplayName, type LoadShedGroup } from '@/lib/deviceConfig';
+import { LOAD_SHED_OPTIONS, effectiveConfig, resolveDisplayName, resolveShedTier, type LoadShedGroup } from '@/lib/deviceConfig';
 import { summariseShed, SHED_ORDER } from '@/lib/shedTiers';
 
 const TIER_LABEL: Record<LoadShedGroup | 'unassigned', string> = {
@@ -51,15 +59,41 @@ export function LoadShedPanel({ onClose }: { onClose?: () => void }) {
   const saveError = useDeviceConfigStore((s) => s.saveError);
   const dispatchClasses = useCapabilitiesStore((s) => s.dispatchClasses);
 
+  const socketConfigs = useSocketConfigStore((s) => s.saved);
+  const setSocketTier = useSocketConfigStore((s) => s.setTier);
+  const socketErrors = useSocketConfigStore((s) => s.rowError);
+
   const summary = useMemo(
-    () => summariseShed(devices, (id) => effectiveConfig(draft, saved, id).loadShedGroup, readings, dispatchClasses),
-    [devices, draft, saved, readings, dispatchClasses],
+    () =>
+      summariseShed(
+        devices,
+        // `resolveShedTier` is the ONE place socket-over-device precedence is decided; the
+        // device-level view still comes through `effectiveConfig` so an unsaved draft in the
+        // metadata editor is reflected here exactly as it was before.
+        (id, socket) =>
+          resolveShedTier(
+            id,
+            socket,
+            { [id]: { loadShedGroup: effectiveConfig(draft, saved, id).loadShedGroup } },
+            socketConfigs,
+          ),
+        readings,
+        dispatchClasses,
+      ),
+    [devices, draft, saved, socketConfigs, readings, dispatchClasses],
   );
 
   /** Set and save in one step. A tier is a single choice from a fixed list, not a field somebody
    * is part-way through typing, so staging it behind a Save button would only create a state
-   * where the panel shows one thing and the shedder would do another. */
-  const setTier = (deviceId: string, value: string) => {
+   * where the panel shows one thing and the shedder would do another.
+   *
+   * A socket writes to `socket_config`; a single-relay device still writes its device row. Two
+   * tables, one gesture — the operator should not have to know which. */
+  const setTier = (deviceId: string, socket: 1 | 2 | null, value: string) => {
+    if (socket !== null) {
+      void setSocketTier(deviceId, socket, value);
+      return;
+    }
     setDraftField(deviceId, 'loadShedGroup', value);
     void save(deviceId);
   };
@@ -119,13 +153,13 @@ export function LoadShedPanel({ onClose }: { onClose?: () => void }) {
         <span className="shed-panel__unassigned-count">{summary.byTier.unassigned.total}</span>
         <span>
           {TIER_LABEL.unassigned}
-          {summary.byTier.unassigned.total > 0 && ' — an unclassified device is never shed, so these are not volunteers'}
+          {summary.byTier.unassigned.total > 0 && ' — an unclassified relay is never shed, so these are not volunteers'}
         </span>
       </p>
 
       {summary.inertCount > 0 && (
         <p className="shed-panel__warn" role="status">
-          {summary.inertCount} device{summary.inertCount === 1 ? ' has' : 's have'} a tier but no
+          {summary.inertCount} relay{summary.inertCount === 1 ? ' has' : 's have'} a tier but no
           dispatch path right now, so shedding would not reach {summary.inertCount === 1 ? 'it' : 'them'}.
           The tier is saved and will work once the bridge reports that class as commandable.
         </p>
@@ -146,38 +180,51 @@ export function LoadShedPanel({ onClose }: { onClose?: () => void }) {
           </tr>
         </thead>
         <tbody>
-          {summary.rows.map((row) => (
-            <tr key={row.device.id}>
-              <td>
-                <span className="shed-panel__name">{resolveDisplayName(row.device, saved[row.device.id])}</span>
-                <span className="shed-panel__id mono">{row.device.id}</span>
-              </td>
-              <td>
-                <span className={`shed-panel__state${row.on ? ' shed-panel__state--on' : ''}`}>
-                  {row.on ? 'on' : 'off'}
-                </span>
-                {!row.dispatchable && <span className="shed-panel__inert">not commandable</span>}
-              </td>
-              <td>
-                <label className="sr-only" htmlFor={`shed-${row.device.id}`}>
-                  Load-shed tier for {resolveDisplayName(row.device, saved[row.device.id])}
-                </label>
-                <select
-                  id={`shed-${row.device.id}`}
-                  className="shed-panel__select"
-                  value={row.tier ?? ''}
-                  onChange={(e) => setTier(row.device.id, e.target.value)}
-                >
-                  <option value="">Not classified</option>
-                  {LOAD_SHED_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </td>
-            </tr>
-          ))}
+          {summary.rows.map((row) => {
+            // The display-name override is a DEVICE fact; the socket suffix is this row's.
+            const deviceName = resolveDisplayName(row.device, saved[row.device.id]);
+            const rowName = row.socket === null ? deviceName : `${deviceName} · S${row.socket}`;
+            const err = row.socket === null ? null : socketErrors[socketKey(row.device.id, row.socket)];
+            return (
+              <tr key={row.key}>
+                <td>
+                  <span className="shed-panel__name">{rowName}</span>
+                  <span className="shed-panel__id mono">{row.key}</span>
+                </td>
+                <td>
+                  <span className={`shed-panel__state${row.on ? ' shed-panel__state--on' : ''}`}>
+                    {row.on ? 'on' : 'off'}
+                  </span>
+                  {!row.dispatchable && <span className="shed-panel__inert">not commandable</span>}
+                </td>
+                <td>
+                  <label className="sr-only" htmlFor={`shed-${row.key}`}>
+                    Load-shed tier for {rowName}
+                  </label>
+                  <select
+                    id={`shed-${row.key}`}
+                    className="shed-panel__select"
+                    value={row.tier ?? ''}
+                    onChange={(e) => setTier(row.device.id, row.socket, e.target.value)}
+                  >
+                    <option value="">Not classified</option>
+                    {LOAD_SHED_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  {/* Reported next to the control that failed, not in a page-level banner the
+                      reader has to go looking for. */}
+                  {err && (
+                    <span className="shed-panel__error" role="alert">
+                      {err}
+                    </span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
       </div>

@@ -26,13 +26,16 @@ import { SITE } from '../shared/siteConfig.mjs';
  * `policy_source: 'build'` beside it is the load-bearing half: with no SUPABASE_URL in the test
  * environment the proxy must fall back to what it was built with rather than dropping the floor.
  */
-const BUILD_FLOOR = SITE.policy.acu_min_setpoint_c;
+// RM-061: read through `roomTargetFloorC` rather than off a key name, so this keeps holding
+// after the contract migration removes the legacy one.
+const BUILD_FLOOR = roomTargetFloorC(SITE.policy);
 import nodeCrypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import { hashBreakGlassPassword } from './breakGlass.mjs';
 import { readBuffer } from './ingestBuffer.mjs';
 import { DEVICE_REGISTRY } from '../shared/registry.mjs';
+import { roomTargetFloorC } from '../shared/sitePolicy.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const MOCK_BRIDGE = join(ROOT, 'mock-bridge', 'server.mjs');
@@ -412,7 +415,7 @@ test('GET /api/capabilities reflects HARDWARE_DISPATCH_ENABLED — false by defa
     assert.equal(res.status, 200);
     // deepEqual, not a subset match: this endpoint tells the UI what it is allowed to claim
     // about hardware, so a field appearing unnoticed is exactly what should fail a test.
-    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: false, dispatch_classes: [], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build' });
+    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: false, dispatch_classes: [], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_room_target_c: BUILD_FLOOR, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build' });
   } finally {
     cleanup();
   }
@@ -422,7 +425,7 @@ test('GET /api/capabilities reports true once the gate is explicitly opened', as
   const { proxyUrl, cleanup } = await setup({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-light-token' });
   try {
     const res = await fetch(`${proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
-    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: true, dispatch_classes: ['switch', 'outlet_dual', 'acu_ir'], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build' });
+    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: true, dispatch_classes: ['switch', 'outlet_dual', 'acu_ir'], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_room_target_c: BUILD_FLOOR, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build' });
   } finally {
     cleanup();
   }
@@ -961,7 +964,11 @@ test('dispatch open + ACU command: routed to /acu as an IR code, not a relay sta
  * separately because the failure mode being prevented is a request that never went through the
  * dashboard at all: a curl, a stale tab, or a scheduled rule written before the policy existed.
  */
-test('an ACU setpoint below the site policy floor is refused, and nothing reaches the hardware', async () => {
+test('an ACU setpoint below the room-comfort policy is DISPATCHED, warned about, and recorded', async () => {
+  // RM-061 reversed this. The policy number stopped being a bound on the commanded setpoint —
+  // it is the coldest ROOM TEMPERATURE the building permits an automatic rule to aim for — so a
+  // person asking for 18 for an hour is no longer refused. The fact is not lost: it comes back
+  // in the ack and it is written into the audit note, which is the only place it can survive.
   const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch();
   try {
     const res = await fetch(`${proxyUrl}/api/command`, {
@@ -969,10 +976,49 @@ test('an ACU setpoint below the site policy floor is refused, and nothing reache
       headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ device_id: 'acu_main', action: 'on', target_c: 18 }),
     });
+    assert.equal(res.status, 202);
+    const ack = await res.json();
+    assert.equal(ack.warnings?.[0]?.code, 'below_room_comfort_policy');
+    assert.equal(ack.warnings[0].floor, 24);
+    assert.equal(lightState.requests.length, 1, 'it really is dispatched now');
+    assert.deepEqual(lightState.requests[0].body, { mode: '18' });
+    assert.equal(supabaseState.insertedCommands.length, 1);
+    assert.match(supabaseState.insertedCommands[0].note, /below this building's 24°C room-comfort policy/);
+  } finally {
+    cleanup();
+  }
+});
+
+test('a setpoint WITHIN the policy produces an ack with no warnings field at all', async () => {
+  // A command that trips nothing must be byte-identical to what it always was, so no existing
+  // reader meets a field it has never seen.
+  const { proxyUrl, cleanup } = await setupDispatch();
+  try {
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'acu_main', action: 'on', target_c: 26 }),
+    });
+    assert.equal(res.status, 202);
+    assert.equal('warnings' in (await res.json()), false);
+  } finally {
+    cleanup();
+  }
+});
+
+test('the HARDWARE bound still refuses — a policy warning is not a licence to send no code', async () => {
+  // `ACU_MIN_C` is what the IR library holds codes for. Below it there is nothing to transmit,
+  // which is a different fact from the building's comfort rule and stays a refusal.
+  const { proxyUrl, lightState, cleanup } = await setupDispatch();
+  try {
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'acu_main', action: 'on', target_c: 15 }),
+    });
     assert.equal(res.status, 400);
-    assert.equal((await res.json()).code, 'below_policy_floor');
-    assert.equal(lightState.requests.length, 0, 'a refused command must not reach the bridge');
-    assert.equal(supabaseState.insertedCommands.length, 0, 'nor be recorded as an attempt');
+    assert.equal((await res.json()).code, 'invalid_target_c');
+    assert.equal(lightState.requests.length, 0);
   } finally {
     cleanup();
   }

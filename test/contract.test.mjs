@@ -23,6 +23,7 @@ import { dirname, join } from 'node:path';
 import { DEVICE_REGISTRY, PHASE_MAP, publicDevices, SITE, BUILDING_METER_IDS } from '../shared/registry.mjs';
 import { buildLatest } from '../shared/buildLatest.mjs';
 import { COMMAND_ROUTE, ACCEPTED_STATUS, validateCommand, buildAck } from '../shared/commands.mjs';
+import { roomTargetFloorC } from '../shared/sitePolicy.mjs';
 import { CONTEXT_ROUTE, CONTEXT_ACCEPTED_STATUS, validateContextWrite, buildContextAck } from '../shared/context.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -599,29 +600,59 @@ test('a setpoint on anything other than the ACU is rejected rather than ignored'
  * university's energy-efficiency policy quoted in the funded project plan ("not lower than
  * 25 degrees"). A different site has a different rule, or none.
  *
- * It is enforced HERE rather than by omitting options from a dropdown, because this function
- * is what every dispatch path already goes through — manual, scheduled and auto-shed alike —
- * and a UI that merely hides the option is not enforcement.
+ * SINCE RM-061 IT IS NOT ENFORCED HERE AT ALL. The number is a statement about the ROOM, and
+ * it is enforced where rules are written and where the closed loop decides. What this function
+ * does is attach a WARNING, which rides on the command into the audit note — so the fact
+ * survives instead of the command being refused. `ACU_MIN_C`/`ACU_MAX_C` remain the only hard
+ * bound, because below them there is no IR code to send at all.
  */
-test('the site policy floor refuses a setpoint the IR library would happily accept', () => {
+test('the room-comfort policy WARNS about a low setpoint, and no longer refuses it', () => {
+  // RM-061 reversed this deliberately. The number stopped being a bound on the commanded
+  // setpoint and became the coldest ROOM TEMPERATURE an automatic rule may aim for, because the
+  // setpoint is the lever a closed loop moves: a loop that may never ask for 22 cannot hold a
+  // room at 24 on a hot afternoon, and a person who needs 18 for an hour had no way to ask.
+  // The fact is not lost — it rides on the command and `server/proxy.mjs` writes it into the
+  // audit note, so a below-policy setpoint is attributed rather than prevented.
+  const r = validateCommand(
+    { device_id: 'acu_main', action: 'on', target_c: 18 },
+    DEVICE_REGISTRY,
+    { acu_min_room_target_c: 25 },
+  );
+  assert.equal(r.ok, true);
+  assert.equal(r.cmd.warnings[0].code, 'below_room_comfort_policy');
+  assert.equal(r.cmd.warnings[0].floor, 25);
+  assert.match(r.cmd.warnings[0].detail, /25/);
+});
+
+test('the LEGACY policy key is still honoured, for the length of the rename window', () => {
+  // phase35 copies the value rather than moving it, and code deploys are a separate act from
+  // migrations here — so a bundle may meet either key first.
   const r = validateCommand(
     { device_id: 'acu_main', action: 'on', target_c: 18 },
     DEVICE_REGISTRY,
     { acu_min_setpoint_c: 25 },
   );
-  assert.equal(r.ok, false);
-  assert.equal(r.status, 400);
-  assert.equal(r.code, 'below_policy_floor');
-  assert.match(r.error, /25/);
+  assert.equal(r.ok, true);
+  assert.equal(r.cmd.warnings[0].floor, 25);
 });
 
-test('a setpoint at the policy floor exactly is allowed — the bound is inclusive', () => {
+test('a command that trips no policy carries no warnings field at all', () => {
+  // A relay ack, and an in-policy setpoint ack, must be byte-identical to what they always
+  // were, so no existing reader meets a field it has never seen.
+  const inPolicy = validateCommand({ device_id: 'acu_main', action: 'on', target_c: 26 }, DEVICE_REGISTRY, { acu_min_room_target_c: 25 });
+  assert.equal('warnings' in inPolicy.cmd, false);
+  const relay = validateCommand({ device_id: 'l1', action: 'on' }, DEVICE_REGISTRY, { acu_min_room_target_c: 25 });
+  assert.equal('warnings' in relay.cmd, false);
+});
+
+test('a setpoint at the policy value exactly draws no warning — the bound is inclusive', () => {
   const r = validateCommand(
     { device_id: 'acu_main', action: 'on', target_c: 25 },
     DEVICE_REGISTRY,
-    { acu_min_setpoint_c: 25 },
+    { acu_min_room_target_c: 25 },
   );
   assert.equal(r.ok, true);
+  assert.equal('warnings' in r.cmd, false);
 });
 
 test('a site with no policy gets the hardware bound and nothing more', () => {
@@ -645,17 +676,19 @@ test('a policy can narrow the hardware bound but never widen it', () => {
   assert.equal(r.code, 'invalid_target_c', 'the hardware bound must be checked first');
 });
 
-test('the active site actually sets a floor, so this is not dead configuration', () => {
-  // Guards against the floor being silently dropped from the site module: the whole feature
-  // is worth nothing if the deployed site declares no policy.
-  assert.equal(typeof SITE.policy.acu_min_setpoint_c, 'number');
+test('the active site actually declares a room-comfort policy, so this is not dead configuration', () => {
+  // Guards against the value being silently dropped from the site module: the whole feature is
+  // worth nothing if the deployed site declares no policy. Read through `roomTargetFloorC` so
+  // this keeps holding after the contract migration removes the legacy key.
+  const floor = roomTargetFloorC(SITE.policy);
+  assert.equal(typeof floor, 'number');
   const r = validateCommand(
-    { device_id: 'acu_main', action: 'on', target_c: SITE.policy.acu_min_setpoint_c - 1 },
+    { device_id: 'acu_main', action: 'on', target_c: floor - 1 },
     DEVICE_REGISTRY,
     SITE.policy,
   );
-  assert.equal(r.ok, false);
-  assert.equal(r.code, 'below_policy_floor');
+  assert.equal(r.ok, true, 'accepted, because the policy is about the room');
+  assert.equal(r.cmd.warnings[0].code, 'below_room_comfort_policy');
 });
 
 /**

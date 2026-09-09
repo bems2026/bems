@@ -314,6 +314,10 @@ export interface Capabilities {
    * proxy predating the field says nothing; `null` means the site has no policy floor and the
    * hardware bound alone applies.
    */
+  /** RM-061: the coldest ROOM TARGET this site permits an automatic rule to aim for. Optional
+   * because a proxy that predates phase35 serves only the legacy key below. */
+  acu_min_room_target_c?: number | null;
+  /** The pre-RM-061 name for the same number, still served for one release. */
   acu_min_setpoint_c?: number | null;
   /** `'database'` or `'build'` — where the proxy got the floor above. During a Supabase outage
    * it falls back to the build value, and a page presenting that as current would be wrong. */

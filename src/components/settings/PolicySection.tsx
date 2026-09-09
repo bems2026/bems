@@ -1,5 +1,6 @@
 /**
- * The building's operating rules — RM-038. Today that means one: the aircon setpoint floor.
+ * The building's operating rules — RM-038. Today that means one: the coldest room temperature
+ * an automatic aircon rule may aim for (redefined by RM-061).
  *
  * WHY THIS EXISTS. The floor comes from the university's energy-efficiency policy, and a
  * university policy changes. It used to live only in `shared/sites/<id>/site.mjs`, compiled into
@@ -21,11 +22,11 @@ import { Card } from '@/components/ui/Card';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
 import { useAuthStore } from '@/stores/authStore';
-import { setAcuMinSetpoint, FLOOR_MIN_C, FLOOR_MAX_C, isValidFloor } from '@/lib/supabasePolicy';
+import { setAcuMinRoomTarget, FLOOR_MIN_C, FLOOR_MAX_C, isValidFloor } from '@/lib/supabasePolicy';
 import { supabase } from '@/config/supabase';
 
 export function PolicySection() {
-  const inForce = useCapabilitiesStore((s) => s.acuMinSetpointC);
+  const inForce = useCapabilitiesStore((s) => s.acuMinRoomTargetC);
   const source = useCapabilitiesStore((s) => s.policySource);
   const refresh = useCapabilitiesStore((s) => s.load);
   const mode = useAuthStore((s) => s.mode);
@@ -57,7 +58,7 @@ export function PolicySection() {
     setStatus('saving');
     setError(null);
     try {
-      await setAcuMinSetpoint(parsed as number | null);
+      await setAcuMinRoomTarget(parsed as number | null);
       // Re-read rather than trusting the write: what matters is the floor the PROXY now applies,
       // and that is a different process reading a cache with its own refresh interval.
       await refresh();
@@ -76,17 +77,19 @@ export function PolicySection() {
       <h2 className="card-title">
         <Thermometer size={16} className="title-icon" aria-hidden="true" />
         Building policy
-        <InfoHint label="What a policy floor does">
-          The floor is the coldest aircon setpoint this building permits. It is enforced by the
-          bridge, not by this page — a request below it is refused server-side, so a command that
-          never went through this dashboard is refused too. It can only ever <strong>narrow</strong>{' '}
-          the range the hardware supports ({FLOOR_MIN_C}–{FLOOR_MAX_C} °C), never widen it.
+        <InfoHint label="What this policy does">
+          This is the coldest <strong>room temperature</strong> an automatic rule may aim for — not a
+          limit on the setpoint sent to the aircon, which is the lever a rule moves and stays free
+          across the range the hardware supports ({FLOOR_MIN_C}–{FLOOR_MAX_C} °C). It is enforced
+          where rules are saved and where the control loop decides. A setpoint chosen by hand below
+          it is <strong>allowed</strong>, flagged on the Control page, and written into the command
+          audit trail.
         </InfoHint>
       </h2>
 
       <div className="policy-field">
         <label className="policy-field__label" htmlFor="policy-acu-floor">
-          Coldest aircon setpoint allowed
+          Coldest room temperature allowed
         </label>
         <div className="policy-field__row">
           <input

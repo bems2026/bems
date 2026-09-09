@@ -53,6 +53,7 @@ import { dirname, join } from 'node:path';
 import { verifyBreakGlassPassword } from './breakGlass.mjs';
 import { validateCommand, buildAck, ACCEPTED_STATUS } from '../shared/commands.mjs';
 import { createLivePolicy } from './livePolicy.mjs';
+import { roomTargetFloorC } from '../shared/sitePolicy.mjs';
 import { DEVICE_REGISTRY, TIMING, SITE } from '../shared/registry.mjs';
 import { dispatchCommand, DISPATCH_CLASSES } from './dispatchLight.mjs';
 import { createTuyaClient, TUYA_HOSTS } from './tuyaCloud.mjs';
@@ -529,10 +530,21 @@ async function handleCommand(req, res, token) {
     update: remoteAudit.update,
   });
 
+  /**
+   * A below-policy setpoint is RECORDED, not refused — RM-061.
+   *
+   * `validateCommand` used to return 400 `below_policy_floor` for these and the command never
+   * happened, so there was nothing to record. Now it accepts and warns, which means the audit
+   * trail is the only place the fact survives. Appending it to the note rather than adding a
+   * column keeps it working on a database that has not been migrated for it, and the note is
+   * already where this table carries prose.
+   */
+  const warningNote = (cmd.warnings ?? []).map((w) => w.detail).join('; ');
+
   const outcome = await auditedDispatch({
     device,
     cmd,
-    note: ack.note,
+    note: warningNote ? `${ack.note} — ${warningNote}` : ack.note,
     auditRow: {
       command_id: cmd.command_id ?? null,
       device_id: cmd.device_id,
@@ -758,7 +770,11 @@ const server = http.createServer(async (req, res) => {
       // necessarily the one in the browser's bundle: an operator can change it without a
       // redeploy, and a setpoint selector built from a stale build value would offer a degree
       // that comes back as a 400 — which reads as a bug rather than as a policy.
-      acu_min_setpoint_c: livePolicy.current().acu_min_setpoint_c ?? null,
+      // RM-061: this number means the coldest ROOM TARGET now, not the coldest commandable
+      // setpoint. Both keys are served for one release so a kiosk still running the pre-rename
+      // bundle does not lose its value the moment phase35 lands.
+      acu_min_room_target_c: roomTargetFloorC(livePolicy.current()),
+      acu_min_setpoint_c: roomTargetFloorC(livePolicy.current()),
       // Where that number came from. A page reporting a floor it got from the build during a
       // database outage should be able to say so rather than presenting it as current.
       policy_source: livePolicy.status().source,

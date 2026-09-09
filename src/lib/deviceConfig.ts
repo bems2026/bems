@@ -100,6 +100,33 @@ export function coerceLoadShedGroup(value: string | null): LoadShedGroup | null 
   return LOAD_SHED_OPTIONS.some((o) => o.value === value) ? (value as LoadShedGroup) : null;
 }
 
+/**
+ * The tier that governs one relay — RM-060.
+ *
+ * SOCKET ROW WINS, DEVICE ROW IS THE FALLBACK, and this is the ONLY place that order is
+ * decided. `shedTiers.ts`, the shed panel and `server/shedPlan.mjs`'s `shedTargets` all apply
+ * the same precedence; a second copy of it would be a second chance for the screen and the
+ * shedder to disagree about which relay is protected.
+ *
+ * The fallback is not a nicety. `socket_config` is populated by phase34's backfill, and until
+ * that migration is applied every socket resolves to its device's tier — which is exactly what
+ * the system did before, since a device-level shed target was fanned out to both sockets.
+ *
+ * @param socket 1 or 2 for a dual outlet; null for a device with a single relay
+ */
+export function resolveShedTier(
+  deviceId: string,
+  socket: number | null,
+  deviceConfigs: Record<string, { loadShedGroup: LoadShedGroup | null } | undefined>,
+  socketConfigs: Record<string, Record<number, { loadShedGroup: LoadShedGroup | null } | undefined> | undefined>,
+): LoadShedGroup | null {
+  if (socket !== null) {
+    const own = socketConfigs[deviceId]?.[socket];
+    if (own && own.loadShedGroup !== null) return own.loadShedGroup;
+  }
+  return deviceConfigs[deviceId]?.loadShedGroup ?? null;
+}
+
 /** Trims every text field and collapses '' to null, so "cleared the box" and "never set it"
  * are the same row state. Without this, a cleared field would save as '' and read back as a
  * value, and the pending-edit diff would report a phantom edit that never clears.

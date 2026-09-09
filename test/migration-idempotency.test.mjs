@@ -17,9 +17,17 @@
  * TRIGGERS HAVE THE SAME GAP AND WERE ADDED HERE BEFORE THEY COULD BECOME THE SAME SCAR.
  * PostgreSQL has no `create trigger if not exists` either, so `phase23_plan_coords.sql` — the
  * first file in this project to define one — would have failed a re-run in precisely the way
- * phase21 did, with precisely the same misleading header. `create or replace function`,
- * `add column if not exists` and `drop constraint if exists` all guard themselves; these two
- * statements are the ones that do not, which is why they are the two this file counts.
+ * phase21 did, with precisely the same misleading header.
+ *
+ * TABLE CONSTRAINTS ARE THE THIRD, AND THIS FILE MISSED THEM FOR THIRTEEN PHASES.
+ * `alter table ... add constraint` has no IF NOT EXISTS form either, and it is the statement
+ * `phase6_schedules_unique_fix.sql` used — the very constraint RM-059 had to drop. Added when
+ * phase33 and phase34 arrived carrying several apiece; the check that would have caught the
+ * original is now here.
+ *
+ * `create or replace function`, `add column if not exists`, `create index if not exists` and
+ * `drop constraint if exists` all guard themselves. These three statements do not, which is
+ * why they are the three this file counts.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -44,23 +52,40 @@ for (const file of FILES) {
   const header = raw.slice(0, raw.search(/^\s*(create|alter|insert|revoke|grant|do)\b/im) + 1 || 4000);
   const sql = raw.replace(/^\s*--.*$/gm, '');
 
-  /** The two statement kinds PostgreSQL gives no `IF NOT EXISTS` form. Counted per kind rather
-   * than summed, so a file that guards two policies and no trigger cannot pass on the total. */
+  /**
+   * The three statement kinds PostgreSQL gives no `IF NOT EXISTS` form. Counted per kind
+   * rather than summed, so a file that guards two policies and no trigger cannot pass on the
+   * total.
+   *
+   * `guard` is a SECOND accepted form, not a synonym for `drop`. Both make a re-run genuinely
+   * safe and this project uses both: phase33/34 drop-then-add, while phase27 wraps each
+   * `add constraint` in `do $$ begin if not exists (select 1 from pg_constraint ...)`. Counting
+   * only the first would fail phase27 for being careful in the other legal way, and a check
+   * that cries wolf gets deleted.
+   */
   const UNGUARDABLE = [
     { kind: 'policy', create: /^\s*create policy\s+\S+/gim, drop: /^\s*drop policy if exists/gim },
     { kind: 'trigger', create: /^\s*create trigger\s+\S+/gim, drop: /^\s*drop trigger if exists/gim },
+    {
+      kind: 'constraint',
+      // Deliberately NOT anchored to a line start: these are written across two lines in this
+      // project — `alter table schedules` on one, an indented `add constraint ...` on the next.
+      create: /alter table\s+\S+\s+add constraint\s+\S+/gim,
+      drop: /alter table\s+\S+\s+drop constraint if exists/gim,
+      guard: /from\s+pg_constraint\s+where\s+conname\s*=/gim,
+    },
   ];
 
   test(`${file}: an idempotency claim in the header is true`, () => {
     if (!CLAIMS_RERUN_SAFE.test(header)) return; // Silent or warning — nothing to hold it to.
-    for (const { kind, create, drop } of UNGUARDABLE) {
+    for (const { kind, create, drop, guard } of UNGUARDABLE) {
       const creates = (sql.match(create) ?? []).length;
-      const guarded = (sql.match(drop) ?? []).length;
+      const guarded = (sql.match(drop) ?? []).length + (guard ? (sql.match(guard) ?? []).length : 0);
       assert.equal(
         creates <= guarded,
         true,
         `${file} says a re-run is safe but creates ${creates} ${kind}s and guards ${guarded}. ` +
-          `\`create ${kind}\` has no IF NOT EXISTS — drop first, or stop claiming it.`,
+          `\`create ${kind}\` has no IF NOT EXISTS — drop first (or guard on the catalogue), or stop claiming it.`,
       );
     }
   });
