@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { ScheduleStackCard } from './ScheduleStackCard';
 import { useScheduleStore } from '@/stores/scheduleStore';
+import { useAcuRuleStore } from '@/stores/acuRuleStore';
 import { scheduleTargets } from '@/lib/scheduleStack';
 import type { Schedule } from '@/lib/supabaseSchedules';
 import type { Device } from '@/lib/types';
@@ -67,6 +68,9 @@ beforeEach(() => {
     remove,
     create,
   });
+  // The aircon cross-check reads this store; an empty one must be the default so every other
+  // test measures the stack alone.
+  useAcuRuleStore.setState({ rules: [] });
 });
 afterEach(cleanup);
 
@@ -171,5 +175,87 @@ describe('ScheduleStackCard — what it refuses to hide', () => {
     useScheduleStore.setState({ rowError: { r1: 'Could not save the rule.' } });
     render(<ScheduleStackCard target={target()} stack={[rule()]} dispatchableIds={new Set(['co1'])} />);
     expect(document.body.textContent).not.toMatch(/supabase/i);
+  });
+});
+
+describe('ScheduleStackCard — the aircon cross-check (RM-071)', () => {
+  const ACU = {
+    id: 'acu_main',
+    display_name: 'CARE ACU IR',
+    class: 'acu_ir',
+    sockets: null,
+    room: null,
+    dps_map: null,
+    status: 'active',
+  } as unknown as Device;
+
+  const acuTarget = () => scheduleTargets([ACU])[0];
+  const acuRule = (over = {}) => ({
+    acuDeviceId: 'acu_main',
+    days: '1111100',
+    windowStart: '08:00',
+    windowEnd: '17:00',
+    enabled: true,
+    label: 'Office hours',
+    ...over,
+  });
+
+  it('warns when a schedule switches the aircon off inside an armed rule window', () => {
+    // The loop is setpoint-only and acts only while the unit reports on, so from 12:00 it holds
+    // on `acu_off` and does nothing until 17:00. Nothing is broken — but "configured and nothing
+    // is happening" is the state the hold vocabulary exists to stop being mistaken for a bug.
+    useAcuRuleStore.setState({ rules: [acuRule()] as never });
+    render(
+      <ScheduleStackCard
+        target={acuTarget()}
+        stack={[rule({ deviceId: 'acu_main', socket: null, on: '07:00', off: '12:00' })]}
+        dispatchableIds={new Set(['acu_main'])}
+      />,
+    );
+    const warning = screen.getAllByRole('status').map((e) => e.textContent ?? '').find((t) => /holds and does nothing/.test(t));
+    expect(warning).toMatch(/switches the aircon off at 12:00/);
+    expect(warning).toMatch(/08:00–17:00 window/);
+  });
+
+  it('says nothing when the off-time falls outside the window', () => {
+    useAcuRuleStore.setState({ rules: [acuRule()] as never });
+    render(
+      <ScheduleStackCard
+        target={acuTarget()}
+        stack={[rule({ deviceId: 'acu_main', socket: null, on: '07:00', off: '18:00' })]}
+        dispatchableIds={new Set(['acu_main'])}
+      />,
+    );
+    expect(screen.queryByText(/holds and does nothing/)).toBeNull();
+  });
+
+  it('says nothing when the two share no day — a Saturday rule cannot silence a weekday window', () => {
+    useAcuRuleStore.setState({ rules: [acuRule()] as never });
+    render(
+      <ScheduleStackCard
+        target={acuTarget()}
+        stack={[rule({ deviceId: 'acu_main', socket: null, on: '07:00', off: '12:00', days: '0000010' })]}
+        dispatchableIds={new Set(['acu_main'])}
+      />,
+    );
+    expect(screen.queryByText(/holds and does nothing/)).toBeNull();
+  });
+
+  it('says nothing when the aircon rule is disarmed', () => {
+    useAcuRuleStore.setState({ rules: [acuRule({ enabled: false })] as never });
+    render(
+      <ScheduleStackCard
+        target={acuTarget()}
+        stack={[rule({ deviceId: 'acu_main', socket: null, on: '07:00', off: '12:00' })]}
+        dispatchableIds={new Set(['acu_main'])}
+      />,
+    );
+    expect(screen.queryByText(/holds and does nothing/)).toBeNull();
+  });
+
+  it('never fires for a light — only the aircon can be silenced this way', () => {
+    useAcuRuleStore.setState({ rules: [acuRule()] as never });
+    render(<ScheduleStackCard target={target()} stack={[rule({ off: '12:00' })]} dispatchableIds={new Set(['co1'])} />);
+    expect(screen.queryByText(/holds and does nothing/)).toBeNull();
   });
 });

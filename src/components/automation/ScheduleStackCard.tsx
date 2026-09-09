@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import { Plus, Trash2, AlertTriangle, Info } from 'lucide-react';
 import { DAY_LABELS, DAY_NAMES, toggleDay, parseDays } from '@shared/scheduleDays.mjs';
 import { useScheduleStore, CREATING } from '@/stores/scheduleStore';
-import { ruleProblem, explainProblem, stackConflicts, type ScheduleTarget } from '@/lib/scheduleStack';
+import { ruleProblem, explainProblem, stackConflicts, acuWindowConflicts, type ScheduleTarget } from '@/lib/scheduleStack';
+import { useAcuRuleStore } from '@/stores/acuRuleStore';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { RuleBlock, RuleWhen, RuleThen } from './RuleBlock';
@@ -36,7 +37,14 @@ export function ScheduleStackCard({
   const createError = useScheduleStore((s) => s.rowError[CREATING]);
   const { ask, modalProps } = useConfirm();
 
-  const conflicts = useMemo(() => stackConflicts(stack), [stack]);
+  // Two sources, one list. A stack-internal collision and a schedule that silences the aircon
+  // loop are both "this fires, but not the way it reads", and splitting them into two lists would
+  // make the operator check two places for the same class of surprise.
+  const acuRules = useAcuRuleStore((s) => s.rules);
+  const conflicts = useMemo(
+    () => [...stackConflicts(stack), ...acuWindowConflicts(stack, acuRules, target)],
+    [stack, acuRules, target],
+  );
   const armedCount = stack.filter((r) => r.enabled).length;
 
   const addRule = () =>
@@ -98,7 +106,7 @@ export function ScheduleStackCard({
         <ul className="schedule-stack__conflicts">
           {conflicts.map((c, i) => (
             <li key={i} className={`schedule-stack__conflict schedule-stack__conflict--${c.kind}`} role="status">
-              {c.kind === 'collision' ? <AlertTriangle size={12} aria-hidden="true" /> : <Info size={12} aria-hidden="true" />}
+              {c.kind === 'collision' || c.kind === 'acu-window' ? <AlertTriangle size={12} aria-hidden="true" /> : <Info size={12} aria-hidden="true" />}
               {c.message}
             </li>
           ))}

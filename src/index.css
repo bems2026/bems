@@ -5055,7 +5055,11 @@ body::before {
 }
 /* A collision changes what happens; an overnight run or a duplicate only changes how it reads.
    Different weights, because treating them alike teaches people to ignore both. */
-.schedule-stack__conflict--collision {
+.schedule-stack__conflict--collision,
+/* Same weight as a collision, for the same reason: both describe a rule that fires and then does
+   not do what it reads like. An aircon rule silenced by a schedule stays armed and explains
+   itself in its own status strip — which nobody is looking at while writing the schedule. */
+.schedule-stack__conflict--acu-window {
   background: var(--warn-soft);
   color: var(--warn-on-page);
 }

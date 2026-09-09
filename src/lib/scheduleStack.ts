@@ -117,7 +117,7 @@ export function ruleProblem(rule: Schedule, device: Device | undefined, dispatch
  * Conflicts — rules that fire, but not the way they read
  * ======================================================================== */
 
-export type ConflictKind = 'collision' | 'duplicate' | 'overnight' | 'same-on-and-off';
+export type ConflictKind = 'collision' | 'duplicate' | 'overnight' | 'same-on-and-off' | 'acu-window';
 
 export interface StackConflict {
   kind: ConflictKind;
@@ -327,4 +327,79 @@ export function formatMinute(min: number): string {
   const m = Math.max(0, Math.min(MINUTES_PER_DAY, Math.round(min)));
   if (m === MINUTES_PER_DAY) return '24:00';
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+/* ===========================================================================
+ * Cross-domain: a schedule that silences the aircon loop
+ * ======================================================================== */
+
+/**
+ * The one conflict on this page that spans two automation strategies.
+ *
+ * WHAT IT CATCHES. A schedule switches the aircon OFF at a time that falls inside an armed ACU
+ * rule's active window. The loop is setpoint-only and acts only while the unit reports `on`, so
+ * from that minute to the end of the window it holds on `acu_off` and does nothing at all. The
+ * rule stays armed, the status strip explains itself, and nothing is broken — but "configured
+ * and nothing is happening" is exactly the state `holds` was designed to stop being
+ * indistinguishable from a bug, and it is cheaper to say so where the schedule is written.
+ *
+ * WHY THIS ONE AND NOT A DSM CROSS-CHECK. The brief that prompted this asked for a warning when
+ * a schedule conflicts with a DSM threshold. That is not computable: a threshold is a power
+ * limit and a schedule is a time, and they do not intersect deterministically — whether a rule
+ * trips a limit depends on what else is drawing at that moment. Inventing a warning for it would
+ * mean crying wolf on correct configurations, which is the argument `overnight` already makes.
+ * This check is deterministic: two windows either overlap on a shared day or they do not.
+ *
+ * BOTH SIDES USE THE SAME 7-CHAR Mon..Sun ENCODING, which is why the overlap is a bitwise
+ * question and not a date-library one. That was a deliberate choice when `acu_rules` was
+ * designed — one convention in this database — and this is the first thing to collect on it.
+ *
+ * DORMANT TODAY, and worth building anyway: `acu_main` currently has no schedule rows at all,
+ * because the operator deleted the one it had. That was one click.
+ */
+export interface AcuWindowRule {
+  acuDeviceId: string;
+  /** 7 chars of '1'/'0', Mon..Sun — the same encoding schedules use. */
+  days: string;
+  windowStart: string;
+  windowEnd: string;
+  enabled: boolean;
+  label: string | null;
+}
+
+export function acuWindowConflicts(stack: Schedule[], acuRules: AcuWindowRule[], target: ScheduleTarget): StackConflict[] {
+  // Only the aircon itself can be silenced this way. A schedule on a light has no bearing on it.
+  if (target.device.class !== 'acu_ir') return [];
+
+  const armedRules = acuRules.filter((r) => r.enabled && r.acuDeviceId === target.device.id);
+  if (armedRules.length === 0) return [];
+
+  const out: StackConflict[] = [];
+  for (const rule of stack.filter((s) => s.enabled)) {
+    const off = minutesOfDay(rule.off ?? '');
+    if (off === null) continue;
+    const offDays = parseDays(rule.days ?? undefined);
+
+    for (const acu of armedRules) {
+      const start = minutesOfDay(acu.windowStart);
+      const end = minutesOfDay(acu.windowEnd);
+      if (start === null || end === null || end <= start) continue; // a window is never treated as wrapping midnight
+      if (off < start || off >= end) continue;
+
+      const acuDays = parseDays(acu.days);
+      const shared = DAY_NAMES.filter((_, i) => offDays[i] && acuDays[i]);
+      if (shared.length === 0) continue;
+
+      const which = acu.label ? `"${acu.label}"` : 'the aircon rule';
+      out.push({
+        kind: 'acu-window',
+        ruleIds: [rule.id],
+        message:
+          `This switches the aircon off at ${rule.off}, inside ${which}'s ${acu.windowStart}–${acu.windowEnd} window ` +
+          `(${shared.length === 7 ? 'every day' : shared.join(', ')}). ` +
+          `The controller only adjusts a unit that is running, so from ${rule.off} it holds and does nothing until ${acu.windowEnd}.`,
+      });
+    }
+  }
+  return out;
 }

@@ -1,6 +1,12 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-09 — **RM-059 to RM-069**, two parallel lines of work on the same
+**Last audited:** 2026-09-10 — **RM-070 and RM-071**. RM-071 is a UI/UX overhaul of the Automation
+page: rules now read as IF/THEN blocks, and auditing for it turned up a one-character CSS typo that
+had been silently disabling the 44px touch-target rule **app-wide**, including on the dialog that
+gates arming unattended load shedding. See the RM-071 section below; the measurement is the part
+worth reading.
+
+**Previously audited:** 2026-09-09 — **RM-059 to RM-069**, two parallel lines of work on the same
 pages, merged. **RM-062 is the one to read**: the Automation page claimed hardware dispatch was
 closed when it has been open, on the page that arms unattended load shedding. It was found twice
 independently, from different directions — once by measuring the live Pi
@@ -2937,6 +2943,75 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 ## 2. Current roadmap (active execution)
 
+
+### How the Automation page READS — RM-071 (2026-09-10)
+
+RM-066..069 fixed what the page could express. This fixed how it reads. Every rule was a flat run
+of controls — `AcuRuleCard` alone had a text input, two selects, two number inputs, two time
+inputs, a textarea, seven day chips and a switch in one row — and nothing said which of them was
+the *condition* and which the *consequence*, which is the entire content of a rule.
+
+- [x] **RM-071a** A stray double comma at `src/index.css:7913` (`.automation-write-btn,,`) had been
+      disabling the whole 44px touch-target rule **app-wide**. A CSS selector list is
+      all-or-nothing: one empty member and the browser discards the entire rule, silently.
+      Verified in a real parser, and measured on a coarse pointer — "Save changes" was 36px.
+      Eleven of the twelve listed controls had no other floor, including
+      `.confirm-modal__cancel`/`__confirm`, the dialog that gates arming unattended load shedding
+      from the kiosk's own touchscreen. `.nav-icon-btn` is the exception and is recorded as such:
+      its `::after` expander kept a real 44px tap target throughout, so a
+      `getBoundingClientRect()` sweep reports it as a failure and is wrong to.
+      Evidence: `test/css-touch-targets.test.mjs` (4, proven by neutering — its first draft had a
+      hole in exactly the place the bug lived and passed on the reintroduced defect).
+- [x] **RM-071b** `src/components/automation/RuleBlock.tsx` — the IF/THEN frame. Two zones in a
+      common region, separated by proximity, background and a rail coloured by trigger type
+      (clock / sensor / demand). **Colour is the fourth cue, not the first**: each zone carries
+      the word WHEN or THEN, the trigger carries an icon, and the trigger type is announced to
+      screen readers, so nothing depends on telling amber from blue on a page that switches
+      relays. Now used by schedules, aircon rules and DSM thresholds.
+- [x] **RM-071c** Progressive disclosure where it was actually warranted, and NOT where it was
+      not. The Overview's 24-hour audit log is collapsed — height is the scarcest thing on the
+      800×480 kiosk. But collapsing it would have hidden a *failed* command, so the card reports
+      `{count, failed}` up and a closed disclosure reads "12 commands, 1 failed". **No disclosure
+      on `AcuRuleCard`** despite the plan expecting one: only the step interval is an advanced
+      field, and a `<details>` around a single input is more chrome than the thing it hides.
+      **None on `DsmThresholdsCard`**: the brief assumed raw JSON and calibration coefficients
+      there; it has two number inputs and a toggle, verified by reading all 234 lines.
+- [x] **RM-071d** `acuWindowConflicts()` in `src/lib/scheduleStack.ts` — the one cross-domain
+      check on this page that is actually computable. A schedule switching the aircon **off**
+      inside an armed ACU rule's window leaves the loop holding on `acu_off`, doing nothing, while
+      still reading as armed. Both sides share the 7-char Mon..Sun encoding, so the overlap is a
+      bitwise question. **A DSM cross-check was asked for and deliberately not built**: a
+      threshold is a power limit and a schedule is a time, and whether a rule trips one depends on
+      what else is drawing — a warning there would cry wolf on correct configurations.
+      *Dormant today*: `acu_main` has no schedule rows, because the operator deleted its one rule.
+      Evidence: `ScheduleStackCard.test.tsx` (16, four of them negative cases).
+- [x] **RM-071e** Responsive pass. The `@media (max-width: 720px)` block at `index.css:5739` was
+      **empty**, under a comment describing a table layout that no longer existed and quoting a
+      341px overflow measured against it. Measured overflow at 375px today: **0px**. The comment
+      outlived its markup, which is worse than no comment. Replaced with what is actually needed:
+      zones go full width, the coming-soon column moves below the rules, the identity row wraps.
+      Verified 0px overflow at 375, 800×480 and 1440.
+- [x] **RM-071f** `.automation-dsm-field__head` used `justify-content: space-between` with no gap
+      and no wrap. Latent for as long as that card was full-width — the caption and status pill
+      only *looked* separated because there was spare room. Inside a zone they ran together as
+      "MAX PHASE CURRENT (A)NO LIMIT SET". space-between is a distribution, not a minimum.
+- [x] **RM-071g** `ScheduleStackCard` had **no component test at all** — part of how this page
+      once shipped claiming it was not dispatchable while the daemon fired its rows at real
+      relays. It has 16 now.
+
+**Tailwind was asked for and deliberately not used.** It is imported at `index.css:1` and has
+**zero** utility classes across all 86 styled components; `test/design-tokens.test.mjs` and
+`test/contrast.test.mjs` enforce the token palette. Matching the other pages *requires* the
+existing system, and new colours outside it would bypass the contrast guard.
+
+**Toasts were asked for and deliberately not built.** This codebase rejects them twice in writing
+(`index.css:7464`, `:7767` — "a failed write says why, next to the control that failed"), there is
+no toast system, and this is an unattended 24/7 kiosk where an auto-dismissing message is seen by
+nobody.
+
+Contrast measured in a browser on a **reloaded** page, composited over alpha, in both themes:
+light — zone label 4.93, log summary 12.92, count 5.40; dark — zone label 5.79, shed title 11.95,
+shed sub 4.72; rails 8.16 and 5.56 against the 3:1 non-text floor.
 
 ### What the Automation page can express — RM-066 to RM-069 (migrations applied 2026-09-09)
 
