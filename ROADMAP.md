@@ -5071,6 +5071,40 @@ fall back to it).
       This is also why `sens_outside_temp` has no real telemetry: `acu_main` and
       `sens_outside_temp` both read `ac_dash_state`, which the IR blaster feeds.
 
+- [ ] **RM-070** Daylight-driven lighting and blinds. Measure how much natural light a room
+      already has, so artificial lighting is not run against a bright window, and drive a
+      motorised blind to use that daylight rather than shut it out.
+      *Acceptance:* a daylight sensor reports a light level into `/api/readings/latest` and
+      Supabase on the same cadence and under the same honesty rules as every other reading; a rule
+      holds a lighting circuit off while measured daylight sits above a setpoint, with hysteresis;
+      and blind position is commanded through the same gated, audited path as everything else.
+      **BLOCKED ON HARDWARE THAT IS NOT PHYSICALLY INSTALLED**, reported by the operator
+      2026-09-09. Verified in the code the same day, and it is worth stating precisely because the
+      two devices are blocked differently from each other and from RM-016: there is no `lux`,
+      `illuminance` or light-level member anywhere in `shared/`, so the catalogue cannot parse a
+      reading it has no code for; and there is no blind, shade or cover class in the registry, so
+      a blind is not merely unenrolled but **unrepresentable**. Neither is research — both are
+      enrolment work once the devices are mounted.
+      *Design notes worth keeping before anyone builds this.*
+      It belongs in **Event-Driven**, beside the aircon loop, because it closes a loop on a sensor
+      rather than on a clock or a demand limit. The aircon loop's safety posture transfers with one
+      substitution: **the loop may decide whether a circuit needs to be on, but a person must
+      always be able to switch a light on and have it stay on.** Daylight control that fights the
+      light switch is the most common complaint made about these systems, and the aircon loop
+      already has the mechanism — `manual_override_recent`, widened to cover every non-loop source.
+      The lighting circuits are **on/off relays, not dimmers** (`class: 'switch'`), so this is a
+      threshold with hysteresis, not a proportional dimming loop. The deadband matters more here
+      than it does for the aircon: a light that hunts is visible to everyone in the room, where a
+      setpoint that hunts is not.
+      A blind would be **the first actuator in this system with travel time and intermediate
+      positions**. `shared/commands.mjs`'s "action is absolute, never toggle" rule still holds —
+      "go to 40%" is absolute — but a relay's readback is instantaneous and a blind's is not, so
+      "did the command land?" and "has it finished moving?" become two different questions, and
+      the audit trail currently only knows how to ask the first. Settle that in the command
+      contract before the hardware arrives, not after.
+      *Evidence for the page:* `src/components/automation/EventDrivenPanel.tsx` renders the card
+      with this id beside it, so the claim can be checked rather than believed.
+
 - [ ] **RM-012** `l6` (Light Switch 6) was a one-way link. **Reachable and controllable again
       2026-08-25 — recovered by a Node-RED restart, with nobody touching the fixture.**
       *Acceptance:* `ip neigh` resolves its address, and it stays online across an hour.

@@ -113,6 +113,8 @@ describe('AutomationPage — strategies that are not installed', () => {
     expect(screen.getByText(/Occupancy-driven lighting/i)).toBeInTheDocument();
     expect(screen.getByText(/open procurement question/i)).toBeInTheDocument();
     expect(screen.getByText(/CO₂-driven ventilation/i)).toBeInTheDocument();
+    expect(screen.getByText(/Daylight-driven lighting and blinds/i)).toBeInTheDocument();
+    expect(screen.getByText(/neither of them physically installed/i)).toBeInTheDocument();
   });
 
   it('the aircon loop is a real feature on that tab now, not a coming-soon card', () => {

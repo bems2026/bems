@@ -100,6 +100,18 @@ describe('EventDrivenPanel — what it offers', () => {
     expect(screen.getByText(/Occupancy-driven lighting/i)).toBeInTheDocument();
     expect(screen.getByText(/open procurement question/i)).toBeInTheDocument();
     expect(screen.getByText(/CO₂-driven ventilation/i)).toBeInTheDocument();
+    expect(screen.getByText(/Daylight-driven lighting and blinds/i)).toBeInTheDocument();
+  });
+
+  it('says the daylight hardware is uninstalled, not that the feature is merely unwritten', () => {
+    // The distinction this asserts is the whole point of `blockedOn` being required: an operator
+    // reading "coming soon" waits, and an operator reading "the sensor is not mounted yet" knows
+    // it is theirs to unblock. Both devices are also UNREPRESENTABLE rather than just unenrolled
+    // — nothing in the catalogue reads a light level and no blind class exists — so the card must
+    // not imply the only missing step is screwing the sensor to a wall.
+    render(<EventDrivenPanel devices={[ACU, OUTSIDE]} />);
+    expect(screen.getByText(/neither of them physically installed/i)).toBeInTheDocument();
+    expect(screen.getByText(/no blind or shade class in the registry/i)).toBeInTheDocument();
   });
 });
 

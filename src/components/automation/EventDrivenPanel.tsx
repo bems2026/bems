@@ -128,6 +128,12 @@ export function EventDrivenPanel({ devices }: { devices: Device[] }) {
           roadmapId="ROADMAP §5 Q11"
         />
         <ComingSoonCard
+          title="Daylight-driven lighting and blinds"
+          what="Hold a lighting circuit off while the room already has enough daylight, and set the window blinds to let more of it in — so artificial light is never run against a bright window."
+          blockedOn="a daylight sensor and a motorised blind, neither of them physically installed yet. Nothing in the device catalogue reads a light level, and there is no blind or shade class in the registry, so both need enrolling once they are mounted."
+          roadmapId="RM-070"
+        />
+        <ComingSoonCard
           title="CO₂-driven ventilation"
           what="Raise ventilation when measured CO₂ climbs, and let it fall again as the room empties."
           blockedOn="a CO₂ sensor. There is none in the registry and no such capability in the device catalogue."
