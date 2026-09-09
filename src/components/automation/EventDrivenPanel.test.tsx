@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { EventDrivenPanel } from './EventDrivenPanel';
 import { useAcuRuleStore } from '@/stores/acuRuleStore';
 import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
@@ -191,5 +191,47 @@ describe('EventDrivenPanel — the below-policy override', () => {
     useAcuRuleStore.setState({ rules: [rule()], rowError: { r1: 'a room target of 20C is below this site’s 24C room-comfort policy' } });
     render(<EventDrivenPanel devices={[ACU, OUTSIDE]} />);
     expect(screen.getByRole('alert')).toHaveTextContent(/room-comfort policy/i);
+  });
+});
+
+describe('AcuRuleCard — the IF/THEN split (RM-071)', () => {
+  it('reads the room in WHEN and commands the unit in THEN', () => {
+    // The sensor and the target are the condition; the aircon and the step are the action. If
+    // these ever swap the rule still works and the card stops describing it, which is the kind
+    // of drift a screenshot review does not catch.
+    useAcuRuleStore.setState({ rules: [rule()] });
+    render(<EventDrivenPanel devices={[ACU, OUTSIDE]} />);
+
+    const when = screen.getByText(/^When$/i).closest('.rule-block__zone');
+    const then = screen.getByText(/^Then$/i).closest('.rule-block__zone');
+
+    expect(within(when as HTMLElement).getByText(/Sensor to read/i)).toBeInTheDocument();
+    expect(within(when as HTMLElement).getByLabelText(/Room temperature target for/i)).toBeInTheDocument();
+    expect(within(then as HTMLElement).getByText(/Aircon to command/i)).toBeInTheDocument();
+    // And the converse, which is the half that actually catches a swap.
+    expect(within(when as HTMLElement).queryByText(/Aircon to command/i)).toBeNull();
+  });
+
+  it('the active window is part of the condition, not a category of its own', () => {
+    useAcuRuleStore.setState({ rules: [rule()] });
+    render(<EventDrivenPanel devices={[ACU, OUTSIDE]} />);
+    const when = screen.getByText(/^When$/i).closest('.rule-block__zone');
+    expect(within(when as HTMLElement).getByLabelText(/Window start for/i)).toBeInTheDocument();
+    expect(within(when as HTMLElement).getByRole('button', { name: /^Monday for/i })).toBeInTheDocument();
+  });
+
+  it('states the loop authority on the card: setpoint only, never on or off', () => {
+    // The aircon equivalent of "auto-shed sheds, it never restores". No branch of the planner
+    // emits an `off`, and saying so where the rule is written is cheaper than an operator
+    // inferring otherwise from a control that looks like it switches an aircon.
+    useAcuRuleStore.setState({ rules: [rule()] });
+    render(<EventDrivenPanel devices={[ACU, OUTSIDE]} />);
+    expect(screen.getByText(/never switches the unit on or off/i)).toBeInTheDocument();
+  });
+
+  it('announces the trigger type, so the rail colour is never the only cue', () => {
+    useAcuRuleStore.setState({ rules: [rule()] });
+    render(<EventDrivenPanel devices={[ACU, OUTSIDE]} />);
+    expect(screen.getByText(/sensor trigger/i)).toBeInTheDocument();
   });
 });

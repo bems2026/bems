@@ -29,7 +29,25 @@ const STATUS_TONE: Record<string, string> = {
  * A `dry_run` row is not a failure and must not read as one: it is the honest record of a
  * firing that happened with the dispatch gate closed.
  */
-export function AutomationActivityCard({ devices }: { devices: Device[] }) {
+export function AutomationActivityCard({
+  devices,
+  onSummary,
+}: {
+  devices: Device[];
+  /**
+   * Reports `{ count, failed }` to a parent that may be RENDERING THIS COLLAPSED.
+   *
+   * RM-071 put this card inside a `<details>` on the Overview tab, which buys back vertical
+   * space on the 800x480 kiosk but would otherwise hide a failed command completely — the one
+   * row here nobody can afford to miss. The parent puts the count and any failure on the
+   * summary, so a closed disclosure still says "12 commands, 1 failed" rather than nothing.
+   *
+   * A callback rather than lifting the fetch: this card is used un-collapsed elsewhere and owns
+   * its own loading and error states, and moving the fetch out would make every caller
+   * responsible for them to serve one caller's summary line.
+   */
+  onSummary?: (summary: { count: number; failed: number }) => void;
+}) {
   const [events, setEvents] = useState<AutomationEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,6 +60,14 @@ export function AutomationActivityCard({ devices }: { devices: Device[] }) {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!events) return;
+    onSummary?.({ count: events.length, failed: events.filter((e) => e.status === 'failed').length });
+    // `onSummary` is deliberately not a dependency: callers pass an inline arrow, so including it
+    // would re-run this on every parent render and loop through the parent's setState.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events]);
 
   const nameOf = (id: string) => devices.find((d) => d.id === id)?.display_name ?? id;
 

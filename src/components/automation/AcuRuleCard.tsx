@@ -5,6 +5,7 @@ import { measuresFor } from '@shared/temperatureSources.mjs';
 import { useAcuRuleStore } from '@/stores/acuRuleStore';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
+import { RuleBlock, RuleWhen, RuleThen } from './RuleBlock';
 import { ACU_TEXT } from '@shared/acuLoopVocabulary.mjs';
 import type { AcuRule, AcuLoopState } from '@/lib/supabaseAcuRules';
 import type { Device } from '@/lib/types';
@@ -110,104 +111,127 @@ export function AcuRuleCard({
 
       <AcuStatusStrip state={state} rule={rule} />
 
-      <div className="acu-rule__grid">
-        <label className="acu-rule__field">
-          <span>Aircon to command</span>
-          <select value={rule.acuDeviceId} onChange={(e) => patch({ acuDeviceId: e.target.value })}>
-            {acus.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.display_name}
-              </option>
-            ))}
-          </select>
-        </label>
+      {/*
+       * WHEN is the room and the clock; THEN is the unit and what gets done to it.
+       *
+       * The active window belongs in WHEN and not in a section of its own: "only on these days,
+       * between these hours" is part of the condition, and the old layout put it below the fields
+       * as though it were a third category.
+       *
+       * NO DISCLOSURE HERE, deliberately, though the plan for this work expected one. Only the
+       * step interval is an advanced field — deadband, step size and manual-hold are fixed and
+       * have no control — and hiding a single input behind a `<details>` is more chrome than the
+       * thing it hides. It sits in THEN instead, where it qualifies the action it belongs to:
+       * "step the setpoint, at most this often".
+       */}
+      <RuleBlock trigger="sensor">
+        <RuleWhen trigger="sensor">
+          <label className="acu-rule__field">
+            <span>Sensor to read</span>
+            <select value={rule.sensorDeviceId} onChange={(e) => patch({ sensorDeviceId: e.target.value })}>
+              {sensors.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.display_name}
+                </option>
+              ))}
+            </select>
+          </label>
 
-        <label className="acu-rule__field">
-          <span>Sensor to read</span>
-          <select value={rule.sensorDeviceId} onChange={(e) => patch({ sensorDeviceId: e.target.value })}>
-            {sensors.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.display_name}
-              </option>
-            ))}
-          </select>
-        </label>
+          <label className="acu-rule__field">
+            <span>Room target</span>
+            <span className="acu-rule__inline">
+              <input
+                type="number"
+                min={16}
+                max={30}
+                step={0.5}
+                value={targetDraft ?? rule.targetC}
+                aria-label={`Room temperature target for ${name}`}
+                onChange={(e) => setTargetDraft(e.target.value)}
+                onBlur={(e) => {
+                  setTargetDraft(null);
+                  const next = Number(e.target.value);
+                  if (Number.isFinite(next) && next !== rule.targetC) patch({ targetC: next });
+                }}
+              />
+              <span className="acu-rule__unit">°C</span>
+            </span>
+          </label>
 
-        <label className="acu-rule__field">
-          <span>Room target</span>
-          <span className="acu-rule__inline">
-            <input
-              type="number"
-              min={16}
-              max={30}
-              step={0.5}
-              value={targetDraft ?? rule.targetC}
-              aria-label={`Room temperature target for ${name}`}
-              onChange={(e) => setTargetDraft(e.target.value)}
-              onBlur={(e) => {
-                setTargetDraft(null);
-                const next = Number(e.target.value);
-                if (Number.isFinite(next) && next !== rule.targetC) patch({ targetC: next });
-              }}
-            />
-            <span className="acu-rule__unit">°C</span>
-          </span>
-        </label>
+          {/* The measurement caveat, beside the choice that causes it rather than after it goes
+              wrong. An outdoor sensor can never reach a room target, and a picker that offered it
+              silently would turn a configuration mistake into something that presents as a bug. */}
+          {measures?.caveat && (
+            <p className="acu-rule__caveat" role="status">
+              <AlertTriangle size={12} aria-hidden="true" />
+              <span>
+                <strong>{measures.label}.</strong> {measures.caveat}
+              </span>
+            </p>
+          )}
 
-        <label className="acu-rule__field">
-          <span>Step every</span>
-          <span className="acu-rule__inline">
-            <input
-              type="number"
-              min={1}
-              max={120}
-              value={Math.round(rule.minStepIntervalS / 60)}
-              aria-label={`Minutes between steps for ${name}`}
-              onChange={(e) => {
-                const mins = Number(e.target.value);
-                if (Number.isFinite(mins) && mins >= 1) patch({ minStepIntervalS: Math.round(mins * 60) });
-              }}
-            />
-            <span className="acu-rule__unit">min</span>
-          </span>
-        </label>
-      </div>
+          <div className="acu-rule__window">
+            <span className="acu-rule__window-label">Active</span>
+            <div className="schedule-rule__days">
+              {DAY_LABELS.map((day, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className={`automation-day-chip${days[i] ? ' automation-day-chip--on' : ''}`}
+                  aria-pressed={days[i]}
+                  aria-label={`${DAY_NAMES[i]} for ${name}`}
+                  onClick={() => patch({ days: toggleDay(rule.days, i) })}
+                >
+                  {day}
+                </button>
+              ))}
+            </div>
+            <label className="schedule-rule__time">
+              <span className="schedule-rule__time-label">FROM</span>
+              <input type="time" defaultValue={rule.windowStart} aria-label={`Window start for ${name}`} onBlur={(e) => e.target.value !== rule.windowStart && patch({ windowStart: e.target.value })} />
+            </label>
+            <label className="schedule-rule__time">
+              <span className="schedule-rule__time-label">TO</span>
+              <input type="time" defaultValue={rule.windowEnd} aria-label={`Window end for ${name}`} onBlur={(e) => e.target.value !== rule.windowEnd && patch({ windowEnd: e.target.value })} />
+            </label>
+          </div>
+        </RuleWhen>
 
-      {/* The measurement caveat, where the choice is made rather than after it goes wrong. */}
-      {measures?.caveat && (
-        <p className="acu-rule__caveat" role="status">
-          <AlertTriangle size={12} aria-hidden="true" />
-          <span>
-            <strong>{measures.label}.</strong> {measures.caveat}
-          </span>
-        </p>
-      )}
+        <RuleThen>
+          <label className="acu-rule__field">
+            <span>Aircon to command</span>
+            <select value={rule.acuDeviceId} onChange={(e) => patch({ acuDeviceId: e.target.value })}>
+              {acus.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.display_name}
+                </option>
+              ))}
+            </select>
+          </label>
 
-      <div className="acu-rule__window">
-        <span className="acu-rule__window-label">Active</span>
-        <div className="schedule-rule__days">
-          {DAY_LABELS.map((day, i) => (
-            <button
-              key={i}
-              type="button"
-              className={`automation-day-chip${days[i] ? ' automation-day-chip--on' : ''}`}
-              aria-pressed={days[i]}
-              aria-label={`${DAY_NAMES[i]} for ${name}`}
-              onClick={() => patch({ days: toggleDay(rule.days, i) })}
-            >
-              {day}
-            </button>
-          ))}
-        </div>
-        <label className="schedule-rule__time">
-          <span className="schedule-rule__time-label">FROM</span>
-          <input type="time" defaultValue={rule.windowStart} aria-label={`Window start for ${name}`} onBlur={(e) => e.target.value !== rule.windowStart && patch({ windowStart: e.target.value })} />
-        </label>
-        <label className="schedule-rule__time">
-          <span className="schedule-rule__time-label">TO</span>
-          <input type="time" defaultValue={rule.windowEnd} aria-label={`Window end for ${name}`} onBlur={(e) => e.target.value !== rule.windowEnd && patch({ windowEnd: e.target.value })} />
-        </label>
-      </div>
+          {/* Says the loop's whole authority out loud. It moves the setpoint of a unit that is
+              already running; it never switches one on or off, and no branch of the planner emits
+              an `off`. Stating it on the card is cheaper than an operator inferring otherwise. */}
+          <p className="acu-rule__action">
+            Step the setpoint 1&nbsp;°C toward the target, at most every
+            <span className="acu-rule__inline">
+              <input
+                type="number"
+                min={1}
+                max={120}
+                value={Math.round(rule.minStepIntervalS / 60)}
+                aria-label={`Minutes between steps for ${name}`}
+                onChange={(e) => {
+                  const mins = Number(e.target.value);
+                  if (Number.isFinite(mins) && mins >= 1) patch({ minStepIntervalS: Math.round(mins * 60) });
+                }}
+              />
+              <span className="acu-rule__unit">min</span>
+            </span>
+            . It never switches the unit on or off.
+          </p>
+        </RuleThen>
+      </RuleBlock>
 
       {/* A target below the building's policy needs a written reason, and the reason IS the
           audit. Shown only when it applies, so an in-policy rule is not asked to justify itself. */}

@@ -1,4 +1,5 @@
-import { CalendarClock, Gauge, Thermometer, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { useState } from 'react';
+import { CalendarClock, Gauge, Thermometer, ShieldCheck, ShieldAlert, History } from 'lucide-react';
 import { CLASS_ICON } from '@/lib/deviceIcons';
 import { nextUpSchedules } from './automationMath';
 import { AutomationActivityCard } from './AutomationActivityCard';
@@ -32,6 +33,8 @@ export function AutomationOverview({
   const nextUp = nextUpSchedules(devices, schedules, new Date(), 5);
   const acuRules = useAcuRuleStore((s) => s.rules);
   const acuArmed = acuRules.filter((r) => r.enabled).length;
+  /** Reported up by the activity card so the collapsed log still states what happened. */
+  const [activity, setActivity] = useState<{ count: number; failed: number } | null>(null);
 
   return (
     <div className="automation-overview">
@@ -95,7 +98,34 @@ export function AutomationOverview({
         )}
       </section>
 
-      <AutomationActivityCard devices={devices} />
+      {/*
+       * THE AUDIT LOG IS COLLAPSED BY DEFAULT, and the reason is the kiosk rather than tidiness.
+       * The office display is 800x480; height is the scarcest thing on this page, and the last
+       * 24 hours of firings is the least urgent thing competing for it — "what is armed" and
+       * "what fires next" answer the questions somebody standing at the screen actually has.
+       *
+       * Native `<details>` rather than a new Accordion component: `LoadShedPanel` already
+       * established this idiom for exactly this job, it is keyboard- and screen-reader-correct
+       * with no code, and it survives `prefers-reduced-motion` without a special case.
+       *
+       * The summary carries the count, so collapsing it never hides the fact that something
+       * happened — a closed disclosure reading "12 commands" is a different statement from one
+       * reading "nothing has fired", and both are visible without opening it.
+       */}
+      <details className="automation-overview__log">
+        <summary className="automation-overview__log-summary">
+          <History size={13} aria-hidden="true" />
+          What automation did in the last 24 hours
+          {activity && (
+            <span className={`automation-overview__log-count${activity.failed > 0 ? ' automation-overview__log-count--bad' : ''}`}>
+              {activity.count === 0
+                ? 'nothing fired'
+                : `${activity.count} command${activity.count === 1 ? '' : 's'}${activity.failed > 0 ? `, ${activity.failed} failed` : ''}`}
+            </span>
+          )}
+        </summary>
+        <AutomationActivityCard devices={devices} onSummary={setActivity} />
+      </details>
     </div>
   );
 }

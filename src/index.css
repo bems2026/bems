@@ -4525,9 +4525,20 @@ body::before {
   font-size: var(--fs-2xs);
   line-height: 1.45;
 }
+/*
+ * `justify-content: space-between` with no gap and no wrap was latent for as long as this card
+ * was full-width: the caption and the status pill only ever LOOKED separated because there was
+ * spare room between them. RM-071 put the field inside a rule-block zone, the spare room went,
+ * and they ran together as "MAX PHASE CURRENT (A)NO LIMIT SET".
+ *
+ * The gap is the actual fix — space-between is a distribution, not a minimum. Wrapping lets the
+ * pill drop to its own line rather than crushing the caption on the narrowest surfaces.
+ */
 .automation-dsm-field__head {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
+  gap: 4px var(--sp-2);
   font: 600 var(--fs-xxs-lg) 'IBM Plex Mono', monospace;
   color: var(--muted-2);
   margin-bottom: 6px;
@@ -5265,15 +5276,47 @@ body::before {
   align-items: center;
   gap: var(--sp-2);
 }
-.acu-rule__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--sp-3);
-  margin-top: var(--sp-3);
-}
+/*
+ * `.acu-rule__grid` was here — an auto-fit grid holding all four fields in one undifferentiated
+ * run. RM-071 split them across `.rule-block`'s two zones, which do their own layout, so the
+ * grid had no remaining caller and is deleted rather than left to rot.
+ */
 .acu-rule__field {
   display: grid;
   gap: 4px;
+  /* Was sized by the grid's `minmax(180px, 1fr)` track; now it sets its own floor, because a
+     zone lays its children out with flex-wrap and would otherwise let a select collapse. */
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+/*
+ * The action, written as a sentence with the interval inline. It reads as one statement — "step
+ * the setpoint 1 °C toward the target, at most every 10 min" — rather than a labelled field,
+ * because the number only means anything as part of that clause.
+ */
+.acu-rule__action {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-base);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.acu-rule__action .acu-rule__inline {
+  display: inline-flex;
+}
+.acu-rule__action input {
+  width: 4.5em;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--field-bg);
+  color: var(--txt);
+  font: 600 var(--fs-sm) inherit;
 }
 .acu-rule__field > span:first-child {
   color: var(--muted-2);
@@ -5571,6 +5614,50 @@ body::before {
   gap: var(--sp-2);
 }
 
+/*
+ * The Overview's collapsed audit log. Styled as a card head so a closed disclosure reads as a
+ * section rather than as a stray link, and the marker is left in place — a custom triangle would
+ * be one more thing to keep in step with the theme for no gain.
+ */
+.automation-overview__log > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  background: var(--bg-surface);
+  color: var(--txt);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.automation-overview__log > summary:hover {
+  border-color: var(--border-strong);
+}
+.automation-overview__log > summary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.automation-overview__log[open] > summary {
+  margin-bottom: var(--sp-3);
+}
+/*
+ * The count sits on the summary so a CLOSED disclosure still states what happened. Collapsing the
+ * log to buy kiosk height would otherwise hide a failed command completely, which is the one row
+ * here nobody can afford to miss — so the failure count gets `--bad` and the rest stays quiet.
+ */
+.automation-overview__log-count {
+  margin-left: auto;
+  color: var(--muted-2);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+}
+.automation-overview__log-count--bad {
+  color: var(--bad);
+  font-weight: 600;
+}
+
 
 
 /* ---------------------------------------------------------------------------
@@ -5817,15 +5904,45 @@ body::before {
 /* ---------------------------------------------------------------------------
  * Automation — narrow screens.
  *
- * The schedule row's five rigid columns (device, on, off, seven day chips, arm) cannot fit a
- * phone: the fixed tracks alone are 228px plus gaps, before the day chips ask for another
- * ~154px. Measured 341px of overflow at 375px wide. Below this breakpoint the row stops being
- * a table row and becomes a small stacked card instead, which is what the content actually is.
+ * THIS BLOCK WAS EMPTY FOR AN UNKNOWN PERIOD, under a comment describing a layout that no
+ * longer existed. It read: "the schedule row's five rigid columns cannot fit a phone... 341px
+ * of overflow at 375px... below this breakpoint the row stops being a table row and becomes a
+ * small stacked card". None of that is true any more — `.schedule-rule__main` became a
+ * `flex-wrap: wrap` row long before RM-071, and measured overflow at 375px is 0px. The comment
+ * outlived the markup it described, which is worse than no comment: it documents a fix that
+ * was never written for a problem that no longer exists.
  *
- * The header row goes with it: column captions are meaningless once nothing lines up beneath
- * them, and leaving them would label the wrong things.
+ * What IS needed here is narrower. The rule blocks wrap on their own (`flex: 1 1 260px`, sized
+ * against the CARD rather than the viewport, because this component sits in a detail pane that
+ * is one of two columns on desktop). What they cannot decide for themselves is the things below.
  * ------------------------------------------------------------------------ */
 @media (max-width: 720px) {
+  /*
+   * Zones go full width and stop competing. Above this they sit side by side and the condition
+   * gets the room; below it, a 260px basis would let THEN squeeze onto the same line at ~130px
+   * and put a `<select>` in a box too narrow to read its own options.
+   */
+  .rule-block__zone {
+    flex-basis: 100%;
+  }
+
+  /*
+   * The coming-soon column moves BELOW the rules rather than beside them. It is reference
+   * material — what this building cannot run yet and why — and on a phone the rules are what
+   * somebody came for. `.automation-grid` already collapses to one column at 1100px; this only
+   * fixes the order within that column.
+   */
+  .automation-side {
+    order: 2;
+  }
+
+  /*
+   * The rule's identity row wraps, so the name takes a line of its own and the arm switch and
+   * delete keep their 44px targets side by side instead of being squeezed to the edge.
+   */
+  .schedule-rule__head .schedule-rule__label {
+    flex: 1 1 100%;
+  }
 }
 
 /* ===========================================================================

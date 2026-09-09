@@ -3,6 +3,7 @@ import { useContextStore } from '@/stores/contextStore';
 import { useShedSummary } from '@/hooks/useShedSummary';
 import { readDsmThresholds, maxPhaseNow, totalKwNow } from '@/lib/dsm';
 import { shedEligibleCount } from '@/lib/shedTiers';
+import { RuleBlock, RuleWhen, RuleThen } from './RuleBlock';
 import { isReadingExpired } from '@/lib/staleness';
 
 const MAX_PHASE_KEY = 'global.dsm.max_phase_a';
@@ -119,26 +120,39 @@ export function DsmThresholdsCard() {
         {kwNow !== null ? `${kwNow.toFixed(2)} kW` : '—'} total.
       </p>
 
-      <ThresholdField
-        id="dsm-max-phase"
-        label="MAX PHASE CURRENT (A)"
-        status={phaseStatus}
-        value={effective(MAX_PHASE_KEY)}
-        step={0.1}
-        warning={thresholdWarning(effective(MAX_PHASE_KEY), phaseNow === null ? null : Number(phaseNow.toFixed(1)), 'A')}
-        onChange={(v) => setDraft(MAX_PHASE_KEY, v)}
-      />
-      <ThresholdField
-        id="dsm-max-total"
-        label="MAX TOTAL DRAW (kW)"
-        status={powerStatus}
-        value={effective(MAX_TOTAL_KEY)}
-        step={0.01}
-        warning={thresholdWarning(effective(MAX_TOTAL_KEY), kwNow === null ? null : Number(kwNow.toFixed(2)), 'kW')}
-        onChange={(v) => setDraft(MAX_TOTAL_KEY, v)}
-      />
+      {/*
+       * Demand limiting is an IF/THEN like every other rule on this page, and saying so in the
+       * same frame is the point: "when the building crosses this limit, do this." It used to
+       * read as three unrelated settings stacked in a card — two numbers and a switch — with
+       * nothing connecting the limit to its consequence.
+       *
+       * The rail is amber here rather than blue, which is the one place on the page where the
+       * colour carries a real convention: the trigger is a demand ceiling, not a clock.
+       */}
+      <RuleBlock trigger="demand">
+        <RuleWhen trigger="demand">
+          <ThresholdField
+            id="dsm-max-phase"
+            label="MAX PHASE CURRENT (A)"
+            status={phaseStatus}
+            value={effective(MAX_PHASE_KEY)}
+            step={0.1}
+            warning={thresholdWarning(effective(MAX_PHASE_KEY), phaseNow === null ? null : Number(phaseNow.toFixed(1)), 'A')}
+            onChange={(v) => setDraft(MAX_PHASE_KEY, v)}
+          />
+          <ThresholdField
+            id="dsm-max-total"
+            label="MAX TOTAL DRAW (kW)"
+            status={powerStatus}
+            value={effective(MAX_TOTAL_KEY)}
+            step={0.01}
+            warning={thresholdWarning(effective(MAX_TOTAL_KEY), kwNow === null ? null : Number(kwNow.toFixed(2)), 'kW')}
+            onChange={(v) => setDraft(MAX_TOTAL_KEY, v)}
+          />
+        </RuleWhen>
 
-      <div className="automation-shed-mode">
+        <RuleThen>
+          <div className="automation-shed-mode">
         <div className="automation-shed-mode__body">
           <p className="automation-shed-mode__title" id="dsm-auto-shed-label">
             On breach: {autoShedDraftValue ? 'arm automatic shed' : 'warn and wait for manual override'}
@@ -157,18 +171,20 @@ export function DsmThresholdsCard() {
           being a toggle. It's the same on/off state `ScheduleRow`'s arm control carries, so
           it gets the same primitive and the same `role="switch"` + `aria-checked`.
         */}
-        <button
-          type="button"
-          role="switch"
-          aria-checked={autoShedDraftValue}
-          aria-labelledby="dsm-auto-shed-label"
-          disabled={cannotArm && !autoShedDraftValue}
-          className={`quick-toggle${autoShedDraftValue ? ' quick-toggle--on' : ''}`}
-          onClick={() => setDraft(AUTO_SHED_KEY, String(!autoShedDraftValue))}
-        >
-          <span className="quick-toggle__knob" />
-        </button>
-      </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autoShedDraftValue}
+            aria-labelledby="dsm-auto-shed-label"
+            disabled={cannotArm && !autoShedDraftValue}
+            className={`quick-toggle${autoShedDraftValue ? ' quick-toggle--on' : ''}`}
+            onClick={() => setDraft(AUTO_SHED_KEY, String(!autoShedDraftValue))}
+          >
+            <span className="quick-toggle__knob" />
+          </button>
+          </div>
+        </RuleThen>
+      </RuleBlock>
     </div>
   );
 }
