@@ -208,8 +208,7 @@ export function AutomationPage() {
             <ComingSoonCard
               title="Duty cycling"
               what="Rotate a group of loads on and off in turn to hold a demand ceiling without ever fully dropping any one of them."
-              blockedOn="per-socket runtime history, which starts accumulating once per-socket scheduling lands."
-              roadmapId="RM-066"
+              blockedOn="enough per-socket runtime history to rotate against. The relays became individually schedulable on 2026-09-09, so it is accumulating now; nothing yet tracks the duty cycler itself."
             />
           </div>
         </div>
