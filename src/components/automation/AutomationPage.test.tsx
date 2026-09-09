@@ -142,4 +142,18 @@ describe('AutomationPage', () => {
       expect(dialog.textContent).not.toMatch(/supabase/i);
     });
   });
+
+  /**
+   * REMOVED, not hidden — RM-065. The ambient-trigger slider saved `care_acu_trigger_c`, which no
+   * daemon and no flow node ever read. A control that looks live and drives nothing is worse than
+   * an absent one, so it is absent. Its stored value is left untouched in the database for whoever
+   * builds the rule.
+   */
+  it('no longer offers an ambient trigger setpoint', () => {
+    useDeviceStore.setState({ devices: [light('l1')] });
+    const { container } = render(<AutomationPage />);
+    expect(screen.queryByLabelText(/aircon ambient trigger/i)).not.toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/ambient trigger/i);
+    expect(container.textContent).not.toMatch(/global\.trigger/);
+  });
 });

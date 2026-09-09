@@ -4589,6 +4589,7 @@ body::before {
   color: var(--muted-2);
 }
 .automation-sched-row__arm {
+  gap: var(--sp-1);
   display: flex;
   justify-content: flex-end;
 }
@@ -4643,6 +4644,31 @@ body::before {
 .automation-time-field--off .automation-time-input {
   border-left: 3px solid var(--border-strong);
 }
+/* The control that empties a rule — RM-064. */
+/* Only drawn on a row that has something to clear, so it is never a disabled control looking for
+   a purpose. Muted until hovered: emptying a rule is reversible (it stages, like every other edit
+   here) but it is still the destructive one of the two controls in this cell. */
+.automation-sched-row__clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  background: var(--bg-surface-2);
+  color: var(--muted-2);
+  border-radius: var(--r-sm);
+  padding: 4px;
+  margin-right: var(--sp-1);
+  cursor: pointer;
+}
+.automation-sched-row__clear:hover {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+:root[data-theme='dark'] .automation-sched-row__clear:hover {
+  border-color: var(--red-bright);
+  color: var(--red-bright);
+}
+
 /*
  * A row that cannot do what it says. Spans the full five-column grid so it cannot disturb the
  * columns, and sits on the row that is wrong rather than in a summary elsewhere — the same rule
@@ -4682,46 +4708,8 @@ body::before {
   color: var(--bg-page); /* see .devices-filter-chip--active's comment on why not #ffffff */
 }
 
-.automation-section-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 700;
-  font-size: var(--fs-md);
-  margin: var(--sp-5) 0 4px;
-}
-.automation-trigger-card {
-  padding: 13px 14px;
-  background: var(--glass-2);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--r-inner);
-}
-.automation-trigger-card__head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  font-weight: 700;
-  font-size: var(--fs-sm-lg);
-}
-.automation-trigger-card__value {
-  font-size: var(--fs-md);
-  color: var(--blue);
-}
 /* The track renders ~16px tall, under SC 2.5.8's 24px. The height here enlarges the hit area
    without thickening the track itself, which the browser still draws at its own size. */
-.automation-trigger-card__slider {
-  width: 100%;
-  height: 24px;
-  margin-top: var(--sp-3);
-  accent-color: var(--blue-bright);
-}
-.automation-trigger-card__scale {
-  display: flex;
-  justify-content: space-between;
-  font: 500 var(--fs-2xs) 'IBM Plex Mono', monospace;
-  color: var(--muted-2);
-}
-
 .automation-dsm-card .card-sub {
   margin-bottom: var(--sp-4);
 }
@@ -7340,6 +7328,8 @@ button.space-plan__pin {
    */
   .devices-table__manage-btn,
   .device-panel__tab,
+  /* The new per-row control that empties a schedule — a 13px icon in a 4px box otherwise. */
+  .automation-sched-row__clear,
   /* The fields an operator sets schedules and shed limits with, on a touchscreen. */
   .automation-time-input,
   .automation-number-input {

@@ -1,4 +1,4 @@
-import { Sunrise, Sunset } from 'lucide-react';
+import { Sunrise, Sunset, Eraser } from 'lucide-react';
 import { useId } from 'react';
 import { useContextStore } from '@/stores/contextStore';
 import { CLASS_ICON } from '@/lib/deviceIcons';
@@ -29,6 +29,26 @@ export function ScheduleRow({ device }: { device: Device }) {
 
   const problems = scheduleProblems({ armed, on: onVal || undefined, off: offVal || undefined, days: rawDays });
   const problemId = useId();
+
+  /**
+   * Anything to clear? A row nobody has touched has no button — an always-present control that
+   * does nothing on most rows is the furniture this page has been trimming.
+   */
+  const hasRule = Boolean(onVal || offVal || armed || days.some(Boolean));
+
+  /**
+   * STAGES the blanks; it does not delete the row. A row of empty fields with `armed` off is
+   * already precisely what "no schedule" means to `server/scheduler.mjs`, so this needs no delete
+   * path, and going through the page's own Save gate keeps the change reviewable in Unsaved
+   * changes and attributable when it lands. Disarming is part of it, not a separate step: a blank
+   * rule left armed is exactly the "armed, but no day is selected" fault this row warns about.
+   */
+  const clear = () => {
+    setDraft(scheduleKey(device.id, 'on'), '');
+    setDraft(scheduleKey(device.id, 'off'), '');
+    setDraft(scheduleKey(device.id, 'days'), '0000000');
+    setDraft(scheduleKey(device.id, 'armed'), 'false');
+  };
 
   return (
     <div className="automation-sched-row">
@@ -71,6 +91,17 @@ export function ScheduleRow({ device }: { device: Device }) {
       </div>
 
       <div className="automation-sched-row__arm">
+        {hasRule && (
+          <button
+            type="button"
+            className="automation-sched-row__clear"
+            aria-label={`Clear ${device.display_name}'s schedule`}
+            title="Clear this schedule"
+            onClick={clear}
+          >
+            <Eraser size={13} aria-hidden="true" />
+          </button>
+        )}
         <button
           type="button"
           role="switch"
@@ -104,6 +135,7 @@ export function ScheduleRow({ device }: { device: Device }) {
           {problems.map((code) => SCHEDULE_PROBLEM_TEXT[code]).join(' ')}
         </p>
       )}
+
     </div>
   );
 }

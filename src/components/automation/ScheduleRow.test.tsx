@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup, within } from '@testing-library/react';
+import { render, screen, cleanup, within, fireEvent } from '@testing-library/react';
 import { ScheduleRow } from './ScheduleRow';
 import { useContextStore } from '@/stores/contextStore';
 import type { Device } from '@/lib/types';
@@ -101,4 +101,55 @@ describe('ScheduleRow', () => {
     render(<ScheduleRow device={light()} />);
     expect(document.querySelector('.automation-sched-row__problem')).not.toBeInTheDocument();
   });
+
+  /**
+   * THERE WAS NO WAY TO GET RID OF A SCHEDULE. Live on 2026-09-08 the table held seven rows, none
+   * enabled, several of them junk — `l6` was on 16:23 / off 16:22 with no day selected. You could
+   * blank each field by hand; nothing offered to do it in one go.
+   *
+   * Clearing STAGES the blanks rather than deleting the row, deliberately: a row of empty fields
+   * with `armed` off is already exactly what "no schedule" means to `server/scheduler.mjs`, and
+   * going through the page's own Save gate keeps the change attributable and reversible before it
+   * is written. It also needs no new delete path against the settings store.
+   */
+  describe('clearing', () => {
+    it('offers nothing to clear on a row that is already empty', () => {
+      seed({});
+      render(<ScheduleRow device={light()} />);
+      expect(screen.queryByRole('button', { name: /clear/i })).not.toBeInTheDocument();
+    });
+
+    it('offers to clear a row that has something in it', () => {
+      seed({ 'global.schedule.l1.on': '07:00' });
+      render(<ScheduleRow device={light()} />);
+      expect(screen.getByRole('button', { name: /clear .*Light Switch 1/i })).toBeInTheDocument();
+    });
+
+    it('stages every field blank, so one Save removes the whole rule', () => {
+      seed({
+        'global.schedule.l1.on': '07:00',
+        'global.schedule.l1.off': '18:00',
+        'global.schedule.l1.days': '1111100',
+        'global.schedule.l1.armed': 'true',
+      });
+      render(<ScheduleRow device={light()} />);
+      fireEvent.click(screen.getByRole('button', { name: /clear/i }));
+
+      const d = useContextStore.getState().draft;
+      expect(d['global.schedule.l1.on']).toBe('');
+      expect(d['global.schedule.l1.off']).toBe('');
+      expect(d['global.schedule.l1.days']).toBe('0000000');
+      expect(d['global.schedule.l1.armed']).toBe('false');
+    });
+
+    it('disarms as part of clearing, so a blank rule cannot stay armed', () => {
+      seed({ 'global.schedule.l1.armed': 'true', 'global.schedule.l1.on': '07:00', 'global.schedule.l1.days': '1111100' });
+      render(<ScheduleRow device={light()} />);
+      fireEvent.click(screen.getByRole('button', { name: /clear/i }));
+      expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
+      // and therefore raises no "armed with nothing set" warning
+      expect(document.querySelector('.automation-sched-row__problem')).not.toBeInTheDocument();
+    });
+  });
+
 });

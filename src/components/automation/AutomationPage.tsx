@@ -6,7 +6,7 @@ import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
 import { useDevicesFor } from '@/hooks/useDevicesFor';
 import { DEVICE_CLASS_CATALOG, classesWhere } from '@/lib/deviceClassCatalog';
 import { pendingWrites } from '@/stores/contextStore';
-import { CalendarClock, Thermometer, ListTodo } from 'lucide-react';
+import { CalendarClock, ListTodo } from 'lucide-react';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useConfirm } from '@/components/ui/useConfirm';
@@ -16,8 +16,6 @@ import { brokenScheduleCount } from './automationMath';
 import { DsmThresholdsCard } from './DsmThresholdsCard';
 import { LoadShedPanel } from '@/components/devices/LoadShedPanel';
 import type { DeviceClass } from '@/lib/types';
-
-const TRIGGER_KEY = 'global.trigger.care_acu_on';
 
 /**
  * What saving actually causes, READ from the live gate rather than asserted.
@@ -88,14 +86,13 @@ export function AutomationPage() {
     ask(
       {
         title: 'Save these changes?',
-        body: `This saves ${pendingEntries.length} change${pendingEntries.length === 1 ? '' : 's'} — schedules, the aircon trigger and the demand limits — and records them against your account. ${consequence}`,
+        body: `This saves ${pendingEntries.length} change${pendingEntries.length === 1 ? '' : 's'} — schedules, the demand limits — and records them against your account. ${consequence}`,
         confirmLabel: 'Save',
         tone: 'blue',
       },
       () => void save(),
     );
 
-  const triggerValue = Number(draft[TRIGGER_KEY] ?? saved[TRIGGER_KEY] ?? 24);
 
   // Skeletons rather than a sentence, matching what Devices already does one tab away. This is
   // the genuine pre-catalogue state (`devices.length === 0`) that `Skeleton.tsx` reserves itself
@@ -231,32 +228,6 @@ export function AutomationPage() {
             </div>
           </div>
 
-          <h3 className="automation-section-title">
-            <Thermometer size={14} className="title-icon" aria-hidden="true" />
-            Ambient Trigger Setpoints
-          </h3>
-          <p className="automation-schedules-sub">IR blaster rules driven by the paired climate sensor.</p>
-          <div className="automation-trigger-card">
-            <div className="automation-trigger-card__head">
-              <span>Transmit the aircon ON above</span>
-              <span className="automation-trigger-card__value mono">{triggerValue}°C</span>
-            </div>
-            <input
-              type="range"
-              min={20}
-              max={32}
-              step={0.5}
-              value={triggerValue}
-              onChange={(e) => setDraft(TRIGGER_KEY, e.target.value)}
-              className="automation-trigger-card__slider"
-              aria-label="Aircon ambient trigger setpoint"
-            />
-            <div className="automation-trigger-card__scale">
-              <span>20 °C</span>
-              <span>{TRIGGER_KEY}</span>
-              <span>32 °C</span>
-            </div>
-          </div>
         </div>
 
         <div className="automation-side">

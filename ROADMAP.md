@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-08 — **RM-059 to RM-063**, a UI/UX pass over the Devices and
+**Last audited:** 2026-09-09 — **RM-059 to RM-065**, a UI/UX pass over the Devices and
 Automation pages. **RM-062 is the one to read**: the Automation page claimed hardware dispatch
 was closed when it has been open, on the page that arms unattended load shedding. RM-061 came straight from the operator looking at what RM-059 shipped: the
 Details and Edit buttons sitting beside each other were the wrong shape, and the fix was not to
@@ -1579,6 +1579,46 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       counts, the unclassified line, and a collapsed list of what cannot be shed
       — `src/components/devices/LoadShedPanel.tsx`, `src/lib/shedTiers.ts`, `src/index.css`,
       tests updated to assert the meaning rather than the old phrasing.
+- [x] **RM-065** **Two of the three gaps RM-062 found on the Automation page, and the third
+      deliberately not built.**
+
+      **A schedule can be cleared.** Live on 2026-09-08 the table held seven rows, none enabled,
+      several junk — `l6` was on 16:23 / off 16:22 with no day selected. Every field could be blanked
+      by hand; nothing offered to do it at once. The control **stages** the blanks rather than
+      deleting the row, and that is the design rather than a shortcut: a row of empty fields with
+      `armed` off is already precisely what "no schedule" means to `server/scheduler.mjs`, so it
+      needs no delete path against the settings store, and it goes through the page's own Save gate
+      so the change is reviewable in Unsaved changes and attributable when it lands. Disarming is
+      part of clearing — a blank rule left armed is exactly the "armed, but no day is selected" fault
+      RM-060 warns about. Shown only on a row that has something to clear.
+
+      **The ambient trigger setpoint is gone.** Nothing consumed `care_acu_trigger_c`: no daemon and
+      no flow node read it, grepped across `server/`, `shared/` and `node-red-bridge/`. It was first
+      labelled "Recorded only"; the operator's answer was that a control which does nothing should
+      not be on the page at all, which is this project's own house rule. Removed: the heading, the
+      slider, and the storage plumbing.
+
+      **THE PLUMBING HAD TO GO IN BOTH DIRECTIONS AT ONCE, and that is the part worth keeping.**
+      `dsmRowFrom` always sent `care_acu_trigger_c: num(merged[TRIGGER_KEY])` in the demand-limits
+      `.update()`. Removing only the READ would have left `merged[TRIGGER_KEY]` undefined,
+      `num(undefined)` returns `null`, and the next time anyone saved an unrelated demand limit the
+      stored setpoint would have been silently wiped — data loss with no error, from a save nobody
+      would connect to it. Dropping the column from the payload as well means the `.update()` never
+      names it and the value stays exactly as it is in the database (27 °C), for whoever builds the
+      rule. **Wiring that rule stays a decision, not a task:** it means transmitting aircon ON
+      unattended, which carries the weight of arming auto-shed, and this project's standing rule is
+      that shedding is automatic and restoring is not.
+
+      **BUILT AND THEN REMOVED BEFORE IT SHIPPED: a per-row "last ran" line.** The third gap was
+      that nothing said whether a schedule actually fired, though every dispatch has been recorded
+      in `commands` with `source: 'schedule'` all along (108 rows on 2026-09-09). It was built —
+      a pure shaper, a Supabase read, a hook, a line under each armed row — and on seeing it the
+      operator cut it: a line under every device is the furniture this page had spent three commits
+      removing. Recorded because the reasoning survives the code. The rows are still written and
+      still readable; if the question is worth answering it belongs somewhere you go to ask it, not
+      under every device. Eight orphaned CSS rules went with the two removals
+      — `src/components/automation/AutomationPage.tsx`, `ScheduleRow.tsx`,
+      `src/lib/supabaseConfig.ts`, `src/index.css`, tests updated to guard the absences.
 - [x] **EX-150** One relay control, replacing five. `SwitchesListCard`, `OutletsListCard`,
       `LightingMatrixCard`, `OutletPlanCard` and `MasterQuickActionsCard` each re-derived the same
       `controlView` → `busy`/`unknown`/`on` triple and then decided independently what `disabled`

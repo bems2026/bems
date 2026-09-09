@@ -26,7 +26,14 @@ import { SITE } from '@shared/siteConfig.mjs';
 const MAX_PHASE_KEY = 'global.dsm.max_phase_a';
 const MAX_TOTAL_KEY = 'global.dsm.max_total_kw';
 const AUTO_SHED_KEY = 'global.dsm.auto_shed';
-const TRIGGER_KEY = 'global.trigger.care_acu_on';
+/**
+ * `care_acu_trigger_c` IS DELIBERATELY NEITHER READ NOR WRITTEN ANY MORE — RM-065. The Automation
+ * page's ambient-trigger slider was removed because nothing consumed the value: no daemon and no
+ * flow node ever read it. Both halves had to go together. Dropping only the read would have left
+ * `dsmRowFrom` sending `num(undefined)` — i.e. `null` — and the next demand-limit save would have
+ * silently wiped the stored setpoint. Leaving the column out of the `.update()` payload instead
+ * means the value stays exactly as it is in the database, ready for whoever builds the rule.
+ */
 
 const SCHEDULE_KEY_RE = /^global\.schedule\.([^.]+)\.(on|off|days|armed)$/;
 
@@ -40,7 +47,6 @@ interface DsmThresholdsRow {
   max_phase_current: number | null;
   max_total_kw: number | null;
   auto_shed: boolean;
-  care_acu_trigger_c: number | null;
 }
 
 function num(v: string | undefined): number | null {
@@ -76,7 +82,6 @@ export function dsmRowToContext(row: DsmThresholdsRow | null): ContextMap {
   if (row.max_phase_current !== null) ctx[MAX_PHASE_KEY] = String(row.max_phase_current);
   if (row.max_total_kw !== null) ctx[MAX_TOTAL_KEY] = String(row.max_total_kw);
   ctx[AUTO_SHED_KEY] = String(row.auto_shed);
-  if (row.care_acu_trigger_c !== null) ctx[TRIGGER_KEY] = String(row.care_acu_trigger_c);
   return ctx;
 }
 
@@ -116,7 +121,6 @@ export function dsmRowFrom(merged: ContextMap, actorUserId: string | null) {
     max_phase_current: num(merged[MAX_PHASE_KEY]),
     max_total_kw: num(merged[MAX_TOTAL_KEY]),
     auto_shed: merged[AUTO_SHED_KEY] === 'true',
-    care_acu_trigger_c: num(merged[TRIGGER_KEY]),
     updated_by: actorUserId,
     updated_at: new Date().toISOString(),
   };
@@ -126,7 +130,7 @@ export async function fetchScheduleContext(): Promise<ContextMap> {
   const client = requireSupabase();
   const [schedules, thresholds] = await Promise.all([
     client.from('schedules').select('device_id,rule,enabled').is('socket', null),
-    client.from('dsm_thresholds').select('max_phase_current,max_total_kw,auto_shed,care_acu_trigger_c').eq('site_id', SITE.id).maybeSingle(),
+    client.from('dsm_thresholds').select('max_phase_current,max_total_kw,auto_shed').eq('site_id', SITE.id).maybeSingle(),
   ]);
   if (schedules.error) throw new Error(`Supabase schedules fetch failed: ${schedules.error.message}`);
   if (thresholds.error) throw new Error(`Supabase dsm_thresholds fetch failed: ${thresholds.error.message}`);
@@ -152,7 +156,7 @@ export async function writeScheduleContext(pending: ContextMap, merged: ContextM
       deviceIds.add(m[1]);
       continue;
     }
-    if (key === MAX_PHASE_KEY || key === MAX_TOTAL_KEY || key === AUTO_SHED_KEY || key === TRIGGER_KEY) dsmChanged = true;
+    if (key === MAX_PHASE_KEY || key === MAX_TOTAL_KEY || key === AUTO_SHED_KEY) dsmChanged = true;
   }
 
   if (deviceIds.size > 0) {

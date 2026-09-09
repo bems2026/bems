@@ -29,17 +29,16 @@ describe('scheduleRowsToContext', () => {
 
 describe('dsmRowToContext', () => {
   it('maps a full threshold row, including the ACU trigger setpoint', () => {
-    const ctx = dsmRowToContext({ max_phase_current: 30, max_total_kw: 5.5, auto_shed: true, care_acu_trigger_c: 28 });
+    const ctx = dsmRowToContext({ max_phase_current: 30, max_total_kw: 5.5, auto_shed: true });
     expect(ctx).toEqual({
       'global.dsm.max_phase_a': '30',
       'global.dsm.max_total_kw': '5.5',
       'global.dsm.auto_shed': 'true',
-      'global.trigger.care_acu_on': '28',
     });
   });
 
   it('omits an unset (null) threshold rather than showing a fabricated 0 or empty string', () => {
-    const ctx = dsmRowToContext({ max_phase_current: null, max_total_kw: null, auto_shed: false, care_acu_trigger_c: null });
+    const ctx = dsmRowToContext({ max_phase_current: null, max_total_kw: null, auto_shed: false });
     expect(ctx).toEqual({ 'global.dsm.auto_shed': 'false' });
   });
 
