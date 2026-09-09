@@ -7893,6 +7893,29 @@ button.space-plan__pin {
  * rules — checked), but the invariant was gone, so the block was moved back to the end. If you
  * add a section to this file, add it ABOVE this block.
  *
+ * A STRAY DOUBLE COMMA DISABLED THE FIRST RULE HERE FOR AN UNKNOWN PERIOD, and it is worth
+ * recording how quiet that was. `.automation-write-btn,,` left an empty member in the selector
+ * list, and a selector list is all-or-nothing: one invalid member and the browser drops the
+ * WHOLE rule, silently, with no console warning and no visual clue.
+ *
+ * ELEVEN OF THE TWELVE CONTROLS LISTED BELOW HAD NOTHING ELSE HOLDING THE FLOOR — no
+ * pseudo-element expander, no `min-height` of their own — so for that period they had no 44px
+ * guarantee at all. `.automation-write-btn` measured 36px on a coarse pointer. The pair that
+ * matters most is `.confirm-modal__cancel`/`__confirm`: that is the dialog gating unattended
+ * load shedding, reached from the kiosk's own touchscreen.
+ *
+ * `.nav-icon-btn` is the twelfth and the exception, worth stating so nobody re-derives it: its
+ * `::after` expander (`inset: -6px` on a 32px box) kept a real 44px TAP TARGET throughout. Only
+ * its visible box was undersized. A `getBoundingClientRect()` sweep reports it as a failure and
+ * is wrong to — measure the hit area, not the drawn box, or the expander pattern below reads as
+ * a bug every time someone audits this file.
+ *
+ * What made the whole thing invisible is that the SECOND rule in this same block was fine, so
+ * the tab strip measured a correct 44px right beside a 36px button. Nothing looked broken.
+ * `test/css-touch-targets.test.mjs` now parses this block and fails if any rule in it
+ * disappears — including on the shape that hid it, an empty member in an at-rule's first
+ * nested selector.
+ *
  * `min-width`/`min-height` survive
  * being placed anywhere (they constrain the box regardless of which `width`/`height`
  * wins the cascade), but `padding-block` does not — a later same-specificity `padding`
@@ -7910,7 +7933,7 @@ button.space-plan__pin {
   .confirm-modal__confirm,
   .devices-filter-chip,
   .analytics-scope-btn,
-  .automation-write-btn,,
+  .automation-write-btn,
   /* The panel chrome RM-059 introduced, and the fleet control that adds hardware. */
   .overlay-panel__close,
   .devices-add-btn {
