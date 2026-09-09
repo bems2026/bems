@@ -145,8 +145,12 @@ including `co6`, which has a tier but no schedule. `sites.policy` now holds both
 `loaded 17 schedule row(s)`, with no `socket_config unreadable` and no `acu_rules unreadable`
 warning, which is what proves phase34 and phase36 are actually being read rather than merely
 present. **Stacking was then proved on the live table**: a second rule was inserted for `l1`
-(2 rows), then deleted (204, back to 1) — the insert impossible before phase33 and the delete
-impossible before its new DELETE policy.
+(2 rows), then deleted (204, back to 1). The insert is the load-bearing half — `unique (device_id)`
+is a constraint, not a policy, so it would have refused that row whatever key was used, and it did
+not. **The delete does NOT prove the new DELETE policy**, because that check used the service-role
+key, which bypasses RLS entirely; `schedules_delete_authenticated` is verified only by phase33
+applying without error, and the browser path is exercised the first time an operator removes a rule
+from the page.
 
 Idempotency was proved by EXECUTION, not by reading the files. **`supabase/reapply.sh`** (new, the
 sibling of `rehearse.sh`) takes a throwaway Postgres 16 container through `schema.sql` plus every
