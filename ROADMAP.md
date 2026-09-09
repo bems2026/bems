@@ -3026,6 +3026,36 @@ the *condition* and which the *consequence*, which is the entire content of a ru
       *Not a finding, recorded so it is not re-raised:* a sweep using `el.focus()` reports ~30
       controls with no focus ring. That is a measurement artifact — programmatic focus does not
       match `:focus-visible`. The global rule at `index.css:470` covers everything.
+- [x] **RM-071i** Page shape and click affordance, from the operator's own review.
+      **The "This page switches real hardware" card is gone.** It restated what the page header
+      already says in `dispatchConsequence`, and the detail it added — the audited path, the
+      dry-run distinction — is in the header's InfoHint a few pixels away. Nothing was lost; the
+      claim still appears, colour-coded by state, in the one place it cannot be scrolled past.
+      Its CSS went with it rather than being left to rot.
+      **The "Overview" tab is "Summary".** "Overview" is the name of a different PAGE in the top
+      nav, so the tab named the wrong thing twice while saying nothing about what set it apart
+      from three tabs named by their trigger. The route id moved too, which is safe:
+      `useHashSubRoute` falls back to the default for a sub it does not recognise, and this IS
+      the default — an old `#automation/overview` link lands on exactly the same tab.
+      **The tab strip moved into the page header, beside Save changes**, which is where every
+      other page keeps its controls — Devices its filters and Add, Analytics its scope toggles,
+      Control its master buttons. Automation was the one page with its primary controls in a
+      different place. Two overrides carry it: `margin-bottom: 0` (that 16px belonged to its old
+      life as a full-width strip) and `min-width: 0`, without which four tabs set a floor on the
+      header width and `.page-header__actions` gets CLIPPED rather than scrolled — the exact
+      failure that rule documents at length. Below 720px the strip scrolls its own tabs behind
+      the same edge-fade mask the top nav already uses, so a cut-off tab reads as trailing off
+      rather than as clipped.
+      **Every clickable thing now looks clickable.** Measured, not eyeballed: all 21 shed-tier
+      `<select>`s and the aircon selects rendered `cursor: default`, so the most-repeated control
+      on the State-Driven tab gave no pointer signal at all. The page's primary CTA
+      (`.schedule-stack__add`) had **no hover state**, and neither did `.quick-toggle` — the
+      switch that arms a rule against real relays, a 44×24 track with no border and no label,
+      where the cursor was the only thing saying it was live.
+      *A first draft of that hover shipped nothing:* `--accent-hi` measured **1.38:1** against the
+      button's own fill in light theme — it is the bright decorative amber and it vanishes on a
+      light accent surface. `--accent-text` is the variant meant for these surfaces: 4.49 light,
+      7.31 dark.
 
 **Tailwind was asked for and deliberately not used.** It is imported at `index.css:1` and has
 **zero** utility classes across all 86 styled components; `test/design-tokens.test.mjs` and

@@ -47,8 +47,17 @@ function dispatchConsequence(open: boolean | null): string {
   return 'Whether saved rules reach hardware has not been confirmed yet.';
 }
 
-type TabId = 'overview' | 'time' | 'state' | 'events';
-const TAB_IDS: TabId[] = ['overview', 'time', 'state', 'events'];
+type TabId = 'summary' | 'time' | 'state' | 'events';
+/*
+ * `summary`, not `overview`. "Overview" is the name of a different PAGE in the top nav, so a tab
+ * called Overview inside Automation named the wrong thing twice — and said nothing about what
+ * distinguished it from the three tabs beside it, which are all named by their trigger.
+ *
+ * Renaming the ROUTE id as well as the label is safe: `useHashSubRoute` returns null for a sub it
+ * does not recognise and falls back to the default, and this IS the default — so an old
+ * `#automation/overview` link lands on exactly the same tab it always did.
+ */
+const TAB_IDS: TabId[] = ['summary', 'time', 'state', 'events'];
 
 export function AutomationPage() {
   const devices = useDeviceStore((s) => s.devices);
@@ -59,7 +68,7 @@ export function AutomationPage() {
   const saveError = useContextStore((s) => s.saveError);
   const lastSave = useContextStore((s) => s.lastSave);
 
-  const [tab, setTab] = useHashSubRoute('automation', TAB_IDS, 'overview');
+  const [tab, setTab] = useHashSubRoute('automation', TAB_IDS, 'summary');
 
   // Membership is the device's declared `scheduling` function, not its class — so an outlet
   // that must never be switched unattended can be taken off this page without a code change.
@@ -125,7 +134,7 @@ export function AutomationPage() {
   }
 
   const tabs: TabDef[] = [
-    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'summary', label: 'Summary', icon: LayoutDashboard },
     { id: 'time', label: 'Time-Driven', icon: CalendarClock, badge: armedCount > 0 ? armedCount : undefined },
     { id: 'state', label: 'State-Driven', icon: Gauge },
     { id: 'events', label: 'Event-Driven', icon: Thermometer },
@@ -151,24 +160,32 @@ export function AutomationPage() {
           </>
         }
         actions={
-          <div className="automation-write-group">
-            {/* Confirmation that the write landed, to the LEFT of the button — was stacked
-                below it, which is what inflated this block to 53.2px tall and made it the
-                one page whose actions row didn't line up with the other four (see
-                index.css's `.page-header` comment). `role="status"` (polite) rather than an
-                alert: it's good news, so it should wait its turn rather than interrupt. */}
-            <p className="automation-write-confirm" role="status">
-              {saveStatus === 'idle' && lastSave
-                ? // THE READER'S OWN CLOCK, deliberately. This is when THEY pressed save, not
-                  // something that happened in the building — see `src/lib/siteTime.ts` for the
-                  // distinction and why the building's facts do not use this frame.
-                  `Saved ${lastSave.count} change${lastSave.count === 1 ? '' : 's'} at ${new Date(lastSave.at).toLocaleTimeString(undefined, { hour12: false })}`
-                : ''}
-            </p>
-            <button type="button" className="automation-write-btn" disabled={pendingEntries.length === 0 || saveStatus === 'saving'} onClick={askSave}>
-              {saveStatus === 'saving' ? 'Saving…' : 'Save changes'}
-            </button>
-          </div>
+          <>
+            {/* THE TAB STRIP LIVES IN THE HEADER, beside the save button, because that is where
+                every other page in this app puts its controls: Devices has its class filters and
+                Add there, Analytics its scope toggles, Control its master buttons. A full-width
+                strip below the header made Automation the one page whose primary controls sat in
+                a different place from everywhere else. */}
+            <Tabs tabs={tabs} activeId={tab} onChange={setTab} label="Automation strategies" className="automation-tabs" />
+            <div className="automation-write-group">
+              {/* Confirmation that the write landed, to the LEFT of the button — was stacked
+                  below it, which is what inflated this block to 53.2px tall and made it the
+                  one page whose actions row didn't line up with the other four (see
+                  index.css's `.page-header` comment). `role="status"` (polite) rather than an
+                  alert: it's good news, so it should wait its turn rather than interrupt. */}
+              <p className="automation-write-confirm" role="status">
+                {saveStatus === 'idle' && lastSave
+                  ? // THE READER'S OWN CLOCK, deliberately. This is when THEY pressed save, not
+                    // something that happened in the building — see `src/lib/siteTime.ts` for the
+                    // distinction and why the building's facts do not use this frame.
+                    `Saved ${lastSave.count} change${lastSave.count === 1 ? '' : 's'} at ${new Date(lastSave.at).toLocaleTimeString(undefined, { hour12: false })}`
+                  : ''}
+              </p>
+              <button type="button" className="automation-write-btn" disabled={pendingEntries.length === 0 || saveStatus === 'saving'} onClick={askSave}>
+                {saveStatus === 'saving' ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </>
         }
       />
       {/* role="alert" so a failed write is announced. Without it a screen reader user got no
@@ -179,9 +196,7 @@ export function AutomationPage() {
         </p>
       )}
 
-      <Tabs tabs={tabs} activeId={tab} onChange={setTab} label="Automation strategies" className="automation-tabs" />
-
-      <TabPanel tabId="overview" activeId={tab}>
+      <TabPanel tabId="summary" activeId={tab}>
       {/* EACH PANEL CARRIES THE SECTION HEADING, screen-reader only.
        *
        * `Card`'s contract is page h1 -> section h2 -> card h3, and this page had NO h2 at all:
@@ -192,8 +207,8 @@ export function AutomationPage() {
        * Hidden rather than drawn because the tab strip already states this visually — the
        * heading is for the outline, which is how many screen-reader users navigate a page.
        */}
-        <h2 className="sr-only">Overview</h2>
-        <AutomationOverview devices={schedulable} schedules={schedules} armedCount={armedCount} dispatching={dispatching} onGoToTab={setTab} />
+        <h2 className="sr-only">Summary</h2>
+        <AutomationOverview devices={schedulable} schedules={schedules} armedCount={armedCount} onGoToTab={setTab} />
       </TabPanel>
 
       <TabPanel tabId="time" activeId={tab}>

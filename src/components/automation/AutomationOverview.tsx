@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CalendarClock, Gauge, Thermometer, ShieldCheck, ShieldAlert, History } from 'lucide-react';
+import { CalendarClock, Gauge, Thermometer, History } from 'lucide-react';
 import { CLASS_ICON } from '@/lib/deviceIcons';
 import { nextUpSchedules } from './automationMath';
 import { AutomationActivityCard } from './AutomationActivityCard';
@@ -21,13 +21,11 @@ export function AutomationOverview({
   devices,
   schedules,
   armedCount,
-  dispatching,
   onGoToTab,
 }: {
   devices: Device[];
   schedules: Schedule[];
   armedCount: number;
-  dispatching: boolean;
   onGoToTab: (id: string) => void;
 }) {
   const nextUp = nextUpSchedules(devices, schedules, new Date(), 5);
@@ -56,17 +54,6 @@ export function AutomationOverview({
         />
       </div>
 
-      <section className={`card automation-overview__reach automation-overview__reach--${dispatching ? 'live' : 'closed'}`}>
-        <h3 className="card-title">
-          {dispatching ? <ShieldAlert size={14} className="title-icon" aria-hidden="true" /> : <ShieldCheck size={14} className="title-icon" aria-hidden="true" />}
-          {dispatching ? 'This page switches real hardware' : 'Dispatch is closed — firings are dry runs'}
-        </h3>
-        <p className="automation-overview__reach-body">
-          {dispatching
-            ? 'The scheduler daemon reads armed rules and dispatches them through the same gated, audited path the Control page uses. Every firing writes a command audit row whether it succeeded or not.'
-            : 'The scheduler daemon still reads and evaluates armed rules on schedule, but this deployment’s hardware-dispatch gate is closed, so each firing is recorded as a dry run and no relay moves.'}
-        </p>
-      </section>
 
       <section className="card automation-overview__next">
         <h3 className="card-title">

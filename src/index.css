@@ -2169,6 +2169,22 @@ body::before {
   flex: none;
   transition: background 0.2s ease;
 }
+/*
+ * The arm switch had no hover state. It is a 44x24 track with no border and no label, so with
+ * nothing on hover the only thing telling a mouse user it is live was the cursor — and this is
+ * the control that arms a rule against real relays. A ring rather than a background change:
+ * the track's colour already carries on/off, and overloading it would blur the two.
+ *
+ * `box-shadow`, not an outline, so it cannot be mistaken for the focus ring the global
+ * `:focus-visible` rule draws.
+ */
+.quick-toggle:hover:not(:disabled) {
+  box-shadow: 0 0 0 3px var(--chip-bg);
+}
+.quick-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
 .quick-toggle--on {
   background: var(--green-bright);
 }
@@ -4382,6 +4398,42 @@ body::before {
    The confirmation is a `role="status"` region that's empty until a write lands; row layout
    means it appearing/disappearing changes this block's WIDTH, not its height, so it can
    never misalign the header band the way the old stacked layout did. */
+/*
+ * The tab strip sits INSIDE the page header now, beside Save changes, so Automation's primary
+ * controls are where every other page puts them. Two overrides are all it needs:
+ *
+ * `margin-bottom: 0` — `.tabs` carries 16px for its old life as a full-width strip above the
+ * content. In a header row that margin is just a bottom-heavy control.
+ *
+ * `min-width: 0` — without it the strip's four tabs set a floor on the header's width and the
+ * actions row cannot shrink, which is the exact failure `.page-header__actions` documents at
+ * length (a row that refuses to shrink gets CLIPPED rather than scrolled). `.tabs` already has
+ * `overflow-x: auto`, so once it may shrink it scrolls its own tabs instead.
+ */
+.automation-tabs {
+  margin-bottom: 0;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+/*
+ * Below this the four tabs no longer fit the header row and the strip scrolls its own content
+ * (measured at 375px: 550px of tabs in a 319px strip, so State-Driven and Event-Driven are
+ * reachable but off-screen). Without a cue it just looks clipped mid-word.
+ *
+ * The same edge fade the top nav already uses under 860px, and the same reasoning: it is
+ * deliberately symmetric rather than scroll-position-aware, because a one-sided fade needs a
+ * scroll listener and this costs nothing and is never actively wrong — only occasionally fading
+ * an edge with nothing past it. 16px reads as "this pill is trailing off" rather than as content
+ * being cut away.
+ */
+@media (max-width: 720px) {
+  .automation-tabs {
+    mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
+  }
+}
+
 .automation-write-group {
   display: flex;
   flex-direction: row;
@@ -4609,10 +4661,13 @@ body::before {
  * card borders touching, which reads as an overlap.
  *
  * WHY IT WAS THE ONLY BLOCK THAT LOST ITS SPACING. `AutomationPage` returns a fragment, so the
- * header, tabs, panel and this card are all direct children of `.app-content`, which is
+ * header, panel and this card are all direct children of `.app-content`, which is
  * `display: block` with no gap. Every other block carries its own trailing margin — the header
- * 20px, the tab strip 16px — and `.tabs__panel` carries none, because a tab panel is normally
- * the last thing on a page. This card is the first thing in the app to follow one.
+ * 20px — and `.tabs__panel` carries none, because a tab panel is normally the last thing on a
+ * page. This card is the first thing in the app to follow one.
+ *
+ * (The tab strip used to sit between the header and the panel with its own 16px; it moved into
+ * the header actions row, so the panel now takes its spacing from `.page-header` directly.)
  *
  * 20px, matching the header-to-tabs gap rather than the tighter 16px between the tabs and their
  * own panel: that 16px binds two halves of one control, and this is a section boundary — the
@@ -4800,16 +4855,6 @@ body::before {
 /* The reach statement. Amber rather than red when live: this is not an error, it is the page
    telling you it has real authority — the tone should read as "pay attention", not "something
    broke". Green would be worse still; there is nothing reassuring about it. */
-.automation-overview__reach--live {
-  border-color: var(--warn);
-  background: var(--warn-soft);
-}
-.automation-overview__reach-body {
-  margin: var(--sp-2) 0 0;
-  color: var(--muted);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-base);
-}
 .automation-overview__next-list {
   list-style: none;
   margin: var(--sp-2) 0 0;
@@ -5032,6 +5077,24 @@ body::before {
   color: var(--accent-text);
   font: 600 var(--fs-xs-lg) inherit;
   cursor: pointer;
+}
+/*
+ * The page's primary CTA had NO hover state — the one button an operator is most likely to reach
+ * for gave no sign it was live until it was clicked. Border and text only: the accent background
+ * is already the thing that marks it as primary, and deepening that too would make hover read as
+ * a pressed state rather than a pointer landing.
+ *
+ * `:not(:disabled)` so a disabled button stays inert-looking, matching `.schedule-rule__delete`.
+ */
+/*
+ * `--accent-text`, NOT `--accent-hi`. The first draft used `--accent-hi` and measured 1.38:1
+ * against this button's own `--accent-soft` fill in LIGHT theme — it is the bright decorative
+ * amber, and it disappears on a light accent surface. `--accent-text` is the variant that exists
+ * precisely to stay readable on these surfaces, and it clears 3:1 in both themes.
+ */
+.schedule-stack__add:hover:not(:disabled) {
+  border-color: var(--accent-text);
+  color: var(--txt);
 }
 .schedule-stack__add:disabled {
   opacity: 0.6;
@@ -5357,6 +5420,11 @@ body::before {
   background: var(--field-bg);
   color: var(--txt);
   font: 600 var(--fs-sm) inherit;
+}
+/* Same reasoning as `.shed-panel__select`: only the select is a pointer target — the number
+   inputs beside it are typed into, and a pointer cursor there would misdescribe them. */
+.acu-rule__field select {
+  cursor: pointer;
 }
 .acu-rule__inline {
   display: flex;
@@ -7266,6 +7334,9 @@ button.space-plan__pin {
   min-height: 36px;
   width: 100%;
   max-width: 15rem;
+  /* A select is clickable; without this it shows a text caret and reads as inert. These 21
+     tier pickers are the most-repeated control on the State-Driven tab. */
+  cursor: pointer;
 }
 .shed-panel__note,
 .shed-panel__excluded {

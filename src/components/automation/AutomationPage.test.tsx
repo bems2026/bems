@@ -58,16 +58,16 @@ describe('AutomationPage — strategy tabs', () => {
     render(<AutomationPage />);
     const list = screen.getByRole('tablist', { name: /automation strategies/i });
     expect(within(list).getAllByRole('tab').map((t) => t.textContent)).toEqual([
-      'Overview',
+      'Summary',
       'Time-Driven',
       'State-Driven',
       'Event-Driven',
     ]);
   });
 
-  it('lands on Overview by default', () => {
+  it('lands on Summary by default', () => {
     render(<AutomationPage />);
-    expect(screen.getByRole('tab', { selected: true })).toHaveTextContent('Overview');
+    expect(screen.getByRole('tab', { selected: true })).toHaveTextContent('Summary');
   });
 
   it('a deep link opens the named tab directly', () => {
@@ -139,7 +139,7 @@ describe('AutomationPage — the dead ambient trigger is gone', () => {
     // `global.trigger.care_acu_on` round-tripped browser -> Supabase -> browser for months and
     // no `server/` file ever read it. RM-069 replaces it with a real controller.
     render(<AutomationPage />);
-    for (const tab of ['Overview', 'Time-Driven', 'State-Driven', 'Event-Driven']) {
+    for (const tab of ['Summary', 'Time-Driven', 'State-Driven', 'Event-Driven']) {
       fireEvent.click(screen.getByRole('tab', { name: new RegExp(tab) }));
       expect(screen.queryByLabelText(/ambient trigger setpoint/i)).not.toBeInTheDocument();
     }
