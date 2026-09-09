@@ -5068,11 +5068,21 @@ body::before {
 .schedule-rule--conflicted {
   border-color: var(--warn);
 }
-.schedule-rule__main {
+/*
+ * The rule's identity row: name, arm, delete. Was `.schedule-rule__main` and held every control
+ * in one undifferentiated run; RM-071 moved the trigger and the action into `.rule-block` and
+ * left this with only the three things that are neither.
+ *
+ * The name grows and the two controls stay put, so the arm switch sits at a predictable x on
+ * every row of a stack — it is the control most often reached for, and a switch that moves with
+ * the length of a rule's name is a switch you have to look for each time.
+ */
+.schedule-rule__head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
 }
 .schedule-rule__label {
   flex: 1 1 140px;
@@ -5480,6 +5490,85 @@ body::before {
   color: var(--muted-2);
   font-size: var(--fs-xs);
   text-transform: uppercase;
+}
+
+/* ===========================================================================
+   RULE BLOCKS — src/components/automation/RuleBlock.tsx (RM-071)
+
+   The IF/THEN frame shared by schedule rules and aircon rules. Two zones in a
+   common region, separated by proximity and a coloured rail; the rail says what
+   KIND of trigger fires the rule so a page of rules can be sorted without being
+   read.
+
+   THE RAIL IS THE FOURTH CUE, NOT THE FIRST. Each zone also carries the word
+   WHEN or THEN and the trigger carries an icon, so nothing here depends on
+   telling amber from blue. Colour-only meaning would be wrong on any page and
+   is indefensible on one that switches relays.
+
+   Every colour is an existing token, so both themes follow automatically and
+   `test/contrast.test.mjs` already covers the text pairs used here
+   (--muted-2 on --bg-inset).
+   =========================================================================== */
+.rule-block {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: stretch;
+}
+
+/*
+ * `flex: 1 1 260px` rather than a media query: the zones wrap when the CARD is
+ * narrow, which is not the same question as when the VIEWPORT is narrow. This
+ * component sits in a detail pane that is already one of two columns on desktop,
+ * so viewport width says little about the space it actually has.
+ */
+.rule-block__zone {
+  flex: 1 1 260px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--bg-inset);
+  border-left: 3px solid var(--border-strong);
+}
+
+.rule-block--time .rule-block__zone--when {
+  border-left-color: var(--blue);
+}
+.rule-block--sensor .rule-block__zone--when {
+  border-left-color: var(--accent);
+}
+.rule-block--demand .rule-block__zone--when {
+  border-left-color: var(--warn);
+}
+
+/*
+ * THEN keeps a neutral rail on purpose. Colouring both zones would put two
+ * competing accents on one rule and lose the thing the colour is for — the
+ * trigger is what varies between rules, the action is always "something is
+ * switched".
+ */
+.rule-block__zone--then {
+  border-left-color: var(--muted-2);
+}
+
+.rule-block__zone-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+
+.rule-block__zone-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
 }
 
 

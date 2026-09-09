@@ -5,6 +5,7 @@ import { useScheduleStore, CREATING } from '@/stores/scheduleStore';
 import { ruleProblem, explainProblem, stackConflicts, type ScheduleTarget } from '@/lib/scheduleStack';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
+import { RuleBlock, RuleWhen, RuleThen } from './RuleBlock';
 import { WeekTimeline } from './WeekTimeline';
 import type { Schedule } from '@/lib/supabaseSchedules';
 
@@ -159,7 +160,10 @@ function RuleRow({
 
   return (
     <li className={`schedule-rule${rule.enabled ? '' : ' schedule-rule--disarmed'}${conflicted ? ' schedule-rule--conflicted' : ''}`}>
-      <div className="schedule-rule__main">
+      {/* Rule identity and its arm/delete controls sit ABOVE the logic, not inside it. Neither is
+          part of the condition or the action — a name is not a trigger, and putting the arm switch
+          in one of the zones would suggest it was. */}
+      <div className="schedule-rule__head">
         <input
           type="text"
           className="schedule-rule__label"
@@ -172,49 +176,6 @@ function RuleRow({
             if (next !== rule.label) void patch(rule.id, { label: next });
           }}
         />
-
-        <label className="schedule-rule__time">
-          <span className="schedule-rule__time-label">ON</span>
-          <input
-            type="time"
-            value={onDraft ?? rule.on ?? ''}
-            aria-label={`${target.name} ${name} on time`}
-            onChange={(e) => setOnDraft(e.target.value)}
-            onBlur={(e) => {
-              setOnDraft(null);
-              commit('on', e.target.value);
-            }}
-          />
-        </label>
-
-        <label className="schedule-rule__time">
-          <span className="schedule-rule__time-label">OFF</span>
-          <input
-            type="time"
-            value={offDraft ?? rule.off ?? ''}
-            aria-label={`${target.name} ${name} off time`}
-            onChange={(e) => setOffDraft(e.target.value)}
-            onBlur={(e) => {
-              setOffDraft(null);
-              commit('off', e.target.value);
-            }}
-          />
-        </label>
-
-        <div className="schedule-rule__days">
-          {DAY_LABELS.map((day, i) => (
-            <button
-              key={i}
-              type="button"
-              className={`automation-day-chip${days[i] ? ' automation-day-chip--on' : ''}`}
-              aria-pressed={days[i]}
-              aria-label={`${DAY_NAMES[i]} for ${name} on ${target.name}`}
-              onClick={() => void patch(rule.id, { days: toggleDay(rule.days ?? undefined, i) })}
-            >
-              {day}
-            </button>
-          ))}
-        </div>
 
         <button
           type="button"
@@ -232,6 +193,64 @@ function RuleRow({
           <Trash2 size={14} aria-hidden="true" />
         </button>
       </div>
+
+      {/*
+       * THE DAYS ARE THE CONDITION AND THE TIMED SWITCH IS THE ACTION, which is the reading that
+       * survives being said out loud: "when Mon–Fri, turn it on at 08:00 and off at 18:00."
+       *
+       * The tempting alternative — times in WHEN, "turns on/off" in THEN — is mushier than it
+       * looks, because one rule carries TWO edges. Its THEN could only say "on, and also off",
+       * which is not an action anybody performs. Splitting on days keeps each zone a single
+       * unambiguous statement.
+       */}
+      <RuleBlock trigger="time">
+        <RuleWhen trigger="time">
+          <div className="schedule-rule__days">
+            {DAY_LABELS.map((day, i) => (
+              <button
+                key={i}
+                type="button"
+                className={`automation-day-chip${days[i] ? ' automation-day-chip--on' : ''}`}
+                aria-pressed={days[i]}
+                aria-label={`${DAY_NAMES[i]} for ${name} on ${target.name}`}
+                onClick={() => void patch(rule.id, { days: toggleDay(rule.days ?? undefined, i) })}
+              >
+                {day}
+              </button>
+            ))}
+          </div>
+        </RuleWhen>
+
+        <RuleThen>
+          <label className="schedule-rule__time">
+            <span className="schedule-rule__time-label">On at</span>
+            <input
+              type="time"
+              value={onDraft ?? rule.on ?? ''}
+              aria-label={`${target.name} ${name} on time`}
+              onChange={(e) => setOnDraft(e.target.value)}
+              onBlur={(e) => {
+                setOnDraft(null);
+                commit('on', e.target.value);
+              }}
+            />
+          </label>
+
+          <label className="schedule-rule__time">
+            <span className="schedule-rule__time-label">Off at</span>
+            <input
+              type="time"
+              value={offDraft ?? rule.off ?? ''}
+              aria-label={`${target.name} ${name} off time`}
+              onChange={(e) => setOffDraft(e.target.value)}
+              onBlur={(e) => {
+                setOffDraft(null);
+                commit('off', e.target.value);
+              }}
+            />
+          </label>
+        </RuleThen>
+      </RuleBlock>
 
       {/* A rule that is armed and can never fire says so where it is, in words. In a stack of
           five this is the difference between one dead rule being noticed and it being invisible. */}
