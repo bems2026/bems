@@ -7,7 +7,7 @@ it would be operator-editable device names. The pdfmake spike is the part worth 
 findings that each cost an afternoon and none of which are in anybody's documentation. The print
 palette's new on-white assertion rejected `--accent` on its first run, and two of that test's own
 first assertions turned out to be measuring the wrong thing and passing. **§5 Q9 is answered by
-measurement and struck**, which also unblocks **RM-042**. `phase37_report_series.sql` is applied, and **reading it back against the live project found four defects, every one of which made the building look better observed than it was** — see RM-072f and RM-072g. The one worth leading with is not in the new code at all: **the Reports page has been overstating its own coverage.** August 2026 reads 48%, and only **26.9%** of its expected minutes carry a real reading — 9,415 of the 21,421 "observed" samples are rows the meters wrote while observing nothing. Correcting the stored figure is **RM-073**, and it is a decision about restating published history rather than a task. Applying the fixes then turned up **RM-072h**: `create or replace` cannot change a function's OUT parameters, and `rehearse.sh` had only ever proved each migration against an EMPTY database — the one case a hand-applied migration never meets twice.
+measurement and struck**, which also unblocks **RM-042**. `phase37_report_series.sql` is applied, and **reading it back against the live project found four defects, every one of which made the building look better observed than it was** — see RM-072f and RM-072g. The one worth leading with is not in the new code at all: **the Reports page has been overstating its own coverage.** August 2026 reads 48%, and only **26.9%** of its expected minutes carry a real reading — 9,415 of the 21,421 "observed" samples are rows the meters wrote while observing nothing. Correcting the stored figure is **RM-073**, and it is a decision about restating published history rather than a task. Applying the fixes then turned up **RM-072h**: `create or replace` cannot change a function's OUT parameters, and `rehearse.sh` had only ever proved each migration against an EMPTY database — the one case a hand-applied migration never meets twice. **phase37 is applied and every check is green (RM-072i)**; the series layer the charts read is done.
 
 **Previously audited:** 2026-09-10 — **RM-070 and RM-071**. RM-071 is a UI/UX overhaul of the
 Automation page: rules now read as IF/THEN blocks, and auditing for it turned up a one-character CSS
@@ -3221,6 +3221,38 @@ emission factor carrying provenance. What has landed:
       that broke, reproduced. `test/phase37-report-series-schema.test.mjs` asserts a drop exists
       for every function and that none of them uses `cascade`, so a function added later without
       one fails before it reaches a database.
+
+
+- [x] **RM-072i — applied and verified, 2026-09-10.** Every check green against the live project:
+      the daily series' bars sum to **90.9468 kWh**, exactly the stored month report; the peak
+      agrees at 4551.3 W; the hour profile returns 24 rows with no unobserved hour carrying a
+      statistic; the matrix returns all 744 cells in 453 ms; the duration curve never rises and
+      starts at the period peak; and `anon` is refused with 401 on every function, so the revoke
+      survived the drop-and-recreate.
+
+      **What the corrected counts show about August 2026**, now that rows and readings are told
+      apart:
+
+      | | rows | real readings |
+      |---|---|---|
+      | month coverage | 48.0% | **26.9%** |
+      | days with rows but no readings | — | **5** (16th, 18th, 21st, 22nd, 23rd) |
+      | hour-cells that look observed | 361 | **208** |
+      | 2026-08-17 | 1,371 rows | **668** readings |
+      | 2026-08-19 | 1,411 rows | **166** readings |
+
+      The 19th is the one to look at: **0.89 kWh from 166 usable minutes of 1,440** — under 12% of
+      the day — which the page today reports as a 98%-covered day. 153 of the month's hour-cells
+      would draw as observed in a heatmap while holding no reading at all. The longest gap reads
+      23,549 minutes (16.4 days), against the nine minutes the first version reported.
+
+      A healthy week is untouched: the week of 2026-08-31 is 10,080 rows and 10,029 readings,
+      100% against 99.5%. Which is exactly why none of this has ever looked wrong.
+
+      One thing noticed and deliberately not chased: 2026-09-01 reports 1,442 samples against an
+      expected 1,440. `expected_samples` is a nominal figure derived from the window, and a minute
+      that carries two rows is a pre-existing ingest artefact — `server/baselineReport.mjs` shows
+      the same 1,442 for that day. Recorded, not fixed.
 
 
 - [ ] **RM-073 (M)** — Correct `generate_period_report`'s `online_sample_count` to count usable
