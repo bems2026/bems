@@ -27,8 +27,27 @@ import { summarize } from './demandProfile.mjs';
  * a full day of minute readings — a figure computed from a handful of them is, in this project's
  * own phrase, a guess wearing a decimal point.
  */
-export const BASELINE_MIN_SAMPLES = 1000;
-export const BASELINE_MIN_DAYS = 3;
+/**
+ * The prose and the thresholds live in `shared/reportProse.mjs` now, because the Reports page
+ * and the PDF say the same things and three copies of a caveat is three chances to drift. The
+ * failure that would cause is not a typo — it is a document qualifying a figure the screen
+ * quotes bare. Re-exported here so callers that import them from this module keep working.
+ */
+export { BASELINE_MIN_SAMPLES, BASELINE_MIN_DAYS } from '../shared/reportProse.mjs';
+
+import {
+  BASELINE_MIN_SAMPLES,
+  BASELINE_MIN_DAYS,
+  COVERAGE_LEDE,
+  DAILY_ENERGY_NOTE,
+  DEMAND_CAVEAT,
+  NOT_A_BASELINE_TITLE,
+  NOT_SAID,
+  NOT_SAID_TITLE,
+  NO_READINGS_NOTE,
+  UNOBSERVED_HOUR_NOTE,
+  notABaselineYet,
+} from '../shared/reportProse.mjs';
 
 const MIN = 60_000;
 
@@ -225,10 +244,7 @@ export function renderReport({ rows = [], offsetMinutes = 0, siteName = 'this si
       ...head,
       '## No readings',
       '',
-      'There are no recorded building totals in this window, so there is nothing to benchmark.',
-      'Totals read null whenever the meters are offline — by design, so that an outage cannot be',
-      'mistaken for a quiet building — which means an empty window is a measurement problem, not',
-      'a building that used nothing.',
+      NO_READINGS_NOTE,
       '',
     ].join('\n');
   }
@@ -248,22 +264,13 @@ export function renderReport({ rows = [], offsetMinutes = 0, siteName = 'this si
   const out = [...head];
 
   if (thin) {
-    out.push(
-      '## This is not a baseline yet',
-      '',
-      `It covers ${cov.observed} reading(s) across ${observedDays.length} building-day(s). A benchmark needs at`,
-      `least ${BASELINE_MIN_SAMPLES} readings across ${BASELINE_MIN_DAYS} days before it can separate a weekday from a`,
-      'weekend, and the weekend is most of the distance between a building’s peak and its floor.',
-      'The figures below are real, and they are a sample. Cite them as one.',
-      '',
-    );
+    out.push(`## ${NOT_A_BASELINE_TITLE}`, '', ...notABaselineYet(cov.observed, observedDays.length), '');
   }
 
   out.push(
     '## Coverage',
     '',
-    'Stated first because every figure after it is a claim about the hours in this table, not',
-    'about the hours in the window.',
+    COVERAGE_LEDE,
     '',
     '| | |',
     '|---|---|',
@@ -282,14 +289,13 @@ export function renderReport({ rows = [], offsetMinutes = 0, siteName = 'this si
     `| p99 | ${f(power?.p99)} W |`,
     `| Observed peak | ${f(power?.max)} W |`,
     '',
-    'These describe what the building drew while it was being watched. They are not a limit —',
-    'see `npm run demand:profile` for a DSM ceiling, which is deliberately set above the peak',
-    'rather than at a percentile of it.',
+    DEMAND_CAVEAT,
+    '',
+    'See `npm run demand:profile` for this building’s own DSM ceiling.',
     '',
     '## Energy by day',
     '',
-    'From the meters’ own running daily counter, not integrated from power samples: integrating',
-    'across a gap would invent the energy used during an outage.',
+    DAILY_ENERGY_NOTE,
     '',
     '| Date | kWh | Peak W | Samples | Observed | Note |',
     '|---|---|---|---|---|---|',
@@ -299,23 +305,15 @@ export function renderReport({ rows = [], offsetMinutes = 0, siteName = 'this si
     '',
     '## Demand by hour of the building’s day',
     '',
-    'An hour with no readings shows `—`. It does not show zero, because the building did not draw',
-    'nothing at that hour — nobody was watching at that hour.',
+    UNOBSERVED_HOUR_NOTE,
     '',
     '| Hour | n | Median W | p95 W | Peak W |',
     '|---|---|---|---|---|',
     ...hours.map((h) => `| ${String(h.hour).padStart(2, '0')}:00 | ${h.n} | ${f(h.p50, 0)} | ${f(h.p95, 0)} | ${f(h.max, 0)} |`),
     '',
-    '## What this report does not say',
+    `## ${NOT_SAID_TITLE}`,
     '',
-    '- **It does not cover the hours it did not observe.** Coverage is above; an outage removes',
-    '  its own hours from every figure here, and those hours are not average ones.',
-    '- **It is not normalised by floor area or occupancy.** Neither is recorded, and a kWh/m²',
-    '  figure computed from an assumed area would be the most quotable number in the document and',
-    '  the least true.',
-    '- **It does not attribute consumption to causes.** Per-circuit and per-space totals exist in',
-    '  the dashboard; this is the building-level baseline the two are compared against.',
-    '- **It is not a forecast.** It is what happened.',
+    ...NOT_SAID.map((n) => `- **${n.lead}** ${n.body}`),
     '',
   );
 

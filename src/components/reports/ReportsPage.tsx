@@ -30,6 +30,12 @@ import { fetchScheduleContext } from '@/lib/supabaseConfig';
 import { PeriodPicker } from './PeriodPicker';
 import { ReportCharts } from './ReportCharts';
 import { buildBreakdown } from '@/lib/circuitBreakdown';
+import { Tabs, type TabDef } from '@/components/ui/Tabs';
+import { BaselineReport } from './BaselineReport';
+import { CircuitDeepDive } from './CircuitDeepDive';
+import { ComparisonReport } from './ComparisonReport';
+import { CoverageBanner } from './CoverageBanner';
+import { getDemandSummary, type DemandSummary } from '@/lib/reportSeries';
 
 /**
  * Energy reports, weekly or monthly — Phase 12, generalised by RM-041.
@@ -99,7 +105,27 @@ const DEVICE_CSV_COLUMNS: readonly CsvColumn<Record<string, unknown>>[] = [
   { key: 'expected_sample_count', header: 'Samples expected' },
 ];
 
+/**
+ * Four readings of the same period, not four pages.
+ *
+ * The summary answers how much, the baseline answers whether the window is even a benchmark, the
+ * circuits answer where it went, and the comparison answers what changed — and every one of them
+ * is about the period the picker above them selects. Tabs rather than routes for that reason: the
+ * period is the page's subject, and a tab that reset it would be a different page pretending.
+ *
+ * NO PANEL FETCHES ON MOUNT, which is `Tabs`' own stated requirement — selection follows focus,
+ * so arrowing across the strip would otherwise fire four loads. Everything is fetched once at
+ * this level, keyed on the period, and handed down.
+ */
+const REPORT_TABS: TabDef[] = [
+  { id: 'summary', label: 'Summary' },
+  { id: 'baseline', label: 'Baseline' },
+  { id: 'circuits', label: 'Circuits' },
+  { id: 'compare', label: 'Compare' },
+];
+
 export function ReportsPage() {
+  const [tab, setTab] = useState('summary');
   const devices = useDeviceStore((s) => s.devices);
   /**
    * Week or month — RM-041. The operator asked for both, and they answer different questions: a
@@ -142,6 +168,7 @@ export function ReportsPage() {
         matrix: MatrixRow[];
         curve: CurveRow[];
         ceilingW: number | null;
+        summary: DemandSummary | null;
       }
     | null
   >(null);
@@ -187,6 +214,7 @@ export function ReportsPage() {
       getHourProfile(period, selected),
       getHourMatrix(period, selected),
       getDemandCurve(period, selected),
+      getDemandSummary(period, selected),
       // The DSM ceiling the duration curve is drawn against. Read from the same row the
       // Automation page writes, so the chart cannot disagree with the page that sets it.
       fetchScheduleContext().then((ctx) => {
@@ -194,8 +222,8 @@ export function ReportsPage() {
         return Number.isFinite(kw) && kw > 0 ? kw * 1000 : null;
       }),
     ])
-      .then(([daily, hours, matrix, curve, ceilingW]) => {
-        if (!cancelled) setSeries({ period, start: selected, daily, hours, matrix, curve, ceilingW });
+      .then(([daily, hours, matrix, curve, summary, ceilingW]) => {
+        if (!cancelled) setSeries({ period, start: selected, daily, hours, matrix, curve, summary, ceilingW });
       })
       .catch((err) => !cancelled && setError(String(err)));
     return () => {
@@ -272,9 +300,14 @@ export function ReportsPage() {
           </>
         }
         actions={
-          <button type="button" className="devices-add-btn" onClick={exportCsv} disabled={!rows || rows.length === 0}>
-            <Download size={16} aria-hidden="true" /> Export CSV
-          </button>
+          <>
+            {/* In the header beside the export, where every other page in this app puts its
+                controls — the shape RM-071 settled on for Automation. */}
+            <Tabs tabs={REPORT_TABS} activeId={tab} onChange={setTab} label="Report type" className="reports-tabs" />
+            <button type="button" className="devices-add-btn" onClick={exportCsv} disabled={!rows || rows.length === 0}>
+              <Download size={16} aria-hidden="true" /> Export CSV
+            </button>
+          </>
         }
       />
 
@@ -314,7 +347,16 @@ export function ReportsPage() {
         />
       ) : null}
 
-      {building ? (
+      {tab === 'summary' && live && selected ? (
+        <CoverageBanner
+          summary={live.summary}
+          observedDays={live.daily.filter((d) => d.usable_sample_count > 0).length}
+          completeDays={live.daily.filter((d) => d.expected_samples > 0 && d.usable_sample_count / d.expected_samples >= 0.95).length}
+          label={formatPeriod(period, selected)}
+        />
+      ) : null}
+
+      {tab === 'summary' && building ? (
         <section className="devices-table-card reports-summary" aria-label={`Building summary for ${formatPeriod(period, building.period_start)}`}>
           <h2 className="card-title">
             {formatPeriod(period, building.period_start)} · building <CoverageTag coverage={buildingCoverage} />
@@ -358,7 +400,7 @@ export function ReportsPage() {
         </section>
       ) : null}
 
-      {live && selected ? (
+      {tab === 'summary' && live && selected ? (
         <ReportCharts
           period={period}
           start={selected}
@@ -372,7 +414,32 @@ export function ReportsPage() {
         />
       ) : null}
 
-      {rows && rows.length > 0 ? (
+      {tab === 'baseline' && live && selected ? (
+        <BaselineReport
+          period={period}
+          start={selected}
+          summary={live.summary}
+          charts={{
+            daily: live.daily,
+            hours: live.hours,
+            matrix: live.matrix,
+            curve: live.curve,
+            segments,
+            untracked,
+            ceilingW: live.ceilingW,
+          }}
+        />
+      ) : null}
+
+      {tab === 'circuits' && rows && selected ? (
+        <CircuitDeepDive period={period} start={selected} rows={rows} nameOf={nameOf} />
+      ) : null}
+
+      {tab === 'compare' && months ? (
+        <ComparisonReport period={period} periods={months} selected={selected} />
+      ) : null}
+
+      {tab === 'summary' && rows && rows.length > 0 ? (
         <div className="devices-table-card devices-table-scroll">
           <table className="devices-table reports-table" aria-label={`Per-device report for ${selected ? formatPeriod(period, selected) : ''}`}>
             <thead>
@@ -402,7 +469,7 @@ export function ReportsPage() {
         </div>
       ) : null}
 
-      {rows?.length === 0 && selected ? (
+      {tab === 'summary' && rows?.length === 0 && selected ? (
         <p className="reports-note">No per-device rows for {formatPeriod(period, selected)}.</p>
       ) : null}
     </>

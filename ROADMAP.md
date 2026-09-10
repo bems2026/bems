@@ -3399,6 +3399,56 @@ emission factor carrying provenance. What has landed:
       read back, and the page boots, but nobody has opened Reports with a session.
 
 
+- [x] **RM-072n — four readings of one period, and the one that refuses to answer.** The
+      report-type tabs, plus the baseline, circuit and comparison reports. Tabs rather than
+      routes because the period is the page's SUBJECT — a tab that reset it would be a different
+      page pretending. Reuses `ui/Tabs`, whose header states the requirement this had to meet:
+      selection follows focus, so a panel that fetched on mount would fire four loads as a
+      keyboard user arrowed across the strip. Everything is fetched once at page level and handed
+      down; no panel does I/O.
+
+      **`shared/reportProse.mjs`** now holds every sentence a report says about its own limits —
+      the coverage lede, the "not a baseline yet" gate and its thresholds, the demand caveat, and
+      the closing "what this report does not say". `server/baselineReport.mjs` reads them from
+      there, and **its 13 tests pass with the file untouched**, which is the proof the move was
+      faithful. Three renderings of one set of caveats: the CLI's Markdown, the page, and the PDF
+      to come. The failure if they diverge is not a typo — it is a document qualifying a figure
+      the screen quotes bare, which is RM-062's defect in a different place.
+
+      **The baseline report** is Milestone 1's "benchmarking summary" on the page rather than in
+      a gitignored Markdown file nobody opens. FI-018 has produced this content since 2026-08-31;
+      the figures were never the problem, the reader was. Coverage first, then the thinness gate,
+      then the numbers — and the gate counts **real readings and days that held one**, not rows,
+      because counting rows would let a fortnight of frozen counters promote a sample to a
+      benchmark. That is the exact shape 2026-08-18 has.
+
+      **`CoverageBanner` shows two coverage figures, named.** August 2026 is 48% as rows and 27%
+      as real readings; showing only the first overstates by twenty-one points, showing only the
+      second disagrees with the stored report. Both, with the gap explained. `resolution` is
+      qualified here too — an old period's percentiles come from hourly means, a different
+      statistic with no event to mark the transition.
+
+      **`ComparisonReport` is IPMVP Option C, and the refusal is the feature.** Option C is
+      whole-facility and requires adjustment for the independent variables; this system records
+      none of them. So `src/lib/ipmvp.ts` computes a difference **only when both periods are
+      `complete`**, and otherwise says which period was thin and by how much. Live, that is a
+      100%-covered week beside a 48%-covered month: ungated it prints something like **−52%** as
+      the most quotable number on the page, entirely an artefact of the meters being off. It also
+      refuses a week against a month, returns `null` rather than a percentage of zero, and says
+      the direction in words — a minus sign in front of a number a reader hopes is good gets read
+      as whichever they were hoping for. `COMPARISON_NOT_ADJUSTED` is permanent and not
+      collapsible; the last of its four bullets is *"It is a difference, not a saving."*
+
+      **`CircuitDeepDive`** separates the branch meters from the devices inside them. A flat table
+      puts a branch and one of its own outlets on adjacent rows reading as peers, and adding them
+      double-counts. It leads with the unattributed figure when there is one.
+
+      One defect found while testing: mocking the whole of `@/lib/reportSeries` left the pure
+      mappers undefined, `ReportCharts` called one, and the page threw on first render — so four
+      assertions failed with "unable to find", reading as four layout bugs and being one bad
+      mock. Only the I/O is faked now, which is the rule the sibling test file already states.
+
+
 - [ ] **RM-073 (M)** — Correct `generate_period_report`'s `online_sample_count` to count usable
       observations rather than rows, and regenerate. **Blocked on a decision, not on code.**
       RM-072g measured what it would change: August 2026's stored coverage moves 48.0% → 26.9%.

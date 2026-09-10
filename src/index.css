@@ -6358,6 +6358,51 @@ body::before {
   font-size: var(--fs-xs);
 }
 
+/* What a report does not say — RM-072n. Deliberately a plain block rather than a callout: these
+   are not a warning about something going wrong, they are the limits of every figure above them,
+   and styling them as an alert would make a reader dismiss them as one. */
+.report-caveats {
+  padding: var(--sp-4);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  margin-top: var(--sp-4);
+}
+
+.report-caveats__list {
+  margin: var(--sp-2) 0 0;
+  padding-left: var(--sp-4);
+  display: grid;
+  gap: var(--sp-2);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+}
+
+.report-caveats__list strong {
+  color: var(--txt);
+}
+
+/* The "this is not a baseline yet" gate. Warn-toned because it qualifies everything below it,
+   and `--warn-on-page` rather than `--warn` because this sits on the page background — the two
+   are separate tokens precisely because several colours pass on a card and fail off it. */
+.report-thin {
+  border-color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.report-thin .card-title {
+  color: var(--warn-on-page);
+}
+
+/* The deep-dive's tables name themselves, so a screen reader hears which of the two it is in
+   rather than meeting a second unlabelled grid of numbers. */
+.reports-table caption.card-title {
+  caption-side: top;
+  text-align: left;
+  padding-bottom: var(--sp-2);
+}
+
 .reports-picker__select {
   min-height: 36px;
   padding: 0 var(--sp-2);
