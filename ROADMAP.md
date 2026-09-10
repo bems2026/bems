@@ -1,10 +1,19 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-10 — **RM-070 and RM-071**. RM-071 is a UI/UX overhaul of the Automation
-page: rules now read as IF/THEN blocks, and auditing for it turned up a one-character CSS typo that
-had been silently disabling the 44px touch-target rule **app-wide**, including on the dialog that
-gates arming unattended load shedding. See the RM-071 section below; the measurement is the part
-worth reading.
+**Last audited:** 2026-09-10 — **RM-072**, the Reports overhaul, in progress. The primitives have
+landed: charts are a scene with two serializers rather than an SVG string, because putting a string
+into the DOM would mean this codebase's first `dangerouslySetInnerHTML` and the first thing through
+it would be operator-editable device names. The pdfmake spike is the part worth reading — three
+findings that each cost an afternoon and none of which are in anybody's documentation. The print
+palette's new on-white assertion rejected `--accent` on its first run, and two of that test's own
+first assertions turned out to be measuring the wrong thing and passing. **§5 Q9 is answered by
+measurement and struck**, which also unblocks **RM-042**.
+
+**Previously audited:** 2026-09-10 — **RM-070 and RM-071**. RM-071 is a UI/UX overhaul of the
+Automation page: rules now read as IF/THEN blocks, and auditing for it turned up a one-character CSS
+typo that had been silently disabling the 44px touch-target rule **app-wide**, including on the
+dialog that gates arming unattended load shedding. See the RM-071 section below; the measurement is
+the part worth reading.
 
 **Previously audited:** 2026-09-09 — **RM-059 to RM-069**, two parallel lines of work on the same
 pages, merged. **RM-062 is the one to read**: the Automation page claimed hardware dispatch was
@@ -2944,6 +2953,109 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 ## 2. Current roadmap (active execution)
 
 
+### Reports gain charts, a document, and a price — RM-072 (2026-09-10)
+
+`ReportsPage.tsx` is 337 lines that render one `<dl>` of six figures and one five-column table.
+It has **no charts at all**, there is no PDF anywhere in this repo, and there is not one
+`@media print` rule in 8,453 lines of `src/index.css`. Export is CSV only.
+
+The data underneath it is real and good, which is what makes the page the weak part rather than
+the pipeline: `period_building_reports` holds four weekly rows and one monthly row from
+production right now — August 2026 at 90.95 kWh from 21,421 of 44,640 expected samples, peak
+4,551 W, 127 commands. **That also settles §5 Q9**, which still asks whether the Reports page has
+been seen with real data. It has.
+
+Planned: four report types (period summary, baseline, circuit deep-dive, and a comparison in the
+IPMVP Option C shape), five chart families, a paginated PDF, and an operator-entered tariff and
+emission factor carrying provenance. What has landed:
+
+- [x] **RM-072a — the pdfmake spike, and it is the part worth reading.** Run against 0.3.11 in
+      Node and in a real browser with the hardest SVG the design calls for: a hatch `<pattern>`,
+      a `<linearGradient>`, `stroke-dasharray`, and text carrying `&` and `<CO5>`. It works —
+      a 2-page, 24,580-byte PDF in **102 ms**, carrying `/Pattern` and `/Shading` (so the hatch
+      and the gradient really are vector) with Roboto embedded and subsetted (so the text is
+      real and selectable). Visually confirmed: the unobserved day draws as a hatched block
+      labelled "no data", the zero day as a hairline bar, and the two are not each other.
+      Three findings that would each have cost an afternoon, none of them in the documentation
+      an LLM or a tutorial will hand you:
+      **(1) pdfmake 0.3 is Promise-based.** `createPdf(def).getBlob()` returns a Promise. The
+      `getBlob(cb)` callback form that every example shows is the 0.2 API, and on 0.3 it hangs
+      forever — no error, no warning, no timeout. This cost the most time.
+      **(2) Fonts must come from the font CONTAINER, not `vfs_fonts.js`.**
+      `build/fonts/Roboto.js` self-registers through `addFontContainer` and works;
+      `build/vfs_fonts.js` registers the font *files* but no font *definitions*, so
+      `font: 'Roboto'` is unknown and rendering hangs in exactly the same silent way as (1) —
+      which is how one bug looks like the other.
+      **(3) SVG `<text>` resolves fonts through a different path than pdfmake's own text**, via
+      a `fontCallback` in `js/Renderer.js` that hands PDFKit a filename. In the browser that
+      resolves against the virtual filesystem; in Node it hits the real one and fails. Only
+      bites a server-side render, which is one more reason not to do one.
+      Measured cost: `pdfmake.min.js` 1.05 MB + `fonts/Roboto.js` 855 KB, to be a lazy chunk
+      with its own `manualChunks` entry so the figure stays visible in build output. Still
+      unmeasured: the same generation on the Pi, which gates the button's busy state.
+
+- [x] **RM-072b — the chart primitives: one scene, two serializers.** Charts here are neither
+      Recharts nor scraped from it. A generator is a pure function returning a **scene** — a flat
+      list of resolved drawing primitives — and two thin serializers turn it into React elements
+      for the page and an SVG string for the PDF.
+      **Why not simply return an SVG string**, which would be one renderer and no possible
+      disagreement: putting a string into the DOM means `dangerouslySetInnerHTML`, which appears
+      **nowhere in this codebase**, and the first use of it would be for chart labels built partly
+      from operator-editable device names — the same names `src/lib/csv.ts` already treats as
+      untrusted where the payload is a spreadsheet formula. Going through real React elements
+      means React escapes them, by construction, in the one consumer that has a scripting engine
+      attached. `sceneToSvg` escapes by hand because pdfmake's parser does not.
+      The drift that buys is closed twice over. `sceneNodes.ts` makes every decision — every tag,
+      attribute name and formatted number — exactly once, so the two serializers are fifteen lines
+      each with nothing left to disagree about; and `serializers.test.tsx` renders one scene
+      through both and compares node for node, attribute for attribute. Deliberately not a
+      snapshot: a snapshot goes green under `-u` on precisely the change it exists to catch.
+      `src/components/reports/charts/{types,palette,escapeXml,sceneNodes,sceneToSvg,sceneToJsx,chartFrame}.ts`,
+      67 tests.
+
+- [x] **RM-072c — a print palette, and the guard the existing contrast test cannot provide.**
+      `test/contrast.test.mjs` measures every text token against every palette SURFACE, and its
+      own header says what it does not do: *"It measures the palette, not the page."* **Paper is
+      not a palette surface.** So the PDF gets a fixed light palette regardless of the kiosk's
+      theme — which is also the right document — mirrored from the light `:root` the way
+      `scene3d/tokens.ts` mirrors it for Three.js, and drift-guarded the same way.
+      The new assertion is contrast against `#ffffff`, and **it rejected `--accent` on the first
+      run at 2.15:1** — a figure `index.css` already documents, and the reason it ships
+      `--accent-text`. The print series therefore takes the AA-strength tier
+      (`--accent-text`/`--blue`/`--green`/`--purple`), never the `-bright` tier the screen uses
+      for lines on a tinted card.
+      **Two of that file's first assertions were wrong, and both were wrong in the same
+      direction — measuring the wrong thing and reporting success:**
+      *Gridlines were held to 3:1.* WCAG 2.2 SC 1.4.11 is about graphical objects **required to
+      understand** the content, and a gridline is a reading aid, not a datum. One at 3:1 would be
+      as loud as the series drawn over it, so the test would have forced a measurably worse chart
+      while passing. It now asserts what a gridline actually has to do: recede behind the ink and
+      behind every series, while staying visible on the page.
+      *Series separation was measured as a luminance difference*, and failed on `--blue` against
+      `--purple` at 0.0078 — two colours nobody would confuse. Luminance is the wrong instrument
+      for a categorical palette; it is exactly the axis on which two distinguishable hues may
+      coincide. Tightening the threshold until it passed would have been fitting the guard to the
+      palette. It measures **CIE76 ΔE in Lab** now, at ≥25, with its own Lab anchors asserted so a
+      copy that has drifted cannot report success.
+      Also added: `--heat-1..5`, the palette's only *ordered* scale, for the day-by-hour demand
+      heatmap — five lightness steps of one hue rather than a rainbow, because a heat cell is
+      ranked and a multi-hue ramp is only rankable by someone who already knows the legend. The
+      dark theme **inverts** it rather than darkening it: "more" must read as more ink on paper
+      and more light on a dark screen, and carrying the light ramp across would have made an
+      unobserved hour the loudest cell on the page — an error invisible in a swatch strip. Both
+      directions are asserted monotonic.
+
+- [x] **RM-072d — two dataviz rules enforced in `chartFrame.ts` rather than left to whoever
+      writes the next generator.** A bar axis is anchored at zero (`zeroBased` is a required
+      option, not a default): a bar's length *is* its value, so an axis starting at 1.2 makes a
+      1.26 kWh day look like nothing beside a 1.38 kWh day, which is the commonest way a truthful
+      dataset produces a dishonest picture. And `niceScale` returns **`null`** for an empty or
+      all-null domain rather than a plausible 0–1 grid — the same rule as `coverageOf` returning
+      null instead of zero, so a caller has to draw "nobody was watching" instead of a confident
+      empty chart over a month nobody observed.
+
+
+
 ### How the Automation page READS — RM-071 (2026-09-10)
 
 RM-066..069 fixed what the page could express. This fixed how it reads. Every rule was a flat run
@@ -4402,9 +4514,14 @@ fall back to it).
       five days of both figures rather than the single three-minute window quoted here.
 
 - [ ] **RM-042 (S)** Retire `monthly_reports`, `monthly_building_reports` and
-      `generate_monthly_report`, and drop the second RPC call in `server/reports.mjs`. Blocked
-      until the period tables have carried a full month in production and the two have been
-      compared on real data rather than only on the rehearsal's fixtures.
+      `generate_monthly_report`, and drop the second RPC call in `server/reports.mjs`.
+      **UNBLOCKED 2026-09-10 (RM-072).** The condition was that the period tables carry a full
+      month in production and be compared against the legacy ones on real data rather than the
+      rehearsal's fixtures. August 2026 has now gone through both paths and they agree to the
+      digit — `monthly_building_reports` and `period_building_reports` both report
+      `90.9468091666591` kWh for `2026-08-01`, read from the live project. That is the
+      comparison, and it passed. What remains is the deletion itself, which is a migration and
+      a four-line change to `server/reports.mjs`, not a question.
 
 - [x] **RM-043 (S)** **DONE 2026-09-02, deployed.** **The office kiosk was running a week-old
       build and nothing said so.** MEASURED on the Pi: `ibems-kiosk.service` had been up since
@@ -6542,10 +6659,20 @@ may not.
    **RM-027 is where it gets fixed rather than merely checked:** the timezone is currently a
    SQL default AND a hardcoded UTC offset in `shared/buildLatest.mjs`, two places that can
    disagree with each other. It becomes one per-site value.
-9. **Has the Reports page been seen with real data?** The coverage logic, the CSV serializer
-   and the page's honesty properties are unit-tested (`ReportsPage.test.tsx` asserts that a
-   sparse month cannot quote a bare total), but no report has been generated from real rows.
-   Blocked on RM-009.
+9. ~~**Has the Reports page been seen with real data?**~~ **Answered by measuring it,
+   2026-09-10 (RM-072).** It has. `period_building_reports` carries four weekly rows and one
+   monthly row generated from production readings — August 2026 at 90.95 kWh from 21,421 of
+   44,640 expected samples (48% coverage, so the page's own "partial" caveat is the common
+   case rather than the edge one), peak 4,551 W, 127 commands, and the week of 2026-08-31 at
+   46.08 kWh with **100%** coverage. The unit tests were never the doubt; this question was
+   about whether the generator had ever run against real rows, and it has.
+   **Two things the real rows say that the fixtures did not.** The monthly figure agrees to
+   the digit with the legacy `monthly_building_reports` row for the same month — which is
+   exactly the comparison **RM-042** has been waiting for, so RM-042 is no longer blocked. And
+   the anomaly counts are not credible as findings: 2,136 for August and 3,428 for the week of
+   2026-08-31, in a building whose median demand is 105 W. `server/anomalyStats.mjs` already
+   requires z-score and IQR to agree; this says that is still not enough, and a report must
+   qualify that number rather than print it as a headline. Recorded rather than rendered.
 
 10. ~~**Is 16 °C an acceptable aircon setpoint here?**~~ **Answered by building it,
     2026-08-26.** The floor is 25, it lives in `SITE.policy`, and `validateCommand` enforces

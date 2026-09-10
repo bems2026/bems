@@ -4,7 +4,7 @@
   "license": "MIT",
   "private": true,
   "type": "module",
-  "description": "iBEMS web dashboard \u2014 live data via the Node-RED bridge, Supabase-backed history, and audited device control (hardware dispatch gated)",
+  "description": "iBEMS web dashboard — live data via the Node-RED bridge, Supabase-backed history, and audited device control (hardware dispatch gated)",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -58,6 +58,7 @@
     "@supabase/supabase-js": "^2.112.3",
     "@types/three": "^0.185.4",
     "lucide-react": "^1.31.0",
+    "pdfmake": "^0.3.11",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "recharts": "^3.10.1",

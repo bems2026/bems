@@ -129,6 +129,29 @@
   --purple-bright: #8b5cf6;
 
   /**
+   * Sequential ramp — the ONLY ordered scale in this palette, for the reports' day-by-hour
+   * demand heatmap. Every other colour here is categorical: it says which thing, not how much.
+   *
+   * Five steps of one hue rather than a rainbow, because a heat cell is ranked, and a
+   * multi-hue ramp is only rankable by someone who already knows the legend's order. Blue
+   * rather than the amber accent because the accent already means "this building's own
+   * energy" everywhere else in the app, and a scale is not a category.
+   *
+   * These are LIGHTNESS steps, and `charts/palette.test.ts` asserts their luminance is
+   * monotonic — a ramp whose middle step is lighter than its neighbour encodes magnitude as
+   * something the eye cannot rank, and the error is invisible in a swatch strip.
+   *
+   * A heat cell carries no text, and its value is always recoverable from the data table
+   * beside the chart, so these are exempt from the 4.5:1 text bar. Their end-to-end contrast
+   * is asserted instead, which is the property that actually matters for a scale.
+   */
+  --heat-1: #eff6ff;
+  --heat-2: #bfdbfe;
+  --heat-3: #60a5fa;
+  --heat-4: #2563eb;
+  --heat-5: #1e3a8a;
+
+  /**
    * Focus indicator. Deliberately NOT --accent, which is what this was: amber #f59e0b
    * measures 2.15:1 against white and ~1.75:1 against --bg-page, and WCAG 2.2 SC 1.4.11
    * requires 3:1 for a focus indicator against adjacent colour. The one affordance whose
@@ -329,6 +352,17 @@
 
   --purple: #a78bfa; /* 6.9:1 */
   --purple-bright: #c4b5fd; /* 10.2:1 */
+
+  /* The heat ramp INVERTS, it does not merely darken. "More" must read as more ink on paper
+     and as more light on a dark screen; carrying the light theme's ramp across would make an
+     empty hour the loudest cell on the page. Same five steps, same hue, reversed direction —
+     so `--heat-1` stays "least" in both themes and no chart needs to know which theme it is
+     in. Luminance is monotonic here too, and the same test asserts it. */
+  --heat-1: #172554;
+  --heat-2: #1e40af;
+  --heat-3: #3b82f6;
+  --heat-4: #93c5fd;
+  --heat-5: #dbeafe;
 
   --focus-ring: #6690e8; /* = --blue-bright — 6.0:1, and 3:1+ against every surface it sits on */
 
