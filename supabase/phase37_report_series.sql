@@ -136,6 +136,27 @@ as $fn$
 $fn$;
 
 -- ---------------------------------------------------------------------------------------------
+-- A ROW IS NOT AN OBSERVATION.
+--
+-- Found by reading the live project back, and it is the third time this shape of thing has been
+-- found that way. On 2026-08-18 `building_totals` holds 1,414 rows — and every one of them has
+-- `total_power_w` NULL, `avg_voltage` NULL, and the month counter frozen at the previous day's
+-- value. The meters wrote rows; they observed nothing. `server/baselineReport.mjs` already draws
+-- this distinction and reports that day as "nothing observed — no usable total was recorded";
+-- counting rows instead reports it as 98% covered with a confident 0 kWh bar beside it.
+--
+-- So every bucketed function returns BOTH counts:
+--   `sample_count`        rows present — reconciles with phase27's `online_sample_count`,
+--                         which counts the same way, so the two never disagree on screen;
+--   `usable_sample_count` rows carrying a real power reading. THIS is what a chart must use to
+--                         decide observed-versus-gap, and what coverage should be quoted from.
+--
+-- The two are deliberately not collapsed. phase27's stored reports count rows, and quietly
+-- changing what the daily series counts would make the page show two coverage figures for one
+-- period without saying why. Reporting both, and naming which is which, is the honest form.
+-- ---------------------------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------------------------
 -- Daily energy, peak and coverage — one row per local day, gaps included.
 --
 -- ENERGY IS THE DAILY INCREMENT OF THE MONOTONIC MONTH COUNTER, not the daily counter's
@@ -162,6 +183,7 @@ returns table (
   peak_power_w        numeric,
   avg_power_w         numeric,
   sample_count        int,
+  usable_sample_count int,
   expected_samples    int,
   first_seen_minute   int,
   last_seen_minute    int,
@@ -187,13 +209,18 @@ begin
   -- `returns table (…)` declares real PL/pgSQL variables, so a CTE column called
   -- `sample_count` makes every later reference ambiguous — and the error names the line the
   -- reference is on rather than the declaration that shadowed it.
-  with hours_ext (bucket, avg_w_h, max_w_h, month_max, n_obs) as (
-    select b.hour, b.total_power_w_avg, b.total_power_w_max, b.energy_kwh_month_max, b.sample_count
+  with hours_ext (bucket, avg_w_h, max_w_h, month_max, n_obs, n_usable) as (
+    select b.hour, b.total_power_w_avg, b.total_power_w_max, b.energy_kwh_month_max, b.sample_count,
+           -- An hourly bucket does not record how many of its samples carried a power reading.
+           -- A NULL average means none did; otherwise the bucket's own count is the best figure
+           -- available. Stated rather than hidden: this is an upper bound for a rolled-up hour.
+           case when b.total_power_w_avg is null then 0 else b.sample_count end
       from building_totals_hourly b
      where b.hour >= w.win_start - interval '1 day' and b.hour < w.win_end
     union all
     select date_trunc('hour', t.ts),
-           avg(t.total_power_w), max(t.total_power_w), max(t.energy_kwh_month), count(*)::int
+           avg(t.total_power_w), max(t.total_power_w), max(t.energy_kwh_month), count(*)::int,
+           count(*) filter (where t.total_power_w is not null)::int
       from building_totals t
      where t.ts >= w.win_start - interval '1 day' and t.ts < w.win_end
        -- The rollup wins the seam. `phase10_history_archive.sql` explains why an overlap is
@@ -205,14 +232,17 @@ begin
     select (bucket at time zone p_tz)::date as d,
            max(month_max)                   as day_max,
            max(max_w_h)                     as peak_w,
-           sum(avg_w_h * n_obs)
-             / nullif(sum(n_obs) filter (where avg_w_h is not null), 0) as avg_w,
-           sum(n_obs)::int                  as n
+           -- Weighted by USABLE samples, not by rows. An hour holding 40 real readings and 20
+           -- frozen ones is 40 minutes of evidence about demand, not 60.
+           sum(avg_w_h * n_usable)
+             / nullif(sum(n_usable) filter (where avg_w_h is not null), 0) as avg_w,
+           sum(n_obs)::int                  as n,
+           sum(n_usable)::int               as n_use
       from hours_ext
      group by 1
   ),
   incremented as (
-    select d, day_max, peak_w, avg_w, n,
+    select d, day_max, peak_w, avg_w, n, n_use,
            lag(day_max) over (order by d) as prev_max
       from by_day
   ),
@@ -259,6 +289,7 @@ begin
          i.peak_w,
          i.avg_w,
          coalesce(i.n, 0),
+         coalesce(i.n_use, 0),
          -- What a gapless day would have held. The last day of a period still in progress is
          -- judged against the minutes elapsed, not the 1440 it has not reached yet.
          greatest(
@@ -389,10 +420,11 @@ create or replace function public.report_hour_matrix(
 returns table (
   local_day     date,
   local_hour    int,
-  avg_power_w   numeric,
-  max_power_w   numeric,
-  sample_count  int,
-  resolution    text
+  avg_power_w         numeric,
+  max_power_w         numeric,
+  sample_count        int,
+  usable_sample_count int,
+  resolution          text
 )
 language plpgsql
 stable
@@ -414,12 +446,14 @@ begin
 
   return query
   -- Explicit column names, none of them an OUT parameter's — see report_daily_series above.
-  with hours_ext (bucket, avg_w, max_w, n_obs) as (
-    select b.hour, b.total_power_w_avg, b.total_power_w_max, b.sample_count
+  with hours_ext (bucket, avg_w, max_w, n_obs, n_usable) as (
+    select b.hour, b.total_power_w_avg, b.total_power_w_max, b.sample_count,
+           case when b.total_power_w_avg is null then 0 else b.sample_count end
       from building_totals_hourly b
      where b.hour >= w.win_start and b.hour < w.win_end
     union all
-    select date_trunc('hour', t.ts), avg(t.total_power_w), max(t.total_power_w), count(*)::int
+    select date_trunc('hour', t.ts), avg(t.total_power_w), max(t.total_power_w), count(*)::int,
+           count(*) filter (where t.total_power_w is not null)::int
       from building_totals t
      where t.ts >= w.win_start and t.ts < w.win_end
        and not exists (select 1 from building_totals_hourly b2 where b2.hour = date_trunc('hour', t.ts))
@@ -428,7 +462,7 @@ begin
   observed as (
     select (bucket at time zone p_tz)::date              as d,
            extract(hour from bucket at time zone p_tz)::int as h,
-           avg_w, max_w, n_obs
+           avg_w, max_w, n_obs, n_usable
       from hours_ext
   ),
   grid as (
@@ -440,7 +474,7 @@ begin
            ) d,
            generate_series(0, 23) h
   )
-  select grid.d, grid.h, o.avg_w, o.max_w, coalesce(o.n_obs, 0),
+  select grid.d, grid.h, o.avg_w, o.max_w, coalesce(o.n_obs, 0), coalesce(o.n_usable, 0),
          res
     from grid
     left join observed o on o.d = grid.d and o.h = grid.h
@@ -498,7 +532,10 @@ begin
       from building_totals_hourly b
      where b.hour >= w.win_start and b.hour < w.win_end
        and b.total_power_w_avg is not null
-       and not exists (select 1 from building_totals t2 where date_trunc('hour', t2.ts) = b.hour)
+       -- Range, not date_trunc equality: an index on `ts` can serve this and cannot serve a
+       -- function of the column, so the equality form scans building_totals once per bucket.
+       and not exists (select 1 from building_totals t2
+                        where t2.ts >= b.hour and t2.ts < b.hour + interval '1 hour')
   ),
   fractions as (
     select i::numeric / (p_points - 1) as f from generate_series(0, p_points - 1) i
@@ -535,6 +572,7 @@ returns table (
   max_w               numeric,
   min_w               numeric,
   observed_minutes    int,
+  usable_minutes      int,
   expected_minutes    int,
   longest_gap_minutes numeric,
   resolution          text
@@ -574,14 +612,20 @@ begin
    * says which granularity produced it, the same way coverage qualifies every other figure.
    */
   with obs as (
-    select t.ts as start_at, t.ts + interval '1 minute' as end_at, 1 as minutes, t.total_power_w as v
+    select t.ts as start_at, t.ts + interval '1 minute' as end_at, 1 as minutes,
+           case when t.total_power_w is null then 0 else 1 end as usable, t.total_power_w as v
       from building_totals t
      where t.ts >= w.win_start and t.ts < w.win_end
     union all
-    select b.hour, b.hour + interval '1 hour', coalesce(b.sample_count, 0), b.total_power_w_avg
+    select b.hour, b.hour + interval '1 hour', coalesce(b.sample_count, 0),
+           case when b.total_power_w_avg is null then 0 else coalesce(b.sample_count, 0) end,
+           b.total_power_w_avg
       from building_totals_hourly b
      where b.hour >= w.win_start and b.hour < w.win_end
-       and not exists (select 1 from building_totals t2 where date_trunc('hour', t2.ts) = b.hour)
+       -- Range, not date_trunc equality: an index on `ts` can serve this and cannot serve a
+       -- function of the column, so the equality form scans building_totals once per bucket.
+       and not exists (select 1 from building_totals t2
+                        where t2.ts >= b.hour and t2.ts < b.hour + interval '1 hour')
   ),
   samples as (
     select v from obs where v is not null
@@ -601,7 +645,9 @@ begin
   bounded as (
     select w.win_start as start_at, w.win_start as end_at
     union all
-    select start_at, end_at from obs
+    -- Only a USABLE observation closes a gap. A run of rows carrying nothing but a frozen
+    -- counter is exactly as dark as no rows at all, and 2026-08-18 is 1,414 of them.
+    select start_at, end_at from obs where usable > 0
     union all
     select least(w.win_end, now()), least(w.win_end, now())
   ),
@@ -617,10 +663,12 @@ begin
          (select max(v) from samples),
          (select min(v) from samples),
          (select coalesce(sum(minutes), 0)::int from obs),
+         (select coalesce(sum(usable), 0)::int from obs),
          w.expected_minutes,
          -- NULL, never 0, when nothing at all was observed: at that point the gap is the whole
          -- window and calling it zero would be the most reassuring possible way to report it.
-         (select case when (select count(*) from obs) = 0 then null else max(gap_min)::numeric end from gaps),
+         (select case when (select count(*) from obs where usable > 0) = 0 then null
+                       else max(gap_min)::numeric end from gaps),
          res;
 end;
 $fn$;

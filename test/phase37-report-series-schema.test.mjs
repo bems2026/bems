@@ -108,7 +108,32 @@ test('longest_gap_minutes is NULL rather than 0 when nothing at all was observed
   // At that point the gap is the whole window, and calling it zero would be the most
   // reassuring possible way to report an outage nobody can see any more.
   const body = bodyOf('report_demand_summary');
-  assert.match(body, /count\(\*\)\s*from obs\)\s*=\s*0\s+then null/i);
+  // "nothing observed" means nothing USABLE was observed — a run of rows carrying only a
+  // frozen counter is exactly as dark as no rows at all.
+  assert.match(body, /count\(\*\) from obs where usable > 0\)\s*=\s*0\s+then null/i);
+});
+
+test('a row is not an observation, and the two counts are reported separately', () => {
+  // Found by reading the live project back. On 2026-08-18 `building_totals` holds 1,414 rows and
+  // every one has `total_power_w` NULL with the month counter frozen at the previous day's
+  // value: the meters wrote rows, they observed nothing. `server/baselineReport.mjs` already
+  // draws the distinction and calls that day "nothing observed"; counting rows instead reports
+  // it as 98% covered with a confident 0 kWh bar beside it.
+  //
+  // The two counts are deliberately NOT collapsed into one. phase27's stored reports count rows,
+  // so quietly changing what the series counts would put two coverage figures for one period on
+  // the same page without saying why.
+  for (const fn of ['report_daily_series', 'report_hour_matrix']) {
+    const body = bodyOf(fn);
+    assert.match(body, /sample_count\s+int,/i, `${fn} keeps the row count`);
+    assert.match(body, /usable_sample_count\s+int/i, `${fn} must also report usable samples`);
+    assert.match(body, /filter \(where t\.total_power_w is not null\)/i, `${fn} counts real readings`);
+    assert.match(body, /when b\.total_power_w_avg is null then 0/i, `${fn} treats an empty bucket as unusable`);
+  }
+  const sum = bodyOf('report_demand_summary');
+  assert.match(sum, /usable_minutes\s+int/i);
+  // Only a usable observation closes a gap — otherwise a run of frozen rows shortens an outage.
+  assert.match(sum, /from obs where usable > 0/i);
 });
 
 test('the longest gap is bounded by the window, not by the first observation in it', () => {
@@ -212,6 +237,18 @@ test('the duration curve returns a fixed row count and bounds its own argument',
 });
 
 // --- the seam and the timezone ----------------------------------------------------------------
+
+test('the seam guard is sargable in the direction that scans', () => {
+  // `date_trunc('hour', t2.ts) = b.hour` cannot use the index on `ts`, so it rescans
+  // building_totals once per hourly bucket. The opposite direction is fine and stays:
+  // `b2.hour = date_trunc('hour', t.ts)` is an index lookup on a primary key, computed once
+  // per raw row.
+  assert.equal(
+    /from building_totals t2 where date_trunc\('hour', t2\.ts\) = b\.hour/i.test(sql),
+    false,
+    'a seam guard on building_totals must be a range on ts, not a function of it'
+  );
+});
 
 test('the rollup wins the raw/hourly seam everywhere the two are unioned', () => {
   // An overlap is possible while a rollup pass is mid-flight; counting an hour twice is worse

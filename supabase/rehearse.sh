@@ -999,6 +999,69 @@ begin
 
   raise notice 'phase37: all assertions passed';
 end $$;
+
+-- ---- phase37: a row is not an observation ---------------------------------------------------
+--
+-- The fixtures above have no rows that carry nothing, so they cannot exercise the distinction
+-- that reading the live project turned up: on 2026-08-18 `building_totals` held 1,414 rows with
+-- `total_power_w` NULL and the month counter frozen at the previous day's value. The meters
+-- wrote rows; they observed nothing. Counting rows reports that day as 98% covered with a
+-- confident 0 kWh bar beside it, which is the most quotable figure in the document and the least
+-- true. This block seeds that exact shape.
+do $$
+declare
+  rows_n  int;
+  usable  int;
+  v       numeric;
+begin
+  -- 2026-06-20 is dark in every fixture above. Fill it with the frozen signature: real rows,
+  -- real timestamps, no power, no voltage, and a counter that does not move.
+  insert into building_totals (ts, site_id, energy_kwh_today, energy_kwh_week, energy_kwh_month,
+                               total_power_w, avg_voltage, phase_current_red,
+                               phase_current_yellow, phase_current_blue)
+  select timestamptz '2026-06-19 16:00:00+00' + (n || ' minutes')::interval,
+         'mmsu-nberic-care', 14, 14, 14, null, null, null, null, null
+    from generate_series(0, 599) n
+  on conflict (ts) do nothing;
+
+  select sample_count, usable_sample_count
+    into rows_n, usable
+    from report_daily_series('month', date '2026-06-01', 'Asia/Manila')
+   where local_day = date '2026-06-20';
+
+  assert rows_n = 600,
+    format('usable: the day holds 600 rows, got sample_count %s', rows_n);
+  assert usable = 0,
+    format('usable: none of those rows carries a reading, expected usable_sample_count 0, got %s', usable);
+
+  -- And the figures that depend on a reading stay absent rather than becoming zero.
+  select peak_power_w into v from report_daily_series('month', date '2026-06-01', 'Asia/Manila')
+   where local_day = date '2026-06-20';
+  assert v is null, format('usable: a day with no readings has no peak, got %s', v);
+  select avg_power_w into v from report_daily_series('month', date '2026-06-01', 'Asia/Manila')
+   where local_day = date '2026-06-20';
+  assert v is null, format('usable: a day with no readings has no average, got %s', v);
+
+  -- The matrix agrees, cell by cell.
+  select sum(sample_count)::int, sum(usable_sample_count)::int into rows_n, usable
+    from report_hour_matrix('month', date '2026-06-01', 'Asia/Manila')
+   where local_day = date '2026-06-20';
+  assert rows_n = 600 and usable = 0,
+    format('usable: the matrix should show 600 rows and 0 usable for that day, got %s and %s', rows_n, usable);
+
+  -- ONLY A USABLE OBSERVATION CLOSES A GAP. Dropping 600 rows carrying nothing into the middle
+  -- of a dark stretch must not shorten it — that is the whole point, and it is the shape that
+  -- made 2026-08-18 look like a well-covered day.
+  select observed_minutes, usable_minutes into rows_n, usable
+    from report_demand_summary('month', date '2026-06-01', 'Asia/Manila');
+  assert rows_n > usable,
+    format('usable: %s observed minutes against %s usable — the frozen rows are not being told apart', rows_n, usable);
+  select longest_gap_minutes into v from report_demand_summary('month', date '2026-06-01', 'Asia/Manila');
+  assert v > 20000,
+    format('usable: rows carrying nothing must not close the gap, got %s', v);
+
+  raise notice 'phase37: a row is not an observation — assertions passed';
+end $$;
 SQL
 
 echo

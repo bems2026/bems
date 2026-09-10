@@ -7,7 +7,7 @@ it would be operator-editable device names. The pdfmake spike is the part worth 
 findings that each cost an afternoon and none of which are in anybody's documentation. The print
 palette's new on-white assertion rejected `--accent` on its first run, and two of that test's own
 first assertions turned out to be measuring the wrong thing and passing. **§5 Q9 is answered by
-measurement and struck**, which also unblocks **RM-042**. `phase37_report_series.sql` is applied, and **reading it back against the live project found three more defects, all of which under-reported an outage** — see RM-072f, which has to be re-applied. The one worth leading with: the longest gap read NINE MINUTES for a month that was dark for sixteen days.
+measurement and struck**, which also unblocks **RM-042**. `phase37_report_series.sql` is applied, and **reading it back against the live project found four defects, every one of which made the building look better observed than it was** — see RM-072f and RM-072g. The one worth leading with is not in the new code at all: **the Reports page has been overstating its own coverage.** August 2026 reads 48%, and only **26.9%** of its expected minutes carry a real reading — 9,415 of the 21,421 "observed" samples are rows the meters wrote while observing nothing. Correcting the stored figure is **RM-073**, and it is a decision about restating published history rather than a task.
 
 **Previously audited:** 2026-09-10 — **RM-070 and RM-071**. RM-071 is a UI/UX overhaul of the
 Automation page: rules now read as IF/THEN blocks, and auditing for it turned up a one-character CSS
@@ -3150,6 +3150,64 @@ emission factor carrying provenance. What has landed:
       length, and that `report_resolution` appears exactly once per function; `supabase/rehearse.sh`
       asserts all three resolution states plus NULL, and that the longest gap exceeds 20,000
       minutes — the trailing dark stretch, which the old expression could not see.
+
+
+- [x] **RM-072g — a row is not an observation, and the Reports page has been overstating its own
+      coverage.** The fourth thing the live read-back turned up, and the only one that is a defect
+      in a SHIPPED feature rather than in new code.
+
+      **What it looks like.** `report_daily_series` reported 2026-08-18 as **1,414 samples,
+      0 kWh, no peak** — a day that is 98% covered and used no electricity. `building_totals`
+      does hold 1,414 rows for that day, and **every one of them has `total_power_w` NULL,
+      `avg_voltage` NULL, and `energy_kwh_month` frozen** at the previous day's value. The meters
+      wrote rows on schedule; they observed nothing. `server/baselineReport.mjs` already draws
+      this distinction and reports that day as *"nothing observed — no usable total was
+      recorded"*. Nothing else in the system does.
+
+      **Measured on the live project, August 2026:**
+
+      | | rows | usable | coverage |
+      |---|---|---|---|
+      | August 2026 | 21,421 | **12,006** | 48.0% → **26.9%** |
+      | week of 2026-08-31 | 10,080 | 10,029 | 100.0% → 99.5% |
+
+      9,415 of August's 21,421 "observed" samples — **44% of them** — carry no reading. The
+      Reports page renders coverage beside every figure precisely so that a barely-observed month
+      can never quote a bare total, and that coverage figure is itself overstated by 21 points.
+      A healthy week is barely affected, which is why this has never looked wrong.
+
+      **What changed here.** phase37's bucketed functions return BOTH counts —
+      `sample_count` (rows, which reconciles with phase27 so the page never shows two coverage
+      figures without saying why) and `usable_sample_count` (rows carrying a real reading, which
+      is what a chart must use to decide observed-versus-gap). `report_demand_summary` gains
+      `usable_minutes`, and **only a usable observation closes a gap**: 600 rows of frozen
+      counter dropped into the middle of a dark stretch must not shorten it. The daily average is
+      weighted by usable samples too — an hour holding 40 real readings and 20 frozen ones is 40
+      minutes of evidence about demand, not 60.
+
+      **What has NOT changed, and is a decision rather than a task.** `generate_period_report`
+      (phase27) still counts rows as `online_sample_count`, so the stored reports and the figure
+      on the page are unchanged. Correcting it would rewrite every stored coverage figure in the
+      database, including months already reported upward, and would move some months across the
+      50% band boundary between "partial" and "sparse" — which is the boundary `isQuotable`
+      uses to decide whether a total may be shown without a caveat. That is worth doing and it is
+      **RM-073**, not a side effect of this one.
+
+      Guarded in both places: `test/phase37-report-series-schema.test.mjs` asserts both counts
+      exist and that only a usable observation closes a gap; `supabase/rehearse.sh` seeds 600 rows
+      of the exact frozen signature into a dark day and asserts the day reports 600 rows, 0
+      usable, no peak, no average, and a gap that does not shorten.
+
+- [ ] **RM-073 (M)** — Correct `generate_period_report`'s `online_sample_count` to count usable
+      observations rather than rows, and regenerate. **Blocked on a decision, not on code.**
+      RM-072g measured what it would change: August 2026's stored coverage moves 48.0% → 26.9%.
+      Regenerating rewrites every stored coverage figure, including for months that have already
+      been reported to the university, and some months will cross the 50% boundary that
+      `isQuotable` uses to decide whether a total may be quoted without a caveat — so figures that
+      are currently shown bare would acquire a "(partial month)" qualifier. That is the correct
+      direction and it is still a change to published history. What it needs first: a decision on
+      whether to restate, and if so a note in the report itself saying that coverage before a
+      given date was computed differently. Do NOT do this quietly.
 
 
 ### How the Automation page READS — RM-071 (2026-09-10)
