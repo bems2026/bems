@@ -3334,6 +3334,61 @@ emission factor carrying provenance. What has landed:
       rather than quietly splitting the difference.
 
 
+- [x] **RM-072m — the client layer and the charts on the page.** `src/lib/reportSeries.ts` reads
+      phase37's five functions, every call through `assertNotTruncated` against that function's own
+      bounded row count — these cannot legitimately hit a cap, so hitting one means the answer was
+      cut, and a cut series draws a complete-looking chart. `p_tz` is passed explicitly from
+      `SITE.timezone` rather than left to the SQL default: the client and the query have to agree
+      about what a day is.
+
+      **The mappers are where the distinction either survives or is quietly lost.** Every bucketed
+      row carries `sample_count` (rows) and `usable_sample_count` (rows holding a real reading);
+      2026-08-18 has 1,414 of the first and zero of the second. `toDailyPoints` takes `observed`
+      from the second and defers to `coverageOf` for where "complete" begins, so the chart and the
+      figures printed beside it are qualified by one threshold rather than two. `toHeatCells`
+      blanks a cell whose samples carried nothing **and** one whose average is null — belt and
+      braces, and where the two disagree the absent number wins.
+
+      **`ChartFigure` makes a chart a document element rather than a picture.** `Sparkline` is
+      `aria-hidden` and that is right for what it is; a heatmap has no numeric stat beside it, so
+      hiding it removes the finding instead of de-duplicating it. The scene names itself
+      (`role="img"` + `<title>`/`<desc>`), and every chart carries its own numbers in a collapsed
+      table — the only form in which an exact figure can be read off, and the only one where a
+      missing value is visibly an em dash rather than an absence in a drawing.
+      One defect found while testing it: the visible caption repeated the scene's `<desc>` word
+      for word, so a screen reader read the same sentence twice. It is `aria-hidden` when it
+      duplicates, exposed when a caller supplies something the chart cannot know.
+
+      **`PeriodPicker`** replaces the pill row. RM-041's buttons were right for the two months
+      that existed then and do not survive their own query — `getReportPeriods` fetches up to 240
+      months or **520 weeks**. The buttons stay to fourteen and a year-grouped select takes over
+      past it.
+
+      **And the CSV defect is fixed**: `exportCsv` computed `period` and then dropped it, because
+      it was absent from `DEVICE_CSV_COLUMNS` — so a weekly export's rows were headed "Month" and
+      held a Monday. The filename disambiguated them; the file's contents did not.
+
+      **Two pre-existing guards caught real faults in this work, both about replication.**
+      `test/device-ids-in-frontend.test.mjs` refused the untracked-energy calculation, which named
+      `mtr_co_yellow` and `/^co\d$/` inline — every one of those literals is a promise the next
+      building has the same wiring, the promise FI-017 and RM-033 exist to stop the frontend
+      making. It is `src/lib/circuitBreakdown.ts` now, deriving the shape from the circuit tree:
+      segments come from `BUILDING_METER_IDS`, which is the same derived constant
+      `shared/buildLatest.mjs` sums to produce the building total, so the chart and the figure
+      above it cannot disagree about which meters make the whole; sub-meters come from each
+      device's own `branch_circuit`. A branch with no metered children is never flagged as
+      unattributed — nothing was claiming to account for it, and flagging it would flag correct
+      wiring.
+      `test/css-touch-targets.test.mjs` refused a second `@media (pointer: coarse)` block: it
+      reads *the* block, so a second one silently takes the place of the one that covers every
+      other control. The two new controls joined the canonical list instead — which is the single-
+      block invariant RM-071a's stray comma broke app-wide.
+
+      Still to come before this is a document: the report-type tabs and the other three reports,
+      then the PDF. **Not yet seen signed-in in a browser** — the charts have been rendered from
+      live data and read back, but the page itself has only been exercised under test.
+
+
 - [ ] **RM-073 (M)** — Correct `generate_period_report`'s `online_sample_count` to count usable
       observations rather than rows, and regenerate. **Blocked on a decision, not on code.**
       RM-072g measured what it would change: August 2026's stored coverage moves 48.0% → 26.9%.

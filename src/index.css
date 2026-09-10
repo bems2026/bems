@@ -6287,6 +6287,89 @@ body::before {
   color: var(--bad);
 }
 
+/* Report charts — RM-072. Only the genuinely page-specific pieces, per CLAUDE.md: the table
+   inside each figure is `.devices-table`, the coverage badges are `.badge--*`, and the surface
+   is `.devices-table-card`'s, because a chart is not a new kind of card. */
+.report-charts {
+  display: grid;
+  gap: var(--sp-4);
+  margin-top: var(--sp-4);
+}
+
+.report-chart {
+  margin: 0;
+  padding: var(--sp-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+}
+
+/* The scene sizes itself from its own viewBox and scales to the column. `overflow-x: auto`
+   rather than a squeeze: a heatmap compressed below its cell size stops being readable, and a
+   chart that has to scroll is better than one that has quietly become a smear. */
+.report-chart__plot {
+  overflow-x: auto;
+}
+
+.report-chart__plot svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-width: 460px;
+}
+
+.report-chart__caption {
+  margin-top: var(--sp-2);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+
+/* Collapsed by default, so it costs a sighted reader nothing — but it is the only form in which
+   an exact figure can be read off, and the only one where a missing value is visibly an em dash
+   rather than an absence in a drawing. */
+.report-chart__data {
+  margin-top: var(--sp-2);
+}
+
+.report-chart__data > summary {
+  cursor: pointer;
+  color: var(--muted-2);
+  font-size: var(--fs-xs);
+  /* The 44px coarse-pointer floor is applied with every other control's, in the one block
+     `test/css-touch-targets.test.mjs` checks. */
+  padding: var(--sp-2) 0;
+  min-height: 24px;
+}
+
+.report-chart__data[open] > summary {
+  margin-bottom: var(--sp-2);
+}
+
+/* The period picker's select form, for when the pill row would run past two lines. */
+.reports-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.reports-picker__label {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.reports-picker__select {
+  min-height: 36px;
+  padding: 0 var(--sp-2);
+  background: var(--bg-surface);
+  color: var(--txt);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+
+
 /* ============================================================================
    Narrow screens — page header actions
    The header is a two-part flex row: a title block and an actions block. Above
@@ -8330,6 +8413,13 @@ button.space-plan__pin {
   /* The panel chrome RM-059 introduced, and the fleet control that adds hardware. */
   .overlay-panel__close,
   .devices-add-btn,
+  /* RM-072: the disclosure that opens a chart's own numbers, and the period select that
+     replaces the pill row once it would run past two lines. Both are real controls on the
+     kiosk, and both belong HERE rather than in a second coarse-pointer block of their own —
+     a second block is what `css-touch-targets.test.mjs` reads instead of this one, so the
+     controls above silently stop being checked. */
+  .report-chart__data > summary,
+  .reports-picker__select,
   /* RM-071: a 30x30 icon button that DELETES a schedule rule, on a touchscreen. Square and in
      normal flow beside the arm switch, so it grows rather than needing a hit-area expander —
      the switch's own expander is 44 wide and the row's 8px gap keeps them from cross-talking. */

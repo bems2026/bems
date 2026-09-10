@@ -16,6 +16,20 @@ import {
   type ReportPeriod,
   type PeriodDeviceReport,
 } from '@/lib/supabaseReports';
+import {
+  getDailySeries,
+  getDemandCurve,
+  getHourMatrix,
+  getHourProfile,
+  type CurveRow,
+  type DailyRow,
+  type HourRow,
+  type MatrixRow,
+} from '@/lib/reportSeries';
+import { fetchScheduleContext } from '@/lib/supabaseConfig';
+import { PeriodPicker } from './PeriodPicker';
+import { ReportCharts } from './ReportCharts';
+import { buildBreakdown } from '@/lib/circuitBreakdown';
 
 /**
  * Energy reports, weekly or monthly — Phase 12, generalised by RM-041.
@@ -70,7 +84,11 @@ function Figure({ value, unit, digits = 1, coverage }: { value: number | null; u
 }
 
 const DEVICE_CSV_COLUMNS: readonly CsvColumn<Record<string, unknown>>[] = [
-  { key: 'month', header: 'Month' },
+  // `period` used to be computed in `exportCsv` and then dropped on the floor, because it was
+  // absent from this list — so a weekly export's rows were headed "Month" and held a Monday.
+  // The filename disambiguated them; the file's own contents did not.
+  { key: 'period', header: 'Period' },
+  { key: 'month', header: 'Period start' },
   { key: 'device_id', header: 'Device ID' },
   { key: 'device_name', header: 'Device' },
   { key: 'energy_kwh', header: 'Energy (kWh)' },
@@ -109,6 +127,24 @@ export function ReportsPage() {
    */
   const [fetched, setFetched] = useState<{ period: ReportPeriod; month: string; rows: PeriodDeviceReport[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * phase37's series, behind the charts. Tagged with the period and start they were fetched for,
+   * exactly like `fetched` above and for the same reason: a result for another month is not a
+   * result for this one, and rendering it under this month's heading would be worse than
+   * rendering nothing.
+   */
+  const [series, setSeries] = useState<
+    | {
+        period: ReportPeriod;
+        start: string;
+        daily: DailyRow[];
+        hours: HourRow[];
+        matrix: MatrixRow[];
+        curve: CurveRow[];
+        ceilingW: number | null;
+      }
+    | null
+  >(null);
 
   const nameOf = useCallback(
     (id: string) => devices.find((d) => d.id === id)?.display_name ?? id,
@@ -143,9 +179,42 @@ export function ReportsPage() {
     };
   }, [period, selected]);
 
+  useEffect(() => {
+    if (!supabase || !selected) return;
+    let cancelled = false;
+    Promise.all([
+      getDailySeries(period, selected),
+      getHourProfile(period, selected),
+      getHourMatrix(period, selected),
+      getDemandCurve(period, selected),
+      // The DSM ceiling the duration curve is drawn against. Read from the same row the
+      // Automation page writes, so the chart cannot disagree with the page that sets it.
+      fetchScheduleContext().then((ctx) => {
+        const kw = Number(ctx['global.dsm.max_total_kw']);
+        return Number.isFinite(kw) && kw > 0 ? kw * 1000 : null;
+      }),
+    ])
+      .then(([daily, hours, matrix, curve, ceilingW]) => {
+        if (!cancelled) setSeries({ period, start: selected, daily, hours, matrix, curve, ceilingW });
+      })
+      .catch((err) => !cancelled && setError(String(err)));
+    return () => {
+      cancelled = true;
+    };
+  }, [period, selected]);
+
   // Tagged with the PERIOD as well as the start, so week 2026-06-01's rows are never rendered
   // under month 2026-06-01's heading — the two are different reports that share a first day.
   const rows = fetched && fetched.month === selected && fetched.period === period ? fetched.rows : null;
+  const live = series && series.period === period && series.start === selected ? series : null;
+
+  /**
+   * The breakdown, derived from the circuit tree rather than from device names. Which meters
+   * make the whole is `BUILDING_METER_IDS` — the same derived constant `shared/buildLatest.mjs`
+   * sums to produce the building total — so the chart and the figure printed above it cannot
+   * disagree. See `src/lib/circuitBreakdown.ts` for why none of it is written here.
+   */
+  const { segments, untracked } = useMemo(() => buildBreakdown(rows ?? [], nameOf), [rows, nameOf]);
 
   const building = useMemo(
     () => months?.find((m) => m.period_start.slice(0, 10) === selected) ?? null,
@@ -237,22 +306,12 @@ export function ReportsPage() {
       </div>
 
       {months && months.length > 0 ? (
-        <div className="reports-months" role="group" aria-label={period === 'week' ? 'Report week' : 'Report month'}>
-          {months.map((m) => {
-            const key = m.period_start.slice(0, 10);
-            return (
-              <button
-                key={key}
-                type="button"
-                className={`analytics-scope-btn${selected === key ? ' analytics-scope-btn--active' : ''}`}
-                aria-pressed={selected === key}
-                onClick={() => setSelected(key)}
-              >
-                {formatPeriod(period, key)}
-              </button>
-            );
-          })}
-        </div>
+        <PeriodPicker
+          period={period}
+          starts={months.map((m) => m.period_start.slice(0, 10))}
+          selected={selected}
+          onSelect={setSelected}
+        />
       ) : null}
 
       {building ? (
@@ -297,6 +356,20 @@ export function ReportsPage() {
             </div>
           </dl>
         </section>
+      ) : null}
+
+      {live && selected ? (
+        <ReportCharts
+          period={period}
+          start={selected}
+          daily={live.daily}
+          hours={live.hours}
+          matrix={live.matrix}
+          curve={live.curve}
+          segments={segments}
+          untracked={untracked}
+          ceilingW={live.ceilingW}
+        />
       ) : null}
 
       {rows && rows.length > 0 ? (
