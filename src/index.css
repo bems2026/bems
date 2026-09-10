@@ -4399,18 +4399,26 @@ body::before {
    means it appearing/disappearing changes this block's WIDTH, not its height, so it can
    never misalign the header band the way the old stacked layout did. */
 /*
- * The tab strip sits INSIDE the page header now, beside Save changes, so Automation's primary
- * controls are where every other page puts them. Two overrides are all it needs:
+ * A tab strip sitting INSIDE a page header, beside that page's actions.
  *
- * `margin-bottom: 0` — `.tabs` carries 16px for its old life as a full-width strip above the
- * content. In a header row that margin is just a bottom-heavy control.
+ * SCOPED BY ANCESTOR, NOT BY PAGE, and not by source order — this is the fix for a real
+ * misalignment. The first version of this rule was `.automation-tabs { margin-bottom: 0 }`,
+ * which never applied: `.tabs` and `.automation-tabs` are both single-class selectors, so they
+ * tie on specificity and the LATER one wins — and `.tabs` is 300 lines further down this file.
+ * The strip kept its 16px bottom margin, which inflated its flex box to 61px, set the height of
+ * `.page-header__actions`, and left the tabs sitting 8px above the save button's centre. Two
+ * controls in one header band, visibly out of line, from a rule that looked correct.
  *
- * `min-width: 0` — without it the strip's four tabs set a floor on the header's width and the
- * actions row cannot shrink, which is the exact failure `.page-header__actions` documents at
- * length (a row that refuses to shrink gets CLIPPED rather than scrolled). `.tabs` already has
+ * `.page-header__actions .tabs` is (0,2,0) so it cannot lose that tie, it is order-independent
+ * if either block moves, and it says the true condition: a tab strip in a header row behaves
+ * differently from one above the content. Any page that adopts this layout inherits it.
+ *
+ * `min-width: 0` — without it the four tabs set a floor on the header's width and the actions
+ * row cannot shrink, which is the exact failure `.page-header__actions` documents at length (a
+ * row that refuses to shrink gets CLIPPED rather than scrolled). `.tabs` already has
  * `overflow-x: auto`, so once it may shrink it scrolls its own tabs instead.
  */
-.automation-tabs {
+.page-header__actions .tabs {
   margin-bottom: 0;
   min-width: 0;
   flex: 0 1 auto;
@@ -4428,7 +4436,7 @@ body::before {
  * being cut away.
  */
 @media (max-width: 720px) {
-  .automation-tabs {
+  .page-header__actions .tabs {
     mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
     -webkit-mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
   }
