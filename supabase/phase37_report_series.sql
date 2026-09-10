@@ -30,7 +30,29 @@
 -- `phase35_policy_room_target.sql`, which IS definer — it writes one key of a row nobody may
 -- update, and that is a different job.
 --
--- SAFE TO RE-RUN: every function is `create or replace`.
+-- SAFE TO RE-RUN, AND THAT TAKES MORE THAN `create or replace`.
+--
+-- `create or replace function` CANNOT change a function's OUT parameters — Postgres refuses with
+-- `42P13: cannot change return type of existing function`, because the row type the function
+-- returns is part of its identity. RM-072g added `usable_sample_count` to two of these and
+-- `usable_minutes` to a third, and re-applying the file against a database that already held the
+-- earlier shapes failed on exactly that.
+--
+-- So every function is dropped by explicit signature first. That is what makes this file
+-- idempotent across a SHAPE change and not merely across a body change — which is the only kind
+-- of re-run that matters here, since migrations are pasted by hand and the reason to paste one
+-- twice is usually that it changed.
+--
+-- Deliberately not CASCADE. Nothing depends on these functions today, and if something ever
+-- does, the right outcome is an error naming it rather than its silent removal.
+
+drop function if exists public.report_window(text, date, text);
+drop function if exists public.report_resolution(timestamptz, timestamptz);
+drop function if exists public.report_daily_series(text, date, text);
+drop function if exists public.report_hour_profile(text, date, text, text);
+drop function if exists public.report_hour_matrix(text, date, text);
+drop function if exists public.report_demand_curve(text, date, text, int);
+drop function if exists public.report_demand_summary(text, date, text);
 
 -- ---------------------------------------------------------------------------------------------
 -- The window. Extracted so that nothing re-derives it.

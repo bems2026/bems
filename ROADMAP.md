@@ -7,7 +7,7 @@ it would be operator-editable device names. The pdfmake spike is the part worth 
 findings that each cost an afternoon and none of which are in anybody's documentation. The print
 palette's new on-white assertion rejected `--accent` on its first run, and two of that test's own
 first assertions turned out to be measuring the wrong thing and passing. **§5 Q9 is answered by
-measurement and struck**, which also unblocks **RM-042**. `phase37_report_series.sql` is applied, and **reading it back against the live project found four defects, every one of which made the building look better observed than it was** — see RM-072f and RM-072g. The one worth leading with is not in the new code at all: **the Reports page has been overstating its own coverage.** August 2026 reads 48%, and only **26.9%** of its expected minutes carry a real reading — 9,415 of the 21,421 "observed" samples are rows the meters wrote while observing nothing. Correcting the stored figure is **RM-073**, and it is a decision about restating published history rather than a task.
+measurement and struck**, which also unblocks **RM-042**. `phase37_report_series.sql` is applied, and **reading it back against the live project found four defects, every one of which made the building look better observed than it was** — see RM-072f and RM-072g. The one worth leading with is not in the new code at all: **the Reports page has been overstating its own coverage.** August 2026 reads 48%, and only **26.9%** of its expected minutes carry a real reading — 9,415 of the 21,421 "observed" samples are rows the meters wrote while observing nothing. Correcting the stored figure is **RM-073**, and it is a decision about restating published history rather than a task. Applying the fixes then turned up **RM-072h**: `create or replace` cannot change a function's OUT parameters, and `rehearse.sh` had only ever proved each migration against an EMPTY database — the one case a hand-applied migration never meets twice.
 
 **Previously audited:** 2026-09-10 — **RM-070 and RM-071**. RM-071 is a UI/UX overhaul of the
 Automation page: rules now read as IF/THEN blocks, and auditing for it turned up a one-character CSS
@@ -3197,6 +3197,31 @@ emission factor carrying provenance. What has landed:
       exist and that only a usable observation closes a gap; `supabase/rehearse.sh` seeds 600 rows
       of the exact frozen signature into a dark day and asserts the day reports 600 rows, 0
       usable, no peak, no average, and a gap that does not shorten.
+
+- [x] **RM-072h — `create or replace` is not enough, and the rehearsal had been proving the one
+      case that never happens twice.** Re-applying phase37 after RM-072g added a column failed in
+      the SQL editor with `42P13: cannot change return type of existing function`. A function's
+      OUT parameters are part of its identity, so `create or replace` can change a body and never
+      a shape.
+
+      **The gap this exposed is in the rehearsal, not just the file.** `rehearse.sh` applies every
+      migration to an EMPTY database, which proves each file works on a fresh install — and a
+      hand-applied migration gets pasted a second time precisely *because* it changed, so applying
+      to an empty database is the one situation that never occurs twice. Three rounds of read-back
+      fixes were re-applied by hand and none of them was ever rehearsed as a re-application.
+
+      Every function is now dropped by explicit signature before it is created, so the file is
+      idempotent across a SHAPE change and not merely across a body change. Deliberately not
+      `cascade`: nothing depends on these today, and if something ever does, an error naming it
+      beats its silent removal.
+
+      The rehearsal now puts a deliberately wrong-shaped `report_daily_series` in the way — same
+      name, same argument types, different OUT columns, exactly what an earlier version of the
+      file left behind — and re-applies over it, then applies again unchanged. That is the case
+      that broke, reproduced. `test/phase37-report-series-schema.test.mjs` asserts a drop exists
+      for every function and that none of them uses `cascade`, so a function added later without
+      one fails before it reaches a database.
+
 
 - [ ] **RM-073 (M)** — Correct `generate_period_report`'s `online_sample_count` to count usable
       observations rather than rows, and regenerate. **Blocked on a decision, not on code.**

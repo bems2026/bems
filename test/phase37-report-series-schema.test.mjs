@@ -300,10 +300,23 @@ test('every series function reports what resolution its numbers were computed at
 
 // --- re-runnability ---------------------------------------------------------------------------
 
-test('every function is create-or-replace, so the file is safe to paste twice', () => {
-  // Migrations here are applied by hand into a SQL editor. "Did that one already run?" is a
-  // question this file must never make expensive.
+test('the file is safe to paste twice even after a signature changes', () => {
+  // Migrations here are applied by hand into a SQL editor, and the reason to paste one twice is
+  // usually that it changed. `create or replace` is not enough on its own: it CANNOT change a
+  // function's OUT parameters, and refuses with 42P13 "cannot change return type of existing
+  // function". Adding `usable_sample_count` in RM-072g hit exactly that against a database
+  // holding the earlier shape. Every function is therefore dropped by explicit signature first.
   assert.equal((sql.match(/create or replace function/gi) ?? []).length, FUNCTIONS.length);
+  for (const fn of FUNCTIONS) {
+    assert.match(
+      sql,
+      new RegExp(`drop function if exists public\\.${fn}\\(`, 'i'),
+      `${fn} must be dropped before it is recreated, or a shape change cannot be re-applied`
+    );
+  }
+  // CASCADE would take dependent objects with it silently. An error naming them is the better
+  // outcome, so the drops are deliberately plain.
+  assert.equal(/drop function[^;]*cascade/i.test(sql), false);
   assert.equal(/create table/i.test(sql), false, 'phase37 adds no tables; it is read-only');
 });
 

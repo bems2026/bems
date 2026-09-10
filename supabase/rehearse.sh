@@ -93,6 +93,31 @@ for f in "$HERE/schema.sql" $(ls "$HERE"/phase*.sql | sort -V); do
   echo "ok"
 done
 
+# RE-APPLYING PHASE37 OVER A DIFFERENT SHAPE.
+#
+# The loop above proves every file applies to an EMPTY database. That is not the case that broke:
+# phase37 was applied, then gained a column, and re-applying it failed with
+# `42P13: cannot change return type of existing function` — because `create or replace` cannot
+# change a function's OUT parameters. A hand-applied migration gets pasted twice precisely when
+# it has changed, so applying to an empty database is the one situation that never happens twice.
+#
+# This puts a deliberately wrong-shaped function in the way and re-applies the file over it.
+echo "== re-applying phase37 over an older function shape =="
+psql <<'SQL' >/dev/null
+drop function if exists public.report_daily_series(text, date, text);
+-- Same name and argument types, different OUT columns: exactly what an earlier version of the
+-- file left behind, and what `create or replace` alone refuses to overwrite.
+create function public.report_daily_series(p_period text, p_start date, p_tz text)
+returns table (local_day date, something_else int)
+language sql stable as $stub$ select null::date, null::int $stub$;
+SQL
+psql < "$HERE/phase37_report_series.sql" >/dev/null
+echo "   ok — a shape change re-applies cleanly"
+
+# And plainly twice in a row, which is the ordinary case.
+psql < "$HERE/phase37_report_series.sql" >/dev/null
+echo "   ok — and again, unchanged"
+
 echo "== seeding =="
 psql <<'SQL'
 insert into devices (id, display_name, class) values
