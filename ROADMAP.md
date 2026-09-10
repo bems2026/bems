@@ -3490,6 +3490,12 @@ emission factor carrying provenance. What has landed:
       which 7 complete** — eleven and not sixteen, because five of August's days hold rows the
       meters wrote while observing nothing.
 
+      **DEPLOYED to the Pi 2026-09-10**, serving `index-BV4kgcIO.js`. `npm ci` first — pdfmake is
+      a new dependency and the device did not have it; a `npm run build` alone would have
+      succeeded and shipped a button that throws on click, because nothing imports pdfmake
+      statically. Verified after: the `pdf` chunk is reachable at 1,826 kB **and appears nowhere
+      in the served HTML**, so it is fetched on the first click and never on a page load.
+
 
 - [ ] **RM-073 (M)** — Correct `generate_period_report`'s `online_sample_count` to count usable
       observations rather than rows, and regenerate. **Blocked on a decision, not on code.**
