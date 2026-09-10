@@ -3384,9 +3384,19 @@ emission factor carrying provenance. What has landed:
       other control. The two new controls joined the canonical list instead — which is the single-
       block invariant RM-071a's stray comma broke app-wide.
 
+      **DEPLOYED to the Pi 2026-09-10**, `npm run build` on the device — the kiosk is served from
+      `./dist`, and a commit is not a deploy. Serving `index-BXlsdybd.js`; boots clean with no
+      console errors. No restart was needed and none was performed: RM-043's `useBuildWatch`
+      notices the entry bundle's hash within five minutes and the kiosk reloads itself once it
+      has been idle a minute, which is the durable fix that incident bought.
+      **The five charts cost 21 kB.** 689,487 bytes before, 710,842 after — which is the
+      hand-rolled-SVG decision paying for itself, against a Recharts instance per chart. `pdfmake`
+      is installed but imported by nothing yet, and `grep` confirms zero bytes of it in the
+      bundle; it stays that way until the export button dynamically imports it.
+
       Still to come before this is a document: the report-type tabs and the other three reports,
-      then the PDF. **Not yet seen signed-in in a browser** — the charts have been rendered from
-      live data and read back, but the page itself has only been exercised under test.
+      then the PDF. **Not yet seen signed-in** — the charts have been rendered from live data and
+      read back, and the page boots, but nobody has opened Reports with a session.
 
 
 - [ ] **RM-073 (M)** — Correct `generate_period_report`'s `online_sample_count` to count usable
