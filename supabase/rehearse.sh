@@ -948,6 +948,15 @@ begin
   assert v > 1440,
     format('demand summary: the fixture is dark for over eight days, got a %s minute gap (a small number means the rolled-up half was skipped)', v);
 
+  -- AND THE DARKNESS AT THE ENDS COUNTS. The fixture's last observation is midday on 06-12 and
+  -- June runs to the 30th, so the longest stretch nobody was watching is that trailing one — over
+  -- 26,000 minutes. Measured only BETWEEN observations, as this was first written, the answer is
+  -- the eight-day stretch in the middle instead, and a period that begins or ends dark reports
+  -- none of it. Against the live project that version called August 2026 a NINE MINUTE gap while
+  -- it sat dark for its first sixteen days.
+  assert v > 20000,
+    format('demand summary: expected the trailing dark stretch (>20000 min), got %s — the window edges are not being counted', v);
+
   select p95_w into v from report_demand_summary('month', date '2026-06-01', 'Asia/Manila');
   assert v is not null, 'demand summary: p95 must be computable from the seeded samples';
 
@@ -967,14 +976,26 @@ begin
     null;  -- expected
   end;
 
-  -- June is partly raw and partly rolled up here, which is exactly the state a recent month is
-  -- in on the live system — and the state whose statistics differ from a fully raw one.
+  -- RESOLUTION SAYS WHAT THE DATA IS MADE OF, NOT HOW MUCH OF IT THERE IS. All three states
+  -- exist in this fixture, which is why all three are asserted: an earlier version compared raw
+  -- hours against the window's ELAPSED hours, so a month that was entirely raw but half dark
+  -- reported 'mixed' — a resolution downgrade describing a coverage gap. It took reading the
+  -- live project back to see it, because a fixture is never half a real month.
+
+  -- June holds both: hour 0 of the 1st was rolled up and pruned, hour 1 is still raw.
   select resolution into txt from report_daily_series('month', date '2026-06-01', 'Asia/Manila') limit 1;
-  assert txt in ('minute', 'mixed', 'hour'),
-    format('resolution: expected one of minute/mixed/hour, got %s', txt);
-  -- A month with no raw rows left at all must say so rather than implying minute resolution.
+  assert txt = 'mixed', format('resolution: June has raw and rolled-up hours, expected mixed, got %s', txt);
+
+  -- The week of the 8th holds only the three hourly buckets seeded for the frozen-meter case.
+  select report_resolution(
+           (date '2026-06-08'::timestamp at time zone 'Asia/Manila'),
+           (date '2026-06-15'::timestamp at time zone 'Asia/Manila')) into txt;
+  assert txt = 'hour', format('resolution: that week is hourly buckets only, got %s', txt);
+
+  -- NULL, not 'hour'. With nothing observed at all, resolution is not a claim anyone can make —
+  -- the same rule that makes an unobserved hour NULL rather than 0 W.
   select report_resolution(timestamptz '2020-01-01 00:00:00+00', timestamptz '2020-02-01 00:00:00+00') into txt;
-  assert txt = 'hour', format('resolution: a fully pruned window is hourly, got %s', txt);
+  assert txt is null, format('resolution: an empty window has no resolution to report, got %s', txt);
 
   raise notice 'phase37: all assertions passed';
 end $$;

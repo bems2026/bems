@@ -105,20 +105,33 @@ language sql
 stable
 security invoker
 as $fn$
+  /*
+   * RESOLUTION IS ABOUT WHERE THE SURVIVING DATA CAME FROM, NOT HOW MUCH OF IT THERE IS.
+   *
+   * The first version compared the count of raw hours against the window's ELAPSED hours, which
+   * conflated two different facts: August 2026 is entirely raw minute samples and is also dark
+   * for its first sixteen days, and that version reported it as 'mixed' — a resolution downgrade
+   * describing a coverage gap. Reading it back against the live project is what showed it;
+   * fixtures cannot, because a fixture is never half a real month.
+   *
+   * Coverage already answers "how much", beside every figure. This answers only "made of what",
+   * and NULL is a real answer: with nothing observed, resolution is not a claim anyone can make.
+   */
   select case
-           when raw_hours = 0 then 'hour'
-           -- The window's own length in hours, so a period still in progress is judged against
-           -- the hours that have actually elapsed rather than the ones still to come.
-           when raw_hours >= least(
-                  ceil(extract(epoch from (p_win_end - p_win_start)) / 3600),
-                  ceil(extract(epoch from (least(p_win_end, now()) - p_win_start)) / 3600))
-             then 'minute'
+           when raw_hours = 0 and rolled_hours = 0 then null
+           when rolled_hours = 0 then 'minute'
+           when raw_hours = 0    then 'hour'
            else 'mixed'
          end
     from (
-      select count(distinct date_trunc('hour', ts)) as raw_hours
-        from building_totals
-       where ts >= p_win_start and ts < p_win_end
+      select (select count(distinct date_trunc('hour', ts))
+                from building_totals
+               where ts >= p_win_start and ts < p_win_end) as raw_hours,
+             (select count(*)
+                from building_totals_hourly b
+               where b.hour >= p_win_start and b.hour < p_win_end
+                 and not exists (select 1 from building_totals t2
+                                  where t2.ts >= b.hour and t2.ts < b.hour + interval '1 hour')) as rolled_hours
     ) s;
 $fn$;
 
@@ -160,8 +173,14 @@ security invoker
 as $fn$
 declare
   w record;
+  -- Computed ONCE, into a local. Called inline in a select list it runs per OUTPUT ROW — 744 of
+  -- them for a month's matrix, each a scan of `building_totals` counting distinct hours. That is
+  -- what made report_hour_matrix time out against the live project at 744 cells while returning
+  -- a week's 168 in milliseconds: not the row count, the repetition.
+  res text;
 begin
   select * into w from public.report_window(p_period, p_start, p_tz);
+  res := public.report_resolution(w.win_start, w.win_end);
 
   return query
   -- The CTE columns are named explicitly and none of them reuses an OUT parameter's name.
@@ -251,7 +270,7 @@ begin
          ),
          s.first_min,
          s.last_min,
-         public.report_resolution(w.win_start, w.win_end)
+         res
     from days
     left join incremented i on i.d = days.d
     left join seen_day   s on s.d = days.d
@@ -291,8 +310,10 @@ security invoker
 as $fn$
 declare
   w record;
+  res text;
 begin
   select * into w from public.report_window(p_period, p_start, p_tz);
+  res := public.report_resolution(w.win_start, w.win_end);
 
   return query
   with samples as (
@@ -326,7 +347,10 @@ begin
           from building_totals_hourly b
          where p_device_id is null
            and b.hour >= w.win_start and b.hour < w.win_end
-           and not exists (select 1 from building_totals t2 where date_trunc('hour', t2.ts) = b.hour)
+           -- Range, not date_trunc: an index on `ts` can serve this and cannot serve a
+           -- function of it.
+           and not exists (select 1 from building_totals t2
+                            where t2.ts >= b.hour and t2.ts < b.hour + interval '1 hour')
       ) u(ts, power_w)
      where power_w is not null
   ),
@@ -341,7 +365,7 @@ begin
          percentile_cont(0.95) within group (order by s.v)::numeric,
          max(s.v),
          avg(s.v),
-         public.report_resolution(w.win_start, w.win_end)
+         res
     from hours
     left join samples s on s.h = hours.h
    group by hours.h
@@ -376,9 +400,11 @@ security invoker
 as $fn$
 declare
   w record;
+  res text;
   cells int;
 begin
   select * into w from public.report_window(p_period, p_start, p_tz);
+  res := public.report_resolution(w.win_start, w.win_end);
 
   cells := ((w.win_end at time zone p_tz)::date - (w.win_start at time zone p_tz)::date) * 24;
   if cells > 900 then
@@ -415,7 +441,7 @@ begin
            generate_series(0, 23) h
   )
   select grid.d, grid.h, o.avg_w, o.max_w, coalesce(o.n_obs, 0),
-         public.report_resolution(w.win_start, w.win_end)
+         res
     from grid
     left join observed o on o.d = grid.d and o.h = grid.h
    order by grid.d, grid.h;
@@ -452,6 +478,7 @@ security invoker
 as $fn$
 declare
   w record;
+  res text;
 begin
   if p_points < 2 or p_points > 501 then
     raise exception 'p_points must be between 2 and 501, got %', p_points
@@ -459,6 +486,7 @@ begin
   end if;
 
   select * into w from public.report_window(p_period, p_start, p_tz);
+  res := public.report_resolution(w.win_start, w.win_end);
 
   return query
   with samples as (
@@ -479,7 +507,7 @@ begin
          -- Descending, so the curve starts at the peak and falls: fraction 0 is the highest
          -- sample, fraction 1 the lowest. That is the convention a duration curve is read in.
          (select percentile_cont(fractions.f) within group (order by s.v desc)::numeric from samples s),
-         public.report_resolution(w.win_start, w.win_end)
+         res
     from fractions
    order by fractions.f;
 end;
@@ -517,8 +545,10 @@ security invoker
 as $fn$
 declare
   w record;
+  res text;
 begin
   select * into w from public.report_window(p_period, p_start, p_tz);
+  res := public.report_resolution(w.win_start, w.win_end);
 
   return query
   /*
@@ -556,9 +586,28 @@ begin
   samples as (
     select v from obs where v is not null
   ),
+  /*
+   * BOUNDED BY THE WINDOW, NOT BY THE FIRST OBSERVATION INSIDE IT.
+   *
+   * Without the two sentinels below, a period that BEGINS dark reports no gap for that darkness:
+   * the first observation has no predecessor, so the stretch before it is never differenced.
+   * Read back against the live project, August 2026 reported a NINE MINUTE longest gap while
+   * being dark for its first sixteen days — the most reassuring possible summary of an outage,
+   * and one no fixture would have produced. The same omission hid a trailing dark stretch.
+   *
+   * The window's start is a zero-length observation, and so is its end — or now, if the period
+   * has not finished, because hours that have not happened yet are not a gap.
+   */
+  bounded as (
+    select w.win_start as start_at, w.win_start as end_at
+    union all
+    select start_at, end_at from obs
+    union all
+    select least(w.win_end, now()), least(w.win_end, now())
+  ),
   gaps as (
     select greatest(extract(epoch from (start_at - prev_end)) / 60, 0) as gap_min
-      from (select start_at, lag(end_at) over (order by start_at) as prev_end from obs) o
+      from (select start_at, lag(end_at) over (order by start_at) as prev_end from bounded) o
      where prev_end is not null
   )
   select (select count(*)::int from samples),
@@ -572,7 +621,7 @@ begin
          -- NULL, never 0, when nothing at all was observed: at that point the gap is the whole
          -- window and calling it zero would be the most reassuring possible way to report it.
          (select case when (select count(*) from obs) = 0 then null else max(gap_min)::numeric end from gaps),
-         public.report_resolution(w.win_start, w.win_end);
+         res;
 end;
 $fn$;
 

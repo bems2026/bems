@@ -7,7 +7,7 @@ it would be operator-editable device names. The pdfmake spike is the part worth 
 findings that each cost an afternoon and none of which are in anybody's documentation. The print
 palette's new on-white assertion rejected `--accent` on its first run, and two of that test's own
 first assertions turned out to be measuring the wrong thing and passing. **§5 Q9 is answered by
-measurement and struck**, which also unblocks **RM-042**. `phase37_report_series.sql` is written and rehearsed against real PostgreSQL but **not yet applied** to the live project; its rehearsal found two bugs a text test cannot see, both of which under-reported an outage.
+measurement and struck**, which also unblocks **RM-042**. `phase37_report_series.sql` is applied, and **reading it back against the live project found three more defects, all of which under-reported an outage** — see RM-072f, which has to be re-applied. The one worth leading with: the longest gap read NINE MINUTES for a month that was dark for sixteen days.
 
 **Previously audited:** 2026-09-10 — **RM-070 and RM-071**. RM-071 is a UI/UX overhaul of the
 Automation page: rules now read as IF/THEN blocks, and auditing for it turned up a one-character CSS
@@ -3057,7 +3057,7 @@ emission factor carrying provenance. What has landed:
 
 
 - [x] **RM-072e — `supabase/phase37_report_series.sql`, the series behind the charts.**
-      **CODE DONE, REHEARSED, NOT YET APPLIED** to the live project. phase27's tables hold one row
+      **APPLIED 2026-09-10 — and then corrected; see RM-072f, which must be re-applied.** phase27's tables hold one row
       per period — a total, a peak, a coverage pair. A chart needs the SHAPE, and none of it is
       stored: energy day by day, demand hour by hour, the load sorted high to low.
       Seven `stable`, `security invoker` functions: `report_window`, `report_resolution`,
@@ -3105,6 +3105,51 @@ emission factor carrying provenance. What has landed:
       result fails at `RETURN QUERY` with a message naming a column position rather than a line.
       `test/phase37-report-series-schema.test.mjs`, 21 assertions; rehearsal green on real
       PostgreSQL 16.
+
+
+- [x] **RM-072f — phase37 applied, read back against the live project, and three defects found
+      that the rehearsal could not.** Applied 2026-09-10. **The corrected file must be re-applied**
+      — the version currently in the database is the one this entry describes fixing.
+      The read-back is not a formality. FI-018 established why: the first real baseline report
+      turned up a dark day rendered as an absent row and a blank row rendered as `—–—`, neither of
+      which any test caught. This found three more, and **all three erred in the reassuring
+      direction** — which is the direction that does not get reported.
+
+      **What was right.** The assertion the file rests on held on production data: the daily
+      series' 31 bars sum to **90.9468 kWh**, exactly the figure the stored month report prints
+      above them, computed by a different expression in a different function. 16 days observed,
+      15 dark, and all 15 dark days render as NULL rather than 0. The peak agrees at 4551.3 W and
+      the hour profile returns 24 rows with no unobserved hour carrying a statistic.
+
+      **1. `longest_gap_minutes` said NINE MINUTES for a month that was dark for sixteen days.**
+      August 2026's first observation is the 16th, and the gap series was differenced only
+      *between* observations — so the darkness before the first one, and after the last, was
+      never measured at all. Nine minutes is the longest stretch between two samples once the
+      data starts. No fixture would produce this: a fixture is never half a real month. The
+      window's own start and end are zero-length observations now, `least(win_end, now())` at the
+      far end because hours that have not happened are not a gap.
+
+      **2. `resolution` conflated "made of what" with "how much".** It compared the count of raw
+      hours against the window's ELAPSED hours, so August — which is *entirely* raw minute
+      samples and also half dark — reported `'mixed'`. That is a resolution downgrade describing
+      a coverage gap, and coverage already answers that question beside every figure. It compares
+      raw hours against rolled-up hours now, and returns **NULL** when nothing was observed:
+      with no data, resolution is not a claim anyone can make, the same rule that makes an
+      unobserved hour NULL rather than 0 W.
+
+      **3. `report_hour_matrix` timed out on a month and returned a week in milliseconds.** That
+      reads as a row-count problem and is not one — 744 cells is well under the 900 cap the
+      function guards. `report_resolution` was being called **inline in the select list**, so it
+      ran once per OUTPUT ROW: 744 scans of `building_totals` counting distinct hours. Hoisted
+      into a local computed once per call. The seam guard in `report_hour_profile` was also
+      rewritten from `date_trunc('hour', t2.ts) = b.hour` to a range, because an index on `ts`
+      can serve a range and cannot serve a function of the column.
+
+      Guards added for all three, in both places: `test/phase37-report-series-schema.test.mjs`
+      (now 23) asserts the boundary sentinels exist, that resolution never measures the window
+      length, and that `report_resolution` appears exactly once per function; `supabase/rehearse.sh`
+      asserts all three resolution states plus NULL, and that the longest gap exceeds 20,000
+      minutes — the trailing dark stretch, which the old expression could not see.
 
 
 ### How the Automation page READS — RM-071 (2026-09-10)

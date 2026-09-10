@@ -111,6 +111,48 @@ test('longest_gap_minutes is NULL rather than 0 when nothing at all was observed
   assert.match(body, /count\(\*\)\s*from obs\)\s*=\s*0\s+then null/i);
 });
 
+test('the longest gap is bounded by the window, not by the first observation in it', () => {
+  // Without the two boundary sentinels, a period that BEGINS dark reports no gap for that
+  // darkness — the first observation has no predecessor, so the stretch before it is never
+  // differenced. Read back against the live project, August 2026 reported a NINE MINUTE longest
+  // gap while sitting dark for its first sixteen days. No fixture produced that; only real data
+  // that starts mid-month did.
+  const body = bodyOf('report_demand_summary');
+  assert.match(body, /bounded as \(/i, 'the gap series must carry the window edges');
+  assert.match(body, /select w\.win_start as start_at, w\.win_start as end_at/i);
+  assert.match(body, /least\(w\.win_end, now\(\)\)/i, 'hours that have not happened are not a gap');
+  assert.match(body, /from bounded/i, 'gaps must be taken over the bounded series');
+});
+
+test('resolution says what the data is MADE OF, not how much of it there is', () => {
+  // The first version compared raw hours against the window's ELAPSED hours, so a month that was
+  // entirely raw minute samples but half dark reported 'mixed' — a resolution downgrade
+  // describing a coverage gap. Coverage already answers "how much", beside every figure.
+  const body = bodyOf('report_resolution');
+  assert.match(body, /raw_hours = 0 and rolled_hours = 0 then null/i, 'no data means no resolution to claim');
+  assert.match(body, /rolled_hours = 0 then 'minute'/i);
+  assert.match(body, /raw_hours = 0\s+then 'hour'/i);
+  // The elapsed-time comparison that caused it must not come back.
+  assert.equal(/p_win_end - p_win_start/.test(body), false, 'resolution must not measure the window length');
+});
+
+test('the resolution is computed once per call, not once per row', () => {
+  // Inline in a select list it runs per OUTPUT ROW — 744 of them for a month's matrix, each a
+  // scan of building_totals counting distinct hours. That is a statement timeout against the
+  // live project on the month while the week returns in milliseconds, and it looks like a
+  // row-count problem rather than a repetition one.
+  for (const fn of ['report_daily_series', 'report_hour_profile', 'report_hour_matrix', 'report_demand_curve', 'report_demand_summary']) {
+    const body = bodyOf(fn);
+    assert.match(body, /res\s+text;/i, `${fn} must hold the resolution in a local`);
+    assert.match(body, /res\s*:=\s*public\.report_resolution\(/i, `${fn} must compute it once`);
+    assert.equal(
+      (body.match(/public\.report_resolution\(/g) ?? []).length,
+      1,
+      `${fn} calls report_resolution more than once; it belongs in the declare block`
+    );
+  }
+});
+
 test('an observation is an interval, not an instant', () => {
   // Both of the bugs `supabase/rehearse.sh` caught here were the same mistake, and both erred
   // in the reassuring direction:
