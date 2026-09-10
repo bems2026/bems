@@ -64,7 +64,7 @@ export const PRINT_PALETTE: ChartPalette = {
   bad: '#b91c1c',
   gap: '#5f6b7d',
   threshold: '#b91c1c',
-  heat: ['#eff6ff', '#bfdbfe', '#60a5fa', '#2563eb', '#1e3a8a'],
+  heat: ['#dbeafe', '#93c5fd', '#60a5fa', '#2563eb', '#1e3a8a'],
   /**
    * Roboto, not the app's Manrope. pdfmake's bundled font container IS Roboto, and a label
    * inside an inline SVG is measured by the same font machinery as the body text around it —

@@ -121,3 +121,56 @@ export function plotBox(width: number, height: number, m: Margins = DEFAULT_MARG
     bottom: height - m.bottom,
   };
 }
+
+export interface Pt {
+  x: number;
+  y: number;
+}
+
+/**
+ * Splits a series into runs of consecutive present values.
+ *
+ * THIS IS THE HONESTY RULE FOR EVERY LINE IN THIS FOLDER, expressed once. A chart that joins the
+ * points either side of a gap draws a smooth curve through hours nobody observed — the most
+ * confident possible picture of the least evidence, and the reader cannot tell which part was
+ * measured. EX-102 fixed exactly this for the live 24h chart by recording `online` per sample so
+ * an unreporting device leaves a gap rather than a flat line; this is that rule for the report.
+ */
+export function runsOf<T>(items: readonly T[], present: (item: T) => boolean): T[][] {
+  const runs: T[][] = [];
+  let current: T[] = [];
+  for (const item of items) {
+    if (present(item)) current.push(item);
+    else if (current.length > 0) {
+      runs.push(current);
+      current = [];
+    }
+  }
+  if (current.length > 0) runs.push(current);
+  return runs;
+}
+
+const c = (v: number) => (Math.round(v * 100) / 100).toString();
+
+/** One `M`, then `L`s — per run. A run of one point emits a zero-length segment so a lone
+ *  observed hour between two gaps is still drawn; dropping it would hide a real reading. */
+export function pathFromRuns(runs: readonly (readonly Pt[])[]): string {
+  return runs
+    .map((run) =>
+      run.length === 1
+        ? `M ${c(run[0].x)} ${c(run[0].y)} L ${c(run[0].x)} ${c(run[0].y)}`
+        : run.map((p, i) => `${i === 0 ? 'M' : 'L'} ${c(p.x)} ${c(p.y)}`).join(' ')
+    )
+    .join(' ');
+}
+
+/** A closed band between two edges of the same run — `top` forwards, `bottom` back. */
+export function areaFromRuns(runs: readonly (readonly { top: Pt; bottom: Pt }[])[]): string {
+  return runs
+    .map((run) => {
+      const forward = run.map((p, i) => `${i === 0 ? 'M' : 'L'} ${c(p.top.x)} ${c(p.top.y)}`).join(' ');
+      const back = [...run].reverse().map((p) => `L ${c(p.bottom.x)} ${c(p.bottom.y)}`).join(' ');
+      return `${forward} ${back} Z`;
+    })
+    .join(' ');
+}

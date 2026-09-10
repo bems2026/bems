@@ -145,8 +145,12 @@
    * beside the chart, so these are exempt from the 4.5:1 text bar. Their end-to-end contrast
    * is asserted instead, which is the property that actually matters for a scale.
    */
-  --heat-1: #eff6ff;
-  --heat-2: #bfdbfe;
+  /* Not #eff6ff. Rendered against real August data the palest step was so near white that a
+     genuinely quiet hour read as an empty cell — which is the one distinction this ramp shares
+     a chart with the "no data" hatch to make. Two steps darker at the light end; the dark end
+     is unchanged, so the ramp still spans 8:1. */
+  --heat-1: #dbeafe;
+  --heat-2: #93c5fd;
   --heat-3: #60a5fa;
   --heat-4: #2563eb;
   --heat-5: #1e3a8a;

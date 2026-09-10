@@ -7,7 +7,7 @@ it would be operator-editable device names. The pdfmake spike is the part worth 
 findings that each cost an afternoon and none of which are in anybody's documentation. The print
 palette's new on-white assertion rejected `--accent` on its first run, and two of that test's own
 first assertions turned out to be measuring the wrong thing and passing. **§5 Q9 is answered by
-measurement and struck**, which also unblocks **RM-042**. `phase37_report_series.sql` is applied, and **reading it back against the live project found four defects, every one of which made the building look better observed than it was** — see RM-072f and RM-072g. The one worth leading with is not in the new code at all: **the Reports page has been overstating its own coverage.** August 2026 reads 48%, and only **26.9%** of its expected minutes carry a real reading — 9,415 of the 21,421 "observed" samples are rows the meters wrote while observing nothing. Correcting the stored figure is **RM-073**, and it is a decision about restating published history rather than a task. Applying the fixes then turned up **RM-072h**: `create or replace` cannot change a function's OUT parameters, and `rehearse.sh` had only ever proved each migration against an EMPTY database — the one case a hand-applied migration never meets twice. **phase37 is applied and every check is green (RM-072i)**, and the first chart is drawing from it (RM-072j) — where looking at real data, rather than asserting on fixtures, rewrote two of its decisions.
+measurement and struck**, which also unblocks **RM-042**. `phase37_report_series.sql` is applied, and **reading it back against the live project found four defects, every one of which made the building look better observed than it was** — see RM-072f and RM-072g. The one worth leading with is not in the new code at all: **the Reports page has been overstating its own coverage.** August 2026 reads 48%, and only **26.9%** of its expected minutes carry a real reading — 9,415 of the 21,421 "observed" samples are rows the meters wrote while observing nothing. Correcting the stored figure is **RM-073**, and it is a decision about restating published history rather than a task. Applying the fixes then turned up **RM-072h**: `create or replace` cannot change a function's OUT parameters, and `rehearse.sh` had only ever proved each migration against an EMPTY database — the one case a hand-applied migration never meets twice. **phase37 is applied and every check is green (RM-072i)**, and all five charts are drawing from it (RM-072j, RM-072k) — where looking at real data, rather than asserting on fixtures, rewrote a decision in nearly every one of them. The breakdown chart also turned up a fact about the building: **49.3 of the 51.1 kWh on the convenience-outlet branch is not attributable to any of the seven outlets beneath it**, which is RM-020 and RM-021 seen from the energy side.
 
 **Previously audited:** 2026-09-10 — **RM-070 and RM-071**. RM-071 is a UI/UX overhaul of the
 Automation page: rules now read as IF/THEN blocks, and auditing for it turned up a one-character CSS
@@ -3283,6 +3283,55 @@ emission factor carrying provenance. What has landed:
 
       `dailyEnergyChart.ts`, 18 tests. Coverage policy stays in `coverageOf` — the generator is
       handed `observed` and `complete` already resolved and knows nothing about bands.
+
+
+- [x] **RM-072k — the remaining four chart generators, and what rendering them against live data
+      said.** `loadProfileChart`, `circuitBreakdownChart`, `demandHeatmapChart` and
+      `durationCurveChart`. 133 tests across the five generators. The honesty rule each one keeps:
+
+      *Load profile* — median, the p50–p95 spread and the peak, as three series because a median
+      alone cannot tell an hour that sat steadily at 800 W from one that idled at 100 W and spiked
+      to 4 kW twice. **The line breaks at an unobserved hour rather than interpolating across it**
+      — EX-102's rule for the live 24h chart, carried into the report. `runsOf` in `chartFrame.ts`
+      is that rule written once, and every line chart here uses it.
+
+      *Circuit breakdown* — a 100% stacked bar, which is the honest form and not a stylistic one:
+      since RM-057 the building total IS the sum of these four branch meters, so the parts really
+      make the whole. An unmetered circuit is excluded and named, never drawn as a zero-width
+      sliver — the seven light switches have no metering at all, and a sliver of nothing says the
+      lights used no electricity.
+
+      *Heatmap* — the only chart here where a coverage gap is a SHAPE rather than a footnote. An
+      unobserved cell is hatched, **never the lightest step of the ramp**: the ramp runs least to
+      most, so its palest step means "this hour drew almost nothing", and 153 of August's 744
+      cells hold rows carrying no reading at all.
+
+      *Duration curve* — with the DSM ceiling drawn across it and the share of the period spent
+      above it. A ceiling that is never reached is still drawn, above the curve, because "the
+      building never came near it" is the finding rather than the absence of one, and a ceiling
+      set far above anything the building does is how auto-shedding ends up armed and inert.
+
+      **Three things only rendering them could have found.**
+
+      The load profile drew three series and named none of them. The description says "median,
+      the p50–p95 spread, and the peak" in prose, and prose cannot say which one is the blue line.
+      It has a key now.
+
+      `--heat-1` was `#eff6ff`, near enough to white that a genuinely quiet hour read as an empty
+      cell — which is the one distinction the ramp shares a chart with the hatch to make. Two
+      steps darker at the light end, dark end unchanged, ramp still spans 8:1.
+
+      `test/site-naming.test.mjs` — a guard that predates this work — caught `toLocaleString('en-US')`
+      in the duration curve's watt formatter. It is right to: RM-033 already had to go back and
+      unpick thirteen such call sites for the replication framework. The reader owns formatting.
+
+      **And one finding about the building rather than the code.** The breakdown of August reads:
+      convenience outlets 51.1 kWh, indoor ACU 30.9, outdoor ACU 6.5, lighting 2.4 — and
+      **49.3 of the 51.1 kWh on the convenience-outlet branch is not attributable to any of the
+      seven metered outlets beneath it.** That is not a chart defect; it is RM-020 and RM-021 seen
+      from the energy side. Six of those seven outlets have been off the network for weeks, so the
+      branch meter sees the load and no sub-meter accounts for it. The chart says so in words
+      rather than quietly splitting the difference.
 
 
 - [ ] **RM-073 (M)** — Correct `generate_period_report`'s `online_sample_count` to count usable
