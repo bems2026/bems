@@ -783,9 +783,205 @@ begin
 
   raise notice 'all assertions passed';
 end $$;
+
+-- ---- phase37: the series behind the charts -------------------------------------------------
+--
+-- Its own block, with its own declarations, so it cannot collide with the variables above.
+--
+-- The fixtures it reads were seeded for other assertions, which is what makes them worth
+-- reading: 2026-06-01 carries 120 minutes split across the raw/rollup seam, and 2026-06-10..12
+-- carry the frozen-meter signature measured on the live building. June therefore has four
+-- observed days out of thirty, which is the shape a real month here actually has.
+do $$
+declare
+  rows_n     int;
+  observed_n int;
+  v          numeric;
+  month_kwh  numeric;
+  daily_sum  numeric;
+  txt        text;
+begin
+  -- Regenerate the month first. The backfill loop above ran BEFORE 2026-06-10..12 were seeded,
+  -- so the stored row predates half the fixture — comparing against it as-is would compare two
+  -- different instants, which is the trap the phase27 block above already documents paying for.
+  perform generate_period_report('month', date '2026-06-01');
+
+  -- ---- report_daily_series ------------------------------------------------------------------
+
+  select count(*) into rows_n from report_daily_series('month', date '2026-06-01', 'Asia/Manila');
+  assert rows_n = 30, format('daily series: June has 30 days, got %s rows', rows_n);
+
+  -- THE ASSERTION THIS FUNCTION EXISTS FOR. A chart whose bars sum to something other than the
+  -- total printed above them is worse than no chart, and the two are computed by different
+  -- expressions in different functions — the month takes `max(energy_kwh_month_max)`, the daily
+  -- series sums per-day increments of the same counter. They must agree, and nothing but this
+  -- checks that they do.
+  select sum(energy_kwh) into daily_sum from report_daily_series('month', date '2026-06-01', 'Asia/Manila');
+  select energy_kwh into month_kwh from period_building_reports
+   where period = 'month' and period_start = date '2026-06-01';
+  assert daily_sum = month_kwh,
+    format('daily series: the days sum to %s but the month reports %s', daily_sum, month_kwh);
+
+  -- A FROZEN DAY CONTRIBUTES NOTHING. 2026-06-11's counter is byte-identical to the 10th's.
+  -- Summing the daily counter's maxima instead of its increments would score it as another full
+  -- day of consumption — the defect phase27 measured on the live building.
+  select energy_kwh into v from report_daily_series('month', date '2026-06-01', 'Asia/Manila')
+   where local_day = date '2026-06-11';
+  assert v = 0, format('daily series: the frozen day must add 0, got %s', v);
+
+  -- AN UNOBSERVED DAY IS A ROW WITH NO ENERGY, NOT AN ABSENT ROW AND NOT A ZERO. This is the
+  -- one server/baselineReport.mjs found in its first real output: "2026-06-18 sat between the
+  -- 17th and the 19th and simply was not there" — the quietest possible way to lose an outage
+  -- from a document going to a university.
+  select count(*) into observed_n from report_daily_series('month', date '2026-06-01', 'Asia/Manila')
+   where sample_count > 0;
+  assert observed_n = 4, format('daily series: 4 of June was observed, got %s', observed_n);
+
+  select energy_kwh into v from report_daily_series('month', date '2026-06-01', 'Asia/Manila')
+   where local_day = date '2026-06-20';
+  assert v is null, format('daily series: an unobserved day must be NULL, got %s', v);
+
+  select peak_power_w into v from report_daily_series('month', date '2026-06-01', 'Asia/Manila')
+   where local_day = date '2026-06-20';
+  assert v is null, 'daily series: an unobserved day has no peak, and 0 W is a different claim';
+
+  -- The COUNT may be zero, because nobody observed it zero times and that is true.
+  select sample_count into rows_n from report_daily_series('month', date '2026-06-01', 'Asia/Manila')
+   where local_day = date '2026-06-20';
+  assert rows_n = 0, format('daily series: sample_count is a count and must be 0, got %s', rows_n);
+
+  -- A whole day in the past would have held 1440 samples. Derived, never assumed.
+  select expected_samples into rows_n from report_daily_series('month', date '2026-06-01', 'Asia/Manila')
+   where local_day = date '2026-06-20';
+  assert rows_n = 1440, format('daily series: a past day expects 1440 minutes, got %s', rows_n);
+
+  -- 2026-06-01 was observed 08:00-09:59 local. A day marked partial without saying WHICH hours
+  -- it saw is a caveat the reader cannot act on.
+  select first_seen_minute into rows_n from report_daily_series('month', date '2026-06-01', 'Asia/Manila')
+   where local_day = date '2026-06-01';
+  assert rows_n = 480, format('daily series: first sight was 08:00 local = minute 480, got %s', rows_n);
+
+  -- ---- report_hour_profile ------------------------------------------------------------------
+
+  select count(*) into rows_n from report_hour_profile('month', date '2026-06-01', 'Asia/Manila');
+  assert rows_n = 24, format('hour profile: always 24 hours, got %s', rows_n);
+
+  -- Hour 09 local is 01:00 UTC, which is still raw: 60 minute-samples.
+  select n into rows_n from report_hour_profile('month', date '2026-06-01', 'Asia/Manila')
+   where local_hour = 9;
+  assert rows_n = 60, format('hour profile: hour 09 local should hold 60 samples, got %s', rows_n);
+
+  -- Hour 03 local was never observed. NOT 0 W: the building did not draw nothing at 03:00,
+  -- nobody was watching at 03:00, and collapsing those two is the error the system refuses.
+  select n into rows_n from report_hour_profile('month', date '2026-06-01', 'Asia/Manila')
+   where local_hour = 3;
+  assert rows_n = 0, format('hour profile: hour 03 was unobserved, got n = %s', rows_n);
+  select p50_w into v from report_hour_profile('month', date '2026-06-01', 'Asia/Manila')
+   where local_hour = 3;
+  assert v is null, format('hour profile: an unobserved hour has no median, got %s', v);
+
+  -- ---- report_hour_matrix -------------------------------------------------------------------
+
+  select count(*) into rows_n from report_hour_matrix('month', date '2026-06-01', 'Asia/Manila');
+  assert rows_n = 720, format('hour matrix: June is 30 x 24 = 720 cells, got %s', rows_n);
+
+  select count(*) into rows_n from report_hour_matrix('month', date '2026-06-01', 'Asia/Manila')
+   where sample_count > 0;
+  assert rows_n > 0 and rows_n < 720,
+    format('hour matrix: some cells observed and some not, got %s of 720', rows_n);
+
+  -- A week is 168 cells, which is also the check that the window really narrows.
+  select count(*) into rows_n from report_hour_matrix('week', date '2026-06-01', 'Asia/Manila');
+  assert rows_n = 168, format('hour matrix: a week is 7 x 24 = 168 cells, got %s', rows_n);
+
+  -- ---- report_demand_curve ------------------------------------------------------------------
+
+  select count(*) into rows_n from report_demand_curve('month', date '2026-06-01', 'Asia/Manila');
+  assert rows_n = 101, format('duration curve: 101 points by default, got %s', rows_n);
+
+  -- It is a DURATION curve, so it must fall: fraction 0 is the peak, fraction 1 the minimum.
+  -- Ascending would be a chart that reads exactly backwards and looks entirely plausible.
+  select count(*) into rows_n from (
+    select power_w, lag(power_w) over (order by pct) as prev
+      from report_demand_curve('month', date '2026-06-01', 'Asia/Manila')
+  ) s where prev is not null and power_w > prev;
+  assert rows_n = 0, format('duration curve: %s point(s) rise; the curve must be non-increasing', rows_n);
+
+  -- Its first point is the period's peak, which is the same figure the period report holds.
+  select power_w into v from report_demand_curve('month', date '2026-06-01', 'Asia/Manila') where pct = 0;
+  select peak_total_power_w into month_kwh from period_building_reports
+   where period = 'month' and period_start = date '2026-06-01';
+  assert v = month_kwh, format('duration curve: peak %s disagrees with the report''s %s', v, month_kwh);
+
+  begin
+    perform report_demand_curve('month', date '2026-06-01', 'Asia/Manila', 1);
+    assert false, 'duration curve: p_points below 2 must raise rather than divide by zero';
+  exception when invalid_parameter_value then
+    null;  -- expected
+  end;
+
+  -- ---- report_demand_summary ----------------------------------------------------------------
+
+  select expected_minutes into rows_n from report_demand_summary('month', date '2026-06-01', 'Asia/Manila');
+  assert rows_n = 43200, format('demand summary: June is 30 days = 43200 minutes, got %s', rows_n);
+
+  -- AN OBSERVATION IS AN INTERVAL, NOT AN INSTANT, and this is the assertion that says so.
+  -- The fixture holds 60 raw minutes (hour 1 of 06-01), plus four hourly buckets of 60 samples
+  -- each — hour 0 of 06-01 after the rollup pruned it, and 06-10, 06-11, 06-12. That is 300
+  -- observed minutes. Counting each hourly bucket as a single sample instead gives 64, which is
+  -- what the first version of this function returned: a month with no gaps at all would have
+  -- reported 1.7% coverage, qualifying every true figure in the document as untrustworthy.
+  select observed_minutes into rows_n from report_demand_summary('month', date '2026-06-01', 'Asia/Manila');
+  assert rows_n = 300,
+    format('demand summary: expected 300 observed minutes, got %s (64 means an hourly bucket was counted as one minute)', rows_n);
+
+  -- The gap that matters: the fixture is observed for two hours on the 1st and then dark until
+  -- the 10th. A coverage percentage cannot tell that apart from an evenly-scattered outage, and
+  -- this is the figure that can.
+  --
+  -- It also has to survive the rollup. Measured across raw rows alone — which is how this was
+  -- first written — the dark stretch is invisible here, because it lies entirely in the half of
+  -- the window that has been pruned into hourly buckets. The rehearsal caught that as a
+  -- one-minute gap over a fixture that is dark for eight days.
+  select longest_gap_minutes into v from report_demand_summary('month', date '2026-06-01', 'Asia/Manila');
+  assert v is not null, 'demand summary: something was observed, so the gap is measurable';
+  assert v > 1440,
+    format('demand summary: the fixture is dark for over eight days, got a %s minute gap (a small number means the rolled-up half was skipped)', v);
+
+  select p95_w into v from report_demand_summary('month', date '2026-06-01', 'Asia/Manila');
+  assert v is not null, 'demand summary: p95 must be computable from the seeded samples';
+
+  -- ---- report_window and report_resolution --------------------------------------------------
+
+  -- Truncated, not taken as given, exactly as generate_period_report is. A mid-month date must
+  -- resolve to the month, or the chart and the report describe two different windows.
+  select local_start::text into txt from report_window('month', date '2026-06-17', 'Asia/Manila');
+  assert txt = '2026-06-01', format('window: a mid-month date must truncate to the 1st, got %s', txt);
+  select local_start::text into txt from report_window('week', date '2026-06-03', 'Asia/Manila');
+  assert txt = '2026-06-01', format('window: a Wednesday must truncate to its Monday, got %s', txt);
+
+  begin
+    perform report_window('fortnight', date '2026-06-01', 'Asia/Manila');
+    assert false, 'window: an unknown period must raise rather than return an empty window';
+  exception when invalid_parameter_value then
+    null;  -- expected
+  end;
+
+  -- June is partly raw and partly rolled up here, which is exactly the state a recent month is
+  -- in on the live system — and the state whose statistics differ from a fully raw one.
+  select resolution into txt from report_daily_series('month', date '2026-06-01', 'Asia/Manila') limit 1;
+  assert txt in ('minute', 'mixed', 'hour'),
+    format('resolution: expected one of minute/mixed/hour, got %s', txt);
+  -- A month with no raw rows left at all must say so rather than implying minute resolution.
+  select report_resolution(timestamptz '2020-01-01 00:00:00+00', timestamptz '2020-02-01 00:00:00+00') into txt;
+  assert txt = 'hour', format('resolution: a fully pruned window is hourly, got %s', txt);
+
+  raise notice 'phase37: all assertions passed';
+end $$;
 SQL
 
 echo
 echo "== REHEARSAL PASSED =="
-echo "Every migration applied in order against PostgreSQL 16, and all six functions behaved"
-echo "as designed against realistic data — including the live offline failure shape."
+echo "Every migration applied in order against PostgreSQL 16, and every function behaved as"
+echo "designed against realistic data — including the live offline failure shape, and"
+echo "phase37's daily series summing to the same figure the month report prints."

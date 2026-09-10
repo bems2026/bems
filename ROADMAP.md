@@ -7,7 +7,7 @@ it would be operator-editable device names. The pdfmake spike is the part worth 
 findings that each cost an afternoon and none of which are in anybody's documentation. The print
 palette's new on-white assertion rejected `--accent` on its first run, and two of that test's own
 first assertions turned out to be measuring the wrong thing and passing. **§5 Q9 is answered by
-measurement and struck**, which also unblocks **RM-042**.
+measurement and struck**, which also unblocks **RM-042**. `phase37_report_series.sql` is written and rehearsed against real PostgreSQL but **not yet applied** to the live project; its rehearsal found two bugs a text test cannot see, both of which under-reported an outage.
 
 **Previously audited:** 2026-09-10 — **RM-070 and RM-071**. RM-071 is a UI/UX overhaul of the
 Automation page: rules now read as IF/THEN blocks, and auditing for it turned up a one-character CSS
@@ -3054,6 +3054,57 @@ emission factor carrying provenance. What has landed:
       null instead of zero, so a caller has to draw "nobody was watching" instead of a confident
       empty chart over a month nobody observed.
 
+
+
+- [x] **RM-072e — `supabase/phase37_report_series.sql`, the series behind the charts.**
+      **CODE DONE, REHEARSED, NOT YET APPLIED** to the live project. phase27's tables hold one row
+      per period — a total, a peak, a coverage pair. A chart needs the SHAPE, and none of it is
+      stored: energy day by day, demand hour by hour, the load sorted high to low.
+      Seven `stable`, `security invoker` functions: `report_window`, `report_resolution`,
+      `report_daily_series`, `report_hour_profile`, `report_hour_matrix`, `report_demand_curve`,
+      `report_demand_summary`. Invoker is load-bearing — a definer function here would run as its
+      owner and hand every reading to anyone who could execute it, undoing `phase5` without
+      touching a policy. `anon` is named explicitly in every revoke, because revoking from PUBLIC
+      does not remove a grant Supabase gave `anon` directly.
+      **Why SQL and not a loop in the browser.** A month of `building_totals` is 44,640 rows
+      against PostgREST's silent 1000-row cap — the trap `phase9_history_buckets.sql` was written
+      for, whose symptom was a "7 day" chart holding 17h39m that "rendered with axes and a
+      plausible curve, and wrong". And gap days: every bucket is a `generate_series` LEFT JOIN, so
+      a day cannot be forgotten because it is never separately constructed. `baselineReport.mjs`
+      found the alternative the hard way and patches it up afterwards with a fill loop.
+      **`resolution` is the new honesty column, and it names a decay nothing was tracking.**
+      `building_totals` is pruned at 30 days. A p95 for August read in September is part minute
+      samples and part hourly means; read in October it is entirely hourly means, which is a
+      *different statistic* — an average of averages cannot reach the peaks the samples had, so it
+      reads systematically low. There is no error, no gap and no event; the same query simply
+      returns a quieter answer every month. Every function returns `'minute' | 'mixed' | 'hour'`
+      and every consumer renders it beside the figure, exactly as coverage already is.
+      **The rehearsal earned its keep, and both bugs it found erred in the reassuring direction.**
+      `supabase/rehearse.sh` gained a phase37 block of 30 assertions against the existing
+      fixtures — which is what caught them, because a file-text test cannot:
+      *`observed_minutes` counted an hourly bucket as ONE minute.* A fully observed month that had
+      been rolled up would have reported ~744 observed against 43,200 expected: **1.7% coverage
+      for a month with no gaps at all**, and since the Reports page renders coverage beside every
+      figure, it would have qualified every true number in the document as untrustworthy.
+      *`longest_gap_minutes` was measured across raw rows alone*, so once part of a window had been
+      pruned the gap was measured only over the surviving part. A fixture dark for eight days
+      reported a **one-minute gap**, because the dark stretch lay entirely in the rolled-up half.
+      Both are the same mistake — treating an observation as an instant rather than an interval.
+      A raw row covers its minute; an hourly bucket covers its hour and carries the minutes it
+      actually saw. The gap is now a stated floor, and `resolution` says at what granularity.
+      **The assertion the whole file rests on**: the daily series' bars must sum to the figure the
+      month report prints above them. They are computed by different expressions in different
+      functions — the month takes `max(energy_kwh_month_max)`, the series sums per-day increments
+      of the same counter — and nothing but this checks that they agree. Also asserted: a frozen
+      day adds 0 (the live failure phase27 measured), an unobserved day is a row with NULL energy
+      and `sample_count` 0, the duration curve never rises and its first point equals the report's
+      peak, and a mid-month date truncates to the 1st.
+      Two defects the rehearsal surfaced before that, both invisible to a text test: `sample_count`
+      as both an OUT parameter and a CTE column is ambiguous in PL/pgSQL, and `percentile_cont`
+      has no numeric overload — it returns double precision whatever it sorted, so an uncast
+      result fails at `RETURN QUERY` with a message naming a column position rather than a line.
+      `test/phase37-report-series-schema.test.mjs`, 21 assertions; rehearsal green on real
+      PostgreSQL 16.
 
 
 ### How the Automation page READS — RM-071 (2026-09-10)
