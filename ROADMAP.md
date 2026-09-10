@@ -3056,6 +3056,40 @@ the *condition* and which the *consequence*, which is the entire content of a ru
       button's own fill in light theme — it is the bright decorative amber and it vanishes on a
       light accent surface. `--accent-text` is the variant meant for these surfaces: 4.49 light,
       7.31 dark.
+- [x] **RM-071j** The tab strip sat **8px above** the save button's centre in a row that is
+      `align-items: center`. The override RM-071i wrote — `.automation-tabs { margin-bottom: 0 }` —
+      **never applied**: it ties `.tabs` on specificity and loses on source order (4413 vs 4739),
+      so the 16px survived, inflated the strip's flex box to 61px, and that box set the row height
+      while the write group centred inside it. A rule that reads as correct and computes as absent.
+      `.page-header__actions .tabs` is (0,2,0), order-independent, and states the real condition.
+      *Heights are not a defect and were checked, not assumed:* Devices 33, Analytics 35, Control
+      39, Automation's tab buttons 35 and save 36. The strip's 44px outer box is `.tabs`'s own 4px
+      padding — the same shape Analytics' scope group has (42 box, 35 buttons).
+- [x] **RM-071k** Adding a schedule while a blank one was still in the list surfaced
+      `duplicate key value violates unique constraint "schedules_dedupe_uidx"` and left it on
+      screen until the next *successful* add. Three separate faults in one flow.
+      **Prevented, not explained.** `phase33`'s dedupe index keys on
+      `(device_id, coalesce(socket,0), on, off, days)`, so a second blank rule is an exact
+      duplicate of the first and the insert is refused *every time*. The Add button now waits with
+      a reason instead of firing a write that cannot succeed.
+      **Translated at the boundary.** `explainWriteError()` in `src/lib/supabaseSchedules.ts` turns
+      the constraint violation into a sentence naming what to do, with different wording for an
+      add (go and finish the blank rule) than for an edit (there is no blank rule — change a
+      time). Anything unrecognised passes through verbatim rather than being flattened into
+      "something went wrong": an unfamiliar message the reader can search beats a friendly one
+      that hides the only useful string.
+      **Dismissable.** The message has a ✕, so a reader who has understood it can clear it instead
+      of living with a stale failure. Its 22px hit area joins the pseudo-element expander group —
+      it is a symbol inline in a text run, which is exactly what that group exists for.
+      Evidence: `supabaseSchedules.test.ts` (5), `ScheduleStackCard.test.tsx` (22, six new).
+- [x] **RM-071l** The Automation sub-line matches every other page now. It was a bold amber
+      `<strong>`; `.page-sub` is 12.5px/400/`--muted-2` on Overview, Devices and the rest, and
+      Automation was the only page that differed. RM-062's actual requirement is unchanged — the
+      sentence is still ON THE PAGE and not behind the ⓘ — and the colour was redundant with the
+      words: the three states have three different sentences ("switch real hardware", "do not
+      reach any hardware", "has not been confirmed yet"), so nothing was ever carried by colour
+      alone and `color-not-only` is satisfied by the text. Measured identical to Overview's
+      sub-line: 12.5px, weight 400, `rgb(139,147,160)`.
 
 **Tailwind was asked for and deliberately not used.** It is imported at `index.css:1` and has
 **zero** utility classes across all 86 styled components; `test/design-tokens.test.mjs` and

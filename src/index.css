@@ -4543,14 +4543,13 @@ body::before {
  * gate is closed or unconfirmed, which is not news. --warn-on-page, not --warn: the page header
  * sits directly on --bg-page, where plain --warn measures 4.15:1 and this one measures 4.90:1.
  */
-.automation-dispatch-note--open {
-  color: var(--warn-on-page);
-}
-.automation-dispatch-note--closed,
-.automation-dispatch-note--unknown {
-  color: var(--muted);
-  font-weight: 600;
-}
+/*
+ * `.automation-dispatch-note` was here — a bold amber sub-line that made Automation the only page
+ * whose header did not match the others. RM-062 put it there to make the sentence prominent, and
+ * the prominence that actually mattered (it is ON THE PAGE, not behind the ⓘ) is unchanged. The
+ * colour was redundant with the words: the three states have three different sentences, so
+ * nothing was ever carried by colour alone. `.page-sub` styles it now, like every other page.
+ */
 /* 22px was just under the 24px minimum. They wrap in their row, so the extra 2px costs
    nothing at any width. */
 .automation-day-chip {
@@ -5119,6 +5118,53 @@ body::before {
 }
 .schedule-stack__error {
   color: var(--bad);
+}
+
+/*
+ * Why "Add schedule" is waiting, next to the button rather than in a banner. Muted and
+ * informational: a blank rule that has not been filled in yet is a normal state somebody is
+ * halfway through, not a fault, and colouring it like one would teach the reader to ignore the
+ * red messages that ARE faults.
+ */
+.schedule-stack__hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: var(--sp-3) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-base);
+}
+
+/*
+ * A dismissable error. The message keeps its own line and the ✕ sits at the end of it, so the
+ * text wraps against the button rather than under it.
+ */
+.schedule-stack__error--dismissable {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.schedule-stack__error-dismiss {
+  flex: none;
+  position: relative; /* anchors the coarse-pointer hit-area expander at the end of this file */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin: -2px -4px 0 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.75;
+}
+.schedule-stack__error-dismiss:hover {
+  opacity: 1;
+  background: var(--bad-soft);
 }
 .schedule-stack__list {
   list-style: none;
@@ -8344,6 +8390,10 @@ button.space-plan__pin {
   .card-head-link::before,
   .info-hint__btn::before,
   .alerts-popover__close::before,
+  /* The ✕ on a dismissable schedule error — a 22px symbol sitting inline at the end of a message
+     line, which is precisely the case this group exists for: growing the visible box would push
+     the message text around. */
+  .schedule-stack__error-dismiss::before,
   .analytics-legend__item::before {
     content: '';
     position: absolute;

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Plus, Trash2, AlertTriangle, Info } from 'lucide-react';
-import { DAY_LABELS, DAY_NAMES, toggleDay, parseDays } from '@shared/scheduleDays.mjs';
+import { Plus, Trash2, AlertTriangle, Info, X } from 'lucide-react';
+import { DAY_LABELS, DAY_NAMES, toggleDay, parseDays, anyDaySet } from '@shared/scheduleDays.mjs';
 import { useScheduleStore, CREATING } from '@/stores/scheduleStore';
 import { ruleProblem, explainProblem, stackConflicts, acuWindowConflicts, type ScheduleTarget } from '@/lib/scheduleStack';
 import { useAcuRuleStore } from '@/stores/acuRuleStore';
@@ -35,6 +35,7 @@ export function ScheduleStackCard({
   const create = useScheduleStore((s) => s.create);
   const creating = useScheduleStore((s) => s.busy[CREATING]);
   const createError = useScheduleStore((s) => s.rowError[CREATING]);
+  const clearRowError = useScheduleStore((s) => s.clearRowError);
   const { ask, modalProps } = useConfirm();
 
   // Two sources, one list. A stack-internal collision and a schedule that silences the aircon
@@ -47,7 +48,20 @@ export function ScheduleStackCard({
   );
   const armedCount = stack.filter((r) => r.enabled).length;
 
-  const addRule = () =>
+  /*
+   * A rule nobody has filled in yet. A new one is created blank, and `phase33`'s dedupe index
+   * keys on (device, socket, on, off, days) — so a SECOND blank rule is an exact duplicate of
+   * the first and the insert is refused every time.
+   *
+   * PREVENTED RATHER THAN EXPLAINED. The old behaviour fired the doomed insert and printed the
+   * Postgres constraint name, which is a poor trade: the operator learns nothing, and the thing
+   * they should be looking at — the empty rule already on screen — is not what the message
+   * points at. Now the button says why it is waiting, and nothing is sent.
+   */
+  const blankRule = stack.find((r) => !r.on && !r.off && !anyDaySet(r.days ?? undefined));
+
+  const addRule = () => {
+    if (blankRule) return;
     void create({
       deviceId: target.device.id,
       socket: target.socket,
@@ -60,6 +74,7 @@ export function ScheduleStackCard({
       enabled: false,
       label: null,
     });
+  };
 
   return (
     <section className="card schedule-stack">
@@ -71,15 +86,46 @@ export function ScheduleStackCard({
             {target.device.branch_circuit ? ` · ${target.device.branch_circuit}` : ''}
           </p>
         </div>
-        <button type="button" className="schedule-stack__add" onClick={addRule} disabled={creating}>
+        <button
+          type="button"
+          className="schedule-stack__add"
+          onClick={addRule}
+          disabled={creating || Boolean(blankRule)}
+          // The reason travels with the control rather than only in a message elsewhere, so it is
+          // there on hover and read out by a screen reader when the button is reached.
+          title={blankRule ? 'Finish the empty rule below first' : undefined}
+        >
           <Plus size={14} aria-hidden="true" />
           {creating ? 'Adding…' : 'Add schedule'}
         </button>
       </div>
 
+      {/* Why the button is waiting, next to the button. `role="status"` (polite) because it is
+          guidance about a control the reader just looked at, not a failure that interrupted them. */}
+      {blankRule && !createError && (
+        <p className="schedule-stack__hint" role="status">
+          <Info size={12} aria-hidden="true" />
+          Give the empty rule below a time and a day, and Add schedule comes back.
+        </p>
+      )}
+
+      {/*
+       * DISMISSIBLE, which it was not. This message used to sit until the next SUCCESSFUL create,
+       * so a reader who understood it and moved on kept looking at a stale failure — and the one
+       * error that fires most often here is now prevented above, which means anything that does
+       * appear is worth reading once and clearing.
+       */}
       {createError && (
-        <p className="schedule-stack__error" role="alert">
-          {createError}
+        <p className="schedule-stack__error schedule-stack__error--dismissable" role="alert">
+          <span>{createError}</span>
+          <button
+            type="button"
+            className="schedule-stack__error-dismiss"
+            aria-label="Dismiss this message"
+            onClick={() => clearRowError(CREATING)}
+          >
+            <X size={13} aria-hidden="true" />
+          </button>
         </p>
       )}
 

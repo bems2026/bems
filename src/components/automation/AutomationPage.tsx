@@ -146,12 +146,19 @@ export function AutomationPage() {
         title="Automation"
         sub={
           <>
-            {/* ON THE PAGE, not behind the ⓘ. "Saved rules switch real hardware here" is the most
-                consequential sentence on this screen; a hint you have to open is where you put a
-                footnote, not where you put the warning. */}
-            <strong className={`automation-dispatch-note automation-dispatch-note--${dispatchOpen === true ? 'open' : dispatchOpen === false ? 'closed' : 'unknown'}`}>
-              {consequence}
-            </strong>
+            {/*
+              ON THE PAGE, not behind the ⓘ — that is RM-062's requirement and it still holds. A
+              hint you have to open is where you put a footnote, not where you put the warning.
+              This sentence is always visible, and it is the first thing under the page title.
+
+              IT IS NO LONGER SHOUTED, though. It used to be a bold amber `<strong>`, making
+              Automation the only page whose sub-line did not look like every other page's. The
+              colour was also redundant with the words: the three states do not share a sentence
+              to be distinguished by colour — "switch real hardware", "do not reach any hardware"
+              and "has not been confirmed yet" already say which one is true, so `color-not-only`
+              is satisfied by the text alone. Plain `.page-sub` now, like Overview's.
+            */}
+            {consequence}
             <InfoHint label="What this means">
               Rules saved here are read by the scheduler daemon on the Pi and dispatched through the same gated,
               audited path the Control page uses. Every firing writes a row to the command audit trail, whether it

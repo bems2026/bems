@@ -117,6 +117,38 @@ export async function fetchSchedules(): Promise<Schedule[]> {
  * `supabaseConfig.ts`'s `BREAK_GLASS_HINT` verbatim so the page speaks with one voice. */
 const NOT_SIGNED_IN = 'you are signed in with a limited local sign-in, which cannot save. Sign in with your account to make changes.';
 
+/**
+ * A database error, said in words an operator can act on.
+ *
+ * WHY THIS EXISTS. The page used to render whatever Postgres said, verbatim:
+ *
+ *   Could not add the schedule: duplicate key value violates unique constraint
+ *   "schedules_dedupe_uidx"
+ *
+ * which names an index instead of a problem and tells the reader nothing about what to do. The
+ * one that actually fires is `schedules_dedupe_uidx` — `phase33`'s hygiene index over
+ * `(device_id, coalesce(socket,0), on, off, days)`. Adding a second rule while a blank one is
+ * still sitting in the list trips it every time, because two blank rules ARE identical by that
+ * key. That is a normal thing to do by accident, not a fault, so it should read like guidance.
+ *
+ * TRANSLATED HERE, at the boundary where the raw message enters the app, so every caller gets
+ * the plain sentence and no component has to know what a `uidx` is. Anything unrecognised is
+ * passed through rather than flattened into "something went wrong": an unfamiliar error the
+ * reader can search for beats a friendly one that hides it.
+ */
+export function explainWriteError(error: { message: string; code?: string }, verb: 'add' | 'save'): string {
+  const msg = error.message ?? '';
+  if (error.code === '23505' || /duplicate key value|unique constraint/i.test(msg)) {
+    if (/schedules_dedupe_uidx/.test(msg)) {
+      return verb === 'add'
+        ? 'This target already has a rule with these times and days. Fill in the blank rule already in the list, or change its times, before adding another.'
+        : 'Another rule on this target already has these times and days. Two identical rules would do the same thing, so change one of them.';
+    }
+    return 'A rule like this already exists on this target.';
+  }
+  return `Could not ${verb} the schedule: ${msg}`;
+}
+
 export async function insertSchedule(draft: Omit<Schedule, 'id' | 'updatedBy' | 'updatedAt' | 'createdAt'>): Promise<Schedule> {
   const client = requireSupabase();
   const actorUserId = await actor();
@@ -127,7 +159,7 @@ export async function insertSchedule(draft: Omit<Schedule, 'id' | 'updatedBy' | 
     throw new Error('Cannot save a schedule without a signed-in user: an unattributed rule would never fire.');
   }
   const { data, error } = await client.from('schedules').insert(scheduleToRow(draft, actorUserId)).select(SELECT);
-  if (error) throw new Error(`Could not add the schedule: ${error.message}`);
+  if (error) throw new Error(explainWriteError(error, 'add'));
   if ((data?.length ?? 0) !== 1) throw new Error(`The schedule was not added — ${NOT_SIGNED_IN}`);
   return scheduleFromRow(data![0] as ScheduleRow);
 }
@@ -139,7 +171,7 @@ export async function updateSchedule(id: string, draft: Omit<Schedule, 'id' | 'u
     throw new Error('Cannot save a schedule without a signed-in user: an unattributed rule would never fire.');
   }
   const { data, error } = await client.from('schedules').update(scheduleToRow(draft, actorUserId)).eq('id', id).select(SELECT);
-  if (error) throw new Error(`Could not save the schedule: ${error.message}`);
+  if (error) throw new Error(explainWriteError(error, 'save'));
   if ((data?.length ?? 0) !== 1) throw new Error(`The schedule was not saved — ${NOT_SIGNED_IN}`);
   return scheduleFromRow(data![0] as ScheduleRow);
 }

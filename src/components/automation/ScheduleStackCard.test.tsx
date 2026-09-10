@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { ScheduleStackCard } from './ScheduleStackCard';
-import { useScheduleStore } from '@/stores/scheduleStore';
+import { useScheduleStore, CREATING } from '@/stores/scheduleStore';
 import { useAcuRuleStore } from '@/stores/acuRuleStore';
 import { scheduleTargets } from '@/lib/scheduleStack';
 import type { Schedule } from '@/lib/supabaseSchedules';
@@ -23,6 +23,7 @@ import type { Device } from '@/lib/types';
 const patch = vi.fn();
 const remove = vi.fn();
 const create = vi.fn();
+const clearRowError = vi.fn();
 
 const OUTLET = {
   id: 'co1',
@@ -67,6 +68,7 @@ beforeEach(() => {
     patch,
     remove,
     create,
+    clearRowError,
   });
   // The aircon cross-check reads this store; an empty one must be the default so every other
   // test measures the stack alone.
@@ -257,5 +259,58 @@ describe('ScheduleStackCard — the aircon cross-check (RM-071)', () => {
     useAcuRuleStore.setState({ rules: [acuRule()] as never });
     render(<ScheduleStackCard target={target()} stack={[rule({ off: '12:00' })]} dispatchableIds={new Set(['co1'])} />);
     expect(screen.queryByText(/holds and does nothing/)).toBeNull();
+  });
+});
+
+describe('ScheduleStackCard — adding a second rule while one is still blank', () => {
+  const blank = () => rule({ id: 'blank1', on: null, off: null, days: '0000000', enabled: false, label: null });
+
+  it('does not fire an insert that the dedupe index would refuse', () => {
+    // phase33's `schedules_dedupe_uidx` keys on (device, socket, on, off, days), so a SECOND
+    // blank rule is an exact duplicate of the first. The old behaviour sent it anyway and printed
+    // the constraint name. Prevention is the fix: the doomed write never leaves the browser.
+    render(<ScheduleStackCard target={target()} stack={[blank()]} dispatchableIds={new Set(['co1'])} />);
+    const add = screen.getByRole('button', { name: /add schedule/i });
+    expect(add).toBeDisabled();
+    fireEvent.click(add);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('says why the button is waiting, and points at the rule to finish', () => {
+    render(<ScheduleStackCard target={target()} stack={[blank()]} dispatchableIds={new Set(['co1'])} />);
+    expect(screen.getByText(/Give the empty rule below a time and a day/i)).toBeInTheDocument();
+  });
+
+  it('a rule with only a day set is NOT blank — partial work must not block the button forever', () => {
+    render(
+      <ScheduleStackCard
+        target={target()}
+        stack={[rule({ id: 'partial', on: null, off: null, days: '1000000' })]}
+        dispatchableIds={new Set(['co1'])}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /add schedule/i })).toBeEnabled();
+  });
+
+  it('adds normally once every rule is filled in', () => {
+    render(<ScheduleStackCard target={target()} stack={[rule()]} dispatchableIds={new Set(['co1'])} />);
+    fireEvent.click(screen.getByRole('button', { name: /add schedule/i }));
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ deviceId: 'co1', socket: 1, enabled: false }));
+  });
+});
+
+describe('ScheduleStackCard — an error the reader can clear', () => {
+  it('a failure can be dismissed instead of sitting until the next successful add', () => {
+    useScheduleStore.setState({ rowError: { [CREATING]: 'A rule like this already exists on this target.' } });
+    render(<ScheduleStackCard target={target()} stack={[rule()]} dispatchableIds={new Set(['co1'])} />);
+    expect(screen.getByRole('alert')).toHaveTextContent(/already exists/i);
+    fireEvent.click(screen.getByRole('button', { name: /dismiss this message/i }));
+    expect(clearRowError).toHaveBeenCalledWith(CREATING);
+  });
+
+  it('never shows a raw Postgres constraint name', () => {
+    useScheduleStore.setState({ rowError: { [CREATING]: 'A rule like this already exists on this target.' } });
+    render(<ScheduleStackCard target={target()} stack={[rule()]} dispatchableIds={new Set(['co1'])} />);
+    expect(document.body.textContent).not.toMatch(/uidx|duplicate key value|unique constraint/i);
   });
 });
