@@ -7,7 +7,7 @@ it would be operator-editable device names. The pdfmake spike is the part worth 
 findings that each cost an afternoon and none of which are in anybody's documentation. The print
 palette's new on-white assertion rejected `--accent` on its first run, and two of that test's own
 first assertions turned out to be measuring the wrong thing and passing. **§5 Q9 is answered by
-measurement and struck**, which also unblocks **RM-042**. `phase37_report_series.sql` is applied, and **reading it back against the live project found four defects, every one of which made the building look better observed than it was** — see RM-072f and RM-072g. The one worth leading with is not in the new code at all: **the Reports page has been overstating its own coverage.** August 2026 reads 48%, and only **26.9%** of its expected minutes carry a real reading — 9,415 of the 21,421 "observed" samples are rows the meters wrote while observing nothing. Correcting the stored figure is **RM-073**, and it is a decision about restating published history rather than a task. Applying the fixes then turned up **RM-072h**: `create or replace` cannot change a function's OUT parameters, and `rehearse.sh` had only ever proved each migration against an EMPTY database — the one case a hand-applied migration never meets twice. **phase37 is applied and every check is green (RM-072i)**; the series layer the charts read is done.
+measurement and struck**, which also unblocks **RM-042**. `phase37_report_series.sql` is applied, and **reading it back against the live project found four defects, every one of which made the building look better observed than it was** — see RM-072f and RM-072g. The one worth leading with is not in the new code at all: **the Reports page has been overstating its own coverage.** August 2026 reads 48%, and only **26.9%** of its expected minutes carry a real reading — 9,415 of the 21,421 "observed" samples are rows the meters wrote while observing nothing. Correcting the stored figure is **RM-073**, and it is a decision about restating published history rather than a task. Applying the fixes then turned up **RM-072h**: `create or replace` cannot change a function's OUT parameters, and `rehearse.sh` had only ever proved each migration against an EMPTY database — the one case a hand-applied migration never meets twice. **phase37 is applied and every check is green (RM-072i)**, and the first chart is drawing from it (RM-072j) — where looking at real data, rather than asserting on fixtures, rewrote two of its decisions.
 
 **Previously audited:** 2026-09-10 — **RM-070 and RM-071**. RM-071 is a UI/UX overhaul of the
 Automation page: rules now read as IF/THEN blocks, and auditing for it turned up a one-character CSS
@@ -3253,6 +3253,36 @@ emission factor carrying provenance. What has landed:
       expected 1,440. `expected_samples` is a nominal figure derived from the window, and a minute
       that carries two rows is a pre-existing ingest artefact — `server/baselineReport.mjs` shows
       the same 1,442 for that day. Recorded, not fixed.
+
+
+- [x] **RM-072j — the first chart, and August is the argument for how it draws.** The daily
+      energy bar chart, rendered from the live series and looked at rather than only asserted on.
+      Three states, three treatments, and no two of them look alike:
+
+      *observed and complete* — a solid bar, on an axis anchored at zero because a bar's length
+      is its value. *Observed but partial* — the same bar at reduced weight with a **dashed open
+      cap**: 2026-08-19 recorded 0.89 kWh from 166 usable minutes, which is a floor, and an
+      unmarked floor on a shared axis reads as a comparison. *Not observed* — a hatched block the
+      full height of the plot, and never a bar of any height, because a zero-height bar and a
+      genuine zero are the same picture and only one of them is a fact.
+
+      **Two things only looking at it could have caught.**
+
+      August has twenty unobserved days. One block and one label each gave twenty 8px labels in
+      nine-pixel bands — an unreadable smear that made the chart look broken rather than the
+      month. Consecutive dark days are merged into one run *before* anything is drawn, so
+      "one block per outage" is a property of the geometry rather than a rendering trick, and the
+      big leading gap now reads **"16 days, no data"** once, in the middle. A run too narrow for
+      its label gets none: a clipped label is worse than the hatch alone.
+
+      The partial-day marker was a `≥` above the bar. At 9px in a font the PDF may not embed it
+      renders as an ambiguous smudge — and drawn perfectly it still asks the reader to know what
+      a mathematical operator floating above a bar means. It is a dashed top edge now: an
+      unfinished bar with an unfinished cap, which needs no legend and survives a monochrome
+      print. Opacity alone was never enough; that is decoration, not a channel.
+
+      `dailyEnergyChart.ts`, 18 tests. Coverage policy stays in `coverageOf` — the generator is
+      handed `observed` and `complete` already resolved and knows nothing about bands.
 
 
 - [ ] **RM-073 (M)** — Correct `generate_period_report`'s `online_sample_count` to count usable
