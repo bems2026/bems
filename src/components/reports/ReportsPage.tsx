@@ -36,6 +36,7 @@ import { CircuitDeepDive } from './CircuitDeepDive';
 import { ComparisonReport } from './ComparisonReport';
 import { CoverageBanner } from './CoverageBanner';
 import { getDemandSummary, type DemandSummary } from '@/lib/reportSeries';
+import { ExportPdfButton } from './ExportPdfButton';
 
 /**
  * Energy reports, weekly or monthly — Phase 12, generalised by RM-041.
@@ -304,6 +305,27 @@ export function ReportsPage() {
             {/* In the header beside the export, where every other page in this app puts its
                 controls — the shape RM-071 settled on for Automation. */}
             <Tabs tabs={REPORT_TABS} activeId={tab} onChange={setTab} label="Report type" className="reports-tabs" />
+            <ExportPdfButton
+              period={period}
+              periodLabel={selected ? formatPeriod(period, selected) : ''}
+              building={building}
+              rows={rows}
+              charts={
+                live
+                  ? {
+                      daily: live.daily,
+                      hours: live.hours,
+                      matrix: live.matrix,
+                      curve: live.curve,
+                      segments,
+                      untracked,
+                      ceilingW: live.ceilingW,
+                      summary: live.summary,
+                    }
+                  : null
+              }
+              nameOf={nameOf}
+            />
             <button type="button" className="devices-add-btn" onClick={exportCsv} disabled={!rows || rows.length === 0}>
               <Download size={16} aria-hidden="true" /> Export CSV
             </button>

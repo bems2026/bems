@@ -48,6 +48,11 @@ export default defineConfig({
         // (OfficeScene3D isn't imported until the Overview hero mounts it), so this chunk
         // isn't fetched at all on a first paint that never reaches the 3D view.
         manualChunks(id) {
+          // pdfmake plus its embedded font container is ~2MB. Its own chunk so the figure stays
+          // visible in the build output rather than buried in a vendor bundle, and because
+          // `src/lib/reportPdf/download.ts` imports it dynamically — a reader who never exports
+          // a report should never pay for the ability to, least of all on the kiosk's Pi.
+          if (id.includes('node_modules/pdfmake') || id.includes('node_modules/pdfkit')) return 'pdf';
           if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-')) return 'charts';
           if (id.includes('node_modules/three')) return 'three';
           if (id.includes('node_modules/lucide-react')) return 'icons';

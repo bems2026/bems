@@ -3449,6 +3449,48 @@ emission factor carrying provenance. What has landed:
       mock. Only the I/O is faked now, which is the rule the sibling test file already states.
 
 
+- [x] **RM-072p — the PDF, and the report becomes a document.** `Download PDF` on the Reports
+      page. Rendered from live August data and read back: **7 pages, 492 kB, 311 ms**, five vector
+      charts, fonts embedded and subsetted so the text is real and selectable, and `/Pattern` in
+      the output confirming the gap hatch is vector rather than a picture of one.
+
+      **`docDefinition.ts` does not import pdfmake, and that is the whole point.** The definition
+      is a plain object, so everything worth asserting is checkable as a value without rendering
+      a byte or pulling two megabytes into a test run: that coverage precedes the figures it
+      qualifies (asserted as an ordering property, not by eyeballing), that all seven tables set
+      `headerRows: 1`, that the closing refusals are the last node and `unbreakable`, that a
+      missing device figure is an em dash and never a zero, and — a whole-tree string walk —
+      **that no currency symbol appears anywhere**, which is RM-073's territory and stays absent
+      until a tariff can be entered with provenance. `download.ts` is the only file that knows
+      pdfmake exists.
+
+      **Why a PDF is held to a higher bar than the page.** The page can be re-read with a
+      different period selected and its charts can be hovered. A PDF leaves the building: it is
+      attached to an email, printed, and quoted months later. It is the one rendering nobody can
+      ask a follow-up question of, so every figure carries its qualification with it rather than
+      nearby — which is why the cover states the timezone frame in its second sentence and the
+      footer names the building and period on every page.
+
+      **The charts are generated twice, deliberately.** The page's copies use `SCREEN_PALETTE`
+      (`var(--…)`, following the theme toggle); the document's use `PRINT_PALETTE` — concrete hex
+      mirroring the light theme — because paper is white whatever the kiosk is set to, and a
+      reader in dark mode should not get a document they cannot print. Same scenes, same numbers,
+      different ink.
+
+      **Dynamically imported**, with its own `pdf` chunk: 1,826 kB minified / 815 kB gzipped, and
+      the main bundle **did not grow at all**. A reader who never exports a report never pays for
+      the ability to, which matters most on the machine the kiosk runs on.
+
+      `src/types/pdfmake.d.ts` is hand-written rather than `@types/pdfmake`: that package describes
+      the **0.2** API, the callback one, which on 0.3 hangs forever with no error — typing against
+      it would have TypeScript vouching for the exact call that does not work.
+
+      The document reads back correct on the live month: 12,006 of 44,640 minutes with a real
+      reading (27%) against 21,421 rows (48%), a 23,549-minute longest gap, **11 days observed of
+      which 7 complete** — eleven and not sixteen, because five of August's days hold rows the
+      meters wrote while observing nothing.
+
+
 - [ ] **RM-073 (M)** — Correct `generate_period_report`'s `online_sample_count` to count usable
       observations rather than rows, and regenerate. **Blocked on a decision, not on code.**
       RM-072g measured what it would change: August 2026's stored coverage moves 48.0% → 26.9%.

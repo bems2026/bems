@@ -15,6 +15,7 @@ import {
   type DailyRow,
   type HourRow,
   type MatrixRow,
+  type DemandSummary,
 } from '@/lib/reportSeries';
 import { formatPeriod, type ReportPeriod } from '@/lib/supabaseReports';
 
@@ -40,6 +41,9 @@ export interface ChartsData {
   segments: CircuitSegment[];
   untracked?: { label: string; kwh: number | null };
   ceilingW: number | null;
+  /** Carried in the same bundle because the PDF and the baseline report both need it beside
+   *  these series — splitting it out would mean two things to keep in step for one period. */
+  summary?: DemandSummary | null;
 }
 
 interface Props extends ChartsData {
