@@ -85,7 +85,12 @@ test('RLS is on and anon is named in the revoke', () => {
   // learned that once already, and the comment there says it never comes back.
   for (const t of TABLES) {
     assert.match(sql, new RegExp(`alter table ${t}\\s+enable row level security`, 'i'));
-    assert.match(sql, new RegExp(`revoke all on ${t}\\s+from public, anon`, 'i'));
+    // `authenticated` MUST be named in the revoke, not just `public, anon`. A grant is additive,
+    // and Supabase's default privileges already hand ALL on a new public table to all three
+    // roles — so granting select/insert/delete adds nothing and leaves the UPDATE and the
+    // TRUNCATE this file's header says are unavailable. The first version of this assertion
+    // matched `from public, anon` as a prefix and passed while exactly that was true.
+    assert.match(sql, new RegExp(`revoke all on ${t}\\s+from public, anon, authenticated`, 'i'));
   }
   assert.equal(/grant[^;]*\bto\b[^;]*\banon\b/i.test(sql), false);
 });

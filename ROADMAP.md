@@ -3569,6 +3569,62 @@ emission factor carrying provenance. What has landed:
       page that works.
 
 
+- [x] **RM-072r — phase38 read back, and the grant it never took away.** Applied 2026-09-12.
+      Every constraint holds against the live project: a rate with a blank source is refused, a
+      negative rate is refused, a rate above the sanity ceiling is refused, a currency that is not
+      three letters is refused, an emission factor above 2.0 is refused, a second rate for the
+      same start date is refused, and `anon` is refused on both tables. **phase38 must be
+      re-applied** — see below.
+
+      **The read-back found the hole, and my first two measurements of it were both unsound.**
+      A service-role probe reported that an UPDATE succeeded, which proves nothing: the service
+      role bypasses RLS by design. A second probe set `role authenticated` inside a `DO` block,
+      where it does not change the role the statements run as — and the owner bypasses RLS that
+      is not `FORCE`d, so three "successes" were the owner's. Only the third probe, with a real
+      `set role` outside a function body, measured anything. Recording all three because the
+      wrong two were each individually plausible.
+
+      **What is actually true: a grant is additive, and nothing had ever taken Supabase's default
+      away.** A real project runs `alter default privileges ... grant all on tables to anon,
+      authenticated, service_role`, so `authenticated` held
+      `DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE` on the new tables. phase38 granted
+      `select, insert, delete` and revoked only from `public, anon` — adding nothing that was not
+      already there, and leaving the file's own "no UPDATE path" header as the only thing
+      enforcing it. It revokes from `authenticated` too now.
+
+      **`supabase/rehearse.sh` now reproduces Supabase's default privileges**, which is what makes
+      any privilege assertion in it mean anything: a bare `create role` grants nothing, so until
+      this line a migration that only granted looked correct in the container and left a privilege
+      it never took away in production. The phase38 block asserts the exact privilege set against
+      `information_schema`, and **the guard was verified by neutering it** — with the revoke
+      removed the rehearsal fails and names the full privilege list.
+
+- [ ] **RM-074 (M) — every other table carries the same default grant, and TRUNCATE is not
+      filtered by RLS.** Measured in the rehearsal once it reproduced Supabase's defaults: **all
+      21 pre-existing tables** grant `authenticated`
+      `DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE` — `commands`, `readings`,
+      `building_totals`, `sites`, `period_reports`, every one of them. Only phase38's two are
+      narrow, and only because RM-072r fixed them.
+
+      **For DML this is mostly covered, and for TRUNCATE it is not.** Postgres requires both the
+      table privilege *and* a matching row policy, so an UPDATE or DELETE that no policy permits
+      affects nothing — that is the design, and it is why this has been harmless so far.
+      **TRUNCATE is different: row security does not filter it at all.** Measured as a genuinely
+      switched `authenticated` role against a seeded `commands` row: the table was emptied.
+      `commands` is the safety-critical audit trail, deliberately exempt from every retention
+      pass precisely so it cannot be lost — and any signed-in account can drop all of it in one
+      statement.
+
+      **Why this is a decision rather than a task.** The fix is one `revoke all ... from
+      authenticated` per table followed by the grant each already intends, which is mechanical.
+      What is not mechanical is verifying, table by table, which privileges each consumer
+      genuinely needs before taking the rest away — `device_config`, `schedules`, `space_nodes`,
+      `site_ui_prefs` and `socket_config` are all written from the browser, and a revoke that is
+      one privilege too broad breaks a page with a permission error rather than a visible fault.
+      Do NOT sweep this in one pass without reading each policy first. The rehearsal will now
+      catch a mistake in either direction, which it could not have done a day ago.
+
+
 - [ ] **RM-073 (M)** — Correct `generate_period_report`'s `online_sample_count` to count usable
       observations rather than rows, and regenerate. **Blocked on a decision, not on code.**
       RM-072g measured what it would change: August 2026's stored coverage moves 48.0% → 26.9%.

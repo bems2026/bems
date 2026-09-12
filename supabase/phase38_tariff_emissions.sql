@@ -105,8 +105,23 @@ create policy emission_factors_select_authenticated on emission_factors for sele
 create policy emission_factors_insert_authenticated on emission_factors for insert to authenticated with check (true);
 create policy emission_factors_delete_authenticated on emission_factors for delete to authenticated using (true);
 
-revoke all on energy_tariffs   from public, anon;
-revoke all on emission_factors from public, anon;
+-- REVOKED FROM `authenticated` TOO, AND THAT IS THE LOAD-BEARING LINE.
+--
+-- A grant is additive. Supabase's own `alter default privileges` hands ALL privileges on new
+-- tables in `public` to `anon`, `authenticated` and `service_role`, so granting
+-- `select, insert, delete` here adds nothing that was not already there — `authenticated` would
+-- keep the UPDATE this file's header says it does not have, and the comment would be the only
+-- thing enforcing it.
+--
+-- Caught by reading the live project back: an UPDATE succeeded where the design says none is
+-- possible. The reading was done with the service-role key, which bypasses RLS anyway and so
+-- proves nothing on its own — but it was enough to ask the question, and the answer was that
+-- nothing had ever taken the default grant away. `supabase/rehearse.sh` now asserts the exact
+-- privilege set against `information_schema`, which is the only check that could have caught it.
+--
+-- This is the same shape as phase5's lesson about `anon`, one role along.
+revoke all on energy_tariffs   from public, anon, authenticated;
+revoke all on emission_factors from public, anon, authenticated;
 
 grant select, insert, delete on energy_tariffs   to authenticated;
 grant select, insert, delete on emission_factors to authenticated;

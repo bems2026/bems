@@ -82,6 +82,22 @@ begin
   if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated; end if;
   if not exists (select 1 from pg_roles where rolname = 'service_role') then create role service_role; end if;
 end $$;
+
+-- SUPABASE'S OWN DEFAULT PRIVILEGES, reproduced — and this is what makes the privilege
+-- assertions in this file mean anything.
+--
+-- A real Supabase project hands ALL privileges on every new table in `public` to `anon`,
+-- `authenticated` and `service_role`. Bare `create role` does not, so until this line a
+-- migration that only GRANTED looked correct in the container and left a privilege it never
+-- took away on the live project. RM-072q found exactly that: phase38's header said "no UPDATE
+-- path" while `authenticated` kept the default one, and neither the schema text test (which
+-- reads the grant and is satisfied) nor a service-role probe (which bypasses RLS anyway) could
+-- see it.
+--
+-- With this line the container is the environment the SQL actually lands in, so "revoke before
+-- you grant" is enforced here rather than remembered.
+alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
 SQL
 
 echo "== applying every migration in order =="
@@ -1086,6 +1102,54 @@ begin
     format('usable: rows carrying nothing must not close the gap, got %s', v);
 
   raise notice 'phase37: a row is not an observation — assertions passed';
+end $$;
+
+-- ---- phase38: a rate cannot be edited out from under a report ------------------------------
+--
+-- The privilege set, asserted against information_schema rather than against the file's text.
+-- A `grant` is additive, and Supabase's own default privileges hand ALL on new public tables to
+-- `anon`, `authenticated` and `service_role` — so a migration that only grants adds nothing and
+-- leaves the UPDATE it believes it withheld. Nothing but this query can see that: the schema
+-- text test reads the grant and is satisfied, and a service-role probe bypasses RLS anyway.
+do $$
+declare
+  privs text;
+begin
+  foreach privs in array array['energy_tariffs', 'emission_factors'] loop
+    declare
+      got text;
+    begin
+      select string_agg(distinct privilege_type, ',' order by privilege_type)
+        into got
+        from information_schema.role_table_grants
+       where table_name = privs and grantee = 'authenticated';
+      assert got = 'DELETE,INSERT,SELECT',
+        format('%s: authenticated holds "%s", expected exactly DELETE,INSERT,SELECT — an UPDATE here lets a rate be edited out from under a report that was priced by it', privs, got);
+
+      select string_agg(distinct privilege_type, ',' order by privilege_type)
+        into got
+        from information_schema.role_table_grants
+       where table_name = privs and grantee in ('anon', 'PUBLIC');
+      assert got is null, format('%s: anon/PUBLIC hold "%s" and should hold nothing', privs, got);
+    end;
+  end loop;
+
+  -- And the constraints that make a figure checkable.
+  begin
+    insert into energy_tariffs (site_id, effective_from, currency, rate_per_kwh, source)
+    values ('mmsu-nberic-care', date '1999-01-01', 'PHP', 11.43, '   ');
+    assert false, 'phase38: a rate with a blank source must be refused';
+  exception when check_violation then null;
+  end;
+
+  begin
+    insert into emission_factors (site_id, effective_from, kg_co2e_per_kwh, source)
+    values ('mmsu-nberic-care', date '1999-01-01', 12, 'misplaced decimal');
+    assert false, 'phase38: an emission factor above 2.0 must be refused';
+  exception when check_violation then null;
+  end;
+
+  raise notice 'phase38: privileges and constraints — assertions passed';
 end $$;
 SQL
 
