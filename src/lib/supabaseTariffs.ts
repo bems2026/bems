@@ -23,6 +23,21 @@ function client() {
   return supabase;
 }
 
+/**
+ * Postgres `undefined_table`. phase38 has not been applied yet.
+ *
+ * Treated as "no tariff configured" rather than as an error, and ONLY this code — a permission
+ * failure or a network failure still throws, because those mean something different and a page
+ * that swallowed them would be lying about why it has no figure.
+ *
+ * This is not only for the gap between deploying the bundle and pasting the migration. RM-033's
+ * replication framework stands this up for another institution, and `docs/replication.md` lists
+ * the migrations as a step somebody performs: a site that has not reached phase38 should have a
+ * Reports page that works and says no rate is entered, not one that fails to load.
+ */
+const UNDEFINED_TABLE = '42P01';
+const notMigrated = (error: { code?: string } | null) => error?.code === UNDEFINED_TABLE;
+
 interface TariffRow {
   id: string;
   effective_from: string;
@@ -55,6 +70,7 @@ export async function getTariffs(): Promise<TariffEntry[]> {
     .select('id,effective_from,currency,rate_per_kwh,source,set_by_email,set_at')
     .eq('site_id', SITE.id)
     .order('effective_from', { ascending: false });
+  if (notMigrated(error)) return [];
   if (error) throw new Error(`Could not read the tariffs: ${error.message}`);
   return ((data ?? []) as TariffRow[]).map((r) => ({
     id: r.id,
@@ -73,6 +89,7 @@ export async function getEmissionFactors(): Promise<FactorEntry[]> {
     .select('id,effective_from,kg_co2e_per_kwh,source,set_by_email,set_at')
     .eq('site_id', SITE.id)
     .order('effective_from', { ascending: false });
+  if (notMigrated(error)) return [];
   if (error) throw new Error(`Could not read the emission factors: ${error.message}`);
   return ((data ?? []) as FactorRow[]).map((r) => ({
     id: r.id,
