@@ -37,6 +37,9 @@ import { ComparisonReport } from './ComparisonReport';
 import { CoverageBanner } from './CoverageBanner';
 import { getDemandSummary, type DemandSummary } from '@/lib/reportSeries';
 import { ExportPdfButton } from './ExportPdfButton';
+import { CostCarbonLine } from './CostCarbonLine';
+import { carbonOf, costOf, type DayEnergy } from '@/lib/energyCost';
+import { getEmissionFactors, getTariffs, type FactorEntry, type TariffEntry } from '@/lib/supabaseTariffs';
 
 /**
  * Energy reports, weekly or monthly — Phase 12, generalised by RM-041.
@@ -170,6 +173,8 @@ export function ReportsPage() {
         curve: CurveRow[];
         ceilingW: number | null;
         summary: DemandSummary | null;
+        tariffs: TariffEntry[];
+        factors: FactorEntry[];
       }
     | null
   >(null);
@@ -216,6 +221,11 @@ export function ReportsPage() {
       getHourMatrix(period, selected),
       getDemandCurve(period, selected),
       getDemandSummary(period, selected),
+      // Priced per day at the rate in force that day, so a report of a past month is not priced
+      // at today's rate. Both come back empty when nothing has been entered, and every consumer
+      // renders "not set" rather than a zero.
+      getTariffs(),
+      getEmissionFactors(),
       // The DSM ceiling the duration curve is drawn against. Read from the same row the
       // Automation page writes, so the chart cannot disagree with the page that sets it.
       fetchScheduleContext().then((ctx) => {
@@ -223,8 +233,8 @@ export function ReportsPage() {
         return Number.isFinite(kw) && kw > 0 ? kw * 1000 : null;
       }),
     ])
-      .then(([daily, hours, matrix, curve, summary, ceilingW]) => {
-        if (!cancelled) setSeries({ period, start: selected, daily, hours, matrix, curve, summary, ceilingW });
+      .then(([daily, hours, matrix, curve, summary, tariffs, factors, ceilingW]) => {
+        if (!cancelled) setSeries({ period, start: selected, daily, hours, matrix, curve, summary, tariffs, factors, ceilingW });
       })
       .catch((err) => !cancelled && setError(String(err)));
     return () => {
@@ -244,6 +254,20 @@ export function ReportsPage() {
    * disagree. See `src/lib/circuitBreakdown.ts` for why none of it is written here.
    */
   const { segments, untracked } = useMemo(() => buildBreakdown(rows ?? [], nameOf), [rows, nameOf]);
+
+  /**
+   * Cost and carbon, from the SAME per-day series the charts are drawn from — so the figure in
+   * the summary and the bars above it cannot describe different days.
+   */
+  const priced = useMemo(() => {
+    const days: DayEnergy[] = (live?.daily ?? []).map((d) => ({
+      day: d.local_day.slice(0, 10),
+      // A day whose rows carried no reading has no energy to price. Passing its 0 through would
+      // price it at zero, which says the building spent nothing rather than that nobody watched.
+      kwh: d.usable_sample_count > 0 ? d.energy_kwh : null,
+    }));
+    return { cost: costOf(days, live?.tariffs ?? []), carbon: carbonOf(days, live?.factors ?? []) };
+  }, [live]);
 
   const building = useMemo(
     () => months?.find((m) => m.period_start.slice(0, 10) === selected) ?? null,
@@ -324,6 +348,8 @@ export function ReportsPage() {
                     }
                   : null
               }
+              cost={priced.cost}
+              carbon={priced.carbon}
               nameOf={nameOf}
             />
             <button type="button" className="devices-add-btn" onClick={exportCsv} disabled={!rows || rows.length === 0}>
@@ -418,6 +444,10 @@ export function ReportsPage() {
               <dt>Anomalies</dt>
               <dd>{building.anomaly_count}</dd>
             </div>
+            {/* Last in the list, deliberately: the cost is derived from the energy above it, and
+                putting a currency figure first would make it the headline of a report whose
+                headline is a measurement. */}
+            <CostCarbonLine cost={priced.cost} carbon={priced.carbon} coverage={buildingCoverage} />
           </dl>
         </section>
       ) : null}

@@ -28,6 +28,9 @@ describe('SettingsPage', () => {
       'Floor plan',
       'Page cards',
       'Building policy',
+      // RM-072q. Pinned deliberately: a section added without a deliberate decision is a
+      // settings page that grows by accident, which is how the Devices toolbar reached 1123px.
+      'Tariff & emissions',
     ]);
   });
 

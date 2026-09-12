@@ -6358,6 +6358,101 @@ body::before {
   font-size: var(--fs-xs);
 }
 
+/* Tariff & emissions — RM-072q. The source field is wider than the number on purpose: it is the
+   part that makes the number checkable, and a cramped input invites a one-word answer. */
+.tariff-heading {
+  margin: var(--sp-4) 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--txt);
+}
+
+.tariff-list {
+  list-style: none;
+  margin: 0 0 var(--sp-2);
+  padding: 0;
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.tariff-list li {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs);
+}
+
+.tariff-list__figure {
+  font-weight: 600;
+  color: var(--txt);
+}
+
+.tariff-list__from,
+.tariff-list__prov {
+  color: var(--muted);
+}
+
+.tariff-list__remove {
+  background: none;
+  border: 0;
+  color: var(--muted-2);
+  cursor: pointer;
+  padding: var(--sp-1);
+  border-radius: var(--r-sm);
+}
+
+.tariff-list__remove:hover {
+  color: var(--bad);
+}
+
+.tariff-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-2);
+}
+
+.tariff-form label {
+  display: grid;
+  gap: 2px;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.tariff-form__source {
+  flex: 1 1 260px;
+}
+
+.tariff-form input {
+  min-height: 36px;
+  padding: 0 var(--sp-2);
+  background: var(--bg-surface);
+  color: var(--txt);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+
+/* Provenance inside the report's own figure grid — spans the row, because a source is a
+   sentence rather than a value. */
+.report-provenance {
+  grid-column: 1 / -1;
+}
+
+.report-provenance ul {
+  margin: 0;
+  padding-left: var(--sp-4);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+
 /* What a report does not say — RM-072n. Deliberately a plain block rather than a callout: these
    are not a warning about something going wrong, they are the limits of every figure above them,
    and styling them as an alert would make a reader dismiss them as one. */
@@ -8465,6 +8560,9 @@ button.space-plan__pin {
      controls above silently stop being checked. */
   .report-chart__data > summary,
   .reports-picker__select,
+  /* RM-072q: the tariff entry fields and the control that deletes a rate. */
+  .tariff-form input,
+  .tariff-list__remove,
   /* RM-071: a 30x30 icon button that DELETES a schedule rule, on a touchscreen. Square and in
      normal flow beside the arm switch, so it grows rather than needing a hit-area expander —
      the switch's own expander is 44 wide and the row's 8px gap keeps them from cross-talking. */

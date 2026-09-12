@@ -3497,6 +3497,62 @@ emission factor carrying provenance. What has landed:
       in the served HTML**, so it is fetched on the first click and never on a page load.
 
 
+- [x] **RM-072q — what a kilowatt-hour costs, and what it emits.** The last piece of the reporting
+      scope. `supabase/phase38_tariff_emissions.sql` — **code done, rehearsed, NOT YET APPLIED.**
+
+      **Two tables, not two keys in `sites.policy`.** `set_acu_min_room_target` (phase35) is a
+      `security definer` function because the `sites` row *also* decides whether commands may
+      leave the building for a vendor cloud, and RLS is row-level — a policy narrow enough to
+      permit the setpoint and refuse the dispatch mode cannot be written, so the function is the
+      narrow door. A dedicated table has no such collision: plain `authenticated` RLS, and no
+      function to maintain. phase38 adds none, which the schema test asserts.
+
+      **Dated, not a scalar.** A single "current rate" would price August 2026 at whatever the
+      rate is on the afternoon somebody opens the report — an error that is invisible and grows.
+      `report_daily_series` gives a figure per day precisely so cost can be computed per day at
+      the rate in force *that* day, and the report names every rate it used.
+
+      **`source` is `not null check (btrim(source) <> '')`, and that constraint is the reason
+      this is a table at all.** A rate typed in without saying where it came from becomes an
+      unattributable figure in a document going to a university — the most quotable number in it
+      and the least checkable. Save is disabled until it is filled and the hint says why.
+
+      **No UPDATE, deliberately** — no policy, no grant, asserted by the schema test. A tariff row
+      is a historical claim: "from this date the rate was this, and here is where that came from."
+      Editing it in place rewrites what a past report was priced at with nothing to show it
+      happened. Correcting a mistake is a delete and a re-insert, so both acts stay attributed.
+      `set_by` comes from `auth.uid()` and cannot be forged; `set_by_email` is a snapshot beside
+      it, because provenance is who it was *at the time* rather than a live join that would
+      rewrite an old report's footnote when somebody's address changes.
+
+      **`src/lib/energyCost.ts` refuses four ways**, and every one is a `null` rather than a zero:
+      no rate configured at all; a day earlier than the earliest rate (back-applying it would be
+      inventing history — the kilowatt-hours are real, what they cost is not known); a day whose
+      rows carried no reading (unobserved, not free); and two rates in different currencies, which
+      do not sum — better no total than a number that is four hundred of nothing. The cost also
+      **inherits the energy's coverage qualifier verbatim**: if the kWh is a floor, so is the cost.
+
+      **Three pre-existing guards caught real faults**, all of them about replication or about
+      growth by accident:
+      `test/site-naming.test.mjs` refused the tariff form's *placeholder*, which named this
+      institution — a placeholder is shipped text, and it would have named the wrong university at
+      every other deployment. It comes from `SITE.display_name` now. The same reasoning then
+      applied to the form's `currency: 'PHP'` default, which no guard would have caught: the
+      migration refuses to default the currency and says why, and pre-filling it in the form makes
+      exactly that assumption one layer further out where no constraint can see it. It starts
+      empty.
+      `SettingsPage.test.tsx` pins the section list, so the sixth section had to be a deliberate
+      addition rather than an accident — which is how the Devices toolbar reached 1123px.
+      And the tabs test failed on an unmocked `getTariffs`: the Promise.all never resolved and
+      every tab needing the series rendered nothing, which reads as four broken panels and was
+      one missing mock. Second time that exact shape has appeared; the rule is in both files now.
+
+      `docDefinition` gains the cost, the emissions and a provenance line per rate — under the
+      figure rather than as a footnote at the back. The document test's "no currency anywhere"
+      assertion is stronger than before rather than weaker: there is now a cost path to *not*
+      take, and the default fixture has no tariff because that is the live state.
+
+
 - [ ] **RM-073 (M)** — Correct `generate_period_report`'s `online_sample_count` to count usable
       observations rather than rows, and regenerate. **Blocked on a decision, not on code.**
       RM-072g measured what it would change: August 2026's stored coverage moves 48.0% → 26.9%.

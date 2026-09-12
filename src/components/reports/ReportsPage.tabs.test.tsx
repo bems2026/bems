@@ -38,6 +38,13 @@ vi.mock('@/lib/reportSeries', async (importOriginal) => {
   };
 });
 vi.mock('@/lib/supabaseConfig', () => ({ fetchScheduleContext: vi.fn().mockResolvedValue({}) }));
+// Empty, which is the live state: no tariff entered. An unmocked one rejects, the whole
+// Promise.all never resolves, and every tab that needs the series renders nothing — which reads
+// as a broken panel and is a missing mock.
+vi.mock('@/lib/supabaseTariffs', () => ({
+  getTariffs: vi.fn().mockResolvedValue([]),
+  getEmissionFactors: vi.fn().mockResolvedValue([]),
+}));
 
 const FULL = 31 * 24 * 60;
 

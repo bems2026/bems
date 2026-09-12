@@ -14,6 +14,9 @@ import { CONTENT_WIDTH, type PdfChart, type PdfReport } from '@/lib/reportPdf/do
 import { coverageOf, type PeriodBuildingReport, type PeriodDeviceReport, type ReportPeriod } from '@/lib/supabaseReports';
 import { siteDateTime } from '@/lib/siteTime';
 import { bootedScript } from '@/lib/buildVersion';
+import { provenanceLines } from './CostCarbonLine';
+import { isQuotable } from '@/lib/supabaseReports';
+import type { Carboned, Costed } from '@/lib/energyCost';
 import type { ChartsData } from './ReportCharts';
 
 /**
@@ -35,13 +38,15 @@ interface Props {
   building: PeriodBuildingReport | null;
   rows: readonly PeriodDeviceReport[] | null;
   charts: ChartsData | null;
+  cost: Costed;
+  carbon: Carboned;
   nameOf: (id: string) => string;
 }
 
 const f = (v: number | null, digits = 2) =>
   v === null || v === undefined || !Number.isFinite(v) ? null : v.toFixed(digits);
 
-export function ExportPdfButton({ period, periodLabel, building, rows, charts, nameOf }: Props) {
+export function ExportPdfButton({ period, periodLabel, building, rows, charts, cost, carbon, nameOf }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,6 +57,7 @@ export function ExportPdfButton({ period, periodLabel, building, rows, charts, n
     setBusy(true);
     setError(null);
     try {
+      const buildingCoverage = building ? coverageOf(building.online_sample_count, building.expected_sample_count) : null;
       const spec = (idPrefix: string, height: number, title: string) => ({
         width: CONTENT_WIDTH,
         height,
@@ -121,6 +127,15 @@ export function ExportPdfButton({ period, periodLabel, building, rows, charts, n
         observedDays: charts.daily.filter((d) => d.usable_sample_count > 0).length,
         completeDays: charts.daily.filter((d) => d.expected_samples > 0 && d.usable_sample_count / d.expected_samples >= 0.95).length,
         energyKwh: building?.energy_kwh ?? null,
+        // The same qualifier the energy carries. A figure qualified on screen and bare in the
+        // document is worse than one that was never qualified at all.
+        cost:
+          cost.total === null
+            ? null
+            : { text: `${cost.total.toFixed(2)} ${cost.currency ?? ''}`.trim(), qualified: !isQuotable(buildingCoverage) },
+        carbon:
+          carbon.total === null ? null : { text: `${carbon.total.toFixed(1)} kgCO2e`, qualified: !isQuotable(buildingCoverage) },
+        provenance: provenanceLines(cost, carbon),
         charts: scenes.map((scene, i) => ({
           title: scene.title,
           svg: sceneToSvg(scene, PRINT_PALETTE),

@@ -39,6 +39,11 @@ const report = (o: Partial<PdfReport> = {}): PdfReport => ({
   observedDays: 16,
   completeDays: 6,
   energyKwh: 90.9468,
+  // Null by default, which is the live state: no tariff has been entered. That makes the
+  // "no currency anywhere" assertion below a real check rather than a vacuous one.
+  cost: null,
+  carbon: null,
+  provenance: [],
   charts: [{ title: 'Energy per day', svg: '<svg xmlns="http://www.w3.org/2000/svg"/>', desc: 'Nine days.', table: { headers: ['Day', 'kWh'], rows: [['17', '14.68'], ['18', null]] } }],
   deviceRows: [
     { name: 'C.O Yellow meter', energyKwh: '51.13', peakW: '4551', avgW: '318', coverage: '48%' },
@@ -190,10 +195,34 @@ describe('it never invents a number it does not have', () => {
     expect(text).not.toMatch(/0\.00 kWh/);
   });
 
-  it('carries no currency anywhere, because no tariff layer exists yet', () => {
-    // RM-073's territory. Until a tariff is entered with provenance, a cost figure in a document
-    // going to a university would be the most quotable number in it and the least sourced.
+  it('says no rate has been entered rather than printing a zero', () => {
+    // A zero cost is a claim that electricity was free. In a document that leaves the building
+    // it is the most damaging number on the page, and the one a reader repeats without caveats.
     const text = allText(buildDocDefinition(report()).content).join(' ');
+    expect(text).toMatch(/no rate has been entered/i);
+    expect(text).toMatch(/no emission factor has been entered/i);
+    expect(text).not.toMatch(/0\.00 [A-Z]{3}/);
     expect(text).not.toMatch(/[₱$€£]/);
+  });
+
+  it('prints the cost with its provenance once a rate exists', () => {
+    const withRate = report({
+      cost: { text: '1,039.20 PHP', qualified: false },
+      carbon: { text: '63.1 kgCO2e', qualified: false },
+      provenance: ['11.4286 PHP/kWh from 2026-08-01, priced 90.95 kWh — MMSU bill, August 2026, entered by alice@example.test.'],
+    });
+    const text = allText(buildDocDefinition(withRate).content).join(' ');
+    expect(text).toContain('1,039.20 PHP');
+    expect(text).toContain('63.1 kgCO2e');
+    // The source travels with the figure. A peso number a reader cannot trace to a bill is
+    // exactly what a funder cannot check.
+    expect(text).toContain('MMSU bill, August 2026');
+    expect(text).toContain('alice@example.test');
+  });
+
+  it('inherits the energy qualifier rather than presenting a floor as a total', () => {
+    // If the kWh is a floor because the month was half observed, so is the cost.
+    const partial = report({ cost: { text: '500.00 PHP', qualified: true }, carbon: null });
+    expect(allText(buildDocDefinition(partial).content).join(' ')).toMatch(/500\.00 PHP \(partial period\)/);
   });
 });

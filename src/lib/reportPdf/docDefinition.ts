@@ -46,6 +46,11 @@ export interface PdfReport {
   observedDays: number;
   completeDays: number;
   energyKwh: number | null;
+  /** Already formatted by the caller, or null when no rate is entered. Never "0.00". */
+  cost: { text: string; qualified: boolean } | null;
+  carbon: { text: string; qualified: boolean } | null;
+  /** One sentence per rate or factor used: the figure, the dates, the source, who entered it. */
+  provenance: readonly string[];
   charts: readonly PdfChart[];
   deviceRows: readonly PdfDeviceRow[];
   caveats: readonly { lead: string; body: string }[];
@@ -130,6 +135,32 @@ export function buildDocDefinition(r: PdfReport) {
       ? { text: 'No energy figure has been generated for this period.', style: 'note' }
       : { text: `${r.energyKwh.toFixed(2)} kWh`, style: 'figure' }
   );
+
+  /**
+   * Cost and emissions, and never a zero for either. An unset tariff prints the sentence, not
+   * 0.00 — a zero cost is a claim that electricity was free, and in a document that leaves the
+   * building it is the most damaging number on the page.
+   *
+   * The provenance is not a footnote at the back. It sits under the figure it belongs to,
+   * because a peso figure a reader cannot trace to a bill is exactly what a funder cannot check.
+   */
+  content.push({
+    table: {
+      headerRows: 1,
+      widths: ['*', 'auto'],
+      body: [
+        [{ text: 'Derived figure', style: 'th' }, { text: 'Value', style: 'th' }],
+        ['Cost', r.cost ? `${r.cost.text}${r.cost.qualified ? ' (partial period)' : ''}` : `${EM_DASH} no rate has been entered`],
+        ['Emissions', r.carbon ? `${r.carbon.text}${r.carbon.qualified ? ' (partial period)' : ''}` : `${EM_DASH} no emission factor has been entered`],
+      ],
+    },
+    layout: 'lightHorizontalLines',
+    margin: [0, 6, 0, 4],
+  });
+
+  if (r.provenance.length > 0) {
+    content.push({ ul: r.provenance.map((line) => line), style: 'note' });
+  }
 
   // --- charts, each with the numbers behind it ----------------------------------------------
   for (const chart of r.charts) {
