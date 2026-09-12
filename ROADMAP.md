@@ -1,13 +1,22 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-10 — **RM-072**, the Reports overhaul, in progress. The primitives have
+**Last audited:** 2026-09-12 — **RM-072**, the Reports overhaul, in progress. The primitives have
 landed: charts are a scene with two serializers rather than an SVG string, because putting a string
 into the DOM would mean this codebase's first `dangerouslySetInnerHTML` and the first thing through
 it would be operator-editable device names. The pdfmake spike is the part worth reading — three
 findings that each cost an afternoon and none of which are in anybody's documentation. The print
 palette's new on-white assertion rejected `--accent` on its first run, and two of that test's own
 first assertions turned out to be measuring the wrong thing and passing. **§5 Q9 is answered by
-measurement and struck**, which also unblocks **RM-042**. `phase37_report_series.sql` is applied, and **reading it back against the live project found four defects, every one of which made the building look better observed than it was** — see RM-072f and RM-072g. The one worth leading with is not in the new code at all: **the Reports page has been overstating its own coverage.** August 2026 reads 48%, and only **26.9%** of its expected minutes carry a real reading — 9,415 of the 21,421 "observed" samples are rows the meters wrote while observing nothing. Correcting the stored figure is **RM-073**, and it is a decision about restating published history rather than a task. Applying the fixes then turned up **RM-072h**: `create or replace` cannot change a function's OUT parameters, and `rehearse.sh` had only ever proved each migration against an EMPTY database — the one case a hand-applied migration never meets twice. **phase37 is applied and every check is green (RM-072i)**, and all five charts are drawing from it (RM-072j, RM-072k) — where looking at real data, rather than asserting on fixtures, rewrote a decision in nearly every one of them. The breakdown chart also turned up a fact about the building: **49.3 of the 51.1 kWh on the convenience-outlet branch is not attributable to any of the seven outlets beneath it**, which is RM-020 and RM-021 seen from the energy side.
+measurement and struck**, which also unblocks **RM-042**. `phase37_report_series.sql` is applied, and **reading it back against the live project found four defects, every one of which made the building look better observed than it was** — see RM-072f and RM-072g. The one worth leading with is not in the new code at all: **the Reports page has been overstating its own coverage.** August 2026 reads 48%, and only **26.9%** of its expected minutes carry a real reading — 9,415 of the 21,421 "observed" samples are rows the meters wrote while observing nothing. Correcting the stored figure is **RM-073**, and it is a decision about restating published history rather than a task. Applying the fixes then turned up **RM-072h**: `create or replace` cannot change a function's OUT parameters, and `rehearse.sh` had only ever proved each migration against an EMPTY database — the one case a hand-applied migration never meets twice. **phase37 is applied and every check is green (RM-072i)**, and all five charts are drawing from it (RM-072j, RM-072k) — where looking at real data, rather than asserting on fixtures, rewrote a decision in nearly every one of them. The breakdown chart also turned up a fact about the building: **49.3 of the 51.1 kWh on the convenience-outlet branch is not attributable to any of the seven outlets beneath it**, which is RM-020 and RM-021 seen from the energy side. **phase38 and phase39 are both applied and
+read back (2026-09-12).** The one to read is **RM-074**, which came out of the reporting work by
+accident and is the most consequential thing in this audit: every table in the schema had been
+granting `authenticated` the full privilege set since phase4 — not by anyone's decision, but
+because that is what a Supabase project's default privileges do and a `grant` is additive. RLS
+covers most of it; **it does not filter `TRUNCATE`**, and the table exposed was `commands`, the
+audit trail deliberately exempt from every retention pass. It is now an equality invariant checked
+for every RLS table by `rehearse.sh`, so a table added next year is covered without anyone
+remembering. The measurement that matters: all 23 tables now refuse `anon` on a privilege error
+where they previously returned `200 []`.
 
 **Previously audited:** 2026-09-10 — **RM-070 and RM-071**. RM-071 is a UI/UX overhaul of the
 Automation page: rules now read as IF/THEN blocks, and auditing for it turned up a one-character CSS
@@ -3498,7 +3507,11 @@ emission factor carrying provenance. What has landed:
 
 
 - [x] **RM-072q — what a kilowatt-hour costs, and what it emits.** The last piece of the reporting
-      scope. `supabase/phase38_tariff_emissions.sql` — **code done, rehearsed, NOT YET APPLIED.**
+      scope. `supabase/phase38_tariff_emissions.sql` — **applied 2026-09-12.** Both tables answer on
+      the live project (an `anon` probe is refused on a privilege error, not `42P01`), so the schema
+      is there. **No tariff and no emission factor has been entered yet**, which is an operator
+      action and not a code one: until one is, every ₱ and every kg CO₂ in the page and the PDF
+      reads "no rate has been entered" — which is the designed behaviour, not a fault.
 
       **Two tables, not two keys in `sites.policy`.** `set_acu_min_room_target` (phase35) is a
       `security definer` function because the `sites` row *also* decides whether commands may
@@ -3600,7 +3613,24 @@ emission factor carrying provenance. What has landed:
       removed the rehearsal fails and names the full privilege list.
 
 - [x] **RM-074 — `authenticated` holds exactly what its policies permit.**
-      `supabase/phase39_privilege_lockdown.sql` — **code done, rehearsed, NOT YET APPLIED.**
+      `supabase/phase39_privilege_lockdown.sql` — **applied 2026-09-12, and read back.**
+
+      **What the read-back measured**, rather than assumed. A signed-out probe of all 23 tables:
+      every one now refuses `anon` with a privilege error. That is the measurement worth having,
+      because it distinguishes the two states that look alike from the outside — a table with
+      `grant all` and no `anon` policy returns an empty array, and a revoked one returns
+      `permission denied`. Before phase39 all 23 answered `200 []`; after it, `42501`. Nothing in
+      the app can reach that changed shape: `src/App.tsx:38` returns `<LoginPage />` unless the
+      session is authenticated, so no Supabase read happens as `anon` at all.
+      Service-role paths are unaffected, also measured: five services active, ingest writing with
+      zero lag, `ingestion_health.last_error` null, no buffered rows, `commands` readable, and
+      phase37's full read-back green including its three `anon` refusal probes.
+
+      **What it does not prove.** Every check above runs as `service_role` or `anon`. The
+      `authenticated` write paths — Devices config, Automation schedules, Settings — are the ones
+      this migration narrows, and confirming them needs a signed-in click-through that no probe
+      here can perform. The equality invariant is the argument that they are safe; a page load is
+      the evidence.
 
       **What it fixes.** Every table in the schema granted `authenticated`
       `DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE` — not because anyone granted
