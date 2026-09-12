@@ -3599,32 +3599,45 @@ emission factor carrying provenance. What has landed:
       `information_schema`, and **the guard was verified by neutering it** — with the revoke
       removed the rehearsal fails and names the full privilege list.
 
-- [ ] **RM-074 (M) — every other table carries the same default grant, and TRUNCATE is not
-      filtered by RLS.** Measured in the rehearsal once it reproduced Supabase's defaults: **all
-      21 pre-existing tables** grant `authenticated`
-      `DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE` — `commands`, `readings`,
-      `building_totals`, `sites`, `period_reports`, every one of them. Only phase38's two are
-      narrow, and only because RM-072r fixed them.
+- [x] **RM-074 — `authenticated` holds exactly what its policies permit.**
+      `supabase/phase39_privilege_lockdown.sql` — **code done, rehearsed, NOT YET APPLIED.**
 
-      **For DML this is mostly covered, and for TRUNCATE it is not.** Postgres requires both the
-      table privilege *and* a matching row policy, so an UPDATE or DELETE that no policy permits
-      affects nothing — that is the design, and it is why this has been harmless so far.
-      **TRUNCATE is different: row security does not filter it at all.** Measured as a genuinely
-      switched `authenticated` role against a seeded `commands` row: the table was emptied.
-      `commands` is the safety-critical audit trail, deliberately exempt from every retention
-      pass precisely so it cannot be lost — and any signed-in account can drop all of it in one
-      statement.
+      **What it fixes.** Every table in the schema granted `authenticated`
+      `DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE` — not because anyone granted
+      them, but because `alter default privileges … grant all on tables to anon, authenticated,
+      service_role` is what a Supabase project does to every new table in `public`, and a grant is
+      additive. Twenty-three tables, since phase4.
 
-      **Why this is a decision rather than a task.** The fix is one `revoke all ... from
-      authenticated` per table followed by the grant each already intends, which is mechanical.
-      What is not mechanical is verifying, table by table, which privileges each consumer
-      genuinely needs before taking the rest away — `device_config`, `schedules`, `space_nodes`,
-      `site_ui_prefs` and `socket_config` are all written from the browser, and a revoke that is
-      one privilege too broad breaks a page with a permission error rather than a visible fault.
-      Do NOT sweep this in one pass without reading each policy first. The rehearsal will now
-      catch a mistake in either direction, which it could not have done a day ago.
+      **Why it has been invisible, and exactly where it was not.** Postgres needs both the table
+      privilege *and* a matching row policy, so an UPDATE or DELETE no policy permits already
+      affects nothing. **TRUNCATE is not filtered by row security at all.** Measured as a
+      genuinely switched `authenticated` role: `truncate commands` emptied the audit trail — the
+      table deliberately exempt from every retention pass so it cannot be lost. `REFERENCES` and
+      `TRIGGER` are likewise outside RLS's reach.
 
+      **The rule, and why it cannot break a working page.** `authenticated` gets exactly the
+      commands its table has a POLICY for, transcribed from a live survey of `pg_policies` against
+      `information_schema.role_table_grants` rather than from reading the migrations — the
+      policies are what is actually in force. Every table has RLS enabled, verified rather than
+      assumed, so a command without a policy was already refused and removing its grant changes no
+      behaviour that works. The invariant is an *equality*, which is itself the safety proof:
+      grants ⊇ policy commands means nothing a policy permits can be blocked by a missing grant.
 
+      **Two grants are a judgement rather than a transcription**, and the schema test pins both.
+      `commands` gets `select, insert, update` and **no DELETE** — the value of an audit trail is
+      that the thing being audited cannot remove it. `acu_rules` gets `select, delete` and no
+      INSERT or UPDATE, because phase36's `upsert_acu_rule` and `set_acu_rule_enabled` are
+      `security definer` precisely so a rule cannot be written around their validation.
+      `service_role` is untouched: it bypasses RLS by design, the daemons run as it, and narrowing
+      it is a different question with a different blast radius.
+
+      **The guard is a rule, not a list.** `supabase/rehearse.sh` asserts, for every RLS-enabled
+      table in `public`, that `authenticated`'s privileges equal its policy commands — so a table
+      added next year is covered without anyone remembering to add it. Verified by removing
+      phase39 and re-running: it fails and names every drifted table with both sets. It is only
+      meaningful because that script now reproduces Supabase's own default privileges; against a
+      bare `create role` it would pass vacuously, which is how this survived three years of
+      migrations and a schema test per phase.
 - [ ] **RM-073 (M)** — Correct `generate_period_report`'s `online_sample_count` to count usable
       observations rather than rows, and regenerate. **Blocked on a decision, not on code.**
       RM-072g measured what it would change: August 2026's stored coverage moves 48.0% → 26.9%.

@@ -1151,6 +1151,59 @@ begin
 
   raise notice 'phase38: privileges and constraints — assertions passed';
 end $$;
+
+-- ---- phase39: authenticated holds exactly what its policies permit ---------------------------
+--
+-- THE PRIVILEGE INVARIANT, stated once as a rule rather than as a list of tables — so a table
+-- added next year is covered without anybody remembering to add it here.
+--
+-- For every RLS-enabled table in `public`, the commands `authenticated` is granted must equal
+-- the commands that table has a policy for. Postgres needs both, so a privilege with no policy
+-- is dead weight RLS happens to be covering — EXCEPT `TRUNCATE`, `REFERENCES` and `TRIGGER`,
+-- which row security does not filter at all. RM-074 measured the cost of that: `truncate
+-- commands` succeeded as a genuinely switched `authenticated` role and emptied the audit trail.
+--
+-- This check is only meaningful because this script now reproduces Supabase's own default
+-- privileges (see the top of the file). Against a bare `create role` it would pass vacuously.
+do $$
+declare
+  r record;
+  bad int := 0;
+begin
+  for r in
+    select c.relname as t,
+           coalesce((select string_agg(distinct p.cmd, ',' order by p.cmd)
+                       from pg_policies p where p.tablename = c.relname), '') as pol,
+           coalesce((select string_agg(distinct g.privilege_type, ',' order by g.privilege_type)
+                       from information_schema.role_table_grants g
+                      where g.table_name = c.relname and g.grantee = 'authenticated'), '') as grants
+      from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'public' and c.relkind = 'r' and c.relrowsecurity
+     order by c.relname
+  loop
+    -- A policy written for ALL would need expanding to the four commands; none exists, and
+    -- guessing at one silently is worse than stopping.
+    assert position('ALL' in r.pol) = 0,
+      format('%s has an ALL policy; this invariant does not know how to expand it', r.t);
+
+    if r.pol is distinct from r.grants then
+      bad := bad + 1;
+      raise warning 'PRIVILEGE DRIFT %: policies allow [%], authenticated is granted [%]', r.t, r.pol, r.grants;
+    end if;
+  end loop;
+
+  assert bad = 0,
+    format('%s table(s) grant authenticated more than their policies permit — every extra is a TRUNCATE, REFERENCES or TRIGGER that row security does not filter', bad);
+
+  -- And nothing at all for anon or PUBLIC, anywhere.
+  select count(*) into bad
+    from information_schema.role_table_grants
+   where table_schema = 'public' and grantee in ('anon', 'PUBLIC');
+  assert bad = 0, format('anon/PUBLIC hold %s table privilege(s) in public and should hold none', bad);
+
+  raise notice 'phase39: authenticated holds exactly what its policies permit';
+end $$;
 SQL
 
 echo
