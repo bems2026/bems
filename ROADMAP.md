@@ -3552,6 +3552,22 @@ emission factor carrying provenance. What has landed:
       assertion is stronger than before rather than weaker: there is now a cost path to *not*
       take, and the default fixture has no tariff because that is the live state.
 
+      **DEPLOYED to the Pi 2026-09-12**, serving `index-Tuu7wc6z.js`, boots clean. Deployed
+      **ahead of the migration on purpose**, which is only safe because of the paragraph below.
+      **`phase38` still needs applying**, and until it is, the Settings section and the report's
+      cost line both say no rate has been entered rather than failing.
+
+      A database that has not reached phase38 reads as "no rate entered". The frontend reads two
+      tables the migration creates, and migrations here are pasted by hand — so between deploying
+      a bundle and pasting the SQL, every read would reject, the page-level `Promise.all` would
+      never resolve, and the Reports page would fail to load, reporting the wrong problem
+      entirely. Postgres **42P01** (`undefined_table`) is treated as "not configured"; **only**
+      that code, because a permission or network failure means something different and a page
+      that swallowed one would be lying about why it has no figure. Not just for the deploy gap:
+      RM-033 stands this up for another institution and `docs/replication.md` lists the migrations
+      as a step somebody performs, so a site that has not reached phase38 should have a Reports
+      page that works.
+
 
 - [ ] **RM-073 (M)** — Correct `generate_period_report`'s `online_sample_count` to count usable
       observations rather than rows, and regenerate. **Blocked on a decision, not on code.**
