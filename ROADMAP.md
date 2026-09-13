@@ -27,8 +27,9 @@ pass, which deletes raw readings for the first time.
 after a `server/` or `shared/` change, and there are three: `ibems-ingest` was left out. Measured
 the same day, read-only, the Pi's ingest daemon was still running `shared/sites/` modules replaced
 four days earlier. The restart map is now derived from the unit files and their imports, and
-checked (`test/service-restart-map.test.mjs`). **Ingest has not been restarted** — that is an
-operator action, and this was a documentation change.
+checked (`test/service-restart-map.test.mjs`). **Ingest was restarted at 12:40 and read back** —
+a clean start, nothing due, no minute of readings lost — and no daemon now holds a module older
+than its file.
 
 **Previously audited:** 2026-09-10 — **RM-070 and RM-071**. RM-071 is a UI/UX overhaul of the
 Automation page: rules now read as IF/THEN blocks, and auditing for it turned up a one-character CSS
@@ -2982,8 +2983,13 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       those two were the only files newer than their daemon. What changed in them — a `measures`
       field on two devices and the `acu_min_room_target_c` policy key — is read by nothing ingest
       loads (`shapeRows.mjs` takes only `SITE.id` and capability promotion from the registry), so no
-      row it wrote came out different. The next change there need not be so harmless. **Ingest was
-      not restarted by this work**; that is the operator's `sudo systemctl restart ibems-ingest`.
+      row it wrote came out different. The next change there need not be so harmless.
+      **Restarted 2026-09-13 12:40:19 by the operator, and read back.** It stopped on SIGTERM and
+      started cleanly; the fleet alarm re-seeded from the database (18 of 20 devices seen online in
+      the last seven days); the three retention checks and the report check all found nothing due,
+      as expected before 2026-09-15; and it wrote 20 readings + totals at 12:40:25, 22 seconds after
+      the old process's last write, so no minute of readings was lost. `NRestarts=0`. The
+      stale-module check, re-run over all 81 module-to-daemon pairs, now finds none.
       **The map is derived, not kept.** Each `server/*.service` `ExecStart` names an entry module, and
       the imports beneath it, followed to the end, are what that process holds. Three units keep a
       Node process running. `ibems-wifi-prefer` runs node as a oneshot, a fresh process on every
@@ -7349,7 +7355,7 @@ may not.
 
 | Was | Now |
 |---|---|
-| `CLAUDE.md` and `docs/pi-session-brief.md` said `server/` and `shared/` changes need `sudo systemctl restart ibems-proxy ibems-scheduler` | Three daemons load that code, and `ibems-ingest` was the one left out — it was found on the Pi still running `shared/sites/` modules replaced four days earlier. Both documents name all three, the brief carries the restart map, and `test/service-restart-map.test.mjs` derives that map from the unit files and fails when either disagrees. |
+| `CLAUDE.md` and `docs/pi-session-brief.md` said `server/` and `shared/` changes need `sudo systemctl restart ibems-proxy ibems-scheduler` | Three daemons load that code, and `ibems-ingest` was the one left out — it was found on the Pi still running `shared/sites/` modules replaced four days earlier, and was restarted and read back at 12:40 the same day. Both documents name all three, the brief carries the restart map, and `test/service-restart-map.test.mjs` derives that map from the unit files and fails when either disagrees. |
 
 **Resolved 2026-09-09 by RM-066..069:**
 
