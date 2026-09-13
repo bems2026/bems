@@ -18,6 +18,11 @@ for every RLS table by `rehearse.sh`, so a table added next year is covered with
 remembering. The measurement that matters: all 23 tables now refuse `anon` on a privilege error
 where they previously returned `200 []`. **CI had been red for six pushes and is green again** (RM-072q): lint
 failed first, so for that whole stretch CI ran neither the build nor any test suite.
+**RM-075 hardens the backup** — 19 tables where there were 10, page keys covering whole primary
+keys, restore order checked against the migrations — and along the way corrected RM-042's
+evidence (its outlet rows disagree, because the legacy table predates RM-047b's correction) and
+four stale claims that the space tree was empty. **Watch 2026-09-15:** the first real retention
+pass, which deletes raw readings for the first time.
 
 **Previously audited:** 2026-09-10 — **RM-070 and RM-071**. RM-071 is a UI/UX overhaul of the
 Automation page: rules now read as IF/THEN blocks, and auditing for it turned up a one-character CSS
@@ -518,9 +523,10 @@ below, which carry the evidence.
   database alone arms nothing, because the shed actor comes from `dsm_thresholds.updated_by`,
   which is null. Read that entry before flipping it — `group_1` is the lighting, ~16 W of a 919 W
   demand against a 2.21 kW ceiling.
-- **Build the space tree.** `space_nodes` is **0 rows** and no device is placed. This is still the
-  single highest-leverage thing available: RM-028's tree, RM-030's by-space totals and RM-031's
-  plan all start showing real numbers at once, and it is the only check on the `authenticated`
+- ~~**Build the space tree.**~~ **Already built — this line was stale.** Measured 2026-09-13 with
+  the service role: `space_nodes` holds a four-level tree (building, floor, wing, room — all
+  created 2026-09-01) and all 14 `device_config` rows carry a `space_node_id`. What it has still
+  not been is *seen by a signed-in session*, which remains the only check on the `authenticated`
   SELECT policy that a service-role probe cannot make.
 - **RM-026** — join the Deye logger to the device SSID. Nothing can be built or tested until then,
   and this one is **contractual**: Milestone 3, due January 2027.
@@ -557,11 +563,11 @@ from that pass is outstanding.
 **`phase23_plan_coords.sql` is applied and verified live** — see RM-031. The ordering hazard it
 carried is spent: `device_config` selects `plan_x,plan_y` and answers 200.
 
-**The thing that would unlock the most is still not code: build a tree.** `space_nodes` is
-empty on the live project. Devices → Spaces, add a building and a room, place a few devices —
-and RM-028's tree, RM-030's by-space totals and RM-031's plan all start showing real numbers at
-once. It is also the only check on the `authenticated` SELECT policy that cannot be made from a
-service-role probe.
+~~**The thing that would unlock the most is still not code: build a tree.**~~ **Stale — corrected
+2026-09-13.** The tree exists, and has since 2026-09-01: four nodes from building to room, with
+all 14 configured devices placed in it, measured with the service role. What is still unverified
+is a signed-in session seeing it, which is the only check on the `authenticated` SELECT policy
+that cannot be made from a service-role probe.
 
 ### The short version, 2026-08-26
 
@@ -3680,6 +3686,47 @@ emission factor carrying provenance. What has landed:
       meaningful because that script now reproduces Supabase's own default privileges; against a
       bare `create role` it would pass vacuously, which is how this survived three years of
       migrations and a schema test per phase.
+- [x] **RM-075 — the backup exports what the schema holds, in an order it can page and restore.**
+      **Done 2026-09-13.** `server/backup.mjs`, `server/backupCoverage.test.mjs`,
+      `docs/backup-policy.md`. No migration and no daemon: `npm run backup` is run by hand.
+
+      **Coverage had drifted, and the drift was real data.** The export was a hand-kept list of
+      ten tables. It still named phase12's monthly tables a fortnight after the Reports page moved
+      to phase27's period tables, and had never named `energy_tariffs` or `emission_factors` — the
+      only copy of an operator-entered rate and the source it cites — nor `sites`,
+      `socket_config`, `site_ui_prefs`, `space_nodes` or `acu_rules`. Measured live: the space
+      tree's 4 nodes, the 14 socket configurations and the site's own row had never been in any
+      backup. It now exports 19 tables, and `NOT_BACKED_UP` names the other four with a reason
+      each.
+
+      **Three rules, asked of the migrations rather than of the list.** Every table the migrations
+      leave standing is backed up or excluded with a written reason, and nothing is listed that no
+      migration still creates — so RM-042's drop will force the monthly tables off the list. Every
+      table is paged by a key covering its whole primary key. Every table comes after every table it
+      references, because the restore loads the files in list order. Written first and confirmed
+      failing, each for its own reason; the ordering rule caught a foreign key the plan had missed,
+      added to `device_config` by a later `alter table`. A parser self-check pins the rules to
+      primary keys read off the SQL by hand, so a parser that found nothing cannot pass them.
+
+      **The paging rule, stated exactly.** Pages are fetched by `Range` over `order=`, and several
+      keys were not unique — `readings_hourly` by `hour` ties every device at every hour. Postgres
+      documents that tied rows come back in no promised order across LIMIT/OFFSET queries. **It
+      did not bite on a live export:** `anomalies`, 6,584 rows over seven pages ordered by `ts`
+      alone, came out with no duplicate and no missing row. So this removes a reliance on ordering
+      Postgres does not promise; it does not fix an observed loss.
+
+      **Verified against the live project**, old export and new: each file checked against the
+      database's own count at the export's high-water mark — all 19 tables, 0 duplicates,
+      0 missing. PostgREST was confirmed to honour a URL-encoded multi-column `order` exactly as the
+      export builds it, second key included.
+
+      **Watch the first real retention pass, on or shortly after 2026-09-15 15:52 UTC** (retention
+      asks every six hours). The building's oldest reading is 2026-08-16 15:52 UTC, so nothing has
+      aged past the 30-day window yet: `readings_hourly` and `building_totals_hourly` are **empty**,
+      and `roll_up_and_prune_readings` has only ever run on fixtures. That pass deletes raw rows for
+      the first time, so a backup taken before it and copied off the Pi is worth more than one
+      taken after.
+
 - [ ] **RM-073 (M)** — Correct `generate_period_report`'s `online_sample_count` to count usable
       observations rather than rows, and regenerate. **Blocked on a decision, not on code.**
       RM-072g measured what it would change: August 2026's stored coverage moves 48.0% → 26.9%.
@@ -5155,9 +5202,31 @@ fall back to it).
       month in production and be compared against the legacy ones on real data rather than the
       rehearsal's fixtures. August 2026 has now gone through both paths and they agree to the
       digit — `monthly_building_reports` and `period_building_reports` both report
-      `90.9468091666591` kWh for `2026-08-01`, read from the live project. That is the
-      comparison, and it passed. What remains is the deletion itself, which is a migration and
-      a four-line change to `server/reports.mjs`, not a question.
+      `90.9468091666591` kWh for `2026-08-01`, read from the live project.
+
+      **That comparison was the building row only, and the device rows do not agree — measured
+      2026-09-13.** 7 of the 20 August device rows disagree on `energy_kwh`, every one of them an
+      outlet (`co1` 1.09 legacy against 0.632137 period; `co4` 0.02 against 0). Sample counts,
+      peaks and averages match exactly, so both saw the same observations. **The disagreement is
+      explained, and the period table is the right one:** recomputed today from raw `readings` with
+      the generators' own formula, the period figures are reproduced exactly and the legacy ones
+      are not. `monthly_reports` was generated 2026-09-03, before RM-047b corrected the outlets'
+      fabricated energy; `period_reports` was regenerated 2026-09-08, after it. The building row
+      agrees because the building total is the four branch meters, which RM-047 never touched. So
+      the legacy tables are not merely redundant — they hold known-inflated outlet figures, which
+      strengthens the case for retiring them.
+
+      **What remains is larger than a four-line change**, measured by reference count: the
+      `generate_monthly_report` call in `server/reports.mjs` and its test (it runs inside
+      **`ibems-ingest`**, so that is the service to restart); the dead frontend readers
+      `getReportMonths` and `getDeviceReports` in `src/lib/supabaseReports.ts`, which nothing
+      calls; the monthly tables' entries in `BACKUP_TABLES`, which RM-075's coverage test will
+      require removing once they are dropped; `supabase/rehearse.sh`, whose phase12 assertions and
+      phase27-against-phase12 comparison run *after* every migration is applied and would fail on a
+      drop; `docs/storage-contract.md` and `docs/backup-policy.md`; phase27's one-time backfill
+      block, which reads `monthly_building_reports` and so cannot be re-applied alone afterwards;
+      and the migration itself — a `drop table` on production rows, which is the operator's to
+      apply, and only after the code that uses the tables is deployed.
 
 - [x] **RM-043 (S)** **DONE 2026-09-02, deployed.** **The office kiosk was running a week-old
       build and nothing said so.** MEASURED on the Pi: `ibems-kiosk.service` had been up since
@@ -6176,6 +6245,12 @@ fall back to it).
       The doc's final section is the checklist that closes it. Note also that `auth.users` is
       not exported — restored into a new project, every `commands` row keeps its audit
       content but loses its attribution.
+      **Coverage and paging hardened 2026-09-13 (RM-075):** 19 tables instead of 10, every page
+      keyed on a whole primary key, restore order checked against the migrations' foreign keys.
+      That makes a restore more likely to work; it does not make this item done — **a restore has
+      still never been performed.** RM-075 also found that for the tables whose user columns ARE
+      foreign keys (`acu_rules`, `energy_tariffs`, `emission_factors`, `space_nodes`,
+      `socket_config`, `site_ui_prefs`), a missing user is not lost attribution but a refused row.
 - [ ] **RM-006c** Arm auto-shed. **Thresholds done 2026-08-24; tiers assigned 2026-08-31; what is left is one save from the Automation page — see below, the flag alone is not enough.**
       *Acceptance:* at least one device has a shed group, a threshold is set, and auto-shed is on.
       **Limits written, `auto_shed` deliberately left OFF:** `max_total_kw 2.21`,
@@ -6535,8 +6610,10 @@ may not.
       it: a number alone cannot tell a quiet room from an unplugged one.
       *It asks nothing until a space is chosen.* Defaulting to the first node would answer a
       question nobody asked, and on a site with several buildings the first is arbitrary.
-      **It is useful only once a tree exists**, and `space_nodes` is still empty on the live
-      project — the card says so and points at the Spaces panel rather than rendering blank.
+      **It is useful only once a tree exists** — and one does: four nodes, all 14 configured
+      devices placed, measured 2026-09-13 (this line said "still empty" after the tree was built
+      on 2026-09-01). With no tree, the card says so and points at the Spaces panel rather than
+      rendering blank.
       *Acceptance is met and exercised, not asserted.* The rehearsal seeds a window holding two
       observed samples (100 W, 300 W) and two OFFLINE rows carrying a frozen 999. If offline rows
       counted, the average would be 599.5 and the peak 999 — both plausible, both never measured.
@@ -6557,8 +6634,9 @@ may not.
       rollup functions, for no benefit this phase can demonstrate, belongs to a phase that has a
       reason to test it.
       **What is left:** apply `supabase/phase22_node_totals.sql`, then the Analytics scope
-      selector. The selector is worth little until a tree exists — `space_nodes` is empty on the
-      live project — so the honest order is tree first, UI second.
+      selector. The selector is worth little until a tree exists — and since 2026-09-01 one does
+      (four nodes, all 14 configured devices placed; this line said "empty" until it was measured
+      on 2026-09-13), so the tree-first half of that order is done.
       *Acceptance:* a node's total equals the sum of its descendants' devices, and an offline
       device contributes `null` rather than a frozen figure.
       A per-node totals RPC over `readings` joined through placement. **A new RPC, not a rewrite

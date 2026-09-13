@@ -90,7 +90,7 @@ test('the audit trail is backed up — nothing prunes it and it cannot be recomp
 });
 
 test('every permanent derived table is backed up, not just the hand-edited ones', () => {
-  for (const required of ['readings_hourly', 'building_totals_hourly', 'monthly_reports', 'monthly_building_reports', 'device_config', 'schedules']) {
+  for (const required of ['readings_hourly', 'building_totals_hourly', 'monthly_reports', 'monthly_building_reports', 'period_reports', 'period_building_reports', 'energy_tariffs', 'emission_factors', 'device_config', 'schedules']) {
     assert.ok(BACKUP_TABLES.some((t) => t.table === required), `${required} should be backed up`);
   }
 });

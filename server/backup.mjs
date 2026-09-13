@@ -24,7 +24,8 @@
  * `readings` and `building_totals` — the raw, high-volume tables that retention prunes at 30
  * days anyway. Their permanent form is `readings_hourly` / `building_totals_hourly`, which
  * ARE exported. Backing up rows that the system itself deletes on a schedule would be
- * storing something nobody has decided to keep.
+ * storing something nobody has decided to keep. The full list of what is left out, each with its
+ * reason, is `NOT_BACKED_UP` below.
  *
  *     SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node server/backup.mjs --out=/path/to/dir
  *
@@ -36,25 +37,53 @@ import path from 'node:path';
 
 /**
  * The tables worth keeping, and the column each is ordered by so a re-export is stable and
- * two backups can be diffed. Ordered smallest blast-radius first is irrelevant here; this is
- * simply the order they are written.
+ * two backups can be diffed.
  *
- * `commands` is on this list and near the top of it on purpose: it is the audit trail for
- * every attempt to move a relay, nothing prunes it (supabase/phase11_totals_retention.sql),
- * and losing it loses accountability for physical actions taken in a building.
+ * TWO RULES, BOTH CHECKED AGAINST THE MIGRATIONS by `backupCoverage.test.mjs` rather than against
+ * this list. Every `order` covers its table's whole primary key: pages are requested by Range, and
+ * over a key that is not unique Postgres promises nothing about tied rows between one query and
+ * the next, so a row could land on both sides of a page boundary or on neither while the backup
+ * counted itself complete. And the list is in RESTORE order — each table after every table it
+ * references — because `docs/backup-policy.md` loads the files in exactly this order.
+ *
+ * `commands` is on this list on purpose: it is the audit trail for every attempt to move a relay,
+ * nothing prunes it (supabase/phase11_totals_retention.sql), and losing it loses accountability
+ * for physical actions taken in a building.
  */
 export const BACKUP_TABLES = [
+  { table: 'sites', order: 'id' },
   { table: 'devices', order: 'id' },
+  { table: 'space_nodes', order: 'id' },
   { table: 'device_config', order: 'device_id' },
+  { table: 'socket_config', order: 'device_id,socket' },
+  { table: 'site_ui_prefs', order: 'site_id' },
   { table: 'schedules', order: 'id' },
   { table: 'dsm_thresholds', order: 'id' },
-  { table: 'commands', order: 'requested_at' },
-  { table: 'anomalies', order: 'ts' },
-  { table: 'readings_hourly', order: 'hour' },
+  { table: 'acu_rules', order: 'id' },
+  { table: 'energy_tariffs', order: 'id' },
+  { table: 'emission_factors', order: 'id' },
+  { table: 'commands', order: 'requested_at,id' },
+  { table: 'anomalies', order: 'ts,device_id,metric' },
+  { table: 'readings_hourly', order: 'hour,device_id' },
   { table: 'building_totals_hourly', order: 'hour' },
-  { table: 'monthly_reports', order: 'month' },
+  { table: 'monthly_reports', order: 'month,device_id' },
   { table: 'monthly_building_reports', order: 'month' },
+  { table: 'period_reports', order: 'period_start,period,device_id' },
+  { table: 'period_building_reports', order: 'period_start,period' },
 ];
+
+/**
+ * Every table the migrations create that this export deliberately leaves out, with the reason.
+ * `backupCoverage.test.mjs` fails on a table in neither list, so leaving one out is a decision
+ * somebody wrote down rather than something nobody noticed — which is how the period reports and
+ * the tariffs went unexported.
+ */
+export const NOT_BACKED_UP = {
+  readings: 'Raw per-minute rows, pruned at 30 days by design. Their permanent form is readings_hourly, which is exported.',
+  building_totals: 'Raw per-minute building totals, pruned at 30 days by design. Their permanent form is building_totals_hourly, which is exported.',
+  ingestion_health: 'A one-row status snapshot the ingest daemon rewrites every tick. Restored, it would be a stale claim about a daemon that is not running there.',
+  acu_loop_state: 'The setpoint the aircon loop believes it last commanded. Restored into a new project it would be a stale belief about a device, and the planner is built to refuse to step from a value it lacks rather than from a wrong one.',
+};
 
 /** PostgREST caps every response at `db-max-rows` and gives no signal that it did — the bug
  * Phase 9 was built around. Pagination here is explicit for that reason: each page is
@@ -140,7 +169,7 @@ async function main() {
       manifest.tables[table] = rows.length;
       console.log(`[ibems-backup] ${table}: ${rows.length} row(s)`);
     } catch (err) {
-      // Keep going: one unreadable table should not cost the other nine. The manifest
+      // Keep going: one unreadable table should not cost all the others. The manifest
       // records the failure so a backup that is missing something says so rather than
       // looking complete.
       failed++;
