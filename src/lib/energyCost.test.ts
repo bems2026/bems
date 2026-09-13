@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { costOf, carbonOf, type Rate } from './energyCost';
+import { costOf, carbonOf, provenanceLines, type Factor, type Rate } from './energyCost';
 
 /**
  * What a period cost, and what it emitted.
@@ -121,5 +121,36 @@ describe('carbonOf', () => {
     const r = carbonOf([day('2026-07-31', 10), day('2026-08-01', 10)], [factor('2026-08-01', 0.6)]);
     expect(r.total).toBeCloseTo(6, 6);
     expect(r.unpricedKwh).toBeCloseTo(10, 6);
+  });
+});
+
+describe('provenanceLines', () => {
+  // The PDF's footnote. It has no elements to nest, so the page's provenance is flattened into
+  // sentences here — and it must say what the page says, rate for rate.
+  const pdfFactor = (effective_from: string, kg_co2e_per_kwh: number, set_by_label: string | null): Factor => ({
+    effective_from,
+    kg_co2e_per_kwh,
+    source: 'DOE grid factor 2025',
+    set_at: '2026-09-01T00:00:00Z',
+    set_by_label,
+  });
+
+  it('says nothing when nothing was priced', () => {
+    // An empty footnote, not "0 PHP/kWh". No source means no sentence claiming one.
+    expect(provenanceLines(costOf([day('2026-08-17', 10)], []), carbonOf([day('2026-08-17', 10)], []))).toEqual([]);
+  });
+
+  it('names the rate, its date, the energy it priced, its source and who entered it', () => {
+    const days = [day('2026-08-17', 10)];
+    expect(provenanceLines(costOf(days, [rate('2026-01-01', 11.5)]), carbonOf(days, [pdfFactor('2026-01-01', 0.6, 'bob@example.test')]))).toEqual([
+      '11.5 PHP/kWh from 2026-01-01, priced 10.00 kWh — INEC bill, entered by alice@example.test.',
+      '0.6 kgCO₂e/kWh from 2026-01-01, applied to 10.00 kWh — DOE grid factor 2025, entered by bob@example.test.',
+    ]);
+  });
+
+  it('omits the attribution rather than printing a null when the account is gone', () => {
+    const days = [day('2026-08-17', 10)];
+    const [line] = provenanceLines(costOf(days, []), carbonOf(days, [pdfFactor('2026-01-01', 0.6, null)]));
+    expect(line).toBe('0.6 kgCO₂e/kWh from 2026-01-01, applied to 10.00 kWh — DOE grid factor 2025.');
   });
 });

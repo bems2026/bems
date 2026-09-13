@@ -184,3 +184,21 @@ export function carbonOf(days: readonly DayEnergy[], factors: readonly Factor[])
     unobservedDays,
   };
 }
+
+/**
+ * The same provenance `CostCarbonLine` renders, as plain sentences for the PDF — which has no
+ * elements to nest. Lives here rather than beside the component so that file exports components
+ * only, and so the page and the document read their footnote from one place.
+ */
+export function provenanceLines(cost: Costed, carbon: Carboned): string[] {
+  return [
+    ...cost.byRate.map(
+      (r) =>
+        `${r.ratePerKwh} ${cost.currency}/kWh from ${r.effectiveFrom}, priced ${r.kwh.toFixed(2)} kWh — ${r.source}${r.setByLabel ? `, entered by ${r.setByLabel}` : ''}.`
+    ),
+    ...carbon.byFactor.map(
+      (f) =>
+        `${f.kgPerKwh} kgCO₂e/kWh from ${f.effectiveFrom}, applied to ${f.kwh.toFixed(2)} kWh — ${f.source}${f.setByLabel ? `, entered by ${f.setByLabel}` : ''}.`
+    ),
+  ];
+}

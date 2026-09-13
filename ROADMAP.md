@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-12 — **RM-072**, the Reports overhaul, in progress. The primitives have
+**Last audited:** 2026-09-13 — **RM-072**, the Reports overhaul, in progress. The primitives have
 landed: charts are a scene with two serializers rather than an SVG string, because putting a string
 into the DOM would mean this codebase's first `dangerouslySetInnerHTML` and the first thing through
 it would be operator-editable device names. The pdfmake spike is the part worth reading — three
@@ -16,7 +16,8 @@ covers most of it; **it does not filter `TRUNCATE`**, and the table exposed was 
 audit trail deliberately exempt from every retention pass. It is now an equality invariant checked
 for every RLS table by `rehearse.sh`, so a table added next year is covered without anyone
 remembering. The measurement that matters: all 23 tables now refuse `anon` on a privilege error
-where they previously returned `200 []`.
+where they previously returned `200 []`. **CI had been red for six pushes and is green again** (RM-072q): lint
+failed first, so for that whole stretch CI ran neither the build nor any test suite.
 
 **Previously audited:** 2026-09-10 — **RM-070 and RM-071**. RM-071 is a UI/UX overhaul of the
 Automation page: rules now read as IF/THEN blocks, and auditing for it turned up a one-character CSS
@@ -3580,6 +3581,17 @@ emission factor carrying provenance. What has landed:
       RM-033 stands this up for another institution and `docs/replication.md` lists the migrations
       as a step somebody performs, so a site that has not reached phase38 should have a Reports
       page that works.
+
+      **CI was red from this commit for six pushes, and it was not read back after any of them.**
+      `CostCarbonLine.tsx` exported `provenanceLines`, a plain function, and re-exported `siteDate`
+      beside its component; `react-refresh/only-export-components` rejects both. Lint is CI's
+      first step, so from `33e3d9c` to `67ad4ba` **CI ran no build and no test suite at all** on
+      either node version — every check behind lint was being run only on a workstation. Fixed
+      2026-09-13: `provenanceLines` moved to `src/lib/energyCost.ts` beside the `Costed` and
+      `Carboned` types it formats, with the three tests it never had — it is the PDF's only copy of
+      the provenance footnote, the sentence a funder uses to trace a peso figure to its source. The
+      `siteDate` re-export had no consumer anywhere and is deleted. Verified on every step CI runs:
+      lint and build clean, 1,547 vitest, 1,030 bridge, 653 server, `server/data` left clean.
 
 
 - [x] **RM-072r — phase38 read back, and the grant it never took away.** Applied 2026-09-12.

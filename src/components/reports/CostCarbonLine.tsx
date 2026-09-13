@@ -1,7 +1,6 @@
 import type { Carboned, Costed } from '@/lib/energyCost';
 import type { Coverage } from '@/lib/supabaseReports';
 import { isQuotable } from '@/lib/supabaseReports';
-import { siteDate } from '@/lib/siteTime';
 
 /**
  * What the period cost and what it emitted — with the provenance on the same line.
@@ -98,20 +97,3 @@ export function CostCarbonLine({ cost, carbon, coverage }: Props) {
     </>
   );
 }
-
-/** The same provenance, as plain sentences, for the PDF — which has no elements to nest. */
-export function provenanceLines(cost: Costed, carbon: Carboned): string[] {
-  return [
-    ...cost.byRate.map(
-      (r) =>
-        `${r.ratePerKwh} ${cost.currency}/kWh from ${r.effectiveFrom}, priced ${r.kwh.toFixed(2)} kWh — ${r.source}${r.setByLabel ? `, entered by ${r.setByLabel}` : ''}.`
-    ),
-    ...carbon.byFactor.map(
-      (f) =>
-        `${f.kgPerKwh} kgCO₂e/kWh from ${f.effectiveFrom}, applied to ${f.kwh.toFixed(2)} kWh — ${f.source}${f.setByLabel ? `, entered by ${f.setByLabel}` : ''}.`
-    ),
-  ];
-}
-
-/** `siteDate` is re-exported through here only so the section above can stay presentational. */
-export { siteDate };

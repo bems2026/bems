@@ -14,9 +14,8 @@ import { CONTENT_WIDTH, type PdfChart, type PdfReport } from '@/lib/reportPdf/do
 import { coverageOf, type PeriodBuildingReport, type PeriodDeviceReport, type ReportPeriod } from '@/lib/supabaseReports';
 import { siteDateTime } from '@/lib/siteTime';
 import { bootedScript } from '@/lib/buildVersion';
-import { provenanceLines } from './CostCarbonLine';
 import { isQuotable } from '@/lib/supabaseReports';
-import type { Carboned, Costed } from '@/lib/energyCost';
+import { provenanceLines, type Carboned, type Costed } from '@/lib/energyCost';
 import type { ChartsData } from './ReportCharts';
 
 /**
