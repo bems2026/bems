@@ -23,6 +23,12 @@ keys, restore order checked against the migrations — and along the way correct
 evidence (its outlet rows disagree, because the legacy table predates RM-047b's correction) and
 four stale claims that the space tree was empty. **Watch 2026-09-15:** the first real retention
 pass, which deletes raw readings for the first time.
+**EX-170 corrects the deploy note.** `CLAUDE.md` and the Pi brief named two services to restart
+after a `server/` or `shared/` change, and there are three: `ibems-ingest` was left out. Measured
+the same day, read-only, the Pi's ingest daemon was still running `shared/sites/` modules replaced
+four days earlier. The restart map is now derived from the unit files and their imports, and
+checked (`test/service-restart-map.test.mjs`). **Ingest has not been restarted** — that is an
+operator action, and this was a documentation change.
 
 **Previously audited:** 2026-09-10 — **RM-070 and RM-071**. RM-071 is a UI/UX overhaul of the
 Automation page: rules now read as IF/THEN blocks, and auditing for it turned up a one-character CSS
@@ -2963,6 +2969,48 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-123** Schema guard tests asserting RLS shape per migration — `test/device-config-schema.test.mjs`, `test/phase8-anomalies-schema.test.mjs`, `test/phase9-history-schema.test.mjs`, `test/phase10-archive-schema.test.mjs`, `test/phase11-totals-retention-schema.test.mjs`, `test/phase12-monthly-reports-schema.test.mjs`
 - [x] **EX-125** First tests against the proxy's WebSocket relay and against a bridge that hangs rather than refuses — `server/proxy.test.mjs`
 - [x] **EX-124** Operational scripts encoding the real workflow — `package.json` (`mock`, `verify:pi`, `deploy:pi`, `ingest`, `build:flow`, `rotate-light-token:pi`, `backup`)
+- [x] **EX-170** The deploy note names every service a change reaches, and a test derives the list.
+      **Done 2026-09-13.** `CLAUDE.md` and `docs/pi-session-brief.md` said a `server/` or `shared/`
+      change needs `sudo systemctl restart ibems-proxy ibems-scheduler`. `server/ingest.mjs` imports
+      `server/reports.mjs`, `server/retention.mjs` and `shared/registry.mjs`, and runs as
+      `ibems-ingest` — so following the note left the ingest daemon on old code, and nothing says so:
+      a daemon on old code is `active`, and writes rows.
+      **Measured on the Pi, read-only, 2026-09-13.** Ingest had been up since 2026-09-08 15:52. The
+      pull at 2026-09-09 21:44 (merge `76d19ca`) replaced `shared/sites/mmsu-nberic-care/site.mjs`
+      and `devices.mjs` beneath it; proxy and scheduler were restarted 26 minutes later, and ingest
+      was not. Every other module each of the three daemons loads was compared the same way, and
+      those two were the only files newer than their daemon. What changed in them — a `measures`
+      field on two devices and the `acu_min_room_target_c` policy key — is read by nothing ingest
+      loads (`shapeRows.mjs` takes only `SITE.id` and capability promotion from the registry), so no
+      row it wrote came out different. The next change there need not be so harmless. **Ingest was
+      not restarted by this work**; that is the operator's `sudo systemctl restart ibems-ingest`.
+      **The map is derived, not kept.** Each `server/*.service` `ExecStart` names an entry module, and
+      the imports beneath it, followed to the end, are what that process holds. Three units keep a
+      Node process running. `ibems-wifi-prefer` runs node as a oneshot, a fresh process on every
+      timer tick, so it always has the code on disk; `ibems-dashboard` runs `serve` and
+      `ibems-kiosk` runs `chromium`, and load nothing from here. The brief carries the map as a
+      table. The test fails when a module a daemon loads is missing from it, is listed under the
+      wrong daemons, or is listed and loaded by none, and when the restart command beside either
+      deploy note does not name all three. Tracing it turned up two more things the old note missed:
+      the proxy also loads `node-red-bridge/nodeRedAdmin.mjs` and `enrollPlan.mjs`, outside both
+      directories the note named, and `src/` imports `shared/` through `@shared`, so those modules
+      need `npm run build` as well as a restart. The second is stated in `CLAUDE.md` and is not
+      guarded.
+      **The scanner has to read multi-line imports, and the first attempt did not.** A line-based
+      grep for `import … from`, used while tracing this by hand, found `reports.mjs` and missed
+      `retention.mjs` — whose import spans seven lines, and which is the module the note forgot. A
+      self-test pins that form, and the forms that must not count: a JSDoc `import()` type, and an
+      import quoted in a comment. A second test pins the unit parse to what was read by hand, so a
+      parser that finds nothing cannot pass the agreement checks. The deploy-note anchor was wrong
+      on its first run too: the brief wraps "Node loads a / module once" across a line break, so a
+      literal-space pattern reported the note as missing.
+      **Every rule was neutered on a copy of the tree, and each failed on the rule it targets:**
+      either deploy command losing `ibems-ingest`; `CONTRIBUTING.md` gaining a two-daemon command;
+      the map losing `server/retention.mjs`, the `server/notify.mjs` row losing the scheduler, and
+      the map listing `server/backup.mjs`, which no daemon loads; the scheduler starting to import
+      `reports.mjs`; `ibems-wifi-prefer` stopping being a oneshot; and the scanner made line-based.
+      The unmutated copy passed. — `test/service-restart-map.test.mjs`, `docs/pi-session-brief.md`,
+      `CLAUDE.md`
 
 ---
 
@@ -7296,6 +7344,12 @@ may not.
 
 ## 4. Known contradictions & doc drift
 
+
+**Resolved 2026-09-13 by EX-170:**
+
+| Was | Now |
+|---|---|
+| `CLAUDE.md` and `docs/pi-session-brief.md` said `server/` and `shared/` changes need `sudo systemctl restart ibems-proxy ibems-scheduler` | Three daemons load that code, and `ibems-ingest` was the one left out — it was found on the Pi still running `shared/sites/` modules replaced four days earlier. Both documents name all three, the brief carries the restart map, and `test/service-restart-map.test.mjs` derives that map from the unit files and fails when either disagrees. |
 
 **Resolved 2026-09-09 by RM-066..069:**
 

@@ -216,14 +216,44 @@ give it another port: `npm run mock -- --port=1881`. The recovery, as ever, was
 before.
 
 **Editing `server/` or `shared/` changes nothing until the daemons restart.** Node loads a
-module once, at process start. `ibems-proxy` and `ibems-scheduler` therefore keep running the
-code they were started with — on 2026-09-03 the proxy had been up since Sep 1 and was still
-validating commands with a two-day-old `shared/commands.mjs`, so a newly added command verb came
-back `400 invalid_action` and the app rendered it as *"This control is misconfigured — the bridge
-rejected it."* The code was correct, committed, pushed and tested; the process was old.
-`sudo systemctl restart ibems-proxy ibems-scheduler` is free and needs no asking. Do it after any
-change under `server/` or `shared/`, and check `systemctl show <unit> -p ActiveEnterTimestamp`
-against the file's mtime before believing a deploy landed.
+module once, at process start. Every daemon therefore keeps running the code it was started
+with — on 2026-09-03 the proxy had been up since Sep 1 and was still validating commands with a
+two-day-old `shared/commands.mjs`, so a newly added command verb came back `400 invalid_action`
+and the app rendered it as *"This control is misconfigured — the bridge rejected it."* The code
+was correct, committed, pushed and tested; the process was old.
+`sudo systemctl restart ibems-ingest ibems-proxy ibems-scheduler` is free and needs no asking. Do
+it after any change under `server/` or `shared/`, and check
+`systemctl show <unit> -p ActiveEnterTimestamp` against the file's mtime before believing a
+deploy landed.
+
+**It is three daemons, and this brief used to say two.** The command above named only
+`ibems-proxy` and `ibems-scheduler`, and `ibems-ingest` loads `shared/registry.mjs` exactly as
+they do — and alone runs the report and retention passes. Measured 2026-09-13: ingest had been up
+since 2026-09-08 15:52, the pull at 2026-09-09 21:44 replaced
+`shared/sites/mmsu-nberic-care/site.mjs` and `devices.mjs` beneath it, and proxy and scheduler were
+restarted 26 minutes later while ingest was not. Nothing reported it. A daemon on old code is
+`active`, and writes rows. Restarting ingest costs little: its retention and report checks run
+again at once, and both ask the database what is due; the anomaly detector's windows are in
+memory and warm up silently for about ten minutes; the fleet alarm re-seeds itself from the
+database.
+
+The precise rule is **restart every service whose entry module imports the changed file, directly
+or not**. This is the current map. `test/service-restart-map.test.mjs` derives it from each unit's
+`ExecStart` and the imports beneath it, and fails when this table disagrees:
+
+| Restart | After a change to |
+|---|---|
+| `ibems-ingest` `ibems-proxy` `ibems-scheduler` | `shared/registry.mjs` and what it loads — `shared/registry.enrolled.mjs`, `shared/siteConfig.mjs`, `shared/sites/mmsu-nberic-care/site.mjs`, `shared/sites/mmsu-nberic-care/circuits.mjs`, `shared/sites/mmsu-nberic-care/devices.mjs`, `shared/circuits.mjs`, `shared/deviceCapabilities.mjs` — and the audit outage queue, `server/auditQueue.mjs` and `server/ingestBuffer.mjs` |
+| `ibems-ingest` `ibems-scheduler` | `server/notify.mjs` |
+| `ibems-proxy` `ibems-scheduler` | the command path — `shared/commands.mjs`, `shared/buildLatest.mjs`, `shared/sitePolicy.mjs`, `server/dispatchLight.mjs`, `server/dispatchCloud.mjs`, `server/auditedDispatch.mjs` |
+| `ibems-ingest` | `server/ingest.mjs`, `server/reports.mjs`, `server/retention.mjs`, `server/ingestCycle.mjs`, `server/shapeRows.mjs`, `server/scrubTelemetry.mjs`, `server/readingCapabilities.mjs`, `server/healthRow.mjs`, `server/anomalyStats.mjs`, `server/fleetAlarm.mjs`, `server/supabaseRest.mjs` |
+| `ibems-proxy` | `server/proxy.mjs`, `server/breakGlass.mjs`, `server/jwksCache.mjs`, `server/jwtVerify.mjs`, `server/livePolicy.mjs`, `server/macPresence.mjs`, `server/tuyaCloud.mjs`, `server/tuyaFleet.mjs`, `server/cloudDispatchConfig.mjs`, `server/enrollRoute.mjs`, `server/enrollService.mjs`, `server/removeRoute.mjs`, `server/removeService.mjs`, `shared/enrollment.mjs`, `shared/tuyaNodeSettings.mjs` — and two from outside `server/` and `shared/`, `node-red-bridge/nodeRedAdmin.mjs` and `node-red-bridge/enrollPlan.mjs` |
+| `ibems-scheduler` | `server/scheduler.mjs`, `server/schedulePlan.mjs`, `server/shedPlan.mjs`, `server/acuLoopPlan.mjs`, `shared/scheduleDays.mjs`, `shared/scheduleRules.mjs`, `shared/dsmMath.mjs`, `shared/temperatureSources.mjs`, `shared/acuLoopVocabulary.mjs` |
+
+A module not in the table is not loaded by any running daemon, and needs no restart.
+`ibems-wifi-prefer` runs `server/wifi-prefer.mjs` as a oneshot — a fresh process each time its
+timer fires — so it always has the code on disk. `ibems-dashboard` and `ibems-kiosk` load no
+module from here; their deploy is the next paragraph.
 
 **And rebuild `dist` after any change under `src/`.** Same failure one layer over: the kiosk is
 served from `./dist` by `serve -s dist`, so an edit made *after* the last `npm run build` is
