@@ -109,15 +109,15 @@ describe('branchEnergySplit — a meter that froze is not a meter that lost ener
   });
 
   it('does not count the part of a freeze that fell before local midnight against today', () => {
-    const now = local('2026-09-13T02:00:00');
+    const now = local('2026-09-13T03:00:00');
     const history = {
       mtr_lo_red: [
-        ...samples('2026-09-12T23:00:00', 120, () => held),
-        ...samples('2026-09-13T01:00:00', 60, (i) => live(i, 13)),
+        ...samples('2026-09-12T22:00:00', 240, () => held),
+        ...samples('2026-09-13T02:00:00', 60, (i) => live(i, 13)),
       ],
     };
     const split = branchEnergySplit({ devices: DEVICES, readings: { mtr_lo_red: reading('mtr_lo_red', 0.01) }, totals: null, historyByDevice: history, period: 'today', nowMs: now });
-    expect(split.frozen[0].phantomKwh).toBeCloseTo((19.1 * (local('2026-09-13T00:59:05') - local('2026-09-13T00:00:00'))) / 3.6e9, 4);
+    expect(split.frozen[0].phantomKwh).toBeCloseTo((19.1 * (local('2026-09-13T01:59:05') - local('2026-09-13T00:00:00'))) / 3.6e9, 4);
   });
 });
 

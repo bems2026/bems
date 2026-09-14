@@ -36,7 +36,7 @@
  *                      (ROADMAP RM-076/RM-077), comma-separated: `flicker` (one sample of the first
  *                      building meter reported offline between equal readings), `offline` (every
  *                      metered device misses five samples, as in a Node-RED restart), `frozen` (the
- *                      first building meter repeats one reading exactly for ninety minutes), `spike`
+ *                      first building meter repeats one reading exactly for four hours), `spike`
  *                      (the second building meter reports 1,000,000 kW for one sample).
  *   --poll-cadence=<s> metered devices report only every <s> seconds, instead of continuously.
  *                      Reproduces the real bridge, where nothing asks an outlet anything except
@@ -473,11 +473,13 @@ function sampleHistory() {
   }
   if (FAULTS.includes('frozen') && hist.get(first)) {
     const buf = hist.get(first);
-    const from = buf.length - 240;
+    // Four hours: longer than the three-hour freeze threshold, which healthy outlets' hourly refresh
+    // sits well under (RM-077). A shorter fault would be — correctly — not called a freeze at all.
+    const from = buf.length - 420;
     const held = buf[from];
     if (held) {
       const power_w = held.power_w > 0 ? held.power_w : 19.1;
-      for (let i = from; i < from + 90 && i < buf.length; i++) buf[i] = { ts: buf[i].ts, power_w, voltage: held.voltage, current: held.current, online: true };
+      for (let i = from; i < from + 240 && i < buf.length; i++) buf[i] = { ts: buf[i].ts, power_w, voltage: held.voltage, current: held.current, online: true };
     }
   }
   if (FAULTS.includes('spike') && hist.get(second)) {

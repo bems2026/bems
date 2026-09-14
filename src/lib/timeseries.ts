@@ -89,16 +89,25 @@ export const GRID_STEP_MS = { '24h': 60_000, '7d': 900_000, '30d': 3_600_000, '1
 export const MAX_IMPUTE_MS = 120_000;
 
 /**
- * HOW LONG A READING MUST HOLD STILL BEFORE IT IS CALLED FROZEN, measured rather than chosen.
+ * HOW LONG A READING MUST HOLD STILL BEFORE IT IS CALLED FROZEN, measured rather than chosen — and
+ * measured twice, because the first measurement looked at the wrong devices.
  *
- * Over the seven days to 2026-09-14, the longest run of byte-identical power/voltage/current with
- * power above zero on a HEALTHY meter was 33 minutes (`mtr_arec_acu`, 16.2 W). The faults were 540
- * and 840 minutes (`mtr_lo_red`, 13.3 W and 19.1 W). An hour sits well clear of the first and far
- * below the second. Zero watts is excluded outright: an idle channel legitimately reports on
- * change only, and `mtr_lo_yellow` sat at 0 W for 690 healthy minutes.
+ * It shipped at one hour, sized on the four meters alone: over the seven days to 2026-09-14 the
+ * longest byte-identical power/voltage/current run above zero on a healthy METER was 33 minutes.
+ * Run over the live buffers after that deploy, it flagged two OUTLETS as frozen, and both were
+ * metering: the outlets refresh power, voltage and current about once an hour, and co1's own
+ * `add_ele` advanced twice inside its flagged hour. Across all eleven metered devices over the same
+ * seven days, healthy identical runs reached 61 minutes (co1 did 60 or more nineteen times) and
+ * never 120. The faults were 540, 657 and 942 minutes (`mtr_lo_red`).
+ *
+ * Three hours sits about 3x above the longest healthy run and under a third of the shortest fault,
+ * and it needs no idea of device class — which matters for the next building. A two-hour freeze will
+ * go unnamed; an outlet that misses one hourly refresh will not be called frozen. Zero watts is
+ * excluded outright: an idle channel legitimately reports on change only, and `mtr_lo_yellow` sat at
+ * 0 W for 690 healthy minutes.
  */
-export const FROZEN_MIN_SAMPLES = 60;
-export const FROZEN_MIN_DURATION_MS = 55 * 60_000;
+export const FROZEN_MIN_SAMPLES = 180;
+export const FROZEN_MIN_DURATION_MS = 175 * 60_000;
 
 /** A gap this many slots long or longer is reported as a window, not bridged. */
 export const GAP_WINDOW_MIN_SLOTS = 3;

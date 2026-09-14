@@ -141,13 +141,29 @@ describe('detectFrozenRuns', () => {
     expect(FROZEN_MIN_SAMPLES).toBeGreaterThan(33);
   });
 
+  /*
+   * Found on live data after the first deploy, 2026-09-14. A one-hour rule — sized on the four meters
+   * alone — flagged co1 (106.8 W, 08:59 to 09:58) and co7 as frozen. They were not: the outlets refresh
+   * power, voltage and current about once an hour, and co1's own `add_ele` counter advanced at 09:27 and
+   * 09:57 inside that very hour. Over seven days co1 held an identical tuple for 60 minutes or more
+   * nineteen times, never 120. The meter faults were 540, 657 and 942 minutes.
+   */
+  it("does not call an outlet's hourly refresh frozen — co1 held 61 minutes and was metering throughout", () => {
+    expect(detectFrozenRuns(run(61, 106.8, 224.4, 0.505))).toEqual([]);
+    expect(detectFrozenRuns(run(120, 106.8, 224.4, 0.505))).toEqual([]);
+  });
+
+  it('still finds three hours held identical, which no healthy device here has ever produced', () => {
+    expect(detectFrozenRuns(run(180, 19.1, 228.2, 0.576))).toHaveLength(1);
+  });
+
   it('does not call an offline stretch a freeze — that is already a different, louder fact', () => {
-    const offline = run(120, 19.1, 228.2, 0.576).map((p) => ({ ...p, online: false }));
+    const offline = run(240, 19.1, 228.2, 0.576).map((p) => ({ ...p, online: false }));
     expect(detectFrozenRuns(offline)).toEqual([]);
   });
 
   it('needs the voltage to be held too, since a live mains reading moves', () => {
-    const drifting = run(120, 19.1, 228.2, 0.576).map((p, i) => ({ ...p, voltage: 228.2 + (i % 2) * 0.1 }));
+    const drifting = run(240, 19.1, 228.2, 0.576).map((p, i) => ({ ...p, voltage: 228.2 + (i % 2) * 0.1 }));
     expect(detectFrozenRuns(drifting)).toEqual([]);
   });
 });
@@ -317,15 +333,15 @@ describe('buildSeries', () => {
       pt(0, 14.8),
       pt(1, 15.7, { online: false }),
       pt(2, 15.5),
-      ...Array.from({ length: 70 }, (_, i) => ({ ts: at(3 + i), power_w: 19.1, voltage: 228.2, current: 0.576, online: true })),
-      pt(73, 12),
+      ...Array.from({ length: 200 }, (_, i) => ({ ts: at(3 + i), power_w: 19.1, voltage: 228.2, current: 0.576, online: true })),
+      pt(203, 12),
     ];
-    const { slots, frozen } = buildSeries(points, { stepMs: MIN, startMs: T0, endMs: T0 + 74 * MIN, param: 'power', bounds: BOUNDS, detectFrozen: true });
+    const { slots, frozen } = buildSeries(points, { stepMs: MIN, startMs: T0, endMs: T0 + 204 * MIN, param: 'power', bounds: BOUNDS, detectFrozen: true });
     expect(frozen).toHaveLength(1);
     expect(slots[1].quality).toBe('interpolated');
     expect(slots[10].quality).toBe('frozen');
-    expect(slots[73].quality).toBe('measured');
-    expect(summarizeQuality(slots)).toMatchObject({ measured: 3, interpolated: 1, frozen: 70 });
+    expect(slots[203].quality).toBe('measured');
+    expect(summarizeQuality(slots)).toMatchObject({ measured: 3, interpolated: 1, frozen: 200 });
   });
 
   it('bridges up to a live tail, so the line reaches the live reading instead of stopping short', () => {

@@ -163,8 +163,9 @@ tuple an hour for fifteen hours — while both registers stood still. On 09-13 i
 to 09:00 and 0 W / 208.1 V from 10:00 to 16:00; on 09-10, one tuple for 1,132 minutes. It reported
 `online: true` throughout, because it kept sending messages. The legacy `Calculate 3-Phase Totals` node
 multiplied the held 19.1 W by fifteen hours. No healthy meter held an identical power/voltage/current
-tuple above 0 W for longer than 33 minutes in the same seven days, which is what sizes the one-hour
-threshold.
+tuple above 0 W for longer than 33 minutes in the same seven days — but the threshold that shipped on
+that evidence was wrong for outlets, and live data corrected it the same day: see the last paragraph of
+this entry.
 
 **The meter itself needs attention: three freezes in four days.** By this project's own rule, restart
 Node-RED (or that node) before suspecting hardware; if it recurs, power-cycle the meter at the panel.
@@ -191,6 +192,19 @@ pass found a defect the tests had not:** a sum with one frozen contributor drew 
 blank with no band (Energy Flow, Metered vs total). Fixed and pinned (`sumSlotSeries`,
 `pairTotalAndMetered`). **Not verified:** the tooltip on hover — the browser pane was not on screen, so
 the page drew no frames; its content is pinned by `ChartTooltip.test.tsx`.
+
+**Deployed, read back, and the live data corrected the freeze threshold.** `1c74ae3` went green in CI
+(node 22 and 24); the Pi fast-forwarded and rebuilt `./dist`, and its dashboard served the new bundle.
+The signed-in page itself was not viewed from here. Running `lib/timeseries.ts` over the Pi's live 24h
+buffers then did two things. It confirmed the grid on real data: every one-sample flicker on the four
+meters was bridged (CARE ACU 12:46 and 07:40; four each on L.O Yellow and C.O Yellow), no spurious gap
+window appeared, and no hole was invented where floor-binning would have invented 300–476 a meter. And
+it **flagged co1 and co7 as frozen, wrongly**. The one-hour rule had been sized on the meters alone. The
+outlets refresh power, voltage and current about once an hour; co1's own `add_ele` advanced twice inside
+its flagged hour; and over seven days co1 held an identical tuple for 60 minutes or more nineteen times,
+while no healthy run on any of the eleven devices reached 120. The threshold is now **three hours** —
+about 3x the longest healthy run, under a third of the shortest fault (540, 657, 942 minutes) — and the
+mock's `frozen` fault is four hours long to match.
 
 ### 2026-09-09 — the Automation page said it could not do what it was doing
 
@@ -3128,8 +3142,10 @@ quality, and nothing is coerced to 0.
   - **Mock:** `npm run mock -- --faults=flicker,offline,frozen,spike` shapes the seeded history after the
     measured faults, and the mock's samples now carry `online` as the real ring does.
 - [x] **RM-077 — a frozen meter is named, not blamed on the bridge.** `lib/timeseries.detectFrozenRuns`:
-  identical power/voltage/current, power above zero, online, for at least 60 samples and 55 minutes
-  (healthy maximum over seven days: 33 minutes; the faults: 540 and 900). `lib/branchEnergy.ts` names
+  identical power/voltage/current, power above zero, online, for at least 180 samples and 175 minutes.
+  Healthy maximum over seven days across all eleven metered devices: 61 minutes (outlets refresh about
+  hourly; meters alone: 33). The faults: 540, 657 and 942 minutes. It shipped at one hour, sized on the
+  meters alone, and flagged two healthy outlets on live data the same day — see §0. `lib/branchEnergy.ts` names
   each freeze today with its window and held reading, takes what the integrator counted from it out of
   that branch's second opinion and out of the building's, then runs `branchShortfalls` unchanged — its
   thresholds were sized on healthy data. Nothing is estimated. Fixtures: 09-12 and 09-13 from

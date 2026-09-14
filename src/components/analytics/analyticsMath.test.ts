@@ -81,12 +81,12 @@ describe('buildChartRows', () => {
   });
 
   it('draws a frozen stretch on its own series and reports it, rather than as a measurement', () => {
-    const frozen = Array.from({ length: 70 }, (_, i) => ({ ts: at(1 + i), power_w: 19.1, voltage: 228.2, current: 0.576, online: true }));
-    const model = buildChartRows(['a'], { a: [pt(0, 13), ...frozen, pt(71, 12)] }, 140, 'power', opts(71));
+    const frozen = Array.from({ length: 200 }, (_, i) => ({ ts: at(1 + i), power_w: 19.1, voltage: 228.2, current: 0.576, online: true }));
+    const model = buildChartRows(['a'], { a: [pt(0, 13), ...frozen, pt(201, 12)] }, 300, 'power', opts(201));
     expect(model.frozen.a).toHaveLength(1);
     expect(rowAt(model.rows, 10)?.a).toBeUndefined();
     expect(rowAt(model.rows, 10)?.[seriesKey('a', 'frozen')]).toBe(19.1);
-    expect(model.quality.a.frozen).toBe(70);
+    expect(model.quality.a.frozen).toBe(200);
   });
 
   it('names the 09-07 restart as a window instead of leaving an unexplained blank', () => {
@@ -128,8 +128,8 @@ describe('pairTotalAndMetered', () => {
   });
 
   it('draws a frozen branch in the panel total as frozen, not as an unexplained blank', () => {
-    const frozen = Array.from({ length: 70 }, (_, i) => ({ ts: at(i), power_w: 19.1, voltage: 228.2, current: 0.576, online: true }));
-    const { rows } = pairTotalAndMetered([frozen, series(0, 70, () => 900)], [series(0, 70, () => 200)], { ...opts(69), maxPoints: 120 });
+    const frozen = Array.from({ length: 200 }, (_, i) => ({ ts: at(i), power_w: 19.1, voltage: 228.2, current: 0.576, online: true }));
+    const { rows } = pairTotalAndMetered([frozen, series(0, 200, () => 900)], [series(0, 200, () => 200)], { ...opts(199), maxPoints: 300 });
     expect(rowAt(rows, 30)?.totalKw).toBeUndefined();
     expect(rowAt(rows, 30)?.totalFrozenKw).toBeCloseTo(0.9191, 6);
     expect(rowAt(rows, 30)?.meteredKw).toBe(0.2);

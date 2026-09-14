@@ -32,7 +32,7 @@ import { CHART_PARAMS, type ChartParam } from './chartParams';
  *
  *   - `<id>` — measured or live, the solid line;
  *   - `<id>:interpolated` — a bridged gap of at most two minutes, drawn dashed;
- *   - `<id>:frozen` — a stretch the meter held identical for an hour or more, drawn muted.
+ *   - `<id>:frozen` — a stretch the meter held identical for three hours or more, drawn muted.
  *
  * The two variant keys also carry the measured value either side of their stretch, so a dashed or
  * muted segment is drawn joined to the solid line it interrupts rather than floating free of it.
