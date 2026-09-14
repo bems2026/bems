@@ -40,7 +40,7 @@ const RANGE_MS: Record<LongRange, number> = {
  * `max_buckets` guard and PostgREST's 1000-row cap, with enough resolution to still show a
  * daily load shape: 7d/15min = 672 points, 30d/1h = 720 points.
  */
-const BUCKET_SECONDS: Record<LongRange, number> = {
+export const BUCKET_SECONDS: Record<LongRange, number> = {
   '7d': 15 * 60,
   '30d': 60 * 60,
 };
@@ -93,12 +93,18 @@ export function mapReadingsRows(rows: BucketRow[]): HistoryPoint[] {
   const points: HistoryPoint[] = [];
   for (const row of rows) {
     if (row.power_w === null) continue;
-    points.push({
+    const point: HistoryPoint = {
       ts: row.ts,
       power_w: row.power_w,
       voltage: row.voltage ?? undefined,
       current: row.current ?? undefined,
-    });
+    };
+    // How much of the bucket was online — RM-076. One named field rather than the raw column names,
+    // so nothing downstream reads a bucket statistic as a reading. Absent when no counts came back.
+    if (typeof row.sample_count === 'number' && typeof row.online_count === 'number') {
+      point.coverage = { online: row.online_count, samples: row.sample_count };
+    }
+    points.push(point);
   }
   return points;
 }
@@ -150,7 +156,7 @@ const ARCHIVE_RANGE_MS: Record<ArchiveRange, number> = {
  * because getting either wrong fails at runtime in production rather than at build time:
  * 1y/1d = 365 points.
  */
-const ARCHIVE_BUCKET_SECONDS: Record<ArchiveRange, number> = {
+export const ARCHIVE_BUCKET_SECONDS: Record<ArchiveRange, number> = {
   '1y': 24 * 60 * 60,
 };
 

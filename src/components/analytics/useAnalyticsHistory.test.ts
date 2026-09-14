@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { renderHook, waitFor, cleanup } from '@testing-library/react';
-import { useAnalyticsHistory, type AnalyticsRange } from './useAnalyticsHistory';
+import { renderHook, waitFor, cleanup, act } from '@testing-library/react';
+import { useAnalyticsHistory, RETRY_BASE_MS, type AnalyticsRange } from './useAnalyticsHistory';
 import { useDeviceStore, historyFor } from '@/stores/deviceStore';
 import * as bridgeClient from '@/lib/bridgeClient';
 import * as supabaseHistory from '@/lib/supabaseHistory';
@@ -97,5 +97,62 @@ describe('status during a range change', () => {
 
     rerender({ r: '24h' as AnalyticsRange }); // same range — nothing should change
     expect(result.current.status).toBe('ready');
+  });
+});
+
+/*
+ * RM-076 — synchronisation. The page used to know only "loading", "ready" or "error", so history
+ * that stopped arriving an hour ago looked exactly as current as history fetched a second ago, and a
+ * failed fetch waited a full cycle before trying again.
+ */
+describe('sync status', () => {
+  it('reports when the range last arrived, from which source, with no failures', async () => {
+    useDeviceStore.setState({ devices: [meter('mtr_a')], history: {} });
+    vi.mocked(bridgeClient.getHistory).mockResolvedValue({ device_id: 'mtr_a', range: '24h', points: [{ ts: 't1', power_w: 100 }] });
+
+    const { result } = renderHook(() => useAnalyticsHistory('24h'));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    expect(result.current.sync).toMatchObject({ settled: true, failures: 0, lastError: null, source: 'bridge' });
+    expect(typeof result.current.sync.fetchedAt).toBe('number');
+  });
+
+  it('counts consecutive failures and retries sooner than the normal cadence', async () => {
+    vi.useFakeTimers();
+    try {
+      useDeviceStore.setState({ devices: [meter('mtr_a')], history: {} });
+      vi.mocked(bridgeClient.getHistory).mockRejectedValue(new Error('bridge unreachable'));
+
+      const { result } = renderHook(() => useAnalyticsHistory('24h'));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.sync).toMatchObject({ failures: 1, lastError: 'bridge unreachable', fetchedAt: null });
+
+      const callsBefore = vi.mocked(bridgeClient.getHistory).mock.calls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(RETRY_BASE_MS);
+      });
+      expect(vi.mocked(bridgeClient.getHistory).mock.calls.length).toBeGreaterThan(callsBefore);
+      expect(result.current.sync.failures).toBe(2);
+      expect(RETRY_BASE_MS).toBeLessThan(60_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps today's 24h history for the building meters while the chart shows a week", async () => {
+    // The Energy section checks each branch for a frozen meter against today's samples. Switching
+    // the chart to 7d must not leave it with nothing to check against.
+    useDeviceStore.setState({ devices: [meter('mtr_lo_red')], history: {} });
+    vi.mocked(bridgeClient.getHistory).mockResolvedValue({ device_id: 'mtr_lo_red', range: '24h', points: [{ ts: 't0', power_w: 13.3 }] });
+    vi.mocked(supabaseHistory.getLongHistory).mockResolvedValue([{ ts: 't1', power_w: 12 }]);
+
+    const { result } = renderHook(() => useAnalyticsHistory('7d'));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    await waitFor(() => expect(historyFor(useDeviceStore.getState().history, 'mtr_lo_red', '24h')).toEqual([{ ts: 't0', power_w: 13.3 }]));
+    expect(historyFor(useDeviceStore.getState().history, 'mtr_lo_red', '7d')).toEqual([{ ts: 't1', power_w: 12 }]);
+    expect(result.current.sync.source).toBe('stored');
   });
 });

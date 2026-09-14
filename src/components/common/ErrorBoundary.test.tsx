@@ -114,3 +114,52 @@ describe('ErrorBoundary', () => {
     expect(spy.mock.calls.some((c) => String(c[0]).includes('[ibems] This page crashed:'))).toBe(true);
   });
 });
+
+describe('ErrorBoundary — inline, around one card (RM-076)', () => {
+  it('keeps the fault the size of the card that broke, leaving its neighbours drawn', () => {
+    silenceReactErrorLog();
+    render(
+      <div>
+        <ErrorBoundary scope="This chart" variant="inline">
+          <Boom throws />
+        </ErrorBoundary>
+        <p>the next card</p>
+      </div>
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('This chart could not be drawn');
+    expect(screen.getByText('the next card')).toBeInTheDocument();
+    // Reloading the whole kiosk is the page boundary's remedy, not one card's.
+    expect(screen.queryByText(/Reload the dashboard/)).not.toBeInTheDocument();
+  });
+
+  it('recovers by itself when the data it draws changes, without anyone pressing anything', () => {
+    silenceReactErrorLog();
+    const { rerender } = render(
+      <ErrorBoundary scope="This chart" variant="inline" resetKey={1}>
+        <Boom throws />
+      </ErrorBoundary>
+    );
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    rerender(
+      <ErrorBoundary scope="This chart" variant="inline" resetKey={2}>
+        <Boom throws={false} />
+      </ErrorBoundary>
+    );
+    expect(screen.getByText('page content')).toBeInTheDocument();
+  });
+
+  it('stays in its fallback while the data it draws has not changed', () => {
+    silenceReactErrorLog();
+    const { rerender } = render(
+      <ErrorBoundary scope="This chart" variant="inline" resetKey={1}>
+        <Boom throws />
+      </ErrorBoundary>
+    );
+    rerender(
+      <ErrorBoundary scope="This chart" variant="inline" resetKey={1}>
+        <Boom throws={false} />
+      </ErrorBoundary>
+    );
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+});

@@ -42,7 +42,17 @@ const totals = (over: Partial<Totals> = {}): Totals => ({
   ...over,
 });
 
-const BRANCHES = [meter('mtr_a', 'C.O Yellow'), meter('mtr_b', 'L.O Red')];
+const BRANCHES = [meter('mtr_co_yellow', 'C.O Yellow'), meter('mtr_lo_red', 'L.O Red')];
+
+/**
+ * RM-078: the section no longer takes its branches as a prop. It splits the building meters the
+ * bridge sums (`BUILDING_METER_IDS`), named from the device list in the store — the same derivation
+ * Overview's Energy Breakdown uses, so the two cannot list different branches or different figures.
+ */
+const renderSection = () => {
+  useDeviceStore.setState({ devices: BRANCHES });
+  return render(<EnergySection />);
+};
 
 afterEach(() => {
   cleanup();
@@ -52,7 +62,7 @@ afterEach(() => {
 describe('EnergySection', () => {
   it('renders the three counters the bridge reports', () => {
     useDeviceStore.setState({ totals: totals() });
-    render(<EnergySection branchDevices={[]} />);
+    render(<EnergySection />);
     expect(screen.getByText('46.55')).toBeInTheDocument();
     expect(screen.getByText('87.75')).toBeInTheDocument();
     expect(screen.getByText('230.15')).toBeInTheDocument();
@@ -66,22 +76,22 @@ describe('EnergySection', () => {
    */
   it('renders an uncounted period as "No data", never as a zero reading', () => {
     useDeviceStore.setState({ totals: totals({ energy_kwh_week: null, energy_kwh_month: null }) });
-    render(<EnergySection branchDevices={[]} />);
+    render(<EnergySection />);
     expect(screen.getAllByText('No data')).toHaveLength(2);
     expect(screen.queryByText('0.00')).not.toBeInTheDocument();
   });
 
   it('shows no counters at all before the first totals frame arrives', () => {
-    render(<EnergySection branchDevices={[]} />);
+    render(<EnergySection />);
     expect(screen.getAllByText('No data')).toHaveLength(3);
   });
 
   it("splits today's energy by branch, largest first, as a share of the branches shown", () => {
     useDeviceStore.setState({
       totals: totals(),
-      latestReadings: { mtr_a: reading('mtr_a', 25), mtr_b: reading('mtr_b', 75) },
+      latestReadings: { mtr_co_yellow: reading('mtr_co_yellow', 25), mtr_lo_red: reading('mtr_lo_red', 75) },
     });
-    render(<EnergySection branchDevices={BRANCHES} />);
+    renderSection();
     const rows = document.querySelectorAll('.analytics-energy-row');
     expect(rows).toHaveLength(2);
     // Sorted by consumption, so L.O Red (75) leads.
@@ -95,11 +105,11 @@ describe('EnergySection', () => {
     useDeviceStore.setState({
       totals: totals(),
       latestReadings: {
-        mtr_a: reading('mtr_a', 10, { energy_kwh_week: 70, energy_kwh_month: 300 }),
-        mtr_b: reading('mtr_b', 30, { energy_kwh_week: 210, energy_kwh_month: 900 }),
+        mtr_co_yellow: reading('mtr_co_yellow', 10, { energy_kwh_week: 70, energy_kwh_month: 300 }),
+        mtr_lo_red: reading('mtr_lo_red', 30, { energy_kwh_week: 210, energy_kwh_month: 900 }),
       },
     });
-    render(<EnergySection branchDevices={BRANCHES} />);
+    renderSection();
     expect(screen.getByText('40.00 kWh')).toBeInTheDocument(); // today's branch sum
 
     fireEvent.click(screen.getByRole('button', { name: 'Week' }));
@@ -119,9 +129,9 @@ describe('EnergySection', () => {
   it('says week/month are not counted yet when the accumulator has no data', () => {
     useDeviceStore.setState({
       totals: totals(),
-      latestReadings: { mtr_a: reading('mtr_a', 10), mtr_b: reading('mtr_b', 30) },
+      latestReadings: { mtr_co_yellow: reading('mtr_co_yellow', 10), mtr_lo_red: reading('mtr_lo_red', 30) },
     });
-    render(<EnergySection branchDevices={BRANCHES} />);
+    renderSection();
     fireEvent.click(screen.getByRole('button', { name: 'Week' }));
     expect(screen.getByText(/Not counted yet/)).toBeInTheDocument();
     expect(screen.queryByText('0.00 kWh')).not.toBeInTheDocument();
@@ -131,9 +141,9 @@ describe('EnergySection', () => {
   it('omits a branch with no energy reading rather than charting it as 0', () => {
     useDeviceStore.setState({
       totals: totals(),
-      latestReadings: { mtr_a: reading('mtr_a', 40), mtr_b: reading('mtr_b', undefined) },
+      latestReadings: { mtr_co_yellow: reading('mtr_co_yellow', 40), mtr_lo_red: reading('mtr_lo_red', undefined) },
     });
-    render(<EnergySection branchDevices={BRANCHES} />);
+    renderSection();
     expect(document.querySelectorAll('.analytics-energy-row')).toHaveLength(1);
     expect(screen.queryByText('L.O Red')).not.toBeInTheDocument();
     // The share is against the branches actually shown, so the one real branch is 100%.
@@ -217,14 +227,14 @@ describe('EnergySection — branch/total disagreement', () => {
         energy_kwh_week_integrated: 18.4,
       }),
       latestReadings: {
-        mtr_a: reading('mtr_a', 3.1, { energy_kwh_week: 79.278 }),
-        mtr_b: reading('mtr_b', 1.6, { energy_kwh_week: 20.268 }),
+        mtr_co_yellow: reading('mtr_co_yellow', 3.1, { energy_kwh_week: 79.278 }),
+        mtr_lo_red: reading('mtr_lo_red', 1.6, { energy_kwh_week: 20.268 }),
       },
     });
 
   it('names both figures on the page instead of rendering the contradiction silently', () => {
     disagreeing();
-    render(<EnergySection branchDevices={BRANCHES} />);
+    renderSection();
     fireEvent.click(screen.getByRole('button', { name: 'Week' }));
 
     const notice = screen.getByRole('status');
@@ -251,11 +261,11 @@ describe('EnergySection — branch/total disagreement', () => {
         energy_kwh_week_integrated: 18.4,
       }),
       latestReadings: {
-        mtr_a: reading('mtr_a', 15, { energy_kwh_week: 15 }),
-        mtr_b: reading('mtr_b', 5, { energy_kwh_week: 5 }),
+        mtr_co_yellow: reading('mtr_co_yellow', 15, { energy_kwh_week: 15 }),
+        mtr_lo_red: reading('mtr_lo_red', 5, { energy_kwh_week: 5 }),
       },
     });
-    render(<EnergySection branchDevices={BRANCHES} />);
+    renderSection();
     // Today: 20.00 against 5.09 — 3.9x, and it says so.
     expect(screen.getByRole('status')).toHaveTextContent('5.09 kWh');
 
@@ -267,9 +277,9 @@ describe('EnergySection — branch/total disagreement', () => {
   it('stays quiet when the branches sum to less than the building total', () => {
     useDeviceStore.setState({
       totals: totals({ energy_kwh_today: 4.746, energy_kwh_today_integrated: 5.086 }),
-      latestReadings: { mtr_a: reading('mtr_a', 1.652), mtr_b: reading('mtr_b', 3.094) },
+      latestReadings: { mtr_co_yellow: reading('mtr_co_yellow', 1.652), mtr_lo_red: reading('mtr_lo_red', 3.094) },
     });
-    render(<EnergySection branchDevices={BRANCHES} />);
+    renderSection();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
@@ -281,11 +291,11 @@ describe('EnergySection — branch/total disagreement', () => {
     useDeviceStore.setState({
       totals: totals({ energy_kwh_today: 4.305, energy_kwh_today_integrated: 4.649 }),
       latestReadings: {
-        mtr_a: reading('mtr_a', 2.652, { energy_kwh_today_integrated: 2.993 }),
-        mtr_b: reading('mtr_b', 1.653, { energy_kwh_today_integrated: 1.656 }),
+        mtr_co_yellow: reading('mtr_co_yellow', 2.652, { energy_kwh_today_integrated: 2.993 }),
+        mtr_lo_red: reading('mtr_lo_red', 1.653, { energy_kwh_today_integrated: 1.656 }),
       },
     });
-    render(<EnergySection branchDevices={BRANCHES} />);
+    renderSection();
     const notice = screen.getByRole('status');
     expect(notice).toHaveTextContent('C.O Yellow');
     expect(notice).toHaveTextContent('2.65 kWh');
@@ -301,11 +311,11 @@ describe('EnergySection — branch/total disagreement', () => {
     useDeviceStore.setState({
       totals: totals({ energy_kwh_today: 4.305, energy_kwh_today_integrated: 4.649 }),
       latestReadings: {
-        mtr_a: reading('mtr_a', 2.652, { energy_kwh_week: 20, energy_kwh_today_integrated: 2.993 }),
-        mtr_b: reading('mtr_b', 1.653, { energy_kwh_week: 10, energy_kwh_today_integrated: 1.656 }),
+        mtr_co_yellow: reading('mtr_co_yellow', 2.652, { energy_kwh_week: 20, energy_kwh_today_integrated: 2.993 }),
+        mtr_lo_red: reading('mtr_lo_red', 1.653, { energy_kwh_week: 10, energy_kwh_today_integrated: 1.656 }),
       },
     });
-    render(<EnergySection branchDevices={BRANCHES} />);
+    renderSection();
     expect(screen.getByRole('status')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Week' }));
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
@@ -316,11 +326,11 @@ describe('EnergySection — branch/total disagreement', () => {
     useDeviceStore.setState({
       totals: totals({ energy_kwh_today: 2.395, energy_kwh_today_integrated: 2.421 }),
       latestReadings: {
-        mtr_a: reading('mtr_a', 2.228, { energy_kwh_today_integrated: 2.256 }),
-        mtr_b: reading('mtr_b', 0.167, { energy_kwh_today_integrated: 0.165 }),
+        mtr_co_yellow: reading('mtr_co_yellow', 2.228, { energy_kwh_today_integrated: 2.256 }),
+        mtr_lo_red: reading('mtr_lo_red', 0.167, { energy_kwh_today_integrated: 0.165 }),
       },
     });
-    render(<EnergySection branchDevices={BRANCHES} />);
+    renderSection();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
@@ -328,9 +338,9 @@ describe('EnergySection — branch/total disagreement', () => {
     // Older bridge, or an outlet: the field is absent and absent is not zero.
     useDeviceStore.setState({
       totals: totals({ energy_kwh_today: 4.305, energy_kwh_today_integrated: 4.649 }),
-      latestReadings: { mtr_a: reading('mtr_a', 2.652), mtr_b: reading('mtr_b', 1.653) },
+      latestReadings: { mtr_co_yellow: reading('mtr_co_yellow', 2.652), mtr_lo_red: reading('mtr_lo_red', 1.653) },
     });
-    render(<EnergySection branchDevices={BRANCHES} />);
+    renderSection();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
@@ -338,11 +348,11 @@ describe('EnergySection — branch/total disagreement', () => {
     useDeviceStore.setState({
       totals: totals({ energy_kwh_week: null, energy_kwh_week_integrated: null }),
       latestReadings: {
-        mtr_a: reading('mtr_a', 3.1, { energy_kwh_week: 79.278 }),
-        mtr_b: reading('mtr_b', 1.6, { energy_kwh_week: 20.268 }),
+        mtr_co_yellow: reading('mtr_co_yellow', 3.1, { energy_kwh_week: 79.278 }),
+        mtr_lo_red: reading('mtr_lo_red', 1.6, { energy_kwh_week: 20.268 }),
       },
     });
-    render(<EnergySection branchDevices={BRANCHES} />);
+    renderSection();
     fireEvent.click(screen.getByRole('button', { name: 'Week' }));
     // The tile for that period says so, and the split says nothing at all.
     expect(screen.getByText('No data')).toBeInTheDocument();
@@ -391,47 +401,47 @@ describe('branchShortfalls', () => {
   it('ignores a branch reading ABOVE its integration — that is the other direction', () => {
     // The integrator accrues only while the meter reads healthy and while Node-RED runs, so a
     // branch ahead of it is expected. `energyDisagreement` is what watches that side.
-    expect(branchShortfalls([br('mtr_a', 'A', 12, 8)])).toEqual([]);
+    expect(branchShortfalls([br('mtr_co_yellow', 'A', 12, 8)])).toEqual([]);
   });
 
   it('stays quiet while the absolute gap is too small to mean anything', () => {
     // Minutes after midnight, and after any register lump: the register trails the integration
     // by up to one lump (~0.015 kWh on the busiest branch here). A ratio alone would flag every
     // branch every night.
-    expect(branchShortfalls([br('mtr_a', 'A', 0.02, 0.05)])).toEqual([]);
+    expect(branchShortfalls([br('mtr_co_yellow', 'A', 0.02, 0.05)])).toEqual([]);
     // Either side of the floor, expressed as a fraction of it rather than by subtracting it —
     // `1 - 0.15` is 0.85 and `1 - 0.85` is 0.15000000000000002, so an exact-boundary assertion
     // would be testing IEEE-754 rather than the rule.
-    expect(branchShortfalls([br('mtr_a', 'A', 1 - BRANCH_SHORTFALL_FLOOR_KWH * 0.99, 1)])).toEqual([]);
-    expect(branchShortfalls([br('mtr_a', 'A', 1 - BRANCH_SHORTFALL_FLOOR_KWH * 1.05, 1)])).toHaveLength(1);
+    expect(branchShortfalls([br('mtr_co_yellow', 'A', 1 - BRANCH_SHORTFALL_FLOOR_KWH * 0.99, 1)])).toEqual([]);
+    expect(branchShortfalls([br('mtr_co_yellow', 'A', 1 - BRANCH_SHORTFALL_FLOOR_KWH * 1.05, 1)])).toHaveLength(1);
   });
 
   it('stays quiet while the proportion is small, however many kWh that is', () => {
     // 2 kWh short of 102 is 1.96%: a big branch on a long day, well inside what two derivations
     // of the same circuit do. The absolute bar alone would flag it.
-    expect(branchShortfalls([br('mtr_a', 'A', 100, 102)])).toEqual([]);
+    expect(branchShortfalls([br('mtr_co_yellow', 'A', 100, 102)])).toEqual([]);
   });
 
   it('holds its tongue at the margin and speaks just past it', () => {
     const integrated = 10; // so the floor is cleared with room and only the ratio decides
-    expect(branchShortfalls([br('mtr_a', 'A', integrated * (1 - BRANCH_SHORTFALL_MARGIN), integrated)])).toEqual([]);
-    expect(branchShortfalls([br('mtr_a', 'A', integrated * (1 - BRANCH_SHORTFALL_MARGIN) - 0.01, integrated)])).toHaveLength(1);
+    expect(branchShortfalls([br('mtr_co_yellow', 'A', integrated * (1 - BRANCH_SHORTFALL_MARGIN), integrated)])).toEqual([]);
+    expect(branchShortfalls([br('mtr_co_yellow', 'A', integrated * (1 - BRANCH_SHORTFALL_MARGIN) - 0.01, integrated)])).toHaveLength(1);
   });
 
   it('skips a branch with no second opinion rather than assuming one', () => {
     // An outlet has no cumulative register, so the bridge sends no integrated figure for it
     // (RM-058), and a bridge older than that sends none at all. Absent is not zero.
     expect(branchShortfalls([br('co1', 'Outlet 1', 5, undefined)])).toEqual([]);
-    expect(branchShortfalls([br('mtr_a', 'A', 5)])).toEqual([]);
+    expect(branchShortfalls([br('mtr_co_yellow', 'A', 5)])).toEqual([]);
   });
 
   it('reports the worst first, because that is the one to look at', () => {
     const found = branchShortfalls([
-      br('mtr_a', 'A', 8, 10),
-      br('mtr_b', 'B', 2, 10),
+      br('mtr_co_yellow', 'A', 8, 10),
+      br('mtr_lo_red', 'B', 2, 10),
       br('mtr_c', 'C', 9.9, 10),
     ]);
-    expect(found.map((f) => f.id)).toEqual(['mtr_b', 'mtr_a']);
+    expect(found.map((f) => f.id)).toEqual(['mtr_lo_red', 'mtr_co_yellow']);
   });
 
   it('refuses a period other than today, because there is no second opinion for one', () => {
@@ -439,7 +449,7 @@ describe('branchShortfalls', () => {
     // register compared against today's integration would be two different questions, and this
     // case is the only way that mistake is observable: a week register is always at least
     // today's, so the comparison could never report a shortfall of its own accord.
-    const short = [{ id: 'mtr_a', name: 'A', kwh: 1, integrated: 5 }];
+    const short = [{ id: 'mtr_co_yellow', name: 'A', kwh: 1, integrated: 5 }];
     expect(branchShortfalls(short, 'today')).toHaveLength(1);
     expect(branchShortfalls(short, 'week')).toEqual([]);
     expect(branchShortfalls(short, 'month')).toEqual([]);
@@ -448,7 +458,7 @@ describe('branchShortfalls', () => {
   it('treats an integrated figure of zero as nothing to compare against', () => {
     // A branch whose integration has not accrued yet cannot be short of it, and dividing by it
     // would yield Infinity for a fraction the page would then try to render.
-    expect(branchShortfalls([br('mtr_a', 'A', 0, 0)])).toEqual([]);
-    expect(branchShortfalls([br('mtr_a', 'A', -1, 0)])).toEqual([]);
+    expect(branchShortfalls([br('mtr_co_yellow', 'A', 0, 0)])).toEqual([]);
+    expect(branchShortfalls([br('mtr_co_yellow', 'A', -1, 0)])).toEqual([]);
   });
 });

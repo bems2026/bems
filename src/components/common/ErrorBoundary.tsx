@@ -15,12 +15,22 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
  * size of the thing that failed. The outer one wraps everything and only ever renders if
  * the shell itself is broken.
  *
+ * THE INLINE VARIANT takes that one step further — RM-076. Analytics draws a dozen charts from
+ * field telemetry, and one malformed reading in one device's series used to take the whole page
+ * down with it. `variant="inline"` wraps a single card: its fallback is card-sized, it does not
+ * offer to reload the kiosk (the page around it is fine), and `resetKey` lets it redraw on its
+ * own when the data it draws changes — the next poll usually replaces the reading that broke it,
+ * and on an unattended wall display nobody is there to press "Try again".
+ *
  * A class component because this is the one thing React still has no hook for.
  */
 interface Props {
   children: ReactNode;
-  /** What broke, in the operator's words — "This page", "The dashboard". */
+  /** What broke, in the operator's words — "This page", "The dashboard", "This chart". */
   scope: string;
+  variant?: 'page' | 'inline';
+  /** When this changes while the fallback is showing, the children are tried again. */
+  resetKey?: unknown;
 }
 
 interface State {
@@ -41,6 +51,10 @@ export class ErrorBoundary extends Component<Props, State> {
     console.error(`[ibems] ${this.props.scope} crashed:`, error, info.componentStack);
   }
 
+  componentDidUpdate(prevProps: Props) {
+    if (this.state.error && prevProps.resetKey !== this.props.resetKey) this.setState({ error: null });
+  }
+
   /** Try the same tree again — enough for a transient fault (one bad WS frame, a null that
    * should not have been), and honest about not being enough for a real bug. */
   private retry = () => this.setState({ error: null });
@@ -48,6 +62,24 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     const { error } = this.state;
     if (!error) return this.props.children;
+
+    if (this.props.variant === 'inline') {
+      return (
+        <div className="error-boundary error-boundary--inline" role="alert">
+          <p className="error-boundary-title">{this.props.scope} could not be drawn</p>
+          <p className="error-boundary-body">
+            Something in the data it was given could not be rendered. The rest of this page, live data collection and stored history are unaffected, and it redraws by
+            itself when new data arrives.
+          </p>
+          <pre className="error-boundary-detail">{error.message}</pre>
+          <div className="error-boundary-actions">
+            <button type="button" className="error-boundary-btn" onClick={this.retry}>
+              Try again
+            </button>
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div className="error-boundary" role="alert">

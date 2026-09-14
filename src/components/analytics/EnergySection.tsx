@@ -2,76 +2,46 @@ import { useState } from 'react';
 import { AlertTriangle, BatteryCharging } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { InfoHint } from '@/components/ui/InfoHint';
-import type { Device, Reading, Totals } from '@/lib/types';
-import { formatKwh, shareOfTotal } from '@/lib/format';
-import { energyDisagreement, branchShortfalls } from '@/lib/energyDisagreement';
+import type { Totals } from '@/lib/types';
+import { formatKwh, formatNumber } from '@/lib/format';
+import { describeFrozen, describeShortfalls, type EnergyPeriod } from '@/lib/branchEnergy';
+import { useBranchEnergy } from '@/lib/useBranchEnergy';
 
-type Period = 'today' | 'week' | 'month';
-
-const PERIODS: { id: Period; label: string; tile: string; totalsKey: keyof Totals; integratedKey: keyof Totals; deviceKey: keyof Reading }[] = [
-  { id: 'today', label: 'Today', tile: 'TODAY', totalsKey: 'energy_kwh_today', integratedKey: 'energy_kwh_today_integrated', deviceKey: 'energy_kwh_today' },
-  { id: 'week', label: 'Week', tile: 'THIS WEEK', totalsKey: 'energy_kwh_week', integratedKey: 'energy_kwh_week_integrated', deviceKey: 'energy_kwh_week' },
-  { id: 'month', label: 'Month', tile: 'THIS MONTH', totalsKey: 'energy_kwh_month', integratedKey: 'energy_kwh_month_integrated', deviceKey: 'energy_kwh_month' },
+const PERIODS: { id: EnergyPeriod; label: string; tile: string; totalsKey: keyof Totals }[] = [
+  { id: 'today', label: 'Today', tile: 'TODAY', totalsKey: 'energy_kwh_today' },
+  { id: 'week', label: 'Week', tile: 'THIS WEEK', totalsKey: 'energy_kwh_week' },
+  { id: 'month', label: 'Month', tile: 'THIS MONTH', totalsKey: 'energy_kwh_month' },
 ];
 
 /**
  * Building energy consumed, over the three windows the bridge actually counts.
  *
- * THE TILES AND THE SPLIT ARE ONE NUMBER NOW — RM-057. Both are the sum of the building's
- * branch meters: the tiles read `_totals`, which the bridge computes as exactly that sum
- * (`shared/buildLatest.mjs`), and the rows below are the same meters listed out. They cannot
- * disagree, because it is the same arithmetic done once. Until RM-057 the tiles came from the
- * legacy flow's own two-second integration instead, and the operator reported the two figures
- * as out of sync three times before that was read as a design fault rather than a bug.
+ * THE TILES AND THE SPLIT ARE ONE NUMBER — RM-057. Both are the sum of the building's branch
+ * meters: the tiles read `_totals`, which the bridge computes as exactly that sum
+ * (`shared/buildLatest.mjs`), and the rows below are the same meters listed out.
  *
- * Each is rendered as "No data" when the bridge reports null rather than as 0: an uncounted
- * period and a period that genuinely consumed nothing are different facts. A period is null
- * whenever ANY branch is missing its figure — a building total short by a whole circuit, with
- * nothing on screen saying so, is the shape of every energy fault this project has had.
+ * AND THE SPLIT IS OVERVIEW'S SPLIT — RM-078. The rows, their rounding and every notice come from
+ * `lib/branchEnergy.ts` through `useBranchEnergy`, which Overview's Energy Breakdown calls too. This
+ * card used to take its branches as a prop filtered by each device's `monitoring` function while
+ * Overview took every `meter`; the operator saw L.O Red read differently on the two pages. The
+ * membership is now the bridge's own `BUILDING_METER_IDS`, so the split also adds up to the tile.
  *
- * The per-branch week/month are accumulated by the bridge itself (`ACCUMULATE_ENERGY` in
- * build-flow.mjs), because a meter only ever reports a daily counter. On a freshly deployed
- * bridge those accumulators are empty until whole days have rolled over, so both the tile and
- * the split legitimately have nothing to show — an explicit "not counted yet", never zeroes.
+ * Each tile renders "No data" when the bridge reports null rather than as 0: an uncounted period
+ * and a period that genuinely consumed nothing are different facts. The per-branch week/month are
+ * accumulated by the bridge (`ACCUMULATE_ENERGY`), so a fresh bridge has nothing to show for them
+ * until whole days have rolled over — an explicit "not counted yet", never zeroes.
  *
- * Each branch's share is computed against the sum of the branches shown, which is now the same
- * denominator as the tile.
- *
- * WHAT IS STILL COMPARED, and why it is not the tile. `_totals` also carries
- * `energy_kwh_*_integrated`: the legacy integration of the same circuits, the only INDEPENDENT
- * measurement of them this system has. `lib/energyDisagreement.ts` compares the split against
- * that, which is what keeps the RM-053 guard meaningful — comparing the split to the tile would
- * now be comparing a number with itself.
+ * WHAT IS STILL COMPARED. `_totals` also carries `energy_kwh_*_integrated`, the legacy integration
+ * of the same circuits and the only independent measurement of them; `lib/energyDisagreement.ts`
+ * compares the split against it. RM-077 takes out of that second opinion whatever the integrator
+ * counted from a meter that had frozen, which is what made L.O Red look like it was losing energy.
  */
-export function EnergySection({ branchDevices }: { branchDevices: Device[] }) {
+export function EnergySection() {
   const totals = useDeviceStore((s) => s.totals);
-  const readings = useDeviceStore((s) => s.latestReadings);
-  const [period, setPeriod] = useState<Period>('today');
+  const [period, setPeriod] = useState<EnergyPeriod>('today');
   const active = PERIODS.find((p) => p.id === period)!;
-
-  const branches = branchDevices
-    .map((d) => ({
-      id: d.id,
-      name: d.display_name,
-      kwh: readings[d.id]?.[active.deviceKey],
-      // This meter's own integration of the same DAY. `branchShortfalls` is what refuses to
-      // compare it against a longer period's register — the rule lives there so a test can reach
-      // it, see its docblock.
-      integrated: readings[d.id]?.energy_kwh_today_integrated,
-    }))
-    .filter((b): b is { id: string; name: string; kwh: number; integrated: number | undefined } => typeof b.kwh === 'number')
-    .sort((a, b) => b.kwh - a.kwh);
-  const branchSum = branches.reduce((sum, b) => sum + b.kwh, 0);
-  // Against THIS period's INTEGRATED counter, not the tile — RM-057. The tile is now the sum of
-  // these same branches, so comparing the split to it would compare a number with itself and the
-  // check could never fire. The legacy two-second integration is the only independent
-  // measurement of the same circuits, and the period must be the matching one: comparing the
-  // wrong period's figures would manufacture a disagreement out of two correct numbers.
-  const disagreement = energyDisagreement(branchSum, (totals?.[active.integratedKey] as number | null | undefined) ?? null);
-  // THE OPPOSITE DIRECTION, ASKED PER BRANCH — RM-058. A branch reading below its OWN power
-  // integration is energy measured and then lost, which is what RM-056 was doing; at the
-  // building it was 6.7 % and invisible, at the branch 11.4 %.
-  const shortfalls = branchShortfalls(branches, active.id);
+  const { rows, totalKwh, disagreement, shortfalls, frozen } = useBranchEnergy(period);
+  const shortfall = shortfalls.length > 0 ? describeShortfalls(shortfalls, frozen) : null;
 
   return (
     <div className="analytics-cards-section">
@@ -81,9 +51,9 @@ export function EnergySection({ branchDevices }: { branchDevices: Device[] }) {
           Energy
           <InfoHint label="Where these energy figures come from">
             The three totals are the sum of this building's branch meters — the same meters listed below, added up by the bridge, so the headline and the split are one figure and
-            not two that have to be reconciled. Overview reports the same number. Each meter's week and month are accumulated by the bridge from its daily counter, since no meter
-            reports a longer period, so a period reads "not counted yet" until every branch has one. The building's own power integration measures the same circuits a second,
-            independent way; if the two ever drift further apart than they can explain, the split below says so rather than leaving it to be noticed.
+            not two that have to be reconciled. Overview reports the same number, from the same calculation. Each meter's week and month are accumulated by the bridge from its
+            daily counter, since no meter reports a longer period, so a period reads "not counted yet" until every branch has one. The building's own power integration measures
+            the same circuits a second, independent way; if the two drift further apart than they can explain, or a meter stops updating, the split below says so.
           </InfoHint>
         </span>
         <span className="analytics-cards-section__tag">CONSUMED · kWh</span>
@@ -111,7 +81,7 @@ export function EnergySection({ branchDevices }: { branchDevices: Device[] }) {
               </button>
             ))}
           </div>
-          {branches.length > 0 && <span className="analytics-energy-split__sum mono">{branchSum.toFixed(2)} kWh</span>}
+          {totalKwh !== null && <span className="analytics-energy-split__sum mono">{formatKwh(totalKwh)}</span>}
         </div>
         {disagreement && (
           <p className="energy-disagreement" role="status">
@@ -124,42 +94,43 @@ export function EnergySection({ branchDevices }: { branchDevices: Device[] }) {
             </span>
           </p>
         )}
-        {shortfalls.length > 0 && (
+        {period === 'today' &&
+          frozen.map((f) => (
+            <p className="energy-disagreement" role="status" key={`${f.id}-${f.fromMs}`}>
+              <AlertTriangle size={15} aria-hidden="true" />
+              <span>
+                <strong>{f.ongoing ? `${f.name}'s meter is not updating.` : `${f.name}'s meter stopped updating.`}</strong> {describeFrozen(f)}
+              </span>
+            </p>
+          ))}
+        {shortfall && (
           <p className="energy-disagreement" role="status">
             <AlertTriangle size={15} aria-hidden="true" />
             <span>
-              <strong>
-                {shortfalls.length === 1
-                  ? `${shortfalls[0].name} is reporting less than it measured.`
-                  : `${shortfalls.length} branches are reporting less than they measured.`}
-              </strong>{' '}
-              {shortfalls
-                .map((s) => `${s.name} shows ${formatKwh(s.reported)} against ${formatKwh(s.integrated)} of its own power integrated over the same day (${Math.round(s.fraction * 100)}% missing)`)
-                .join('; ')}
-              . A branch cannot have used less than its own meter recorded, so this is energy going missing between the meter and this page.
+              <strong>{shortfall.headline}</strong> {shortfall.detail}
             </span>
           </p>
         )}
-        {branches.length === 0 ? (
+        {rows.length === 0 ? (
           <p className="analytics-energy-empty">
             {period === 'today'
               ? 'No branch readings yet.'
               : `Not counted yet — the bridge accumulates ${active.label.toLowerCase()}ly totals one completed day at a time, so this fills in as days roll over.`}
           </p>
         ) : (
-          branches.map((b) => {
-            const share = shareOfTotal(b.kwh, branchSum);
-            return (
-              <div className="analytics-energy-row" key={b.id}>
-                <span className="analytics-energy-row__name">{b.name}</span>
-                <span className="analytics-energy-row__track" aria-hidden="true">
-                  <span className="analytics-energy-row__fill" style={{ width: `${share.toFixed(1)}%` }} />
-                </span>
-                <span className="analytics-energy-row__pct mono">{share.toFixed(0)}%</span>
-                <span className="analytics-energy-row__kwh mono">{b.kwh.toFixed(2)}</span>
-              </div>
-            );
-          })
+          rows.map((b) => (
+            <div className={`analytics-energy-row${b.stale ? ' analytics-energy-row--stale' : ''}`} key={b.id}>
+              <span className="analytics-energy-row__name">
+                {b.name}
+                {b.stale && <span className="sr-only"> (last reading expired; this is its last reported count)</span>}
+              </span>
+              <span className="analytics-energy-row__track" aria-hidden="true">
+                <span className="analytics-energy-row__fill" style={{ width: `${b.share.toFixed(1)}%` }} />
+              </span>
+              <span className="analytics-energy-row__pct mono">{b.share.toFixed(0)}%</span>
+              <span className="analytics-energy-row__kwh mono">{formatNumber(b.kwh, 2)}</span>
+            </div>
+          ))
         )}
       </div>
     </div>

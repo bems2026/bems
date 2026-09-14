@@ -1,20 +1,50 @@
-import type { CSSProperties } from 'react';
+import { useMemo, type CSSProperties } from 'react';
 import { useDeviceStore, historyFor } from '@/stores/deviceStore';
 import { isReadingStale, measured } from '@/lib/staleness';
+import { useNowTick } from '@/lib/useNowTick';
+import type { SyncStatus } from '@/lib/dataQuality';
 import { HistoryAreaChart } from './HistoryAreaChart';
+import { liveSampleOf, prepareSeries } from './analyticsMath';
 import type { ChartParam } from './chartParams';
+import type { AnalyticsRange } from './useAnalyticsHistory';
 import type { Device } from '@/lib/types';
 import { formatNumber } from '@/lib/format';
+
+/** On the 24h range a card shows the last hour in detail; the main chart above carries the day. */
+const CARD_WINDOW_24H_MS = 60 * 60_000;
+const CARD_POINTS = 60;
 
 /**
  * Branches get the same 2x2 VOLTAGE/CURRENT/POWER/ENERGY tile grid the "selected source"
  * panel above uses (`.analytics-stat-grid`/`.analytics-stat-tile`) — 4 feeders, more room
  * per card, so the bigger tiles read fine. Outlets stay a compact single-column list (7
  * cards, no room to spare) — same underlying numbers, denser layout.
+ *
+ * RM-076: the chart is the device's own series on the shared time grid, ending at its live reading,
+ * with bridged, frozen and offline stretches drawn as what they are.
  */
-export function SourceCard({ device, color, scope, param, range, selected, onSelect }: { device: Device; color: string; scope: string; param: ChartParam; range: string; selected: boolean; onSelect: () => void }) {
+export function SourceCard({
+  device,
+  color,
+  scope,
+  param,
+  range,
+  selected,
+  onSelect,
+  sync,
+}: {
+  device: Device;
+  color: string;
+  scope: string;
+  param: ChartParam;
+  range: AnalyticsRange;
+  selected: boolean;
+  onSelect: () => void;
+  sync: SyncStatus;
+}) {
   const reading = useDeviceStore((s) => s.latestReadings[device.id]);
   const history = useDeviceStore((s) => historyFor(s.history, device.id, range));
+  const minute = Math.floor(useNowTick() / 60_000) * 60_000;
   const stale = isReadingStale(reading);
   // Values are withheld once the reading has expired, so an outlet that reconnected but
   // never reported cannot present a days-old voltage as a current one — see `measured`.
@@ -22,6 +52,12 @@ export function SourceCard({ device, color, scope, param, range, selected, onSel
   const amps = measured(reading?.current, reading);
   const watts = measured(reading?.power_w, reading);
   const kwhToday = measured(reading?.energy_kwh_today, reading);
+
+  const live = useMemo(() => (range === '24h' ? liveSampleOf(reading, param, minute) : undefined), [range, reading, param, minute]);
+  const series = useMemo(
+    () => prepareSeries(history, param, { range, nowMs: minute, maxPoints: CARD_POINTS, windowMs: range === '24h' ? CARD_WINDOW_24H_MS : undefined, live }),
+    [history, param, range, minute, live],
+  );
 
   return (
     <button
@@ -38,9 +74,7 @@ export function SourceCard({ device, color, scope, param, range, selected, onSel
         <span className="analytics-source-card__dot" style={{ background: color }} aria-hidden="true" />
         <span className="analytics-source-card__name">{device.display_name}</span>
         <span className="analytics-source-card__id mono">{device.id}</span>
-        {/* Was aria-hidden with a `title`, which put the live/stale distinction behind both a
-            colour-only cue and an attribute screen readers don't reliably announce on a
-            span. The dot stays decorative; the state is now real text for assistive tech. */}
+        {/* The dot stays decorative; the live/stale state is real text for assistive tech. */}
         <span className={`analytics-source-card__status${stale ? ' analytics-source-card__status--stale' : ''}`} aria-hidden="true" />
         <span className="sr-only">{stale ? 'No recent reading' : 'Reporting'}</span>
       </div>
@@ -59,7 +93,7 @@ export function SourceCard({ device, color, scope, param, range, selected, onSel
           <Stat label="kWh" value={kwhToday} digits={2} />
         </div>
       )}
-      <HistoryAreaChart history={history} color={color} name={device.display_name} className="analytics-source-card__chart" param={param} />
+      <HistoryAreaChart series={series} color={color} name={device.display_name} className="analytics-source-card__chart" param={param} sync={sync} compact />
     </button>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useDeviceStore, historyFor } from './deviceStore';
+import { useDeviceStore, historyFor, historyFetchedAt } from './deviceStore';
 import type { HistoryPoint } from '@/lib/types';
 
 const pts = (n: number): HistoryPoint[] =>
@@ -33,10 +33,23 @@ describe('range-tagged history', () => {
   it("does not let Overview's 24h fetch overwrite what Analytics is showing at 7d", () => {
     // EnergyFlowCard writes into the same map and always asks for 24h, so visiting Overview
     // and coming back used to re-stamp every meter's series.
+    //
+    // RM-078: each range is now its own entry, so the 7d series SURVIVES a 24h write rather than
+    // being blanked by it. A reader still only ever gets the range it asked for — the substitution
+    // this test was written against cannot happen — and the Energy section can hold today's 24h
+    // meter history for freeze detection while the chart above it shows a week.
     useDeviceStore.getState().setHistory('mtr_a', pts(9), '7d');
     useDeviceStore.getState().setHistory('mtr_a', pts(2), '24h');
-    expect(historyFor(useDeviceStore.getState().history, 'mtr_a', '7d')).toEqual([]);
+    expect(historyFor(useDeviceStore.getState().history, 'mtr_a', '7d')).toHaveLength(9);
     expect(historyFor(useDeviceStore.getState().history, 'mtr_a', '24h')).toHaveLength(2);
+  });
+
+  it('records when each range was last written, so a page can say how old what it shows is', () => {
+    const before = Date.now();
+    useDeviceStore.getState().setHistory('mtr_a', pts(2), '24h');
+    const at = historyFetchedAt(useDeviceStore.getState().history, 'mtr_a', '24h');
+    expect(at).toBeGreaterThanOrEqual(before);
+    expect(historyFetchedAt(useDeviceStore.getState().history, 'mtr_a', '7d')).toBeNull();
   });
 
   it('returns nothing for a device that has no history at all', () => {

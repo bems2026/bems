@@ -5,7 +5,10 @@ import {
   archiveWindow,
   assertNotTruncated,
   mapReadingsRows,
+  BUCKET_SECONDS,
+  ARCHIVE_BUCKET_SECONDS,
 } from './supabaseHistory';
+import { GRID_STEP_MS } from './timeseries';
 
 describe('mapReadingsRows', () => {
   it('maps a full row straight through', () => {
@@ -80,11 +83,22 @@ describe('mapReadingsRows on bucket rows', () => {
     expect(points.map((p) => p.ts)).toEqual(['t1', 't3']);
   });
 
-  it('ignores the extra bucket columns rather than leaking them into HistoryPoint', () => {
+  /*
+   * RM-076 reverses this. The counts used to be dropped as columns HistoryPoint had no use for; a
+   * tooltip now has a use for them. A 15-minute average of 3 online samples out of 15 is a much
+   * weaker claim than one of 15, and "Stored · 3 of 15 samples online" is the only place a reader
+   * can learn which one they are looking at. Carried as one named field rather than the raw column
+   * names, so nothing downstream mistakes a bucket statistic for a reading.
+   */
+  it("keeps a bucket's coverage as one named field, so a tooltip can say how much of it was measured", () => {
     const points = mapReadingsRows([
       { ts: 't1', power_w: 10, voltage: null, current: null, sample_count: 15, online_count: 3 },
     ]);
-    expect(points[0]).toEqual({ ts: 't1', power_w: 10, voltage: undefined, current: undefined });
+    expect(points[0]).toEqual({ ts: 't1', power_w: 10, voltage: undefined, current: undefined, coverage: { online: 3, samples: 15 } });
+  });
+
+  it('adds no coverage to a row that carried no counts', () => {
+    expect(mapReadingsRows([{ ts: 't1', power_w: 10, voltage: null, current: null }])[0]).not.toHaveProperty('coverage');
   });
 });
 
@@ -124,5 +138,15 @@ describe('archiveWindow', () => {
     // longer ranges" comparison had nothing to compare against and would have passed
     // vacuously. This asserts the property that actually matters for the range that remains.
     expect(archiveWindow('1y', NOW).bucketSeconds).toBe(24 * 60 * 60);
+  });
+});
+
+describe('stored buckets and the chart grid (RM-076)', () => {
+  it('are the same intervals, so a stored bucket IS a chart slot and nothing is re-binned', () => {
+    // readings_buckets and readings_archive floor on the epoch; lib/timeseries floors on the epoch.
+    // If these ever differ, every stored point lands between two chart slots.
+    expect(BUCKET_SECONDS['7d'] * 1000).toBe(GRID_STEP_MS['7d']);
+    expect(BUCKET_SECONDS['30d'] * 1000).toBe(GRID_STEP_MS['30d']);
+    expect(ARCHIVE_BUCKET_SECONDS['1y'] * 1000).toBe(GRID_STEP_MS['1y']);
   });
 });

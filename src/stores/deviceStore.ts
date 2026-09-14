@@ -30,7 +30,13 @@ export interface DeviceState {
    * that renders confidently over data that does not mean what its label says. Reading
    * through `historyFor` makes a range mismatch a gap rather than a silent substitution.
    */
-  history: Record<string, { range: string; points: HistoryPoint[] }>;
+  //
+  // RM-078: keyed by range as well as device, rather than one tagged entry per device. A reader
+  // still only ever receives the range it asked for, so none of the substitutions above can come
+  // back — but a 24h write no longer evicts a 7d series, which is what lets Analytics' Energy
+  // section hold today's meter history for freeze detection while the chart shows a week.
+  // `fetchedAt` is when that range last arrived, so a page can say how old it is.
+  history: Record<string, Record<string, { points: HistoryPoint[]; fetchedAt: number }>>;
 
   setDevices: (devices: Device[]) => void;
   setLatestReading: (deviceId: string, reading: Reading) => void;
@@ -63,7 +69,8 @@ export const useDeviceStore = create<DeviceState>((set) => ({
       return { latestReadings, totals };
     }),
 
-  setHistory: (deviceId, points, range) => set((s) => ({ history: { ...s.history, [deviceId]: { range, points } } })),
+  setHistory: (deviceId, points, range) =>
+    set((s) => ({ history: { ...s.history, [deviceId]: { ...s.history[deviceId], [range]: { points, fetchedAt: Date.now() } } } })),
 }));
 
 /**
@@ -84,5 +91,10 @@ export function historyFor(
   const entry = history[deviceId];
   // NO_POINTS, not a fresh [] — this runs inside zustand selectors, where a new
   // reference each call would re-render the subscriber on every unrelated store change.
-  return entry && entry.range === range ? entry.points : NO_POINTS;
+  return entry?.[range]?.points ?? NO_POINTS;
+}
+
+/** When `range` was last written for this device, or `null` if it never has been. */
+export function historyFetchedAt(history: DeviceState['history'], deviceId: string, range: string): number | null {
+  return history[deviceId]?.[range]?.fetchedAt ?? null;
 }

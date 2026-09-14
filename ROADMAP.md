@@ -1,6 +1,16 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-13 — **RM-072**, the Reports overhaul, in progress. The primitives have
+**Last audited:** 2026-09-14 — **RM-076 to RM-078, Analytics data quality**, from three operator
+reports: L.O Red "reporting less than it measured", L.O Red reading differently on Overview and
+Analytics, and blank strips in the branch and outlet charts. **The first was a false alarm** — the
+meter froze, repeating one reading for up to fifteen hours while its own registers stood still, and the
+legacy integrator counted the held watts; the bridge had published exactly what the meter said. The
+second was two copies of one derivation. The third was real Node-RED restarts and one-sample health
+flickers drawn as unexplained blanks, on top of charts that paired devices by array position rather
+than by time. See the 2026-09-14 entry in §0. **Stage 2, RM-079 (the bridge side), is not started and
+needs a flow write.**
+
+**Previously audited:** 2026-09-13 — **RM-072**, the Reports overhaul, in progress. The primitives have
 landed: charts are a scene with two serializers rather than an SVG string, because putting a string
 into the DOM would mean this codebase's first `dangerouslySetInnerHTML` and the first thing through
 it would be operator-editable device names. The pdfmake spike is the part worth reading — three
@@ -126,6 +136,61 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
+
+### 2026-09-14 — L.O Red "reporting less than it measured" was a meter that froze, and the charts could not say so
+
+**Three reports, one missing idea: nothing on the Analytics page knew when a sample belonged, or what
+kind of sample it was.** The operator reported (1) Overview and Analytics both saying *"L.O Red shows
+0.00 kWh against 0.30 kWh of its own power integrated over the same day (100 % missing) … energy going
+missing between the meter and this page"*, (2) L.O Red reading differently on Overview's Energy
+Breakdown and Analytics' "By branch", and (3) blank strips in the branch and outlet charts. Each was
+measured before anything changed — the ring buffer, flow context and journals read on the Pi, and the
+`readings` table read back. Operator decisions the same day: bridge gaps of two minutes or less and
+band longer ones; never estimate energy for a frozen window; frontend first, bridge second (RM-079).
+
+**RM-077 — the accusation was wrong.** The bridge publishes exactly L.O Red's own register
+(`capabilities.today_acc_energy1` equals `energy_kwh_today`, day base 0). What disagreed was the
+second opinion:
+
+| local day | integrated from power | own daily register | own lifetime register Δ |
+|---|---|---|---|
+| 09-07 to 09-11 | 0.191 / 0.226 / 0.270 / 0.112 / 0.064 | 0.191 / 0.227 / 0.272 / 0.112 / 0.066 | agrees |
+| 09-12 | **0.329** | **0.008** | **0.008** |
+| 09-13 | **0.214** | **0.091** | **0.092** |
+
+On 09-12 from 06:00 to 20:59 the meter repeated **19.1 W / 228.2 V / 0.576 A exactly** — one distinct
+tuple an hour for fifteen hours — while both registers stood still. On 09-13 it held 13.3 W from 00:00
+to 09:00 and 0 W / 208.1 V from 10:00 to 16:00; on 09-10, one tuple for 1,132 minutes. It reported
+`online: true` throughout, because it kept sending messages. The legacy `Calculate 3-Phase Totals` node
+multiplied the held 19.1 W by fifteen hours. No healthy meter held an identical power/voltage/current
+tuple above 0 W for longer than 33 minutes in the same seven days, which is what sizes the one-hour
+threshold.
+
+**The meter itself needs attention: three freezes in four days.** By this project's own rule, restart
+Node-RED (or that node) before suspecting hardware; if it recurs, power-cycle the meter at the panel.
+Recorded against RM-013.
+
+**RM-078 — two copies of one derivation.** Overview rounded rows to one decimal and took every
+`meter`; Analytics rounded to two and took the `branches` group filtered by `monitoring`; neither
+matched `BUILDING_METER_IDS`, which is what `_totals` sums.
+
+**RM-076 — the blank strips.** The operator's Analytics screenshot matches 2026-09-07 16:31 by its own
+energy figures, and its two gaps were **Node-RED being redeployed and restarted** that afternoon
+(journal: `Updated flows` 15:50:10, `Stopping nodered.service` 15:50:43 and 16:25:55; ingest logged
+`bridge unreachable` at 16:26:00) — real outages, drawn as unexplained blanks. The current buffer adds
+single-sample `online: false` flickers between equal readings (CARE ACU 12:46, L.O Yellow 07:32, co1
+14:08, co5 14:18) — a health flag, not an outage (FI-026). Underneath both, the ring stamps each sample
+with the device's **arrival** time (`mtr_lo_red`: 298 intervals of 1–29 s and 347 of 90–129 s in one
+day), and `buildChartRows` and `sumHistories` paired devices by array position.
+
+**Verified in a browser** against `npm run mock -- --port=1881 --faults=flicker,offline,frozen,spike`
+(new): the main chart reports 6 interpolated samples, 4 gaps and the frozen meter; the badge reads
+"Live · Interpolated 6 min · Offline 4 windows · Frozen L.O Red"; both energy cards name the freeze and
+neither accuses the branch; no inline error boundary tripped; no horizontal overflow at 375 px. **That
+pass found a defect the tests had not:** a sum with one frozen contributor drew the frozen stretch as a
+blank with no band (Energy Flow, Metered vs total). Fixed and pinned (`sumSlotSeries`,
+`pairTotalAndMetered`). **Not verified:** the tooltip on hover — the browser pane was not on screen, so
+the page drew no frames; its content is pinned by `ChartTooltip.test.tsx`.
 
 ### 2026-09-09 — the Automation page said it could not do what it was doing
 
@@ -1786,6 +1851,7 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       `ControlPage.test.tsx`
 
 ### Frontend — state & data layer
+- [x] **EX-171** *(2026-09-14)* Analytics data quality: one time grid, a quality for every sample, frozen-meter detection, one branch-energy derivation for Overview and Analytics, sync status, and an error boundary per card. See RM-076 to RM-078 in §2 — `src/lib/timeseries.ts`, `src/lib/branchEnergy.ts`, `src/lib/useBranchEnergy.ts`, `src/lib/dataQuality.ts`, `src/components/analytics/analyticsMath.ts`, `src/components/analytics/useAnalyticsHistory.ts`, `src/components/analytics/ChartTooltip.tsx`, `src/components/analytics/DataQualityBadge.tsx`, `src/components/common/ErrorBoundary.tsx`. **Deleted:** `src/components/overview/totalPowerSeries.ts` — `sumHistories` summed by array position; its offline rule lives on in `sumSlotSeries`.
 
 - [x] **EX-020** Bridge resilience layer: abort timeouts, in-flight guard, exponential backoff, WS primary with HTTP-poll fallback — `src/lib/bridgeClient.ts`
 - [x] **EX-021** Session-expiry recovery: a 401 triggers one token refresh, then falls through to the login screen instead of retrying a dead token forever — `src/lib/authToken.ts`, `src/stores/authStore.ts`
@@ -3022,6 +3088,65 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 ## 2. Current roadmap (active execution)
 
+
+### Analytics data quality — RM-076 to RM-079 (2026-09-14)
+
+Why this exists is the 2026-09-14 entry in §0. The principle it follows: **energy comes from registers,
+charts come from instantaneous signals, and neither feeds the other.** Every drawn value carries a
+quality, and nothing is coerced to 0.
+
+- [x] **RM-076 — one time grid, and what each minute of it is.** `src/lib/timeseries.ts`.
+  - **Slots, not array positions.** Slot widths are 60 s / 15 min / 1 h / 1 day for 24h / 7d / 30d /
+    1y. The stored widths equal `readings_buckets`' and `readings_archive`'s own buckets, which floor on
+    the epoch; `supabaseHistory.test.ts` pins the agreement. One bridge sample gets one slot, pushed
+    forward at most two slots when its arrival stamp is late. Measured over a full day on every meter,
+    floor-binning invents 318–476 holes per meter; this invents none.
+  - **A quality per slot:** `measured | interpolated | live | frozen | offline | outlier | missing`. A
+    gap of two minutes or less between two real readings is bridged linearly and drawn dashed; anything
+    longer is a labelled band (`Offline` / `No data`). The limit is time, so nothing is bridged on a
+    15-minute grid. Power is never held forward. A reading outside `SITE.telemetry_bounds` is rejected,
+    never clamped.
+  - **Charts** (`analyticsMath.ts`, `HistoryAreaChart.tsx`, `AnalyticsPage.tsx`, `UntrackedLoadCard.tsx`,
+    `overview/EnergyFlowCard.tsx`): devices joined by slot; measured solid, bridged dashed, frozen dotted
+    and muted, long gaps as bands; each chart states its own quality in its accessible name. A sum with a
+    frozen contributor is drawn frozen, carrying the held figure, not left blank. The 24h charts end at
+    each device's live reading (`liveSampleOf`, withheld once expired).
+  - **Tooltip** (`ChartTooltip.tsx`, `lib/dataQuality.ts`): the exact moment to the second, the span of
+    a stored bucket, each value, what kind of point it is, what the device itself carried, the reading's
+    own time, and the source with its fetch time.
+  - **Sync** (`useAnalyticsHistory.ts`): `sync` says whether the range has answered, when its history
+    last arrived (`deviceStore.historyFetchedAt`), and how many fetches in a row have failed. A failure
+    is retried after 10 s, doubling, capped at the range's own cadence. `DataQualityBadge.tsx` reads
+    Live / Syncing… / Cached · N min old / History unavailable, then interpolated minutes, offline windows
+    and frozen meters.
+  - **Stored coverage:** `mapReadingsRows` keeps `online_count/sample_count` as `HistoryPoint.coverage`,
+    reversing a test that dropped them, so a tooltip can say "Stored average of 12 of 15 samples online".
+  - **Error boundaries:** `ErrorBoundary` gains `variant="inline"` and `resetKey`. Every Analytics card
+    has its own, outside the card's button, and redraws by itself when the data changes.
+  - **Store:** `deviceStore.history` is keyed by device and range, so a 24h write no longer evicts a 7d
+    series. A reader still only ever gets the range it asked for.
+  - **Mock:** `npm run mock -- --faults=flicker,offline,frozen,spike` shapes the seeded history after the
+    measured faults, and the mock's samples now carry `online` as the real ring does.
+- [x] **RM-077 — a frozen meter is named, not blamed on the bridge.** `lib/timeseries.detectFrozenRuns`:
+  identical power/voltage/current, power above zero, online, for at least 60 samples and 55 minutes
+  (healthy maximum over seven days: 33 minutes; the faults: 540 and 900). `lib/branchEnergy.ts` names
+  each freeze today with its window and held reading, takes what the integrator counted from it out of
+  that branch's second opinion and out of the building's, then runs `branchShortfalls` unchanged — its
+  thresholds were sized on healthy data. Nothing is estimated. Fixtures: 09-12 and 09-13 from
+  `readings`; RM-056's 2026-09-08 figures still produce the true shortfall.
+- [x] **RM-078 — one branch-energy derivation.** `lib/branchEnergy.branchEnergySplit`, through
+  `lib/useBranchEnergy.ts`, used by `EnergySection.tsx` and `overview/EnergyBreakdownCard.tsx`:
+  membership `BUILDING_METER_IDS`, the total rounded exactly as `buildLatest`'s `branchSum`, rows to two
+  decimals, an expired reading kept (a register is a count) but dimmed. `EnergySection` no longer takes a
+  `branchDevices` prop. `components/analytics/branchEnergyCards.test.tsx` renders both cards against one
+  store and pins that they agree.
+- [ ] **RM-079 — the bridge side (stage 2; needs a flow write).** `APPEND_HISTORY` to record the tick as
+  `sample_ts` beside the arrival `ts`, so the grid is exact rather than reconstructed; a
+  `node-red-bridge/valueFreezeTracker.mjs` (the executed-string pattern of `arrivalTracker.mjs`) so
+  `buildLatest` publishes `measurement_frozen` and withholds `energy_kwh_today_integrated` while frozen;
+  the ring to write `frozen: true`. Deploy: `npm run build:flow`, `npm run test:bridge`, back up
+  `~/.node-red/flows.json`, `deploy:pi` dry run then apply, restart per the restart map, read back both
+  endpoints.
 
 ### Reports gain charts, a document, and a price — RM-072 (2026-09-10)
 
@@ -7153,6 +7278,15 @@ may not.
       weekday/weekend separation the three-day minimum exists to protect.
 
 ### Robustness
+- **FI-026** (S) **One-sample health flickers on the hand-built tabs.** The ring buffer on 2026-09-14
+  held `online: false` samples bracketed by equal readings — CARE ACU 12:46, L.O Yellow and C.O Yellow
+  22:25, 05:52, 07:32, 07:51, co1 14:08, co5 14:18 — never coincident across independent devices, so a
+  health flag dropping for one sample rather than an outage. RM-076 bridges them on the charts. The
+  cause is on the four hand-built source tabs, which nothing in this repository generates, and was not
+  investigated.
+- **FI-027** (M) **Persist sample quality.** `readings` stores `online` but not `frozen`, so a stored
+  range cannot show a freeze and a report cannot leave one out. Follows RM-079, which is where the flag
+  would first exist.
 - ~~**FI-021** (M) Meter arrival tracking.~~ **Done 2026-09-01 — EX-141.** The entry that stood
   here was **wrong about the mechanism**, and the correction is the more useful record: it
   claimed the tracker keyed on value change and had no arrival signal, when the energy

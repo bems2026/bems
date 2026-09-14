@@ -1,25 +1,32 @@
 import { useMemo, useState } from 'react';
-import { siteDate, siteDateTime, siteTimeShort } from '@/lib/siteTime';
+import { siteDate, siteTimeShort } from '@/lib/siteTime';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceArea } from 'recharts';
 import { Activity, Gauge, Plug } from 'lucide-react';
 import { useDeviceStore, historyFor } from '@/stores/deviceStore';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { HistoryAreaChart } from './HistoryAreaChart';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { useAnalyticsHistory, type AnalyticsRange } from './useAnalyticsHistory';
 import { supabase } from '@/config/supabase';
-import { buildChartRows } from './analyticsMath';
-import { CHART_PARAMS, CHART_PARAM_ORDER, formatParamValue, type ChartParam } from './chartParams';
+import { buildChartRows, liveSampleOf, prepareSeries, seriesKey, type TooltipSeries } from './analyticsMath';
+import { CHART_PARAMS, CHART_PARAM_ORDER, type ChartParam } from './chartParams';
 import { SourceCard } from './SourceCard';
 import { EnergySection } from './EnergySection';
 import { UntrackedLoadCard } from './UntrackedLoadCard';
 import { SpaceTotalsCard } from './SpaceTotalsCard';
+import { ChartTooltip } from './ChartTooltip';
+import { DataQualityBadge } from './DataQualityBadge';
 import type { Device, Reading } from '@/lib/types';
+import type { SyncStatus } from '@/lib/dataQuality';
+import { GRID_STEP_MS, summarizeQuality, type SlotQuality } from '@/lib/timeseries';
 import { formatNumber } from '@/lib/format';
 import { measured } from '@/lib/staleness';
+import { useNowTick } from '@/lib/useNowTick';
 
 const MAX_CHART_POINTS = 140;
+const SELECTED_POINTS = 140;
 /** v4's own 7-color cycle (amber, blue, green, purple, plus 3 more) — decoration only, so
  * literal hex/bright vars are fine here the same way `scene3d/tokens.ts`'s SCENE_PALETTE is. */
 const PALETTE = ['var(--accent)', 'var(--blue-bright)', 'var(--green-bright)', 'var(--purple-bright)', 'var(--red-bright)', '#0ea5e9', '#db2777'];
@@ -46,30 +53,31 @@ const RANGE_LABEL: Record<AnalyticsRange, string> = { '24h': '24 h', '7d': '7 d'
 const RANGE_WORDS: Record<AnalyticsRange, string> = { '24h': '24 hours', '7d': '7 days', '30d': '30 days', '1y': 'year' };
 
 /**
- * v4's Analytics tab, re-themed into the M1 glass tokens (the source design ships this
- * page as un-restyled v3 markup — see the Phase M plan §6.2) and rebuilt against real data.
+ * v4's Analytics tab, re-themed into the M1 glass tokens and rebuilt against real data.
  *
- * The Power | Voltage | Current toggle is real: the ring buffer now records voltage and
- * current alongside power on every poll (`build-flow.mjs`'s APPEND_HISTORY and the mock's
- * `sampleHistory`), so each is an actual measured series. It was previously dropped
- * precisely because that data wasn't stored — a toggle that changed nothing would have
- * been its own kind of dishonesty.
+ * The Power | Voltage | Current toggle is real: the ring buffer records voltage and current
+ * alongside power on every poll, so each is an actual measured series. v4's fourth param — Energy —
+ * is still absent, because `energy_kwh_today` is a cumulative counter that resets at midnight, not
+ * an instantaneous signal to plot beside the other three.
  *
- * Two consequences worth keeping in mind: V/A only accrue from the moment a bridge starts
- * recording them, so a long-running bridge shows a gap over the older part of the window
- * (`HistoryPoint`'s optional fields carry that honestly, never a 0), and v4's fourth param
- * — Energy — is still absent, because `energy_kwh_today` is a cumulative counter that
- * resets at midnight, not an instantaneous signal to plot beside the other three.
+ * RM-076 — WHAT EACH CHART NOW SAYS ABOUT ITSELF. Every series is put on one time grid before it is
+ * drawn (`lib/timeseries.ts`), devices are joined minute to minute rather than by array position,
+ * and each stretch is drawn as what it is: measured solid, a bridged flicker dashed, a frozen meter
+ * dotted, an outage as a labelled band. The badge above the chart says whether the history is
+ * current and how much of it was bridged or missing; the tooltip gives the exact time, the raw
+ * value and the source. Each card sits in its own error boundary, so one malformed reading takes
+ * down one card, not the page.
  */
 export function AnalyticsPage() {
   const devices = useDeviceStore((s) => s.devices);
   const readings = useDeviceStore((s) => s.latestReadings);
   const historyMap = useDeviceStore((s) => s.history);
   const [range, setRange] = useState<AnalyticsRange>('24h');
-  const { byGroup, branchIds, outletIds, status } = useAnalyticsHistory(range);
+  const { byGroup, branchIds, outletIds, status, sync } = useAnalyticsHistory(range);
   // Long-range history is Supabase-backed — only offer those options
   // when it's actually configured, rather than showing buttons that would just error.
   const longRangeAvailable = supabase !== null;
+  const minute = Math.floor(useNowTick() / 60_000) * 60_000;
 
   const scopes = useMemo(() => Object.keys(byGroup), [byGroup]);
   const [scopeState, setScope] = useState<Scope>('branches');
@@ -95,22 +103,44 @@ export function AnalyticsPage() {
     }
     return out;
   }, [byGroup, devices]);
-  const branchDevices = devicesFor.branches ?? [];
-  const scopeDevices = devicesFor[scope] ?? [];
-  const scopeIds = scopeDevices.map((d) => d.id);
+  const scopeDevices = useMemo(() => devicesFor[scope] ?? [], [devicesFor, scope]);
+  const scopeIds = useMemo(() => scopeDevices.map((d) => d.id), [scopeDevices]);
 
   const selectedId = selectedByScope[scope] && scopeIds.includes(selectedByScope[scope]!) ? selectedByScope[scope]! : (scopeIds[0] ?? null);
   const selectDevice = (id: string) => setSelectedByScope((s) => ({ ...s, [scope]: id }));
 
-  // Filter to the active range BEFORE charting. buildChartRows stays a pure function over a
-  // plain map; deciding what counts as this range's data is this component's job.
-  const scopedHistory = useMemo(
-    () => Object.fromEntries(scopeIds.map((id) => [id, historyFor(historyMap, id, range)])),
-    [scopeIds, historyMap, range],
+  const scopedHistory = useMemo(() => Object.fromEntries(scopeIds.map((id) => [id, historyFor(historyMap, id, range)])), [scopeIds, historyMap, range]);
+  // The live tail only means something on the bridge's own minute grid; a stored bucket is an average.
+  const liveById = useMemo(
+    () => (range === '24h' ? Object.fromEntries(scopeIds.map((id) => [id, liveSampleOf(readings[id], param, minute)])) : undefined),
+    [range, scopeIds, readings, param, minute],
   );
-  const rows = useMemo(() => buildChartRows(scopeIds, scopedHistory, MAX_CHART_POINTS, param), [scopeIds, scopedHistory, param]);
+  const model = useMemo(
+    () => buildChartRows(scopeIds, scopedHistory, MAX_CHART_POINTS, param, { range, nowMs: minute, live: liveById }),
+    [scopeIds, scopedHistory, param, range, minute, liveById],
+  );
+  const rows = model.rows;
+  const tooltipSeries: TooltipSeries[] = useMemo(() => scopeDevices.map((d, i) => ({ key: d.id, name: d.display_name, color: PALETTE[i % PALETTE.length] })), [scopeDevices]);
+  const chartQuality = useMemo(() => {
+    const total = summarizeQuality([]);
+    for (const id of scopeIds) {
+      const q = model.quality[id];
+      if (q) for (const k of Object.keys(total) as SlotQuality[]) total[k] += q[k];
+    }
+    return total;
+  }, [model, scopeIds]);
+  const gapCount = scopeIds.reduce((n, id) => n + (model.gaps[id]?.length ?? 0), 0);
+  const frozenNames = scopeDevices.filter((d) => (model.frozen[d.id]?.length ?? 0) > 0).map((d) => d.display_name);
+
   const selectedDevice = scopeDevices.find((d) => d.id === selectedId);
   const selectedReading = selectedId ? readings[selectedId] : undefined;
+  const selectedSeries = useMemo(
+    () =>
+      selectedId
+        ? prepareSeries(historyFor(historyMap, selectedId, range), param, { range, nowMs: minute, maxPoints: SELECTED_POINTS, live: liveById?.[selectedId] })
+        : undefined,
+    [selectedId, historyMap, range, param, minute, liveById],
+  );
 
   if (devices.length === 0) {
     return (
@@ -128,11 +158,10 @@ export function AnalyticsPage() {
           <>
             {RANGE_LABEL[range]} trends · consumption totals
             <InfoHint label="What this page covers">
-              Power, voltage, and current over the last {RANGE_WORDS[range]} for the 4 CHNT branch meters and the 7 individually-metered outlets, plus the building's energy consumed
-              today, this week, and this month.{' '}
-              {longRangeAvailable
-                ? 'Anything past 24 h reads from stored history — the bridge itself only keeps a 24 h buffer.'
-                : ''}
+              Power, voltage, and current over the last {RANGE_WORDS[range]} for the branch meters and the individually-metered outlets, plus the building's energy consumed
+              today, this week, and this month. {longRangeAvailable ? 'Anything past 24 h reads from stored history — the bridge itself only keeps a 24 h buffer. ' : ''}
+              Solid lines are measurements. A dashed segment bridges a gap of two minutes or less between two real readings; a dotted grey line is a meter that repeated one
+              reading unchanged for an hour or more; a shaded band is a stretch with no readings at all. Hover a chart for the exact time, the raw value and where it came from.
             </InfoHint>
           </>
         }
@@ -179,8 +208,7 @@ export function AnalyticsPage() {
                   type="button"
                   className="analytics-legend__item"
                   // --muted-2, not --faint: this is a 10px interactive label, and --faint is
-                  // documented in index.css as decoration-only (under 3:1 on every surface
-                  // here). Same retarget the stylesheet's own 29 sites got.
+                  // documented in index.css as decoration-only (under 3:1 on every surface here).
                   style={{ color: d.id === selectedId ? 'var(--txt)' : 'var(--muted-2)' }}
                   aria-pressed={d.id === selectedId}
                   onClick={() => selectDevice(d.id)}
@@ -191,73 +219,112 @@ export function AnalyticsPage() {
               ))}
             </div>
           </div>
-          {status === 'loading' && rows.length === 0 ? (
-            <Skeleton height="440px" />
-          ) : rows.length === 0 ? (
-            <p className="section-placeholder">
-              {status === 'error'
-                ? 'History unavailable right now.'
-                : range === '24h'
-                  ? 'No history yet — the buffer fills at 1 point/min.'
-                  : `No ${RANGE_LABEL[range]} history yet — data accumulates going forward from when ingestion started.`}
-            </p>
-          ) : (
-            <div
-              className={`chart-frame chart-frame--axes-visible${chartRevealed ? ' chart-frame--revealed' : ''}`}
-              role="img"
-              aria-label={`${CHART_PARAMS[param].label} over the last ${RANGE_WORDS[range]} across ${scopeDevices.length} ${scope}, ${rows.length} samples.`}
-              {...revealHandlers}
-            >
-              <ResponsiveContainer width="100%" height={440}>
-                <LineChart data={rows} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
-                  <CartesianGrid stroke="var(--border)" strokeOpacity={0.5} vertical={false} />
-                  <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tickFormatter={(t) => formatTick(t, range)} stroke="var(--muted)" fontSize={11} tickLine={false} />
-                  {/* Voltage sits in a narrow band well above zero (~220-230 V), so a
-                      0-based axis would flatten every real variation into one straight
-                      line — it gets an auto domain; power/current keep the 0-based default
-                      where zero is a meaningful floor. */}
-                  <YAxis stroke="var(--muted)" fontSize={11} width={44} tickLine={false} domain={param === 'voltage' ? ['auto', 'auto'] : undefined} />
-                  <Tooltip
-                    labelFormatter={(t) => siteDateTime(t as number)}
-                    formatter={(v, name) => [formatParamValue(Number(v), param), scopeDevices.find((d) => d.id === name)?.display_name ?? String(name)]}
-                    contentStyle={{ background: 'var(--bg-surface-2)', border: '1px solid var(--border)', borderRadius: 8 }}
-                  />
-                  {scopeDevices.map((d, i) => (
-                    <Line
-                      key={d.id}
-                      type="monotone"
-                      dataKey={d.id}
-                      name={d.id}
-                      stroke={PALETTE[i % PALETTE.length]}
-                      strokeWidth={d.id === selectedId ? 1.8 : 1.1}
-                      strokeOpacity={d.id === selectedId ? 1 : 0.35}
-                      dot={false}
-                      isAnimationActive={false}
-                      connectNulls={false}
-                    />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          )}
+          <div className="analytics-chart-card__quality">
+            <DataQualityBadge sync={sync} quality={chartQuality} gapCount={gapCount} frozenNames={frozenNames} stepMs={GRID_STEP_MS[range]} />
+          </div>
+          <ErrorBoundary scope="This chart" variant="inline" resetKey={model}>
+            {status === 'loading' && rows.length === 0 ? (
+              <Skeleton height="440px" />
+            ) : rows.length === 0 ? (
+              <p className="section-placeholder">
+                {status === 'error'
+                  ? 'History unavailable right now.'
+                  : range === '24h'
+                    ? 'No history yet — the buffer fills at 1 point/min.'
+                    : `No ${RANGE_LABEL[range]} history yet — data accumulates going forward from when ingestion started.`}
+              </p>
+            ) : (
+              <div
+                className={`chart-frame chart-frame--axes-visible${chartRevealed ? ' chart-frame--revealed' : ''}`}
+                role="img"
+                aria-label={`${CHART_PARAMS[param].label} over the last ${RANGE_WORDS[range]} across ${scopeDevices.length} ${scope}, ${rows.length} points${chartQuality.interpolated > 0 ? `, ${chartQuality.interpolated} interpolated samples` : ''}${gapCount > 0 ? `, ${gapCount} gaps` : ''}${frozenNames.length > 0 ? `, frozen readings on ${frozenNames.join(' and ')}` : ''}.`}
+                {...revealHandlers}
+              >
+                <ResponsiveContainer width="100%" height={440}>
+                  <LineChart data={rows} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+                    <CartesianGrid stroke="var(--border)" strokeOpacity={0.5} vertical={false} />
+                    <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tickFormatter={(t) => formatTick(t, range)} stroke="var(--muted)" fontSize={11} tickLine={false} />
+                    {/* Voltage sits in a narrow band well above zero (~220-230 V), so a 0-based axis would
+                        flatten every real variation into one straight line — it gets an auto domain. */}
+                    <YAxis stroke="var(--muted)" fontSize={11} width={44} tickLine={false} domain={param === 'voltage' ? ['auto', 'auto'] : undefined} />
+                    {selectedId &&
+                      (model.gaps[selectedId] ?? []).map((g) => (
+                        <ReferenceArea
+                          key={g.fromMs}
+                          x1={g.fromMs}
+                          x2={g.toMs}
+                          ifOverflow="hidden"
+                          fill="var(--muted)"
+                          fillOpacity={0.14}
+                          stroke="none"
+                          label={{ value: g.kind === 'offline' ? 'Offline' : 'No data', position: 'insideTop', fill: 'var(--muted-2)', fontSize: 10 }}
+                        />
+                      ))}
+                    <Tooltip content={<ChartTooltip rows={rows} meta={model.meta} series={tooltipSeries} param={param} sync={sync} stepMs={model.stepMs} />} />
+                    {scopeDevices.flatMap((d, i) => {
+                      const color = PALETTE[i % PALETTE.length];
+                      const isSelected = d.id === selectedId;
+                      const width = isSelected ? 1.8 : 1.1;
+                      const opacity = isSelected ? 1 : 0.35;
+                      return [
+                        <Line key={d.id} type="monotone" dataKey={d.id} name={d.id} stroke={color} strokeWidth={width} strokeOpacity={opacity} dot={false} isAnimationActive={false} connectNulls={false} />,
+                        <Line
+                          key={`${d.id}:interpolated`}
+                          type="linear"
+                          dataKey={seriesKey(d.id, 'interpolated')}
+                          stroke={color}
+                          strokeWidth={width}
+                          strokeOpacity={opacity}
+                          strokeDasharray="4 3"
+                          dot={false}
+                          isAnimationActive={false}
+                          connectNulls={false}
+                          legendType="none"
+                        />,
+                        <Line
+                          key={`${d.id}:frozen`}
+                          type="linear"
+                          dataKey={seriesKey(d.id, 'frozen')}
+                          stroke="var(--muted)"
+                          strokeWidth={width}
+                          strokeOpacity={isSelected ? 0.9 : 0.35}
+                          strokeDasharray="1 3"
+                          dot={false}
+                          isAnimationActive={false}
+                          connectNulls={false}
+                          legendType="none"
+                        />,
+                      ];
+                    })}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </ErrorBoundary>
         </div>
 
         <div className="card analytics-stat-card">
           <h3 className="card-title">{selectedDevice?.display_name ?? 'No source selected'}</h3>
           {selectedDevice && <SelectedStatPanel reading={selectedReading} />}
-          <div className="analytics-stat-card__spark-label">{CHART_PARAMS[param].label.toUpperCase()} · 24 H</div>
-          <HistoryAreaChart
-            history={selectedId ? historyFor(historyMap, selectedId, range) : undefined}
-            color="var(--blue-bright)"
-            name={selectedDevice?.display_name ?? 'Selected source'}
-            className="analytics-stat-card__chart"
-            maxPoints={140}
-            param={param}
-          />
+          <div className="analytics-stat-card__spark-label">
+            {CHART_PARAMS[param].label.toUpperCase()} · {RANGE_LABEL[range].toUpperCase()}
+          </div>
+          <ErrorBoundary scope="This chart" variant="inline" resetKey={selectedSeries}>
+            <HistoryAreaChart
+              series={selectedSeries}
+              color="var(--blue-bright)"
+              name={selectedDevice?.display_name ?? 'Selected source'}
+              className="analytics-stat-card__chart"
+              param={param}
+              sync={sync}
+            />
+          </ErrorBoundary>
         </div>
       </div>
 
-      <EnergySection branchDevices={branchDevices} />
+      <ErrorBoundary scope="The energy section" variant="inline" resetKey={historyMap}>
+        <EnergySection />
+      </ErrorBoundary>
 
       {scopes.map((g) => (
         <SourceSection
@@ -267,16 +334,25 @@ export function AnalyticsPage() {
           activeScope={scope}
           param={param}
           range={range}
+          sync={sync}
+          resetKey={historyMap}
           selectedId={selectedByScope[g] ?? null}
-          onSelect={(id) => { setScope(g); selectDevice(id); }}
+          onSelect={(id) => {
+            setScope(g);
+            selectDevice(id);
+          }}
         />
       ))}
 
-      <UntrackedLoadCard branchIds={branchIds} outletIds={outletIds} range={range} />
+      <ErrorBoundary scope="Metered vs total" variant="inline" resetKey={historyMap}>
+        <UntrackedLoadCard branchIds={branchIds} outletIds={outletIds} range={range} sync={sync} />
+      </ErrorBoundary>
 
       {/* RM-030. Follows the page's range but asks a different question of a different
           source — spaces rather than device groups — so it owns its own selection. */}
-      <SpaceTotalsCard range={range} />
+      <ErrorBoundary scope="Space totals" variant="inline" resetKey={historyMap}>
+        <SpaceTotalsCard range={range} />
+      </ErrorBoundary>
     </>
   );
 }
@@ -310,7 +386,8 @@ function SelectedStatPanel({ reading }: { reading: Reading | undefined }) {
 /**
  * One per Analytics group. Title, tag, icon and grid class come from `presentationFor`, which
  * falls back for a group nobody has styled — so a new metered class shows up as a plain
- * section rather than not at all.
+ * section rather than not at all. Each card has its own error boundary, outside the card's own
+ * button so the fallback's "Try again" is never a button inside a button.
  */
 function SourceSection({
   devices,
@@ -318,6 +395,8 @@ function SourceSection({
   activeScope,
   param,
   range,
+  sync,
+  resetKey,
   selectedId,
   onSelect,
 }: {
@@ -325,7 +404,9 @@ function SourceSection({
   scope: Scope;
   activeScope: Scope;
   param: ChartParam;
-  range: string;
+  range: AnalyticsRange;
+  sync: SyncStatus;
+  resetKey: unknown;
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
@@ -342,7 +423,9 @@ function SourceSection({
       </div>
       <div className={gridClass}>
         {devices.map((d, i) => (
-          <SourceCard key={d.id} device={d} color={PALETTE[i % PALETTE.length]} scope={scope} param={param} range={range} selected={activeScope === scope && selectedId === d.id} onSelect={() => onSelect(d.id)} />
+          <ErrorBoundary key={d.id} scope={`${d.display_name}'s card`} variant="inline" resetKey={resetKey}>
+            <SourceCard device={d} color={PALETTE[i % PALETTE.length]} scope={scope} param={param} range={range} sync={sync} selected={activeScope === scope && selectedId === d.id} onSelect={() => onSelect(d.id)} />
+          </ErrorBoundary>
         ))}
       </div>
     </div>

@@ -178,6 +178,12 @@ export interface HistoryPoint {
    * suppresses a point only when it is explicitly `false`.
    */
   online?: boolean;
+  /**
+   * For a STORED bucket only: how many of its raw samples were online, out of how many (RM-076).
+   * A 15-minute average of 3 online samples is a much weaker claim than one of 15, and a tooltip
+   * is where that difference can be said. Absent on the bridge's own samples.
+   */
+  coverage?: { online: number; samples: number };
 }
 
 export interface HistoryResponse {

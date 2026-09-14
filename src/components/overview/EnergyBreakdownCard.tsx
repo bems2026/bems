@@ -1,54 +1,33 @@
 import { AlertTriangle, ChartPie } from 'lucide-react';
-import { useDeviceStore } from '@/stores/deviceStore';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { CardLink } from '@/components/ui/CardLink';
-import { formatKwh, shareOfTotal } from '@/lib/format';
-import { energyDisagreement, branchShortfalls } from '@/lib/energyDisagreement';
+import { formatKwh, formatNumber } from '@/lib/format';
+import { describeFrozen, describeShortfalls } from '@/lib/branchEnergy';
+import { useBranchEnergy } from '@/lib/useBranchEnergy';
 
 /**
  * Today's consumed energy, split by branch — the "where did the kWh go" counterpart to
  * `EnergyFlowCard`'s instantaneous "where is the power going".
  *
- * Each figure is that meter's own `energy_kwh_today` counter, and shares are computed
- * against the sum of the branches shown, which is true by construction. Analytics' Energy
- * section carries the same split with week/month periods; this is the Overview-sized view of
- * it, so the "Details" link goes there rather than duplicating the toggle here.
+ * THE SAME SPLIT ANALYTICS SHOWS, FROM THE SAME CALCULATION — RM-078. The operator reported L.O Red
+ * reading differently here and on Analytics. This card took every device of class `meter` and
+ * rounded to one decimal; Analytics took the `branches` group filtered by `monitoring` and rounded
+ * to two. Both now read `useBranchEnergy`, whose membership is the bridge's own
+ * `BUILDING_METER_IDS` and whose rows, total, rounding and notices are one derivation
+ * (`lib/branchEnergy.ts`). `branchEnergyCards.test.tsx` renders both cards against one store and
+ * pins that they agree.
  *
- * THE HEADLINE AND `LiveDemandCard`'S "TODAY" ARE THE SAME NUMBER — RM-057. They were not:
- * this card summed the branch meters' registers while Live Demand, one card away, showed the
- * legacy flow's separately-integrated counter, and they read 4.75 against 5.09. RM-055
- * relabelled this one "kWh today · branches" to stop the two sharing a name; RM-057 removed the
- * reason for the label instead, by making `_totals` the sum of these same meters at the bridge.
- * So the plain label is correct again, and `EnergyBreakdownCard.test.tsx` pins that the
- * qualifier does not come back while the derivation stays shared.
+ * THE HEADLINE AND `LiveDemandCard`'S "TODAY" ARE THE SAME NUMBER — RM-057: `_totals` is the sum of
+ * these same meters, rounded the same way, so the plain label is correct.
  *
- * The comparison did not go away with it, it moved: `_totals.energy_kwh_today_integrated` still
- * carries the legacy integration of the same circuits, and that is what this checks against.
- * Checking against the headline would now be checking a number against itself. The rule is
- * `lib/energyDisagreement.ts`, shared with Analytics' Energy section, which carries the
- * measurements its thresholds are sized from.
+ * The comparison against `_totals.energy_kwh_today_integrated`, the legacy integration of the same
+ * circuits, is still made. RM-077 removes from it whatever the integrator counted from a meter that
+ * had frozen, and names the freeze instead — L.O Red was accused of "100 % missing" energy on
+ * 2026-09-12 when its meter had simply repeated one reading for fifteen hours.
  */
 export function EnergyBreakdownCard() {
-  const devices = useDeviceStore((s) => s.devices);
-  const readings = useDeviceStore((s) => s.latestReadings);
-  const integratedToday = useDeviceStore((s) => s.totals?.energy_kwh_today_integrated) ?? null;
-
-  const branches = devices
-    .filter((d) => d.class === 'meter')
-    .map((d) => ({
-      id: d.id,
-      name: d.display_name,
-      kwh: readings[d.id]?.energy_kwh_today,
-      integrated: readings[d.id]?.energy_kwh_today_integrated,
-    }))
-    .filter((b): b is { id: string; name: string; kwh: number; integrated: number | undefined } => typeof b.kwh === 'number')
-    .sort((a, b) => b.kwh - a.kwh);
-  const total = branches.reduce((sum, b) => sum + b.kwh, 0);
-  const disagreement = energyDisagreement(total, integratedToday);
-  // RM-058, and this is the direction the figure above cannot see. A branch reading below its
-  // OWN power integration is energy measured and then lost; RM-056 did that to 11.4% of the
-  // aircon branch while the building-wide shortfall was 6.7% and went unnoticed for hours.
-  const shortfalls = branchShortfalls(branches);
+  const { rows, totalKwh, disagreement, shortfalls, frozen } = useBranchEnergy('today');
+  const shortfall = shortfalls.length > 0 ? describeShortfalls(shortfalls, frozen) : null;
 
   return (
     <div className="card">
@@ -61,20 +40,20 @@ export function EnergyBreakdownCard() {
             longer-period accumulators are reported.
             <br />
             <br />
-            <strong>This total and Live Demand's "Today" are the same figure</strong> — both are these branch meters added up, so the page cannot show two answers to one
-            question. The building's own flow also integrates the same circuits from power, second by second, as an independent second opinion; it is not shown here, but if the
-            two ever drift further apart than they can explain, this card says so rather than leaving it to be noticed.
+            <strong>This total, Live Demand's "Today" and Analytics' split are the same figure</strong> — all three are these branch meters added up, by one calculation. The
+            building's own flow also integrates the same circuits from power as an independent second opinion; if the two drift further apart than they can explain, or a meter
+            stops updating, this card says so rather than leaving it to be noticed.
           </InfoHint>
         </h3>
         <CardLink to="analytics" label="View the full energy breakdown on Analytics" />
       </div>
 
-      {branches.length === 0 ? (
+      {rows.length === 0 || totalKwh === null ? (
         <p className="section-placeholder">Waiting for branch meter readings…</p>
       ) : (
         <>
           <div className="breakdown-total">
-            <span className="breakdown-total__value mono">{total.toFixed(2)}</span>
+            <span className="breakdown-total__value mono">{formatNumber(totalKwh, 2)}</span>
             <span className="breakdown-total__unit">kWh today</span>
           </div>
           {disagreement && (
@@ -88,34 +67,34 @@ export function EnergyBreakdownCard() {
               </span>
             </p>
           )}
-          {shortfalls.length > 0 && (
+          {frozen.map((f) => (
+            <p className="energy-disagreement" role="status" key={`${f.id}-${f.fromMs}`}>
+              <AlertTriangle size={15} aria-hidden="true" />
+              <span>
+                <strong>{f.ongoing ? `${f.name}'s meter is not updating.` : `${f.name}'s meter stopped updating.`}</strong> {describeFrozen(f)}
+              </span>
+            </p>
+          ))}
+          {shortfall && (
             <p className="energy-disagreement" role="status">
               <AlertTriangle size={15} aria-hidden="true" />
               <span>
-                <strong>
-                  {shortfalls.length === 1
-                    ? `${shortfalls[0].name} is reporting less than it measured.`
-                    : `${shortfalls.length} branches are reporting less than they measured.`}
-                </strong>{' '}
-                {shortfalls
-                  .map((s) => `${s.name} shows ${formatKwh(s.reported)} against ${formatKwh(s.integrated)} of its own power integrated over the same day (${Math.round(s.fraction * 100)}% missing)`)
-                  .join('; ')}
-                . A branch cannot have used less than its own meter recorded.
+                <strong>{shortfall.headline}</strong> {shortfall.detail}
               </span>
             </p>
           )}
-          {branches.map((b) => {
-            const share = shareOfTotal(b.kwh, total);
-            return (
-              <div className="breakdown-row" key={b.id}>
-                <span className="breakdown-row__name">{b.name}</span>
-                <span className="breakdown-row__track" aria-hidden="true">
-                  <span className="breakdown-row__fill" style={{ width: `${share.toFixed(1)}%` }} />
-                </span>
-                <span className="breakdown-row__kwh mono">{b.kwh.toFixed(1)}</span>
-              </div>
-            );
-          })}
+          {rows.map((b) => (
+            <div className={`breakdown-row${b.stale ? ' breakdown-row--stale' : ''}`} key={b.id}>
+              <span className="breakdown-row__name">
+                {b.name}
+                {b.stale && <span className="sr-only"> (last reading expired; this is its last reported count)</span>}
+              </span>
+              <span className="breakdown-row__track" aria-hidden="true">
+                <span className="breakdown-row__fill" style={{ width: `${b.share.toFixed(1)}%` }} />
+              </span>
+              <span className="breakdown-row__kwh mono">{formatNumber(b.kwh, 2)}</span>
+            </div>
+          ))}
         </>
       )}
     </div>

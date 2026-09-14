@@ -32,6 +32,12 @@
  *                         really reaching hardware (e.g. `--dispatch=switch` reproduces the
  *                         real Pi's lights-only state). Default: none, i.e. gate closed.
  *   --cmd-drop=<id|all> that command never responds at all (exercises the client's abort)
+ *   --faults=<list>    shape the seeded 24h history after faults measured on the live building
+ *                      (ROADMAP RM-076/RM-077), comma-separated: `flicker` (one sample of the first
+ *                      building meter reported offline between equal readings), `offline` (every
+ *                      metered device misses five samples, as in a Node-RED restart), `frozen` (the
+ *                      first building meter repeats one reading exactly for ninety minutes), `spike`
+ *                      (the second building meter reports 1,000,000 kW for one sample).
  *   --poll-cadence=<s> metered devices report only every <s> seconds, instead of continuously.
  *                      Reproduces the real bridge, where nothing asks an outlet anything except
  *                      `outletPollPlan`'s 60 s poller — so `--poll-cadence=60` is the live Pi's
@@ -65,6 +71,7 @@ const CMD_FAIL = val('cmd-fail', '');
 // only a real Pi with the gate open would otherwise produce. Same purpose as --cmd-fail
 // above: make a state that needs hardware reachable without hardware.
 const DISPATCH_CLASSES = val('dispatch', '') ? val('dispatch', '').split(',').filter(Boolean) : [];
+const FAULTS = val('faults', '') ? val('faults', '').split(',').filter(Boolean) : [];
 const CMD_DROP = val('cmd-drop', '');
 // How often a metered device is treated as having reported, in seconds. 0 (the default) keeps
 // the historical always-fresh behaviour. See `arrivalAt` below for why this is needed at all —
@@ -424,6 +431,8 @@ function sampleHistory() {
     const p = { ts: r.ts, power_w: r.power_w };
     if (typeof r.voltage === 'number') p.voltage = r.voltage;
     if (typeof r.current === 'number') p.current = r.current;
+    // Mirrors APPEND_HISTORY's FI-010 flag, so the frontend's offline handling is exercised here too.
+    if (typeof r.online === 'boolean') p.online = r.online;
     buf.push(p);
     if (buf.length > TIMING.HISTORY_MAX_POINTS) buf.splice(0, buf.length - TIMING.HISTORY_MAX_POINTS);
     hist.set(r.device_id, buf);
@@ -447,9 +456,37 @@ function sampleHistory() {
       // — a chart of A must look like a scaled chart of W, or the mock would be teaching
       // the UI a relationship the real meters don't have.
       const voltage = Math.round((224 + wobble(i % 23, ms, 3)) * 10) / 10;
-      buf.push({ ts: iso8(ms, SITE.utc_offset_minutes), power_w, voltage, current: Math.round((power_w / voltage) * 1000) / 1000 });
+      buf.push({ ts: iso8(ms, SITE.utc_offset_minutes), power_w, voltage, current: Math.round((power_w / voltage) * 1000) / 1000, online: true });
     }
     hist.set(d.id, buf);
+  }
+})();
+// --faults: see the header. Positions are counted back from the newest seeded sample, so each fault
+// lands inside the last few hours, where the 24h chart and the source cards both show it.
+(function applyFaults() {
+  if (!FAULTS.length) return;
+  const [first, second] = BUILDING_METER_IDS;
+  if (FAULTS.includes('flicker') && hist.get(first)) {
+    const buf = hist.get(first);
+    const i = buf.length - 30;
+    if (buf[i]) buf[i] = { ...buf[i], online: false };
+  }
+  if (FAULTS.includes('frozen') && hist.get(first)) {
+    const buf = hist.get(first);
+    const from = buf.length - 240;
+    const held = buf[from];
+    if (held) {
+      const power_w = held.power_w > 0 ? held.power_w : 19.1;
+      for (let i = from; i < from + 90 && i < buf.length; i++) buf[i] = { ts: buf[i].ts, power_w, voltage: held.voltage, current: held.current, online: true };
+    }
+  }
+  if (FAULTS.includes('spike') && hist.get(second)) {
+    const buf = hist.get(second);
+    const i = buf.length - 50;
+    if (buf[i]) buf[i] = { ...buf[i], power_w: 1_000_000_000 };
+  }
+  if (FAULTS.includes('offline')) {
+    for (const [id, buf] of hist) hist.set(id, buf.filter((_, i) => i < buf.length - 95 || i >= buf.length - 90));
   }
 })();
 setInterval(sampleHistory, TIMING.HISTORY_SAMPLE_MS).unref?.();
@@ -725,6 +762,7 @@ server.listen(PORT, () => {
     CMD_FAIL && `--cmd-fail=${CMD_FAIL}`,
     DISPATCH_CLASSES.length && `--dispatch=${DISPATCH_CLASSES.join(',')}`,
     CMD_DROP && `--cmd-drop=${CMD_DROP}`,
+    FAULTS.length && `--faults=${FAULTS.join(',')}`,
   ].filter(Boolean);
   console.log(`iBEMS mock bridge  http://localhost:${PORT}`);
   console.log(`  GET  /api/devices              ${DEVICE_REGISTRY.length} devices`);
