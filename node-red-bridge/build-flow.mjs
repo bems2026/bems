@@ -38,6 +38,9 @@ import { DEVICE_REGISTRY, PHASE_MAP, STALE_AFTER_MS_BY_CLASS, TIMING, publicDevi
 import { TRACK_ARRIVALS_SRC } from './arrivalTracker.mjs';
 import { energyDayBaseSrc } from './energyDayBase.mjs';
 import { energyAccumulatorSrc } from './energyAccumulator.mjs';
+import { VALUE_FREEZE_SRC } from './valueFreezeTracker.mjs';
+import { appendHistorySrc } from './historyRing.mjs';
+import { FROZEN_AFTER_MS } from '../shared/measurementFreeze.mjs';
 
 /** Devices that report an energy counter — the only ones the accumulator has anything to
  * accumulate for. Derived from the registry, never hand-listed. */
@@ -178,8 +181,11 @@ const DAILY_ENERGY_CODE = ${JSON.stringify(DAILY_ENERGY_CODE_BY_DEVICE)};
 // PHASE_MAP is: buildLatest is inlined here verbatim and may not import. A second site changes
 // its own circuits file and this follows, which is what retires the hand-built totals node.
 const BUILDING_METERS = ${JSON.stringify(BUILDING_METER_IDS)};
+// How long a metered reading may hold identical, drawing power and online, before it is flagged
+// measurement_frozen. From shared/measurementFreeze.mjs, which the frontend reads too.
+const FROZEN_AFTER_MS = ${JSON.stringify(FROZEN_AFTER_MS)};
 
-msg.payload = buildLatest(msg.snapshot || {}, REG, PHASE_MAP, Date.now(), ${SITE.utc_offset_minutes}, STALE_AFTER_MS_BY_CLASS, MAX_BRANCH_KWH_PER_DAY, DAILY_ENERGY_CODE, BUILDING_METERS);
+msg.payload = buildLatest(msg.snapshot || {}, REG, PHASE_MAP, Date.now(), ${SITE.utc_offset_minutes}, STALE_AFTER_MS_BY_CLASS, MAX_BRANCH_KWH_PER_DAY, DAILY_ENERGY_CODE, BUILDING_METERS, FROZEN_AFTER_MS);
 msg.headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
 return msg;`;
 
@@ -220,38 +226,11 @@ msg.payload = {
 };
 return msg;`;
 
-const APPEND_HISTORY = `
-// Ring buffer. Required because no 24h history exists anywhere in the live flow:
-// the *_arr_* keys are 3-minute averaging buffers that get emptied each cycle, and
-// the ui_chart nodes' 12h window is locked inside the dashboard with no API.
-// NOTE: worthless unless settings.js enables contextStorage.localfilesystem —
-// otherwise this is memory-only and a restart wipes it.
-const CAP = ${TIMING.HISTORY_MAX_POINTS};
-const rows = Array.isArray(msg.payload) ? msg.payload : [];
-for (const r of rows) {
-  if (r.device_id === '_totals') continue;
-  if (typeof r.power_w !== 'number') continue;
-  const key = 'hist_' + r.device_id;
-  const buf = flow.get(key) || [];
-  // voltage/current are recorded alongside power so Analytics can chart them over time,
-  // not just as instantaneous values. Each is written ONLY when the poll actually carried
-  // it — same "omitted, never zeroed" rule buildLatest follows, so a point predating this
-  // change (or a meter that didn't report V/A) stays a gap in the chart rather than a
-  // fabricated 0. Points already in the buffer keep power only; V/A accrues going forward.
-  const p = { ts: r.ts, power_w: r.power_w };
-  if (typeof r.voltage === 'number') p.voltage = r.voltage;
-  if (typeof r.current === 'number') p.current = r.current;
-  // Whether the device was actually reporting when this sample was taken (FI-010). Every
-  // meter's last known wattage is carried forward into each sample, so without this a device
-  // offline all day drew a confident flat line for hardware that was not reporting — the same
-  // dishonesty already fixed for the 7d/30d charts. Written only when it is a real boolean, so
-  // points from a bridge that never reported it stay unknown rather than being assumed online.
-  if (typeof r.online === 'boolean') p.online = r.online;
-  buf.push(p);
-  if (buf.length > CAP) buf.splice(0, buf.length - CAP);
-  flow.set(key, buf);
-}
-return null;`;
+/**
+ * The history ring. Moved to `historyRing.mjs` (RM-079) so a test executes it — and so the sample
+ * can carry the tick that took it beside the reading's own time. Its reasoning lives with it there.
+ */
+const APPEND_HISTORY = appendHistorySrc(TIMING.HISTORY_MAX_POINTS);
 
 
 /** Reads OUR OWN tab's accumulators into the snapshot. Unlike the building-tab collectors
@@ -408,6 +387,15 @@ nodes.push(
   inject(BRIDGE_TAB, `sample ${TIMING.HISTORY_SAMPLE_MS / 1000}s`, TIMING.HISTORY_SAMPLE_MS / 1000, 240, 600, [[ringCall.id]]),
   ringCall, ringFn, accFn,
 );
+
+// --- value-freeze tracking — RM-079 -----------------------------------------
+// When each metered device's measurement last moved, for buildLatest's measurement_frozen. It belongs
+// between arrival tracking and the day baseline: it reads the collected meters, and buildLatest needs
+// its output in the same pass. Created LAST and spliced in by rewiring arrFn, so every node generated
+// above keeps the id it already had and the redeploy's diff is this node and one wire.
+const freezeFn = fn(BRIDGE_TAB, 'Track value freezes', VALUE_FREEZE_SRC.trim(), 900, 440, [[dayBaseFn.id]]);
+arrFn.wires = [[freezeFn.id]];
+nodes.push(freezeFn);
 
 writeFileSync(OUT, JSON.stringify(nodes, null, 2) + '\n');
 

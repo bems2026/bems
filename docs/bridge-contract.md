@@ -123,6 +123,8 @@ zero are different facts and the UI renders them differently.
 | `setpoint_c`, `room_temp_c`, `humidity_pct` | number \| absent | `acu_ir` only, from `ac_dash_state` |
 | `temp_c` | number \| absent | `sensor_temp_humidity` only |
 | `capabilities` | object \| absent | every dp the device reports, decoded — see below |
+| `measurement_frozen` | `true` \| absent | metered devices only: power, voltage and current held identical for `FROZEN_AFTER_MS` while drawing power and online — see below (RM-079) |
+| `frozen_since` | ISO 8601 +08:00 \| absent | with `measurement_frozen`: when those values last changed |
 
 ### `capabilities`
 
@@ -243,6 +245,21 @@ opinion", never zero.
 threshold worth setting. Six times louder at the branch. `src/lib/energyDisagreement.ts`'s
 `branchShortfalls` reads it.
 
+#### `measurement_frozen` — reporting, but not measuring — RM-079
+
+A metered device is flagged `measurement_frozen: true`, with `frozen_since`, when its
+`<ctx>_last_v`, `_last_c` and `_last_p` have held byte-identical for `FROZEN_AFTER_MS`
+(`shared/measurementFreeze.mjs`: three hours) while it draws power and reads `online`. The clock is
+`node-red-bridge/valueFreezeTracker.mjs`, which stamps the last CHANGE of those three values. It does
+not use the sample-buffer depth, which moves on every message a frozen meter keeps sending, or
+`<ctx>_energy`, which the integrator moves on a timer.
+
+**While the flag stands, `energy_kwh_today_integrated` is omitted.** The integrator is counting a
+held figure: on 2026-09-12 that is how L.O Red was shown as "100 % missing" when its meter had
+repeated one reading for fifteen hours (ROADMAP RM-077). The register-derived `energy_kwh_today`
+stays. Zero watts is never flagged — an idle channel legitimately reports nothing new — and neither
+is an offline device. Absent means not flagged, or a flow older than RM-079.
+
 **Today only.** The legacy engine keeps a per-meter daily figure and no per-meter week or month,
 so there is nothing to compare a longer period against and none is offered.
 
@@ -272,11 +289,18 @@ never as zero.
 {
   "device_id": "co3",
   "range": "24h",
-  "points": [{ "ts": "2026-08-10T08:00:00+08:00", "power_w": 388.2 }]
+  "points": [{ "ts": "2026-09-14T08:52:14+08:00", "power_w": 106.8, "voltage": 224.4, "current": 0.505, "online": true, "sample_ts": "2026-09-14T00:54:00.000Z" }]
 }
 ```
 
 `range` accepts `1h | 6h | 24h`. Unknown values fall back to `24h`.
+
+Each point carries `ts`, the reading's own time (when the device last reported), and `power_w`;
+`voltage`, `current` and `online` only when the reading carried them. **`sample_ts`** (RM-079) is the
+60 s tick that took the sample, identical for every device in one pass, so a device that stopped
+reporting — whose `ts` repeats — still has one point per tick. **`frozen: true`** is written only when
+the reading was flagged `measurement_frozen`. Both are absent on points an older flow recorded. The
+ring lives in `node-red-bridge/historyRing.mjs`.
 
 > **This required new storage.** The Stage 1 plan assumed history could be read from
 > "flow context arrays used for the current 24h charts". It cannot: `*_arr_v/_arr_c/_arr_p`

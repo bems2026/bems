@@ -130,6 +130,20 @@ function frozenToday(id: string, name: string, points: HistoryPoint[], nowMs: nu
   return found;
 }
 
+/**
+ * A freeze the BRIDGE flagged on the live reading (RM-079), for a card that has no history loaded to
+ * find it in. The bridge flags only from the three-hour mark, so `frozen_since` is when the values
+ * last moved and the whole span since then is counted.
+ */
+function frozenFromReading(id: string, name: string, reading: Reading | undefined, nowMs: number): FrozenBranch | null {
+  if (!reading?.measurement_frozen || typeof reading.power_w !== 'number') return null;
+  const since = Date.parse(reading.frozen_since ?? '');
+  if (!Number.isFinite(since)) return null;
+  const countedFrom = Math.max(since, siteDayStartMs(nowMs));
+  if (nowMs <= countedFrom) return null;
+  return { id, name, fromMs: since, toMs: nowMs, ongoing: true, heldW: reading.power_w, heldV: reading.voltage, phantomKwh: (reading.power_w * (nowMs - countedFrom)) / W_MS_PER_KWH };
+}
+
 export function branchEnergySplit(input: BranchEnergyInput): BranchEnergySplit {
   const { devices, readings, totals, historyByDevice, period, nowMs, meterIds = BUILDING_METER_IDS as readonly string[] } = input;
   const byId = new Map(devices.map((d) => [d.id, d]));
@@ -141,6 +155,10 @@ export function branchEnergySplit(input: BranchEnergyInput): BranchEnergySplit {
     const device = byId.get(id);
     if (!device) continue;
     const found = frozenToday(id, device.display_name, historyByDevice[id] ?? [], nowMs);
+    // The history already shows an ongoing freeze when it is loaded; the bridge's flag names the same
+    // freeze, so it is only used when the history does not.
+    const flagged = frozenFromReading(id, device.display_name, readings[id], nowMs);
+    if (flagged && !found.some((f) => f.ongoing)) found.push(flagged);
     frozen.push(...found);
     phantomById.set(id, found.reduce((sum, f) => sum + f.phantomKwh, 0));
     const reading = readings[id];

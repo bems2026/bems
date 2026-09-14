@@ -72,7 +72,7 @@ export function liveSampleOf(reading: Reading | undefined, param: ChartParam, no
   if (!reading) return undefined;
   const field = CHART_PARAMS[param].field as 'power_w' | 'voltage' | 'current';
   const value = measured(reading[field], reading, nowMs);
-  return typeof value === 'number' ? { ts: reading.ts, value, online: reading.online } : undefined;
+  return typeof value === 'number' ? { ts: reading.ts, value, online: reading.online, frozen: reading.measurement_frozen === true } : undefined;
 }
 
 export type ChartRow = Record<string, number | undefined>;

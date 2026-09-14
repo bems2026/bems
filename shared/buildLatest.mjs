@@ -80,9 +80,15 @@ export const STALE_READING_MS = 600000;
  *        looked up, for the same reason as the three above: this file is inlined verbatim into a
  *        Node-RED function node and may not import anything. `{}` reproduces the pre-2026-09-07
  *        behaviour, where the code was a literal assembled here.
+ * @param {Array} [buildingMeterIds] the meters whose sum is the building total — see RM-057 below.
+ * @param {number} [frozenAfterMs] how long a metered device's power/voltage/current may hold
+ *        byte-identical, drawing power and online, before the reading is flagged
+ *        `measurement_frozen` — `shared/measurementFreeze.mjs`'s `FROZEN_AFTER_MS`, threaded in for
+ *        the same reason as the parameters above. Omitted means nothing is flagged, which reproduces
+ *        the pre-RM-079 behaviour for an older deployed flow.
  * @returns {Array} one entry per device, plus a trailing `_totals` entry
  */
-export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, staleAfterMsByClass = {}, maxDailyKwh = undefined, dailyEnergyCodeByDevice = {}, buildingMeterIds = []) {
+export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, staleAfterMsByClass = {}, maxDailyKwh = undefined, dailyEnergyCodeByDevice = {}, buildingMeterIds = [], frozenAfterMs = undefined) {
   const energy = snap.energy || { meters: {}, totals: {} };
   const outlet = snap.outlet || { meters: {}, state: {} };
   const lights = (snap.switch || {}).state || {};
@@ -263,6 +269,29 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, st
         // sleep through the outage above — an always-fresh timestamp can never look old.
         r.ts = iso8(seenAt, offsetMinutes);
         if (nowMs - seenAt > STALE_READING_MS) r.online = false;
+      }
+
+      // A MEASUREMENT THAT HAS STOPPED MOVING — RM-079.
+      //
+      // `online` answers "is the device reporting?", and a frozen meter is: on 2026-09-12 L.O Red
+      // repeated 19.1 W / 228.2 V / 0.576 A for fifteen hours while sending messages throughout,
+      // its registers stood still, and the legacy integrator multiplied the held watts by the hours.
+      // `snap.valueSince` is when this device's v/c/p last changed (node-red-bridge/
+      // valueFreezeTracker.mjs). Held for `frozenAfterMs` while drawing power and online, the reading
+      // is flagged, with the moment it last moved.
+      //
+      // Zero watts is never frozen: an idle channel legitimately reports nothing new. An offline
+      // device is never frozen either; that is already the louder fact.
+      //
+      // AND THE SECOND OPINION IS WITHHELD while the flag stands. `energy_kwh_today_integrated` is the
+      // integrator's figure, and during a freeze it is counting a number that is not being measured,
+      // so any comparison against it would accuse the register of losing energy it never saw — which
+      // is exactly what the page did. The register stays: it is the meter's own count.
+      const heldSince = num((snap.valueSince || {})[d.ctx]);
+      if (frozenAfterMs !== undefined && heldSince !== undefined && r.online !== false && p !== undefined && p > 0 && nowMs - heldSince >= frozenAfterMs) {
+        r.measurement_frozen = true;
+        r.frozen_since = iso8(heldSince, offsetMinutes);
+        delete r.energy_kwh_today_integrated;
       }
     } else if (d.class === 'switch') {
       // Switches have no `ctx` (no metering DPS), but a real per-switch connection signal

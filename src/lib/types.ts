@@ -75,6 +75,15 @@ export interface Reading {
    * also on a bridge older than RM-058; absent is not zero.
    */
   energy_kwh_today_integrated?: number;
+  /**
+   * RM-079 — the measurement has held byte-identical for three hours or more
+   * (`shared/measurementFreeze.mjs`) while drawing power and online: the device is reporting, but
+   * not measuring. Absent means not flagged, or a bridge older than RM-079. While it stands the
+   * bridge withholds `energy_kwh_today_integrated`, which would be counting the held figure.
+   */
+  measurement_frozen?: boolean;
+  /** When the held values last changed, present with `measurement_frozen`. */
+  frozen_since?: string;
   online: boolean;
   state: SwitchState | null;
   /** `outlet_dual` only. */
@@ -184,6 +193,14 @@ export interface HistoryPoint {
    * is where that difference can be said. Absent on the bridge's own samples.
    */
   coverage?: { online: number; samples: number };
+  /**
+   * The bridge tick that took this sample (RM-079). `ts` is when the DEVICE last reported, which is
+   * not the same thing: a device that stopped reporting carries one `ts` on every sample. Absent on
+   * samples from a bridge older than RM-079, which the grid then places from `ts`.
+   */
+  sample_ts?: string;
+  /** The bridge had flagged the reading `measurement_frozen` when this sample was taken (RM-079). */
+  frozen?: boolean;
 }
 
 export interface HistoryResponse {

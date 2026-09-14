@@ -9,6 +9,7 @@ import type { ChartParam } from './chartParams';
 import type { AnalyticsRange } from './useAnalyticsHistory';
 import type { Device } from '@/lib/types';
 import { formatNumber } from '@/lib/format';
+import { siteTimeShort } from '@/lib/siteTime';
 
 /** On the 24h range a card shows the last hour in detail; the main chart above carries the day. */
 const CARD_WINDOW_24H_MS = 60 * 60_000;
@@ -74,6 +75,11 @@ export function SourceCard({
         <span className="analytics-source-card__dot" style={{ background: color }} aria-hidden="true" />
         <span className="analytics-source-card__name">{device.display_name}</span>
         <span className="analytics-source-card__id mono">{device.id}</span>
+        {/* RM-079: the bridge says this meter is reporting but not measuring. Said in words, because the
+            tiles below are otherwise indistinguishable from a live reading. */}
+        {reading?.measurement_frozen && reading.frozen_since && (
+          <span className="analytics-source-card__frozen">Frozen since {siteTimeShort(reading.frozen_since)}</span>
+        )}
         {/* The dot stays decorative; the live/stale state is real text for assistive tech. */}
         <span className={`analytics-source-card__status${stale ? ' analytics-source-card__status--stale' : ''}`} aria-hidden="true" />
         <span className="sr-only">{stale ? 'No recent reading' : 'Reporting'}</span>

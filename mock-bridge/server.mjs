@@ -50,6 +50,8 @@ import crypto from 'node:crypto';
 import { DEVICE_REGISTRY, PHASE_MAP, STALE_AFTER_MS_BY_CLASS, TIMING, publicDevices, SITE, DAILY_ENERGY_CODE_BY_DEVICE, BUILDING_METER_IDS } from '../shared/registry.mjs';
 import { fixturePlan, branchEnergyTotal } from './fixturePlan.mjs';
 import { buildLatest, iso8 } from '../shared/buildLatest.mjs';
+import { FROZEN_AFTER_MS } from '../shared/measurementFreeze.mjs';
+import { runValueFreezeTracker } from '../node-red-bridge/valueFreezeTracker.mjs';
 import { CAPABILITY_PROFILES, channelCodesFor } from '../shared/deviceCapabilities.mjs';
 import { COMMAND_ROUTE, ACCEPTED_STATUS, validateCommand, buildAck } from '../shared/commands.mjs';
 import { CONTEXT_ROUTE, CONTEXT_ACCEPTED_STATUS, validateContextWrite, buildContextAck } from '../shared/context.mjs';
@@ -416,7 +418,14 @@ function snapshot() {
 
 // The site's offset, same as the generated flow passes — the mock is contract-identical to
 // the real bridge by construction, and a timestamp is part of the contract.
-const latest = () => buildLatest(snapshot(), DEVICE_REGISTRY, PHASE_MAP, Date.now(), SITE.utc_offset_minutes, STALE_AFTER_MS_BY_CLASS, SITE.max_branch_kwh_per_day, DAILY_ENERGY_CODE_BY_DEVICE, BUILDING_METER_IDS);
+// RM-079: the same value-freeze tracker and threshold the real bridge runs, executed from the same
+// source string, so a frozen reading is flagged here exactly as it would be on the Pi.
+const freezeStore = {};
+const latest = () => {
+  const snap = snapshot();
+  runValueFreezeTracker(freezeStore, snap);
+  return buildLatest(snap, DEVICE_REGISTRY, PHASE_MAP, Date.now(), SITE.utc_offset_minutes, STALE_AFTER_MS_BY_CLASS, SITE.max_branch_kwh_per_day, DAILY_ENERGY_CODE_BY_DEVICE, BUILDING_METER_IDS, FROZEN_AFTER_MS);
+};
 
 // ---------------------------------------------------------------------------
 // history ring buffer — same semantics as the Node-RED one
@@ -433,6 +442,9 @@ function sampleHistory() {
     if (typeof r.current === 'number') p.current = r.current;
     // Mirrors APPEND_HISTORY's FI-010 flag, so the frontend's offline handling is exercised here too.
     if (typeof r.online === 'boolean') p.online = r.online;
+    // And RM-079's tick and freeze flag (node-red-bridge/historyRing.mjs).
+    p.sample_ts = new Date().toISOString();
+    if (r.measurement_frozen === true) p.frozen = true;
     buf.push(p);
     if (buf.length > TIMING.HISTORY_MAX_POINTS) buf.splice(0, buf.length - TIMING.HISTORY_MAX_POINTS);
     hist.set(r.device_id, buf);

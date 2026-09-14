@@ -8818,3 +8818,14 @@ button.space-plan__pin {
   max-height: 6em;
   font-size: var(--fs-2xs);
 }
+/* RM-079 — a card whose meter is reporting but not measuring says so in words. --warn on --warn-soft
+   is the pairing .energy-disagreement already measured over a card (4.65:1 light, 6.40:1 dark). */
+.analytics-source-card__frozen {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font: 600 var(--fs-2xs) 'IBM Plex Mono', monospace;
+  white-space: nowrap;
+}

@@ -124,11 +124,18 @@ const isGap = (s: Slot) => GAP_QUALITIES.has(s.quality);
 const hasValue = (s: Slot) => VALUE_QUALITIES.has(s.quality) && s.value !== undefined;
 const worst = (qualities: SlotQuality[]): SlotQuality => SEVERITY.find((q) => qualities.includes(q)) ?? 'missing';
 
-/** Parseable points, oldest first; of two with the same timestamp the later one in the input wins. */
+/**
+ * Parseable points, oldest first; of two at the same instant the later one in the input wins.
+ *
+ * A point is placed by the bridge TICK that took it (`sample_ts`, RM-079) when it carries one, and by
+ * the device's own `ts` otherwise. The tick is exact; `ts` is when the device last reported, which a
+ * device that went quiet repeats on every sample.
+ */
 function ordered(points: HistoryPoint[]): { ms: number; point: HistoryPoint }[] {
   const withMs: { ms: number; point: HistoryPoint }[] = [];
   for (const point of points) {
-    const ms = Date.parse(point.ts);
+    const tick = point.sample_ts !== undefined ? Date.parse(point.sample_ts) : Number.NaN;
+    const ms = Number.isFinite(tick) ? tick : Date.parse(point.ts);
     if (Number.isFinite(ms)) withMs.push({ ms, point });
   }
   withMs.sort((a, b) => a.ms - b.ms);
@@ -186,7 +193,9 @@ function classify(point: HistoryPoint, ms: number, param: SeriesParam, bounds: T
   if (typeof v !== 'number' || !Number.isFinite(v)) return { quality: 'outlier', raw, readingTs };
   const bound = bounds?.[field];
   if (bound && (v < bound.min || v > bound.max)) return { quality: 'outlier', raw: v, readingTs };
-  if (frozenRuns.some((r) => ms >= r.fromMs && ms <= r.toMs)) return { quality: 'frozen', value: v, raw: v, readingTs };
+  // Frozen either because the bridge flagged this sample (RM-079) or because its run is long enough to
+  // find here — the bridge flags only from the three-hour mark on, and this marks the whole run.
+  if (point.frozen === true || frozenRuns.some((r) => ms >= r.fromMs && ms <= r.toMs)) return { quality: 'frozen', value: v, raw: v, readingTs };
   return { quality: 'measured', value: v, raw: v, readingTs };
 }
 
@@ -351,6 +360,8 @@ export interface LiveSample {
   ts: string;
   value: number | undefined;
   online?: boolean;
+  /** The bridge flagged the reading `measurement_frozen` (RM-079). */
+  frozen?: boolean;
 }
 
 /**
@@ -370,7 +381,7 @@ export function appendLiveTail(slots: Slot[], live: LiveSample, stepMs: number):
     const rts = out[k].readingTs;
     if (rts !== undefined && Date.parse(rts) >= ms) return out;
   }
-  out[i] = { t: out[i].t, value: live.value, raw: live.value, readingTs: live.ts, quality: 'live' };
+  out[i] = { t: out[i].t, value: live.value, raw: live.value, readingTs: live.ts, quality: live.frozen ? 'frozen' : 'live' };
   return out;
 }
 

@@ -7,8 +7,9 @@ meter froze, repeating one reading for up to fifteen hours while its own registe
 legacy integrator counted the held watts; the bridge had published exactly what the meter said. The
 second was two copies of one derivation. The third was real Node-RED restarts and one-sample health
 flickers drawn as unexplained blanks, on top of charts that paired devices by array position rather
-than by time. See the 2026-09-14 entry in §0. **Stage 2, RM-079 (the bridge side), is not started and
-needs a flow write.**
+than by time. See the 2026-09-14 entry in §0. **Stage 2, RM-079 (the bridge side), is built and tested — the
+bridge now stamps each sample's tick and flags a reading that has stopped moving; see its entry for
+the flow write.**
 
 **Previously audited:** 2026-09-13 — **RM-072**, the Reports overhaul, in progress. The primitives have
 landed: charts are a scene with two serializers rather than an SVG string, because putting a string
@@ -3156,13 +3157,28 @@ quality, and nothing is coerced to 0.
   decimals, an expired reading kept (a register is a count) but dimmed. `EnergySection` no longer takes a
   `branchDevices` prop. `components/analytics/branchEnergyCards.test.tsx` renders both cards against one
   store and pins that they agree.
-- [ ] **RM-079 — the bridge side (stage 2; needs a flow write).** `APPEND_HISTORY` to record the tick as
-  `sample_ts` beside the arrival `ts`, so the grid is exact rather than reconstructed; a
-  `node-red-bridge/valueFreezeTracker.mjs` (the executed-string pattern of `arrivalTracker.mjs`) so
-  `buildLatest` publishes `measurement_frozen` and withholds `energy_kwh_today_integrated` while frozen;
-  the ring to write `frozen: true`. Deploy: `npm run build:flow`, `npm run test:bridge`, back up
-  `~/.node-red/flows.json`, `deploy:pi` dry run then apply, restart per the restart map, read back both
-  endpoints.
+- [x] **RM-079 — the bridge side: the tick, and a freeze flag on the reading.** Built 2026-09-14 on the
+  operator's go-ahead for the flow write.
+  - **`sample_ts`.** The ring moved to `node-red-bridge/historyRing.mjs` (`test/history-ring.test.mjs`
+    executes it) and writes the tick beside the reading's own `ts`, identical for every device in a
+    pass. `lib/timeseries.ts` places a point by `sample_ts` when present and by `ts` otherwise, so a
+    buffer that switches partway keeps every sample (pinned).
+  - **`measurement_frozen`.** `node-red-bridge/valueFreezeTracker.mjs` stamps the last change of each
+    metered device's v/c/p — not `n`, not `e`, and on change rather than on read, so reader cadence
+    cannot move it (the RM-056 lesson). `shared/buildLatest.mjs` flags a reading held for
+    `FROZEN_AFTER_MS` (`shared/measurementFreeze.mjs`, three hours; a vitest pins the frontend's
+    `FROZEN_MIN_SAMPLES` against it) while drawing power and online, adds `frozen_since`, and omits
+    `energy_kwh_today_integrated` while the flag stands. The ring writes `frozen: true`. The frontend
+    draws a flagged sample and a flagged live tail as frozen; `branchEnergy` names a flagged freeze
+    with no history loaded, without naming one twice; `SourceCard` says "Frozen since HH:MM".
+    Documented in `docs/bridge-contract.md`.
+  - **The flow diff is one node and three edits:** "Track value freezes" added — created last, so every
+    existing generated id is unchanged — "Track meter arrivals" rewired to it, and the bodies of "Build
+    latest readings" and "Append to history ring". The mock runs the same tracker string and threshold.
+  - **One test caught itself.** The "older flow" case first passed the threshold anyway, because
+    `build(s, undefined)` takes a defaulted parameter's default. It now calls `buildLatest` with nine
+    arguments, as an old flow does.
+  - **Restart map:** `shared/buildLatest.mjs` reaches `ibems-proxy` and `ibems-scheduler`.
 
 ### Reports gain charts, a document, and a price — RM-072 (2026-09-10)
 

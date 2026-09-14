@@ -15,6 +15,7 @@ import {
   type Slot,
 } from './timeseries';
 import type { HistoryPoint } from './types';
+import { FROZEN_AFTER_MS } from '@shared/measurementFreeze.mjs';
 
 /*
  * Every fixture below is shaped from a measurement on this building, not invented — the arrival
@@ -43,6 +44,12 @@ const qualities = (slots: Slot[]) => slots.map((s) => s.quality);
 describe('GRID_STEP_MS', () => {
   it('matches the bucket widths the stored-history RPCs already use, so a slot IS a bucket', () => {
     expect(GRID_STEP_MS).toEqual({ '24h': 60_000, '7d': 900_000, '30d': 3_600_000, '1y': 86_400_000 });
+  });
+});
+
+describe('FROZEN_MIN_SAMPLES', () => {
+  it("matches the bridge's own threshold, so a chart and a live reading call the same stretch frozen", () => {
+    expect(FROZEN_MIN_SAMPLES * GRID_STEP_MS['24h']).toBe(FROZEN_AFTER_MS);
   });
 });
 
@@ -97,6 +104,31 @@ describe('alignToGrid', () => {
   it('sorts unordered input and keeps the newest of two identical timestamps', () => {
     const slots = grid([pt(2, 30), pt(0, 10), pt(1, 20), { ...pt(1, 21) }], 3);
     expect(slots.map((s) => s.value)).toEqual([10, 21, 30]);
+  });
+
+  /*
+   * RM-079. The bridge now writes the tick that took each sample as `sample_ts`. A device that has not
+   * reported for a few minutes carries the SAME arrival stamp on every sample, so without the tick
+   * those samples collapse into one point; with it, each lands in its own minute.
+   */
+  it('uses the tick that took a sample when the bridge sends one, so the grid is exact rather than reconstructed', () => {
+    const arrived = '2026-09-13T15:41:05+08:00';
+    const points = [0, 1, 2].map((m) => ({ ts: arrived, sample_ts: iso(T0 + (45 + m) * MIN + 2000), power_w: 100 + m, online: true }));
+    const slots = alignToGrid(points, { stepMs: MIN, startMs: T0 + 45 * MIN, endMs: T0 + 48 * MIN, param: 'power', bounds: BOUNDS });
+    expect(slots.map((s) => s.value)).toEqual([100, 101, 102]);
+    expect(slots[2].readingTs).toBe(arrived);
+  });
+
+  it('places a buffer that switches from arrival stamps to ticks partway without losing or doubling a sample', () => {
+    const before = [pt(0, 10), pt(1, 11)];
+    const after = [2, 3].map((m) => ({ ts: at(m - 1, 50), sample_ts: iso(T0 + m * MIN + 1000), power_w: 10 + m, online: true }));
+    expect(grid([...before, ...after], 4).map((s) => s.value)).toEqual([10, 11, 12, 13]);
+  });
+
+  it('treats a sample the bridge flagged frozen as frozen, before any run of it is long enough to detect', () => {
+    const slots = grid([pt(0, 19.1, { frozen: true }), pt(1, 20)], 2);
+    expect(slots[0].quality).toBe('frozen');
+    expect(slots[1].quality).toBe('measured');
   });
 
   it('ignores points with an unreadable timestamp rather than placing them anywhere', () => {
@@ -319,6 +351,11 @@ describe('appendLiveTail', () => {
   it('ignores a live reading the bridge calls offline, or one with no value', () => {
     expect(appendLiveTail(base(), { ts: at(3, 30), value: 140, online: false }, MIN)[3].quality).toBe('missing');
     expect(appendLiveTail(base(), { ts: at(3, 30), value: undefined, online: true }, MIN)[3].quality).toBe('missing');
+  });
+
+  it('draws a live reading the bridge calls frozen as frozen, not as live', () => {
+    const slots = appendLiveTail(base(), { ts: at(3, 30), value: 19.1, online: true, frozen: true }, MIN);
+    expect(slots[3]).toMatchObject({ quality: 'frozen', value: 19.1 });
   });
 
   it('never replaces a stored sample newer than the live one', () => {

@@ -108,6 +108,36 @@ describe('branchEnergySplit — a meter that froze is not a meter that lost ener
     expect(split.shortfalls).toEqual([]);
   });
 
+  /*
+   * RM-079 — the bridge flags a freeze on the reading itself, so a card can name it without the 24h
+   * history loaded, and withholds the integrated figure while it holds.
+   */
+  it('names a freeze the bridge flags even when no history is loaded to find it in', () => {
+    const now = local('2026-09-12T20:00:00');
+    const readings = {
+      mtr_lo_red: reading(
+        'mtr_lo_red',
+        0.008,
+        { power_w: 19.1, voltage: 228.2, measurement_frozen: true, frozen_since: '2026-09-12T06:00:05+08:00' },
+        new Date(now - 20_000).toISOString(),
+      ),
+    };
+    const split = branchEnergySplit({ devices: DEVICES, readings, totals: null, historyByDevice: {}, period: 'today', nowMs: now });
+    expect(split.frozen).toHaveLength(1);
+    expect(split.frozen[0]).toMatchObject({ id: 'mtr_lo_red', ongoing: true, heldW: 19.1, heldV: 228.2, fromMs: local('2026-09-12T06:00:05'), toMs: now });
+    expect(split.shortfalls).toEqual([]);
+  });
+
+  it('does not name one freeze twice when both its history and the bridge see it', () => {
+    const now = local('2026-09-12T21:00:30');
+    const history = { mtr_lo_red: samples('2026-09-12T06:00:00', 900, () => held) };
+    const readings = {
+      mtr_lo_red: reading('mtr_lo_red', 0.008, { power_w: 19.1, voltage: 228.2, measurement_frozen: true, frozen_since: '2026-09-12T06:00:05+08:00' }, new Date(now - 20_000).toISOString()),
+    };
+    const split = branchEnergySplit({ devices: DEVICES, readings, totals: null, historyByDevice: history, period: 'today', nowMs: now });
+    expect(split.frozen).toHaveLength(1);
+  });
+
   it('does not count the part of a freeze that fell before local midnight against today', () => {
     const now = local('2026-09-13T03:00:00');
     const history = {
