@@ -3644,6 +3644,14 @@ ever cleared, and put its controls in three rows. This section is that page's ov
       month's PDF on the kiosk, read the line, and record it here. Above one second, move
       `buildDocDefinition` + `createPdf().getBlob()` into a module worker and download the Blob on the
       main thread; below it, record the figure and close this.
+      **Tried remotely on 2026-09-15; not possible from here.** A standalone page running the export's exact
+      steps on a synthetic full month — 31 days, a 744-cell heatmap, every section — built cleanly against
+      the Pi's checkout, to be opened in a headless Chromium with its own profile. Headless Chromium on the
+      Pi hangs before it navigates while the kiosk's own Chromium is running: a local server answered
+      `curl`, and Chromium never requested the page, in 240 s with the page and 60 s with `--dump-dom`.
+      A Node run was ruled out earlier, because `download.ts` records that pdfmake resolves chart fonts
+      through the real filesystem there. Nothing on the Pi was changed, and the scratch directory was
+      removed. One export on the kiosk is still the way to close this.
 - [x] **RM-084 (S)** — **Hover on the charts, and three findings the series already hold.** Landed
       2026-09-15. Every generator now emits `Scene.hits` — a day's whole column, an hour, a heatmap
       cell, a circuit's segment, a point on the duration curve — each carrying its value, what it
