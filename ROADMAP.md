@@ -9,7 +9,8 @@ second was two copies of one derivation. The third was real Node-RED restarts an
 flickers drawn as unexplained blanks, on top of charts that paired devices by array position rather
 than by time. See the 2026-09-14 entry in §0. **Stage 2, RM-079 (the bridge side), is deployed to the live flow and
 read back (2026-09-15)** — the bridge now stamps each sample's tick and flags a reading that has stopped
-moving. The three daemons still need a restart; see its entry.
+moving — and the three daemons that load `shared/buildLatest.mjs` were restarted onto it and read
+back.
 
 **Previously audited:** 2026-09-13 — **RM-072**, the Reports overhaul, in progress. The primitives have
 landed: charts are a scene with two serializers rather than an SVG string, because putting a string
@@ -3194,9 +3195,15 @@ quality, and nothing is coerced to 0.
       followed by four tick-stamped ones), gave 1,440 slots for 1,440 samples on every device: nothing
       lost or doubled at the switch, no gap windows, and the flickers bridged.
 
-    **Not yet done:** restarting `ibems-ingest ibems-proxy ibems-scheduler`, which still hold the
-    pre-RM-079 `shared/buildLatest.mjs`. They use only its `iso8`, so nothing they do changes. The
-    remote restart was refused by the session's permission mode and handed to the operator.
+    **Daemons restarted 08:18:32–34 by the operator.** The remote restart had been refused by the
+    session's permission mode. Read back:
+    - `ibems-ingest`, `ibems-proxy` and `ibems-scheduler` are active, with no restarts since.
+    - `shared/buildLatest.mjs` and `shared/measurementFreeze.mjs` were modified the day before, so no
+      daemon holds a stale module.
+    - The proxy is listening and forwarding authorized requests.
+    - The scheduler loaded its 22 schedule rows with auto-shed on.
+    - Ingest is writing 20 readings plus totals each cycle.
+    - No error or warning line has been logged since the restart.
     **Not yet seen live:** a `measurement_frozen` flag, which needs a meter to hold still for three
     hours.
 
