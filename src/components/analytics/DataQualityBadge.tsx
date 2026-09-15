@@ -35,8 +35,9 @@ export function DataQualityBadge({
           {summary.text}
         </Badge>
       </span>
-      {interpolated > 0 && <Badge tone="neutral">{`Interpolated · ${formatAge(interpolated * stepMs)}`}</Badge>}
-      {gapCount > 0 && <Badge tone="warn">{`Offline · ${gapCount} ${gapCount === 1 ? 'window' : 'windows'}`}</Badge>}
+      {/* The same words the tooltip uses, so a tag and the badge that counts it read alike. */}
+      {interpolated > 0 && <Badge tone="neutral">{`Estimated · ${formatAge(interpolated * stepMs)}`}</Badge>}
+      {gapCount > 0 && <Badge tone="warn">{`Gaps · ${gapCount}`}</Badge>}
       {frozenNames.length > 0 && <Badge tone="warn">{`Frozen · ${frozenNames.join(', ')}`}</Badge>}
       <span className="sr-only">{summary.detail}</span>
     </div>

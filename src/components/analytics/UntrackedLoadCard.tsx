@@ -1,11 +1,11 @@
 import { useId, useMemo, useState } from 'react';
-import { siteDate, siteDateTime, siteTimeShort } from '@/lib/siteTime';
+import { siteDate, siteTimeShort } from '@/lib/siteTime';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { SplitSquareVertical } from 'lucide-react';
 import { useDeviceStore, historyFor } from '@/stores/deviceStore';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { useNowTick } from '@/lib/useNowTick';
-import { describeSlot, sourceLabel, type SyncStatus } from '@/lib/dataQuality';
+import { qualityTag, staleNote, tooltipTime, type SyncStatus } from '@/lib/dataQuality';
 import { GRID_STEP_MS } from '@/lib/timeseries';
 import { pairTotalAndMetered, type PairedModel, type SlotMeta } from './analyticsMath';
 import { DataQualityBadge } from './DataQualityBadge';
@@ -138,14 +138,14 @@ export function UntrackedLoadCard({ branchIds, outletIds, range, sync }: { branc
   );
 }
 
+/** One line of the tooltip below, in the same minimal form as `ChartTooltip`. */
 function PairLine({ name, kw, meta }: { name: string; kw: number | undefined; meta: SlotMeta }) {
+  const tag = qualityTag(meta);
   return (
-    <div className="chart-tooltip__series">
-      <div className="chart-tooltip__head">
-        <span className="chart-tooltip__name">{name}</span>
-        <span className="chart-tooltip__value mono">{kw !== undefined ? `${kw.toFixed(3)} kW` : '—'}</span>
-      </div>
-      <div className={`chart-tooltip__quality chart-tooltip__quality--${meta.quality}`}>{describeSlot(meta, 'power')}</div>
+    <div className="chart-tooltip__row">
+      <span className="chart-tooltip__name">{name}</span>
+      {tag && <span className={`chart-tooltip__tag chart-tooltip__tag--${meta.quality}`}>{tag}</span>}
+      <span className="chart-tooltip__value mono">{kw !== undefined ? `${kw.toFixed(2)} kW` : '—'}</span>
     </div>
   );
 }
@@ -156,12 +156,13 @@ function PairTooltip({ active, label, model, sync }: { active?: boolean; label?:
   const i = model.rows.findIndex((r) => r.t === Number(label));
   if (i === -1) return null;
   const row = model.rows[i];
+  const note = staleNote(sync, now);
   return (
     <div className="chart-tooltip">
-      <div className="chart-tooltip__time mono">{siteDateTime(row.t)}</div>
+      <div className="chart-tooltip__time">{tooltipTime(row.t, model.stepMs)}</div>
       <PairLine name="Panel total" kw={row.totalKw ?? row.totalFrozenKw} meta={model.meta[i].total} />
       <PairLine name="Outlet-metered" kw={row.meteredKw ?? row.meteredFrozenKw} meta={model.meta[i].metered} />
-      <div className="chart-tooltip__source">{sourceLabel(sync, 'measured', now)}</div>
+      {note && <div className="chart-tooltip__note">{note}</div>}
     </div>
   );
 }

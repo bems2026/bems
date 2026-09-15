@@ -253,6 +253,8 @@ export interface PairedModel {
   meta: { total: SlotMeta; metered: SlotMeta }[];
   quality: { total: Record<SlotQuality, number>; metered: Record<SlotQuality, number> };
   gaps: { total: GapWindow[]; metered: GapWindow[] };
+  /** The width of one drawn row, after coarsening — what a tooltip's time span is. */
+  stepMs: number;
 }
 
 const kw = (s: Slot | undefined) => (s && (s.quality === 'measured' || s.quality === 'live' || s.quality === 'interpolated') && s.value !== undefined ? s.value / 1000 : undefined);
@@ -271,7 +273,7 @@ function frozenKw(slots: Slot[], i: number): number | undefined {
  * which is still perfectly well known.
  */
 export function pairTotalAndMetered(branchHistories: HistoryPoint[][], outletHistories: HistoryPoint[][], opts: Omit<SeriesOptions, 'live'>): PairedModel {
-  const empty = { rows: [], meta: [], quality: { total: summarizeQuality([]), metered: summarizeQuality([]) }, gaps: { total: [], metered: [] } };
+  const empty = { rows: [], meta: [], quality: { total: summarizeQuality([]), metered: summarizeQuality([]) }, gaps: { total: [], metered: [] }, stepMs: GRID_STEP_MS[opts.range] };
   if (branchHistories.length === 0 && outletHistories.length === 0) return empty;
   const grid = gridFor(opts.range, opts.nowMs, opts.windowMs);
   const side = (histories: HistoryPoint[][]) =>
@@ -298,6 +300,7 @@ export function pairTotalAndMetered(branchHistories: HistoryPoint[][], outletHis
     meta: totalDisplay.map((s, i) => ({ total: metaOf(s), metered: metaOf(meteredDisplay[i]) })),
     quality: { total: summarizeQuality(totalTrim), metered: summarizeQuality(meteredTrim) },
     gaps: { total: gapWindows(totalTrim, grid.stepMs), metered: gapWindows(meteredTrim, grid.stepMs) },
+    stepMs: grid.stepMs * factor,
   };
 }
 

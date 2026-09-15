@@ -160,8 +160,8 @@ export function AnalyticsPage() {
             <InfoHint label="What this page covers">
               Power, voltage, and current over the last {RANGE_WORDS[range]} for the branch meters and the individually-metered outlets, plus the building's energy consumed
               today, this week, and this month. {longRangeAvailable ? 'Anything past 24 h reads from stored history — the bridge itself only keeps a 24 h buffer. ' : ''}
-              Solid lines are measurements. A dashed segment bridges a gap of two minutes or less between two real readings; a dotted grey line is a meter that repeated one
-              reading unchanged for three hours or more; a shaded band is a stretch with no readings at all. Hover a chart for the exact time, the raw value and where it came from.
+              Solid lines are measurements. A dashed segment is estimated across a gap of two minutes or less; a dotted grey line is a meter that repeated one
+              reading unchanged for three hours or more; a shaded band is a stretch with no readings at all. Hover a chart for the values at any moment; a small tag marks anything estimated, frozen or missing.
             </InfoHint>
           </>
         }

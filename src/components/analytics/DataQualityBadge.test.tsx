@@ -28,15 +28,16 @@ describe('DataQualityBadge', () => {
   it('says how long was bridged, how many windows were offline, and which meters froze', () => {
     useConnectionStore.setState({ wsStatus: 'connected' });
     render(<DataQualityBadge sync={fresh()} quality={{ ...summarizeQuality([]), interpolated: 3 }} gapCount={2} frozenNames={['L.O Red']} stepMs={60_000} />);
-    expect(screen.getByText('Interpolated · 3 min')).toBeInTheDocument();
-    expect(screen.getByText('Offline · 2 windows')).toBeInTheDocument();
+    // The same words the tooltip uses (operator request 2026-09-15: simple and minimal).
+    expect(screen.getByText('Estimated · 3 min')).toBeInTheDocument();
+    expect(screen.getByText('Gaps · 2')).toBeInTheDocument();
     expect(screen.getByText('Frozen · L.O Red')).toBeInTheDocument();
   });
 
   it('adds nothing about quality when every point on the chart was measured', () => {
     useConnectionStore.setState({ wsStatus: 'connected' });
     render(<DataQualityBadge sync={fresh()} quality={summarizeQuality([])} gapCount={0} frozenNames={[]} stepMs={60_000} />);
-    expect(screen.queryByText(/Interpolated|Offline ·|Frozen ·/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Estimated|Gaps ·|Frozen ·/)).not.toBeInTheDocument();
   });
 
   it('says Cached, with its age, once history stops arriving — and gives the reason to a screen reader', () => {

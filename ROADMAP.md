@@ -3127,14 +3127,18 @@ quality, and nothing is coerced to 0.
     and muted, long gaps as bands; each chart states its own quality in its accessible name. A sum with a
     frozen contributor is drawn frozen, carrying the held figure, not left blank. The 24h charts end at
     each device's live reading (`liveSampleOf`, withheld once expired).
-  - **Tooltip** (`ChartTooltip.tsx`, `lib/dataQuality.ts`): the exact moment to the second, the span of
-    a stored bucket, each value, what kind of point it is, what the device itself carried, the reading's
-    own time, and the source with its fetch time.
+  - **Tooltip** (`ChartTooltip.tsx`, `lib/dataQuality.ts`): the time (`Sep 14 · 22:40`, or the span a
+    longer point stands for), each device's value, and a tag of a word or two only where a point is not
+    a plain reading — Estimated, Frozen, Offline, No data, Bad reading, Live. A `Cached · N min old` note
+    appears only once the data has stopped arriving. **Simplified on the operator's request from the live
+    page, 2026-09-15:** the first version explained every point in a sentence ("Average of 11 of 11
+    samples", "Reading at 22:50:02", "Bridge buffer · fetched 08:32:01") on every line, which buried the
+    value a reader came for.
   - **Sync** (`useAnalyticsHistory.ts`): `sync` says whether the range has answered, when its history
     last arrived (`deviceStore.historyFetchedAt`), and how many fetches in a row have failed. A failure
     is retried after 10 s, doubling, capped at the range's own cadence. `DataQualityBadge.tsx` reads
-    Live / Syncing… / Cached · N min old / History unavailable, then interpolated minutes, offline windows
-    and frozen meters.
+    Live / Syncing… / Cached · N min old / History unavailable, then — in the tooltip's own words —
+    `Estimated · N min`, `Gaps · N` and `Frozen · <meter>`.
   - **Stored coverage:** `mapReadingsRows` keeps `online_count/sample_count` as `HistoryPoint.coverage`,
     reversing a test that dropped them, so a tooltip can say "Stored average of 12 of 15 samples online".
   - **Error boundaries:** `ErrorBoundary` gains `variant="inline"` and `resetKey`. Every Analytics card

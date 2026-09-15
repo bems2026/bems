@@ -5,8 +5,9 @@ import type { ChartRow, SlotMeta } from './analyticsMath';
 import type { SyncStatus } from '@/lib/dataQuality';
 
 /*
- * RM-076 — a tooltip that says exactly when, exactly what, what kind of point, and from where. The
- * fixture is CARE ACU's 12:46 health flicker on 2026-09-13 beside a measured C.O Yellow.
+ * RM-076 — the chart tooltip, kept minimal at the operator's request (2026-09-15): the time, each
+ * device's value, and a short tag only where a point is not a plain reading. The fixture is CARE ACU's
+ * 12:46 flicker on 2026-09-13 beside a measured C.O Yellow.
  */
 
 const T = Date.parse('2026-09-13T12:46:00+08:00');
@@ -14,41 +15,64 @@ const rows: ChartRow[] = [{ t: T, a: undefined, 'a:interpolated': 15.15, 'a:froz
 const meta: Record<string, SlotMeta>[] = [
   {
     a: { quality: 'interpolated', imputedFrom: 'offline', raw: 15.7, readingTs: '2026-09-13T12:46:05+08:00' },
-    b: { quality: 'measured', raw: 402.1, readingTs: '2026-09-13T12:46:17+08:00' },
+    b: { quality: 'measured', raw: 402.1, readingTs: '2026-09-13T12:46:17+08:00', samples: 11, of: 11 },
   },
 ];
 const series = [
   { key: 'a', name: 'CARE ACU', color: 'var(--accent)' },
   { key: 'b', name: 'C.O Yellow', color: 'var(--blue-bright)' },
 ];
-const sync: SyncStatus = { settled: true, fetchedAt: Date.now(), failures: 0, lastError: null, refetchMs: 60_000, source: 'bridge' };
+const fresh = (): SyncStatus => ({ settled: true, fetchedAt: Date.now(), failures: 0, lastError: null, refetchMs: 60_000, source: 'bridge' });
+const mount = (over: { label?: number; stepMs?: number; sync?: SyncStatus; active?: boolean } = {}) =>
+  render(
+    <ChartTooltip
+      active={over.active ?? true}
+      label={over.label ?? T}
+      rows={rows}
+      meta={meta}
+      series={series}
+      param="power"
+      sync={over.sync ?? fresh()}
+      stepMs={over.stepMs ?? 60_000}
+    />,
+  );
 
 afterEach(cleanup);
 
 describe('ChartTooltip', () => {
   it('draws nothing while the chart is not being hovered', () => {
-    const { container } = render(<ChartTooltip active={false} label={T} rows={rows} meta={meta} series={series} param="power" sync={sync} stepMs={60_000} />);
-    expect(container).toBeEmptyDOMElement();
+    expect(mount({ active: false }).container).toBeEmptyDOMElement();
   });
 
-  it('names the exact moment, each value, what kind of point it is, what the device carried, and where it came from', () => {
-    render(<ChartTooltip active label={T} rows={rows} meta={meta} series={series} param="power" sync={sync} stepMs={60_000} />);
-    expect(screen.getByText(/12:46:00/)).toBeInTheDocument();
+  it('shows the time, each value, and a tag only where a point is not a plain reading', () => {
+    mount();
+    expect(screen.getByText('Sep 13 · 12:46')).toBeInTheDocument();
     expect(screen.getByText('CARE ACU')).toBeInTheDocument();
-    expect(screen.getByText('15.15 W')).toBeInTheDocument();
-    expect(screen.getByText('Interpolated across a brief offline flicker (the device carried 15.7 W)')).toBeInTheDocument();
-    expect(screen.getByText('402.1 W')).toBeInTheDocument();
-    expect(screen.getByText('Reading at 12:46:17')).toBeInTheDocument();
-    expect(screen.getByText(/^Bridge buffer · fetched/)).toBeInTheDocument();
+    expect(screen.getByText('15 W')).toBeInTheDocument();
+    expect(screen.getByText('C.O Yellow')).toBeInTheDocument();
+    expect(screen.getByText('402 W')).toBeInTheDocument();
+    expect(screen.getAllByText('Estimated')).toHaveLength(1);
   });
 
-  it('shows the span a stored bucket stands for, not just its start', () => {
-    render(<ChartTooltip active label={T} rows={rows} meta={meta} series={series} param="power" sync={{ ...sync, source: 'stored' }} stepMs={900_000} />);
-    expect(screen.getByText(/12:46:00 – 13:01/)).toBeInTheDocument();
+  it('leaves out everything that is not the time, a value or a tag', () => {
+    const { container } = mount();
+    expect(container).not.toHaveTextContent(/Average|samples|Reading at|Bridge buffer|fetched|Interpolated/);
+  });
+
+  it('shows the span a longer point stands for', () => {
+    mount({ stepMs: 900_000 });
+    expect(screen.getByText('Sep 13 · 12:46–13:01')).toBeInTheDocument();
+  });
+
+  it('adds one note only when the data has stopped arriving', () => {
+    mount({ sync: { ...fresh(), fetchedAt: Date.now() - 330_000, failures: 2 } });
+    expect(screen.getByText(/^Cached · \d+ min old$/)).toBeInTheDocument();
+    cleanup();
+    mount();
+    expect(screen.queryByText(/Cached/)).not.toBeInTheDocument();
   });
 
   it('draws nothing for a moment it has no row for', () => {
-    const { container } = render(<ChartTooltip active label={T + 60_000} rows={rows} meta={meta} series={series} param="power" sync={sync} stepMs={60_000} />);
-    expect(container).toBeEmptyDOMElement();
+    expect(mount({ label: T + 60_000 }).container).toBeEmptyDOMElement();
   });
 });

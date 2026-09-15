@@ -1,62 +1,45 @@
-import { SITE } from '@shared/siteConfig.mjs';
+import { siteDate, siteTimeShort } from './siteTime';
 import type { ConnStatus } from './bridgeClient';
 import type { Slot, SlotQuality } from './timeseries';
 
 /**
- * RM-076 — the words a chart uses to say what a point is and how current it is.
+ * RM-076 — the words a chart uses about a point, and about how current its data is.
  *
- * Kept pure and out of the components so the sentences are pinned by tests in one place, and so
- * the tooltip and the badge stay thin. Two rules run through all of it: never let a bridged,
- * frozen or rejected value read as a measurement, and never let old data read as current.
+ * KEPT TO A WORD OR TWO, at the operator's request on the live page (2026-09-15). The first version
+ * explained every point in a sentence — "Average of 11 of 11 samples", "Reading at 22:50:02",
+ * "Bridge buffer · fetched 08:32:01" — on every line of every tooltip, which buried the one number a
+ * reader came for. Now a plain reading gets no words at all, anything else gets one tag, and the badge
+ * above the chart uses the same words. Pure, so the words are pinned by tests in one place.
  */
 
-export type ChartQuantity = 'power' | 'voltage' | 'current';
 export type QualityTone = 'neutral' | 'good' | 'warn' | 'bad' | 'accent';
 
-const UNIT: Record<ChartQuantity, string> = { power: 'W', voltage: 'V', current: 'A' };
-
-export const QUALITY_LABEL: Record<SlotQuality, string> = {
-  measured: 'Measured',
-  interpolated: 'Interpolated',
+const TAG: Record<SlotQuality, string | null> = {
+  measured: null,
+  interpolated: 'Estimated',
   live: 'Live',
   frozen: 'Frozen',
   offline: 'Offline',
-  outlier: 'Rejected',
+  outlier: 'Bad reading',
   missing: 'No data',
 };
 
-/** What the device carried, exactly — a tooltip is where full precision belongs. */
-export function formatRawValue(value: number, quantity: ChartQuantity): string {
-  return `${value} ${UNIT[quantity]}`;
+/** A word or two for a point that is not a plain reading; `null` for one that is. */
+export function qualityTag(slot: Pick<Slot, 'quality' | 'samples' | 'of'>): string | null {
+  return TAG[slot.quality];
 }
 
-export type SlotDescriptor = Pick<Slot, 'quality' | 'raw' | 'imputedFrom' | 'samples' | 'of' | 'coverage'>;
+const DAY_MS = 86_400_000;
 
-export function describeSlot(slot: SlotDescriptor, quantity: ChartQuantity): string {
-  const raw = slot.raw !== undefined ? formatRawValue(slot.raw, quantity) : undefined;
-  switch (slot.quality) {
-    case 'interpolated':
-      if (slot.imputedFrom === 'offline') return raw ? `Interpolated across a brief offline flicker (the device carried ${raw})` : 'Interpolated across a brief offline flicker';
-      if (slot.imputedFrom === 'outlier') return raw ? `Interpolated over a rejected reading of ${raw}` : 'Interpolated over a rejected reading';
-      if (slot.imputedFrom === 'missing') return 'Interpolated across a missed sample';
-      return slot.samples !== undefined && slot.of !== undefined ? `Mostly interpolated: an average of ${slot.samples} of ${slot.of} samples` : 'Interpolated';
-    case 'outlier':
-      return raw ? `Rejected: ${raw} is outside what this site can measure` : 'Rejected: not a readable number';
-    case 'frozen':
-      return raw
-        ? `Frozen: the meter repeated ${raw} unchanged, so this is not a measurement`
-        : 'Frozen: the meter repeated the same reading unchanged, so this is not a measurement';
-    case 'offline':
-      return raw ? `Offline: the bridge reported this device unreachable (its last value, ${raw}, is not plotted)` : 'Offline: the bridge reported this device unreachable';
-    case 'missing':
-      return 'No data recorded for this time';
-    case 'live':
-      return 'Live reading';
-    case 'measured':
-      if (slot.coverage) return `Stored average of ${slot.coverage.online} of ${slot.coverage.samples} samples online`;
-      if (slot.samples !== undefined && slot.of !== undefined && slot.of > 1) return `Average of ${slot.samples} of ${slot.of} samples`;
-      return 'Measured';
-  }
+/**
+ * The moment a tooltip is about: `Sep 14 · 22:40` for a one-minute point, `Sep 14 · 22:40–22:51` for
+ * one that stands for longer, and just the day or days for a point a day or more wide.
+ */
+export function tooltipTime(t: number, stepMs: number): string {
+  const day = (ms: number) => siteDate(ms, { month: 'short', day: 'numeric' });
+  if (stepMs >= DAY_MS) return stepMs === DAY_MS ? day(t) : `${day(t)}–${day(t + stepMs - DAY_MS)}`;
+  const from = siteTimeShort(t);
+  return stepMs > 60_000 ? `${day(t)} · ${from}–${siteTimeShort(t + stepMs)}` : `${day(t)} · ${from}`;
 }
 
 export function formatAge(ms: number): string {
@@ -108,15 +91,7 @@ export function syncSummary(sync: SyncStatus, wsStatus: ConnStatus, nowMs: numbe
   return { tone: 'good', text: 'Live', detail: `History fetched ${formatAge(age)} ago; the newest point comes from the live feed.` };
 }
 
-function siteClockSeconds(ms: number): string {
-  return new Date(ms).toLocaleTimeString(undefined, { hourCycle: 'h23', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: SITE.timezone as string });
-}
-
-/** Where a point on the chart came from, for the tooltip. */
-export function sourceLabel(sync: SyncStatus, quality: SlotQuality, nowMs: number): string {
-  if (quality === 'live') return 'Live feed';
-  const name = sync.source === 'stored' ? 'Stored history' : 'Bridge buffer';
-  if (sync.fetchedAt === null) return name;
-  const at = siteClockSeconds(sync.fetchedAt);
-  return isStale(sync, nowMs) ? `Cached · as of ${at}` : `${name} · fetched ${at}`;
+/** One line for a tooltip, only once the data behind it has stopped arriving. */
+export function staleNote(sync: SyncStatus, nowMs: number): string | null {
+  return sync.fetchedAt !== null && isStale(sync, nowMs) ? `Cached · ${formatAge(nowMs - sync.fetchedAt)} old` : null;
 }
