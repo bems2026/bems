@@ -23,6 +23,11 @@ against weekend energy, the load factor and the overnight base load — each an 
 when the period's data cannot carry it. **RM-082c** adds a Circuit select that narrows the device table,
 the Circuits tab and the per-device CSV to one branch, read from the circuit tree; a share stays a share
 of the whole building, and the page says the headline figures, findings and charts cannot be narrowed.
+**RM-087** came out of checking the first real retention pass before it ran: the hourly totals rollup
+never filled phase32's integrated columns, so from 2026-10-08 every pruned hour would lose the only
+independent cross-check on the building total. `phase41_totals_rollup_integrated.sql` fixes it and is
+rehearsed; **it waits for the operator to paste it, before 2026-10-08.** Nothing has been lost, and the
+rows the first passes prune were exported and copied off the Pi beforehand.
 
 **Previously audited:** 2026-09-14 — **RM-076 to RM-078, Analytics data quality**, from three operator
 reports: L.O Red "reporting less than it measured", L.O Red reading differently on Overview and
@@ -162,6 +167,25 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
+
+### 2026-09-15 — the first real retention pass, checked before it runs; phase41 waits to be applied
+
+**Apply `supabase/phase41_totals_rollup_integrated.sql` before 2026-10-08 (RM-087).** Paste it into the
+Supabase SQL editor like every phase file, then run the read-back in RM-087. Without it, the first
+retention pass to reach phase32's integrated series — 2026-10-08, thirty days after the series began —
+stores NULL for every hour it prunes and deletes the rows that held the value.
+
+**The first pass is due at 18:18 UTC tonight, not 15:52.** Retention asks every six hours from when the
+ingest daemon started, and the oldest reading ages past thirty days at 15:52 UTC, so the 18:18 check is
+the first to find anything. It rolls up and prunes 2026-08-16 15:00–18:00 — whole hours only, because
+both rollups truncate the cutoff to the hour. Checked before it runs:
+- **A backup and a raw export are off the Pi.** `server/backup.mjs` leaves out `readings` and
+  `building_totals` by design, and those are exactly what a pass deletes. So every raw row from before
+  2026-08-18 — 35,162 readings and 1,852 totals rows, each count matching the database — was exported
+  beside the backup, and the directory was copied off the Pi with checksums matching file for file. That
+  covers every pass until 2026-09-17.
+- **The ingest buffer drains.** "Supabase unreachable, buffered (1 pending)" appears 26–100 times a day,
+  all week; each is one write retried the next minute, and no buffer file is left behind.
 
 ### 2026-09-15 — phase40 is applied; CO6 and CO7 are corrected
 
@@ -808,12 +832,13 @@ Everything else is small, and the build order below is honest about size.
   two weeks (RM-020), so their averages mean nothing and their tiers should be set on what they
   feed rather than on what they have measured.
 
-### Migrations — all applied
+### Migrations — one waiting: phase41
 
-**Every migration in this repository is applied**, the latest `phase40_report_curve_speed.sql`
-(RM-086) on 2026-09-15, read back the same day. `phase27_period_reports.sql` was applied
-2026-09-08, the last of them; the section that listed pending files is gone because the list is
-empty. `period_reports` holds 80 rows and `period_building_reports` 4, regenerated at the moment
+**`supabase/phase41_totals_rollup_integrated.sql` (RM-087) is not applied yet.** Paste it before
+2026-10-08 and read it back as RM-087 says. **Every earlier migration is applied**, the latest
+`phase40_report_curve_speed.sql` (RM-086) on 2026-09-15, read back the same day.
+`phase27_period_reports.sql` was applied 2026-09-08; `period_reports` holds 80 rows and
+`period_building_reports` 4, regenerated at the moment
 of applying — which means they were built from the outlet energy AFTER RM-047b's correction
 rather than the inflated figures, so August's per-device totals are the corrected ones.
 
@@ -3578,6 +3603,42 @@ ever cleared, and put its controls in three rows. This section is that page's ov
       **To close:** the operator pastes it into the Supabase SQL editor; read back by opening Reports
       signed in and seeing the duration curve draw.
 
+- [ ] **RM-087 (S)** — **phase41: the hourly totals rollup keeps phase32's integrated cross-check.**
+      Written and rehearsed 2026-09-15; **waiting for the operator to apply it, before 2026-10-08.**
+      - **The defect.** phase32 (RM-057) stores the legacy power integration beside the summed building
+        total as `building_totals.energy_kwh_*_integrated` — the only independent measurement of those
+        circuits — and added `building_totals_hourly.energy_kwh_*_integrated_max`. It never redefined
+        `roll_up_and_prune_building_totals`, which is still phase11's and names neither column, so a
+        retention pass stores NULL in the hourly bucket and deletes the raw row. The series starts at
+        2026-09-08 07:31 UTC, so the first pass to reach it falls on 2026-10-08. Found while checking the
+        first real retention pass; nothing has been lost.
+      - **The fix.** `supabase/phase41_totals_rollup_integrated.sql` redefines the one function under the
+        same signature, OUT columns and grants, plus three within-hour maxima. No backfill: no hour rolled
+        so far held a value. Site scoping stays RM-030's.
+      - **Held by** `test/phase41-totals-rollup-integrated-schema.test.mjs` — every rule phase11 proved, and
+        each integrated counter checked position by position into its own column, because all of them are
+        `numeric` and a swapped pair would run cleanly — and by `supabase/rehearse.sh`, which seeds the
+        series at values unlike the summed counters, asserts the three maxima, and applies phase41 twice.
+        Before the file existed, the rehearsal failed on exactly that assertion, with NULL.
+      - **To close.** Paste the file into the Supabase SQL editor, then read the deployed function back
+        without touching a real row — phase31's method, inside a transaction that is rolled back:
+
+        ```sql
+        begin;
+        insert into building_totals (ts, site_id, energy_kwh_today_integrated, energy_kwh_week_integrated, energy_kwh_month_integrated)
+        select v.ts, (select id from sites order by id limit 1), v.d, v.w, v.m
+          from (values (timestamptz '2020-01-01 00:10:00+00', 1.5, 2.5, 3.5),
+                       (timestamptz '2020-01-01 00:40:00+00', 1.6, 2.6, 3.6)) as v(ts, d, w, m);
+        select * from roll_up_and_prune_building_totals(timestamptz '2020-01-01 01:00:00+00');
+        select energy_kwh_today_integrated_max, energy_kwh_week_integrated_max, energy_kwh_month_integrated_max
+          from building_totals_hourly where hour = timestamptz '2020-01-01 00:00:00+00';
+        rollback;
+        ```
+
+        It should roll 1 hour, delete 2 rows, and read 1.6, 2.6 and 3.6; NULLs mean the old function is
+        still live. The cutoff can select only the two rows the script inserts — the oldest real reading
+        is 2026-08-16 — and the rollback removes them and their bucket. This exact script was run in the
+        rehearsal's database after phase41 on 2026-09-15 and returned 1, 2, and 1.6, 2.6, 3.6.
 - [ ] **RM-083c (S)** — **Time the PDF on the kiosk's Pi, and move it to a worker only if it is slow.**
       Each export now logs `[ibems] pdf: assembled in N ms, rendered in N ms` to the console. Generate one
       month's PDF on the kiosk, read the line, and record it here. Above one second, move
@@ -3612,7 +3673,7 @@ ever cleared, and put its controls in three rows. This section is that page's ov
 - [ ] **RM-085 (L)** — **Arbitrary windows: last 24 hours, month to date, billing cycle, custom.**
       **Deferred by operator decision, 2026-09-15.** `report_window` accepts only a whole week or
       month (`phase37_report_series.sql:66`) and counts the unfinished part of a period as missing,
-      so these cannot be served honestly from today's functions. Needs `phase41_report_ranges.sql`
+      so these cannot be served honestly from today's functions. Needs `phase42_report_ranges.sql`
       (range variants clamped to `now()`, per-device energy from each device's own counters, a
       weekday-by-hour heatmap past 37 days to stay under the 900-cell cap), a billing-cycle day
       setting, a provisional "in progress" banner, and a rehearsal asserting the bars sum to the

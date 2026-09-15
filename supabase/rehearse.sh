@@ -143,6 +143,13 @@ psql < "$HERE/phase40_report_curve_speed.sql" >/dev/null
 psql < "$HERE/phase40_report_curve_speed.sql" >/dev/null
 echo "   ok — the one-pass curve is back in place, and re-applies cleanly"
 
+# RE-APPLYING PHASE41 — RM-087. It redefines a function the ingest daemon calls every six hours, and a
+# hand-applied migration gets pasted twice exactly when someone is unsure it took. Twice, as phase40.
+echo "== re-applying phase41, twice =="
+psql < "$HERE/phase41_totals_rollup_integrated.sql" >/dev/null
+psql < "$HERE/phase41_totals_rollup_integrated.sql" >/dev/null
+echo "   ok — the totals rollup re-applies cleanly"
+
 echo "== seeding =="
 psql <<'SQL'
 insert into devices (id, display_name, class) values
@@ -193,13 +200,19 @@ values ('mtr_nulls', timestamptz '2026-06-01 00:00:00+00', 220, 1.0, null, 0.01,
 
 -- site_id is NOT NULL since phase20. The seed runs after every migration, so leaving it out
 -- fails here rather than at anything this rehearsal is trying to prove.
+-- phase32's integrated series rides alongside, at values that cannot be mistaken for the summed
+-- counters beside it — so a rollup that drops the series, or files one period's counter under
+-- another's column, fails an equality below rather than passing on a coincidence (RM-087).
 insert into building_totals (ts, site_id, energy_kwh_today, energy_kwh_week, energy_kwh_month,
                              total_power_w, avg_voltage, phase_current_red,
-                             phase_current_yellow, phase_current_blue)
+                             phase_current_yellow, phase_current_blue,
+                             energy_kwh_today_integrated, energy_kwh_week_integrated,
+                             energy_kwh_month_integrated)
 select timestamptz '2026-06-01 00:00:00+00' + (n || ' minutes')::interval,
        'mmsu-nberic-care',
        n * 0.01, n * 0.02, n * 0.03, 500 + n, 220, 2.5, 2.0,
-       null   -- no Blue-phase meter exists; this must survive as NULL, never become 0
+       null,  -- no Blue-phase meter exists; this must survive as NULL, never become 0
+       n * 0.011, n * 0.021, n * 0.031
   from generate_series(0, 119) n;
 
 -- A SECOND SITE, seeded only here. Nothing in production has one yet, and that is exactly why
@@ -315,6 +328,17 @@ begin
 
   select energy_kwh_month_max into v from building_totals_hourly;
   assert v = 1.77, format('totals rollup: the month counter must be a MAX (1.77), got %s', v);
+
+  -- ---- RM-087 (phase41): the integrated series is rolled up with everything else ----------
+  -- Hour 0 holds n = 0..59, so each maximum is the n = 59 row. NULL is the bug phase41 fixes:
+  -- phase32 added these hourly columns and the rollup never filled them, so every archived hour
+  -- would lose the one independent cross-check on the building total.
+  select energy_kwh_today_integrated_max into v from building_totals_hourly;
+  assert v = 0.649, format('phase41: the integrated day counter must roll up as a MAX (0.649), got %s', v);
+  select energy_kwh_week_integrated_max into v from building_totals_hourly;
+  assert v = 1.239, format('phase41: the integrated week counter must roll up as a MAX (1.239), got %s', v);
+  select energy_kwh_month_integrated_max into v from building_totals_hourly;
+  assert v = 1.829, format('phase41: the integrated month counter must roll up as a MAX (1.829), got %s', v);
 
   -- ---- prune_anomalies (phase 11) ------------------------------------------------------
   select r.deleted into deleted from prune_anomalies(timestamptz '2025-01-01 00:00:00+00') r;
