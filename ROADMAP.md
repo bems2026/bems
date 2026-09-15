@@ -7,7 +7,8 @@ the Control page and Settings → Floor plan disagree with the Overview. **RM-08
 the Reports page loads as six independent sections**, so a failed tariff read no longer hides five
 charts that loaded, a hung query becomes a timeout with a Retry instead of an empty page, and a
 period stored as 0 kWh from ten rows that held no reading says "not observed". RM-082 to RM-084
-(layout, exports, charts) are planned in the same §2 section and not yet built.
+(layout, exports, charts) are planned in the same §2 section; **RM-082a has since landed** — a
+headline row led by energy, tables built for reading, and the Reports CSS on a guarded 8-point grid.
 
 **Previously audited:** 2026-09-14 — **RM-076 to RM-078, Analytics data quality**, from three operator
 reports: L.O Red "reporting less than it measured", L.O Red reading differently on Overview and
@@ -3297,15 +3298,58 @@ ever cleared, and put its controls in three rows. This section is that page's ov
       the weekly empty state. **Not verified signed-in in a browser** — the workstation's dev build
       has no Supabase keys, so the Reports page renders "not configured" there.
 
-- [ ] **RM-082 (M)** — **One control bar, a headline row, and tables built for reading.** A sticky
+- [x] **RM-082a (M)** **DONE 2026-09-15. The headline comes first and largest, and the tables are
+      built for reading.** The report's figures were eight equal cells of a `<dl>`, the period's
+      energy at the same 14px as its command count.
+
+      *`ReportKpis`* leads with energy at `--fs-3xl`, then peak demand in kW, cost and emissions
+      (through `CostCarbonLine`, so a failed rate read still never claims "no rate entered"),
+      readings coverage as the share of minutes that carried a **real reading** — 27% for August
+      2026, not the 48% the rows say — and a comparison with the previous stored period **only when
+      `ipmvp.compare` says both were fully observed**; otherwise it says "not comparable" and names
+      which period was watched how much. Above it, the period is named once with its coverage
+      badge and when it was generated, in the building's own time. Voltage, phase currents,
+      commands and anomalies move to an "Also recorded" list rather than disappearing.
+
+      **The order is a decision, and it keeps the rule it looks like it breaks.** Coverage precedes
+      the figures it qualifies: the badge sits in the heading directly above the headline row, every
+      headline carries its own "(partial …)" on the same line, and the detailed coverage card follows
+      immediately. What moved is the *detail*, not the qualifier.
+
+      *`ReportTable`* replaces `.devices-table` in the device table, both circuit tables and every
+      chart's numbers. That class brought a `min-width: 860px` sized for the eight-column fleet grid,
+      which made a five-column report scroll on the kiosk; and the `is-numeric` class the chart tables
+      set **had no CSS rule at all**, so every number in every chart table was left-aligned. Units now
+      live in the header once, numeric columns right-align in tabular figures, rows are separated by a
+      hairline with no zebra striping or vertical rules, and the row header stays pinned when a table
+      does have to scroll. A missing value is an em dash and a **zero is a zero** — both directions
+      asserted. `ReportFigure` and `CoverageTag` moved out of the page so three callers share one copy
+      of "never without the qualifier".
+
+      *The 8-point grid is a test, not a convention:* `test/reports-spacing-grid.test.mjs` fails on any
+      margin, padding or gap in a `.report-`/`.reports-` rule that is not 0, a multiple of 8,
+      `--sp-2`, `--sp-4` or `calc(var(--sp-2) * N)` (`--sp-1` allowed in a gap only). Its first run
+      found **five** off-grid values — 6px, three uses of `--sp-3` (12px) and 2px. It proves itself
+      against a synthetic sheet with five known violations before it is believed, and refuses to pass
+      if it matched fewer than fifteen rules.
+
+      **Three things the tests caught about themselves.** `null / 1000` is `0` in JavaScript, which is
+      exactly how a missing peak would have printed "0.00 kW" — pinned. The first version of that
+      assertion searched the whole tile row for `/0\.00 kW/`, which matches inside "100.00 kWh".
+      And a `<dt>` (role `term`) takes its accessible name from author attributes only, never from its
+      text, so `getByRole('term', { name })` **can never match** — the first version of "no
+      comparison without an earlier period" was vacuous. All three now query text, and the comparison
+      test is the absence test's positive control.
+
+      Tests: `ReportTable.test.tsx` (6), `ReportKpis.test.tsx` (8), the grid guard (3). The peak
+      guard was **neutered to prove it**: with the null check removed, exactly that test fails; with
+      the file restored byte-for-byte, all eight pass. **Not verified signed-in in a browser.**
+
+- [ ] **RM-082b (M)** — **One control bar, and loading that looks like what it loads.** A sticky
       bar holding period kind, a period stepper with *Latest settled / Previous / Same period last
-      year*, the report tabs, a circuit scope and Export; a KPI row led by energy at `--fs-3xl`, then
-      peak demand, cost, emissions, readings coverage and — only when `ipmvp.compare` says the two
-      are comparable — change against the previous period; `ReportTable` with right-aligned
-      tabular numerals, units in the header, no zebra striping and no `min-width: 860px` (the
-      `is-numeric` class `ChartFigure` sets has **no CSS rule**, so numbers are left-aligned
-      today); skeletons shaped like each chart and table; the Reports CSS on an 8-point grid with a
-      guard test.
+      year*, the report tabs, a circuit scope and Export, replacing the three rows of controls today;
+      skeletons shaped like each chart and table, shown when the subject changes and never flashed
+      on a same-period retry.
 - [ ] **RM-083 (M)** — **An export drawer with sections, a sectioned PDF and tidy CSVs.** Coverage
       and "what this report does not say" are locked on (operator decision, 2026-09-15); every other
       section is optional. The PDF gains the key figures it omits today (peak demand, voltage,

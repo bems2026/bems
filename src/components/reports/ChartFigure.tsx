@@ -1,4 +1,5 @@
 import { SceneSvg } from './charts/sceneToJsx';
+import { ReportTable } from './ReportTable';
 import { SCREEN_PALETTE } from './charts/palette';
 import type { Scene } from './charts/types';
 
@@ -51,40 +52,18 @@ export function ChartFigure({ scene, table, caption, summaryLabel = 'Show the nu
       </figcaption>
       <details className="report-chart__data">
         <summary>{summaryLabel}</summary>
-        <div className="devices-table-scroll">
-          <table className="devices-table reports-table">
-            <thead>
-              <tr>
-                {table.headers.map((h, i) => (
-                  <th key={h} scope="col" className={i === 0 ? undefined : 'is-numeric'}>
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {table.rows.map((row) => (
-                <tr key={String(row[0])}>
-                  {row.map((cell, i) =>
-                    i === 0 ? (
-                      <th key={i} scope="row">
-                        {cell ?? '—'}
-                      </th>
-                    ) : (
-                      <td key={i} className="is-numeric">
-                        {cell === null || cell === undefined ? (
-                          <span className="reports-figure reports-figure--missing">—</span>
-                        ) : (
-                          cell
-                        )}
-                      </td>
-                    )
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {/* RM-082: the shared report table, so these numbers right-align like every other figure. */}
+        <ReportTable
+          columns={table.headers.map((header, i) => ({
+            id: `${i}-${header}`,
+            header,
+            numeric: i > 0,
+            cell: (row: readonly (string | number | null)[]) => row[i],
+          }))}
+          rows={table.rows}
+          rowKey={(row, i) => `${String(row[0])}-${i}`}
+          label={`The numbers behind ${scene.title}`}
+        />
       </details>
     </figure>
   );

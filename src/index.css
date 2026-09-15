@@ -6213,7 +6213,7 @@ body::before {
 .reports-months {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--sp-2);
   margin-bottom: var(--sp-4);
 }
 
@@ -6228,8 +6228,8 @@ body::before {
      phone and beside nothing on a wide monitor, and six labelled figures should reflow
      rather than force a horizontal scroll. */
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: var(--sp-3) var(--sp-4);
-  margin: var(--sp-3) 0 0;
+  gap: var(--sp-4);
+  margin: var(--sp-2) 0 0;
 }
 
 .reports-summary__grid dt {
@@ -6240,7 +6240,7 @@ body::before {
 }
 
 .reports-summary__grid dd {
-  margin: 2px 0 0;
+  margin: 0;
   font-size: var(--fs-md);
   color: var(--txt);
 }
@@ -6266,12 +6266,6 @@ body::before {
    every other number in this app. */
 .reports-figure--missing {
   color: var(--muted);
-}
-
-.reports-table th[scope='row'] {
-  text-align: left;
-  font-weight: 500;
-  color: var(--txt);
 }
 
 .reports-note {
@@ -6309,6 +6303,173 @@ body::before {
 
 .report-retry-btn:hover {
   border-color: var(--txt);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   RM-082 — hierarchy and tables. Every margin, padding and gap in a `.report-`/`.reports-` rule is
+   on an 8-point grid (`--sp-2`, `--sp-4`, `calc(var(--sp-2) * N)`), enforced by
+   `test/reports-spacing-grid.test.mjs`; the app's own 12/20/28 steps are left alone elsewhere.
+   ------------------------------------------------------------------------------------------- */
+
+/* The period being read, named once, with its coverage badge and when it was generated. */
+.report-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2) var(--sp-4);
+  margin: calc(var(--sp-2) * 3) 0 var(--sp-4);
+}
+
+.report-heading__title {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  color: var(--txt);
+}
+
+.report-heading__meta {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+/* The headline figures. Tiles on the card surface, energy spanning two of them in the largest
+   type the app has; values in proportional figures, because tabular numerals make a large
+   standalone number look loose — tables keep tabular ones, where digits must line up. */
+.report-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--sp-4);
+  margin: 0 0 var(--sp-4);
+}
+
+.report-kpis > div {
+  min-width: 0;
+  padding: var(--sp-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+}
+
+.report-kpis .report-kpi--hero {
+  grid-column: span 2;
+}
+
+.report-kpis dt {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.report-kpis dd {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--txt);
+}
+
+.report-kpis dd .reports-figure {
+  font-variant-numeric: proportional-nums;
+}
+
+.report-kpis .report-kpi__hero-value {
+  font-size: var(--fs-3xl);
+}
+
+/* Qualifiers and missing-value sentences stay readable at body size rather than inheriting the
+   headline's, so "— not observed" does not shout louder than a real figure would. */
+.report-kpis dd .reports-figure__caveat,
+.report-kpis dd .reports-figure--missing {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+
+.report-kpi__sub {
+  display: block;
+  white-space: normal;
+}
+
+/* Provenance is a sentence about the figures, not a figure: it spans the row without a tile. */
+.report-kpis .report-provenance {
+  grid-column: 1 / -1;
+  padding: 0;
+  background: none;
+  border: 0;
+}
+
+@media (max-width: 480px) {
+  .report-kpis .report-kpi--hero {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Tables built for reading: hairline rows, no zebra striping and no vertical rules, units in the
+   header, numbers right-aligned in tabular figures. No minimum width — it scrolls inside its own
+   container only when the columns genuinely do not fit, with the row header pinned. */
+.report-table-card {
+  margin-top: var(--sp-4);
+  padding: var(--sp-2) 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+}
+
+.report-table-scroll {
+  overflow-x: auto;
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  color: var(--txt);
+}
+
+.report-table th,
+.report-table td {
+  height: 40px;
+  padding: var(--sp-2) var(--sp-4);
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.report-table thead th {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+  border-bottom-color: var(--border);
+}
+
+.report-table tbody th[scope='row'] {
+  position: sticky;
+  left: 0;
+  font-weight: 500;
+  background: var(--bg-surface);
+}
+
+.report-table tbody tr:last-child > th,
+.report-table tbody tr:last-child > td {
+  border-bottom: 0;
+}
+
+.report-table .report-table__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.report-table__caption {
+  caption-side: top;
+  padding: 0 var(--sp-4) var(--sp-2);
+  text-align: left;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--txt);
 }
 
 /* Report charts — RM-072. Only the genuinely page-specific pieces, per CLAUDE.md: the table
@@ -6512,14 +6673,6 @@ body::before {
 
 .report-thin .card-title {
   color: var(--warn-on-page);
-}
-
-/* The deep-dive's tables name themselves, so a screen reader hears which of the two it is in
-   rather than meeting a second unlabelled grid of numbers. */
-.reports-table caption.card-title {
-  caption-side: top;
-  text-align: left;
-  padding-bottom: var(--sp-2);
 }
 
 .reports-picker__select {
@@ -8097,7 +8250,7 @@ button.space-plan__pin {
 .reports-periods {
   display: flex;
   gap: var(--sp-2);
-  margin-bottom: var(--sp-3);
+  margin-bottom: var(--sp-4);
 }
 
 /* A newer build has been deployed under this tab — RM-043. Full-width under the nav rather than

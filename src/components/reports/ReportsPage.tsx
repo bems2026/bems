@@ -6,7 +6,8 @@ import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { supabase } from '@/config/supabase';
 import { toCsv, downloadCsv, type CsvColumn } from '@/lib/csv';
-import { coverageOf, formatPeriod, isQuotable, type Coverage, type ReportPeriod } from '@/lib/supabaseReports';
+import { coverageOf, formatPeriod, isQuotable, type PeriodDeviceReport, type ReportPeriod } from '@/lib/supabaseReports';
+import { siteDateTime } from '@/lib/siteTime';
 import { PeriodPicker } from './PeriodPicker';
 import { ReportCharts, type ChartsData } from './ReportCharts';
 import { buildBreakdown } from '@/lib/circuitBreakdown';
@@ -16,8 +17,10 @@ import { CircuitDeepDive } from './CircuitDeepDive';
 import { ComparisonReport } from './ComparisonReport';
 import { CoverageBanner } from './CoverageBanner';
 import { ExportPdfButton } from './ExportPdfButton';
-import { CostCarbonLine } from './CostCarbonLine';
 import { ReportSectionNote } from './ReportSectionNote';
+import { ReportKpis } from './ReportKpis';
+import { ReportTable, type ReportColumn } from './ReportTable';
+import { CoverageTag, ReportFigure } from './ReportFigure';
 import { useReportData } from './useReportData';
 import { carbonOf, costOf, type DayEnergy } from '@/lib/energyCost';
 
@@ -39,79 +42,13 @@ import { carbonOf, costOf, type DayEnergy } from '@/lib/energyCost';
  * independent sections, and every panel below sits in its own inline error boundary. A failed
  * tariff read costs the cost line, a hung heatmap query costs the four hourly charts, and a
  * malformed row costs one card — and each says so where it would have been, with a Retry.
- */
-
-/** Tones reuse the shared `.badge--*` modifiers rather than introducing new colour values,
- * per CLAUDE.md: those four are already contrast-checked in both themes, and a fifth pair
- * invented here would be the first thing to fail an audit. */
-const COVERAGE_TONE: Record<Coverage['band'], { label: string; tone: string }> = {
-  complete: { label: 'Complete', tone: 'good' },
-  partial: { label: 'Partial', tone: 'warn' },
-  sparse: { label: 'Sparse', tone: 'bad' },
-  none: { label: 'No data', tone: 'bad' },
-};
-
-/** Period-aware — a weekly report used to describe itself as a month (RM-081). */
-function coverageNote(band: Coverage['band'], period: ReportPeriod): string {
-  switch (band) {
-    case 'complete':
-      return `the whole ${period} was observed`;
-    case 'partial':
-      return `over half the ${period} was observed — this total is understated`;
-    case 'sparse':
-      return `only a fraction of the ${period} was observed — this total is not the ${period}’s consumption`;
-    case 'none':
-      return `the ${period} passed with nothing recorded`;
-  }
-}
-
-function CoverageTag({ coverage, period }: { coverage: Coverage | null; period: ReportPeriod }) {
-  // "Unknown" is not "none": one means the month recorded nothing, the other means we cannot
-  // even say what full coverage would have been. Neutral badge, no tone.
-  if (!coverage) return <span className="badge">Coverage unknown</span>;
-  const copy = COVERAGE_TONE[coverage.band];
-  return (
-    <span className={`badge badge--${copy.tone}`} title={coverageNote(coverage.band, period)}>
-      {copy.label} · {Math.round(coverage.ratio * 100)}%
-    </span>
-  );
-}
-
-/** A figure the report cannot stand behind is still shown — hiding it would be its own kind
- * of dishonesty — but never without the qualifier attached to the same line.
  *
- * `notObserved` is the exception, and it is not hiding a figure: it is refusing to print one that
- * was never measured. Live, the week of 2026-08-10 is stored as 0 kWh from 10 of 10,080 samples,
- * none of them a real reading — and "0.00 kWh" says that week used no electricity. */
-function Figure({
-  value,
-  unit,
-  digits = 1,
-  coverage,
-  period,
-  notObserved = false,
-}: {
-  value: number | null;
-  unit: string;
-  digits?: number;
-  coverage?: Coverage | null;
-  period: ReportPeriod;
-  notObserved?: boolean;
-}) {
-  if (notObserved) {
-    return <span className="reports-figure reports-figure--missing">— not observed</span>;
-  }
-  if (value === null || value === undefined || !Number.isFinite(value)) {
-    return <span className="reports-figure reports-figure--missing">—</span>;
-  }
-  const qualified = coverage !== undefined && !isQuotable(coverage);
-  return (
-    <span className={`reports-figure${qualified ? ' reports-figure--qualified' : ''}`}>
-      {value.toFixed(digits)} {unit}
-      {qualified ? <span className="reports-figure__caveat"> (partial {period})</span> : null}
-    </span>
-  );
-}
+ * THE HEADLINE COMES FIRST AND LARGEST — RM-082. The period is named with its coverage badge, then
+ * the key figures, then the coverage in detail, then what else the period recorded, then the
+ * charts and the device table. Coverage still travels with every figure it qualifies: each
+ * headline carries its own "(partial …)" on the same line, and the badge sits in the heading
+ * directly above them.
+ */
 
 const DEVICE_CSV_COLUMNS: readonly CsvColumn<Record<string, unknown>>[] = [
   // `period` used to be computed in `exportCsv` and then dropped on the floor, because it was
@@ -147,6 +84,12 @@ const REPORT_TABS: TabDef[] = [
   { id: 'circuits', label: 'Circuits' },
   { id: 'compare', label: 'Compare' },
 ];
+
+/** When the stored report was generated, in the building's own time; nothing when unreadable. */
+function generatedLabel(iso: string): string | null {
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? siteDateTime(t) : null;
+}
 
 export function ReportsPage() {
   const [tab, setTab] = useState('summary');
@@ -211,10 +154,11 @@ export function ReportsPage() {
     return { cost: costOf(days, pricing.data?.tariffs ?? []), carbon: carbonOf(days, pricing.data?.factors ?? []) };
   }, [core.data, pricing.data]);
 
-  const building = useMemo(
-    () => months?.find((m) => m.period_start.slice(0, 10) === selected) ?? null,
-    [months, selected]
-  );
+  const selectedIndex = months && selected ? months.findIndex((m) => m.period_start.slice(0, 10) === selected) : -1;
+  const building = months && selectedIndex >= 0 ? months[selectedIndex] : null;
+  /** The list is newest first, so the period before this one is the next entry — named by its own
+   *  label wherever it is shown, because a missing week in between makes it not the calendar's. */
+  const previous = months && selectedIndex >= 0 ? (months[selectedIndex + 1] ?? null) : null;
   const buildingCoverage = building ? coverageOf(building.online_sample_count, building.expected_sample_count) : null;
 
   /**
@@ -271,6 +215,32 @@ export function ReportsPage() {
 
   const periodLabel = selected ? formatPeriod(period, selected) : '';
   const scopeKey = `${period}:${selected ?? ''}`;
+  const rowCoverage = (r: PeriodDeviceReport) => coverageOf(r.online_sample_count, r.expected_sample_count);
+  const deviceColumns: ReportColumn<PeriodDeviceReport>[] = [
+    { id: 'device', header: 'Device', cell: (r) => nameOf(r.device_id) },
+    {
+      id: 'energy',
+      header: 'Energy',
+      unit: 'kWh',
+      numeric: true,
+      cell: (r) => <ReportFigure value={r.energy_kwh} unit="" digits={2} coverage={rowCoverage(r)} period={period} />,
+    },
+    {
+      id: 'peak',
+      header: 'Peak',
+      unit: 'W',
+      numeric: true,
+      cell: (r) => <ReportFigure value={r.peak_power_w} unit="" digits={0} coverage={rowCoverage(r)} period={period} />,
+    },
+    {
+      id: 'average',
+      header: 'Average',
+      unit: 'W',
+      numeric: true,
+      cell: (r) => <ReportFigure value={r.avg_power_w} unit="" digits={0} coverage={rowCoverage(r)} period={period} />,
+    },
+    { id: 'coverage', header: 'Coverage', cell: (r) => <CoverageTag coverage={rowCoverage(r)} period={period} /> },
+  ];
 
   return (
     <>
@@ -343,6 +313,30 @@ export function ReportsPage() {
         />
       ) : null}
 
+      {tab === 'summary' && building ? (
+        <ErrorBoundary scope="The headline figures" variant="inline" resetKey={building}>
+          <header className="report-heading">
+            <h2 className="report-heading__title">
+              {formatPeriod(period, building.period_start)} · {period === 'week' ? 'Weekly' : 'Monthly'} report
+            </h2>
+            <CoverageTag coverage={buildingCoverage} period={period} />
+            {generatedLabel(building.generated_at) ? (
+              <p className="report-heading__meta">Generated {generatedLabel(building.generated_at)}</p>
+            ) : null}
+          </header>
+          <ReportKpis
+            period={period}
+            building={building}
+            summary={core.status === 'ready' ? (core.data?.summary ?? null) : core.status === 'error' ? null : undefined}
+            notObserved={notObserved}
+            cost={priced.cost}
+            carbon={priced.carbon}
+            pricing={pricing}
+            previous={previous}
+          />
+        </ErrorBoundary>
+      ) : null}
+
       {tab === 'summary' && selected ? (
         <>
           <ReportSectionNote section={core} what="the daily figures" />
@@ -362,39 +356,25 @@ export function ReportsPage() {
       ) : null}
 
       {tab === 'summary' && building ? (
-        <ErrorBoundary scope="The building summary" variant="inline" resetKey={building}>
-          <section className="devices-table-card reports-summary" aria-label={`Building summary for ${formatPeriod(period, building.period_start)}`}>
-            <h2 className="card-title">
-              {formatPeriod(period, building.period_start)} · building <CoverageTag coverage={buildingCoverage} period={period} />
-            </h2>
+        <ErrorBoundary scope="The period’s other records" variant="inline" resetKey={building}>
+          <section className="devices-table-card reports-summary" aria-label={`Also recorded for ${formatPeriod(period, building.period_start)}`}>
+            <h2 className="card-title">Also recorded</h2>
             <dl className="reports-summary__grid">
-              <div>
-                <dt>Energy</dt>
-                <dd>
-                  <Figure value={building.energy_kwh} unit="kWh" digits={2} coverage={buildingCoverage} period={period} notObserved={notObserved} />
-                </dd>
-              </div>
-              <div>
-                <dt>Peak demand</dt>
-                <dd>
-                  <Figure value={building.peak_total_power_w} unit="W" digits={0} coverage={buildingCoverage} period={period} notObserved={notObserved} />
-                </dd>
-              </div>
               <div>
                 <dt>Average voltage</dt>
                 <dd>
-                  <Figure value={building.avg_voltage} unit="V" period={period} />
+                  <ReportFigure value={building.avg_voltage} unit="V" period={period} />
                 </dd>
               </div>
               <div>
                 <dt>Phase current R / Y / B</dt>
                 <dd>
-                  <Figure value={building.phase_current_red_avg} unit="" digits={2} period={period} />
+                  <ReportFigure value={building.phase_current_red_avg} unit="" digits={2} period={period} />
                   {' / '}
-                  <Figure value={building.phase_current_yellow_avg} unit="" digits={2} period={period} />
+                  <ReportFigure value={building.phase_current_yellow_avg} unit="" digits={2} period={period} />
                   {' / '}
                   {/* Blue is NULL by design — no Blue-phase meter is installed. */}
-                  <Figure value={building.phase_current_blue_avg} unit="A" digits={2} period={period} />
+                  <ReportFigure value={building.phase_current_blue_avg} unit="A" digits={2} period={period} />
                 </dd>
               </div>
               <div>
@@ -408,10 +388,6 @@ export function ReportsPage() {
                 <dt>Anomalies</dt>
                 <dd>{building.anomaly_count}</dd>
               </div>
-              {/* Last in the list, deliberately: the cost is derived from the energy above it, and
-                  putting a currency figure first would make it the headline of a report whose
-                  headline is a measurement. */}
-              <CostCarbonLine cost={priced.cost} carbon={priced.carbon} coverage={buildingCoverage} pricing={pricing} />
             </dl>
           </section>
         </ErrorBoundary>
@@ -458,40 +434,8 @@ export function ReportsPage() {
 
       {tab === 'summary' && rows && rows.length > 0 ? (
         <ErrorBoundary scope="The per-device table" variant="inline" resetKey={rows}>
-          <div className="devices-table-card devices-table-scroll">
-            <table className="devices-table reports-table" aria-label={`Per-device report for ${periodLabel}`}>
-              <thead>
-                <tr>
-                  <th scope="col">Device</th>
-                  <th scope="col">Energy</th>
-                  <th scope="col">Peak</th>
-                  <th scope="col">Average</th>
-                  <th scope="col">Coverage</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => {
-                  const c = coverageOf(r.online_sample_count, r.expected_sample_count);
-                  return (
-                    <tr key={r.device_id}>
-                      <th scope="row">{nameOf(r.device_id)}</th>
-                      <td>
-                        <Figure value={r.energy_kwh} unit="kWh" digits={2} coverage={c} period={period} />
-                      </td>
-                      <td>
-                        <Figure value={r.peak_power_w} unit="W" digits={0} coverage={c} period={period} />
-                      </td>
-                      <td>
-                        <Figure value={r.avg_power_w} unit="W" digits={0} coverage={c} period={period} />
-                      </td>
-                      <td>
-                        <CoverageTag coverage={c} period={period} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="report-table-card">
+            <ReportTable columns={deviceColumns} rows={rows} rowKey={(r) => r.device_id} label={`Per-device report for ${periodLabel}`} />
           </div>
         </ErrorBoundary>
       ) : null}

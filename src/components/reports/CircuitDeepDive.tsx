@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
 import { BUILDING_METER_IDS } from '@shared/registry.mjs';
-import { coverageOf, isQuotable, type PeriodDeviceReport, type ReportPeriod, formatPeriod } from '@/lib/supabaseReports';
+import { coverageOf, type PeriodDeviceReport, type ReportPeriod, formatPeriod } from '@/lib/supabaseReports';
 import { buildBreakdown } from '@/lib/circuitBreakdown';
+import { ReportTable, type ReportColumn } from './ReportTable';
+import { ReportFigure } from './ReportFigure';
 
 /**
  * Where the energy went, circuit by circuit and device by device.
@@ -24,19 +26,7 @@ interface Props {
   nameOf: (id: string) => string;
 }
 
-const f = (v: number | null, digits = 2) =>
-  v === null || v === undefined || !Number.isFinite(v) ? null : v.toFixed(digits);
-
-function Cell({ value, unit, coverage }: { value: string | null; unit: string; coverage?: ReturnType<typeof coverageOf> }) {
-  if (value === null) return <span className="reports-figure reports-figure--missing">—</span>;
-  const qualified = coverage !== undefined && !isQuotable(coverage);
-  return (
-    <span className={`reports-figure${qualified ? ' reports-figure--qualified' : ''}`}>
-      {value} {unit}
-      {qualified ? <span className="reports-figure__caveat"> (partial)</span> : null}
-    </span>
-  );
-}
+const toneOf = (band: string) => (band === 'complete' ? 'good' : band === 'partial' ? 'warn' : 'bad');
 
 export function CircuitDeepDive({ period, start, rows, nameOf }: Props) {
   const meterIds = BUILDING_METER_IDS as readonly string[];
@@ -47,58 +37,60 @@ export function CircuitDeepDive({ period, start, rows, nameOf }: Props) {
   const total = branches.reduce((a, r) => a + (r.energy_kwh ?? 0), 0);
   const label = formatPeriod(period, start);
 
+  // RM-082: the shared report table — units in the header, figures right-aligned.
+  const coverage = (r: PeriodDeviceReport) => coverageOf(r.online_sample_count, r.expected_sample_count);
+  const columns = (withShare: boolean): ReportColumn<PeriodDeviceReport>[] => [
+    { id: 'device', header: 'Device', cell: (r) => nameOf(r.device_id) },
+    {
+      id: 'energy',
+      header: 'Energy',
+      unit: 'kWh',
+      numeric: true,
+      cell: (r) => <ReportFigure value={r.energy_kwh} unit="" digits={2} coverage={coverage(r)} period={period} />,
+    },
+    ...(withShare
+      ? [
+          {
+            id: 'share',
+            header: 'Share',
+            numeric: true,
+            cell: (r: PeriodDeviceReport) => (r.energy_kwh === null || total <= 0 ? null : `${((r.energy_kwh / total) * 100).toFixed(1)}%`),
+          },
+        ]
+      : []),
+    {
+      id: 'peak',
+      header: 'Peak',
+      unit: 'W',
+      numeric: true,
+      cell: (r) => <ReportFigure value={r.peak_power_w} unit="" digits={0} coverage={coverage(r)} period={period} />,
+    },
+    {
+      id: 'average',
+      header: 'Average',
+      unit: 'W',
+      numeric: true,
+      cell: (r) => <ReportFigure value={r.avg_power_w} unit="" digits={0} coverage={coverage(r)} period={period} />,
+    },
+    {
+      id: 'coverage',
+      header: 'Coverage',
+      cell: (r) => {
+        const c = coverage(r);
+        return c ? <span className={`badge badge--${toneOf(c.band)}`}>{Math.round(c.ratio * 100)}%</span> : <span className="badge">unknown</span>;
+      },
+    },
+  ];
+
   const table = (caption: string, list: readonly PeriodDeviceReport[], withShare: boolean) => (
-    <div className="devices-table-card devices-table-scroll">
-      <table className="devices-table reports-table" aria-label={`${caption} for ${label}`}>
-        <caption className="card-title">{caption}</caption>
-        <thead>
-          <tr>
-            <th scope="col">Device</th>
-            <th scope="col">Energy</th>
-            {withShare ? <th scope="col">Share</th> : null}
-            <th scope="col">Peak</th>
-            <th scope="col">Average</th>
-            <th scope="col">Coverage</th>
-          </tr>
-        </thead>
-        <tbody>
-          {list.map((r) => {
-            const c = coverageOf(r.online_sample_count, r.expected_sample_count);
-            return (
-              <tr key={r.device_id}>
-                <th scope="row">{nameOf(r.device_id)}</th>
-                <td>
-                  <Cell value={f(r.energy_kwh)} unit="kWh" coverage={c} />
-                </td>
-                {withShare ? (
-                  <td>
-                    {r.energy_kwh === null || total <= 0 ? (
-                      <span className="reports-figure reports-figure--missing">—</span>
-                    ) : (
-                      `${((r.energy_kwh / total) * 100).toFixed(1)}%`
-                    )}
-                  </td>
-                ) : null}
-                <td>
-                  <Cell value={f(r.peak_power_w, 0)} unit="W" coverage={c} />
-                </td>
-                <td>
-                  <Cell value={f(r.avg_power_w, 0)} unit="W" coverage={c} />
-                </td>
-                <td>
-                  {c ? (
-                    <span className={`badge badge--${c.band === 'complete' ? 'good' : c.band === 'partial' ? 'warn' : 'bad'}`}>
-                      {Math.round(c.ratio * 100)}%
-                    </span>
-                  ) : (
-                    <span className="badge">unknown</span>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <div className="report-table-card">
+      <ReportTable
+        columns={columns(withShare)}
+        rows={list}
+        rowKey={(r) => r.device_id}
+        label={`${caption} for ${label}`}
+        caption={caption}
+      />
     </div>
   );
 
