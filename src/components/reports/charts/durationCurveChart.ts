@@ -1,5 +1,5 @@
 import { DEFAULT_MARGINS, linearScale, niceScale, pathFromRuns, plotBox, runsOf } from './chartFrame';
-import type { ChartSpec, Def, Mark, Scene } from './types';
+import type { ChartSpec, Def, Hit, Mark, Scene } from './types';
 
 /**
  * The load duration curve: demand sorted high to low across the period.
@@ -138,7 +138,21 @@ export function durationCurveChart(
 
   marks.push({ kind: 'line', x1: box.x, y1: box.bottom, x2: box.right, y2: box.bottom, stroke: palette.ink, width: 1 });
 
-  return { width, height, idPrefix, title, desc, defs, marks };
+  // --- a column per computed point; none where the series broke, as the curve has none there ---
+  const step = box.w / Math.max(points.length - 1, 1);
+  const hits: Hit[] = points
+    .filter((p): p is { pct: number; w: number } => typeof p.w === 'number' && Number.isFinite(p.w))
+    .map((p) => ({
+      x: x(p.pct) - step / 2,
+      y: box.y,
+      w: step,
+      h: box.h,
+      label: `${Number.isInteger(p.pct) ? p.pct : p.pct.toFixed(1)}% of the period`,
+      value: `At or above ${formatW(p.w)}`,
+      ...(threshold !== null && p.w >= threshold ? { note: 'At or above the DSM ceiling' } : {}),
+    }));
+
+  return { width, height, idPrefix, title, desc, defs, marks, hits };
 }
 
 /**

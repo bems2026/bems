@@ -17,6 +17,10 @@ reader's locale. The drawer that offers them is RM-083b. **Read back signed in o
 day:** the page, both themes' contrast and the kiosk and phone widths hold; the duration curve's query
 times out for signed-in readers, which RM-081b contains to one chart and phase40 (RM-086) fixes —
 **applied and read back: 448 ms where it was 3.5 s, and all five charts drawing signed in.**
+**RM-084** closes the planned set: every report chart reads out its values under the pointer and from
+the keyboard at one tab stop, with the PDF's drawings unchanged, and the Summary tab gains weekday
+against weekend energy, the load factor and the overnight base load — each an em dash with its reason
+when the period's data cannot carry it.
 
 **Previously audited:** 2026-09-14 — **RM-076 to RM-078, Analytics data quality**, from three operator
 reports: L.O Red "reporting less than it measured", L.O Red reading differently on Overview and
@@ -3559,14 +3563,26 @@ ever cleared, and put its controls in three rows. This section is that page's ov
       month's PDF on the kiosk, read the line, and record it here. Above one second, move
       `buildDocDefinition` + `createPdf().getBlob()` into a module worker and download the Blob on the
       main thread; below it, record the figure and close this.
-- [ ] **RM-084 (S)** — **Hover on the charts, and three findings the series already hold.** Hit
-      targets emitted only by the screen serializer, a tooltip on hover and focus; weekday against
-      weekend daily energy from complete days, load factor, and overnight base load — each "—" with
-      a reason when the days are too few.
+- [x] **RM-084 (S)** — **Hover on the charts, and three findings the series already hold.** Landed
+      2026-09-15. Every generator now emits `Scene.hits` — a day's whole column, an hour, a heatmap
+      cell, a circuit's segment, a point on the duration curve — each carrying its value, what it
+      belongs to and any qualifier as plain text (`Hit` in `charts/types.ts`). Neither serializer reads
+      them, so the SVG the PDF embeds is byte-identical with or without (`charts/hits.test.ts`).
+      `ChartFigure` reads a value under the pointer or from the arrow keys at one tab stop — a month's
+      heatmap is 744 cells, not 744 tab stops; up and down move a day at a time
+      (`charts/hitNavigation.ts`) — shows a value-first tooltip beside the value rather than over it,
+      keeps a tapped value on the kiosk until the next tap, and says each keyboard step in a live region
+      (`ChartFigure.hover.test.tsx`). `src/lib/reportFindings.ts` adds three findings to the Summary tab,
+      after the coverage that qualifies them: weekday against weekend energy from complete days only
+      (Saturday and Sunday assumed — the site has no working week — and the page says so); a load factor
+      whose average is weighted by the share of each day observed, qualified on a partial period; and the
+      overnight base load, the median of 00:00–06:00's hourly medians, needing four of those six hours.
+      Each is an em dash with its reason when the data cannot carry it (`reportFindings.test.ts`,
+      `ReportFindings.test.tsx`). Page only: the PDF's sections are unchanged.
 - [ ] **RM-085 (L)** — **Arbitrary windows: last 24 hours, month to date, billing cycle, custom.**
       **Deferred by operator decision, 2026-09-15.** `report_window` accepts only a whole week or
       month (`phase37_report_series.sql:66`) and counts the unfinished part of a period as missing,
-      so these cannot be served honestly from today's functions. Needs `phase40_report_ranges.sql`
+      so these cannot be served honestly from today's functions. Needs `phase41_report_ranges.sql`
       (range variants clamped to `now()`, per-device energy from each device's own counters, a
       weekday-by-hour heatmap past 37 days to stay under the 900-cell cap), a billing-cycle day
       setting, a provisional "in progress" banner, and a rehearsal asserting the bars sum to the

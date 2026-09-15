@@ -1,4 +1,4 @@
-import type { ChartSpec, Def, Mark, Scene } from './types';
+import type { ChartSpec, Def, Hit, Mark, Scene } from './types';
 
 /**
  * Demand as a calendar: one cell per hour, days down, hours across.
@@ -73,16 +73,27 @@ export function demandHeatmapChart(cells: readonly HeatCell[], spec: ChartSpec):
 
   if (missing > 0) defs.push({ kind: 'hatch', id: gapId, stroke: palette.gap, gap: 4, width: 1 });
 
+  const hits: Hit[] = [];
   for (const cell of cells) {
     const row = dayIndex.get(cell.day);
     if (row === undefined) continue;
     const x = PAD_LEFT + cell.hour * cellW;
     const y = PAD_TOP + row * cellH;
-    const fill = typeof cell.value === 'number' && Number.isFinite(cell.value)
-      ? palette.heat[bin(cell.value)]
-      : `url(#${gapId})`;
+    const read = typeof cell.value === 'number' && Number.isFinite(cell.value);
+    const fill = read ? palette.heat[bin(cell.value as number)] : `url(#${gapId})`;
     marks.push({ kind: 'rect', x, y, w: cellW, h: cellH, fill });
+    hits.push({
+      x,
+      y,
+      w: cellW,
+      h: cellH,
+      label: `${cell.day} ${String(cell.hour).padStart(2, '0')}:00`,
+      value: read ? `${Math.round(cell.value as number).toLocaleString(undefined)} W average` : 'No data',
+    });
   }
+  // Reading order — a day at a time, hour by hour — whatever order the rows arrived in, so the
+  // arrow keys walk the calendar rather than the query plan.
+  hits.sort((a, b) => a.y - b.y || a.x - b.x);
 
   // --- hour labels across the top, every third ---
   for (let h = 0; h < 24; h += 3) {
@@ -143,5 +154,5 @@ export function demandHeatmapChart(cells: readonly HeatCell[], spec: ChartSpec):
     missing > 0 ? `${missing} of ${cells.length} hours were never observed and are hatched.` : 'Every hour was observed.'
   }`;
 
-  return { width, height, idPrefix, title, desc, defs, marks };
+  return { width, height, idPrefix, title, desc, defs, marks, hits };
 }

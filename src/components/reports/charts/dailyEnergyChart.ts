@@ -1,5 +1,5 @@
 import { DEFAULT_MARGINS, bandScale, linearScale, niceScale, plotBox } from './chartFrame';
-import type { ChartSpec, Def, Mark, Scene } from './types';
+import type { ChartSpec, Def, Hit, Mark, Scene } from './types';
 
 /**
  * Energy per day, with the days nobody watched drawn as gaps rather than as zeroes.
@@ -200,7 +200,23 @@ export function dailyEnergyChart(points: readonly DailyEnergyPoint[], spec: Char
   // The baseline last, so it sits over the gap hatching rather than under it.
   marks.push({ kind: 'line', x1: box.x, y1: box.bottom, x2: box.right, y2: box.bottom, stroke: palette.ink, width: 1 });
 
-  return { width, height, idPrefix, title, desc, defs, marks };
+  // --- what a reader can point at: each day's whole column, bar or gap, so a short bar is as easy
+  // to land on as a tall one and a day nobody watched answers "No data" rather than nothing ---
+  const slot = box.w / points.length;
+  const hits: Hit[] = points.map((p, i) => {
+    const measured = p.observed && p.kwh !== null;
+    return {
+      x: band(i).cx - slot / 2,
+      y: box.y,
+      w: slot,
+      h: box.h,
+      label: p.day,
+      value: measured ? `${(p.kwh as number).toFixed(2)} kWh` : 'No data',
+      ...(measured && !p.complete ? { note: 'Partly observed, so at least this much' } : {}),
+    };
+  });
+
+  return { width, height, idPrefix, title, desc, defs, marks, hits };
 }
 
 /** Ticks carry a decimal only when the axis is small enough to need one — `0.5` on a 2 kWh

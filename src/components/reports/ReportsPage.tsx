@@ -27,6 +27,7 @@ import { CoverageBanner } from './CoverageBanner';
 import { ExportDrawer, type ExportFormat } from './ExportDrawer';
 import { ReportSectionNote } from './ReportSectionNote';
 import { ReportKpis } from './ReportKpis';
+import { ReportFindings } from './ReportFindings';
 import { ReportTable, type ReportColumn } from './ReportTable';
 import { CoverageTag, ReportFigure } from './ReportFigure';
 import { useReportData } from './useReportData';
@@ -389,6 +390,18 @@ export function ReportsPage() {
                   core.data.daily.filter((d) => d.expected_samples > 0 && d.usable_sample_count / d.expected_samples >= 0.95).length
                 }
                 label={periodLabel}
+              />
+            </ErrorBoundary>
+          ) : null}
+          {/* RM-084: after the coverage that qualifies them, before the records and charts. */}
+          {core.data ? (
+            <ErrorBoundary scope="The findings" variant="inline" resetKey={core.data}>
+              <ReportFindings
+                label={periodLabel}
+                daily={core.data.daily}
+                hours={hours.data}
+                hoursLoading={hours.status === 'loading'}
+                summary={core.data.summary}
               />
             </ErrorBoundary>
           ) : null}

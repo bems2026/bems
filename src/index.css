@@ -6238,6 +6238,12 @@ body::before {
   color: var(--txt);
 }
 
+/* RM-084: a finding's figure, one to a line, above the sentence that qualifies it. */
+.report-finding__value {
+  display: block;
+  font-weight: 600;
+}
+
 .reports-figure {
   font-variant-numeric: tabular-nums;
 }
@@ -6725,6 +6731,8 @@ body::before {
 }
 
 .report-chart {
+  /* The tooltip anchors here rather than inside the plot, whose horizontal scroll would clip it. */
+  position: relative;
   margin: 0;
   padding: var(--sp-4);
   background: var(--bg-surface);
@@ -6744,6 +6752,67 @@ body::before {
   width: 100%;
   height: auto;
   min-width: 460px;
+}
+
+/* RM-084: the one tab stop a chart's values are read from. The same minimum width as the drawing,
+   so the highlight's percentages land on the drawing rather than on a narrower box around it. The
+   focus ring is drawn inside, because the scrolling plot would clip one drawn outside. */
+.report-chart__explore {
+  position: relative;
+  min-width: 460px;
+}
+
+.report-chart__explore:focus-visible {
+  outline-offset: -2px;
+}
+
+.report-chart__focus {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 2px var(--focus-ring);
+}
+
+/* The Analytics tooltip's surface, stacked: value, then what it belongs to, then any qualifier.
+   Beside the value rather than over it, and never more than half the figure wide, so it cannot
+   cover the thing it describes or run off a phone. Two classes, to outrank `.chart-tooltip`'s own
+   widths, which come later in this file. */
+.chart-tooltip.report-chart__tip {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  width: max-content;
+  max-width: min(240px, calc(50% - 8px));
+  pointer-events: none;
+  transform: translateX(8px);
+}
+
+.chart-tooltip.report-chart__tip--before {
+  transform: translateX(calc(-100% - 8px));
+}
+
+.chart-tooltip.report-chart__tip--above {
+  transform: translate(8px, -100%);
+}
+
+.chart-tooltip.report-chart__tip--before.report-chart__tip--above {
+  transform: translate(calc(-100% - 8px), -100%);
+}
+
+.report-chart__tip .chart-tooltip__value {
+  margin: 0;
+  padding: 0;
+  font-size: var(--fs-sm);
+  white-space: normal;
+}
+
+/* --muted rather than the Analytics tooltip's --muted-2, which is not measured on this surface. */
+.report-chart__tip .chart-tooltip__time,
+.report-chart__tip .chart-tooltip__note {
+  margin: 0;
+  color: var(--muted);
 }
 
 .report-chart__caption {

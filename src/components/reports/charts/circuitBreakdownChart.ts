@@ -1,4 +1,4 @@
-import type { ChartSpec, Def, Mark, Scene } from './types';
+import type { ChartSpec, Def, Hit, Mark, Scene } from './types';
 
 /**
  * Where the building's energy went, as a share of its own total.
@@ -77,12 +77,15 @@ export function circuitBreakdownChart(
   const barY = 22;
   let x = padX;
   const unlabelled: { label: string; colour: string; pct: number }[] = [];
+  // Exactly the segment: the bar is one row, so there is no taller column to widen it into.
+  const hits: Hit[] = [];
 
   metered.forEach((s, i) => {
     const w = (s.kwh / total) * barW;
     const colour = palette.series[i % palette.series.length];
     const pct = (s.kwh / total) * 100;
     marks.push({ kind: 'rect', x, y: barY, w, h: BAR_H, fill: colour });
+    hits.push({ x, y: barY, w, h: BAR_H, label: s.label, value: `${fmt(s.kwh)} kWh`, note: `${pct.toFixed(1)}% of the metered total` });
 
     // In place when it fits, in the legend when it does not. A clipped label is worse than a
     // swatch, and a label that spills into its neighbour is worse than both.
@@ -135,7 +138,7 @@ export function circuitBreakdownChart(
     lx += SWATCH + 6 + text.length * CHAR_W + 12;
   }
 
-  return { width, height, idPrefix, title, desc, defs, marks };
+  return { width, height, idPrefix, title, desc, defs, marks, hits };
 }
 
 /** Two decimals below 10 kWh, one above — a month's total does not need hundredths. */

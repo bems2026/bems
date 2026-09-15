@@ -57,6 +57,29 @@ export type Def =
   | { kind: 'hatch'; id: string; stroke: string; width?: number; gap?: number }
   | { kind: 'linearGradient'; id: string; from: string; to: string; fromOpacity?: number; toOpacity?: number };
 
+/**
+ * Something a reader can point at to read a value off — RM-084.
+ *
+ * NOT A MARK, deliberately. Marks are drawn, and both serializers draw them; the PDF cannot be
+ * hovered, so a hit drawn into it would be dead weight at best and a visible outline at worst.
+ * `sceneNodes` never reads `hits`, so the SVG the document embeds is byte-identical with or without
+ * them, and the equivalence guard between the two serializers has nothing new to compare.
+ *
+ * A hit's box is the area that answers — a whole day's column, not just the bar — because a target
+ * the size of the mark is one nobody lands on (dataviz: the hit target is bigger than the mark).
+ * Its `value` is the figure; its `label` is what the figure belongs to; `note` is a qualifier such
+ * as "partly observed". All three are plain strings the page renders as text, never as markup.
+ */
+export interface Hit {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  label: string;
+  value: string;
+  note?: string;
+}
+
 export interface Scene {
   width: number;
   height: number;
@@ -72,6 +95,8 @@ export interface Scene {
   desc: string;
   defs: Def[];
   marks: Mark[];
+  /** Where a reader can read a value off the page, left to right. Never serialized — see `Hit`. */
+  hits?: Hit[];
 }
 
 export interface ChartPalette {

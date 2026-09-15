@@ -8,7 +8,7 @@ import {
   runsOf,
   type Pt,
 } from './chartFrame';
-import type { ChartSpec, Def, Mark, Scene } from './types';
+import type { ChartSpec, Def, Hit, Mark, Scene } from './types';
 
 /**
  * Demand by hour of the building's own day — median, spread, and peak.
@@ -41,6 +41,9 @@ const observedAt = (p: HourProfilePoint) => p.n > 0 && p.p50 !== null;
  *  the description names them in prose, but prose cannot say which one is the blue line. */
 const MARGINS = { top: 20, right: 10, bottom: 46, left: 44 };
 const CHAR_W = 4.9;
+
+/** `1,500 W` in the reader's own grouping, the form the duration curve's ceiling label uses. */
+const watts = (w: number) => `${Math.round(w).toLocaleString(undefined)} W`;
 
 export function loadProfileChart(points: readonly HourProfilePoint[], spec: ChartSpec): Scene {
   const { width, height, palette, idPrefix, title } = spec;
@@ -174,5 +177,16 @@ export function loadProfileChart(points: readonly HourProfilePoint[], spec: Char
     key((x) => [{ kind: 'rect', x, y: ly - 5, w: 17, h: 10, fill: `url(#${gapId})`, opacity: 0.4 }], 'no data');
   }
 
-  return { width, height, idPrefix, title, desc, defs, marks };
+  // --- one hit per hour: the median leads, because it is the line; the spread and peak qualify it ---
+  const hits: Hit[] = points.map((p, i) => {
+    const { x, w } = band(i);
+    const base = { x, y: box.y, w, h: box.h, label: `${String(p.hour).padStart(2, '0')}:00` };
+    if (!observedAt(p)) return { ...base, value: 'No data' };
+    const spread = [p.p95 === null ? null : `p95 ${watts(p.p95)}`, p.max === null ? null : `peak ${watts(p.max)}`]
+      .filter((s): s is string => s !== null)
+      .join(' · ');
+    return { ...base, value: `Median ${watts(p.p50 as number)}`, ...(spread ? { note: spread } : {}) };
+  });
+
+  return { width, height, idPrefix, title, desc, defs, marks, hits };
 }
