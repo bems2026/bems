@@ -130,6 +130,50 @@ export function costOf(days: readonly DayEnergy[], rates: readonly Rate[]): Cost
   };
 }
 
+export interface DayPrice {
+  day: string;
+  /** `null` when the day is unobserved, falls before the earliest rate, or no single currency applies. */
+  amount: number | null;
+  currency: string | null;
+}
+
+/**
+ * Pure. Each day's cost at the rate in force that day — RM-083, for the simple CSV.
+ *
+ * The same four refusals as `costOf`, per day: no rate prices nothing; a day before the earliest rate
+ * is not back-priced; an unobserved day is not free; and rates in more than one currency price
+ * nothing at all, because a column of amounts in two currencies sums to nothing meaningful. The days
+ * that are priced add up to `costOf`'s total, which is what keeps the spreadsheet and the report
+ * agreeing about the same period.
+ */
+export function pricePerDay(days: readonly DayEnergy[], rates: readonly Rate[]): DayPrice[] {
+  const currencies = new Set(rates.map((r) => r.currency));
+  if (rates.length === 0 || currencies.size > 1) {
+    return days.map((d) => ({ day: d.day, amount: null, currency: null }));
+  }
+  const currency = [...currencies][0] ?? null;
+  return days.map((d) => {
+    if (d.kwh === null || !Number.isFinite(d.kwh)) return { day: d.day, amount: null, currency };
+    const r = inForce(rates, d.day);
+    return { day: d.day, amount: r ? d.kwh * r.rate_per_kwh : null, currency };
+  });
+}
+
+export interface DayEmissions {
+  day: string;
+  /** `null` when the day is unobserved or falls before the earliest factor. */
+  kg: number | null;
+}
+
+/** Pure. Each day's emissions at the factor in force that day; adds up to `carbonOf`'s total. */
+export function emissionsPerDay(days: readonly DayEnergy[], factors: readonly Factor[]): DayEmissions[] {
+  return days.map((d) => {
+    if (factors.length === 0 || d.kwh === null || !Number.isFinite(d.kwh)) return { day: d.day, kg: null };
+    const f = inForce(factors, d.day);
+    return { day: d.day, kg: f ? d.kwh * f.kg_co2e_per_kwh : null };
+  });
+}
+
 export interface AppliedFactor {
   kgPerKwh: number;
   effectiveFrom: string;

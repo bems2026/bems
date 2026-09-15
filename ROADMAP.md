@@ -10,7 +10,10 @@ period stored as 0 kWh from ten rows that held no reading says "not observed". R
 (layout, exports, charts) are planned in the same §2 section; **RM-082a has since landed** — a
 headline row led by energy, tables built for reading, and the Reports CSS on a guarded 8-point grid —
 and **RM-082b**, which puts every control in one sticky bar around a period stepper and draws loading
-as the shape of what is coming.
+as the shape of what is coming. **RM-083a** builds the export's parts: sections a reader can choose (coverage and
+the closing refusals locked on), a PDF assembled from them that now carries the key figures and never
+prints a zero nobody measured, a simple one-row-per-day CSV, and filenames that do not depend on the
+reader's locale. The drawer that offers them is RM-083b.
 
 **Previously audited:** 2026-09-14 — **RM-076 to RM-078, Analytics data quality**, from three operator
 reports: L.O Red "reporting less than it measured", L.O Red reading differently on Overview and
@@ -3391,13 +3394,51 @@ ever cleared, and put its controls in three rows. This section is that page's ov
       `BUILDING_METER_IDS` and each device's `branch_circuit` like `circuitBreakdown.ts`, with the
       building-level charts saying plainly that they still show the whole building — per-device series
       are not stored.
-- [ ] **RM-083 (M)** — **An export drawer with sections, a sectioned PDF and tidy CSVs.** Coverage
-      and "what this report does not say" are locked on (operator decision, 2026-09-15); every other
-      section is optional. The PDF gains the key figures it omits today (peak demand, voltage,
-      commands, anomalies) and the Baseline, Circuits and Comparison content. A simple CSV with one
-      row per day and a per-device CSV, as separate downloads (operator decision: no ZIP). ISO
-      filenames that do not vary by locale. Export status in a live region; PDF generation timed on
-      the Pi, and moved to a worker only if it exceeds one second there.
+- [x] **RM-083a (M)** **DONE 2026-09-15. The parts of an export, each pure and each held to the
+      page's rules.** Nothing here touches the DOM; the drawer that offers them is RM-083b.
+
+      *`src/lib/reportSections.ts`* — thirteen sections in the order the document reads, from coverage
+      to the closing refusals. **Two are locked**, by operator decision: coverage and "what this report
+      does not say", each carrying the reason the drawer will show. `normaliseSections` puts them back
+      whatever a reader asks for, returns every choice once and in document order, and drops an id
+      this build does not know — a choice remembered from an older one.
+
+      *`docDefinition.ts` builds only the chosen sections*, and the test that matters asserts it **for
+      every choice** rather than for one: the empty selection, all of them, each alone, and each left
+      out — coverage precedes every figure and the refusals close the document in all of them. The PDF
+      also gains what it omitted: peak demand, voltage, commands and anomalies beside the energy, and
+      Baseline, Circuits and Comparison sections — the comparison **never without** the list of what it
+      was not adjusted for. An unchosen chart takes its table with it. A cost section left out prints
+      nothing about cost, rather than "no rate has been entered", which would be a claim about a
+      section the reader did not ask for. And RM-081's rule reaches the document: a period with no
+      real reading reads **"Not observed"**, not its stored 0.00 kWh. `ExportPdfButton` tags each chart
+      with its section and supplies the key figures, so today's button still produces the whole
+      document.
+
+      *`src/lib/reportCsv.ts`* — the **simple CSV is one tidy row per day**: date, energy, peak demand
+      in kW, readings coverage, and `complete | partial | no data`. No preamble, and **no totals row**,
+      because a total inside a column is counted twice the moment anyone sums it. A day with no real
+      reading has an **empty** energy cell — a zero in a spreadsheet is summed into the month like a real
+      one. Cost and emissions columns exist only when a rate or factor exists, in the rate's own currency,
+      and **not at all** when the rates are in two currencies. The per-device CSV keeps its columns and
+      adds **Branch** (`circuitBreakdown.branchOf`, read off the circuit tree) and **Share of building**,
+      given only when every branch meter reported — a share of a total missing a branch is too large.
+
+      *`pricePerDay` / `emissionsPerDay`* apply the same refusals as `costOf` per day, and the priced
+      days **add up to `costOf`'s total** — asserted, because a spreadsheet that disagrees with the report
+      about the same month is the failure. *`src/lib/reportFiles.ts`* names every export from the
+      period's own date: `ibems-month-report-2026-08.pdf`, `…-daily.csv`; the per-device CSV keeps the
+      name it has always had.
+
+      Tests: `reportSections` (5), `docDefinition` (+9), `reportCsv` (10), `energyCostPerDay` (6),
+      `reportFiles` (5), `circuitBranch` (3).
+
+- [ ] **RM-083b (M)** — **The export drawer, and exports that say what they did.** An Export button in
+      the control bar opening a slide-out panel: format (PDF · simple CSV · per-device CSV), the section
+      checklist with the two locked sections shown locked and why, and a Generate button guarded
+      against a double click, with the result or the failure in a live region beside it rather than in
+      the header. The last choice remembered per viewer. PDF generation timed on the Pi, and moved to a
+      worker only if it exceeds one second there.
 - [ ] **RM-084 (S)** — **Hover on the charts, and three findings the series already hold.** Hit
       targets emitted only by the screen serializer, a tooltip on hover and focus; weekday against
       weekend daily energy from complete days, load factor, and overnight base load — each "—" with

@@ -16,7 +16,11 @@ import { siteDateTime } from '@/lib/siteTime';
 import { bootedScript } from '@/lib/buildVersion';
 import { isQuotable } from '@/lib/supabaseReports';
 import { provenanceLines, type Carboned, type Costed } from '@/lib/energyCost';
+import type { ReportSectionId } from '@/lib/reportSections';
 import type { ChartsData } from './ReportCharts';
+
+/** Which export section each generated chart belongs to, in the order the scenes are built. */
+const CHART_SECTIONS: readonly ReportSectionId[] = ['dailyEnergy', 'hourProfile', 'breakdown', 'heatmap', 'durationCurve'];
 
 /**
  * Exporting the report as a document.
@@ -132,6 +136,25 @@ export function ExportPdfButton({ period, periodLabel, building, rows, charts, c
         observedDays: charts.daily.filter((d) => d.usable_sample_count > 0).length,
         completeDays: charts.daily.filter((d) => d.expected_samples > 0 && d.usable_sample_count / d.expected_samples >= 0.95).length,
         energyKwh: building?.energy_kwh ?? null,
+        // RM-081's rule, carried into the document: a period with no real reading states no energy.
+        notObserved: charts.summary?.usable_minutes === 0,
+        keyFigures: building
+          ? [
+              {
+                label: 'Peak demand',
+                value:
+                  building.peak_total_power_w === null || charts.summary?.usable_minutes === 0
+                    ? '—'
+                    : `${(building.peak_total_power_w / 1000).toFixed(2)} kW${isQuotable(buildingCoverage) ? '' : ' (partial period)'}`,
+              },
+              { label: 'Average voltage', value: f(building.avg_voltage, 1) === null ? '—' : `${f(building.avg_voltage, 1)} V` },
+              {
+                label: 'Commands',
+                value: `${building.command_count} (${building.command_count_manual} manual, ${building.command_count_schedule} scheduled, ${building.command_count_autoshed} auto-shed)`,
+              },
+              { label: 'Anomalies', value: String(building.anomaly_count) },
+            ]
+          : [],
         // The same qualifier the energy carries. A figure qualified on screen and bare in the
         // document is worse than one that was never qualified at all.
         cost:
@@ -142,6 +165,7 @@ export function ExportPdfButton({ period, periodLabel, building, rows, charts, c
           carbon.total === null ? null : { text: `${carbon.total.toFixed(1)} kgCO2e`, qualified: !isQuotable(buildingCoverage) },
         provenance: provenanceLines(cost, carbon),
         charts: scenes.map((scene, i) => ({
+          section: CHART_SECTIONS[i],
           title: scene.title,
           svg: sceneToSvg(scene, PRINT_PALETTE),
           desc: scene.desc,

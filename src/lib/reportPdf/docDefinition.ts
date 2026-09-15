@@ -1,5 +1,6 @@
-import { COVERAGE_LEDE } from '@shared/reportProse.mjs';
+import { COMPARISON_NOT_ADJUSTED, COVERAGE_LEDE } from '@shared/reportProse.mjs';
 import type { DemandSummary } from '@/lib/reportSeries';
+import { normaliseSections, REPORT_SECTIONS, type ReportSectionId } from '@/lib/reportSections';
 
 /**
  * The report as a pdfmake document definition.
@@ -15,9 +16,17 @@ import type { DemandSummary } from '@/lib/reportSeries';
  * to an email, printed, and quoted in a report to the university months later. It is the one
  * rendering nobody can ask a follow-up question of, so every figure has to carry its
  * qualification with it rather than nearby.
+ *
+ * THE READER CHOOSES THE SECTIONS — RM-083 — and the choice cannot break either rule above.
+ * `normaliseSections` puts coverage and the closing refusals back whatever was asked for, and the
+ * builder emits sections in one fixed order, so coverage precedes every figure and the refusals
+ * close the document for any selection a reader can make. A section with no data behind it is
+ * skipped rather than printed empty.
  */
 
 export interface PdfChart {
+  /** The section this chart belongs to. An untagged chart is always included. */
+  section?: ReportSectionId;
   title: string;
   /** Serialized against `PRINT_PALETTE` — paper is white whatever the kiosk's theme is. */
   svg: string;
@@ -54,6 +63,16 @@ export interface PdfReport {
   charts: readonly PdfChart[];
   deviceRows: readonly PdfDeviceRow[];
   caveats: readonly { lead: string; body: string }[];
+  /** The sections the reader chose. Omitted means every section. Coverage and the closing refusals
+   *  are included whatever this says. */
+  sections?: readonly ReportSectionId[];
+  /** No minute of the period carried a real reading, so no energy figure may be stated — RM-081. */
+  notObserved?: boolean;
+  /** Formatted figures shown beside the energy: peak demand, voltage, commands, anomalies. */
+  keyFigures?: readonly { label: string; value: string }[];
+  baseline?: { gate: readonly string[] | null; rows: readonly (readonly [string, string])[]; caveat: string } | null;
+  circuits?: { branches: readonly PdfDeviceRow[]; devices: readonly PdfDeviceRow[]; untracked: string | null } | null;
+  comparison?: { heading: string; lines: readonly string[] } | null;
 }
 
 /** A4 minus 40pt margins each side. Charts are generated at exactly this width. */
@@ -70,7 +89,22 @@ const RESOLUTION_NOTE: Record<string, string> = {
   hour: 'These figures are computed from hourly averages only. The minute-by-minute rows behind this period have been rolled up, and an average cannot reach the peaks the samples had.',
 };
 
+const deviceTable = (rows: readonly PdfDeviceRow[]) => ({
+  table: {
+    headerRows: 1,
+    widths: ['*', 'auto', 'auto', 'auto', 'auto'],
+    body: [
+      ['Device', 'Energy (kWh)', 'Peak (W)', 'Average (W)', 'Coverage'].map((h) => ({ text: h, style: 'th' })),
+      ...rows.map((d) => [d.name, d.energyKwh ?? EM_DASH, d.peakW ?? EM_DASH, d.avgW ?? EM_DASH, d.coverage]),
+    ],
+  },
+  layout: 'lightHorizontalLines',
+  margin: [0, 4, 0, 10],
+});
+
 export function buildDocDefinition(r: PdfReport) {
+  const chosen = new Set(normaliseSections(r.sections ?? REPORT_SECTIONS.map((s) => s.id)));
+  const has = (id: ReportSectionId) => chosen.has(id);
   const content: unknown[] = [];
 
   // --- cover ------------------------------------------------------------------------------
@@ -89,7 +123,7 @@ export function buildDocDefinition(r: PdfReport) {
     { text: '', pageBreak: 'after' }
   );
 
-  // --- coverage, before anything it qualifies ----------------------------------------------
+  // --- coverage, before anything it qualifies — always ------------------------------------------
   content.push({ text: 'Coverage', style: 'h2' }, { text: COVERAGE_LEDE, style: 'note' });
 
   if (r.summary) {
@@ -129,12 +163,29 @@ export function buildDocDefinition(r: PdfReport) {
   }
 
   // --- headline ------------------------------------------------------------------------------
-  content.push({ text: 'Energy', style: 'h2' });
-  content.push(
-    r.energyKwh === null
-      ? { text: 'No energy figure has been generated for this period.', style: 'note' }
-      : { text: `${r.energyKwh.toFixed(2)} kWh`, style: 'figure' }
-  );
+  if (has('keyFigures')) {
+    content.push({ text: 'Energy', style: 'h2' });
+    content.push(
+      r.notObserved
+        ? // A stored zero from rows that held no reading says the building used nothing. It did not
+          // say that; nobody was watching.
+          { text: 'Not observed — not one minute of this period carried a real reading, so no energy figure is stated.', style: 'note' }
+        : r.energyKwh === null
+          ? { text: 'No energy figure has been generated for this period.', style: 'note' }
+          : { text: `${r.energyKwh.toFixed(2)} kWh`, style: 'figure' }
+    );
+    if (r.keyFigures && r.keyFigures.length > 0) {
+      content.push({
+        table: {
+          headerRows: 1,
+          widths: ['*', 'auto'],
+          body: [[{ text: 'Key figure', style: 'th' }, { text: 'Value', style: 'th' }], ...r.keyFigures.map((k) => [k.label, k.value])],
+        },
+        layout: 'lightHorizontalLines',
+        margin: [0, 6, 0, 4],
+      });
+    }
+  }
 
   /**
    * Cost and emissions, and never a zero for either. An unset tariff prints the sentence, not
@@ -144,26 +195,29 @@ export function buildDocDefinition(r: PdfReport) {
    * The provenance is not a footnote at the back. It sits under the figure it belongs to,
    * because a peso figure a reader cannot trace to a bill is exactly what a funder cannot check.
    */
-  content.push({
-    table: {
-      headerRows: 1,
-      widths: ['*', 'auto'],
-      body: [
-        [{ text: 'Derived figure', style: 'th' }, { text: 'Value', style: 'th' }],
-        ['Cost', r.cost ? `${r.cost.text}${r.cost.qualified ? ' (partial period)' : ''}` : `${EM_DASH} no rate has been entered`],
-        ['Emissions', r.carbon ? `${r.carbon.text}${r.carbon.qualified ? ' (partial period)' : ''}` : `${EM_DASH} no emission factor has been entered`],
-      ],
-    },
-    layout: 'lightHorizontalLines',
-    margin: [0, 6, 0, 4],
-  });
+  if (has('costCarbon')) {
+    content.push({
+      table: {
+        headerRows: 1,
+        widths: ['*', 'auto'],
+        body: [
+          [{ text: 'Derived figure', style: 'th' }, { text: 'Value', style: 'th' }],
+          ['Cost', r.cost ? `${r.cost.text}${r.cost.qualified ? ' (partial period)' : ''}` : `${EM_DASH} no rate has been entered`],
+          ['Emissions', r.carbon ? `${r.carbon.text}${r.carbon.qualified ? ' (partial period)' : ''}` : `${EM_DASH} no emission factor has been entered`],
+        ],
+      },
+      layout: 'lightHorizontalLines',
+      margin: [0, 6, 0, 4],
+    });
 
-  if (r.provenance.length > 0) {
-    content.push({ ul: r.provenance.map((line) => line), style: 'note' });
+    if (r.provenance.length > 0) {
+      content.push({ ul: r.provenance.map((line) => line), style: 'note' });
+    }
   }
 
   // --- charts, each with the numbers behind it ----------------------------------------------
   for (const chart of r.charts) {
+    if (chart.section !== undefined && !has(chart.section)) continue;
     content.push(
       { text: chart.title, style: 'h2' },
       { svg: chart.svg, width: CONTENT_WIDTH },
@@ -187,25 +241,55 @@ export function buildDocDefinition(r: PdfReport) {
   }
 
   // --- per device ------------------------------------------------------------------------------
-  if (r.deviceRows.length > 0) {
+  if (has('devices') && r.deviceRows.length > 0) {
+    content.push({ text: 'By device', style: 'h2' }, deviceTable(r.deviceRows));
+  }
+
+  // --- baseline demand ---------------------------------------------------------------------------
+  if (has('baseline') && r.baseline) {
+    content.push({ text: 'Baseline demand', style: 'h2' });
+    // The "not a baseline yet" gate precedes the numbers it qualifies, as it does on the page.
+    for (const line of r.baseline.gate ?? []) content.push({ text: line, style: 'note' });
     content.push(
-      { text: 'By device', style: 'h2' },
       {
         table: {
           headerRows: 1,
-          widths: ['*', 'auto', 'auto', 'auto', 'auto'],
-          body: [
-            ['Device', 'Energy (kWh)', 'Peak (W)', 'Average (W)', 'Coverage'].map((h) => ({ text: h, style: 'th' })),
-            ...r.deviceRows.map((d) => [d.name, d.energyKwh ?? EM_DASH, d.peakW ?? EM_DASH, d.avgW ?? EM_DASH, d.coverage]),
-          ],
+          widths: ['*', 'auto'],
+          body: [[{ text: 'Measure', style: 'th' }, { text: 'Value', style: 'th' }], ...r.baseline.rows.map(([label, value]) => [label, value])],
         },
         layout: 'lightHorizontalLines',
-        margin: [0, 4, 0, 10],
-      }
+        margin: [0, 4, 0, 4],
+      },
+      { text: r.baseline.caveat, style: 'note' }
     );
   }
 
-  // --- the closing refusals, last -------------------------------------------------------------
+  // --- circuits ------------------------------------------------------------------------------
+  if (has('circuits') && r.circuits) {
+    content.push({ text: 'By circuit', style: 'h2' });
+    content.push({
+      text: 'The building total is the sum of the branch circuits. The devices sit inside those branches, so adding the two tables together would count the same energy twice.',
+      style: 'note',
+    });
+    if (r.circuits.untracked) content.push({ text: r.circuits.untracked, style: 'note' });
+    if (r.circuits.branches.length > 0) content.push({ text: 'Branch circuits', style: 'h3' }, deviceTable(r.circuits.branches));
+    if (r.circuits.devices.length > 0) content.push({ text: 'Devices within those branches', style: 'h3' }, deviceTable(r.circuits.devices));
+  }
+
+  // --- comparison, never without what it was not adjusted for -------------------------------------
+  if (has('comparison') && r.comparison) {
+    content.push({
+      stack: [
+        { text: r.comparison.heading, style: 'h2' },
+        ...r.comparison.lines.map((line) => ({ text: line, style: 'note' })),
+        { text: 'What this comparison was not adjusted for', style: 'h3' },
+        { ul: COMPARISON_NOT_ADJUSTED.map((c) => ({ text: [{ text: c.lead, bold: true }, ' ', c.body] })), style: 'note' },
+      ],
+      unbreakable: true,
+    });
+  }
+
+  // --- the closing refusals, last — always -------------------------------------------------------
   content.push({
     stack: [
       { text: 'What this report does not say', style: 'h2' },
@@ -237,6 +321,7 @@ export function buildDocDefinition(r: PdfReport) {
       coverPeriod: { fontSize: 13, color: '#475569', margin: [0, 0, 0, 18] as [number, number, number, number] },
       coverMeta: { fontSize: 9, color: '#475569', margin: [0, 0, 0, 4] as [number, number, number, number] },
       h2: { fontSize: 13, bold: true, margin: [0, 14, 0, 4] as [number, number, number, number] },
+      h3: { fontSize: 10.5, bold: true, margin: [0, 8, 0, 2] as [number, number, number, number] },
       figure: { fontSize: 20, bold: true, margin: [0, 2, 0, 4] as [number, number, number, number] },
       note: { fontSize: 9, color: '#475569', margin: [0, 2, 0, 4] as [number, number, number, number] },
       th: { bold: true, fontSize: 9 },

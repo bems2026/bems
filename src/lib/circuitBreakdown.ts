@@ -41,6 +41,19 @@ function circuitForMeter(meterId: string): Circuit | undefined {
   return circuits.find((c) => c.meter_device_id === meterId);
 }
 
+/**
+ * The branch circuit a device sits on, by name — RM-083, for the per-device CSV's Branch column.
+ *
+ * A branch meter's branch is the circuit it measures; any other device's is its own
+ * `branch_circuit`. Derived from the tree like everything else here, so no device is named. `null`
+ * when the tree does not say, which the CSV leaves as an empty cell rather than a guess.
+ */
+export function branchOf(deviceId: string): string | null {
+  const measured = circuitForMeter(deviceId);
+  if (measured) return measured.name;
+  return registry.find((d) => d.id === deviceId)?.branch_circuit ?? null;
+}
+
 export interface Breakdown {
   segments: CircuitSegment[];
   /**

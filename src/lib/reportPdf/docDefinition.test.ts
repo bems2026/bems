@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildDocDefinition, type PdfReport } from './docDefinition';
 import { NOT_SAID } from '@shared/reportProse.mjs';
+import { REPORT_SECTIONS, type ReportSectionId } from '../reportSections';
 
 /**
  * The document, asserted as a value.
@@ -195,6 +196,13 @@ describe('it never invents a number it does not have', () => {
     expect(text).not.toMatch(/0\.00 kWh/);
   });
 
+  it('says a period nobody observed was not observed, rather than printing its stored zero', () => {
+    // Live, 2026-09-15: the week of 2026-08-10 is stored as 0 kWh from 10 rows holding no reading.
+    const text = allText(buildDocDefinition(report({ energyKwh: 0, notObserved: true })).content).join(' ');
+    expect(text).toMatch(/Not observed/);
+    expect(text).not.toMatch(/0\.00 kWh/);
+  });
+
   it('says no rate has been entered rather than printing a zero', () => {
     // A zero cost is a claim that electricity was free. In a document that leaves the building
     // it is the most damaging number on the page, and the one a reader repeats without caveats.
@@ -224,5 +232,93 @@ describe('it never invents a number it does not have', () => {
     // If the kWh is a floor because the month was half observed, so is the cost.
     const partial = report({ cost: { text: '500.00 PHP', qualified: true }, carbon: null });
     expect(allText(buildDocDefinition(partial).content).join(' ')).toMatch(/500\.00 PHP \(partial period\)/);
+  });
+});
+
+/**
+ * RM-083 — the reader chooses the sections. Everything above still holds when every section is in;
+ * these hold for ANY choice, because the choice is the one input a reader controls.
+ */
+describe('sections', () => {
+  const OPTIONAL = REPORT_SECTIONS.filter((s) => !s.locked).map((s) => s.id);
+
+  const chart = (section: ReportSectionId, title: string) => ({
+    section,
+    title,
+    svg: '<svg xmlns="http://www.w3.org/2000/svg"/>',
+    desc: '',
+    table: { headers: ['Day', 'kWh'], rows: [['17', '1.00']] },
+  });
+
+  const full = (o: Partial<PdfReport> = {}) =>
+    report({
+      charts: [chart('dailyEnergy', 'Energy per day'), chart('heatmap', 'Demand by day and hour')],
+      keyFigures: [{ label: 'Peak demand', value: '4.55 kW' }],
+      baseline: { gate: null, rows: [['Median (p50)', '100 W']], caveat: 'These describe what the building drew.' },
+      circuits: { branches: [{ name: 'Outlet branch', energyKwh: '51.13', peakW: '4551', avgW: '318', coverage: '48%' }], devices: [], untracked: null },
+      comparison: { heading: 'August 2026 against July 2026', lines: ['Not comparable: July was 20% observed.'] },
+      ...o,
+    });
+
+  it('keeps coverage before every figure and the refusals last, for any choice of sections', () => {
+    const choices: string[][] = [
+      [],
+      OPTIONAL,
+      ...OPTIONAL.map((id) => [id]),
+      ...OPTIONAL.map((id) => OPTIONAL.filter((other) => other !== id)),
+    ];
+    for (const sections of choices) {
+      const def = buildDocDefinition(full({ sections: sections as ReportSectionId[] }));
+      const coverageAt = index(def, 'Minutes with a real reading');
+      expect(coverageAt, `coverage missing for ${sections.join(',')}`).toBeGreaterThan(-1);
+      for (const figure of ['90.95', 'Peak demand', 'Energy per day', 'C.O Yellow meter', 'Outlet branch', 'Median (p50)']) {
+        const at = index(def, figure);
+        if (at > -1) expect(coverageAt, `${figure} before coverage for ${sections.join(',')}`).toBeLessThan(at);
+      }
+      expect(allText(def.content[def.content.length - 1]).join(' ')).toMatch(/not normalised by floor area/i);
+    }
+  });
+
+  it('includes coverage and the refusals even when a reader leaves them out', () => {
+    const text = allText(buildDocDefinition(full({ sections: ['dailyEnergy'] })).content).join(' ');
+    expect(text).toContain('Minutes with a real reading');
+    expect(text).toContain('What this report does not say');
+  });
+
+  it('leaves out a chart that was not chosen, and the numbers under it', () => {
+    const text = allText(buildDocDefinition(full({ sections: ['heatmap'] })).content).join(' ');
+    expect(text).toContain('Demand by day and hour');
+    expect(text).not.toContain('Energy per day');
+  });
+
+  it('prints the key figures the page shows beside the energy', () => {
+    const text = allText(buildDocDefinition(full({ sections: ['keyFigures'] })).content).join(' ');
+    expect(text).toContain('90.95 kWh');
+    expect(text).toContain('Peak demand');
+    expect(text).toContain('4.55 kW');
+  });
+
+  it('says nothing about cost when the cost section was left out, rather than "no rate entered"', () => {
+    const text = allText(buildDocDefinition(full({ sections: ['keyFigures'] })).content).join(' ');
+    expect(text).not.toMatch(/no rate has been entered/i);
+  });
+
+  it('carries a comparison only with what it was not adjusted for', () => {
+    const text = allText(buildDocDefinition(full({ sections: ['comparison'] })).content).join(' ');
+    expect(text).toContain('August 2026 against July 2026');
+    expect(text).toContain('It is a difference, not a saving.');
+  });
+
+  it('includes the circuit and baseline sections when chosen', () => {
+    const text = allText(buildDocDefinition(full({ sections: ['circuits', 'baseline'] })).content).join(' ');
+    expect(text).toContain('Outlet branch');
+    expect(text).toContain('Median (p50)');
+  });
+
+  it('includes every section when none is specified, as the export always has', () => {
+    const text = allText(buildDocDefinition(full()).content).join(' ');
+    expect(text).toContain('Energy per day');
+    expect(text).toContain('Peak demand');
+    expect(text).toContain('C.O Yellow meter');
   });
 });
