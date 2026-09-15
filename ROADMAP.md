@@ -15,8 +15,8 @@ the closing refusals locked on), a PDF assembled from them that now carries the 
 prints a zero nobody measured, a simple one-row-per-day CSV, and filenames that do not depend on the
 reader's locale. The drawer that offers them is RM-083b. **Read back signed in on live data the same
 day:** the page, both themes' contrast and the kiosk and phone widths hold; the duration curve's query
-times out for signed-in readers, which RM-081b contains to one chart and phase40 (RM-086, rehearsed,
-not yet applied) fixes.
+times out for signed-in readers, which RM-081b contains to one chart and phase40 (RM-086) fixes —
+**applied and read back: 448 ms where it was 3.5 s, and all five charts drawing signed in.**
 
 **Previously audited:** 2026-09-14 — **RM-076 to RM-078, Analytics data quality**, from three operator
 reports: L.O Red "reporting less than it measured", L.O Red reading differently on Overview and
@@ -157,12 +157,11 @@ other four and none needed changing.
 ## 0. Triage — what to do next
 
 
-### 2026-09-15 — apply phase40; CO6 and CO7 are corrected
+### 2026-09-15 — phase40 is applied; CO6 and CO7 are corrected
 
-**`supabase/phase40_report_curve_speed.sql` is written and rehearsed, and NOT applied.** Until it
-is, a signed-in reader of Reports sees "the load duration curve could not be loaded" for August 2026
-(RM-086) — since RM-081b that costs the one chart and nothing else, and the PDF says it left it out.
-Paste the file into the Supabase SQL editor, then open Reports signed in and confirm the curve draws.
+**`supabase/phase40_report_curve_speed.sql` is applied and read back** (RM-086). The duration curve
+answers in 448 ms where it took 3.5 s, and signed in all five charts draw in about half a second
+where the curve was cancelled by the statement timeout on every attempt.
 
 **CO6 and CO7 (RM-080) are done.** The operator reports the physical installation has CO6 on the
 right wall and CO7 on the partition. The three code copies are swapped and deployed, and the operator
@@ -803,10 +802,10 @@ Everything else is small, and the build order below is honest about size.
   two weeks (RM-020), so their averages mean nothing and their tiers should be set on what they
   feed rather than on what they have measured.
 
-### Migrations — all applied except phase40
+### Migrations — all applied
 
-**`phase40_report_curve_speed.sql` (RM-086, 2026-09-15) is rehearsed and waiting to be applied.**
-Before it, every migration in this repository was applied. `phase27_period_reports.sql` was applied
+**Every migration in this repository is applied**, the latest `phase40_report_curve_speed.sql`
+(RM-086) on 2026-09-15, read back the same day. `phase27_period_reports.sql` was applied
 2026-09-08, the last of them; the section that listed pending files is gone because the list is
 empty. `period_reports` holds 80 rows and `period_building_reports` 4, regenerated at the moment
 of applying — which means they were built from the outlet energy AFTER RM-047b's correction
@@ -3514,9 +3513,16 @@ ever cleared, and put its controls in three rows. This section is that page's ov
       scrolling inside its own card, and every report text element measured at WCAG AA or better in
       both themes (lowest 4.77:1 light, 5.03:1 dark, 194 elements each).
 
-- [ ] **RM-086 (S)** — **phase40: the duration curve in one pass, and the totals policies' auth check
-      evaluated once. Written and rehearsed 2026-09-15; NOT yet applied.**
+- [x] **RM-086 (S)** — **phase40: the duration curve in one pass, and the totals policies' auth check
+      evaluated once. APPLIED 2026-09-15 and read back.**
       `supabase/phase40_report_curve_speed.sql`, `test/phase40-report-curve-schema.test.mjs`.
+
+      **Read back, both ways it failed.** As the service role, `report_demand_curve` for August 2026
+      answers in **448 ms, from 3.5 s** — 101 points, starting at 4,551.3 W (the month's stored peak)
+      and ending at 5.3 W, not one point rising, resolution still `minute`. **Signed in**, on the page
+      where it had been cancelled by the statement timeout after nine seconds on every attempt, Retry
+      drew all five charts in about half a second: energy per day, demand by hour, the breakdown, the
+      heatmap and load duration, with no error left on the page.
 
       **Measured first.** Signed in on the live project, `report_demand_curve` for August 2026 was
       cancelled by the statement timeout on every attempt, about nine seconds each. As the service role,
