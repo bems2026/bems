@@ -20,7 +20,9 @@ times out for signed-in readers, which RM-081b contains to one chart and phase40
 **RM-084** closes the planned set: every report chart reads out its values under the pointer and from
 the keyboard at one tab stop, with the PDF's drawings unchanged, and the Summary tab gains weekday
 against weekend energy, the load factor and the overnight base load — each an em dash with its reason
-when the period's data cannot carry it.
+when the period's data cannot carry it. **RM-082c** adds a Circuit select that narrows the device table,
+the Circuits tab and the per-device CSV to one branch, read from the circuit tree; a share stays a share
+of the whole building, and the page says the headline figures, findings and charts cannot be narrowed.
 
 **Previously audited:** 2026-09-14 — **RM-076 to RM-078, Analytics data quality**, from three operator
 reports: L.O Red "reporting less than it measured", L.O Red reading differently on Overview and
@@ -3401,12 +3403,24 @@ ever cleared, and put its controls in three rows. This section is that page's ov
       Tests: `PeriodPicker.test.tsx` (10, nine of them red against the pill row), `ReportSkeleton.test.tsx`
       (4), `reportPeriods.test.ts` (4). **Not verified signed-in in a browser.**
 
-- [ ] **RM-082c (S)** — **Scope the device table and the circuit report to one branch.** Planned in
-      RM-082 and split out rather than rushed: a circuit selector in the control bar that filters the
-      device table, the Circuits tab and the per-device CSV to one branch circuit, derived from
-      `BUILDING_METER_IDS` and each device's `branch_circuit` like `circuitBreakdown.ts`, with the
-      building-level charts saying plainly that they still show the whole building — per-device series
-      are not stored.
+- [x] **RM-082c (S)** — **Scope the device table and the circuit report to one branch.** Landed
+      2026-09-15. A **Circuit** select in the control bar — *All circuits* or one branch — narrows the
+      Summary device table, the Circuits tab and the per-device CSV, and nothing else.
+      - **From the circuit tree, never from device ids.** The branches are the meters the building total
+        is the sum of, named by their circuits (`branchOptions` in `src/lib/circuitBreakdown.ts`). A device
+        is on a branch when that branch is anywhere on its path from the service entrance, so a deeper
+        panel than this building's narrows correctly. A device the tree does not place is kept out and
+        counted rather than guessed into a branch (`circuitScope.test.ts`, with an invented two-level panel
+        and a wiring cycle).
+      - **A share stays a share of the whole building**, in the Circuits tab and in the CSV. Narrowed to one
+        branch, a share of the rows left on screen would read 100%; the test that guards it was checked to
+        fail with the building total taken from the narrowed rows.
+      - **The narrowed CSV is named for its branch** (`ibems-month-report-2026-08-<branch>.csv`), spelled in
+        letters, digits and hyphens because a circuit name is operator-edited.
+      - **What cannot be narrowed says so.** The headline figures, findings and charts are building series,
+        and per-device series are not stored. A note under the bar names the branch and how many of the
+        period's devices are shown; the export drawer says the PDF and the simple CSV stay the whole
+        building's (`ReportsPage.scope.test.tsx`).
 - [x] **RM-083a (M)** **DONE 2026-09-15. The parts of an export, each pure and each held to the
       page's rules.** Nothing here touches the DOM; the drawer that offers them is RM-083b.
 

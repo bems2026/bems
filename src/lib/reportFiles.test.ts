@@ -25,6 +25,18 @@ describe('reportFilename', () => {
     expect(reportFilename('month', '2026-08-01', 'daily', 'csv')).toBe('ibems-month-report-2026-08-daily.csv');
   });
 
+  it('names a per-device CSV narrowed to one branch for that branch — RM-082c', () => {
+    // So a branch's export cannot overwrite the whole building's in the same downloads folder.
+    expect(reportFilename('month', '2026-08-01', 'devices', 'csv', 'East Wing Sockets')).toBe('ibems-month-report-2026-08-east-wing-sockets.csv');
+  });
+
+  it('spells a branch name so it cannot break the filename, and drops one with nothing sayable in it', () => {
+    // A circuit name is operator-edited text.
+    expect(reportFilename('week', '2026-07-06', 'devices', 'csv', '../East / Main,  West')).toBe('ibems-week-report-2026-07-06-east-main-west.csv');
+    expect(reportFilename('month', '2026-08-01', 'devices', 'csv', ' ./ ')).toBe('ibems-month-report-2026-08.csv');
+    expect(reportFilename('month', '2026-08-01', 'devices', 'csv', null)).toBe('ibems-month-report-2026-08.csv');
+  });
+
   it('never carries a space, a comma, or a date spelled by the reader’s locale', () => {
     const names = [
       reportFilename('week', '2026-07-06', 'report', 'pdf'),

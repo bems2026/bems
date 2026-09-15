@@ -17,6 +17,10 @@ import { useExportAction } from '@/lib/useExportAction';
  * The last choice is remembered for this viewer in `localStorage`, under try/catch like every other
  * use of it in this app: a private window or a locked-down kiosk throws on access, and a convenience
  * must never be the reason an export cannot be made.
+ *
+ * A NARROWED PAGE NARROWS ONE EXPORT — RM-082c. The per-device CSV follows the circuit scope; the PDF
+ * and the simple CSV are the building's series and cannot. Both are said here, before anything is
+ * generated, so nobody files a whole-building PDF believing it is one branch's.
  */
 
 export type ExportFormat = 'pdf' | 'daily-csv' | 'device-csv';
@@ -78,9 +82,11 @@ interface Props {
   unavailable?: Partial<Record<ExportFormat, string>>;
   /** A word under a section, such as a chart whose data could not be loaded and will be left out. */
   sectionNotes?: Partial<Record<ReportSectionId, string>>;
+  /** The branch circuit the page is narrowed to, when it is — RM-082c. */
+  scopeLabel?: string | null;
 }
 
-export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {}, sectionNotes = {} }: Props) {
+export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {}, sectionNotes = {}, scopeLabel = null }: Props) {
   const [choice, setChoice] = useState<Choice>(loadChoice);
   const baseId = useId();
 
@@ -140,6 +146,13 @@ export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {},
       </fieldset>
 
       {hint ? <p className="report-export__hint">{hint}</p> : null}
+      {scopeLabel ? (
+        <p className="report-export__hint">
+          {format === 'device-csv'
+            ? `Only the devices on ${scopeLabel}; each share is still of the whole building.`
+            : `The whole building — the ${scopeLabel} scope applies to the per-device CSV only.`}
+        </p>
+      ) : null}
 
       {format === 'pdf' ? (
         <fieldset className="report-export__group">
@@ -177,6 +190,7 @@ export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {},
         <p className="report-export__summary">
           {periodLabel} ·{' '}
           {format === 'pdf' ? `${normaliseSections(choice.sections).length} sections · PDF` : FORMATS.find((f) => f.id === format)?.label}
+          {format === 'device-csv' && scopeLabel ? ` · ${scopeLabel}` : ''}
         </p>
         <button
           type="button"

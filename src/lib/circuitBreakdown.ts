@@ -1,5 +1,6 @@
 import { BUILDING_METER_IDS, DEVICE_REGISTRY, METERED } from '@shared/registry.mjs';
 import { CIRCUITS } from '@shared/siteConfig.mjs';
+import { buildingMeterIds, circuitPath } from '@shared/circuits.mjs';
 import type { PeriodDeviceReport } from './supabaseReports';
 import type { CircuitSegment } from '@/components/reports/charts/circuitBreakdownChart';
 
@@ -21,6 +22,7 @@ import type { CircuitSegment } from '@/components/reports/charts/circuitBreakdow
 
 interface Circuit {
   id: string;
+  parent_id: string | null;
   name: string;
   meter_device_id: string | null;
 }
@@ -52,6 +54,70 @@ export function branchOf(deviceId: string): string | null {
   const measured = circuitForMeter(deviceId);
   if (measured) return measured.name;
   return registry.find((d) => d.id === deviceId)?.branch_circuit ?? null;
+}
+
+/**
+ * The wiring a scope is read from. The page uses this deployment's; a test can hand in a deeper
+ * panel than this building has, which is the only way to know the scope works below one level.
+ */
+export interface CircuitTree {
+  circuits: readonly Circuit[];
+  registry: readonly { id: string; branch_circuit?: string | null }[];
+}
+
+const SITE_TREE: CircuitTree = { circuits, registry };
+
+export interface BranchOption {
+  /** The circuit's id — stable, and never shown. */
+  id: string;
+  /** The circuit's name, as the panel schedule and each device's `branch_circuit` spell it. */
+  label: string;
+}
+
+/**
+ * The branches a report can be narrowed to — RM-082c. One per meter the building total is the sum of,
+ * in that order: a sub-meter is detail inside a branch already counted, so offering it beside its own
+ * branch would invite reading the two as parts of the same whole.
+ */
+export function branchOptions(tree: CircuitTree = SITE_TREE): BranchOption[] {
+  return (buildingMeterIds(tree.circuits) as string[]).flatMap((meterId) => {
+    const circuit = tree.circuits.find((c) => c.meter_device_id === meterId);
+    return circuit ? [{ id: circuit.id, label: circuit.name }] : [];
+  });
+}
+
+/** The circuit a device hangs from: the one it meters, else the one its own record names. */
+function circuitOfDevice(tree: CircuitTree, deviceId: string): Circuit | undefined {
+  const metered = tree.circuits.find((c) => c.meter_device_id === deviceId);
+  if (metered) return metered;
+  const named = tree.registry.find((d) => d.id === deviceId)?.branch_circuit;
+  return named ? tree.circuits.find((c) => c.name === named) : undefined;
+}
+
+/**
+ * The rows on one branch circuit, or every row when none is chosen — RM-082c.
+ *
+ * A device is on a branch when the branch is anywhere on its path from the service entrance: a
+ * sub-circuit's devices belong to the branch above them. The walk is `circuitPath`'s, depth-capped
+ * and cycle-safe, because `parent_id` is hand-edited. A device the tree does not place is on no
+ * branch — kept out rather than guessed into one, and the page counts what it left out.
+ */
+export function scopeRows<T extends { device_id: string }>(
+  rows: readonly T[],
+  circuitId: string | null,
+  tree: CircuitTree = SITE_TREE
+): T[] {
+  if (circuitId === null) return [...rows];
+  const onBranch = new Map<string, boolean>();
+  return rows.filter((r) => {
+    let known = onBranch.get(r.device_id);
+    if (known === undefined) {
+      const own = circuitOfDevice(tree, r.device_id);
+      known = own ? (circuitPath(tree.circuits, own.id) as { id: string }[]).some((c) => c.id === circuitId) : false;
+      onBranch.set(r.device_id, known);
+    }
+    return known;
+  });
 }
 
 export interface Breakdown {

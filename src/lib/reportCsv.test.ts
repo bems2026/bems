@@ -111,6 +111,13 @@ describe('deviceCsv — the per-device CSV', () => {
     expect(shares).toEqual(['60', '40', '10']);
   });
 
+  it('keeps a narrowed export’s shares of the whole building, not of the rows it kept — RM-082c', () => {
+    // Narrowed to one branch, a share of what is left would call that branch 100% of the building.
+    const building = [row({ device_id: 'meter_a', energy_kwh: 60 }), row({ device_id: 'meter_b', energy_kwh: 40 }), row({ device_id: 'dev_a', energy_kwh: 10 })];
+    const csv = deviceCsv({ ...base, meterIds: ['meter_a', 'meter_b'], rows: building.slice(1), buildingRows: building });
+    expect(lines(csv).slice(1).map((l) => l.split(',')[6])).toEqual(['40', '10']);
+  });
+
   it('leaves share empty when the building total is not known, never a percentage of nothing', () => {
     const csv = deviceCsv({ ...base, meterIds: ['meter_a'], rows: [row({ device_id: 'meter_a', energy_kwh: null }), row()] });
     expect(lines(csv).slice(1).map((l) => l.split(',')[6])).toEqual(['', '']);

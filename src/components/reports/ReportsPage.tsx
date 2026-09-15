@@ -18,7 +18,7 @@ import { siteDateTime } from '@/lib/siteTime';
 import { ReportControlBar } from './ReportControlBar';
 import { ReportSkeleton } from './ReportSkeleton';
 import { ReportCharts, type ChartsData } from './ReportCharts';
-import { branchOf, buildBreakdown } from '@/lib/circuitBreakdown';
+import { branchOf, branchOptions, buildBreakdown, scopeRows } from '@/lib/circuitBreakdown';
 import type { TabDef } from '@/components/ui/Tabs';
 import { BaselineReport } from './BaselineReport';
 import { CircuitDeepDive } from './CircuitDeepDive';
@@ -78,6 +78,12 @@ const REPORT_TABS: TabDef[] = [
   { id: 'compare', label: 'Compare' },
 ];
 
+/**
+ * The branch circuits a reader can narrow the per-device figures to — RM-082c. Read from the circuit
+ * tree once: it is this deployment's wiring, which does not change while the page is open.
+ */
+const BRANCHES = branchOptions();
+
 /** When the stored report was generated, in the building's own time; nothing when unreadable. */
 function generatedLabel(iso: string): string | null {
   const t = Date.parse(iso);
@@ -101,6 +107,17 @@ export function ReportsPage() {
   const { periods, selected, select, core, hours, matrix, curve, pricing, ceiling } = report;
   const months = periods.data;
   const rows = report.devices.data;
+
+  /**
+   * One branch circuit, or the whole building — RM-082c. It narrows what is stored per device: the
+   * device table, the Circuits tab and the per-device CSV. Everything else on the page is a building
+   * series, and per-device series are not stored, so it stays the building's and the page says so.
+   * Kept across periods and tabs: which part of the building a reader is looking at is not a property
+   * of the month.
+   */
+  const [scope, setScope] = useState<string | null>(null);
+  const branch = BRANCHES.find((b) => b.id === scope) ?? null;
+  const scopedRows = useMemo(() => (rows ? scopeRows(rows, branch?.id ?? null) : null), [rows, branch]);
 
   const nameOf = useCallback(
     (id: string) => devices.find((d) => d.id === id)?.display_name ?? id,
@@ -208,6 +225,8 @@ export function ReportsPage() {
         : 'The per-device figures are still loading.';
   } else if (rows.length === 0) {
     exportUnavailable['device-csv'] = 'No per-device rows were stored for this period.';
+  } else if (branch && scopedRows?.length === 0) {
+    exportUnavailable['device-csv'] = `No device on ${branch.label} reported for this period. Choose All circuits to export every device.`;
   }
 
   if (!supabase) {
@@ -236,10 +255,14 @@ export function ReportsPage() {
     if (!selected) throw new Error('No report period is selected.');
 
     if (format === 'device-csv') {
-      if (!rows || rows.length === 0) throw new Error('No per-device rows were stored for this period.');
-      const name = reportFilename(period, selected, 'devices', 'csv');
-      downloadCsv(name, deviceCsv({ period, start: selected, rows, nameOf, branchOf, meterIds: BUILDING_METER_IDS as readonly string[] }));
-      return `Saved ${name} · ${rows.length} devices`;
+      if (!rows || !scopedRows || scopedRows.length === 0) throw new Error('No per-device rows were stored for this period.');
+      // RM-082c: the narrowed rows, with the whole period's beside them so each share is still of the building.
+      const name = reportFilename(period, selected, 'devices', 'csv', branch?.label);
+      downloadCsv(
+        name,
+        deviceCsv({ period, start: selected, rows: scopedRows, buildingRows: rows, nameOf, branchOf, meterIds: BUILDING_METER_IDS as readonly string[] })
+      );
+      return `Saved ${name} · ${scopedRows.length} devices${branch ? ` on ${branch.label}` : ''}`;
     }
 
     if (format === 'daily-csv') {
@@ -330,6 +353,9 @@ export function ReportsPage() {
         starts={months ? months.map((m) => m.period_start.slice(0, 10)) : []}
         selected={selected}
         onSelect={select}
+        branches={BRANCHES}
+        scope={branch?.id ?? null}
+        onScopeChange={setScope}
         tabs={REPORT_TABS}
         tab={tab}
         onTabChange={setTab}
@@ -341,6 +367,19 @@ export function ReportsPage() {
           </button>
         }
       />
+
+      {branch ? (
+        // RM-082c: said once, under the control that caused it and on every tab — the headline figures,
+        // the findings and the charts cannot be narrowed, and nothing about them changes to show it.
+        <p className="reports-note" role="note">
+          Narrowed to <strong>{branch.label}</strong>
+          {rows && scopedRows
+            ? `: the device table, the Circuits tab and the per-device CSV show ${scopedRows.length} of ${rows.length} devices.`
+            : ': the device table, the Circuits tab and the per-device CSV.'}{' '}
+          The headline figures, findings and charts still describe the whole building — per-device series are not stored,
+          so they cannot be narrowed.
+        </p>
+      ) : null}
 
       {periods.status === 'loading' ? (
         <ReportSkeleton label={period === 'week' ? 'weekly' : 'monthly'} period={period} parts={['kpis', 'charts', 'table']} />
@@ -487,9 +526,16 @@ export function ReportsPage() {
       {tab === 'circuits' && selected ? (
         <>
           <ReportSectionNote section={report.devices} what="the per-device figures" />
-          {rows ? (
-            <ErrorBoundary scope="The circuit report" variant="inline" resetKey={rows}>
-              <CircuitDeepDive period={period} start={selected} rows={rows} nameOf={nameOf} />
+          {rows && scopedRows ? (
+            <ErrorBoundary scope="The circuit report" variant="inline" resetKey={scopedRows}>
+              <CircuitDeepDive
+                period={period}
+                start={selected}
+                rows={scopedRows}
+                buildingRows={rows}
+                scopeLabel={branch?.label ?? null}
+                nameOf={nameOf}
+              />
             </ErrorBoundary>
           ) : null}
         </>
@@ -511,16 +557,25 @@ export function ReportsPage() {
         </>
       ) : null}
 
-      {tab === 'summary' && rows && rows.length > 0 ? (
-        <ErrorBoundary scope="The per-device table" variant="inline" resetKey={rows}>
+      {tab === 'summary' && scopedRows && scopedRows.length > 0 ? (
+        <ErrorBoundary scope="The per-device table" variant="inline" resetKey={scopedRows}>
           <div className="report-table-card">
-            <ReportTable columns={deviceColumns} rows={rows} rowKey={(r) => r.device_id} label={`Per-device report for ${periodLabel}`} />
+            <ReportTable
+              columns={deviceColumns}
+              rows={scopedRows}
+              rowKey={(r) => r.device_id}
+              label={`Per-device report for ${periodLabel}${branch ? `, ${branch.label}` : ''}`}
+            />
           </div>
         </ErrorBoundary>
       ) : null}
 
       {tab === 'summary' && rows?.length === 0 && selected ? (
         <p className="reports-note">No per-device rows for {periodLabel}.</p>
+      ) : null}
+
+      {tab === 'summary' && branch && rows && rows.length > 0 && scopedRows?.length === 0 ? (
+        <p className="reports-note">No device on {branch.label} reported for {periodLabel}.</p>
       ) : null}
 
       {exportOpen && selected ? (
@@ -530,6 +585,7 @@ export function ReportsPage() {
           onExport={runExport}
           unavailable={exportUnavailable}
           sectionNotes={exportSectionNotes}
+          scopeLabel={branch?.label ?? null}
         />
       ) : null}
     </>

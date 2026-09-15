@@ -71,20 +71,28 @@ export function deviceCsv({
   period,
   start,
   rows,
+  buildingRows = rows,
   nameOf,
   branchOf,
   meterIds,
 }: {
   period: ReportPeriod;
   start: string;
+  /** The rows to write — one branch's, when the export is narrowed to one (RM-082c). */
   rows: readonly PeriodDeviceReport[];
+  /**
+   * Every row of the period, which the building total is taken from. A narrowed export passes the
+   * whole period here, so a share is still of the building rather than of the branch it kept —
+   * narrowed to one branch, a share of what is left would call that branch 100% of the building.
+   */
+  buildingRows?: readonly PeriodDeviceReport[];
   nameOf: (id: string) => string;
   branchOf: (id: string) => string | null;
   /** The branch meters whose sum is the building total — `BUILDING_METER_IDS` on the page. */
   meterIds: readonly string[];
 }): string {
   const meters = new Set(meterIds);
-  const meterRows = rows.filter((r) => meters.has(r.device_id));
+  const meterRows = buildingRows.filter((r) => meters.has(r.device_id));
   const total =
     meterRows.length > 0 && meterRows.every((r) => r.energy_kwh !== null && Number.isFinite(r.energy_kwh))
       ? meterRows.reduce((a, r) => a + (r.energy_kwh as number), 0)

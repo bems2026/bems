@@ -17,24 +17,32 @@ import { ReportFigure } from './ReportFigure';
  * branch meter and one of the outlets inside that branch on adjacent rows, reading as peers.
  * They are not: adding them together double-counts. The tree is the honest arrangement, and
  * `BUILDING_METER_IDS` — the same constant the ingest path sums — decides which rows are which.
+ *
+ * NARROWED TO ONE BRANCH — RM-082c — the tables hold that branch and its devices, and a share is
+ * still of the WHOLE building, taken from `buildingRows`. A share of what is left on screen would
+ * make every narrowed branch 100%, which is true of nothing.
  */
 
 interface Props {
   period: ReportPeriod;
   start: string;
   rows: readonly PeriodDeviceReport[];
+  /** Every row of the period, when `rows` is narrowed to one branch. Defaults to `rows`. */
+  buildingRows?: readonly PeriodDeviceReport[];
+  /** The branch `rows` is narrowed to, when it is. */
+  scopeLabel?: string | null;
   nameOf: (id: string) => string;
 }
 
 const toneOf = (band: string) => (band === 'complete' ? 'good' : band === 'partial' ? 'warn' : 'bad');
 
-export function CircuitDeepDive({ period, start, rows, nameOf }: Props) {
+export function CircuitDeepDive({ period, start, rows, buildingRows, scopeLabel = null, nameOf }: Props) {
   const meterIds = BUILDING_METER_IDS as readonly string[];
   const { untracked } = useMemo(() => buildBreakdown(rows, nameOf), [rows, nameOf]);
 
   const branches = rows.filter((r) => meterIds.includes(r.device_id));
   const devices = rows.filter((r) => !meterIds.includes(r.device_id));
-  const total = branches.reduce((a, r) => a + (r.energy_kwh ?? 0), 0);
+  const total = (buildingRows ?? rows).filter((r) => meterIds.includes(r.device_id)).reduce((a, r) => a + (r.energy_kwh ?? 0), 0);
   const label = formatPeriod(period, start);
 
   // RM-082: the shared report table — units in the header, figures right-aligned.
@@ -97,11 +105,21 @@ export function CircuitDeepDive({ period, start, rows, nameOf }: Props) {
   return (
     <>
       <section className="devices-table-card reports-summary" aria-label={`Circuit summary for ${label}`}>
-        <h2 className="card-title">The building, by circuit</h2>
+        <h2 className="card-title">{scopeLabel ? `${scopeLabel}, by device` : 'The building, by circuit'}</h2>
         <p className="reports-note">
-          The building total is the sum of these branch meters, so their shares are exact rather than reconciled.
-          The devices below sit <em>inside</em> these branches — adding the two tables together would count the
-          same energy twice.
+          {scopeLabel ? (
+            <>
+              Only the {scopeLabel} branch and the devices on it. Its share is of the whole building, whose total is the sum
+              of every branch meter. The devices below sit <em>inside</em> this branch — adding the two tables together would
+              count the same energy twice.
+            </>
+          ) : (
+            <>
+              The building total is the sum of these branch meters, so their shares are exact rather than reconciled.
+              The devices below sit <em>inside</em> these branches — adding the two tables together would count the
+              same energy twice.
+            </>
+          )}
         </p>
         {untracked && untracked.kwh !== null && untracked.kwh > 0 ? (
           <p className="reports-note reports-note--error" role="note">
@@ -113,7 +131,7 @@ export function CircuitDeepDive({ period, start, rows, nameOf }: Props) {
       </section>
 
       {branches.length > 0 ? table('Branch circuits', branches, true) : null}
-      {devices.length > 0 ? table('Devices within those branches', devices, false) : null}
+      {devices.length > 0 ? table(scopeLabel ? 'Devices within that branch' : 'Devices within those branches', devices, false) : null}
     </>
   );
 }

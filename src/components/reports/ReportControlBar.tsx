@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { Tabs, type TabDef } from '@/components/ui/Tabs';
 import type { ReportPeriod } from '@/lib/supabaseReports';
+import type { BranchOption } from '@/lib/circuitBreakdown';
 import { PeriodPicker } from './PeriodPicker';
 
 /**
@@ -10,7 +11,8 @@ import { PeriodPicker } from './PeriodPicker';
  * Monthly/Weekly buttons on a row of their own, and the period pills on another. So the first
  * thing a reader met was three rows of chrome before a single figure, and the export buttons sat
  * a screen away from what they exported. One bar now, left to right in the order a reader decides:
- * what kind of period, which one, which reading of it, and what to take away.
+ * what kind of period, which one, which part of the building, which reading of it, and what to take
+ * away.
  *
  * STICKY WHERE THERE IS ROOM, because the report is long — five charts and a table — and changing
  * the period from the bottom of it should not mean scrolling back to the top. It sits under the nav,
@@ -26,13 +28,36 @@ interface Props {
   starts: readonly string[];
   selected: string | null;
   onSelect: (start: string) => void;
+  /**
+   * RM-082c: the branch circuits the per-device figures can be narrowed to, the one chosen (`null`
+   * for the whole building), and how to change it. Offered only when there are two or more — a
+   * building on one branch has nothing to narrow.
+   */
+  branches?: readonly BranchOption[];
+  scope?: string | null;
+  onScopeChange?: (id: string | null) => void;
   tabs: TabDef[];
   tab: string;
   onTabChange: (id: string) => void;
   actions?: ReactNode;
 }
 
-export function ReportControlBar({ period, onPeriodChange, starts, selected, onSelect, tabs, tab, onTabChange, actions }: Props) {
+export function ReportControlBar({
+  period,
+  onPeriodChange,
+  starts,
+  selected,
+  onSelect,
+  branches = [],
+  scope = null,
+  onScopeChange,
+  tabs,
+  tab,
+  onTabChange,
+  actions,
+}: Props) {
+  const scopeId = useId();
+
   return (
     <div className="report-controls">
       {/* Week or month — RM-041. Two buttons rather than a select: there are exactly two, and a
@@ -52,6 +77,30 @@ export function ReportControlBar({ period, onPeriodChange, starts, selected, onS
       </div>
 
       {starts.length > 0 ? <PeriodPicker period={period} starts={starts} selected={selected} onSelect={onSelect} /> : null}
+
+      {/* A select rather than buttons: one per branch is a row that grows with the panel, and a second
+          site's panel is not this one's. The same control, and so the same touch floor, as the period
+          select it sits beside. */}
+      {branches.length > 1 && onScopeChange ? (
+        <div className="reports-picker">
+          <label className="reports-picker__label" htmlFor={scopeId}>
+            Circuit
+          </label>
+          <select
+            id={scopeId}
+            className="reports-picker__select"
+            value={scope ?? ''}
+            onChange={(e) => onScopeChange(e.target.value === '' ? null : e.target.value)}
+          >
+            <option value="">All circuits</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
 
       <Tabs tabs={tabs} activeId={tab} onChange={onTabChange} label="Report type" className="reports-tabs" />
 
