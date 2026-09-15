@@ -6632,6 +6632,85 @@ body::before {
   width: 64%;
 }
 
+/* RM-083b — the export drawer. The shared floating panel, narrowed and pinned to the right edge
+   rather than centred: it is a set of options about the page still visible beside it. */
+.overlay-panel.report-export-panel {
+  width: min(28rem, 100%);
+  justify-self: end;
+}
+
+.report-export__group {
+  min-width: 0;
+  margin: 0 0 var(--sp-4);
+  padding: 0;
+  border: 0;
+}
+
+.report-export__legend {
+  margin: 0 0 var(--sp-2);
+  padding: 0;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.report-export__sections {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.report-export__option {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0;
+  font-size: var(--fs-sm);
+  color: var(--txt);
+  cursor: pointer;
+}
+
+.report-export__option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent-text);
+}
+
+/* Why a section is locked, or why a format cannot run — under the option, aligned with its label. */
+.report-export__reason {
+  display: block;
+  margin: 0 0 var(--sp-2) calc(var(--sp-2) * 3);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.report-export__hint {
+  margin: 0 0 var(--sp-4);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.report-export__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2) var(--sp-4);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--border);
+}
+
+.report-export__summary {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
 /* Report charts — RM-072. Only the genuinely page-specific pieces, per CLAUDE.md: the table
    inside each figure is `.devices-table`, the coverage badges are `.badge--*`, and the surface
    is `.devices-table-card`'s, because a chart is not a new kind of card. */
@@ -8907,6 +8986,8 @@ button.space-plan__pin {
   .report-stepper__current,
   .report-stepper__preset,
   .report-period-list__item,
+  /* RM-083b: each format and section row in the export drawer is a tap target on the kiosk. */
+  .report-export__option,
   /* RM-071: a 30x30 icon button that DELETES a schedule rule, on a touchscreen. Square and in
      normal flow beside the arm switch, so it grows rather than needing a hit-area expander —
      the switch's own expander is 44 wide and the row's 8px gap keeps them from cross-talking. */

@@ -3433,12 +3433,46 @@ ever cleared, and put its controls in three rows. This section is that page's ov
       Tests: `reportSections` (5), `docDefinition` (+9), `reportCsv` (10), `energyCostPerDay` (6),
       `reportFiles` (5), `circuitBranch` (3).
 
-- [ ] **RM-083b (M)** — **The export drawer, and exports that say what they did.** An Export button in
-      the control bar opening a slide-out panel: format (PDF · simple CSV · per-device CSV), the section
-      checklist with the two locked sections shown locked and why, and a Generate button guarded
-      against a double click, with the result or the failure in a live region beside it rather than in
-      the header. The last choice remembered per viewer. PDF generation timed on the Pi, and moved to a
-      worker only if it exceeds one second there.
+- [x] **RM-083b (M)** **DONE 2026-09-15. One Export, a drawer that asks what to take away, and
+      exports that say what they did.** The control bar's PDF and CSV buttons could each only ever
+      export everything; they are one **Export** button now, opening `ExportDrawer` — the shared
+      focus-trapped panel pinned to the right edge — with a format (PDF · simple CSV · per-device CSV)
+      and, for the PDF, the section checklist, **coverage and the refusals shown ticked, disabled, and
+      with the reason read to a screen reader**. A CSV holds one table and has no sections to choose;
+      the drawer says what the file holds instead.
+
+      **An export that cannot run says why, and cannot start.** Each format is unavailable for a
+      reason in words: still loading; could not be loaded (retry it on the page first); no per-device
+      rows were stored. And **a failed rate read blocks the PDF and the simple CSV**, because the PDF
+      would print "no rate has been entered" and the CSV would silently omit its cost column — both
+      claims about the database that a failed read has not established.
+
+      *`src/lib/useExportAction.ts`* fixes the two defects of the button it replaces. The busy flag was
+      React state, which two clicks in one tick both read as idle — it is a **ref**, set synchronously.
+      And the PDF's scenes were built synchronously before its first `await`, so "Building PDF…" could
+      not paint until the work it announced was done — the work now **waits for the next paint**, racing
+      a short timeout because a hidden tab may never deliver one. The result ("Saved
+      ibems-month-report-2026-08.pdf · 9 sections") or the failure appears **beside the button**, not in
+      the page header where the old PDF error landed inside the flex row of controls.
+
+      *`src/lib/reportPdf/buildReport.ts`* is the document's assembly, moved out of the button into a
+      pure function: only the **chosen** charts are drawn (each scene costs time on the Pi), the peak is
+      qualified or missing by the same rules as the page, the baseline gate precedes its numbers, the
+      circuits split branch meters from the devices inside them, and a comparison with the previous
+      stored period appears **only when both were fully observed** — otherwise it states why.
+      `ExportPdfButton` is deleted. The last choice is remembered per viewer under try/catch, and a
+      remembered section this build does not know is dropped.
+
+      Two existing page tests went through the old buttons and now go through the drawer, asserting
+      the same properties: no per-device CSV without rows, and a week's export named by its Monday.
+      Tests: `useExportAction` (4), `buildReport` (9), `ExportDrawer` (11). **Not verified signed-in in a
+      browser, and no PDF has been generated from this build on real data yet.**
+
+- [ ] **RM-083c (S)** — **Time the PDF on the kiosk's Pi, and move it to a worker only if it is slow.**
+      Each export now logs `[ibems] pdf: assembled in N ms, rendered in N ms` to the console. Generate one
+      month's PDF on the kiosk, read the line, and record it here. Above one second, move
+      `buildDocDefinition` + `createPdf().getBlob()` into a module worker and download the Blob on the
+      main thread; below it, record the figure and close this.
 - [ ] **RM-084 (S)** — **Hover on the charts, and three findings the series already hold.** Hit
       targets emitted only by the screen serializer, a tooltip on hover and focus; weekday against
       weekend daily energy from complete days, load factor, and overnight base load — each "—" with

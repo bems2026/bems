@@ -132,11 +132,15 @@ describe('ReportsPage', () => {
     expect(await screen.findByText(/RLS said no/)).toBeInTheDocument();
   });
 
-  it('disables the CSV export while there is nothing to export', async () => {
+  it('does not offer the per-device CSV while there is nothing to export, and says why', async () => {
+    // RM-083b moved the export into a drawer; the property is unchanged — an empty table is not an export.
     vi.mocked(reports.getDevicePeriodReports).mockResolvedValue([]);
     render(<ReportsPage />);
-    const button = await screen.findByRole('button', { name: /Export CSV/ });
-    expect(button).toBeDisabled();
+    await screen.findByText(/No per-device rows for/);
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
+    const csv = screen.getByRole('radio', { name: /Per-device CSV/ });
+    expect(csv).toBeDisabled();
+    expect(csv).toHaveAccessibleDescription(/No per-device rows/);
   });
 });
 
@@ -223,11 +227,13 @@ describe('ReportsPage — weekly', () => {
     render(<ReportsPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Weekly' }));
     await screen.findAllByText(/^Week of /);
-    // The export is disabled until the week's device rows arrive, which is after its label does.
-    // Clicking before then clicked a disabled button — a race that RM-081's loader made visible.
-    const exportButton = screen.getByRole('button', { name: /Export|CSV/i });
-    await waitFor(() => expect(exportButton).toBeEnabled());
-    fireEvent.click(exportButton);
-    expect(downloaded).toMatch(/ibems-week-report-2026-07-06\.csv/);
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
+    // The per-device CSV is offered once the week's device rows arrive, which is after its label does —
+    // the race RM-081's loader made visible, now waited for in the drawer rather than on a button.
+    const csv = screen.getByRole('radio', { name: /Per-device CSV/ });
+    await waitFor(() => expect(csv).toBeEnabled());
+    fireEvent.click(csv);
+    fireEvent.click(screen.getByRole('button', { name: 'Download CSV' }));
+    await waitFor(() => expect(downloaded).toMatch(/ibems-week-report-2026-07-06\.csv/));
   });
 });

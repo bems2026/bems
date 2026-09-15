@@ -5,19 +5,26 @@ import { InfoHint } from '@/components/ui/InfoHint';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { supabase } from '@/config/supabase';
-import { toCsv, downloadCsv, type CsvColumn } from '@/lib/csv';
+import { downloadCsv } from '@/lib/csv';
+import { dailyCsv, deviceCsv } from '@/lib/reportCsv';
+import { reportFilename } from '@/lib/reportFiles';
+import type { ReportSectionId } from '@/lib/reportSections';
+import { buildPdfReport } from '@/lib/reportPdf/buildReport';
+import { bootedScript } from '@/lib/buildVersion';
+import { BUILDING_METER_IDS } from '@shared/registry.mjs';
+import { SITE } from '@shared/siteConfig.mjs';
 import { coverageOf, formatPeriod, isQuotable, type PeriodDeviceReport, type ReportPeriod } from '@/lib/supabaseReports';
 import { siteDateTime } from '@/lib/siteTime';
 import { ReportControlBar } from './ReportControlBar';
 import { ReportSkeleton } from './ReportSkeleton';
 import { ReportCharts, type ChartsData } from './ReportCharts';
-import { buildBreakdown } from '@/lib/circuitBreakdown';
+import { branchOf, buildBreakdown } from '@/lib/circuitBreakdown';
 import type { TabDef } from '@/components/ui/Tabs';
 import { BaselineReport } from './BaselineReport';
 import { CircuitDeepDive } from './CircuitDeepDive';
 import { ComparisonReport } from './ComparisonReport';
 import { CoverageBanner } from './CoverageBanner';
-import { ExportPdfButton } from './ExportPdfButton';
+import { ExportDrawer, type ExportFormat } from './ExportDrawer';
 import { ReportSectionNote } from './ReportSectionNote';
 import { ReportKpis } from './ReportKpis';
 import { ReportTable, type ReportColumn } from './ReportTable';
@@ -50,22 +57,6 @@ import { carbonOf, costOf, type DayEnergy } from '@/lib/energyCost';
  * headline carries its own "(partial …)" on the same line, and the badge sits in the heading
  * directly above them.
  */
-
-const DEVICE_CSV_COLUMNS: readonly CsvColumn<Record<string, unknown>>[] = [
-  // `period` used to be computed in `exportCsv` and then dropped on the floor, because it was
-  // absent from this list — so a weekly export's rows were headed "Month" and held a Monday.
-  // The filename disambiguated them; the file's own contents did not.
-  { key: 'period', header: 'Period' },
-  { key: 'month', header: 'Period start' },
-  { key: 'device_id', header: 'Device ID' },
-  { key: 'device_name', header: 'Device' },
-  { key: 'energy_kwh', header: 'Energy (kWh)' },
-  { key: 'peak_power_w', header: 'Peak power (W)' },
-  { key: 'avg_power_w', header: 'Average power (W)' },
-  { key: 'coverage_pct', header: 'Coverage (%)' },
-  { key: 'online_sample_count', header: 'Samples observed' },
-  { key: 'expected_sample_count', header: 'Samples expected' },
-];
 
 /**
  * Four readings of the same period, not four pages.
@@ -104,6 +95,7 @@ export function ReportsPage() {
    * inventing a correspondence that does not exist.
    */
   const [period, setPeriod] = useState<ReportPeriod>('month');
+  const [exportOpen, setExportOpen] = useState(false);
   const report = useReportData(period);
   const { periods, selected, select, core, detail, pricing, ceiling } = report;
   const months = periods.data;
@@ -172,35 +164,38 @@ export function ReportsPage() {
     ? core.data.summary?.usable_minutes === 0
     : building !== null && building.energy_kwh === 0 && !isQuotable(buildingCoverage);
 
-  const pdfBlocked =
+  /**
+   * Which exports cannot run for this period right now, each with the reason — RM-083b. A cost the
+   * page could not read must not become a PDF saying "no rate has been entered" or a CSV with no cost
+   * column, both of which are claims about the database that a failed read has not established.
+   */
+  const pricingReason =
     pricing.status === 'error'
-      ? 'The rates could not be loaded, so the document could not state what the period cost. Retry them first.'
+      ? 'The rates could not be loaded, so the cost could not be stated. Retry them on the page first.'
       : pricing.status === 'loading'
         ? 'Still loading the rates.'
         : null;
-
-  const exportCsv = () => {
-    if (!rows || !selected) return;
-    const flat = rows.map((r) => {
-      const c = coverageOf(r.online_sample_count, r.expected_sample_count);
-      return {
-        period,
-        month: selected,
-        device_id: r.device_id,
-        device_name: nameOf(r.device_id),
-        energy_kwh: r.energy_kwh,
-        peak_power_w: r.peak_power_w,
-        avg_power_w: r.avg_power_w,
-        // Rendered as a number the spreadsheet can sort and filter on, not "Partial · 13%".
-        coverage_pct: c ? Math.round(c.ratio * 100) : null,
-        online_sample_count: r.online_sample_count,
-        expected_sample_count: r.expected_sample_count,
-      };
-    });
-    // The whole date for a week, because seven of them share a `YYYY-MM` and would overwrite
-    // each other in a downloads folder.
-    downloadCsv(`ibems-${period}-report-${period === 'week' ? selected : selected.slice(0, 7)}.csv`, toCsv(flat, DEVICE_CSV_COLUMNS));
-  };
+  const failedPart = core.status === 'error' || detail.status === 'error' || report.devices.status === 'error';
+  const exportUnavailable: Partial<Record<ExportFormat, string>> = {};
+  if (!charts || !rows) {
+    exportUnavailable.pdf = failedPart ? 'Part of this report could not be loaded. Retry it on the page first.' : 'The report is still loading.';
+  } else if (pricingReason) {
+    exportUnavailable.pdf = pricingReason;
+  }
+  if (!core.data) {
+    exportUnavailable['daily-csv'] =
+      core.status === 'error' ? 'The daily figures could not be loaded. Retry them on the page first.' : 'The daily figures are still loading.';
+  } else if (pricingReason) {
+    exportUnavailable['daily-csv'] = pricingReason;
+  }
+  if (!rows) {
+    exportUnavailable['device-csv'] =
+      report.devices.status === 'error'
+        ? 'The per-device figures could not be loaded. Retry them on the page first.'
+        : 'The per-device figures are still loading.';
+  } else if (rows.length === 0) {
+    exportUnavailable['device-csv'] = 'No per-device rows were stored for this period.';
+  }
 
   if (!supabase) {
     return (
@@ -220,6 +215,58 @@ export function ReportsPage() {
    *  skeleton beside an error would say the part is still coming when it is not. */
   const chartsLoading =
     charts === null && (core.status === 'loading' || detail.status === 'loading') && core.status !== 'error' && detail.status !== 'error';
+  /**
+   * Performs one export and says, in words, what was saved. Throws with the reason when it cannot —
+   * `ExportDrawer` shows that beside its button. Names come from `reportFilename`, never from the
+   * on-screen label, so they cannot vary with the reader's locale.
+   */
+  const runExport = async (format: ExportFormat, sections: ReportSectionId[]): Promise<string> => {
+    if (!selected) throw new Error('No report period is selected.');
+
+    if (format === 'device-csv') {
+      if (!rows || rows.length === 0) throw new Error('No per-device rows were stored for this period.');
+      const name = reportFilename(period, selected, 'devices', 'csv');
+      downloadCsv(name, deviceCsv({ period, start: selected, rows, nameOf, branchOf, meterIds: BUILDING_METER_IDS as readonly string[] }));
+      return `Saved ${name} · ${rows.length} devices`;
+    }
+
+    if (format === 'daily-csv') {
+      if (!core.data) throw new Error('The daily figures have not loaded.');
+      const name = reportFilename(period, selected, 'daily', 'csv');
+      downloadCsv(name, dailyCsv({ daily: core.data.daily, tariffs: pricing.data?.tariffs ?? [], factors: pricing.data?.factors ?? [] }));
+      return `Saved ${name} · ${core.data.daily.length} days`;
+    }
+
+    if (!charts || !rows) throw new Error('The report has not finished loading.');
+    const started = performance.now();
+    const pdf = buildPdfReport({
+      period,
+      periodLabel,
+      siteName: SITE.display_name,
+      timezone: SITE.timezone,
+      generatedAt: siteDateTime(Date.now()),
+      buildId: bootedScript(),
+      building,
+      previous,
+      rows,
+      charts,
+      cost: priced.cost,
+      carbon: priced.carbon,
+      nameOf,
+      meterIds: BUILDING_METER_IDS as readonly string[],
+      sections,
+    });
+    const assembled = performance.now();
+    const name = reportFilename(period, selected, 'report', 'pdf');
+    // pdfmake is still loaded only here, on the first export — never on a page load.
+    const { downloadReportPdf } = await import('@/lib/reportPdf/download');
+    await downloadReportPdf(pdf, name);
+    // Measured, not assumed: generation on the kiosk's Pi has never been timed (RM-072a), and RM-083c
+    // moves it to a worker only if this says it is slow there.
+    console.info(`[ibems] pdf: assembled in ${Math.round(assembled - started)} ms, rendered in ${Math.round(performance.now() - assembled)} ms`);
+    return `Saved ${name} · ${pdf.sections?.length ?? 0} sections`;
+  };
+
   const rowCoverage = (r: PeriodDeviceReport) => coverageOf(r.online_sample_count, r.expected_sample_count);
   const deviceColumns: ReportColumn<PeriodDeviceReport>[] = [
     { id: 'device', header: 'Device', cell: (r) => nameOf(r.device_id) },
@@ -275,22 +322,11 @@ export function ReportsPage() {
         tab={tab}
         onTabChange={setTab}
         actions={
-          <>
-            <ExportPdfButton
-              period={period}
-              periodLabel={periodLabel}
-              building={building}
-              rows={rows}
-              charts={charts}
-              cost={priced.cost}
-              carbon={priced.carbon}
-              nameOf={nameOf}
-              blockedReason={pdfBlocked}
-            />
-            <button type="button" className="devices-add-btn" onClick={exportCsv} disabled={!rows || rows.length === 0}>
-              <Download size={16} aria-hidden="true" /> Export CSV
-            </button>
-          </>
+          // RM-083b: one Export, opening the drawer that asks what to take away, instead of a PDF
+          // button and a CSV button that could each only ever export everything.
+          <button type="button" className="devices-add-btn" onClick={() => setExportOpen(true)} disabled={!selected} aria-haspopup="dialog">
+            <Download size={16} aria-hidden="true" /> Export
+          </button>
         }
       />
 
@@ -447,6 +483,10 @@ export function ReportsPage() {
 
       {tab === 'summary' && rows?.length === 0 && selected ? (
         <p className="reports-note">No per-device rows for {periodLabel}.</p>
+      ) : null}
+
+      {exportOpen && selected ? (
+        <ExportDrawer periodLabel={periodLabel} onClose={() => setExportOpen(false)} onExport={runExport} unavailable={exportUnavailable} />
       ) : null}
     </>
   );
