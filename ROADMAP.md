@@ -13,7 +13,10 @@ and **RM-082b**, which puts every control in one sticky bar around a period step
 as the shape of what is coming. **RM-083a** builds the export's parts: sections a reader can choose (coverage and
 the closing refusals locked on), a PDF assembled from them that now carries the key figures and never
 prints a zero nobody measured, a simple one-row-per-day CSV, and filenames that do not depend on the
-reader's locale. The drawer that offers them is RM-083b.
+reader's locale. The drawer that offers them is RM-083b. **Read back signed in on live data the same
+day:** the page, both themes' contrast and the kiosk and phone widths hold; the duration curve's query
+times out for signed-in readers, which RM-081b contains to one chart and phase40 (RM-086, rehearsed,
+not yet applied) fixes.
 
 **Previously audited:** 2026-09-14 — **RM-076 to RM-078, Analytics data quality**, from three operator
 reports: L.O Red "reporting less than it measured", L.O Red reading differently on Overview and
@@ -154,13 +157,19 @@ other four and none needed changing.
 ## 0. Triage — what to do next
 
 
-### 2026-09-15 — CO6 and CO7 swapped places, and half the fix is a database row
+### 2026-09-15 — apply phase40; CO6 and CO7 are corrected
 
-The operator reports that the physical installation has CO6 on the right wall and CO7 on the
-partition — the other way round from every drawing. **RM-080** swaps the three code copies, so the
-Overview's 3D scene and its fallback plan are right as soon as the bundle is built. **The Control
-page and Settings → Floor plan read `device_config`, not code**, and both rows still hold the old
-values: run the two-row statement in RM-080, then read the rows back.
+**`supabase/phase40_report_curve_speed.sql` is written and rehearsed, and NOT applied.** Until it
+is, a signed-in reader of Reports sees "the load duration curve could not be loaded" for August 2026
+(RM-086) — since RM-081b that costs the one chart and nothing else, and the PDF says it left it out.
+Paste the file into the Supabase SQL editor, then open Reports signed in and confirm the curve draws.
+
+**CO6 and CO7 (RM-080) are done.** The operator reports the physical installation has CO6 on the
+right wall and CO7 on the partition. The three code copies are swapped and deployed, and the operator
+ran the two-row statement; read back from the Pi, co6 is 0.9167 / 0.3396 and co7 0.75 / 0.1981, both
+still in their room. The Control page's pins were not seen in a browser from here — the remote browser
+could not reach the live bridge, which is also why device names read as ids there — so a glance at the
+kiosk's Control page closes it.
 
 ### 2026-09-14 — L.O Red "reporting less than it measured" was a meter that froze, and the charts could not say so
 
@@ -794,9 +803,10 @@ Everything else is small, and the build order below is honest about size.
   two weeks (RM-020), so their averages mean nothing and their tiers should be set on what they
   feed rather than on what they have measured.
 
-### Migrations — all applied
+### Migrations — all applied except phase40
 
-**Every migration in this repository is applied.** `phase27_period_reports.sql` was applied
+**`phase40_report_curve_speed.sql` (RM-086, 2026-09-15) is rehearsed and waiting to be applied.**
+Before it, every migration in this repository was applied. `phase27_period_reports.sql` was applied
 2026-09-08, the last of them; the section that listed pending files is gone because the list is
 empty. `period_reports` holds 80 rows and `period_building_reports` 4, regenerated at the moment
 of applying — which means they were built from the outlet energy AFTER RM-047b's correction
@@ -3503,6 +3513,40 @@ ever cleared, and put its controls in three rows. This section is that page's ov
       375px, the headline tiles on one row at kiosk width and one column on a phone, the device table
       scrolling inside its own card, and every report text element measured at WCAG AA or better in
       both themes (lowest 4.77:1 light, 5.03:1 dark, 194 elements each).
+
+- [ ] **RM-086 (S)** — **phase40: the duration curve in one pass, and the totals policies' auth check
+      evaluated once. Written and rehearsed 2026-09-15; NOT yet applied.**
+      `supabase/phase40_report_curve_speed.sql`, `test/phase40-report-curve-schema.test.mjs`.
+
+      **Measured first.** Signed in on the live project, `report_demand_curve` for August 2026 was
+      cancelled by the statement timeout on every attempt, about nine seconds each. As the service role,
+      which bypasses RLS, it took **3.5 s**, against 0.6–1.4 s for its four sibling series over the same
+      window.
+
+      **Two causes.** phase37 computed each of the curve's 101 points as a **correlated** scalar
+      subquery — `percentile_cont(f)` over `samples` — so the whole window of `building_totals` was
+      scanned and sorted **101 times**. `percentile_cont` accepts an array of fractions and answers all
+      of them from **one sort**, which is the form phase40 writes. And the two policies that let
+      `authenticated` read the totals compared `auth.role()` bare, which Postgres evaluates **per row**;
+      wrapped as `(select auth.role())` it is evaluated once per statement. Same rows visible, same
+      roles allowed.
+
+      **Unchanged:** the curve's shape, its 101 points, its NULLs for a period nobody observed, its
+      resolution column and its signature. Dropped by exact signature, never `cascade`, and re-granted
+      to `authenticated` only.
+
+      **The rehearsal nearly proved nothing, and that is worth recording.** `rehearse.sh` re-applies
+      phase37 after the ordered run to test re-application — which put the *slow* curve back, so every
+      assertion after it would have rehearsed phase37's function and passed. It now re-applies phase40
+      twice after that step. Its new block recomputes the curve in phase37's own correlated form over
+      the fixture month and requires the two to agree **point for point**, and asserts 101 empty points
+      for an unobserved month, an honoured `p_points`, and both policies wrapping `auth.role()`.
+      **Rehearsed green on PostgreSQL 16** (in a throwaway container on the Pi), phase39's privilege
+      invariant included. The schema test's first per-row check matched the new CTE's opening
+      parenthesis; it tests the percentile's argument now.
+
+      **To close:** the operator pastes it into the Supabase SQL editor; read back by opening Reports
+      signed in and seeing the duration curve draw.
 
 - [ ] **RM-083c (S)** — **Time the PDF on the kiosk's Pi, and move it to a worker only if it is slow.**
       Each export now logs `[ibems] pdf: assembled in N ms, rendered in N ms` to the console. Generate one

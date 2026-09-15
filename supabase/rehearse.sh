@@ -134,6 +134,15 @@ echo "   ok — a shape change re-applies cleanly"
 psql < "$HERE/phase37_report_series.sql" >/dev/null
 echo "   ok — and again, unchanged"
 
+# RE-APPLYING PHASE40 AFTER IT — RM-086. phase40 replaces phase37's `report_demand_curve`, so the
+# re-application just above put the SLOW curve back. Without this every assertion below would be
+# rehearsing phase37's version and passing for the wrong reason. Twice, because phase40's header
+# says a re-run is safe and this is where that claim is proved.
+echo "== re-applying phase40 over phase37's curve, twice =="
+psql < "$HERE/phase40_report_curve_speed.sql" >/dev/null
+psql < "$HERE/phase40_report_curve_speed.sql" >/dev/null
+echo "   ok — the one-pass curve is back in place, and re-applies cleanly"
+
 echo "== seeding =="
 psql <<'SQL'
 insert into devices (id, display_name, class) values
@@ -1203,6 +1212,69 @@ begin
   assert bad = 0, format('anon/PUBLIC hold %s table privilege(s) in public and should hold none', bad);
 
   raise notice 'phase39: authenticated holds exactly what its policies permit';
+end $$;
+
+-- ---- phase40: the duration curve in one pass -------------------------------------------------
+--
+-- THE SAME CURVE PHASE37 DREW, POINT FOR POINT. Recomputed here in phase37's own form — a
+-- correlated percentile per fraction over the same samples — and compared exactly with the
+-- rewritten function. A faster query that draws a different curve is not a fix.
+do $$
+declare
+  win record;
+  mismatches int;
+  n int;
+begin
+  select * into win from report_window('month', date '2026-06-01', 'Asia/Manila');
+
+  with samples as (
+    select t.total_power_w as v
+      from building_totals t
+     where t.ts >= win.win_start and t.ts < win.win_end and t.total_power_w is not null
+    union all
+    select b.total_power_w_avg
+      from building_totals_hourly b
+     where b.hour >= win.win_start and b.hour < win.win_end
+       and b.total_power_w_avg is not null
+       and not exists (select 1 from building_totals t2
+                        where t2.ts >= b.hour and t2.ts < b.hour + interval '1 hour')
+  ),
+  fractions as (
+    select i::numeric / 100 as f from generate_series(0, 100) i
+  ),
+  reference as (
+    select round(fractions.f * 100, 2) as pct,
+           (select percentile_cont(fractions.f) within group (order by s.v desc)::numeric from samples s) as power_w
+      from fractions
+  )
+  select count(*) into mismatches
+    from reference r
+    full join report_demand_curve('month', date '2026-06-01', 'Asia/Manila') c on c.pct = r.pct
+   where r.pct is null or c.pct is null or r.power_w is distinct from c.power_w;
+  assert mismatches = 0, format('phase40: the curve differs from phase37''s at %s point(s)', mismatches);
+
+  -- The comparison means something only if the fixture month has real values to compare.
+  select count(*) into n from report_demand_curve('month', date '2026-06-01', 'Asia/Manila') where power_w is not null;
+  assert n = 101, format('phase40: the fixture month must yield 101 real points, got %s', n);
+
+  -- A period nobody observed is a curve of empty points — never zeros, and never no rows.
+  select count(*) into n from report_demand_curve('month', date '1999-01-01', 'Asia/Manila');
+  assert n = 101, format('phase40: an unobserved month must still return 101 points, got %s', n);
+  select count(*) into n from report_demand_curve('month', date '1999-01-01', 'Asia/Manila') where power_w is not null;
+  assert n = 0, format('phase40: an unobserved month must hold no values, got %s', n);
+
+  -- A different point count is honoured.
+  select count(*) into n from report_demand_curve('month', date '2026-06-01', 'Asia/Manila', 11);
+  assert n = 11, format('phase40: p_points = 11 must return 11 points, got %s', n);
+
+  -- Both totals policies evaluate auth.role() once per statement.
+  select count(*) into n from pg_policies
+   where tablename in ('building_totals', 'building_totals_hourly')
+     and policyname in ('building_totals_select_authenticated', 'building_totals_hourly_select_authenticated')
+     and qual ilike '%select auth.role()%';
+  assert n = 2, format('phase40: both totals policies must wrap auth.role() in a select, found %s', n);
+
+  raise notice 'phase40: the duration curve in one pass — assertions passed';
 end $$;
 SQL
 
