@@ -172,7 +172,7 @@ other four and none needed changing.
 ## 0. Triage — what to do next
 
 
-### 2026-09-15 — the branch circuits are wired as the operator describes them; two deploy steps are the operator's
+### 2026-09-15 — the branch circuits are wired as the operator describes them, and live
 
 **The operator confirmed what each branch carries (RM-088):** L.O Red is light switches L1–L4, L.O
 Yellow is L5–L7, C.O Yellow is every outlet and whatever plugs into them, and CARE ACU is the aircon
@@ -185,13 +185,15 @@ someone says what feeds it.
 attempt 250 ms; the Pi's IPv6 addresses fail at once, and a lost SYN is retried only after a second,
 so one lost packet failed a whole request. Every daemon now allows 3.5 s.
 
-**Two steps are the operator's, after the Pi has pulled and rebuilt:**
-1. `sudo systemctl restart ibems-ingest ibems-proxy ibems-scheduler` — both changes reach all three,
-   and ingest's device sync is what writes the corrected branches to the `devices` table.
-2. Deploy the regenerated bridge flow, so device cards and schedules show the corrected branch:
-   `node node-red-bridge/deploy.mjs --host=<pi> --force` to read the dry run, then again with
-   `--apply`. Back up `~/.node-red/flows.json` first, as CLAUDE.md says. Reports already use the
-   corrected wiring from the rebuilt bundle.
+**Both deploy steps were run by the operator the same evening and read back.** The three services
+restarted at 12:39 UTC onto `e414ab8`, with no error logged since. The regenerated flow was deployed from
+the Pi itself — Node-RED listens on loopback, so `npm run deploy:pi -- --host=127.0.0.1 --force`, then
+again with `--apply` — after `flows.json` was backed up, and its own verification passed 5 of 5. The
+bridge's `/api/devices` serves L1–L4 on L.O Red, L5–L7 on L.O Yellow and `acu_main` on CARE ACU, and the
+`devices` table matched at ingest's first periodic sync after the deploy (12:44 UTC). The sync at startup
+had copied the old branches, because the services restarted before the flow was deployed. The same two
+devices were offline before and after the deploy — `acu_main` and the outside temperature sensor, both
+unpaired since RM-016.
 
 ### 2026-09-15 — the first real retention pass, checked before it runs; phase41 waits to be applied
 
@@ -3628,8 +3630,8 @@ ever cleared, and put its controls in three rows. This section is that page's ov
       **To close:** the operator pastes it into the Supabase SQL editor; read back by opening Reports
       signed in and seeing the duration curve draw.
 
-- [ ] **RM-088 (S)** — **Every device on the branch circuit it is actually wired to.** Written and
-      verified 2026-09-15; **live once the operator restarts the three services and deploys the flow.**
+- [x] **RM-088 (S)** — **Every device on the branch circuit it is actually wired to.** Written,
+      deployed and read back live 2026-09-15 — the read-back is in §0.
       - **What the operator said.** L.O Red carries light switches L1–L4; L.O Yellow carries L5–L7; C.O
         Yellow carries every outlet and whatever plugs into them; CARE ACU carries the aircon only.
       - **What was wrong.** `shared/sites/mmsu-nberic-care/devices.mjs` filed all seven lights under L.O
@@ -3647,12 +3649,14 @@ ever cleared, and put its controls in three rows. This section is that page's ov
         light is unmetered, and each branch's energy is its own meter's.
       - **Held by** `test/site-branch-wiring.test.mjs` — each branch's exact devices, both meters'
         descriptions, and no site file or install guide still calling L.O Yellow an aircon.
-      - **To go live.** The Pi pulls and rebuilds; then the operator runs
-        `sudo systemctl restart ibems-ingest ibems-proxy ibems-scheduler`, which makes ingest's device
-        sync write the corrected branches to `devices`, and deploys the regenerated flow with
-        `node-red-bridge/deploy.mjs` (dry run, then `--apply --force`, after backing up `flows.json`).
+      - **Live.** The services restarted at 12:39 UTC, and the flow was deployed from the Pi with
+        `--host=127.0.0.1` (dry run, then `--force --apply`, after backing up `flows.json`). The bridge and
+        the `devices` table both read back the corrected branches. The order matters for the table:
+        ingest copies the bridge's device list at start and every five minutes, so a restart before the
+        flow deploy leaves the old branches in `devices` until the next sync.
 - [ ] **RM-089 (S)** — **A lost packet no longer fails a Supabase request.** Written and verified
-      2026-09-15; **live once the three services are restarted.**
+      2026-09-15; **live since the restart at 12:39 UTC, and open until a day of logs says whether it
+      worked.**
       - **The symptom.** Ingest logged "Supabase unreachable, buffered (1 pending): TypeError: fetch
         failed" 26–100 times a day all week, in bursts, and a read from the Pi during one burst failed as
         `AggregateError [ETIMEDOUT]` listing both IPv4 addresses and both IPv6 ones.
@@ -3666,8 +3670,9 @@ ever cleared, and put its controls in three rows. This section is that page's ov
         of `ingest.mjs`, `proxy.mjs` and `scheduler.mjs`, so no socket opens before it; the Pi brief's
         restart map lists it. `server/netDefaults.test.mjs` pins the value, that importing it sets the
         default, and that each daemon imports it first.
-      - **To close.** Restart the three services, then compare a day of "Supabase unreachable" lines
-        against the week before. If they do not fall, the cause is elsewhere and this entry should say so.
+      - **To close.** Compare a day of "Supabase unreachable" lines after the restart with the week
+        before it: 29, 35, 26, 68, 100 and 50 a day from 2026-09-09 to 2026-09-14, and 45 in the 24 hours
+        before the fix. If they do not fall, the cause is elsewhere and this entry should say so.
 - [ ] **RM-087 (S)** — **phase41: the hourly totals rollup keeps phase32's integrated cross-check.**
       Written and rehearsed 2026-09-15; **waiting for the operator to apply it, before 2026-10-08.**
       - **The defect.** phase32 (RM-057) stores the legacy power integration beside the summed building
