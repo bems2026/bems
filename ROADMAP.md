@@ -3421,6 +3421,12 @@ ever cleared, and put its controls in three rows. This section is that page's ov
         and per-device series are not stored. A note under the bar names the branch and how many of the
         period's devices are shown; the export drawer says the PDF and the simple CSV stay the whole
         building's (`ReportsPage.scope.test.tsx`).
+      - **Read back live the same day**, on the Pi at `ec8fece`, signed in, with CI green. Narrowed to
+        C.O Yellow, August 2026's Summary table holds that branch's meter and its seven outlets (8 of 20
+        devices), and the Circuits tab keeps the branch's share at 56.2% — the same as unnarrowed, not
+        100%. The note and the drawer's sentences for the PDF and the per-device CSV read as written, and
+        All circuits restores all 20. The CSV was not downloaded from the pane; its rows, shares and name
+        are held by the tests.
 - [x] **RM-083a (M)** **DONE 2026-09-15. The parts of an export, each pure and each held to the
       page's rules.** Nothing here touches the DOM; the drawer that offers them is RM-083b.
 
