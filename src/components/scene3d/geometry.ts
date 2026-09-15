@@ -125,6 +125,11 @@ export const LIGHT_FIXTURES: LightFixture[] = (() => {
 
 // ---------------------------------------------------------------------------
 // Outlets — ported from Outlet Floor Plan's fixed `coords` array, index i-1 → `co{i}`.
+//
+// CO6 and CO7 are the other way round from that template (RM-080): the physical installation has
+// CO6 on the right wall and CO7 on the partition. The template's own positions were swapped, and
+// every copy of this layout — `FloorPlanView.tsx`, `control/plans/carePreset.ts`, and the live
+// `device_config.plan_x/plan_y` rows — carries the corrected pair.
 // ---------------------------------------------------------------------------
 
 const OUTLET_COORDS: { id: string; px: number; py: number }[] = [
@@ -133,8 +138,8 @@ const OUTLET_COORDS: { id: string; px: number; py: number }[] = [
   { id: 'co3', px: 285, py: 470 },
   { id: 'co4', px: 25, py: 370 },
   { id: 'co5', px: 65, py: 115 },
-  { id: 'co6', px: 235, py: 115 },
-  { id: 'co7', px: 285, py: 190 },
+  { id: 'co6', px: 285, py: 190 },
+  { id: 'co7', px: 235, py: 115 },
 ];
 
 export type WallId = 'left' | 'right' | 'top' | 'bottom' | 'partition';
@@ -151,9 +156,9 @@ export interface WallMount {
 
 /**
  * Nearest-surface resolution against the room's 4 edges plus the interior partition.
- * This is what makes `co5`/`co6` land on the partition rather than the left/right walls —
+ * This is what makes `co5`/`co7` land on the partition rather than the left/right walls —
  * verified against the real coordinates above: co1→left, co2→bottom, co3→right, co4→left,
- * co5→partition, co6→partition, co7→right (see `geometry.test.ts`).
+ * co5→partition, co6→right, co7→partition (see `geometry.test.ts`).
  */
 export function nearestWall(px: number, py: number): WallMount {
   const candidates: { wall: WallId; dist: number; normal: Vec2; tangent: Vec2; point: Vec2 }[] = [

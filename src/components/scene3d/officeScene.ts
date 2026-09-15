@@ -297,7 +297,7 @@ export class OfficeScene {
 
     // The partition is the room's real entrance now — a full-height glazed office
     // partition with a 2-leaf sliding glass door filling its 1.6m centre gap. See
-    // `addGlazedPartition`'s own docblock for why (co5/co6, and keeping l7 visible).
+    // `addGlazedPartition`'s own docblock for why (co5/co7, and keeping l7 visible).
     this.addGlazedPartition(H, wallMat);
   }
 
@@ -369,7 +369,7 @@ export class OfficeScene {
    * The partition is now the room's real entrance: a full-height glazed office partition —
    * a solid knee wall to 0.9m, glass from there to the ceiling — in two panels flanking a
    * 1.6m centre gap that a 2-leaf sliding glass door fills. The knee-wall height is NOT
-   * cosmetic: `co5` (x=-1.9) and `co6` (x=+1.5) are mounted ON this partition at y=0.35, so
+   * cosmetic: `co5` (x=-1.9) and `co7` (x=+1.5) are mounted ON this partition at y=0.35, so
    * the bottom 0.9m has to stay solid material for them to sit on — both x's verified
    * inside the panels ([-3.0,-0.8] and [0.8,3.0], `geometry.test.ts`'s door-gap-clearance
    * test) and clear of the door gap. No mid-mullions and glass at opacity 0.18 (see
@@ -499,7 +499,7 @@ export class OfficeScene {
    * built the whole assembly INSIDE the wall's 0.12m-thick box (only visible at all
    * because the wall material is 96% opaque). `OUTLET_WALL_HALF[wall] + DEPTH/2` instead
    * clears the actual surface each mount type sits on — 0.06 for an outer wall, 0.03 for
-   * the partition's thinner knee wall (co5/co6).
+   * the partition's thinner knee wall (co5/co7).
    */
   private buildOutletFixtures() {
     const PLATE = 0.2;

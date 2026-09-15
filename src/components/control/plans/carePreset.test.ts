@@ -54,6 +54,17 @@ describe('PLAN_PRESETS', () => {
     }
   });
 
+  it('puts CO6 on the right wall and CO7 on the partition, as installed — RM-080', () => {
+    // The original template had these two the other way round. These are the exact room-frame
+    // values the live `device_config` rows are corrected to, so the preset, the 3D scene and the
+    // database cannot quietly disagree about which outlet is where.
+    const point = (id: string) => carePreset.devices.find((d) => d.deviceId === id)!.point!;
+    expect(point('co6').x).toBeCloseTo(0.916667, 5);
+    expect(point('co6').y).toBeCloseTo(0.339623, 5);
+    expect(point('co7').x).toBeCloseTo(0.75, 5);
+    expect(point('co7').y).toBeCloseTo(0.198113, 5);
+  });
+
   it('carries the room proportions, so the drawing is not a square claiming to be this room', () => {
     const care = carePreset;
     expect(care.shape.aspect).toBeCloseTo(CARE_ASPECT, 6);

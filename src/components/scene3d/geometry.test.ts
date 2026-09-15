@@ -3,7 +3,7 @@ import { toWorld, nearestWall, LIGHT_FIXTURES, OUTLET_FIXTURES, ROOM, PLAN } fro
 
 /** The door gap Phase N's glazed partition (officeScene.ts) leaves in the middle of the
  * partition — half-width in world metres. Duplicated here (not imported) deliberately:
- * this is the one test asserting co5/co6 stay clear of it, so it must not silently track
+ * this is the one test asserting co5/co7 stay clear of it, so it must not silently track
  * a future change to the 3D shell's own constant. */
 const DOOR_HALF_M = 0.8;
 /** Outlet block half-width along the wall tangent once enlarged + spread (Phase N):
@@ -25,21 +25,32 @@ describe('toWorld', () => {
 });
 
 describe('nearestWall', () => {
-  // The exact real coordinates from OUTLET_FIXTURES / the live Outlet Floor Plan template.
+  // The exact real coordinates from OUTLET_FIXTURES. CO6 and CO7 are the other way round from
+  // the original Outlet Floor Plan template — RM-080: the physical installation has CO6 on the
+  // right wall and CO7 on the partition, and the template had them swapped.
   it.each([
     ['co1', 25, 470, 'left'],
     ['co2', 50, 515, 'bottom'],
     ['co3', 285, 470, 'right'],
     ['co4', 25, 370, 'left'],
     ['co5', 65, 115, 'partition'],
-    ['co6', 235, 115, 'partition'],
-    ['co7', 285, 190, 'right'],
+    ['co6', 285, 190, 'right'],
+    ['co7', 235, 115, 'partition'],
   ] as const)('%s at (%d,%d) resolves to %s', (_id, px, py, expected) => {
     expect(nearestWall(px, py).wall).toBe(expected);
   });
 
+  it.each([
+    ['co6', 'right'],
+    ['co7', 'partition'],
+  ] as const)('the fixture %s is built on the %s wall — RM-080', (id, wall) => {
+    // Pinned on the FIXTURE, not just on nearestWall: the table above would still pass if the
+    // coordinates in OUTLET_FIXTURES were never swapped.
+    expect(OUTLET_FIXTURES.find((f) => f.id === id)!.mount.wall).toBe(wall);
+  });
+
   it('partition-mounted outlets face away from the partition, into the room they serve', () => {
-    // co5/co6 sit just south of the partition (py=115 > partitionY=100), so they must
+    // co5/co7 sit just south of the partition (py=115 > partitionY=100), so they must
     // face further south (+z), not back into the partition or north across it.
     const mount = nearestWall(65, 115);
     expect(mount.normal.z).toBe(1);
@@ -127,13 +138,13 @@ describe('OUTLET_FIXTURES', () => {
     expect(co1.world.x).toBeCloseTo(ROOM.minX, 6);
   });
 
-  it('the partition-mounted outlets (co5/co6) sit clear of the glazed partition\'s door gap', () => {
+  it('the partition-mounted outlets (co5/co7) sit clear of the glazed partition\'s door gap', () => {
     // This is the ONLY structural safety net for officeScene.ts's glazed-partition door —
     // the socket spread itself lives there, unreachable by this test file, so what's
-    // checked here is the anchor point co5/co6 are built outward from staying safely on a
+    // checked here is the anchor point co5/co7 are built outward from staying safely on a
     // solid glass panel rather than drifting into the 1.6m sliding-door gap.
     const clearance = DOOR_HALF_M + OUTLET_HALF_SPREAD_M;
-    for (const id of ['co5', 'co6']) {
+    for (const id of ['co5', 'co7']) {
       const f = OUTLET_FIXTURES.find((fx) => fx.id === id)!;
       expect(f.mount.wall).toBe('partition');
       expect(Math.abs(f.world.x)).toBeGreaterThan(clearance);

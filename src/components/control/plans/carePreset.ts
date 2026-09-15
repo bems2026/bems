@@ -31,8 +31,10 @@ const OUTLETS: [string, number, number][] = [
   ['co3', 285, 470],
   ['co4', 25, 370],
   ['co5', 65, 115],
-  ['co6', 235, 115],
-  ['co7', 285, 190],
+  // CO6 and CO7 are the other way round from the original template — RM-080. CO6 is on the right
+  // wall and CO7 on the partition, as installed.
+  ['co6', 285, 190],
+  ['co7', 235, 115],
 ];
 
 /** The room's width relative to its height. 300x530 plan units is what the drawing has always

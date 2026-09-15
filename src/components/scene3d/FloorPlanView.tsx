@@ -53,15 +53,18 @@ const LIGHT_LAYOUT: { id: string; row: number }[] = [1, 2, 3, 4, 5, 6, 7].map((r
   row,
 }));
 
-/** Same order as the live template's `coords` array — index i-1 is device `co{i}`. */
+/** Same order as the live template's `coords` array — index i-1 is device `co{i}`, and the label
+ * is drawn from that index, so the ROWS must stay in this order. CO6 and CO7 carry each other's
+ * template positions (RM-080): the installation has CO6 on the right wall and CO7 on the partition,
+ * so their x/y values were swapped in place rather than the rows reordered. */
 const OUTLET_LAYOUT: { id: string; x: number; y: number }[] = [
   { id: 'co1', x: 25, y: 470 },
   { id: 'co2', x: 50, y: 515 },
   { id: 'co3', x: 285, y: 470 },
   { id: 'co4', x: 25, y: 370 },
   { id: 'co5', x: 65, y: 115 },
-  { id: 'co6', x: 235, y: 115 },
-  { id: 'co7', x: 285, y: 190 },
+  { id: 'co6', x: 285, y: 190 },
+  { id: 'co7', x: 235, y: 115 },
 ];
 
 export function FloorPlanView() {

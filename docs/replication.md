@@ -246,7 +246,7 @@ short one.
 | ~~Day-one network setup~~ | **Covered** — `npm run preflight` checks credentials, the database, the vendor account, the local radio segment, the bridge and the services, and reports what it could *not* check rather than passing it. It does not perform the network join: it tells you whether one worked. |
 | ~~A second building's `sites` row~~ | **Covered** — `npm run site:sql` generates it from the site directory, idempotently, and prints rather than executes. `phase20_site_scoping.sql` still contains this building's id, but only in a backfill that matches nothing on a fresh database and a default that `phase22` drops again. |
 | **A 3D scene pack** | Site-specific by nature. A site with `scene_pack: null` gets the data-driven floor plan, which is the intended default. |
-| **The Control page's outlet plan** | Still pins one building's outlet positions (`ROADMAP.md` FI-016). Every other screen is data-driven. |
+| ~~The Control page's outlet plan~~ | **Covered** — data-driven since `ROADMAP.md` RM-044: outlet positions are `device_config.plan_x/plan_y`, placed from Settings → Floor plan. A scene pack's preset only seeds those rows; after that the data is the source of truth. |
 | ~~A conformance suite for your own site~~ | **Built** — `npm run site:check`, step 10. |
 
 ## Traps this project has already paid for

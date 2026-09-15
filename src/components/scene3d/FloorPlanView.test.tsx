@@ -17,6 +17,19 @@ describe('FloorPlanView', () => {
     }
   });
 
+  it('draws CO6 on the right wall and CO7 on the partition, each label over its own pin — RM-080', () => {
+    // The label is `CO{i+1}` from the row's INDEX, drawn 18 units above the row's own x/y. So this
+    // pins both halves of the swap at once: the positions moved, and the rows were not reordered
+    // (which would have relabelled the two pins back to where they started).
+    render(<FloorPlanView />);
+    const at = (label: string) => {
+      const el = screen.getByText(label);
+      return { x: el.getAttribute('x'), y: el.getAttribute('y') };
+    };
+    expect(at('CO6')).toEqual({ x: '285', y: String(190 - 18) });
+    expect(at('CO7')).toEqual({ x: '235', y: String(115 - 18) });
+  });
+
   it('binds a reading to its own device id only — updating co3 never bleeds into co1 or co4', () => {
     useDeviceStore.setState({
       latestReadings: {

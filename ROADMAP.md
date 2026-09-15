@@ -1,6 +1,12 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-14 — **RM-076 to RM-078, Analytics data quality**, from three operator
+**Last audited:** 2026-09-15 — **RM-080: CO6 and CO7 were drawn in each other's places.** The
+three code copies of the office layout are swapped and pinned; the two live `device_config` rows
+still hold the old positions and need the statement in RM-080 run by the operator, so until then
+the Control page and Settings → Floor plan disagree with the Overview. Also planned the same day,
+not yet built: RM-081 to RM-084, the Reports page's reliability, layout and export overhaul.
+
+**Previously audited:** 2026-09-14 — **RM-076 to RM-078, Analytics data quality**, from three operator
 reports: L.O Red "reporting less than it measured", L.O Red reading differently on Overview and
 Analytics, and blank strips in the branch and outlet charts. **The first was a false alarm** — the
 meter froze, repeating one reading for up to fifteen hours while its own registers stood still, and the
@@ -138,6 +144,14 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
+
+### 2026-09-15 — CO6 and CO7 swapped places, and half the fix is a database row
+
+The operator reports that the physical installation has CO6 on the right wall and CO7 on the
+partition — the other way round from every drawing. **RM-080** swaps the three code copies, so the
+Overview's 3D scene and its fallback plan are right as soon as the bundle is built. **The Control
+page and Settings → Floor plan read `device_config`, not code**, and both rows still hold the old
+values: run the two-row statement in RM-080, then read the rows back.
 
 ### 2026-09-14 — L.O Red "reporting less than it measured" was a meter that froze, and the charts could not say so
 
@@ -5558,6 +5572,56 @@ fall back to it).
       `SITE.scene_pack` names it, drawing no device and knowing no device id, re-expressed in the
       room's own 0..1 frame so it cannot sit a few percent off the pins beside it. A replicated
       deployment gets the sketched outline and is told it has no presets.
+
+- [x] **RM-080 (S)** **DONE 2026-09-15 in code; the live rows are an operator step.** **CO6 and
+      CO7 were drawn in each other's places.** The operator, from the physical installation: CO6 is
+      on the right wall and CO7 on the glazed partition. Every copy of this layout descends from the
+      original Node-RED template's `coords`, and that template had the pair the other way round —
+      so all of them agreed with each other and none with the room.
+
+      **Two sources draw an outlet, and a fix in one leaves the other wrong.** The Overview's 3D
+      scene (`scene3d/geometry.ts`, `OUTLET_COORDS`) and its WebGL fallback
+      (`scene3d/FloorPlanView.tsx`, `OUTLET_LAYOUT`) draw from code. The Control page's outlet plan
+      and Settings → Floor plan draw **only** from `device_config.plan_x/plan_y` — there has been no
+      code fallback since this entry's parent, RM-044 — and `control/plans/carePreset.ts` only seeds
+      those rows when the preset is applied. All three code copies are swapped; `nearestWall` then
+      moves CO6 to the right wall and CO7 onto the partition on its own, and CO7 at x=+1.5 clears the
+      door gap exactly as CO6 did.
+
+      *One trap, written into the file:* `FloorPlanView` labels each outlet `CO{i+1}` from its
+      **array index**, so the swap changed the x/y values in place. Reordering the rows would have
+      moved both pins and relabelled them back, and drawn exactly what was there before.
+
+      *Pinned, and confirmed failing first* (4 failures against the old data): `geometry.test.ts`
+      asserts the wall each FIXTURE is built on, not only what `nearestWall` returns for a pair of
+      numbers — the table-driven cases alone would still pass on unswapped fixtures — and the
+      door-gap clearance test now covers co5/co7. `carePreset.test.ts` pins CO6 and CO7's room-frame
+      points to the exact values the live rows are corrected to, so the preset, the scene and the
+      database cannot quietly drift apart again. `FloorPlanView.test.tsx` renders the fallback plan
+      and asserts where the CO6 and CO7 **labels** are drawn — both halves of the index trap at once —
+      and was neutered to prove it: against the unswapped component it fails, restored it passes.
+
+      **The live rows, read 2026-09-15 with the service role, read-only:** still exactly the preset's
+      values, never moved by hand — co6 `0.75 / 0.198113`, co7 `0.916667 / 0.339623`. **Until they
+      are corrected, the Control page and Settings still draw the old positions.** The statement,
+      for the Supabase SQL editor:
+      ```sql
+      begin;
+      update public.device_config set plan_x = 0.9166666666666666, plan_y = 0.33962264150943394 where device_id = 'co6';
+      update public.device_config set plan_x = 0.75,               plan_y = 0.1981132075471698  where device_id = 'co7';
+      select device_id, plan_x, plan_y from public.device_config where device_id in ('co6','co7') order by device_id;
+      commit;
+      ```
+      Both coordinates of each row change together and `space_node_id` is untouched, so phase23's
+      both-or-neither constraint and its room-change trigger are satisfied. Settings → Floor plan can
+      do the same in whole percents (92/34 and 75/20).
+
+      *Ruled out, so nobody chases them:* the live Node-RED flow no longer carries an outlet
+      floor-plan template (checked against `flows.json`); `ibems.layout.v1` in localStorage holds
+      furniture only; `space_nodes.attrs.plan` holds the room's shape only. Circuit, sockets, protocol
+      version and shed tier are identity rather than position, and are unchanged — both outlets are
+      `C.O Yellow` and `group_3`. `docs/replication.md`'s "Not covered" row claiming the Control
+      page still pins one building's outlets was stale since RM-044 and is corrected.
 
 - [x] **RM-045 (S)** **DONE 2026-09-02, deployed.** **The stale flag covered the pin it
       described.** MEASURED on the office kiosk (800x480): four stale outlets rendered four
