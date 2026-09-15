@@ -7,9 +7,9 @@ meter froze, repeating one reading for up to fifteen hours while its own registe
 legacy integrator counted the held watts; the bridge had published exactly what the meter said. The
 second was two copies of one derivation. The third was real Node-RED restarts and one-sample health
 flickers drawn as unexplained blanks, on top of charts that paired devices by array position rather
-than by time. See the 2026-09-14 entry in §0. **Stage 2, RM-079 (the bridge side), is built and tested — the
-bridge now stamps each sample's tick and flags a reading that has stopped moving; see its entry for
-the flow write.**
+than by time. See the 2026-09-14 entry in §0. **Stage 2, RM-079 (the bridge side), is deployed to the live flow and
+read back (2026-09-15)** — the bridge now stamps each sample's tick and flags a reading that has stopped
+moving. The three daemons still need a restart; see its entry.
 
 **Previously audited:** 2026-09-13 — **RM-072**, the Reports overhaul, in progress. The primitives have
 landed: charts are a scene with two serializers rather than an SVG string, because putting a string
@@ -3179,6 +3179,26 @@ quality, and nothing is coerced to 0.
     `build(s, undefined)` takes a defaulted parameter's default. It now calls `buildLatest` with nine
     arguments, as an old flow does.
   - **Restart map:** `shared/buildLatest.mjs` reaches `ibems-proxy` and `ibems-scheduler`.
+  - **Deployed 2026-09-15 08:09:38** (`7d9b599`, after CI went green on it). `flows.json` was backed up
+    byte-identical first, then `deploy:pi --force --apply`: 298 → 299 nodes, all four source tabs
+    matched, no id collisions, and its own verification passed 5/5.
+    **Read back, not assumed:**
+    - `sample_ts` reached the context file about 25 s later, and the newest sample in all eleven history
+      buffers carries the same tick. Every buffer kept its 1,440 points.
+    - `value_freeze` tracks all eleven metered devices.
+    - The latest readings still show 21 rows and 18 of 20 online. There are no freeze flags (the
+      three-hour clock had just started), and all four meters still carry
+      `energy_kwh_today_integrated`.
+    - Node-RED logged no errors from the bridge.
+    - The dashboard's `lib/timeseries.ts`, run over the served history (1,436 arrival-stamped points
+      followed by four tick-stamped ones), gave 1,440 slots for 1,440 samples on every device: nothing
+      lost or doubled at the switch, no gap windows, and the flickers bridged.
+
+    **Not yet done:** restarting `ibems-ingest ibems-proxy ibems-scheduler`, which still hold the
+    pre-RM-079 `shared/buildLatest.mjs`. They use only its `iso8`, so nothing they do changes. The
+    remote restart was refused by the session's permission mode and handed to the operator.
+    **Not yet seen live:** a `measurement_frozen` flag, which needs a meter to hold still for three
+    hours.
 
 ### Reports gain charts, a document, and a price — RM-072 (2026-09-10)
 
