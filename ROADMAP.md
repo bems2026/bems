@@ -3579,6 +3579,16 @@ ever cleared, and put its controls in three rows. This section is that page's ov
       overnight base load, the median of 00:00–06:00's hourly medians, needing four of those six hours.
       Each is an em dash with its reason when the data cannot carry it (`reportFindings.test.ts`,
       `ReportFindings.test.tsx`). Page only: the PDF's sections are unchanged.
+      **Read back live the same day**, on the Pi at `f864de6`, signed in, with CI green.
+      - **August 2026:** 13.0 kWh a weekday against 1.4 kWh a weekend day, a 10% load factor qualified
+        at 27% of minutes observed, and a 91 W overnight base load. Recomputed independently from the
+        daily chart's own table: 13.05 kWh over 25–28 and 31 August, 1.40 kWh over 29–30 August.
+      - **Week of 10 August** (no usable reading): all three findings are an em dash with their reasons,
+        and none of its charts offers anything to explore.
+      - **Hover:** 28 August reads 8.10 kWh, matching its table row.
+      - **Keyboard:** walks the heatmap a day at a time; the live region says each step.
+      - **Contrast:** tooltip and findings text measure at least 5.9:1 in the light theme and 7.9:1 in
+        the dark.
 - [ ] **RM-085 (L)** — **Arbitrary windows: last 24 hours, month to date, billing cycle, custom.**
       **Deferred by operator decision, 2026-09-15.** `report_window` accepts only a whole week or
       month (`phase37_report_series.sql:66`) and counts the unfinished part of a period as missing,
