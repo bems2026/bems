@@ -6210,13 +6210,6 @@ body::before {
    tokens and already contrast-checked tones beat new colour values.
    ============================================================================ */
 
-.reports-months {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-2);
-  margin-bottom: var(--sp-4);
-}
-
 .reports-summary {
   padding: var(--sp-4);
   margin-bottom: var(--sp-4);
@@ -6470,6 +6463,173 @@ body::before {
   font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--txt);
+}
+
+/* RM-082b — one sticky control bar. Under the nav, measured rather than assumed; z-index below the
+   nav's 50 so a popover from the nav still covers it. Not sticky below 640px, where it wraps onto
+   several lines and would cover a third of a phone's screen for the length of the report. */
+.report-controls {
+  position: sticky;
+  top: calc(var(--nav-h-live, var(--nav-h)) + var(--sp-2));
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-4);
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-card);
+}
+
+.report-controls .reports-periods,
+.report-controls .tabs {
+  margin: 0;
+}
+
+.report-controls__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+}
+
+@media (max-width: 640px) {
+  .report-controls {
+    position: static;
+  }
+
+  .report-controls__actions {
+    margin-left: 0;
+  }
+}
+
+/* The period stepper: the report before, the one being read (which opens the list), the one after,
+   and the two jumps a reader actually makes. */
+.report-stepper {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.report-stepper__step,
+.report-stepper__current,
+.report-stepper__preset {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: 32px;
+  padding: 0 var(--sp-2);
+  background: var(--bg-surface);
+  color: var(--txt);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.report-stepper__current {
+  justify-content: space-between;
+  min-width: 176px;
+  font-weight: 600;
+}
+
+.report-stepper button:not(:disabled):hover {
+  border-color: var(--txt);
+}
+
+.report-stepper button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.report-period-list {
+  position: fixed;
+  z-index: 70;
+  overflow-y: auto;
+  padding: var(--sp-2);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-pop, 0 8px 24px rgb(0 0 0 / 0.18));
+}
+
+.report-period-list__year + .report-period-list__year {
+  margin-top: var(--sp-2);
+}
+
+.report-period-list__heading {
+  margin: 0;
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.report-period-list__item {
+  display: block;
+  width: 100%;
+  padding: var(--sp-2);
+  text-align: left;
+  background: none;
+  color: var(--txt);
+  border: 0;
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.report-period-list__item:hover,
+.report-period-list__item--current {
+  background: var(--bg-surface-2);
+}
+
+.report-period-list__item--current {
+  font-weight: 700;
+}
+
+/* Placeholders shaped like what they stand in for. The chart ones take their aspect ratio from
+   `reportChartSizes`, inline, so nothing below them moves when the chart arrives. */
+.report-skeleton .skeleton {
+  display: block;
+}
+
+.report-skeleton__kpis .skeleton + .skeleton {
+  margin-top: var(--sp-2);
+}
+
+.report-skeleton__plot {
+  width: 100%;
+}
+
+.report-skeleton__row {
+  display: grid;
+  grid-template-columns: 2fr repeat(3, 1fr);
+  align-items: center;
+  gap: var(--sp-4);
+  height: 40px;
+  padding: 0 var(--sp-4);
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.report-skeleton__row:last-child {
+  border-bottom: 0;
+}
+
+.report-skeleton__label {
+  width: 60%;
+}
+
+.report-skeleton__num {
+  justify-self: end;
+  width: 64%;
 }
 
 /* Report charts — RM-072. Only the genuinely page-specific pieces, per CLAUDE.md: the table
@@ -8742,6 +8902,11 @@ button.space-plan__pin {
   .tariff-list__remove,
   /* RM-081: Retry on a report section that failed to load. */
   .report-retry-btn,
+  /* RM-082b: the period stepper, its two jumps, and the entries in its list. */
+  .report-stepper__step,
+  .report-stepper__current,
+  .report-stepper__preset,
+  .report-period-list__item,
   /* RM-071: a 30x30 icon button that DELETES a schedule rule, on a touchscreen. Square and in
      normal flow beside the arm switch, so it grows rather than needing a hit-area expander —
      the switch's own expander is 44 wide and the row's 8px gap keeps them from cross-talking. */

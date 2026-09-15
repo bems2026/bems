@@ -8,10 +8,11 @@ import { supabase } from '@/config/supabase';
 import { toCsv, downloadCsv, type CsvColumn } from '@/lib/csv';
 import { coverageOf, formatPeriod, isQuotable, type PeriodDeviceReport, type ReportPeriod } from '@/lib/supabaseReports';
 import { siteDateTime } from '@/lib/siteTime';
-import { PeriodPicker } from './PeriodPicker';
+import { ReportControlBar } from './ReportControlBar';
+import { ReportSkeleton } from './ReportSkeleton';
 import { ReportCharts, type ChartsData } from './ReportCharts';
 import { buildBreakdown } from '@/lib/circuitBreakdown';
-import { Tabs, type TabDef } from '@/components/ui/Tabs';
+import type { TabDef } from '@/components/ui/Tabs';
 import { BaselineReport } from './BaselineReport';
 import { CircuitDeepDive } from './CircuitDeepDive';
 import { ComparisonReport } from './ComparisonReport';
@@ -215,6 +216,10 @@ export function ReportsPage() {
 
   const periodLabel = selected ? formatPeriod(period, selected) : '';
   const scopeKey = `${period}:${selected ?? ''}`;
+  /** Placeholders only while nothing has failed: a failure shows its Retry note instead, and a
+   *  skeleton beside an error would say the part is still coming when it is not. */
+  const chartsLoading =
+    charts === null && (core.status === 'loading' || detail.status === 'loading') && core.status !== 'error' && detail.status !== 'error';
   const rowCoverage = (r: PeriodDeviceReport) => coverageOf(r.online_sample_count, r.expected_sample_count);
   const deviceColumns: ReportColumn<PeriodDeviceReport>[] = [
     { id: 'device', header: 'Device', cell: (r) => nameOf(r.device_id) },
@@ -256,11 +261,21 @@ export function ReportsPage() {
             </InfoHint>
           </>
         }
+      />
+
+      {/* RM-082b: every control in one sticky bar — what kind of period, which one, which reading
+          of it, and what to take away — instead of the header and two rows below it. */}
+      <ReportControlBar
+        period={period}
+        onPeriodChange={setPeriod}
+        starts={months ? months.map((m) => m.period_start.slice(0, 10)) : []}
+        selected={selected}
+        onSelect={select}
+        tabs={REPORT_TABS}
+        tab={tab}
+        onTabChange={setTab}
         actions={
           <>
-            {/* In the header beside the export, where every other page in this app puts its
-                controls — the shape RM-071 settled on for Automation. */}
-            <Tabs tabs={REPORT_TABS} activeId={tab} onChange={setTab} label="Report type" className="reports-tabs" />
             <ExportPdfButton
               period={period}
               periodLabel={periodLabel}
@@ -279,38 +294,16 @@ export function ReportsPage() {
         }
       />
 
-      <ReportSectionNote section={periods} what="the list of reports" />
+      {periods.status === 'loading' ? (
+        <ReportSkeleton label={period === 'week' ? 'weekly' : 'monthly'} period={period} parts={['kpis', 'charts', 'table']} />
+      ) : null}
+      <ReportSectionNote section={periods} what="the list of reports" quietWhileLoading />
 
       {months?.length === 0 ? (
         <p className="reports-note">
           <FileText size={16} aria-hidden="true" /> No {period} has completed since reporting was switched on. The first
           report appears a couple of days after the end of the first full {period}.
         </p>
-      ) : null}
-
-      {/* Week or month — RM-041. Two buttons rather than a select: there are exactly two, and a
-          select would hide one of them behind a click. */}
-      <div className="reports-periods" role="group" aria-label="Report period">
-        {(['month', 'week'] as const).map((p) => (
-          <button
-            key={p}
-            type="button"
-            className={`analytics-scope-btn${period === p ? ' analytics-scope-btn--active' : ''}`}
-            aria-pressed={period === p}
-            onClick={() => setPeriod(p)}
-          >
-            {p === 'month' ? 'Monthly' : 'Weekly'}
-          </button>
-        ))}
-      </div>
-
-      {months && months.length > 0 ? (
-        <PeriodPicker
-          period={period}
-          starts={months.map((m) => m.period_start.slice(0, 10))}
-          selected={selected}
-          onSelect={select}
-        />
       ) : null}
 
       {tab === 'summary' && building ? (
@@ -339,7 +332,7 @@ export function ReportsPage() {
 
       {tab === 'summary' && selected ? (
         <>
-          <ReportSectionNote section={core} what="the daily figures" />
+          <ReportSectionNote section={core} what="the daily figures" quietWhileLoading />
           {core.data ? (
             <ErrorBoundary scope="The coverage summary" variant="inline" resetKey={core.data}>
               <CoverageBanner
@@ -395,9 +388,13 @@ export function ReportsPage() {
 
       {tab === 'summary' && selected ? (
         <>
-          <ReportSectionNote section={detail} what="the hourly charts" />
+          <ReportSectionNote section={detail} what="the hourly charts" quietWhileLoading />
           <ReportSectionNote section={ceiling} what="the demand ceiling" quietWhileLoading />
-          {charts ? <ReportCharts period={period} start={selected} {...charts} /> : null}
+          {charts ? (
+            <ReportCharts period={period} start={selected} {...charts} />
+          ) : chartsLoading ? (
+            <ReportSkeleton label={periodLabel} period={period} parts={['charts']} />
+          ) : null}
         </>
       ) : null}
 
@@ -430,7 +427,15 @@ export function ReportsPage() {
         </ErrorBoundary>
       ) : null}
 
-      {tab === 'summary' && selected ? <ReportSectionNote section={report.devices} what="the per-device figures" /> : null}
+      {tab === 'summary' && selected ? (
+        <>
+          <ReportSectionNote section={report.devices} what="the per-device figures" quietWhileLoading />
+          {report.devices.status === 'loading' ? (
+            // Silent when the charts' skeleton is already saying what is loading.
+            <ReportSkeleton label={periodLabel} period={period} parts={['table']} announce={!chartsLoading} />
+          ) : null}
+        </>
+      ) : null}
 
       {tab === 'summary' && rows && rows.length > 0 ? (
         <ErrorBoundary scope="The per-device table" variant="inline" resetKey={rows}>

@@ -8,7 +8,9 @@ the Reports page loads as six independent sections**, so a failed tariff read no
 charts that loaded, a hung query becomes a timeout with a Retry instead of an empty page, and a
 period stored as 0 kWh from ten rows that held no reading says "not observed". RM-082 to RM-084
 (layout, exports, charts) are planned in the same §2 section; **RM-082a has since landed** — a
-headline row led by energy, tables built for reading, and the Reports CSS on a guarded 8-point grid.
+headline row led by energy, tables built for reading, and the Reports CSS on a guarded 8-point grid —
+and **RM-082b**, which puts every control in one sticky bar around a period stepper and draws loading
+as the shape of what is coming.
 
 **Previously audited:** 2026-09-14 — **RM-076 to RM-078, Analytics data quality**, from three operator
 reports: L.O Red "reporting less than it measured", L.O Red reading differently on Overview and
@@ -3345,11 +3347,50 @@ ever cleared, and put its controls in three rows. This section is that page's ov
       guard was **neutered to prove it**: with the null check removed, exactly that test fails; with
       the file restored byte-for-byte, all eight pass. **Not verified signed-in in a browser.**
 
-- [ ] **RM-082b (M)** — **One control bar, and loading that looks like what it loads.** A sticky
-      bar holding period kind, a period stepper with *Latest settled / Previous / Same period last
-      year*, the report tabs, a circuit scope and Export, replacing the three rows of controls today;
-      skeletons shaped like each chart and table, shown when the subject changes and never flashed
-      on a same-period retry.
+- [x] **RM-082b (M)** **DONE 2026-09-15. One control bar, and loading that looks like what it
+      loads.** The controls were in three places — the report tabs and both exports in the page
+      header, Monthly/Weekly on a row of its own, the period pills on another — so a reader met three
+      rows of chrome before a figure, and the exports sat a screen away from what they exported.
+
+      *`ReportControlBar`* holds them in one row, in the order a reader decides: what kind of period,
+      which one, which reading of it, what to take away. **Sticky** under the nav, measured through
+      `--nav-h-live` rather than assumed, and below the nav's z-index so the nav's own popovers still
+      cover it — because the report is five charts and a table long, and changing the period from the
+      bottom of it should not mean scrolling back to the top. **Not sticky below 640px**, where it wraps
+      onto several lines and would cover a third of a phone screen for the whole report.
+
+      *`PeriodPicker` is a stepper now*: the report before, the one being read (which opens a list of
+      every stored report grouped by year, the current one marked), the report after, **Latest**, and
+      **Same month/week last year**. It steps through **stored reports, not the calendar** — the list
+      can have holes, and "previous" landing on a period with no report would render an empty page
+      that reads as a period with no consumption. A week last year is **52 weeks back, 364 days**:
+      stored weeks start on a Monday, and 365 days lands on a Tuesday that matches no week, so a
+      calendar year would have reported last year's week missing every time (`src/lib/reportPeriods.ts`,
+      pinned across a leap day). An unavailable jump is disabled **and says why** — "No report for
+      August 2025" — through a description a screen reader reads, not only a tooltip. It kept the
+      "Report month"/"Report week" group and the current period's button name, so the existing page
+      and tabs tests held **without a change**.
+
+      *`ReportSkeleton`* replaces the loading sentences for the charts and the device table. Each chart
+      placeholder takes the **same aspect ratio** as its chart — `src/lib/reportChartSizes.ts`, which
+      `ReportCharts` now draws from too, so the two cannot drift — because the charts scale to their
+      column and a fixed-height placeholder would still jump when the chart arrived. One status line
+      is spoken; a second skeleton on the page stays silent. Placeholders show only while nothing has
+      failed — beside an error a skeleton would claim the part is still coming. The plan's "hold the
+      previous frame on a same-period retry" turned out to be moot: a Retry only ever follows a
+      failure, which has nothing drawn to hold, and a period already read answers from RM-081's cache
+      with no loading state at all.
+
+      Removed: `.reports-months` and the `MAX_PILLS` export, which nothing imports now.
+      Tests: `PeriodPicker.test.tsx` (10, nine of them red against the pill row), `ReportSkeleton.test.tsx`
+      (4), `reportPeriods.test.ts` (4). **Not verified signed-in in a browser.**
+
+- [ ] **RM-082c (S)** — **Scope the device table and the circuit report to one branch.** Planned in
+      RM-082 and split out rather than rushed: a circuit selector in the control bar that filters the
+      device table, the Circuits tab and the per-device CSV to one branch circuit, derived from
+      `BUILDING_METER_IDS` and each device's `branch_circuit` like `circuitBreakdown.ts`, with the
+      building-level charts saying plainly that they still show the whole building — per-device series
+      are not stored.
 - [ ] **RM-083 (M)** — **An export drawer with sections, a sectioned PDF and tidy CSVs.** Coverage
       and "what this report does not say" are locked on (operator decision, 2026-09-15); every other
       section is optional. The PDF gains the key figures it omits today (peak demand, voltage,

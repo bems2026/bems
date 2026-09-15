@@ -20,6 +20,7 @@ import {
   type DemandSummary,
 } from '@/lib/reportSeries';
 import { formatPeriod, type ReportPeriod } from '@/lib/supabaseReports';
+import { REPORT_CHART_WIDTH, reportChartHeight } from '@/lib/reportChartSizes';
 
 /**
  * The five charts, in the order the report reads.
@@ -93,7 +94,7 @@ function ChartSlot({ scope, build, table, summaryLabel }: SlotProps) {
   );
 }
 
-export function ReportCharts({ period, start, daily, hours, matrix, curve, segments, untracked, ceilingW, width = 640 }: Props) {
+export function ReportCharts({ period, start, daily, hours, matrix, curve, segments, untracked, ceilingW, width = REPORT_CHART_WIDTH }: Props) {
   const label = formatPeriod(period, start);
 
   const spec = useCallback(
@@ -109,7 +110,7 @@ export function ReportCharts({ period, start, daily, hours, matrix, curve, segme
   );
 
   const dailyScene = useCallback(
-    () => dailyEnergyChart(toDailyPoints(daily), spec('rep-de', 230, `Energy per day — ${label}`)),
+    () => dailyEnergyChart(toDailyPoints(daily), spec('rep-de', reportChartHeight('daily', daily.length), `Energy per day — ${label}`)),
     [daily, spec, label]
   );
   const dailyTable = useCallback(
@@ -129,8 +130,8 @@ export function ReportCharts({ period, start, daily, hours, matrix, curve, segme
   );
 
   const hoursScene = useCallback(
-    () => loadProfileChart(toHourPoints(hours), spec('rep-lp', 220, `Demand by hour — ${label}`)),
-    [hours, spec, label]
+    () => loadProfileChart(toHourPoints(hours), spec('rep-lp', reportChartHeight('hours', daily.length), `Demand by hour — ${label}`)),
+    [hours, daily.length, spec, label]
   );
   const hoursTable = useCallback(
     (): ChartTable => ({
@@ -141,8 +142,8 @@ export function ReportCharts({ period, start, daily, hours, matrix, curve, segme
   );
 
   const breakdownScene = useCallback(
-    () => circuitBreakdownChart(segments, spec('rep-cb', 100, `Where the energy went — ${label}`), { untracked }),
-    [segments, untracked, spec, label]
+    () => circuitBreakdownChart(segments, spec('rep-cb', reportChartHeight('breakdown', daily.length), `Where the energy went — ${label}`), { untracked }),
+    [segments, untracked, daily.length, spec, label]
   );
   const breakdownTable = useCallback((): ChartTable => {
     const total = segments.reduce((a, x) => a + (x.kwh ?? 0), 0);
@@ -153,7 +154,7 @@ export function ReportCharts({ period, start, daily, hours, matrix, curve, segme
   }, [segments]);
 
   const heatScene = useCallback(
-    () => demandHeatmapChart(toHeatCells(matrix), spec('rep-hm', daily.length > 10 ? 320 : 200, `Demand by day and hour — ${label}`)),
+    () => demandHeatmapChart(toHeatCells(matrix), spec('rep-hm', reportChartHeight('heat', daily.length), `Demand by day and hour — ${label}`)),
     [matrix, daily.length, spec, label]
   );
   // 744 cells is not a table anyone reads. The per-hour numbers are already in the load profile
@@ -176,8 +177,8 @@ export function ReportCharts({ period, start, daily, hours, matrix, curve, segme
   );
 
   const curveScene = useCallback(
-    () => durationCurveChart(toDurationPoints(curve), spec('rep-dc', 220, `Load duration — ${label}`), { thresholdW: ceilingW }),
-    [curve, ceilingW, spec, label]
+    () => durationCurveChart(toDurationPoints(curve), spec('rep-dc', reportChartHeight('curve', daily.length), `Load duration — ${label}`), { thresholdW: ceilingW }),
+    [curve, ceilingW, daily.length, spec, label]
   );
   // Every tenth point: 101 rows of a smooth curve is noise, and the shape is the finding.
   const curveTable = useCallback(
