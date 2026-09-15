@@ -50,6 +50,11 @@ describe('ExportDrawer', () => {
     expect(screen.getByRole('checkbox', { name: 'Energy per day' })).toBeEnabled();
   });
 
+  it('says under a section when its chart could not be loaded and will be left out', () => {
+    draw({ sectionNotes: { durationCurve: 'Could not be loaded, so it will be left out of the PDF.' } });
+    expect(screen.getByRole('checkbox', { name: 'Load duration' })).toHaveAccessibleDescription(/left out of the PDF/);
+  });
+
   it('will not let a locked section be unticked', () => {
     draw();
     const coverage = screen.getByRole('checkbox', { name: 'Coverage' });

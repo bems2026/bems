@@ -73,6 +73,8 @@ export interface PdfReport {
   baseline?: { gate: readonly string[] | null; rows: readonly (readonly [string, string])[]; caveat: string } | null;
   circuits?: { branches: readonly PdfDeviceRow[]; devices: readonly PdfDeviceRow[]; untracked: string | null } | null;
   comparison?: { heading: string; lines: readonly string[] } | null;
+  /** Charts the reader chose whose data could not be loaded when the document was made — RM-081b. */
+  omitted?: readonly string[];
 }
 
 /** A4 minus 40pt margins each side. Charts are generated at exactly this width. */
@@ -216,6 +218,13 @@ export function buildDocDefinition(r: PdfReport) {
   }
 
   // --- charts, each with the numbers behind it ----------------------------------------------
+  if (r.omitted && r.omitted.length > 0) {
+    // Said before the charts, where a reader would look for the missing one.
+    content.push({
+      text: `Not included, because their data could not be loaded when this document was made: ${r.omitted.join(', ')}.`,
+      style: 'note',
+    });
+  }
   for (const chart of r.charts) {
     if (chart.section !== undefined && !has(chart.section)) continue;
     content.push(

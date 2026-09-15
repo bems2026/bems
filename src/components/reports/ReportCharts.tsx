@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { ChartFigure, type ChartTable } from './ChartFigure';
+import { ChartPlaceholder } from './ReportSkeleton';
 import { SCREEN_PALETTE } from './charts/palette';
 import { dailyEnergyChart } from './charts/dailyEnergyChart';
 import { loadProfileChart } from './charts/loadProfileChart';
@@ -20,7 +21,7 @@ import {
   type DemandSummary,
 } from '@/lib/reportSeries';
 import { formatPeriod, type ReportPeriod } from '@/lib/supabaseReports';
-import { REPORT_CHART_WIDTH, reportChartHeight } from '@/lib/reportChartSizes';
+import { REPORT_CHART_WIDTH, reportChartHeight, type ReportChartKind } from '@/lib/reportChartSizes';
 
 /**
  * The five charts, in the order the report reads.
@@ -37,15 +38,21 @@ import { REPORT_CHART_WIDTH, reportChartHeight } from '@/lib/reportChartSizes';
  *
  * EACH CHART IS BUILT INSIDE ITS OWN ERROR BOUNDARY — RM-081. The five scenes used to be generated
  * together in one `useMemo` at this level, so a single malformed row in the heatmap's input threw
- * past every chart to the page boundary and replaced the whole Reports page. Generation now happens
- * in the child the boundary wraps, so a chart that cannot be drawn costs one card and says so.
+ * past every chart to the page boundary and replaced the whole Reports page.
+ *
+ * AND EACH DRAWS FROM ITS OWN DATA — RM-081b. The hour profile, the heatmap and the duration curve
+ * each arrive on their own. A chart whose series is still coming holds its place at its own shape;
+ * one whose series failed is simply not drawn, and the page says so above the charts with a Retry.
+ * Live on 2026-09-15 the curve's query timed out every time, and it no longer takes the two charts
+ * beside it down with it.
  */
 
 export interface ChartsData {
   daily: DailyRow[];
-  hours: HourRow[];
-  matrix: MatrixRow[];
-  curve: CurveRow[];
+  /** `null` when this chart's series has not arrived, or could not be read. */
+  hours: HourRow[] | null;
+  matrix: MatrixRow[] | null;
+  curve: CurveRow[] | null;
   segments: CircuitSegment[];
   untracked?: { label: string; kwh: number | null };
   ceilingW: number | null;
@@ -59,6 +66,8 @@ interface Props extends ChartsData {
   start: string;
   /** Plot width. The kiosk is 1024 wide; the PDF asks for 515pt. */
   width?: number;
+  /** Charts whose data is still on its way; each holds its place at its own aspect ratio. */
+  loading?: Partial<Record<ReportChartKind, boolean>>;
 }
 
 const num = (v: number | null | undefined, digits = 0) =>
@@ -68,6 +77,8 @@ const num = (v: number | null | undefined, digits = 0) =>
  *  a day marked partial without saying WHICH hours it saw is a caveat nobody can act on. */
 const hhmm = (m: number | null) =>
   m === null || m === undefined ? null : `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+const NONE: never[] = [];
 
 interface SlotProps {
   /** What the chart is, as its fallback names it: "Energy per day could not be drawn". */
@@ -94,8 +105,23 @@ function ChartSlot({ scope, build, table, summaryLabel }: SlotProps) {
   );
 }
 
-export function ReportCharts({ period, start, daily, hours, matrix, curve, segments, untracked, ceilingW, width = REPORT_CHART_WIDTH }: Props) {
+export function ReportCharts({
+  period,
+  start,
+  daily,
+  hours,
+  matrix,
+  curve,
+  segments,
+  untracked,
+  ceilingW,
+  width = REPORT_CHART_WIDTH,
+  loading = {},
+}: Props) {
   const label = formatPeriod(period, start);
+  const hourRows = hours ?? NONE;
+  const matrixRows = matrix ?? NONE;
+  const curveRows = curve ?? NONE;
 
   const spec = useCallback(
     (idPrefix: string, height: number, title: string) => ({
@@ -130,15 +156,15 @@ export function ReportCharts({ period, start, daily, hours, matrix, curve, segme
   );
 
   const hoursScene = useCallback(
-    () => loadProfileChart(toHourPoints(hours), spec('rep-lp', reportChartHeight('hours', daily.length), `Demand by hour — ${label}`)),
-    [hours, daily.length, spec, label]
+    () => loadProfileChart(toHourPoints(hourRows), spec('rep-lp', reportChartHeight('hours', daily.length), `Demand by hour — ${label}`)),
+    [hourRows, daily.length, spec, label]
   );
   const hoursTable = useCallback(
     (): ChartTable => ({
       headers: ['Hour', 'Samples', 'Median (W)', 'p95 (W)', 'Peak (W)'],
-      rows: toHourPoints(hours).map((h) => [`${String(h.hour).padStart(2, '0')}:00`, h.n, num(h.p50), num(h.p95), num(h.max)]),
+      rows: toHourPoints(hourRows).map((h) => [`${String(h.hour).padStart(2, '0')}:00`, h.n, num(h.p50), num(h.p95), num(h.max)]),
     }),
-    [hours]
+    [hourRows]
   );
 
   const breakdownScene = useCallback(
@@ -154,8 +180,8 @@ export function ReportCharts({ period, start, daily, hours, matrix, curve, segme
   }, [segments]);
 
   const heatScene = useCallback(
-    () => demandHeatmapChart(toHeatCells(matrix), spec('rep-hm', reportChartHeight('heat', daily.length), `Demand by day and hour — ${label}`)),
-    [matrix, daily.length, spec, label]
+    () => demandHeatmapChart(toHeatCells(matrixRows), spec('rep-hm', reportChartHeight('heat', daily.length), `Demand by day and hour — ${label}`)),
+    [matrixRows, daily.length, spec, label]
   );
   // 744 cells is not a table anyone reads. The per-hour numbers are already in the load profile
   // above; what this one adds is the shape, so its table is the daily roll-up.
@@ -163,7 +189,7 @@ export function ReportCharts({ period, start, daily, hours, matrix, curve, segme
     (): ChartTable => ({
       headers: ['Day', 'Hours with readings', 'Busiest hour', 'Peak (W)'],
       rows: daily.map((r) => {
-        const forDay = matrix.filter((c) => c.local_day.slice(0, 10) === r.local_day.slice(0, 10) && c.usable_sample_count > 0);
+        const forDay = matrixRows.filter((c) => c.local_day.slice(0, 10) === r.local_day.slice(0, 10) && c.usable_sample_count > 0);
         const busiest = [...forDay].sort((a, b) => (b.avg_power_w ?? 0) - (a.avg_power_w ?? 0))[0];
         return [
           r.local_day,
@@ -173,31 +199,43 @@ export function ReportCharts({ period, start, daily, hours, matrix, curve, segme
         ];
       }),
     }),
-    [daily, matrix]
+    [daily, matrixRows]
   );
 
   const curveScene = useCallback(
-    () => durationCurveChart(toDurationPoints(curve), spec('rep-dc', reportChartHeight('curve', daily.length), `Load duration — ${label}`), { thresholdW: ceilingW }),
-    [curve, ceilingW, daily.length, spec, label]
+    () => durationCurveChart(toDurationPoints(curveRows), spec('rep-dc', reportChartHeight('curve', daily.length), `Load duration — ${label}`), { thresholdW: ceilingW }),
+    [curveRows, ceilingW, daily.length, spec, label]
   );
   // Every tenth point: 101 rows of a smooth curve is noise, and the shape is the finding.
   const curveTable = useCallback(
     (): ChartTable => ({
       headers: ['Share of period', 'At or above (W)'],
-      rows: toDurationPoints(curve)
+      rows: toDurationPoints(curveRows)
         .filter((_, i) => i % 10 === 0)
         .map((p) => [`${p.pct}%`, num(p.w)]),
     }),
-    [curve]
+    [curveRows]
   );
+
+  /** A chart with its data is drawn; one still loading holds its place; one that failed is absent,
+   *  and the page's note above the charts says which, with a Retry. */
+  const placeholder = (kind: ReportChartKind) => (loading[kind] ? <ChartPlaceholder kind={kind} dayCount={daily.length} /> : null);
 
   return (
     <section className="report-charts" aria-label={`Charts for ${label}`}>
       <ChartSlot scope="Energy per day" build={dailyScene} table={dailyTable} />
-      <ChartSlot scope="Demand by hour" build={hoursScene} table={hoursTable} />
-      <ChartSlot scope="Where the energy went" build={breakdownScene} table={breakdownTable} summaryLabel="Show the circuits" />
-      <ChartSlot scope="Demand by day and hour" build={heatScene} table={heatTable} summaryLabel="Show the daily roll-up" />
-      <ChartSlot scope="Load duration" build={curveScene} table={curveTable} summaryLabel="Show the curve" />
+      {hours ? <ChartSlot scope="Demand by hour" build={hoursScene} table={hoursTable} /> : placeholder('hours')}
+      {loading.breakdown ? (
+        placeholder('breakdown')
+      ) : (
+        <ChartSlot scope="Where the energy went" build={breakdownScene} table={breakdownTable} summaryLabel="Show the circuits" />
+      )}
+      {matrix ? (
+        <ChartSlot scope="Demand by day and hour" build={heatScene} table={heatTable} summaryLabel="Show the daily roll-up" />
+      ) : (
+        placeholder('heat')
+      )}
+      {curve ? <ChartSlot scope="Load duration" build={curveScene} table={curveTable} summaryLabel="Show the curve" /> : placeholder('curve')}
     </section>
   );
 }

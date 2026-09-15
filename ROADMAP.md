@@ -3468,6 +3468,42 @@ ever cleared, and put its controls in three rows. This section is that page's ov
       Tests: `useExportAction` (4), `buildReport` (9), `ExportDrawer` (11). **Not verified signed-in in a
       browser, and no PDF has been generated from this build on real data yet.**
 
+- [x] **RM-081b (S)** **DONE 2026-09-15, found by verifying RM-081 signed in on live data. A section
+      must be no bigger than one thing that can fail.** The operator signed in and the Reports page was
+      read back in a browser against August 2026. The headline figures, coverage (27%), the table and
+      both themes' contrast all checked out — and "The hourly charts could not be loaded.
+      report_demand_curve failed: canceling statement due to statement timeout" came back on every
+      Retry, about nine seconds each. Measured from the Pi, the other four series answered in
+      0.6–1.4 s and the curve in 3.5 s as the service role; signed in, RLS pushes it past the statement
+      timeout. That is RM-086's to fix in the database.
+
+      **What it exposed here is a grouping mistake of RM-081's own.** The hour profile, the heatmap
+      and the duration curve were one "detail" section, fetched together. Both of the first two loaded;
+      the curve did not; **all three charts disappeared**, and because the PDF waited on all of them,
+      **no PDF could be made for August**. RM-081's rule was that each part fails on its own, and a
+      section is exactly the unit that fails together — so it has to be no bigger than one query.
+
+      `useReportData` now reads `hours`, `matrix` and `curve` as three sections, each with its own
+      timeout, label and Retry. `ReportCharts` draws each chart from its own data: one still loading
+      holds its place at its own aspect ratio (`ChartPlaceholder`), one that failed is absent and named
+      above the charts with its Retry. The PDF waits only for the headline data and the device rows;
+      a chosen chart whose data failed is **left out and named in the document** ("Not included,
+      because their data could not be loaded when this document was made: Load duration"), and the
+      export drawer says so under that section before anyone generates it.
+
+      Tests: the hook's "a slow duration curve costs only the curve", `buildReport` names a left-out
+      chart, `docDefinition` prints the note before the charts, the drawer shows it, and the page's
+      reliability test now asserts four charts are drawn while the heatmap's series has failed.
+
+- [x] **RM-082d (S)** **DONE 2026-09-15, measured on the live page. The control bar is sticky only
+      where there is room for it.** At the kiosk's 1024×600 the sticky bar was **117px** under a 73px
+      nav — 190px of a 600px screen covered for the length of the report. It is sticky now only on
+      screens wider than 640px **and at least 720px tall**; below that it scrolls away with the page.
+      The same read-back confirmed the rest of RM-082 on real data: no sideways overflow at 1024×600 or
+      375px, the headline tiles on one row at kiosk width and one column on a phone, the device table
+      scrolling inside its own card, and every report text element measured at WCAG AA or better in
+      both themes (lowest 4.77:1 light, 5.03:1 dark, 194 elements each).
+
 - [ ] **RM-083c (S)** — **Time the PDF on the kiosk's Pi, and move it to a worker only if it is slow.**
       Each export now logs `[ibems] pdf: assembled in N ms, rendered in N ms` to the console. Generate one
       month's PDF on the kiosk, read the line, and record it here. Above one second, move

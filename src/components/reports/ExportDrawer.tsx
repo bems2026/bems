@@ -76,9 +76,11 @@ interface Props {
   onExport: (format: ExportFormat, sections: ReportSectionId[]) => Promise<string>;
   /** Formats that cannot run for this period, each with the reason. */
   unavailable?: Partial<Record<ExportFormat, string>>;
+  /** A word under a section, such as a chart whose data could not be loaded and will be left out. */
+  sectionNotes?: Partial<Record<ReportSectionId, string>>;
 }
 
-export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {} }: Props) {
+export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {}, sectionNotes = {} }: Props) {
   const [choice, setChoice] = useState<Choice>(loadChoice);
   const baseId = useId();
 
@@ -144,7 +146,9 @@ export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {} 
           <legend className="report-export__legend">Sections</legend>
           <ul className="report-export__sections">
             {REPORT_SECTIONS.map((s) => {
-              const lockedId = `${baseId}-${s.id}-locked`;
+              // Why a section is locked, or what will happen to it — read to a screen reader with it.
+              const note = s.locked ?? sectionNotes[s.id];
+              const noteId = `${baseId}-${s.id}-note`;
               return (
                 <li key={s.id} className="report-export__item">
                   <label className="report-export__option">
@@ -152,14 +156,14 @@ export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {} 
                       type="checkbox"
                       checked={s.locked !== undefined || chosen.has(s.id)}
                       disabled={s.locked !== undefined || working}
-                      aria-describedby={s.locked ? lockedId : undefined}
+                      aria-describedby={note ? noteId : undefined}
                       onChange={() => toggle(s.id)}
                     />
                     <span>{s.label}</span>
                   </label>
-                  {s.locked ? (
-                    <span id={lockedId} className="report-export__reason">
-                      {s.locked}
+                  {note ? (
+                    <span id={noteId} className="report-export__reason">
+                      {note}
                     </span>
                   ) : null}
                 </li>

@@ -75,9 +75,18 @@ const spec = (idPrefix: string, height: number, title: string) => ({
 
 /** One entry per chart, in the order the report reads: which section it is, and how to draw it and
  *  the numbers that travel with it. A printed chart cannot be hovered. */
-const CHARTS: readonly { section: ReportSectionId; build: (c: ChartsData) => { scene: Scene; table: PdfChart['table'] } }[] = [
+const CHARTS: readonly {
+  section: ReportSectionId;
+  /** How the document names a chart it had to leave out. */
+  label: string;
+  /** Whether this chart's data arrived. A chart without it is named as left out, never drawn empty. */
+  has: (c: ChartsData) => boolean;
+  build: (c: ChartsData) => { scene: Scene; table: PdfChart['table'] };
+}[] = [
   {
     section: 'dailyEnergy',
+    label: 'Energy per day',
+    has: () => true,
     build: (c) => ({
       scene: dailyEnergyChart(toDailyPoints(c.daily), spec('pdf-de', 220, 'Energy per day')),
       table: {
@@ -88,16 +97,20 @@ const CHARTS: readonly { section: ReportSectionId; build: (c: ChartsData) => { s
   },
   {
     section: 'hourProfile',
+    label: 'Demand by hour of the day',
+    has: (c) => c.hours !== null,
     build: (c) => ({
-      scene: loadProfileChart(toHourPoints(c.hours), spec('pdf-lp', 210, 'Demand by hour of the day')),
+      scene: loadProfileChart(toHourPoints(c.hours ?? []), spec('pdf-lp', 210, 'Demand by hour of the day')),
       table: {
         headers: ['Hour', 'Samples', 'Median (W)', 'p95 (W)', 'Peak (W)'],
-        rows: toHourPoints(c.hours).map((h) => [`${String(h.hour).padStart(2, '0')}:00`, String(h.n), f(h.p50, 0), f(h.p95, 0), f(h.max, 0)]),
+        rows: toHourPoints(c.hours ?? []).map((h) => [`${String(h.hour).padStart(2, '0')}:00`, String(h.n), f(h.p50, 0), f(h.p95, 0), f(h.max, 0)]),
       },
     }),
   },
   {
     section: 'breakdown',
+    label: 'Where the energy went',
+    has: () => true,
     build: (c) => ({
       scene: circuitBreakdownChart(c.segments, spec('pdf-cb', 100, 'Where the energy went'), { untracked: c.untracked }),
       table: { headers: ['Circuit', 'Energy (kWh)'], rows: c.segments.map((s) => [s.label, f(s.kwh)]) },
@@ -105,26 +118,30 @@ const CHARTS: readonly { section: ReportSectionId; build: (c: ChartsData) => { s
   },
   {
     section: 'heatmap',
+    label: 'Demand by day and hour',
+    has: (c) => c.matrix !== null,
     build: (c) => ({
-      scene: demandHeatmapChart(toHeatCells(c.matrix), spec('pdf-hm', c.daily.length > 10 ? 300 : 190, 'Demand by day and hour')),
+      scene: demandHeatmapChart(toHeatCells(c.matrix ?? []), spec('pdf-hm', c.daily.length > 10 ? 300 : 190, 'Demand by day and hour')),
       // The heatmap's 744 cells are not a table anyone reads; the hour profile already carries the
       // per-hour numbers, so this one rolls up to the day.
       table: {
         headers: ['Day', 'Hours with readings'],
         rows: c.daily.map((d) => [
           d.local_day,
-          String(c.matrix.filter((m) => m.local_day.slice(0, 10) === d.local_day.slice(0, 10) && m.usable_sample_count > 0).length),
+          String((c.matrix ?? []).filter((m) => m.local_day.slice(0, 10) === d.local_day.slice(0, 10) && m.usable_sample_count > 0).length),
         ]),
       },
     }),
   },
   {
     section: 'durationCurve',
+    label: 'Load duration',
+    has: (c) => c.curve !== null,
     build: (c) => ({
-      scene: durationCurveChart(toDurationPoints(c.curve), spec('pdf-dc', 210, 'Load duration'), { thresholdW: c.ceilingW }),
+      scene: durationCurveChart(toDurationPoints(c.curve ?? []), spec('pdf-dc', 210, 'Load duration'), { thresholdW: c.ceilingW }),
       table: {
         headers: ['Share of period', 'At or above (W)'],
-        rows: toDurationPoints(c.curve)
+        rows: toDurationPoints(c.curve ?? [])
           .filter((_, i) => i % 10 === 0)
           .map((p) => [`${p.pct}%`, f(p.w, 0)]),
       },
@@ -210,10 +227,13 @@ export function buildPdfReport(input: PdfReportInput): PdfReport {
     cost: cost.total === null ? null : { text: `${cost.total.toFixed(2)} ${cost.currency ?? ''}`.trim(), qualified },
     carbon: carbon.total === null ? null : { text: `${carbon.total.toFixed(1)} kgCO2e`, qualified },
     provenance: provenanceLines(cost, carbon),
-    charts: CHARTS.filter((c) => sections.includes(c.section)).map((c) => {
+    charts: CHARTS.filter((c) => sections.includes(c.section) && c.has(charts)).map((c) => {
       const { scene, table } = c.build(charts);
       return { section: c.section, title: scene.title, svg: sceneToSvg(scene, PRINT_PALETTE), desc: scene.desc, table };
     }),
+    // RM-081b: a chosen chart whose data could not be read is named, so the document says what it
+    // left out rather than silently being one chart shorter than the reader asked for.
+    omitted: CHARTS.filter((c) => sections.includes(c.section) && !c.has(charts)).map((c) => c.label),
     deviceRows: rows.map(deviceRow),
     baseline: {
       gate: thin ? [NOT_A_BASELINE_TITLE, ...notABaselineYet(summary?.usable_minutes ?? 0, observedDays)] : null,

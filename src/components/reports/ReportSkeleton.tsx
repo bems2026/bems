@@ -1,6 +1,6 @@
 import { Skeleton } from '@/components/ui/Skeleton';
 import type { ReportPeriod } from '@/lib/supabaseReports';
-import { REPORT_CHART_ORDER, REPORT_CHART_WIDTH, reportChartHeight } from '@/lib/reportChartSizes';
+import { REPORT_CHART_ORDER, REPORT_CHART_WIDTH, reportChartHeight, type ReportChartKind } from '@/lib/reportChartSizes';
 
 /**
  * The shape of a report that has not arrived yet — RM-082b.
@@ -21,6 +21,20 @@ import { REPORT_CHART_ORDER, REPORT_CHART_WIDTH, reportChartHeight } from '@/lib
  */
 
 type Part = 'kpis' | 'charts' | 'table';
+
+/**
+ * One chart's place, at that chart's own aspect ratio — RM-081b. Since each chart's series loads on
+ * its own, one chart can still be on its way while the others have drawn; this holds its place.
+ */
+export function ChartPlaceholder({ kind, dayCount }: { kind: ReportChartKind; dayCount: number }) {
+  return (
+    <div className="report-chart report-skeleton__chart" data-chart={kind}>
+      <div className="report-skeleton__plot" style={{ aspectRatio: `${REPORT_CHART_WIDTH} / ${reportChartHeight(kind, dayCount)}` }}>
+        <Skeleton height="100%" />
+      </div>
+    </div>
+  );
+}
 
 interface Props {
   /** What is loading, as the status line names it: "August 2026", "monthly". */
@@ -64,11 +78,7 @@ export function ReportSkeleton({ label, period, parts, announce = true }: Props)
       {parts.includes('charts') ? (
         <div className="report-charts">
           {REPORT_CHART_ORDER.map((kind) => (
-            <div key={kind} className="report-chart report-skeleton__chart" data-chart={kind}>
-              <div className="report-skeleton__plot" style={{ aspectRatio: `${REPORT_CHART_WIDTH} / ${reportChartHeight(kind, days)}` }}>
-                <Skeleton height="100%" />
-              </div>
-            </div>
+            <ChartPlaceholder key={kind} kind={kind} dayCount={days} />
           ))}
         </div>
       ) : null}

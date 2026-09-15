@@ -12,10 +12,11 @@ import { PeriodPicker } from './PeriodPicker';
  * a screen away from what they exported. One bar now, left to right in the order a reader decides:
  * what kind of period, which one, which reading of it, and what to take away.
  *
- * STICKY, because the report is long — five charts and a table — and changing the period from the
- * bottom of it should not mean scrolling back to the top. It sits under the nav, measured rather
- * than assumed (`--nav-h-live`). Below 640px it stops being sticky: wrapped onto several lines it
- * would cover a third of a phone's screen for the whole report.
+ * STICKY WHERE THERE IS ROOM, because the report is long — five charts and a table — and changing
+ * the period from the bottom of it should not mean scrolling back to the top. It sits under the nav,
+ * measured rather than assumed (`--nav-h-live`), and only on screens wider than 640px and at least
+ * 720px tall (RM-082d). Measured on the kiosk's 1024x600 it was 117px under a 73px nav — a third of
+ * the screen covered for the whole report — and on a phone it wraps onto several lines.
  */
 
 interface Props {

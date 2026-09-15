@@ -12,6 +12,11 @@ import * as config from '@/lib/supabaseConfig';
  * query left the page empty with nothing saying so, and one bad month followed the reader to every
  * other month until a reload. Each of those is a test here.
  *
+ * RM-081b. Signed in on live data, `report_demand_curve` hit the database's statement timeout every
+ * time — and because it shared a section with the hour profile and the heatmap, which both loaded,
+ * all three charts disappeared and the PDF could not be made. Each chart's series is its own section
+ * now, so a slow one costs only itself.
+ *
  * ONLY THE I/O IS FAKED — the rule `ReportsPage.tabs.test.tsx` states, for the reason it states.
  */
 
@@ -88,7 +93,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 const allReady = (r: ReturnType<typeof useReportData>) =>
-  [r.periods, r.devices, r.core, r.detail, r.pricing, r.ceiling].every((s) => s.status === 'ready');
+  [r.periods, r.devices, r.core, r.hours, r.matrix, r.curve, r.pricing, r.ceiling].every((s) => s.status === 'ready');
 
 describe('useReportData', () => {
   it('reads the newest period, and every section of it, handing each request a signal it can be cancelled with', async () => {
@@ -100,7 +105,9 @@ describe('useReportData', () => {
     expect(result.current.ceiling.data).toBeCloseTo(2210, 6);
     expect(reports.getDevicePeriodReports).toHaveBeenCalledWith('month', '2026-08-01', signalled);
     expect(series.getDailySeries).toHaveBeenCalledWith('month', '2026-08-01', signalled);
+    expect(series.getHourProfile).toHaveBeenCalledWith('month', '2026-08-01', signalled);
     expect(series.getHourMatrix).toHaveBeenCalledWith('month', '2026-08-01', signalled);
+    expect(series.getDemandCurve).toHaveBeenCalledWith('month', '2026-08-01', signalled);
     expect(tariffs.getTariffs).toHaveBeenCalledWith(signalled);
   });
 
@@ -112,37 +119,51 @@ describe('useReportData', () => {
 
     await waitFor(() => expect(result.current.pricing.status).toBe('error'));
     expect(result.current.pricing.error).toMatch(/permission denied/);
-    await waitFor(() => expect(result.current.detail.status).toBe('ready'));
+    await waitFor(() => expect(result.current.curve.status).toBe('ready'));
+    expect(result.current.core.status).toBe('ready');
+    expect(result.current.matrix.status).toBe('ready');
+  });
+
+  it('confines a slow duration curve to the curve, and keeps the hour profile and heatmap that loaded', async () => {
+    // Live, 2026-09-15, signed in: `report_demand_curve` was cancelled by the statement timeout on
+    // every attempt, and it took two charts that had loaded down with it.
+    vi.mocked(series.getDemandCurve).mockRejectedValue(new Error('report_demand_curve failed: canceling statement due to statement timeout'));
+    const { result } = renderHook(() => useReportData('month', FAST));
+
+    await waitFor(() => expect(result.current.curve.status).toBe('error'));
+    await waitFor(() => expect(result.current.hours.status).toBe('ready'));
+    expect(result.current.matrix.status).toBe('ready');
     expect(result.current.core.status).toBe('ready');
   });
 
-  it('confines a heatmap failure to the detail charts, and keeps the headline figures', async () => {
+  it('confines a heatmap failure to the heatmap, and keeps the headline figures', async () => {
     vi.mocked(series.getHourMatrix).mockRejectedValue(new Error('report_hour_matrix failed: statement timeout'));
     const { result } = renderHook(() => useReportData('month', FAST));
 
-    await waitFor(() => expect(result.current.detail.status).toBe('error'));
+    await waitFor(() => expect(result.current.matrix.status).toBe('error'));
     expect(result.current.core.status).toBe('ready');
     expect(result.current.devices.status).toBe('ready');
+    await waitFor(() => expect(result.current.curve.status).toBe('ready'));
   });
 
   it('asks again when Retry is pressed, and recovers', async () => {
     vi.mocked(series.getHourMatrix).mockRejectedValueOnce(new Error('boom')).mockResolvedValue([]);
     const { result } = renderHook(() => useReportData('month', FAST));
-    await waitFor(() => expect(result.current.detail.status).toBe('error'));
+    await waitFor(() => expect(result.current.matrix.status).toBe('error'));
 
-    act(() => result.current.detail.retry());
+    act(() => result.current.matrix.retry());
     // Loading at once, not the old error sitting there until the answer arrives.
-    expect(result.current.detail.status).toBe('loading');
-    await waitFor(() => expect(result.current.detail.status).toBe('ready'));
+    expect(result.current.matrix.status).toBe('loading');
+    await waitFor(() => expect(result.current.matrix.status).toBe('ready'));
     expect(series.getHourMatrix).toHaveBeenCalledTimes(2);
   });
 
   it('turns a request that never answers into a timeout, rather than a page that loads forever', async () => {
     vi.mocked(series.getHourMatrix).mockReturnValue(new Promise(() => {}));
-    const { result } = renderHook(() => useReportData('month', { timeouts: { detail: 30 }, retry: { retries: 0 } }));
+    const { result } = renderHook(() => useReportData('month', { timeouts: { matrix: 30 }, retry: { retries: 0 } }));
 
-    await waitFor(() => expect(result.current.detail.status).toBe('error'));
-    expect(result.current.detail.error).toMatch(/did not answer/);
+    await waitFor(() => expect(result.current.matrix.status).toBe('error'));
+    expect(result.current.matrix.error).toMatch(/did not answer/);
     expect(result.current.core.status).toBe('ready');
   });
 
@@ -183,6 +204,7 @@ describe('useReportData', () => {
     expect(result.current.selected).toBeNull();
     expect(result.current.devices.data).toBeNull();
     expect(result.current.core.data).toBeNull();
+    expect(result.current.curve.data).toBeNull();
   });
 
   it('answers a period it has already read from memory, instead of asking again', async () => {
@@ -206,6 +228,7 @@ describe('useReportData', () => {
     expect(result.current.selected).toBeNull();
     expect(result.current.devices.status).toBe('idle');
     expect(result.current.core.status).toBe('idle');
+    expect(result.current.curve.status).toBe('idle');
   });
 
   it('falls back to the newest period when the one asked for is not a report that exists', async () => {

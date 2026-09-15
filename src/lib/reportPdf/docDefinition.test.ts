@@ -315,6 +315,15 @@ describe('sections', () => {
     expect(text).toContain('Median (p50)');
   });
 
+  it('says which charts were left out because their data could not be loaded', () => {
+    const def = buildDocDefinition(full({ omitted: ['Load duration'] }));
+    const text = allText(def.content).join(' ');
+    expect(text).toMatch(/Not included, because their data could not be loaded/);
+    expect(text).toContain('Load duration');
+    // Before the charts, where a reader looks for the missing one.
+    expect(index(def, 'Not included')).toBeLessThan(index(def, 'Energy per day'));
+  });
+
   it('includes every section when none is specified, as the export always has', () => {
     const text = allText(buildDocDefinition(full()).content).join(' ');
     expect(text).toContain('Energy per day');

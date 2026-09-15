@@ -148,14 +148,17 @@ describe('ReportsPage — when something fails', () => {
     render(<ReportsPage />);
 
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(/hourly charts could not be loaded/i);
+    expect(alert).toHaveTextContent(/day-by-hour heatmap could not be loaded/i);
     expect(alert).toHaveTextContent(/statement timeout/);
-    // The figures that did load are not hostage to the ones that did not.
+    // The figures that did load are not hostage to the ones that did not — RM-081b: nor are the four
+    // charts whose own series arrived. Live, the curve's timeout used to take two loaded charts with it.
     expect(screen.getByText(/100\.00 kWh/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByRole('img').length).toBeGreaterThanOrEqual(4));
+    expect(screen.queryByText(/^Demand by day and hour/)).not.toBeInTheDocument();
 
     fireEvent.click(within(alert).getByRole('button', { name: /retry/i }));
     await waitFor(() => expect(screen.getAllByRole('img').length).toBeGreaterThanOrEqual(5));
-    expect(screen.queryByText(/hourly charts could not be loaded/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/day-by-hour heatmap could not be loaded/i)).not.toBeInTheDocument();
   });
 
   it('says it is loading, rather than showing an empty page', async () => {

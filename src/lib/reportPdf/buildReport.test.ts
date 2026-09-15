@@ -84,6 +84,14 @@ describe('buildPdfReport', () => {
     expect(report.charts.map((c) => c.section)).toEqual(['heatmap']);
   });
 
+  it('leaves out a chart whose data could not be loaded, and names it rather than drawing it empty', () => {
+    // Live, 2026-09-15: the duration curve's query timed out. An empty chart would read as a building
+    // with no load; a missing one with no word would read as a chart the reader forgot to tick.
+    const report = buildPdfReport(input({ sections: ['hourProfile', 'durationCurve'], charts: { ...input().charts, curve: null } }));
+    expect(report.charts.map((c) => c.section)).toEqual(['hourProfile']);
+    expect(report.omitted).toEqual(['Load duration']);
+  });
+
   it('carries the chosen sections, with coverage and the refusals put back', () => {
     const report = buildPdfReport(input({ sections: ['devices'] }));
     expect(report.sections).toEqual(['coverage', 'devices', 'notSaid']);

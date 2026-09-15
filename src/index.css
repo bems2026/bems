@@ -6465,11 +6465,10 @@ body::before {
   color: var(--txt);
 }
 
-/* RM-082b — one sticky control bar. Under the nav, measured rather than assumed; z-index below the
-   nav's 50 so a popover from the nav still covers it. Not sticky below 640px, where it wraps onto
-   several lines and would cover a third of a phone's screen for the length of the report. */
+/* RM-082b — one control bar. Under the nav, measured rather than assumed; z-index below the nav's 50
+   so a popover from the nav still covers it. Sticky only where there is room for it (RM-082d, below). */
 .report-controls {
-  position: sticky;
+  position: static;
   top: calc(var(--nav-h-live, var(--nav-h)) + var(--sp-2));
   z-index: 10;
   display: flex;
@@ -6499,12 +6498,17 @@ body::before {
 }
 
 @media (max-width: 640px) {
-  .report-controls {
-    position: static;
-  }
-
   .report-controls__actions {
     margin-left: 0;
+  }
+}
+
+/* RM-082d — sticky only where it leaves room to read: wider than 640px, so the bar sits on one or two
+   lines, and at least 720px tall. Measured on the live page 2026-09-15 at the kiosk's 1024x600, the
+   bar was 117px under a 73px nav — 190px of a 600px screen covered for the whole report. */
+@media (min-width: 641px) and (min-height: 720px) {
+  .report-controls {
+    position: sticky;
   }
 }
 

@@ -24,19 +24,26 @@ import { fetchScheduleContext } from '@/lib/supabaseConfig';
 import { createReportCache, retryTransient, withTimeout, type ReportCache, type RetryOptions } from '@/lib/reportLoader';
 
 /**
- * Everything the Reports page reads, as independent sections — RM-081.
+ * Everything the Reports page reads, as independent sections — RM-081, split further by RM-081b.
  *
  * WHY SECTIONS. The page used to fetch the charts' series, the tariffs, the emission factors and
  * the demand ceiling in one `Promise.all`, and kept one error string that nothing ever cleared. A
  * failed tariff read therefore hid five charts that had loaded; a hung heatmap query left a page
  * with nothing on it and nothing saying why; and a month that failed once followed the reader to
- * every other month until somebody reloaded a kiosk nobody was standing at. Each section here
- * loads, fails, retries and recovers on its own:
+ * every other month until somebody reloaded a kiosk nobody was standing at.
+ *
+ * WHY EACH CHART'S SERIES IS ITS OWN SECTION. RM-081 grouped the hour profile, the heatmap and the
+ * duration curve as one "detail" section. Signed in on live data, `report_demand_curve` hit the
+ * database's statement timeout on every attempt (RM-086) — and the two charts that had loaded
+ * disappeared with it, and the PDF, which waited on all three, could not be made. A section is the
+ * unit that fails together, so it must be no bigger than one thing that can fail:
  *
  *   periods  the stored reports of this kind            → the picker
  *   devices  per-device rows for the selected period    → the device table, circuits, CSV
  *   core     daily series + demand summary              → headline figures, coverage, daily chart
- *   detail   hour profile, matrix, duration curve       → the four slower charts
+ *   hours    hour-of-day profile                        → the load profile chart
+ *   matrix   day × hour matrix                          → the heatmap
+ *   curve    duration curve                             → the load duration chart
  *   pricing  tariffs + emission factors                 → cost and emissions only
  *   ceiling  the DSM ceiling                            → the line across the duration curve
  *
@@ -50,7 +57,7 @@ import { createReportCache, retryTransient, withTimeout, type ReportCache, type 
  * to a period already read answers at once.
  */
 
-export type SectionName = 'periods' | 'devices' | 'core' | 'detail' | 'pricing' | 'ceiling';
+export type SectionName = 'periods' | 'devices' | 'core' | 'hours' | 'matrix' | 'curve' | 'pricing' | 'ceiling';
 export type SectionStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 export interface Section<T> {
@@ -67,12 +74,6 @@ export interface CoreData {
   summary: DemandSummary | null;
 }
 
-export interface DetailData {
-  hours: HourRow[];
-  matrix: MatrixRow[];
-  curve: CurveRow[];
-}
-
 export interface PricingData {
   tariffs: TariffEntry[];
   factors: FactorEntry[];
@@ -85,7 +86,9 @@ export interface ReportData {
   select: (start: string) => void;
   devices: Section<PeriodDeviceReport[]>;
   core: Section<CoreData>;
-  detail: Section<DetailData>;
+  hours: Section<HourRow[]>;
+  matrix: Section<MatrixRow[]>;
+  curve: Section<CurveRow[]>;
   pricing: Section<PricingData>;
   ceiling: Section<number | null>;
 }
@@ -95,13 +98,16 @@ export interface ReportDataOptions {
   retry?: RetryOptions;
 }
 
-/** How long each section may take. The detail charts get the longest: `report_hour_matrix` is the
- *  heaviest query the page makes, and a month of it measured 453 ms on a good day (RM-072i). */
+/** How long each section may take. The matrix and the curve get the longest; a month of either is
+ *  the heaviest read the page makes. The database's own statement timeout may cut them sooner, and
+ *  that failure is reported in its own words. */
 export const DEFAULT_TIMEOUTS: Record<SectionName, number> = {
   periods: 20_000,
   devices: 20_000,
   core: 30_000,
-  detail: 45_000,
+  hours: 30_000,
+  matrix: 45_000,
+  curve: 45_000,
   pricing: 20_000,
   ceiling: 20_000,
 };
@@ -111,7 +117,9 @@ const LABELS: Record<SectionName, string> = {
   periods: 'The list of reports',
   devices: 'The per-device figures',
   core: 'The daily figures',
-  detail: 'The hourly charts',
+  hours: 'The hour-of-day profile',
+  matrix: 'The day-by-hour heatmap',
+  curve: 'The load duration curve',
   pricing: 'The tariffs and emission factors',
   ceiling: 'The demand ceiling',
 };
@@ -193,7 +201,7 @@ export function useReportData(period: ReportPeriod, options?: ReportDataOptions)
     timeouts: { ...DEFAULT_TIMEOUTS, ...options?.timeouts },
     retry: options?.retry ?? {},
   }));
-  const [cache] = useState(() => createReportCache<unknown>({ max: 40 }));
+  const [cache] = useState(() => createReportCache<unknown>({ max: 60 }));
   const enabled = supabase !== null;
 
   const loadPeriods = useCallback((signal: AbortSignal) => getReportPeriods(period, { signal }), [period]);
@@ -233,18 +241,9 @@ export function useReportData(period: ReportPeriod, options?: ReportDataOptions)
     },
     [period, selected]
   );
-  const loadDetail = useCallback(
-    async (signal: AbortSignal): Promise<DetailData> => {
-      const start = requireStart(selected);
-      const [hours, matrix, curve] = await Promise.all([
-        getHourProfile(period, start, { signal }),
-        getHourMatrix(period, start, { signal }),
-        getDemandCurve(period, start, { signal }),
-      ]);
-      return { hours, matrix, curve };
-    },
-    [period, selected]
-  );
+  const loadHours = useCallback((signal: AbortSignal) => getHourProfile(period, requireStart(selected), { signal }), [period, selected]);
+  const loadMatrix = useCallback((signal: AbortSignal) => getHourMatrix(period, requireStart(selected), { signal }), [period, selected]);
+  const loadCurve = useCallback((signal: AbortSignal) => getDemandCurve(period, requireStart(selected), { signal }), [period, selected]);
   // Priced per day at the rate in force that day, so these are not per-period: one read per visit.
   const loadPricing = useCallback(async (signal: AbortSignal): Promise<PricingData> => {
     const [tariffs, factors] = await Promise.all([getTariffs({ signal }), getEmissionFactors({ signal })]);
@@ -261,7 +260,9 @@ export function useReportData(period: ReportPeriod, options?: ReportDataOptions)
     select,
     devices: useSection('devices', at('devices'), loadDevices, cache, opts),
     core: useSection('core', at('core'), loadCore, cache, opts),
-    detail: useSection('detail', at('detail'), loadDetail, cache, opts),
+    hours: useSection('hours', at('hours'), loadHours, cache, opts),
+    matrix: useSection('matrix', at('matrix'), loadMatrix, cache, opts),
+    curve: useSection('curve', at('curve'), loadCurve, cache, opts),
     pricing: useSection('pricing', enabled ? 'pricing' : null, loadPricing, cache, opts),
     ceiling: useSection('ceiling', enabled ? 'ceiling' : null, loadCeiling, cache, opts),
   };

@@ -97,7 +97,7 @@ export function ReportsPage() {
   const [period, setPeriod] = useState<ReportPeriod>('month');
   const [exportOpen, setExportOpen] = useState(false);
   const report = useReportData(period);
-  const { periods, selected, select, core, detail, pricing, ceiling } = report;
+  const { periods, selected, select, core, hours, matrix, curve, pricing, ceiling } = report;
   const months = periods.data;
   const rows = report.devices.data;
 
@@ -114,23 +114,23 @@ export function ReportsPage() {
    */
   const { segments, untracked } = useMemo(() => buildBreakdown(rows ?? [], nameOf), [rows, nameOf]);
 
-  /** The five charts need both the daily series and the hourly detail. The ceiling is optional:
-   *  a failed read draws the curve without it and says so, rather than holding the chart back. */
+  /** The charts need the daily series; each of the other three draws when its own series arrives
+   *  (RM-081b). The ceiling is optional: a failed read draws the curve without its line. */
   const charts: ChartsData | null = useMemo(
     () =>
-      core.data && detail.data
+      core.data
         ? {
             daily: core.data.daily,
-            hours: detail.data.hours,
-            matrix: detail.data.matrix,
-            curve: detail.data.curve,
+            hours: hours.data,
+            matrix: matrix.data,
+            curve: curve.data,
             segments,
             untracked,
             ceilingW: ceiling.data ?? null,
             summary: core.data.summary,
           }
         : null,
-    [core.data, detail.data, segments, untracked, ceiling.data]
+    [core.data, hours.data, matrix.data, curve.data, segments, untracked, ceiling.data]
   );
 
   /**
@@ -175,13 +175,25 @@ export function ReportsPage() {
       : pricing.status === 'loading'
         ? 'Still loading the rates.'
         : null;
-  const failedPart = core.status === 'error' || detail.status === 'error' || report.devices.status === 'error';
+  const failedPart = core.status === 'error' || report.devices.status === 'error';
+  const chartsStillLoading = hours.status === 'loading' || matrix.status === 'loading' || curve.status === 'loading';
   const exportUnavailable: Partial<Record<ExportFormat, string>> = {};
   if (!charts || !rows) {
     exportUnavailable.pdf = failedPart ? 'Part of this report could not be loaded. Retry it on the page first.' : 'The report is still loading.';
+  } else if (chartsStillLoading) {
+    exportUnavailable.pdf = 'The charts are still loading.';
   } else if (pricingReason) {
     exportUnavailable.pdf = pricingReason;
   }
+  /**
+   * A chart whose series failed no longer blocks the PDF — RM-081b. It is left out, the document says
+   * so, and the drawer says so beside the section before anyone generates it.
+   */
+  const leftOut = 'Could not be loaded, so it will be left out of the PDF. Retry it on the page to include it.';
+  const exportSectionNotes: Partial<Record<ReportSectionId, string>> = {};
+  if (hours.status === 'error') exportSectionNotes.hourProfile = leftOut;
+  if (matrix.status === 'error') exportSectionNotes.heatmap = leftOut;
+  if (curve.status === 'error') exportSectionNotes.durationCurve = leftOut;
   if (!core.data) {
     exportUnavailable['daily-csv'] =
       core.status === 'error' ? 'The daily figures could not be loaded. Retry them on the page first.' : 'The daily figures are still loading.';
@@ -213,8 +225,7 @@ export function ReportsPage() {
   const scopeKey = `${period}:${selected ?? ''}`;
   /** Placeholders only while nothing has failed: a failure shows its Retry note instead, and a
    *  skeleton beside an error would say the part is still coming when it is not. */
-  const chartsLoading =
-    charts === null && (core.status === 'loading' || detail.status === 'loading') && core.status !== 'error' && detail.status !== 'error';
+  const chartsLoading = charts === null && core.status === 'loading';
   /**
    * Performs one export and says, in words, what was saved. Throws with the reason when it cannot —
    * `ExportDrawer` shows that beside its button. Names come from `reportFilename`, never from the
@@ -424,10 +435,22 @@ export function ReportsPage() {
 
       {tab === 'summary' && selected ? (
         <>
-          <ReportSectionNote section={detail} what="the hourly charts" quietWhileLoading />
+          <ReportSectionNote section={hours} what="the hour-of-day profile" quietWhileLoading />
+          <ReportSectionNote section={matrix} what="the day-by-hour heatmap" quietWhileLoading />
+          <ReportSectionNote section={curve} what="the load duration curve" quietWhileLoading />
           <ReportSectionNote section={ceiling} what="the demand ceiling" quietWhileLoading />
           {charts ? (
-            <ReportCharts period={period} start={selected} {...charts} />
+            <ReportCharts
+              period={period}
+              start={selected}
+              {...charts}
+              loading={{
+                hours: hours.status === 'loading',
+                heat: matrix.status === 'loading',
+                curve: curve.status === 'loading',
+                breakdown: report.devices.status === 'loading',
+              }}
+            />
           ) : chartsLoading ? (
             <ReportSkeleton label={periodLabel} period={period} parts={['charts']} />
           ) : null}
@@ -437,7 +460,9 @@ export function ReportsPage() {
       {tab === 'baseline' && selected ? (
         <>
           <ReportSectionNote section={core} what="the daily figures" />
-          <ReportSectionNote section={detail} what="the hourly charts" />
+          <ReportSectionNote section={hours} what="the hour-of-day profile" quietWhileLoading />
+          <ReportSectionNote section={matrix} what="the day-by-hour heatmap" quietWhileLoading />
+          <ReportSectionNote section={curve} what="the load duration curve" quietWhileLoading />
           {charts ? (
             <ErrorBoundary scope="The baseline report" variant="inline" resetKey={charts}>
               <BaselineReport period={period} start={selected} summary={charts.summary ?? null} charts={charts} />
@@ -486,7 +511,13 @@ export function ReportsPage() {
       ) : null}
 
       {exportOpen && selected ? (
-        <ExportDrawer periodLabel={periodLabel} onClose={() => setExportOpen(false)} onExport={runExport} unavailable={exportUnavailable} />
+        <ExportDrawer
+          periodLabel={periodLabel}
+          onClose={() => setExportOpen(false)}
+          onExport={runExport}
+          unavailable={exportUnavailable}
+          sectionNotes={exportSectionNotes}
+        />
       ) : null}
     </>
   );
