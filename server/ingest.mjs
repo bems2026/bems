@@ -17,6 +17,7 @@
  * template at `server/ibems-ingest.service`.
  */
 
+import './netDefaults.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TIMING, METERED, SITE, DEVICE_REGISTRY } from '../shared/registry.mjs';

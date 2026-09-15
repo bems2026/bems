@@ -1,5 +1,5 @@
 /**
- * The 21 devices of the MMSU CARE Office / NBERIC deployment - RM-033 / FI-017.
+ * The 20 devices of the MMSU CARE Office / NBERIC deployment - RM-033 / FI-017.
  *
  * WHY THIS FILE EXISTS. This list is the most site-specific thing in the whole codebase: it is
  * hardware screwed to one building's walls, with that building's flow-context keys and that
@@ -12,13 +12,16 @@
  * so it has to be safe in all three.
  *
  * ---------------------------------------------------------------------------
- * CT circuit map (confirmed on site - the only documentation of this that exists,
- * transcribed from the comment block at Original.html:1697-1705):
+ * CT circuit map — what each branch meter measures, as the operator confirmed it on 2026-09-15.
+ * That corrected the first version, transcribed from the comment block at Original.html:1697-1705,
+ * which called L.O yellow the outdoor aircon unit and filed all seven light switches under L.O red:
  *
- *   L.O red     -> the room's lighting circuits
- *   L.O yellow  -> OUTDOOR ACU (separate unit, right side outside the room)
- *   C.O yellow  -> convenience outlets
- *   ACU meter   -> indoor ACU
+ *   L.O red     -> lighting: switches L1, L2, L3, L4
+ *   L.O yellow  -> lighting: switches L5, L6, L7   (about 120 W — lighting, not an aircon)
+ *   C.O yellow  -> every convenience outlet, and whatever else plugs into them
+ *   CARE ACU    -> the aircon, and nothing else
+ *
+ * `test/site-branch-wiring.test.mjs` holds every device's `branch_circuit` to that map.
  *
  * The two yellow meters are two logical meters on ONE physical device reading different DPS
  * ranges, which is why device identity here is the logical meter id, never the Tuya device id.
@@ -56,6 +59,9 @@ export const BUILT_IN_DEVICES = [
   })),
 
   // --- Lighting circuits: relay only, no metering -----------------------------
+  // Two branches, not one: L1–L4 are on L.O Red and L5–L7 on L.O Yellow (operator, 2026-09-15).
+  // Until then all seven were filed under L.O Red, so a report narrowed to L.O Yellow showed a
+  // branch with no lights on it.
   ...[1, 2, 3, 4, 5, 6, 7].map((n) => ({
     id: `l${n}`,
     display_name: `Light Switch ${n}`,
@@ -65,7 +71,7 @@ export const BUILT_IN_DEVICES = [
     capability_profile: 'tdq_switch',
     ctx: null,
     state_key: `L${n}`, // key within flow context `bems_lights_state`
-    branch_circuit: 'L.O Red',
+    branch_circuit: n <= 4 ? 'L.O Red' : 'L.O Yellow',
     status: 'active',
   })),
 
@@ -94,7 +100,7 @@ export const BUILT_IN_DEVICES = [
     channel: 1,
     ctx: 'lo_red',
     branch_circuit: 'L.O Red',
-    description: "The room's lighting circuits",
+    description: 'Lighting circuits L1–L4',
     phase: 'red',
     status: 'active',
   },
@@ -130,7 +136,7 @@ export const BUILT_IN_DEVICES = [
     channel: 2,
     ctx: 'lo_yel2',
     branch_circuit: 'L.O Yellow',
-    description: 'Outdoor ACU (separate unit, right side outside the room)',
+    description: 'Lighting circuits L5–L7',
     phase: 'yellow',
     status: 'active',
   },
@@ -155,6 +161,9 @@ export const BUILT_IN_DEVICES = [
     // than 24 — by however much the unit's own draw-down is. Recorded here rather than left to
     // be discovered, because the rule editor states it where the choice is made.
     measures: 'return_air',
+    // The aircon is the only load on CARE ACU (operator, 2026-09-15). This endpoint commands it and
+    // `mtr_arec_acu` measures it, so both belong to that branch; it was on none before.
+    branch_circuit: 'CARE ACU',
     status: 'active',
   },
 
@@ -173,6 +182,8 @@ export const BUILT_IN_DEVICES = [
     // temperature source, so a picker will offer it — and a rule closed on it can never reach a
     // room target, because cooling the room does not change the weather. The editor says so.
     measures: 'outdoor_air',
+    // No `branch_circuit`: nobody has said what feeds it, and a guessed branch would be stated as
+    // wiring in every report narrowed to that branch.
     status: 'active',
   },
 ];

@@ -7,6 +7,10 @@
  * reproduce the old hand-written `PHASE_MAP` meter for meter, and `test/circuit-tree.test.mjs`
  * asserts exactly that — if they disagree, this file is wrong.
  *
+ * WHAT EACH BRANCH CARRIES was confirmed by the operator on 2026-09-15, and corrected the transcribed
+ * map in one place: L.O Yellow is lighting (switches L5–L7), not the outdoor aircon unit it was
+ * described as. `test/site-branch-wiring.test.mjs` holds the descriptions below to that.
+ *
  * A second site writes its own version of this file and nothing else changes.
  *
  * Data only, no imports. See `shared/circuits.mjs` for the shape and the derivation.
@@ -43,7 +47,7 @@ export const CIRCUITS = [
     name: 'L.O Red',
     phase: 'red',
     meter_device_id: 'mtr_lo_red',
-    description: "The room's lighting circuits",
+    description: 'Lighting circuits L1–L4',
   },
   {
     // The aircon is the only load on this branch, which is why one physical meter serves as both
@@ -71,13 +75,14 @@ export const CIRCUITS = [
   {
     // Two channels of ONE physical meter, the other being `mtr_co_yellow`. They are separate
     // logical circuits and separate registry devices, so they are separate rows here.
+    // Lighting, not the outdoor aircon unit this was first described as (operator, 2026-09-15).
     id: 'lo_yellow',
     parent_id: 'chnt_subpanel',
     kind: 'branch',
     name: 'L.O Yellow',
     phase: 'yellow',
     meter_device_id: 'mtr_lo_yellow',
-    description: 'Outdoor ACU (separate unit, right side outside the room)',
+    description: 'Lighting circuits L5–L7',
   },
 
   // --- Blue phase ----------------------------------------------------------

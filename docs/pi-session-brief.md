@@ -243,7 +243,7 @@ or not**. This is the current map. `test/service-restart-map.test.mjs` derives i
 
 | Restart | After a change to |
 |---|---|
-| `ibems-ingest` `ibems-proxy` `ibems-scheduler` | `shared/registry.mjs` and what it loads — `shared/registry.enrolled.mjs`, `shared/siteConfig.mjs`, `shared/sites/mmsu-nberic-care/site.mjs`, `shared/sites/mmsu-nberic-care/circuits.mjs`, `shared/sites/mmsu-nberic-care/devices.mjs`, `shared/circuits.mjs`, `shared/deviceCapabilities.mjs` — and the audit outage queue, `server/auditQueue.mjs` and `server/ingestBuffer.mjs` |
+| `ibems-ingest` `ibems-proxy` `ibems-scheduler` | `shared/registry.mjs` and what it loads — `shared/registry.enrolled.mjs`, `shared/siteConfig.mjs`, `shared/sites/mmsu-nberic-care/site.mjs`, `shared/sites/mmsu-nberic-care/circuits.mjs`, `shared/sites/mmsu-nberic-care/devices.mjs`, `shared/circuits.mjs`, `shared/deviceCapabilities.mjs` — and the audit outage queue, `server/auditQueue.mjs` and `server/ingestBuffer.mjs`, and the network defaults each of them sets first, `server/netDefaults.mjs` |
 | `ibems-ingest` `ibems-scheduler` | `server/notify.mjs` |
 | `ibems-proxy` `ibems-scheduler` | the command path — `shared/commands.mjs`, `shared/buildLatest.mjs`, `shared/sitePolicy.mjs`, `server/dispatchLight.mjs`, `server/dispatchCloud.mjs`, `server/auditedDispatch.mjs` |
 | `ibems-ingest` | `server/ingest.mjs`, `server/reports.mjs`, `server/retention.mjs`, `server/ingestCycle.mjs`, `server/shapeRows.mjs`, `server/scrubTelemetry.mjs`, `server/readingCapabilities.mjs`, `server/healthRow.mjs`, `server/anomalyStats.mjs`, `server/fleetAlarm.mjs`, `server/supabaseRest.mjs` |

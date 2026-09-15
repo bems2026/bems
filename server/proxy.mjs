@@ -45,6 +45,7 @@
  * treating an open gate as "everything on this page now moves hardware."
  */
 
+import './netDefaults.mjs';
 import http from 'node:http';
 import net from 'node:net';
 import crypto from 'node:crypto';

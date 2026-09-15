@@ -213,9 +213,9 @@ export const OUTLET_FIXTURES: OutletFixture[] = OUTLET_COORDS.map(({ id, px, py 
 //     child by name and `applyState()` drives its opacity from the real `acu_main` reading
 //     every tick — removing this entry would silently kill that glow effect, not just tidy
 //     the room.
-//   - `acu-outdoor`: the real paired unit `mtr_lo_yellow`'s registry description names
-//     ("Outdoor ACU (separate unit, right side outside the room)") — actual building
-//     equipment, not office decor.
+//   - `acu-outdoor`: the CARE ACU's own outdoor unit — every split aircon has one — which is
+//     actual building equipment, not office decor. (This used to cite `mtr_lo_yellow` as that
+//     unit; the operator confirmed on 2026-09-15 that L.O Yellow is lighting, L5–L7.)
 //
 // What IS real and used as the anchor for this layout:
 //   - ROOM's bounds (6.0m x 10.6m) and the partition at z = -3.5, both derived from the
@@ -287,9 +287,7 @@ export const FURNITURE: FurnitureSpec[] = [
   // y = ceilingHeight - 0.22 wall-mounts it high, like a real split-unit indoor head;
   // without a y it defaults to 0 and sits centred on the floor, half-buried (Phase N fix).
   { kind: 'acu', x: 0, y: ROOM.ceilingHeight - 0.22, z: ROOM.maxZ - 0.13, ry: -Math.PI / 2 },
-  // Outdoor unit just outside the same wall, on its own pad (`mtr_lo_yellow`'s registry
-  // description — "Outdoor ACU (separate unit, right side outside the room)" — described
-  // the old east-wall placement; the unit itself just follows the indoor head wherever it
-  // moves, so it stays paired here rather than anchored to a compass direction).
+  // Outdoor unit just outside the same wall, on its own pad. It follows the indoor head wherever it
+  // moves, so it stays paired here rather than anchored to a compass direction.
   { kind: 'acu-outdoor', x: 0, z: ROOM.maxZ + 0.7, ry: -Math.PI / 2 },
 ];

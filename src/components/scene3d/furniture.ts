@@ -159,10 +159,10 @@ function makeCabinet(): THREE.Group {
 export const acuGlowMaterial = () => new THREE.MeshBasicMaterial({ color: P.acuGlow, transparent: true, opacity: 0 });
 
 /**
- * The room's own east wall being ACU-adjacent is a real detail — `shared/registry.mjs`
- * describes `mtr_lo_yellow` as "Outdoor ACU (separate unit, right side outside the room)".
- * `outdoor` builds a slightly larger, undetailed variant for that unit rather than a
- * second factory — same body, no interior display, sat on its own pad by the caller.
+ * The aircon's indoor head and its outdoor unit. `outdoor` builds a slightly larger, undetailed
+ * variant for the outdoor unit rather than a second factory — same body, no interior display, sat
+ * on its own pad by the caller. (This once cited `mtr_lo_yellow` as that outdoor unit; the operator
+ * confirmed on 2026-09-15 that L.O Yellow is lighting, L5–L7.)
  */
 function makeACU(outdoor = false): THREE.Group {
   const g = new THREE.Group();

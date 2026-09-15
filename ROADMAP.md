@@ -27,7 +27,11 @@ of the whole building, and the page says the headline figures, findings and char
 never filled phase32's integrated columns, so from 2026-10-08 every pruned hour would lose the only
 independent cross-check on the building total. `phase41_totals_rollup_integrated.sql` fixes it and is
 rehearsed; **it waits for the operator to paste it, before 2026-10-08.** Nothing has been lost, and the
-rows the first passes prune were exported and copied off the Pi beforehand.
+rows the first passes prune were exported and copied off the Pi beforehand. **RM-088** corrects the
+branch wiring from the operator's own account: light switches L1–L4 are on L.O Red and L5–L7 on L.O
+Yellow — which the site file had called the outdoor aircon unit — and the aircon is CARE ACU's only
+load. **RM-089** gives every daemon's connections time for a lost packet to be retried, which the
+Supabase dropouts ingest has logged all week point to.
 
 **Previously audited:** 2026-09-14 — **RM-076 to RM-078, Analytics data quality**, from three operator
 reports: L.O Red "reporting less than it measured", L.O Red reading differently on Overview and
@@ -167,6 +171,27 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
+
+### 2026-09-15 — the branch circuits are wired as the operator describes them; two deploy steps are the operator's
+
+**The operator confirmed what each branch carries (RM-088):** L.O Red is light switches L1–L4, L.O
+Yellow is L5–L7, C.O Yellow is every outlet and whatever plugs into them, and CARE ACU is the aircon
+and nothing else. The site file said otherwise in two places — all seven lights on L.O Red, and L.O
+Yellow as "the outdoor aircon unit" — and the aircon's IR endpoint was on no branch. Corrected and
+held by `test/site-branch-wiring.test.mjs`. The outside temperature sensor stays on no branch until
+someone says what feeds it.
+
+**RM-089 is the likely cause of the "Supabase unreachable" bursts.** Node gives each connection
+attempt 250 ms; the Pi's IPv6 addresses fail at once, and a lost SYN is retried only after a second,
+so one lost packet failed a whole request. Every daemon now allows 3.5 s.
+
+**Two steps are the operator's, after the Pi has pulled and rebuilt:**
+1. `sudo systemctl restart ibems-ingest ibems-proxy ibems-scheduler` — both changes reach all three,
+   and ingest's device sync is what writes the corrected branches to the `devices` table.
+2. Deploy the regenerated bridge flow, so device cards and schedules show the corrected branch:
+   `node node-red-bridge/deploy.mjs --host=<pi> --force` to read the dry run, then again with
+   `--apply`. Back up `~/.node-red/flows.json` first, as CLAUDE.md says. Reports already use the
+   corrected wiring from the rebuilt bundle.
 
 ### 2026-09-15 — the first real retention pass, checked before it runs; phase41 waits to be applied
 
@@ -3603,6 +3628,46 @@ ever cleared, and put its controls in three rows. This section is that page's ov
       **To close:** the operator pastes it into the Supabase SQL editor; read back by opening Reports
       signed in and seeing the duration curve draw.
 
+- [ ] **RM-088 (S)** — **Every device on the branch circuit it is actually wired to.** Written and
+      verified 2026-09-15; **live once the operator restarts the three services and deploys the flow.**
+      - **What the operator said.** L.O Red carries light switches L1–L4; L.O Yellow carries L5–L7; C.O
+        Yellow carries every outlet and whatever plugs into them; CARE ACU carries the aircon only.
+      - **What was wrong.** `shared/sites/mmsu-nberic-care/devices.mjs` filed all seven lights under L.O
+        Red, and its circuit map — transcribed from a 2019 dashboard comment — described L.O Yellow as
+        "the outdoor aircon unit", as did `circuits.mjs`, both meters' descriptions, the 3D pack's
+        comments and `docs/physical-install.md`. L.O Yellow's meter reads about 120 W, which is
+        lighting. The aircon's IR endpoint, `acu_main`, was on no branch. So a report narrowed to L.O
+        Yellow (RM-082c) showed a branch with no devices, and one narrowed to L.O Red showed three lights
+        that are not on it. Earlier entries here that say "outdoor ACU" for L.O Yellow — the branch table
+        in §0 and RM-072's first read of August — carry that same error.
+      - **What changed.** L1–L4 on L.O Red, L5–L7 on L.O Yellow, `acu_main` on CARE ACU; the descriptions
+        and the install guide's map now say what each branch carries. The outside temperature sensor
+        stays on no branch, because nobody has said what feeds it. The regenerated
+        `node-red-bridge/bridge-flow.json` carries the new branches. Energy figures do not move: every
+        light is unmetered, and each branch's energy is its own meter's.
+      - **Held by** `test/site-branch-wiring.test.mjs` — each branch's exact devices, both meters'
+        descriptions, and no site file or install guide still calling L.O Yellow an aircon.
+      - **To go live.** The Pi pulls and rebuilds; then the operator runs
+        `sudo systemctl restart ibems-ingest ibems-proxy ibems-scheduler`, which makes ingest's device
+        sync write the corrected branches to `devices`, and deploys the regenerated flow with
+        `node-red-bridge/deploy.mjs` (dry run, then `--apply --force`, after backing up `flows.json`).
+- [ ] **RM-089 (S)** — **A lost packet no longer fails a Supabase request.** Written and verified
+      2026-09-15; **live once the three services are restarted.**
+      - **The symptom.** Ingest logged "Supabase unreachable, buffered (1 pending): TypeError: fetch
+        failed" 26–100 times a day all week, in bursts, and a read from the Pi during one burst failed as
+        `AggregateError [ETIMEDOUT]` listing both IPv4 addresses and both IPv6 ones.
+      - **The mechanism.** Node 20 and later give each resolved address one connection attempt of 250 ms.
+        The Pi's IPv6 addresses fail at once (`ENETUNREACH` — it has no IPv6 route), so a request rests on
+        its IPv4 attempts, and a TCP SYN lost on the Wi-Fi is retried only after about a second. One lost
+        packet failed the request. Measured the same day, a quiet link connects in 41–76 ms (p90 62 ms,
+        30 of 30 under 250 ms), which is why the failures come in bursts rather than steadily.
+      - **The fix.** `server/netDefaults.mjs` sets `net.setDefaultAutoSelectFamilyAttemptTimeout(3500)`,
+        enough for two SYN retries and still inside fetch's 10 s connect timeout. It is the first import
+        of `ingest.mjs`, `proxy.mjs` and `scheduler.mjs`, so no socket opens before it; the Pi brief's
+        restart map lists it. `server/netDefaults.test.mjs` pins the value, that importing it sets the
+        default, and that each daemon imports it first.
+      - **To close.** Restart the three services, then compare a day of "Supabase unreachable" lines
+        against the week before. If they do not fall, the cause is elsewhere and this entry should say so.
 - [ ] **RM-087 (S)** — **phase41: the hourly totals rollup keeps phase32's integrated cross-check.**
       Written and rehearsed 2026-09-15; **waiting for the operator to apply it, before 2026-10-08.**
       - **The defect.** phase32 (RM-057) stores the legacy power integration beside the summed building

@@ -24,6 +24,7 @@
  *     node server/scheduler.mjs
  */
 
+import './netDefaults.mjs';
 import { DEVICE_REGISTRY, SITE } from '../shared/registry.mjs';
 import { resolveDue, unfireableRows } from './schedulePlan.mjs';
 import { planShed } from './shedPlan.mjs';

@@ -79,18 +79,21 @@ visible.〕
 
 〔FILL IN: which physical breaker each CT is on, by way number.〕
 
-**Record the circuit map as you go.** This is the single most important thing to write down, and
-the CARE office's own version exists only as a comment transcribed from a 2019 dashboard:
+**Record the circuit map as you go.** This is the single most important thing to write down. The
+CARE office's first version was a comment transcribed from a 2019 dashboard, and it was wrong about
+one of its four branches for years; this is the map as the operator confirmed it on 2026-09-15:
 
 ```
-L.O red     -> the room's lighting circuits
-L.O yellow  -> OUTDOOR ACU (separate unit, right side outside the room)
-C.O yellow  -> convenience outlets
-ACU meter   -> indoor ACU
+L.O red     -> lighting: switches L1-L4
+L.O yellow  -> lighting: switches L5-L7   (the 2019 comment called it the outdoor aircon unit)
+C.O yellow  -> every convenience outlet, and whatever else plugs into them
+CARE ACU    -> the aircon, and nothing else
 ```
 
-It goes into `shared/sites/<slug>/circuits.mjs`. Get it wrong and every phase total is
-confidently wrong — the dashboard cannot tell.
+The map goes into `shared/sites/<slug>/circuits.mjs`, and each device's own branch into its
+`branch_circuit` in `devices.mjs`. Get either wrong and every phase total, or every report narrowed
+to a branch, is confidently wrong — the dashboard cannot tell. Check a branch against what its meter
+reads: a branch drawing about 120 W is lighting, whatever a comment says.
 
 **Two logical meters can share one physical device.** At CARE, two of the four are one box
 reading different DPS ranges. Device identity in this system is the *logical* meter, never the
