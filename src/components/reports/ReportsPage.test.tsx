@@ -162,7 +162,8 @@ describe('ReportsPage — weekly', () => {
     vi.mocked(reports.getReportPeriods).mockResolvedValue([weekRow()]);
     vi.mocked(reports.getDevicePeriodReports).mockResolvedValue([deviceRow({ period: 'week', period_start: '2026-07-06' })]);
     fireEvent.click(screen.getByRole('button', { name: 'Weekly' }));
-    await waitFor(() => expect(reports.getReportPeriods).toHaveBeenCalledWith('week'));
+    // The second argument is RM-081's cancellation signal; what this asserts is that weeks are asked for.
+    await waitFor(() => expect(reports.getReportPeriods).toHaveBeenCalledWith('week', expect.anything()));
     expect(await screen.findByRole('group', { name: 'Report week' })).toBeInTheDocument();
   });
 
@@ -192,7 +193,7 @@ describe('ReportsPage — weekly', () => {
     vi.mocked(reports.getReportPeriods).mockResolvedValue([weekRow(), weekRow({ period_start: '2026-06-29' })]);
     vi.mocked(reports.getDevicePeriodReports).mockResolvedValue([deviceRow({ period: 'week', period_start: '2026-07-06' })]);
     fireEvent.click(screen.getByRole('button', { name: 'Weekly' }));
-    await waitFor(() => expect(reports.getDevicePeriodReports).toHaveBeenCalledWith('week', '2026-07-06'));
+    await waitFor(() => expect(reports.getDevicePeriodReports).toHaveBeenCalledWith('week', '2026-07-06', expect.anything()));
   });
 
   it('never renders a month’s device rows under a week that shares its first day', async () => {
@@ -222,7 +223,11 @@ describe('ReportsPage — weekly', () => {
     render(<ReportsPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Weekly' }));
     await screen.findAllByText(/^Week of /);
-    fireEvent.click(screen.getByRole('button', { name: /Export|CSV/i }));
+    // The export is disabled until the week's device rows arrive, which is after its label does.
+    // Clicking before then clicked a disabled button — a race that RM-081's loader made visible.
+    const exportButton = screen.getByRole('button', { name: /Export|CSV/i });
+    await waitFor(() => expect(exportButton).toBeEnabled());
+    fireEvent.click(exportButton);
     expect(downloaded).toMatch(/ibems-week-report-2026-07-06\.csv/);
   });
 });

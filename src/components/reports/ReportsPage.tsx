@@ -1,45 +1,25 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Download, FileText } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { InfoHint } from '@/components/ui/InfoHint';
+import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { supabase } from '@/config/supabase';
 import { toCsv, downloadCsv, type CsvColumn } from '@/lib/csv';
-import {
-  coverageOf,
-  formatPeriod,
-  getDevicePeriodReports,
-  getReportPeriods,
-  isQuotable,
-  type Coverage,
-  type PeriodBuildingReport,
-  type ReportPeriod,
-  type PeriodDeviceReport,
-} from '@/lib/supabaseReports';
-import {
-  getDailySeries,
-  getDemandCurve,
-  getHourMatrix,
-  getHourProfile,
-  type CurveRow,
-  type DailyRow,
-  type HourRow,
-  type MatrixRow,
-} from '@/lib/reportSeries';
-import { fetchScheduleContext } from '@/lib/supabaseConfig';
+import { coverageOf, formatPeriod, isQuotable, type Coverage, type ReportPeriod } from '@/lib/supabaseReports';
 import { PeriodPicker } from './PeriodPicker';
-import { ReportCharts } from './ReportCharts';
+import { ReportCharts, type ChartsData } from './ReportCharts';
 import { buildBreakdown } from '@/lib/circuitBreakdown';
 import { Tabs, type TabDef } from '@/components/ui/Tabs';
 import { BaselineReport } from './BaselineReport';
 import { CircuitDeepDive } from './CircuitDeepDive';
 import { ComparisonReport } from './ComparisonReport';
 import { CoverageBanner } from './CoverageBanner';
-import { getDemandSummary, type DemandSummary } from '@/lib/reportSeries';
 import { ExportPdfButton } from './ExportPdfButton';
 import { CostCarbonLine } from './CostCarbonLine';
+import { ReportSectionNote } from './ReportSectionNote';
+import { useReportData } from './useReportData';
 import { carbonOf, costOf, type DayEnergy } from '@/lib/energyCost';
-import { getEmissionFactors, getTariffs, type FactorEntry, type TariffEntry } from '@/lib/supabaseTariffs';
 
 /**
  * Energy reports, weekly or monthly — Phase 12, generalised by RM-041.
@@ -54,33 +34,73 @@ import { getEmissionFactors, getTariffs, type FactorEntry, type TariffEntry } fr
  * the same error as the truncated chart Phase 9 fixed. With the field devices down since
  * 2026-08-20 (RM-001), most months available today are mostly gap — the page says so rather
  * than printing a confident total.
+ *
+ * EVERY PART LOADS AND FAILS ON ITS OWN — RM-081. `useReportData` reads the report as six
+ * independent sections, and every panel below sits in its own inline error boundary. A failed
+ * tariff read costs the cost line, a hung heatmap query costs the four hourly charts, and a
+ * malformed row costs one card — and each says so where it would have been, with a Retry.
  */
 
 /** Tones reuse the shared `.badge--*` modifiers rather than introducing new colour values,
  * per CLAUDE.md: those four are already contrast-checked in both themes, and a fifth pair
  * invented here would be the first thing to fail an audit. */
-const COVERAGE_COPY: Record<Coverage['band'], { label: string; tone: string; note: string }> = {
-  complete: { label: 'Complete', tone: 'good', note: 'the whole month was observed' },
-  partial: { label: 'Partial', tone: 'warn', note: 'over half the month was observed — this total is understated' },
-  sparse: { label: 'Sparse', tone: 'bad', note: 'only a fraction of the month was observed — this total is not the month’s consumption' },
-  none: { label: 'No data', tone: 'bad', note: 'the month passed with nothing recorded' },
+const COVERAGE_TONE: Record<Coverage['band'], { label: string; tone: string }> = {
+  complete: { label: 'Complete', tone: 'good' },
+  partial: { label: 'Partial', tone: 'warn' },
+  sparse: { label: 'Sparse', tone: 'bad' },
+  none: { label: 'No data', tone: 'bad' },
 };
 
-function CoverageTag({ coverage }: { coverage: Coverage | null }) {
+/** Period-aware — a weekly report used to describe itself as a month (RM-081). */
+function coverageNote(band: Coverage['band'], period: ReportPeriod): string {
+  switch (band) {
+    case 'complete':
+      return `the whole ${period} was observed`;
+    case 'partial':
+      return `over half the ${period} was observed — this total is understated`;
+    case 'sparse':
+      return `only a fraction of the ${period} was observed — this total is not the ${period}’s consumption`;
+    case 'none':
+      return `the ${period} passed with nothing recorded`;
+  }
+}
+
+function CoverageTag({ coverage, period }: { coverage: Coverage | null; period: ReportPeriod }) {
   // "Unknown" is not "none": one means the month recorded nothing, the other means we cannot
   // even say what full coverage would have been. Neutral badge, no tone.
   if (!coverage) return <span className="badge">Coverage unknown</span>;
-  const copy = COVERAGE_COPY[coverage.band];
+  const copy = COVERAGE_TONE[coverage.band];
   return (
-    <span className={`badge badge--${copy.tone}`} title={copy.note}>
+    <span className={`badge badge--${copy.tone}`} title={coverageNote(coverage.band, period)}>
       {copy.label} · {Math.round(coverage.ratio * 100)}%
     </span>
   );
 }
 
 /** A figure the report cannot stand behind is still shown — hiding it would be its own kind
- * of dishonesty — but never without the qualifier attached to the same line. */
-function Figure({ value, unit, digits = 1, coverage }: { value: number | null; unit: string; digits?: number; coverage?: Coverage | null }) {
+ * of dishonesty — but never without the qualifier attached to the same line.
+ *
+ * `notObserved` is the exception, and it is not hiding a figure: it is refusing to print one that
+ * was never measured. Live, the week of 2026-08-10 is stored as 0 kWh from 10 of 10,080 samples,
+ * none of them a real reading — and "0.00 kWh" says that week used no electricity. */
+function Figure({
+  value,
+  unit,
+  digits = 1,
+  coverage,
+  period,
+  notObserved = false,
+}: {
+  value: number | null;
+  unit: string;
+  digits?: number;
+  coverage?: Coverage | null;
+  period: ReportPeriod;
+  notObserved?: boolean;
+}) {
+  if (notObserved) {
+    return <span className="reports-figure reports-figure--missing">— not observed</span>;
+  }
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return <span className="reports-figure reports-figure--missing">—</span>;
   }
@@ -88,7 +108,7 @@ function Figure({ value, unit, digits = 1, coverage }: { value: number | null; u
   return (
     <span className={`reports-figure${qualified ? ' reports-figure--qualified' : ''}`}>
       {value.toFixed(digits)} {unit}
-      {qualified ? <span className="reports-figure__caveat"> (partial month)</span> : null}
+      {qualified ? <span className="reports-figure__caveat"> (partial {period})</span> : null}
     </span>
   );
 }
@@ -135,117 +155,20 @@ export function ReportsPage() {
    * Week or month — RM-041. The operator asked for both, and they answer different questions: a
    * month is what gets reported upward, a week is how you notice something changed.
    *
-   * Changing it clears the selection rather than trying to map one period onto the other. The
-   * week containing 1 July is not "July", and a mapping that picked one would be inventing a
-   * correspondence that does not exist.
+   * Changing it lands on that kind's newest report rather than trying to map one period onto the
+   * other. The week containing 1 July is not "July", and a mapping that picked one would be
+   * inventing a correspondence that does not exist.
    */
   const [period, setPeriod] = useState<ReportPeriod>('month');
-  /** Tagged with the period it was fetched for, and derived — the same shape as `fetched`
-   * below and for the same reason. Clearing it inside the effect was a synchronous setState in
-   * a commit, which cascades a render; and until it cleared, the list of MONTHS would render
-   * under a heading that said weeks. */
-  const [loaded, setLoaded] = useState<{ period: ReportPeriod; list: PeriodBuildingReport[] } | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
-  const months = loaded && loaded.period === period ? loaded.list : null;
-  /**
-   * Tagged with the month it was fetched for, and derived rather than stored — the same fix
-   * commit c5d4e18 made for `deviceStore.history`, for the same reason. A plain `rows` state
-   * cleared inside the effect would both need a setState in the effect body (a cascading
-   * render, which `react-hooks/set-state-in-effect` rightly rejects) and, until it was
-   * cleared, render July's per-device figures under August's heading. A result for another
-   * month simply is not a result for this one.
-   */
-  const [fetched, setFetched] = useState<{ period: ReportPeriod; month: string; rows: PeriodDeviceReport[] } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  /**
-   * phase37's series, behind the charts. Tagged with the period and start they were fetched for,
-   * exactly like `fetched` above and for the same reason: a result for another month is not a
-   * result for this one, and rendering it under this month's heading would be worse than
-   * rendering nothing.
-   */
-  const [series, setSeries] = useState<
-    | {
-        period: ReportPeriod;
-        start: string;
-        daily: DailyRow[];
-        hours: HourRow[];
-        matrix: MatrixRow[];
-        curve: CurveRow[];
-        ceilingW: number | null;
-        summary: DemandSummary | null;
-        tariffs: TariffEntry[];
-        factors: FactorEntry[];
-      }
-    | null
-  >(null);
+  const report = useReportData(period);
+  const { periods, selected, select, core, detail, pricing, ceiling } = report;
+  const months = periods.data;
+  const rows = report.devices.data;
 
   const nameOf = useCallback(
     (id: string) => devices.find((d) => d.id === id)?.display_name ?? id,
     [devices]
   );
-
-  useEffect(() => {
-    if (!supabase) return;
-    let cancelled = false;
-    getReportPeriods(period)
-      .then((list) => {
-        if (cancelled) return;
-        setLoaded({ period, list });
-        // Always the newest of the period just switched to — NOT `current ?? …`, which would
-        // keep a month's date selected after switching to weeks and then match no week at all.
-        setSelected(list[0]?.period_start?.slice(0, 10) ?? null);
-      })
-      .catch((err) => !cancelled && setError(String(err)));
-    return () => {
-      cancelled = true;
-    };
-  }, [period]);
-
-  useEffect(() => {
-    if (!supabase || !selected) return;
-    let cancelled = false;
-    getDevicePeriodReports(period, selected)
-      .then((list) => !cancelled && setFetched({ period, month: selected, rows: list }))
-      .catch((err) => !cancelled && setError(String(err)));
-    return () => {
-      cancelled = true;
-    };
-  }, [period, selected]);
-
-  useEffect(() => {
-    if (!supabase || !selected) return;
-    let cancelled = false;
-    Promise.all([
-      getDailySeries(period, selected),
-      getHourProfile(period, selected),
-      getHourMatrix(period, selected),
-      getDemandCurve(period, selected),
-      getDemandSummary(period, selected),
-      // Priced per day at the rate in force that day, so a report of a past month is not priced
-      // at today's rate. Both come back empty when nothing has been entered, and every consumer
-      // renders "not set" rather than a zero.
-      getTariffs(),
-      getEmissionFactors(),
-      // The DSM ceiling the duration curve is drawn against. Read from the same row the
-      // Automation page writes, so the chart cannot disagree with the page that sets it.
-      fetchScheduleContext().then((ctx) => {
-        const kw = Number(ctx['global.dsm.max_total_kw']);
-        return Number.isFinite(kw) && kw > 0 ? kw * 1000 : null;
-      }),
-    ])
-      .then(([daily, hours, matrix, curve, summary, tariffs, factors, ceilingW]) => {
-        if (!cancelled) setSeries({ period, start: selected, daily, hours, matrix, curve, summary, tariffs, factors, ceilingW });
-      })
-      .catch((err) => !cancelled && setError(String(err)));
-    return () => {
-      cancelled = true;
-    };
-  }, [period, selected]);
-
-  // Tagged with the PERIOD as well as the start, so week 2026-06-01's rows are never rendered
-  // under month 2026-06-01's heading — the two are different reports that share a first day.
-  const rows = fetched && fetched.month === selected && fetched.period === period ? fetched.rows : null;
-  const live = series && series.period === period && series.start === selected ? series : null;
 
   /**
    * The breakdown, derived from the circuit tree rather than from device names. Which meters
@@ -255,25 +178,61 @@ export function ReportsPage() {
    */
   const { segments, untracked } = useMemo(() => buildBreakdown(rows ?? [], nameOf), [rows, nameOf]);
 
+  /** The five charts need both the daily series and the hourly detail. The ceiling is optional:
+   *  a failed read draws the curve without it and says so, rather than holding the chart back. */
+  const charts: ChartsData | null = useMemo(
+    () =>
+      core.data && detail.data
+        ? {
+            daily: core.data.daily,
+            hours: detail.data.hours,
+            matrix: detail.data.matrix,
+            curve: detail.data.curve,
+            segments,
+            untracked,
+            ceilingW: ceiling.data ?? null,
+            summary: core.data.summary,
+          }
+        : null,
+    [core.data, detail.data, segments, untracked, ceiling.data]
+  );
+
   /**
    * Cost and carbon, from the SAME per-day series the charts are drawn from — so the figure in
    * the summary and the bars above it cannot describe different days.
    */
   const priced = useMemo(() => {
-    const days: DayEnergy[] = (live?.daily ?? []).map((d) => ({
+    const days: DayEnergy[] = (core.data?.daily ?? []).map((d) => ({
       day: d.local_day.slice(0, 10),
       // A day whose rows carried no reading has no energy to price. Passing its 0 through would
       // price it at zero, which says the building spent nothing rather than that nobody watched.
       kwh: d.usable_sample_count > 0 ? d.energy_kwh : null,
     }));
-    return { cost: costOf(days, live?.tariffs ?? []), carbon: carbonOf(days, live?.factors ?? []) };
-  }, [live]);
+    return { cost: costOf(days, pricing.data?.tariffs ?? []), carbon: carbonOf(days, pricing.data?.factors ?? []) };
+  }, [core.data, pricing.data]);
 
   const building = useMemo(
     () => months?.find((m) => m.period_start.slice(0, 10) === selected) ?? null,
     [months, selected]
   );
   const buildingCoverage = building ? coverageOf(building.online_sample_count, building.expected_sample_count) : null;
+
+  /**
+   * Whether the period's headline figures were ever measured. Once the summary has arrived this
+   * is exact — not one minute of the period carried a real reading. Before it arrives, a stored
+   * zero from a period that was not fully observed is held back rather than printed: it is either
+   * "not observed" or a floor of nothing, and neither reads correctly as "0.00 kWh".
+   */
+  const notObserved = core.data
+    ? core.data.summary?.usable_minutes === 0
+    : building !== null && building.energy_kwh === 0 && !isQuotable(buildingCoverage);
+
+  const pdfBlocked =
+    pricing.status === 'error'
+      ? 'The rates could not be loaded, so the document could not state what the period cost. Retry them first.'
+      : pricing.status === 'loading'
+        ? 'Still loading the rates.'
+        : null;
 
   const exportCsv = () => {
     if (!rows || !selected) return;
@@ -310,6 +269,9 @@ export function ReportsPage() {
     );
   }
 
+  const periodLabel = selected ? formatPeriod(period, selected) : '';
+  const scopeKey = `${period}:${selected ?? ''}`;
+
   return (
     <>
       <PageHeader
@@ -331,26 +293,14 @@ export function ReportsPage() {
             <Tabs tabs={REPORT_TABS} activeId={tab} onChange={setTab} label="Report type" className="reports-tabs" />
             <ExportPdfButton
               period={period}
-              periodLabel={selected ? formatPeriod(period, selected) : ''}
+              periodLabel={periodLabel}
               building={building}
               rows={rows}
-              charts={
-                live
-                  ? {
-                      daily: live.daily,
-                      hours: live.hours,
-                      matrix: live.matrix,
-                      curve: live.curve,
-                      segments,
-                      untracked,
-                      ceilingW: live.ceilingW,
-                      summary: live.summary,
-                    }
-                  : null
-              }
+              charts={charts}
               cost={priced.cost}
               carbon={priced.carbon}
               nameOf={nameOf}
+              blockedReason={pdfBlocked}
             />
             <button type="button" className="devices-add-btn" onClick={exportCsv} disabled={!rows || rows.length === 0}>
               <Download size={16} aria-hidden="true" /> Export CSV
@@ -359,14 +309,12 @@ export function ReportsPage() {
         }
       />
 
-      {error ? <p className="reports-note reports-note--error">{error}</p> : null}
-
-      {months === null && !error ? <p className="reports-note">Loading reports…</p> : null}
+      <ReportSectionNote section={periods} what="the list of reports" />
 
       {months?.length === 0 ? (
         <p className="reports-note">
-          <FileText size={16} aria-hidden="true" /> No month has completed since reporting was switched on. The first
-          report appears a couple of days after the end of the first full month.
+          <FileText size={16} aria-hidden="true" /> No {period} has completed since reporting was switched on. The first
+          report appears a couple of days after the end of the first full {period}.
         </p>
       ) : null}
 
@@ -391,138 +339,165 @@ export function ReportsPage() {
           period={period}
           starts={months.map((m) => m.period_start.slice(0, 10))}
           selected={selected}
-          onSelect={setSelected}
+          onSelect={select}
         />
       ) : null}
 
-      {tab === 'summary' && live && selected ? (
-        <CoverageBanner
-          summary={live.summary}
-          observedDays={live.daily.filter((d) => d.usable_sample_count > 0).length}
-          completeDays={live.daily.filter((d) => d.expected_samples > 0 && d.usable_sample_count / d.expected_samples >= 0.95).length}
-          label={formatPeriod(period, selected)}
-        />
+      {tab === 'summary' && selected ? (
+        <>
+          <ReportSectionNote section={core} what="the daily figures" />
+          {core.data ? (
+            <ErrorBoundary scope="The coverage summary" variant="inline" resetKey={core.data}>
+              <CoverageBanner
+                summary={core.data.summary}
+                observedDays={core.data.daily.filter((d) => d.usable_sample_count > 0).length}
+                completeDays={
+                  core.data.daily.filter((d) => d.expected_samples > 0 && d.usable_sample_count / d.expected_samples >= 0.95).length
+                }
+                label={periodLabel}
+              />
+            </ErrorBoundary>
+          ) : null}
+        </>
       ) : null}
 
       {tab === 'summary' && building ? (
-        <section className="devices-table-card reports-summary" aria-label={`Building summary for ${formatPeriod(period, building.period_start)}`}>
-          <h2 className="card-title">
-            {formatPeriod(period, building.period_start)} · building <CoverageTag coverage={buildingCoverage} />
-          </h2>
-          <dl className="reports-summary__grid">
-            <div>
-              <dt>Energy</dt>
-              <dd><Figure value={building.energy_kwh} unit="kWh" digits={2} coverage={buildingCoverage} /></dd>
-            </div>
-            <div>
-              <dt>Peak demand</dt>
-              <dd><Figure value={building.peak_total_power_w} unit="W" digits={0} coverage={buildingCoverage} /></dd>
-            </div>
-            <div>
-              <dt>Average voltage</dt>
-              <dd><Figure value={building.avg_voltage} unit="V" /></dd>
-            </div>
-            <div>
-              <dt>Phase current R / Y / B</dt>
-              <dd>
-                <Figure value={building.phase_current_red_avg} unit="" digits={2} />
-                {' / '}
-                <Figure value={building.phase_current_yellow_avg} unit="" digits={2} />
-                {' / '}
-                {/* Blue is NULL by design — no Blue-phase meter is installed. */}
-                <Figure value={building.phase_current_blue_avg} unit="A" digits={2} />
-              </dd>
-            </div>
-            <div>
-              <dt>Commands</dt>
-              <dd>
-                {building.command_count} total · {building.command_count_manual} manual ·{' '}
-                {building.command_count_schedule} scheduled · {building.command_count_autoshed} auto-shed
-              </dd>
-            </div>
-            <div>
-              <dt>Anomalies</dt>
-              <dd>{building.anomaly_count}</dd>
-            </div>
-            {/* Last in the list, deliberately: the cost is derived from the energy above it, and
-                putting a currency figure first would make it the headline of a report whose
-                headline is a measurement. */}
-            <CostCarbonLine cost={priced.cost} carbon={priced.carbon} coverage={buildingCoverage} />
-          </dl>
-        </section>
+        <ErrorBoundary scope="The building summary" variant="inline" resetKey={building}>
+          <section className="devices-table-card reports-summary" aria-label={`Building summary for ${formatPeriod(period, building.period_start)}`}>
+            <h2 className="card-title">
+              {formatPeriod(period, building.period_start)} · building <CoverageTag coverage={buildingCoverage} period={period} />
+            </h2>
+            <dl className="reports-summary__grid">
+              <div>
+                <dt>Energy</dt>
+                <dd>
+                  <Figure value={building.energy_kwh} unit="kWh" digits={2} coverage={buildingCoverage} period={period} notObserved={notObserved} />
+                </dd>
+              </div>
+              <div>
+                <dt>Peak demand</dt>
+                <dd>
+                  <Figure value={building.peak_total_power_w} unit="W" digits={0} coverage={buildingCoverage} period={period} notObserved={notObserved} />
+                </dd>
+              </div>
+              <div>
+                <dt>Average voltage</dt>
+                <dd>
+                  <Figure value={building.avg_voltage} unit="V" period={period} />
+                </dd>
+              </div>
+              <div>
+                <dt>Phase current R / Y / B</dt>
+                <dd>
+                  <Figure value={building.phase_current_red_avg} unit="" digits={2} period={period} />
+                  {' / '}
+                  <Figure value={building.phase_current_yellow_avg} unit="" digits={2} period={period} />
+                  {' / '}
+                  {/* Blue is NULL by design — no Blue-phase meter is installed. */}
+                  <Figure value={building.phase_current_blue_avg} unit="A" digits={2} period={period} />
+                </dd>
+              </div>
+              <div>
+                <dt>Commands</dt>
+                <dd>
+                  {building.command_count} total · {building.command_count_manual} manual ·{' '}
+                  {building.command_count_schedule} scheduled · {building.command_count_autoshed} auto-shed
+                </dd>
+              </div>
+              <div>
+                <dt>Anomalies</dt>
+                <dd>{building.anomaly_count}</dd>
+              </div>
+              {/* Last in the list, deliberately: the cost is derived from the energy above it, and
+                  putting a currency figure first would make it the headline of a report whose
+                  headline is a measurement. */}
+              <CostCarbonLine cost={priced.cost} carbon={priced.carbon} coverage={buildingCoverage} pricing={pricing} />
+            </dl>
+          </section>
+        </ErrorBoundary>
       ) : null}
 
-      {tab === 'summary' && live && selected ? (
-        <ReportCharts
-          period={period}
-          start={selected}
-          daily={live.daily}
-          hours={live.hours}
-          matrix={live.matrix}
-          curve={live.curve}
-          segments={segments}
-          untracked={untracked}
-          ceilingW={live.ceilingW}
-        />
+      {tab === 'summary' && selected ? (
+        <>
+          <ReportSectionNote section={detail} what="the hourly charts" />
+          <ReportSectionNote section={ceiling} what="the demand ceiling" quietWhileLoading />
+          {charts ? <ReportCharts period={period} start={selected} {...charts} /> : null}
+        </>
       ) : null}
 
-      {tab === 'baseline' && live && selected ? (
-        <BaselineReport
-          period={period}
-          start={selected}
-          summary={live.summary}
-          charts={{
-            daily: live.daily,
-            hours: live.hours,
-            matrix: live.matrix,
-            curve: live.curve,
-            segments,
-            untracked,
-            ceilingW: live.ceilingW,
-          }}
-        />
+      {tab === 'baseline' && selected ? (
+        <>
+          <ReportSectionNote section={core} what="the daily figures" />
+          <ReportSectionNote section={detail} what="the hourly charts" />
+          {charts ? (
+            <ErrorBoundary scope="The baseline report" variant="inline" resetKey={charts}>
+              <BaselineReport period={period} start={selected} summary={charts.summary ?? null} charts={charts} />
+            </ErrorBoundary>
+          ) : null}
+        </>
       ) : null}
 
-      {tab === 'circuits' && rows && selected ? (
-        <CircuitDeepDive period={period} start={selected} rows={rows} nameOf={nameOf} />
+      {tab === 'circuits' && selected ? (
+        <>
+          <ReportSectionNote section={report.devices} what="the per-device figures" />
+          {rows ? (
+            <ErrorBoundary scope="The circuit report" variant="inline" resetKey={rows}>
+              <CircuitDeepDive period={period} start={selected} rows={rows} nameOf={nameOf} />
+            </ErrorBoundary>
+          ) : null}
+        </>
       ) : null}
 
       {tab === 'compare' && months ? (
-        <ComparisonReport period={period} periods={months} selected={selected} />
+        <ErrorBoundary scope="The comparison" variant="inline" resetKey={scopeKey}>
+          <ComparisonReport period={period} periods={months} selected={selected} />
+        </ErrorBoundary>
       ) : null}
 
+      {tab === 'summary' && selected ? <ReportSectionNote section={report.devices} what="the per-device figures" /> : null}
+
       {tab === 'summary' && rows && rows.length > 0 ? (
-        <div className="devices-table-card devices-table-scroll">
-          <table className="devices-table reports-table" aria-label={`Per-device report for ${selected ? formatPeriod(period, selected) : ''}`}>
-            <thead>
-              <tr>
-                <th scope="col">Device</th>
-                <th scope="col">Energy</th>
-                <th scope="col">Peak</th>
-                <th scope="col">Average</th>
-                <th scope="col">Coverage</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => {
-                const c = coverageOf(r.online_sample_count, r.expected_sample_count);
-                return (
-                  <tr key={r.device_id}>
-                    <th scope="row">{nameOf(r.device_id)}</th>
-                    <td><Figure value={r.energy_kwh} unit="kWh" digits={2} coverage={c} /></td>
-                    <td><Figure value={r.peak_power_w} unit="W" digits={0} coverage={c} /></td>
-                    <td><Figure value={r.avg_power_w} unit="W" digits={0} coverage={c} /></td>
-                    <td><CoverageTag coverage={c} /></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <ErrorBoundary scope="The per-device table" variant="inline" resetKey={rows}>
+          <div className="devices-table-card devices-table-scroll">
+            <table className="devices-table reports-table" aria-label={`Per-device report for ${periodLabel}`}>
+              <thead>
+                <tr>
+                  <th scope="col">Device</th>
+                  <th scope="col">Energy</th>
+                  <th scope="col">Peak</th>
+                  <th scope="col">Average</th>
+                  <th scope="col">Coverage</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => {
+                  const c = coverageOf(r.online_sample_count, r.expected_sample_count);
+                  return (
+                    <tr key={r.device_id}>
+                      <th scope="row">{nameOf(r.device_id)}</th>
+                      <td>
+                        <Figure value={r.energy_kwh} unit="kWh" digits={2} coverage={c} period={period} />
+                      </td>
+                      <td>
+                        <Figure value={r.peak_power_w} unit="W" digits={0} coverage={c} period={period} />
+                      </td>
+                      <td>
+                        <Figure value={r.avg_power_w} unit="W" digits={0} coverage={c} period={period} />
+                      </td>
+                      <td>
+                        <CoverageTag coverage={c} period={period} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </ErrorBoundary>
       ) : null}
 
       {tab === 'summary' && rows?.length === 0 && selected ? (
-        <p className="reports-note">No per-device rows for {formatPeriod(period, selected)}.</p>
+        <p className="reports-note">No per-device rows for {periodLabel}.</p>
       ) : null}
     </>
   );

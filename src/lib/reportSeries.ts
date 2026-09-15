@@ -131,8 +131,16 @@ function client() {
   return supabase;
 }
 
-async function call<T>(fn: string, args: Record<string, unknown>, cap: number): Promise<T[]> {
-  const { data, error } = await client().rpc(fn, args);
+/** Optional cancellation — RM-081. A caller that gives up on a slow query aborts the request
+ *  itself, so its answer does not keep crossing the Pi's uplink for nobody. */
+export interface SeriesRequest {
+  signal?: AbortSignal;
+}
+
+async function call<T>(fn: string, args: Record<string, unknown>, cap: number, signal?: AbortSignal): Promise<T[]> {
+  let request = client().rpc(fn, args);
+  if (signal) request = request.abortSignal(signal);
+  const { data, error } = await request;
   if (error) throw new Error(`${fn} failed: ${error.message}`);
   const rows = (data ?? []) as T[];
   // Every one of these returns a bounded count by construction, so hitting the cap means the
@@ -149,24 +157,24 @@ const window = (period: ReportPeriod, start: string) => ({
   p_tz: TZ,
 });
 
-export async function getDailySeries(period: ReportPeriod, start: string): Promise<DailyRow[]> {
+export async function getDailySeries(period: ReportPeriod, start: string, { signal }: SeriesRequest = {}): Promise<DailyRow[]> {
   // 31 days at most; 40 leaves room for a period type longer than a month without tripping.
-  return call<DailyRow>('report_daily_series', window(period, start), 40);
+  return call<DailyRow>('report_daily_series', window(period, start), 40, signal);
 }
 
-export async function getHourProfile(period: ReportPeriod, start: string): Promise<HourRow[]> {
-  return call<HourRow>('report_hour_profile', window(period, start), 25);
+export async function getHourProfile(period: ReportPeriod, start: string, { signal }: SeriesRequest = {}): Promise<HourRow[]> {
+  return call<HourRow>('report_hour_profile', window(period, start), 25, signal);
 }
 
-export async function getHourMatrix(period: ReportPeriod, start: string): Promise<MatrixRow[]> {
-  return call<MatrixRow>('report_hour_matrix', window(period, start), MAX_MATRIX_CELLS + 1);
+export async function getHourMatrix(period: ReportPeriod, start: string, { signal }: SeriesRequest = {}): Promise<MatrixRow[]> {
+  return call<MatrixRow>('report_hour_matrix', window(period, start), MAX_MATRIX_CELLS + 1, signal);
 }
 
-export async function getDemandCurve(period: ReportPeriod, start: string): Promise<CurveRow[]> {
-  return call<CurveRow>('report_demand_curve', window(period, start), 502);
+export async function getDemandCurve(period: ReportPeriod, start: string, { signal }: SeriesRequest = {}): Promise<CurveRow[]> {
+  return call<CurveRow>('report_demand_curve', window(period, start), 502, signal);
 }
 
-export async function getDemandSummary(period: ReportPeriod, start: string): Promise<DemandSummary | null> {
-  const rows = await call<DemandSummary>('report_demand_summary', window(period, start), 2);
+export async function getDemandSummary(period: ReportPeriod, start: string, { signal }: SeriesRequest = {}): Promise<DemandSummary | null> {
+  const rows = await call<DemandSummary>('report_demand_summary', window(period, start), 2, signal);
   return rows[0] ?? null;
 }

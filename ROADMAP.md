@@ -3,8 +3,11 @@
 **Last audited:** 2026-09-15 — **RM-080: CO6 and CO7 were drawn in each other's places.** The
 three code copies of the office layout are swapped and pinned; the two live `device_config` rows
 still hold the old positions and need the statement in RM-080 run by the operator, so until then
-the Control page and Settings → Floor plan disagree with the Overview. Also planned the same day,
-not yet built: RM-081 to RM-084, the Reports page's reliability, layout and export overhaul.
+the Control page and Settings → Floor plan disagree with the Overview. **RM-081 landed the same day:
+the Reports page loads as six independent sections**, so a failed tariff read no longer hides five
+charts that loaded, a hung query becomes a timeout with a Retry instead of an empty page, and a
+period stored as 0 kWh from ten rows that held no reading says "not observed". RM-082 to RM-084
+(layout, exports, charts) are planned in the same §2 section and not yet built.
 
 **Previously audited:** 2026-09-14 — **RM-076 to RM-078, Analytics data quality**, from three operator
 reports: L.O Red "reporting less than it measured", L.O Red reading differently on Overview and
@@ -3224,6 +3227,104 @@ quality, and nothing is coerced to 0.
     - No error or warning line has been logged since the restart.
     **Not yet seen live:** a `measurement_frozen` flag, which needs a meter to hold still for three
     hours.
+
+### The Reports page, made reliable, readable and exportable — RM-081 to RM-085 (2026-09-15)
+
+The operator asked for a report page that can be trusted to load, reads at a glance, exports a PDF
+and a simple CSV, and lets the reader choose which parts of a report to include. RM-072 built a good
+pipeline under a page that fetched everything in one `Promise.all`, kept one error string nothing
+ever cleared, and put its controls in three rows. This section is that page's overhaul, in order.
+
+- [x] **RM-081 (M)** **DONE 2026-09-15. Every part of a report loads, fails and recovers on its
+      own.** Audit of the page as RM-072 left it, each item confirmed in the code before it was
+      changed:
+      the error was one string set by any of three effects and never cleared, so a failure followed
+      the reader to every other period until a reload; the charts' series, the tariffs, the emission
+      factors and the DSM ceiling were one `Promise.all`, so a failed tariff read hid five charts
+      that had loaded; nothing had a timeout, and nothing but the period list said it was loading;
+      no panel had an error boundary, so one malformed row replaced the whole page; and stepping
+      back to a period refetched all ten queries.
+
+      *`src/lib/reportLoader.ts`* holds three primitives that know nothing about reports.
+      `withTimeout` **aborts** the request it gives up on, not just the wait — the signal is threaded
+      through `getReportPeriods`, `getDevicePeriodReports`, the five phase37 calls, both tariff
+      readers and `fetchScheduleContext`, all optional so no other caller changed. `isTransient`
+      admits only a timeout or a browser network failure (Chrome, Firefox and Safari word it three
+      ways); a permission refusal, a truncated result or a caller cancelling is never retried,
+      because asking again cannot change the answer. `createReportCache` de-duplicates requests in
+      flight, never keeps a failure — a remembered failure is a Retry that cannot work — and expires
+      after ten minutes, because the list of periods grows every Monday-plus-grace and a kiosk left
+      on the page would otherwise never see the new week. 23 tests.
+
+      *`src/components/reports/useReportData.ts`* reads the report as six sections — periods,
+      devices, core (daily series + demand summary), detail (hour profile, matrix, curve), pricing
+      and ceiling — each `idle | loading | ready | error` with its own `retry`. Still **derived by
+      key and never cleared in an effect**, the rule this page has held since c5d4e18: an outcome is
+      tagged with the request it answers, so a month's rows cannot render under a week that shares
+      its first day. The cache is **per mount**, not module scope: a module-level cache would carry
+      one test's fixtures into the next and one session's answers into another's. 17 tests.
+
+      *On the page*, every panel sits in an inline `ErrorBoundary`, and `ReportCharts` now builds
+      each scene **inside** its own boundary rather than all five in one `useMemo` above them — so a
+      chart that cannot be drawn costs one card. `ReportSectionNote` says loading as a `status` and
+      failure as an `alert` naming what failed, why, and a Retry. A failed tariff read renders "the
+      rates could not be loaded", **never "no rate has been entered"**, which is a claim about the
+      database a failed read has not established — and the PDF button is disabled with that reason
+      rather than producing a document that says it.
+
+      **Measured on live data before it was written:** `period_building_reports` holds the week of
+      2026-08-10 as `energy_kwh = 0` from **10 of 10,080** samples, and the page printed "0.00 kWh".
+      A period whose summary shows no minute with a real reading now reads **"— not observed"** for
+      energy and peak demand; before the summary arrives, a stored zero from a period that was not
+      fully observed is held back the same way. The stored row is unchanged — restating it is RM-073.
+      Weekly reports also stop calling themselves months: "(partial week)", "the whole week was
+      observed", "No week has completed".
+
+      **Two things the tests found about themselves, recorded because both look like page bugs.**
+      `vi.resetAllMocks()` wipes the implementation a `vi.mock` factory set, so a ceiling read mocked
+      there returned `undefined`, failed, and raised a second alert the test was not about — the
+      third time an unmocked read on this page has read as a broken panel. And the existing
+      CSV-filename test was **racing the device rows**: it waited for the week's label, which
+      arrives before the rows, then clicked an export button that is correctly disabled until they
+      do. The loader's extra async steps made it fail two runs in three; it now waits for the button
+      to be enabled. That is one of **three assertions changed in `ReportsPage.test.tsx`**; the other
+      two widened exact-argument checks to allow the new signal. None of its honesty properties
+      changed.
+
+      `ReportsPage.reliability.test.tsx` (7): a throwing heatmap is contained and the table, the
+      figures and four charts remain; a tariff failure keeps all five charts and never claims no
+      rate; Retry recovers a failed section; loading is announced; "not observed"; "partial week";
+      the weekly empty state. **Not verified signed-in in a browser** — the workstation's dev build
+      has no Supabase keys, so the Reports page renders "not configured" there.
+
+- [ ] **RM-082 (M)** — **One control bar, a headline row, and tables built for reading.** A sticky
+      bar holding period kind, a period stepper with *Latest settled / Previous / Same period last
+      year*, the report tabs, a circuit scope and Export; a KPI row led by energy at `--fs-3xl`, then
+      peak demand, cost, emissions, readings coverage and — only when `ipmvp.compare` says the two
+      are comparable — change against the previous period; `ReportTable` with right-aligned
+      tabular numerals, units in the header, no zebra striping and no `min-width: 860px` (the
+      `is-numeric` class `ChartFigure` sets has **no CSS rule**, so numbers are left-aligned
+      today); skeletons shaped like each chart and table; the Reports CSS on an 8-point grid with a
+      guard test.
+- [ ] **RM-083 (M)** — **An export drawer with sections, a sectioned PDF and tidy CSVs.** Coverage
+      and "what this report does not say" are locked on (operator decision, 2026-09-15); every other
+      section is optional. The PDF gains the key figures it omits today (peak demand, voltage,
+      commands, anomalies) and the Baseline, Circuits and Comparison content. A simple CSV with one
+      row per day and a per-device CSV, as separate downloads (operator decision: no ZIP). ISO
+      filenames that do not vary by locale. Export status in a live region; PDF generation timed on
+      the Pi, and moved to a worker only if it exceeds one second there.
+- [ ] **RM-084 (S)** — **Hover on the charts, and three findings the series already hold.** Hit
+      targets emitted only by the screen serializer, a tooltip on hover and focus; weekday against
+      weekend daily energy from complete days, load factor, and overnight base load — each "—" with
+      a reason when the days are too few.
+- [ ] **RM-085 (L)** — **Arbitrary windows: last 24 hours, month to date, billing cycle, custom.**
+      **Deferred by operator decision, 2026-09-15.** `report_window` accepts only a whole week or
+      month (`phase37_report_series.sql:66`) and counts the unfinished part of a period as missing,
+      so these cannot be served honestly from today's functions. Needs `phase40_report_ranges.sql`
+      (range variants clamped to `now()`, per-device energy from each device's own counters, a
+      weekday-by-hour heatmap past 37 days to stay under the 900-cell cap), a billing-cycle day
+      setting, a provisional "in progress" banner, and a rehearsal asserting the bars sum to the
+      range total.
 
 ### Reports gain charts, a document, and a price — RM-072 (2026-09-10)
 

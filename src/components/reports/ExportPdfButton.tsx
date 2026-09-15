@@ -40,16 +40,22 @@ interface Props {
   cost: Costed;
   carbon: Carboned;
   nameOf: (id: string) => string;
+  /**
+   * Why the document cannot be built right now, when that is something other than the data not
+   * having arrived — RM-081. A failed tariff read must not produce a PDF saying "no rate has been
+   * entered", which is a statement about the database that a failed read has not established.
+   */
+  blockedReason?: string | null;
 }
 
 const f = (v: number | null, digits = 2) =>
   v === null || v === undefined || !Number.isFinite(v) ? null : v.toFixed(digits);
 
-export function ExportPdfButton({ period, periodLabel, building, rows, charts, cost, carbon, nameOf }: Props) {
+export function ExportPdfButton({ period, periodLabel, building, rows, charts, cost, carbon, nameOf, blockedReason = null }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const ready = charts !== null && rows !== null;
+  const ready = charts !== null && rows !== null && blockedReason === null;
 
   const run = async () => {
     if (!ready || busy) return;
@@ -173,6 +179,7 @@ export function ExportPdfButton({ period, periodLabel, building, rows, charts, c
         onClick={run}
         disabled={!ready || busy}
         aria-busy={busy || undefined}
+        title={blockedReason ?? undefined}
       >
         <FileDown size={16} aria-hidden="true" /> {busy ? 'Building PDF…' : 'Download PDF'}
       </button>

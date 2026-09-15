@@ -88,13 +88,16 @@ export function dsmRowFrom(merged: ContextMap, actorUserId: string | null) {
 }
 
 /** Everything `contextStore.load()` needs, in the one shape the DSM components already read. */
-export async function fetchScheduleContext(): Promise<ContextMap> {
+export async function fetchScheduleContext({ signal }: { signal?: AbortSignal } = {}): Promise<ContextMap> {
   const client = requireSupabase();
-  const thresholds = await client
+  let query = client
     .from('dsm_thresholds')
     .select('max_phase_current,max_total_kw,auto_shed')
-    .eq('site_id', SITE.id)
-    .maybeSingle();
+    .eq('site_id', SITE.id);
+  // Optional, for callers that give up on a slow read (the Reports page, RM-081) — so the request
+  // itself is cancelled rather than merely no longer awaited.
+  if (signal) query = query.abortSignal(signal);
+  const thresholds = await query.maybeSingle();
   if (thresholds.error) throw new Error(`Could not read the demand limits: ${thresholds.error.message}`);
   return dsmRowToContext(thresholds.data);
 }

@@ -6287,6 +6287,30 @@ body::before {
   color: var(--bad);
 }
 
+/* A section of the report that failed to load, said where it would have been — RM-081. The
+   message wraps and the Retry sits at the end of it rather than on a line of its own. */
+.report-section-error {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+}
+
+.report-retry-btn {
+  min-height: 32px;
+  padding: 0 var(--sp-4);
+  background: var(--bg-surface);
+  color: var(--txt);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.report-retry-btn:hover {
+  border-color: var(--txt);
+}
+
 /* Report charts — RM-072. Only the genuinely page-specific pieces, per CLAUDE.md: the table
    inside each figure is `.devices-table`, the coverage badges are `.badge--*`, and the surface
    is `.devices-table-card`'s, because a chart is not a new kind of card. */
@@ -8563,6 +8587,8 @@ button.space-plan__pin {
   /* RM-072q: the tariff entry fields and the control that deletes a rate. */
   .tariff-form input,
   .tariff-list__remove,
+  /* RM-081: Retry on a report section that failed to load. */
+  .report-retry-btn,
   /* RM-071: a 30x30 icon button that DELETES a schedule rule, on a touchscreen. Square and in
      normal flow beside the arm switch, so it grows rather than needing a hit-area expander —
      the switch's own expander is 44 wide and the row's 8px gap keeps them from cross-talking. */

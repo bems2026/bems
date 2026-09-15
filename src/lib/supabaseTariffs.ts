@@ -64,12 +64,15 @@ export interface FactorEntry extends Factor {
   id: string;
 }
 
-export async function getTariffs(): Promise<TariffEntry[]> {
-  const { data, error } = await client()
+export async function getTariffs({ signal }: { signal?: AbortSignal } = {}): Promise<TariffEntry[]> {
+  let query = client()
     .from('energy_tariffs')
     .select('id,effective_from,currency,rate_per_kwh,source,set_by_email,set_at')
     .eq('site_id', SITE.id)
     .order('effective_from', { ascending: false });
+  // RM-081: the Reports page cancels a read it has stopped waiting for.
+  if (signal) query = query.abortSignal(signal);
+  const { data, error } = await query;
   if (notMigrated(error)) return [];
   if (error) throw new Error(`Could not read the tariffs: ${error.message}`);
   return ((data ?? []) as TariffRow[]).map((r) => ({
@@ -83,12 +86,14 @@ export async function getTariffs(): Promise<TariffEntry[]> {
   }));
 }
 
-export async function getEmissionFactors(): Promise<FactorEntry[]> {
-  const { data, error } = await client()
+export async function getEmissionFactors({ signal }: { signal?: AbortSignal } = {}): Promise<FactorEntry[]> {
+  let query = client()
     .from('emission_factors')
     .select('id,effective_from,kg_co2e_per_kwh,source,set_by_email,set_at')
     .eq('site_id', SITE.id)
     .order('effective_from', { ascending: false });
+  if (signal) query = query.abortSignal(signal);
+  const { data, error } = await query;
   if (notMigrated(error)) return [];
   if (error) throw new Error(`Could not read the emission factors: ${error.message}`);
   return ((data ?? []) as FactorRow[]).map((r) => ({

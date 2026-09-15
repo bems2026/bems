@@ -185,27 +185,36 @@ export function formatPeriod(period: ReportPeriod, start: string): string {
  * PostgREST caps silently, and this project has been bitten by inferring completeness from a
  * response that had no way to signal truncation. 240 months is 20 years; 240 weeks is under 5,
  * so weeks get their own, larger bound rather than sharing one that means different things. */
-export async function getReportPeriods(period: ReportPeriod): Promise<PeriodBuildingReport[]> {
-  const { data, error } = await requireSupabase()
+export async function getReportPeriods(period: ReportPeriod, { signal }: { signal?: AbortSignal } = {}): Promise<PeriodBuildingReport[]> {
+  let query = requireSupabase()
     .from('period_building_reports')
     .select('*')
     .eq('period', period)
     .order('period_start', { ascending: false })
     .limit(period === 'week' ? 520 : 240);
+  // RM-081: a caller that times out cancels the request itself, not just its wait for it.
+  if (signal) query = query.abortSignal(signal);
+  const { data, error } = await query;
   if (error) throw new Error(`Could not list reports: ${error.message}`);
   return (data ?? []) as PeriodBuildingReport[];
 }
 
 /** The per-device rows for one period. At most one row per device, so the device count is the
  * natural bound. */
-export async function getDevicePeriodReports(period: ReportPeriod, start: string): Promise<PeriodDeviceReport[]> {
-  const { data, error } = await requireSupabase()
+export async function getDevicePeriodReports(
+  period: ReportPeriod,
+  start: string,
+  { signal }: { signal?: AbortSignal } = {}
+): Promise<PeriodDeviceReport[]> {
+  let query = requireSupabase()
     .from('period_reports')
     .select('*')
     .eq('period', period)
     .eq('period_start', start)
     .order('energy_kwh', { ascending: false, nullsFirst: false })
     .limit(500);
+  if (signal) query = query.abortSignal(signal);
+  const { data, error } = await query;
   if (error) throw new Error(`Could not load the ${period} report starting ${start}: ${error.message}`);
   return (data ?? []) as PeriodDeviceReport[];
 }
