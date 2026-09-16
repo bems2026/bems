@@ -159,6 +159,12 @@ psql < "$HERE/phase42_bounded_device_energy.sql" >/dev/null
 psql < "$HERE/phase42_bounded_device_energy.sql" >/dev/null
 echo "   ok — the bounded generators re-apply cleanly"
 
+# RE-APPLYING PHASE43 — RM-091a. Two policies dropped and recreated; twice, because its header says so.
+echo "== re-applying phase43, twice =="
+psql < "$HERE/phase43_readings_policy_speed.sql" >/dev/null
+psql < "$HERE/phase43_readings_policy_speed.sql" >/dev/null
+echo "   ok — the readings policies re-apply cleanly"
+
 echo "== seeding =="
 psql <<'SQL'
 insert into devices (id, display_name, class) values
@@ -1522,6 +1528,44 @@ begin
 
   raise notice 'phase42: the bounded counter — assertions passed';
 end $$;
+SQL
+
+# ---- phase43: the readings policies check the role once per statement ----------------------------
+#
+# The shape, and then the thing the shape must not cost: a signed-in reader still sees every reading.
+# Run AS `authenticated` inside a transaction that is rolled back, so RLS applies exactly as it does to
+# the Reports page.
+psql <<'SQL'
+do $$
+declare n int;
+begin
+  select count(*) into n from pg_policies
+   where tablename in ('readings', 'readings_hourly')
+     and policyname in ('readings_select_authenticated', 'readings_hourly_select_authenticated')
+     and qual ilike '%select auth.role()%';
+  assert n = 2, format('phase43: both readings policies must wrap auth.role() in a select, found %s', n);
+end $$;
+
+begin;
+-- What the tables hold, counted before the role changes: earlier stages prune and roll up readings, so a
+-- fixed number here would be testing those stages rather than the policy.
+select set_config('rehearse.readings_total', (select count(*) from readings)::text, true);
+select set_config('rehearse.hourly_total', (select count(*) from readings_hourly)::text, true);
+set local role authenticated;
+do $$
+declare n int;
+begin
+  select count(*) into n from readings;
+  assert n > 0 and n = current_setting('rehearse.readings_total')::int,
+    format('phase43: a signed-in reader must see every reading (%s), saw %s', current_setting('rehearse.readings_total'), n);
+  select count(*) into n from readings_hourly;
+  assert n > 0 and n = current_setting('rehearse.hourly_total')::int,
+    format('phase43: a signed-in reader must see every hourly row (%s), saw %s', current_setting('rehearse.hourly_total'), n);
+  select count(*) into n from report_device_daily_energy('week', date '2026-07-06', 'Asia/Manila', array['mtr_raw']) where removed_kwh = 50.00;
+  assert n = 1, format('phase43: signed in, the bounded daily function must still find the raw jump, found %s', n);
+  raise notice 'phase43: the readings policies — assertions passed';
+end $$;
+rollback;
 SQL
 
 echo

@@ -6,8 +6,10 @@ readings kept the 2026-09-08 counter jump RM-052 fixed in the bridge, and a repo
 high-water mark.
 - **RM-090:** the page refuses any stored figure its circuit could not have drawn.
 - **RM-091:** `phase42` bounds each hour's counter rise by the circuit's own power, in the generators and
-  per day. It is rehearsed and **waits for the operator to apply it, before about 2026-10-03**; it will
-  correct that one row to about 4.62 kWh.
+  per day. **Applied by the operator on 2026-09-17 and read back**: the week of 7 September's L.O Yellow
+  row is 4.617 kWh with 76.789 removed, the only row restated anywhere, and the building row is untouched.
+  **RM-091a**'s `phase43` (the readings policies' role check, once per statement) is rehearsed and waits
+  for the operator, with a signed-in timing probe to run before and after.
 - **RM-092/093:** branch circuits carry Lighting / Aircon / Others, and a report narrows to one.
 - **RM-094/095:** each circuit's energy per day and power through the week or month, charted.
 - **RM-096/097:** four tabs (Overview, Circuits, Usage patterns, Compare) with no statistician's words.
@@ -938,12 +940,12 @@ Everything else is small, and the build order below is honest about size.
   two weeks (RM-020), so their averages mean nothing and their tiers should be set on what they
   feed rather than on what they have measured.
 
-### Migrations — one waits: phase42
+### Migrations — one waits: phase43
 
-**`supabase/phase42_bounded_device_energy.sql` (RM-091) is written and rehearsed, and waits to be
-applied by the operator — before about 2026-10-03**, when September's monthly report is generated and
-would otherwise carry the L.O Yellow counter jump. Its read-back is in RM-091. Every earlier migration
-is applied, the latest
+**`supabase/phase43_readings_policy_speed.sql` (RM-091a) is written and rehearsed, and waits for the
+operator**, with the signed-in timing probe in RM-091a to run before and after it.
+**`supabase/phase42_bounded_device_energy.sql` (RM-091) was applied by the operator on 2026-09-17 and read
+back the same day** — see RM-091. Every earlier migration is applied, the latest before it
 `phase41_totals_rollup_integrated.sql` (RM-087) on 2026-09-16, read back the same day, and
 `phase40_report_curve_speed.sql` (RM-086) on 2026-09-15, read back the same day.
 `phase27_period_reports.sql` was applied 2026-09-08; `period_reports` holds 80 rows and
@@ -3311,9 +3313,23 @@ Why this exists is the 2026-09-16 entry in §0. Operator decisions, 2026-09-16:
     `src/components/reports/CircuitDeepDive.tsx`, `src/components/reports/ReportsPage.tsx`,
     `src/lib/reportCsv.ts`, `src/lib/reportPdf/buildReport.ts`, `src/lib/reportPdf/docDefinition.ts`, and
     their tests.
-- [ ] **RM-091 (M) — `phase42_bounded_device_energy.sql`: the generators use the rule, and the one row is
-  corrected. Written and rehearsed 2026-09-17; waits for the operator to apply it — before about
-  2026-10-03.**
+- [x] **RM-091 (M) — `phase42_bounded_device_energy.sql`: the generators use the rule, and the one row is
+  corrected. Written and rehearsed 2026-09-17; applied by the operator and read back the same day.**
+  - **Read back live** (service role, GET only, 2026-09-17):
+    - `report_device_daily_energy` for the week of 7 September gives L.O Yellow **0.713 kWh on 8
+      September, with 77.502 on the counter, 76.789 removed and one clipped hour**. The other six days
+      equal their counters exactly.
+    - The stored `period_reports` row reads **4.617 kWh with 76.789 removed**, `energy_restated_at`
+      2026-09-16 21:22 UTC. Its `generated_at` (2026-09-16 00:39 UTC), sample count and peak are unchanged.
+    - **Exactly one row** anywhere has `energy_restated_at` or `energy_removed_kwh`. The other three meters
+      that week are untouched.
+    - The building row is unchanged at 61.733 kWh, and **the four branches now sum to 61.513** — 0.36 %
+      apart, where they were 138.3.
+    - The function run over every stored period (August, and every week from 10 August) finds **no other
+      removal**.
+    - The legacy `monthly_reports` row is unchanged, and an anonymous call is refused with 42501.
+  - **Timing, as the service role** (which skips RLS): 0.4–2.9 s per period; the August month took 2.9 s.
+    A signed-in reader also pays the readings policies' role check — RM-091a.
   - **What it adds.**
     - `period_reports.energy_removed_kwh` and `energy_restated_at`.
     - `report_device_daily_energy(period, start, tz, device_ids)`: one row per device per local day of
@@ -3360,6 +3376,33 @@ Why this exists is the 2026-09-16 entry in §0. Operator decisions, 2026-09-16:
     - The four branches: about 61.51 kWh against the building's 61.73.
   - Files: `supabase/phase42_bounded_device_energy.sql`, `supabase/rehearse.sh`,
     `test/phase42-bounded-device-energy-schema.test.mjs`, `docs/storage-contract.md`.
+- [ ] **RM-091a (S) — `phase43_readings_policy_speed.sql`: the readings policies check the role once per
+  statement. Written and rehearsed 2026-09-17; waits for the operator.**
+  - **Why.** `readings` and `readings_hourly` let signed-in readers in with `auth.role() = 'authenticated'`,
+    called bare, so Postgres evaluates it for every row a query touches. phase40 (RM-086) measured the same
+    shape on the totals tables: 3.5 s as the service role, cancelled by the signed-in statement timeout on
+    every attempt.
+  - **Why it matters now.** RM-094's Circuits tab and RM-098's every-reading CSV read whole weeks and months
+    of `readings` signed in, and phase42's month read already takes 2.9 s before any policy check.
+  - **The change.** Both policies are dropped and recreated with `(select auth.role())`: the same rows, the
+    same role, evaluated once. Nothing else is touched.
+  - **Guards.**
+    - `test/phase43-readings-policy-speed-schema.test.mjs` checks the shape and that nothing else is in the
+      file.
+    - `supabase/rehearse.sh` applies it twice, checks both quals, and confirms a signed-in reader still sees
+      every reading and hourly row and still finds the jump. A neuter restoring the bare call fails it.
+  - **Timing probe** — run it in the SQL editor before and after pasting phase43 (it is rolled back, and
+    reads the eleven devices the Circuits tab asks for):
+    ```sql
+    begin;
+    set local role authenticated;
+    select set_config('request.jwt.claim.role', 'authenticated', true),
+           set_config('request.jwt.claims', '{"role":"authenticated"}', true);
+    explain analyze select * from report_device_daily_energy('month', date '2026-09-01', 'Asia/Manila',
+      array['mtr_lo_red','mtr_arec_acu','mtr_co_yellow','mtr_lo_yellow','co1','co2','co3','co4','co5','co6','co7']);
+    rollback;
+    ```
+  - **Read back:** the probe's Execution Time before and after, and the Circuits tab on a month signed in.
 - [x] **RM-092 (S) — a `load` category on each branch circuit. 2026-09-17.**
   - `shared/circuits.mjs` gains `LOADS` (`lighting`, `aircon`, `other`), `LOAD_LABELS` (Lighting,
     Aircon, Others), `loadOf(circuits, id)` and `buildingMetersByLoad(circuits)`.
