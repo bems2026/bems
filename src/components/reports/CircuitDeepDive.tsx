@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { BUILDING_METER_IDS } from '@shared/registry.mjs';
 import { coverageOf, type PeriodDeviceReport, type ReportPeriod, formatPeriod } from '@/lib/supabaseReports';
 import { buildBreakdown } from '@/lib/circuitBreakdown';
+import { energyFlagOf, usableEnergy } from '@/lib/boundedEnergy';
 import { ReportTable, type ReportColumn } from './ReportTable';
 import { ReportFigure } from './ReportFigure';
 
@@ -42,7 +43,7 @@ export function CircuitDeepDive({ period, start, rows, buildingRows, scopeLabel 
 
   const branches = rows.filter((r) => meterIds.includes(r.device_id));
   const devices = rows.filter((r) => !meterIds.includes(r.device_id));
-  const total = (buildingRows ?? rows).filter((r) => meterIds.includes(r.device_id)).reduce((a, r) => a + (r.energy_kwh ?? 0), 0);
+  const total = (buildingRows ?? rows).filter((r) => meterIds.includes(r.device_id)).reduce((a, r) => a + (usableEnergy(r) ?? 0), 0);
   const label = formatPeriod(period, start);
 
   // RM-082: the shared report table — units in the header, figures right-aligned.
@@ -54,7 +55,7 @@ export function CircuitDeepDive({ period, start, rows, buildingRows, scopeLabel 
       header: 'Energy',
       unit: 'kWh',
       numeric: true,
-      cell: (r) => <ReportFigure value={r.energy_kwh} unit="" digits={2} coverage={coverage(r)} period={period} />,
+      cell: (r) => <ReportFigure value={r.energy_kwh} unit="" digits={2} coverage={coverage(r)} period={period} flag={energyFlagOf(r)} />,
     },
     ...(withShare
       ? [
@@ -62,7 +63,10 @@ export function CircuitDeepDive({ period, start, rows, buildingRows, scopeLabel 
             id: 'share',
             header: 'Share',
             numeric: true,
-            cell: (r: PeriodDeviceReport) => (r.energy_kwh === null || total <= 0 ? null : `${((r.energy_kwh / total) * 100).toFixed(1)}%`),
+            cell: (r: PeriodDeviceReport) => {
+              const kwh = usableEnergy(r);
+              return kwh === null || total <= 0 ? null : `${((kwh / total) * 100).toFixed(1)}%`;
+            },
           },
         ]
       : []),

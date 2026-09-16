@@ -142,6 +142,13 @@ export interface PeriodDeviceReport {
   avg_power_w: number | null;
   online_sample_count: number;
   expected_sample_count: number;
+  /**
+   * kWh of a counter jump the stored figure does not count — RM-091, phase42. Absent before phase42 is
+   * applied (the columns do not exist, and `select *` simply omits them), null when nothing was removed.
+   */
+  energy_removed_kwh?: number | null;
+  /** When phase42's one-time correction rewrote this row's energy; null for a row generated with the rule. */
+  energy_restated_at?: string | null;
 }
 
 export interface PeriodBuildingReport {

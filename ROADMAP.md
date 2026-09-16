@@ -1,6 +1,14 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-15 — **RM-080: CO6 and CO7 were drawn in each other's places.** The
+**Last audited:** 2026-09-16 — **RM-090: the weekly report for 7 September said L.O Yellow, a lighting
+circuit, used 81.41 kWh, and the page now refuses that figure.** The stored readings still carry the
+2026-09-08 counter jump RM-052 fixed in the bridge, and a report sums each day's high-water mark. The
+page checks every stored figure against the most its circuit could draw in the period, prints an
+impossible one as "Not possible" and leaves it out of every total, share, chart, CSV and PDF, and says
+"Corrected" beside a figure phase42 has repaired. RM-091 to RM-099 — phase42, load categories, branch
+graphs, the two new CSVs, a Simple or Detailed PDF and plain words — are planned in §2.
+
+**Earlier, 2026-09-15 — RM-080: CO6 and CO7 were drawn in each other's places.** The
 three code copies of the office layout are swapped and pinned; the two live `device_config` rows
 still hold the old positions and need the statement in RM-080 run by the operator, so until then
 the Control page and Settings → Floor plan disagree with the Overview. **RM-081 landed the same day:
@@ -179,6 +187,35 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
+
+### 2026-09-16 — a lighting circuit's week read 81.41 kWh; the report summed a counter jump
+
+**The operator reported it: L.O Yellow, lighting only (L5–L7), was the biggest consumer in the week of
+7 September.** It was not. Measured read-only against the live project:
+
+- The stored `period_reports` row gives `mtr_lo_yellow` **81.406 kWh** with a peak of **251.2 W**.
+  251.2 W for all 168 hours is 42.2 kWh.
+- A period's per-device energy is **the sum of each local day's highest `energy_kwh_today`**
+  (`phase27_period_reports.sql`, and `phase12_monthly_reports.sql` for the legacy table).
+- On 2026-09-08 the register jumped **0.111 -> 67.391 at 02:36 while the circuit drew 49 W**, then to
+  77.317 ten minutes later. That day's high-water mark, 77.502, is in the week. Its power integrates to
+  0.708 kWh.
+- RM-052/RM-053 fixed the bridge and its context. **The stored `readings` were never corrected**, and the
+  week was generated on 2026-09-16 from them.
+
+**How far it reaches.** Every stored device-day was scanned (raw since 2026-08-17, hourly since
+2026-08-16, the 12 devices that record energy): **that day is the only contaminated one.** September's
+monthly report is due about 2026-10-03 and would carry it.
+
+**The fix, proven before it was written.** Credit each hour's rise of the counter only up to what the
+circuit could have drawn in it — the day's peak power across the span, +10 % and 5 Wh — and past that,
+credit the hour's measured power instead. Replayed over **all 250 live device-days, it changes exactly
+one**: 2026-09-08 L.O Yellow, 77.502 -> 0.713 kWh. The corrected week is 4.617 kWh, and the four branches
+then sum to 61.51 kWh against the building meter's own 61.73.
+
+**What shipped the same day (RM-090):** the page, the CSV and the PDF refuse the stored 81.406 as "Not
+possible". What waits is RM-091's `phase42`, applied by the operator, which fixes the generators and
+corrects that one row — see §2.
 
 ### 2026-09-15 — the branch circuits are wired as the operator describes them, and live
 
@@ -3224,6 +3261,59 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 ## 2. Current roadmap (active execution)
 
 
+### Reports, corrected and made plain — RM-090 to RM-099 (2026-09-16)
+
+Why this exists is the 2026-09-16 entry in §0. Operator decisions, 2026-09-16:
+1. Correct the stored report and show a "Corrected" note.
+2. Load categories are fixed in the site setup: L.O Red and L.O Yellow are Lighting, CARE ACU is Aircon,
+   and C.O Yellow with its outlets is Others.
+3. The every-reading CSV exports minute readings while they are retained, and hourly rows for older
+   periods. Retention is not changed.
+4. Four simpler tabs: Overview, Circuits, Usage patterns, Compare.
+
+- [x] **RM-090 (S) — the page refuses a stored figure its circuit could not have drawn. 2026-09-16.**
+  - **`src/lib/boundedEnergy.ts`** holds the rule twice over:
+    - `boundDay`, the per-day rule phase42 will compute in SQL. Its six fixture days are the ones the
+      rehearsal will seed, with the same answers: a jump, a healthy day, a nine-hour gap, a restart, a
+      jump in an hour with no power reading, and a day with no power at all.
+    - `periodEnergyCheck`, which calls a stored figure impossible when it exceeds its peak power held for
+      the whole period (+10 %, +5 Wh). It is loose on purpose — energy counted across an outage still
+      passes — and it still refuses 81.406, whose limit is 46.4.
+  - **What a flagged figure does.**
+    - `ReportFigure` prints an impossible figure as an em dash with a "Not possible" badge, and a
+      corrected one (`energy_removed_kwh` above 1 Wh, from phase42) with a "Corrected" badge saying how
+      much was taken out.
+    - The breakdown leaves the circuit out and says why, rather than calling it unmetered. The Circuits
+      tab's total and shares skip it. The per-device CSV leaves the cell empty and gains a Note column.
+    - The PDF follows each device table with a line per flag.
+  - **Neuters.** Four each fail tests: dropping the cap, crediting the cap instead of the measured power,
+    never letting a falling counter reset the rise, and never calling a period impossible.
+  - Files: `src/lib/boundedEnergy.ts`, `src/lib/supabaseReports.ts`, `src/components/reports/ReportFigure.tsx`,
+    `src/lib/circuitBreakdown.ts`, `src/components/reports/charts/circuitBreakdownChart.ts`,
+    `src/components/reports/CircuitDeepDive.tsx`, `src/components/reports/ReportsPage.tsx`,
+    `src/lib/reportCsv.ts`, `src/lib/reportPdf/buildReport.ts`, `src/lib/reportPdf/docDefinition.ts`, and
+    their tests.
+- [ ] **RM-091 (M) — `phase42_bounded_device_energy.sql`: the generators use the rule, and the one row is
+  corrected.**
+  - `report_device_daily_energy(period, start, tz, device_ids)` returns one row per device per local day:
+    bounded energy, the counter, removed kWh, peak, average and minutes. Gap days are included.
+  - `generate_period_report` and `generate_monthly_report` sum it, with their building halves unchanged.
+  - A guarded one-time correction subtracts the removed kWh from stored `period_reports` rows only. It
+    never touches coverage, `generated_at`, building rows or the legacy tables.
+  - Rehearsed on the Pi, applied by the operator, then read back. **Apply before about 2026-10-03.**
+- [ ] **RM-092 (S) — a `load` category on each branch circuit** (Lighting / Aircon / Others) in the site
+  setup, checked by `site:check`.
+- [ ] **RM-093 (M) — narrow a report to a category or one circuit.**
+- [ ] **RM-094 (M) — per-circuit daily energy and hourly power for the period** (the phase42 function,
+  and `readings_archive`).
+- [ ] **RM-095 (M) — Energy per day by circuit, and Power through the week or month,** as report charts
+  that also print, with a fixed colour per circuit.
+- [ ] **RM-096 (L) — four tabs:** Overview, Circuits, Usage patterns, Compare.
+- [ ] **RM-097 (M) — plain words:** no p50/p95, load factor, load duration or DSM ceiling on the page or
+  in the PDF.
+- [ ] **RM-098 (M) — two new CSVs:** devices one row per day, and every reading (time, V, A, W).
+- [ ] **RM-099 (M) — a Simple or Detailed PDF** that follows the category or circuit chosen.
+
 ### Analytics data quality — RM-076 to RM-079 (2026-09-14)
 
 Why this exists is the 2026-09-14 entry in §0. The principle it follows: **energy comes from registers,
@@ -3789,7 +3879,9 @@ ever cleared, and put its controls in three rows. This section is that page's ov
 - [ ] **RM-085 (L)** — **Arbitrary windows: last 24 hours, month to date, billing cycle, custom.**
       **Deferred by operator decision, 2026-09-15.** `report_window` accepts only a whole week or
       month (`phase37_report_series.sql:66`) and counts the unfinished part of a period as missing,
-      so these cannot be served honestly from today's functions. Needs `phase42_report_ranges.sql`
+      so these cannot be served honestly from today's functions. Needs `phase44_report_ranges.sql`
+      (renumbered 2026-09-16: phase42 is RM-091's, and phase43 is held for RM-091a if a signed-in
+      month read proves slow)
       (range variants clamped to `now()`, per-device energy from each device's own counters, a
       weekday-by-hour heatmap past 37 days to stay under the 900-cell cap), a billing-cycle day
       setting, a provisional "in progress" banner, and a rehearsal asserting the bars sum to the

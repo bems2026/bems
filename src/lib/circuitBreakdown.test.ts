@@ -55,6 +55,16 @@ describe('buildBreakdown', () => {
     expect(segments[0].kwh).toBeNull();
   });
 
+  it('leaves out a branch whose stored figure is impossible, and says why rather than calling it unmetered — RM-090', () => {
+    const rows = meterIds.map((id, i) =>
+      i === 0 ? { ...row(id, 81.406), peak_power_w: 251.2, expected_sample_count: 10080 } : { ...row(id, 10), peak_power_w: 500 }
+    );
+    const { segments } = buildBreakdown(rows, nameOf);
+    expect(segments[0].kwh).toBeNull();
+    expect(segments[0].excluded).toMatch(/more than it could have drawn/);
+    expect(segments[1].excluded).toBeUndefined();
+  });
+
   it('names the devices no meter accounts for rather than omitting them', () => {
     // The seven light switches have no metering at all. A reader who cannot see them listed
     // will assume lighting is inside one of the segments above.

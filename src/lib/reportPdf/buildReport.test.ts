@@ -124,6 +124,21 @@ describe('buildPdfReport', () => {
     expect(report.circuits?.devices[0].energyKwh).toBeNull();
   });
 
+  it('prints an impossible figure as a dash with its reason, and a corrected one with what was removed — RM-090', () => {
+    const week = { period: 'week' as const, expected_sample_count: 10080 };
+    const r = buildPdfReport(
+      input({
+        rows: [
+          device('meter_a', { ...week, energy_kwh: 81.406, peak_power_w: 251.2 }),
+          device('meter_b', { ...week, energy_kwh: 4.617, peak_power_w: 251.2, energy_removed_kwh: 76.789 }),
+        ],
+        meterIds: ['meter_a', 'meter_b'],
+      })
+    );
+    expect(r.deviceRows[0]).toMatchObject({ energyKwh: null, note: expect.stringMatching(/^Not possible/) });
+    expect(r.deviceRows[1]).toMatchObject({ energyKwh: '4.62', note: expect.stringMatching(/76.79 kWh/) });
+  });
+
   it('compares with the previous period when both were fully observed', () => {
     const report = buildPdfReport(input({ previous: building({ period_start: '2026-07-01', energy_kwh: 120 }) }));
     expect(report.comparison?.heading).toMatch(/August 2026 against July 2026/);

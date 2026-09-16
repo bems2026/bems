@@ -150,6 +150,16 @@ describe('tables', () => {
     // The unmetered switch's row holds dashes, and no zero was invented for it.
     expect(text).not.toMatch(/Light Switch 1 \| 0/);
   });
+
+  it('follows a flagged device table with the reason for each flag — RM-090', () => {
+    const note = 'Not possible: more than this circuit’s highest draw could deliver, so it is left out';
+    const def = buildDocDefinition(
+      report({ deviceRows: [{ name: 'L.O Yellow meter', energyKwh: null, peakW: '251', avgW: '27', coverage: '100%', note }] })
+    );
+    const text = allText(def.content);
+    expect(text).toContain(`L.O Yellow meter: ${note}`);
+    expect(text.indexOf(`L.O Yellow meter: ${note}`)).toBeGreaterThan(text.indexOf('L.O Yellow meter'));
+  });
 });
 
 describe('charts', () => {

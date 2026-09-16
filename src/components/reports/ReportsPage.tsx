@@ -32,6 +32,7 @@ import { ReportTable, type ReportColumn } from './ReportTable';
 import { CoverageTag, ReportFigure } from './ReportFigure';
 import { useReportData } from './useReportData';
 import { carbonOf, costOf, type DayEnergy } from '@/lib/energyCost';
+import { energyFlagOf } from '@/lib/boundedEnergy';
 
 /**
  * Energy reports, weekly or monthly — Phase 12, generalised by RM-041.
@@ -310,7 +311,7 @@ export function ReportsPage() {
       header: 'Energy',
       unit: 'kWh',
       numeric: true,
-      cell: (r) => <ReportFigure value={r.energy_kwh} unit="" digits={2} coverage={rowCoverage(r)} period={period} />,
+      cell: (r) => <ReportFigure value={r.energy_kwh} unit="" digits={2} coverage={rowCoverage(r)} period={period} flag={energyFlagOf(r)} />,
     },
     {
       id: 'peak',

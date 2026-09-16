@@ -2,6 +2,7 @@ import { toCsv, type CsvColumn } from './csv';
 import { coverageOf, type PeriodDeviceReport, type ReportPeriod } from './supabaseReports';
 import type { DailyRow } from './reportSeries';
 import { emissionsPerDay, pricePerDay, type Factor, type Rate } from './energyCost';
+import { energyFlagOf, energyFlagText, usableEnergy } from './boundedEnergy';
 
 /**
  * The report's two CSVs — RM-083. Pure: rows in, text out; `downloadCsv` does the DOM part.
@@ -94,26 +95,30 @@ export function deviceCsv({
   const meters = new Set(meterIds);
   const meterRows = buildingRows.filter((r) => meters.has(r.device_id));
   const total =
-    meterRows.length > 0 && meterRows.every((r) => r.energy_kwh !== null && Number.isFinite(r.energy_kwh))
-      ? meterRows.reduce((a, r) => a + (r.energy_kwh as number), 0)
+    meterRows.length > 0 && meterRows.every((r) => usableEnergy(r) !== null && Number.isFinite(usableEnergy(r)))
+      ? meterRows.reduce((a, r) => a + (usableEnergy(r) as number), 0)
       : null;
 
   const flat = rows.map((r) => {
     const c = coverageOf(r.online_sample_count, r.expected_sample_count);
+    // RM-090: an impossible stored figure is an empty cell with its reason, never a number to sum.
+    const energy = usableEnergy(r);
+    const flag = energyFlagOf(r);
     return {
       period,
       start: start.slice(0, 10),
       device_id: r.device_id,
       device_name: nameOf(r.device_id),
       branch: branchOf(r.device_id),
-      energy_kwh: r.energy_kwh,
-      share_pct: total !== null && total > 0 && r.energy_kwh !== null ? round((r.energy_kwh / total) * 100, 1) : null,
+      energy_kwh: energy,
+      share_pct: total !== null && total > 0 && energy !== null ? round((energy / total) * 100, 1) : null,
       peak_power_w: r.peak_power_w,
       avg_power_w: r.avg_power_w,
       // A number a spreadsheet can sort and filter on, not "Partial · 13%".
       coverage_pct: c ? Math.round(c.ratio * 100) : null,
       online_sample_count: r.online_sample_count,
       expected_sample_count: r.expected_sample_count,
+      note: flag ? energyFlagText(flag) : null,
     };
   });
 
@@ -130,6 +135,7 @@ export function deviceCsv({
     { key: 'coverage_pct', header: 'Coverage (%)' },
     { key: 'online_sample_count', header: 'Samples observed' },
     { key: 'expected_sample_count', header: 'Samples expected' },
+    { key: 'note', header: 'Note' },
   ];
   return toCsv(flat, columns);
 }

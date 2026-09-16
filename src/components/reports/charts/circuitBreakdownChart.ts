@@ -18,6 +18,11 @@ export interface CircuitSegment {
   label: string;
   /** `null` means unmetered — not zero, and not drawn. */
   kwh: number | null;
+  /**
+   * Why a metered circuit is left out of the split — RM-090, when its stored figure is impossible.
+   * Not drawn, and not called unmetered: the description says what it is instead.
+   */
+  excluded?: string;
 }
 
 export interface BreakdownOptions {
@@ -46,13 +51,15 @@ export function circuitBreakdownChart(
   const barW = width - padX * 2;
 
   const metered = segments.filter((s): s is { label: string; kwh: number } => typeof s.kwh === 'number' && Number.isFinite(s.kwh));
-  const unmetered = segments.filter((s) => typeof s.kwh !== 'number' || !Number.isFinite(s.kwh));
+  const excluded = segments.filter((s) => s.excluded);
+  const unmetered = segments.filter((s) => !s.excluded && (typeof s.kwh !== 'number' || !Number.isFinite(s.kwh)));
   const total = metered.reduce((a, s) => a + s.kwh, 0);
 
   const notes: string[] = [];
   if (unmetered.length > 0) {
     notes.push(`${unmetered.map((s) => s.label).join(', ')} ${unmetered.length === 1 ? 'is' : 'are'} not metered, so ${unmetered.length === 1 ? 'it is' : 'they are'} not in this split.`);
   }
+  for (const s of excluded) notes.push(`${s.label} is left out: ${s.excluded}.`);
   const untracked = options.untracked;
   if (untracked && typeof untracked.kwh === 'number' && Number.isFinite(untracked.kwh)) {
     notes.push(`${fmt(untracked.kwh)} kWh on ${untracked.label} is not attributable to a sub-meter beneath it.`);

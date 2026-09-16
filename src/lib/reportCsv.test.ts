@@ -96,9 +96,37 @@ describe('deviceCsv — the per-device CSV', () => {
   it('keeps the columns this export has always had, adds branch and share, and names the period in every row', () => {
     const csv = deviceCsv({ ...base, period: 'week', start: '2026-07-06', rows: [row({ period: 'week', period_start: '2026-07-06' })], nameOf: () => 'Outlet A', branchOf: () => 'Outlets' });
     expect(lines(csv)[0]).toBe(
-      'Period,Period start,Device ID,Device,Branch,Energy (kWh),Share of building (%),Peak power (W),Average power (W),Coverage (%),Samples observed,Samples expected'
+      'Period,Period start,Device ID,Device,Branch,Energy (kWh),Share of building (%),Peak power (W),Average power (W),Coverage (%),Samples observed,Samples expected,Note'
     );
-    expect(lines(csv)[1]).toBe('week,2026-07-06,dev_a,Outlet A,Outlets,41.2,,812,230,100,44640,44640');
+    expect(lines(csv)[1]).toBe('week,2026-07-06,dev_a,Outlet A,Outlets,41.2,,812,230,100,44640,44640,');
+  });
+
+  it('leaves an impossible figure empty with its reason, and out of every share — RM-090', () => {
+    // The live week of 2026-09-07: 81.406 kWh at a 251.2 W peak, where 42.2 kWh is the most 168 hours
+    // at that peak could deliver.
+    const week = { period: 'week' as const, period_start: '2026-09-07', expected_sample_count: 10080, online_sample_count: 10050 };
+    const csv = deviceCsv({
+      ...base,
+      period: 'week',
+      start: '2026-09-07',
+      meterIds: ['meter_a', 'meter_b'],
+      rows: [row({ ...week, device_id: 'meter_a', energy_kwh: 81.406, peak_power_w: 251.2 }), row({ ...week, device_id: 'meter_b', energy_kwh: 24.188, peak_power_w: 673.6 })],
+    });
+    const [bad, good] = lines(csv).slice(1).map((l) => l.split(','));
+    expect(bad[5]).toBe('');
+    expect(bad[6]).toBe('');
+    // The reason holds a comma, so the cell is quoted — and it is the last one on the line.
+    expect(lines(csv)[1]).toMatch(/,"Not possible: [^"]+, so it is left out"$/);
+    // A total missing a branch would overstate every share, so none is given.
+    expect(good[6]).toBe('');
+    expect(good[12]).toBe('');
+  });
+
+  it('keeps a corrected figure and says what was taken out of it', () => {
+    const csv = deviceCsv({ ...base, rows: [row({ energy_kwh: 4.617, peak_power_w: 251.2, energy_removed_kwh: 76.789 })] });
+    const cells = lines(csv)[1].split(',');
+    expect(cells[5]).toBe('4.617');
+    expect(cells[12]).toBe('Corrected: a 76.79 kWh jump in the meter’s counter is not counted');
   });
 
   it('gives each device its share of the building total, which is the sum of the branch meters', () => {

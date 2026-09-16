@@ -40,6 +40,8 @@ export interface PdfDeviceRow {
   peakW: string | null;
   avgW: string | null;
   coverage: string;
+  /** What the report says about this figure — RM-090's "not possible" or "corrected". */
+  note?: string | null;
 }
 
 export interface PdfReport {
@@ -103,6 +105,13 @@ const deviceTable = (rows: readonly PdfDeviceRow[]) => ({
   layout: 'lightHorizontalLines',
   margin: [0, 4, 0, 10],
 });
+
+/** The table, then a line for every figure the report qualifies — RM-090. A flagged figure never
+ *  travels without the reason it was left out or corrected. */
+const deviceTableWithNotes = (rows: readonly PdfDeviceRow[]) => [
+  deviceTable(rows),
+  ...rows.filter((d) => d.note).map((d) => ({ text: `${d.name}: ${d.note}`, style: 'note' })),
+];
 
 export function buildDocDefinition(r: PdfReport) {
   const chosen = new Set(normaliseSections(r.sections ?? REPORT_SECTIONS.map((s) => s.id)));
@@ -251,7 +260,7 @@ export function buildDocDefinition(r: PdfReport) {
 
   // --- per device ------------------------------------------------------------------------------
   if (has('devices') && r.deviceRows.length > 0) {
-    content.push({ text: 'By device', style: 'h2' }, deviceTable(r.deviceRows));
+    content.push({ text: 'By device', style: 'h2' }, ...deviceTableWithNotes(r.deviceRows));
   }
 
   // --- baseline demand ---------------------------------------------------------------------------
@@ -281,8 +290,8 @@ export function buildDocDefinition(r: PdfReport) {
       style: 'note',
     });
     if (r.circuits.untracked) content.push({ text: r.circuits.untracked, style: 'note' });
-    if (r.circuits.branches.length > 0) content.push({ text: 'Branch circuits', style: 'h3' }, deviceTable(r.circuits.branches));
-    if (r.circuits.devices.length > 0) content.push({ text: 'Devices within those branches', style: 'h3' }, deviceTable(r.circuits.devices));
+    if (r.circuits.branches.length > 0) content.push({ text: 'Branch circuits', style: 'h3' }, ...deviceTableWithNotes(r.circuits.branches));
+    if (r.circuits.devices.length > 0) content.push({ text: 'Devices within those branches', style: 'h3' }, ...deviceTableWithNotes(r.circuits.devices));
   }
 
   // --- comparison, never without what it was not adjusted for -------------------------------------

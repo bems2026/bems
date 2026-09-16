@@ -1,4 +1,5 @@
 import { isQuotable, type Coverage, type ReportPeriod } from '@/lib/supabaseReports';
+import { energyFlagText, type EnergyFlag } from '@/lib/boundedEnergy';
 
 /**
  * A figure with its qualifier on the same line, and the coverage badge that goes beside it.
@@ -53,6 +54,10 @@ export function CoverageTag({ coverage, period }: { coverage: Coverage | null; p
  * none of them a real reading — and "0.00 kWh" says that week used no electricity.
  *
  * `unit` may be empty where a table already says the unit in its header.
+ *
+ * `flag` — RM-090. An IMPOSSIBLE stored figure (more than the circuit's highest draw could deliver)
+ * is refused like an unmeasured one: an em dash, with a badge saying why. A CORRECTED figure is printed
+ * with a badge saying what was taken out of it. Neither is ever silent.
  */
 export function ReportFigure({
   value,
@@ -61,6 +66,7 @@ export function ReportFigure({
   coverage,
   period,
   notObserved = false,
+  flag = null,
 }: {
   value: number | null;
   unit: string;
@@ -68,7 +74,18 @@ export function ReportFigure({
   coverage?: Coverage | null;
   period: ReportPeriod;
   notObserved?: boolean;
+  flag?: EnergyFlag | null;
 }) {
+  if (flag?.kind === 'impossible') {
+    return (
+      <span className="reports-figure reports-figure--missing">
+        —{' '}
+        <span className="badge badge--warn" title={energyFlagText(flag)}>
+          Not possible
+        </span>
+      </span>
+    );
+  }
   if (notObserved) {
     return <span className="reports-figure reports-figure--missing">— not observed</span>;
   }
@@ -81,6 +98,14 @@ export function ReportFigure({
       {value.toFixed(digits)}
       {unit ? ` ${unit}` : null}
       {qualified ? <span className="reports-figure__caveat"> (partial {period})</span> : null}
+      {flag?.kind === 'corrected' ? (
+        <>
+          {' '}
+          <span className="badge" title={energyFlagText(flag)}>
+            Corrected
+          </span>
+        </>
+      ) : null}
     </span>
   );
 }

@@ -2,6 +2,7 @@ import { BUILDING_METER_IDS, DEVICE_REGISTRY, METERED } from '@shared/registry.m
 import { CIRCUITS } from '@shared/siteConfig.mjs';
 import { buildingMeterIds, circuitPath } from '@shared/circuits.mjs';
 import type { PeriodDeviceReport } from './supabaseReports';
+import { usableEnergy } from './boundedEnergy';
 import type { CircuitSegment } from '@/components/reports/charts/circuitBreakdownChart';
 
 /**
@@ -136,13 +137,17 @@ export function buildBreakdown(
 ): Breakdown {
   if (rows.length === 0) return { segments: [] };
 
-  const energy = new Map(rows.map((r) => [r.device_id, r.energy_kwh]));
+  // RM-090: an impossible stored figure is neither a share nor a sub-meter's total — it is left out,
+  // and the segment says so rather than reading as unmetered.
+  const energy = new Map(rows.map((r) => [r.device_id, usableEnergy(r)]));
+  const refused = new Set(rows.filter((r) => r.energy_kwh !== null && usableEnergy(r) === null).map((r) => r.device_id));
   const meterIds = BUILDING_METER_IDS as readonly string[];
 
-  const segments: CircuitSegment[] = meterIds.map((id) => ({
-    label: nameOf(id),
-    kwh: energy.get(id) ?? null,
-  }));
+  const segments: CircuitSegment[] = meterIds.map((id) =>
+    refused.has(id)
+      ? { label: nameOf(id), kwh: null, excluded: 'its stored figure is more than it could have drawn' }
+      : { label: nameOf(id), kwh: energy.get(id) ?? null }
+  );
 
   /**
    * Devices the period reported on that no meter can account for — the seven light switches

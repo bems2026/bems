@@ -20,6 +20,7 @@ import { coverageOf, formatPeriod, isQuotable, type PeriodBuildingReport, type P
 import { compare, describeDifference } from '@/lib/ipmvp';
 import { provenanceLines, type Carboned, type Costed } from '@/lib/energyCost';
 import { buildBreakdown } from '@/lib/circuitBreakdown';
+import { energyFlagOf, energyFlagText, usableEnergy } from '@/lib/boundedEnergy';
 import { normaliseSections, type ReportSectionId } from '@/lib/reportSections';
 import { CONTENT_WIDTH, type PdfChart, type PdfDeviceRow, type PdfReport } from './docDefinition';
 
@@ -160,9 +161,12 @@ export function buildPdfReport(input: PdfReportInput): PdfReport {
 
   const deviceRow = (r: PeriodDeviceReport): PdfDeviceRow => {
     const c = coverageOf(r.online_sample_count, r.expected_sample_count);
+    const flag = energyFlagOf(r);
     return {
       name: nameOf(r.device_id),
-      energyKwh: f(r.energy_kwh),
+      // RM-090: an impossible stored figure is an em dash with its reason, never a number.
+      energyKwh: f(usableEnergy(r)),
+      note: flag ? energyFlagText(flag) : null,
       peakW: f(r.peak_power_w, 0),
       avgW: f(r.avg_power_w, 0),
       coverage: c ? `${Math.round(c.ratio * 100)}%` : '—',

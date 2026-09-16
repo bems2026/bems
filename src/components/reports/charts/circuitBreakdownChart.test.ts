@@ -69,6 +69,14 @@ describe('circuitBreakdownChart', () => {
     expect(scene.desc).toMatch(/not metered/i);
   });
 
+  it('leaves out a circuit whose figure is impossible, and says so rather than calling it unmetered — RM-090', () => {
+    const withRefused = [...SEGMENTS.slice(1), { label: 'Lighting branch', kwh: null, excluded: 'its stored figure is more than it could have drawn' }];
+    const scene = circuitBreakdownChart(withRefused, SPEC);
+    expect(bars(scene.marks)).toHaveLength(3);
+    expect(scene.desc).toMatch(/Lighting branch is left out: its stored figure is more than it could have drawn./);
+    expect(scene.desc).not.toMatch(/not metered/i);
+  });
+
   it('labels a segment in place when it fits, and in a legend when it does not', () => {
     const lopsided: CircuitSegment[] = [
       { label: 'Convenience outlets', kwh: 97 },
