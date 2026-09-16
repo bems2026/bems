@@ -165,6 +165,19 @@ test('an invalid phase is an error', () => {
   assert.ok(codes(run({ circuits: [cir({ phase: 'green' })] })).errors.includes('circuit_phase_invalid'));
 });
 
+test('a load category this build does not know is an error — RM-092', () => {
+  assert.ok(codes(run({ circuits: [cir({ load: 'heating' })] })).errors.includes('circuit_load_invalid'));
+  assert.equal(codes(run({ circuits: [cir({ load: 'lighting' })] })).errors.includes('circuit_load_invalid'), false);
+});
+
+test('a building meter whose circuit has no load category is a warning — reports cannot group it', () => {
+  const meter = dev({ id: 'm', class: 'meter', ctx: 'm', state_key: null });
+  const unsaid = run({ devices: [meter], circuits: [cir({ id: 'a', meter_device_id: 'm', phase: 'red' })] });
+  assert.ok(codes(unsaid).warnings.includes('circuit_load_missing'));
+  const said = run({ devices: [meter], circuits: [cir({ id: 'a', meter_device_id: 'm', phase: 'red', load: 'other' })] });
+  assert.equal(codes(said).warnings.includes('circuit_load_missing'), false);
+});
+
 test('a meter no circuit claims is a warning — its readings reach no phase total', () => {
   const r = run({ devices: [dev({ id: 'm', class: 'meter', ctx: 'm', state_key: null })] });
   assert.ok(codes(r).warnings.includes('meter_unclaimed'));
@@ -189,6 +202,7 @@ test('the live site passes its own check with no errors', () => {
   const r = checkSite({ slug: SITE.id, site: SITE, devices: BUILT_IN_DEVICES, circuits: CIRCUITS });
   assert.deepEqual(r.errors, [], JSON.stringify(r.errors, null, 1));
   assert.equal(r.ok, true);
+  assert.equal(codes(r).warnings.includes('circuit_load_missing'), false, 'every branch here has a load category');
 });
 
 /**

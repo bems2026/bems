@@ -69,3 +69,22 @@ test('no site file or install guide still calls L.O Yellow an outdoor aircon', (
     assert.doesNotMatch(readFileSync(join(ROOT, file), 'utf8'), /outdoor ACU/i, `${file} still says L.O Yellow is an outdoor ACU`);
   }
 });
+
+test('each branch carries the load category the operator gave it — RM-092', async () => {
+  const { loadOf, buildingMetersByLoad } = await import('../shared/circuits.mjs');
+  const loadOfMeter = (meterId) => loadOf(CIRCUITS, CIRCUITS.find((c) => c.meter_device_id === meterId)?.id);
+  assert.equal(loadOfMeter('mtr_lo_red'), 'lighting');
+  assert.equal(loadOfMeter('mtr_lo_yellow'), 'lighting');
+  assert.equal(loadOfMeter('mtr_arec_acu'), 'aircon');
+  assert.equal(loadOfMeter('mtr_co_yellow'), 'other');
+  // Others is the outlet branch's meter alone: the outlets are inside it, so adding theirs would count
+  // the same energy twice.
+  assert.deepEqual(
+    buildingMetersByLoad(CIRCUITS).map((g) => [g.load, [...g.meterIds].sort()]),
+    [
+      ['lighting', ['mtr_lo_red', 'mtr_lo_yellow']],
+      ['aircon', ['mtr_arec_acu']],
+      ['other', ['mtr_co_yellow']],
+    ]
+  );
+});

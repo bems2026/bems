@@ -11,6 +11,10 @@
  * map in one place: L.O Yellow is lighting (switches L5–L7), not the outdoor aircon unit it was
  * described as. `test/site-branch-wiring.test.mjs` holds the descriptions below to that.
  *
+ * WHAT EACH BRANCH IS FOR — `load`, RM-092 — is the operator's, from the same account (2026-09-16):
+ * both lighting branches are Lighting, CARE ACU is Aircon, and the outlet branch with whatever plugs
+ * into it is Others. Reports group by it; `test/site-branch-wiring.test.mjs` holds it.
+ *
  * A second site writes its own version of this file and nothing else changes.
  *
  * Data only, no imports. See `shared/circuits.mjs` for the shape and the derivation.
@@ -48,6 +52,7 @@ export const CIRCUITS = [
     phase: 'red',
     meter_device_id: 'mtr_lo_red',
     description: 'Lighting circuits L1–L4',
+    load: 'lighting',
   },
   {
     // The aircon is the only load on this branch, which is why one physical meter serves as both
@@ -60,6 +65,7 @@ export const CIRCUITS = [
     phase: 'red',
     meter_device_id: 'mtr_arec_acu',
     description: "The CARE ACU's own branch circuit — the indoor unit the IR blaster commands",
+    load: 'aircon',
   },
 
   // --- Yellow phase --------------------------------------------------------
@@ -71,6 +77,7 @@ export const CIRCUITS = [
     phase: 'yellow',
     meter_device_id: 'mtr_co_yellow',
     description: 'Convenience outlets branch',
+    load: 'other',
   },
   {
     // Two channels of ONE physical meter, the other being `mtr_co_yellow`. They are separate
@@ -83,6 +90,7 @@ export const CIRCUITS = [
     phase: 'yellow',
     meter_device_id: 'mtr_lo_yellow',
     description: 'Lighting circuits L5–L7',
+    load: 'lighting',
   },
 
   // --- Blue phase ----------------------------------------------------------

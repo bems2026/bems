@@ -136,7 +136,8 @@ const circuitsTemplate = (slug) => `/**
  * wired to are two different questions, and a building answers them differently: one circuit
  * commonly crosses several rooms.
  *
- * Shape, per node: \`{ id, parent_id, kind, name, phase, meter_device_id }\` — see
+ * Shape, per node: \`{ id, parent_id, kind, name, phase, meter_device_id, load }\` — \`load\` is
+ * what a branch carries ('lighting', 'aircon' or 'other'), which reports group by. See
  * \`shared/sites/\` for a populated example, and \`shared/circuits.mjs\` for what each field does.
  */
 

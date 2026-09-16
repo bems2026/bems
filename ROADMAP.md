@@ -3345,8 +3345,23 @@ Why this exists is the 2026-09-16 entry in §0. Operator decisions, 2026-09-16:
     - The four branches: about 61.51 kWh against the building's 61.73.
   - Files: `supabase/phase42_bounded_device_energy.sql`, `supabase/rehearse.sh`,
     `test/phase42-bounded-device-energy-schema.test.mjs`, `docs/storage-contract.md`.
-- [ ] **RM-092 (S) — a `load` category on each branch circuit** (Lighting / Aircon / Others) in the site
-  setup, checked by `site:check`.
+- [x] **RM-092 (S) — a `load` category on each branch circuit. 2026-09-17.**
+  - `shared/circuits.mjs` gains `LOADS` (`lighting`, `aircon`, `other`), `LOAD_LABELS` (Lighting,
+    Aircon, Others), `loadOf(circuits, id)` and `buildingMetersByLoad(circuits)`.
+    - `loadOf` returns a circuit's own category, else the nearest above it. It is cycle-safe, and an
+      undeclared or unknown value is `null`, never a guess.
+    - `buildingMetersByLoad` groups building meters only, so an outlet can never be added to its own
+      branch's figure.
+  - The site's `circuits.mjs` carries the operator's categories: L.O Red and L.O Yellow are lighting,
+    CARE ACU is aircon, C.O Yellow is other. The demo site carries them too, and `site:new` documents
+    the field.
+  - `site:check` reports `circuit_load_invalid` (error) and `circuit_load_missing` (warning, for a
+    building meter whose circuit says nothing). This site reads coherent.
+  - Tests: `test/circuit-tree.test.mjs` (+4), `test/site-branch-wiring.test.mjs` (the four categories,
+    and Others is C.O Yellow's meter alone), `test/site-check.test.mjs` (+2, and the live site has no
+    missing category).
+  - No daemon reads `load`, so running services behave identically until they restart onto it. The
+    frontend needs `npm run build` (RM-093 is the first reader).
 - [ ] **RM-093 (M) — narrow a report to a category or one circuit.**
 - [ ] **RM-094 (M) — per-circuit daily energy and hourly power for the period** (the phase42 function,
   and `readings_archive`).

@@ -37,6 +37,8 @@ export const CIRCUITS = [
     name: 'Outlets A',
     phase: 'red',
     meter_device_id: 'mtr_outlets_a',
+    // What the branch is for, which reports group by (RM-092): lighting, aircon or other.
+    load: 'other',
   },
   {
     id: 'lighting_a',
@@ -45,6 +47,7 @@ export const CIRCUITS = [
     name: 'Lighting A',
     phase: 'yellow',
     meter_device_id: 'mtr_lighting_a',
+    load: 'lighting',
   },
   {
     id: 'hvac',
@@ -53,5 +56,6 @@ export const CIRCUITS = [
     name: 'HVAC',
     phase: 'red',
     meter_device_id: 'mtr_hvac',
+    load: 'aircon',
   },
 ];

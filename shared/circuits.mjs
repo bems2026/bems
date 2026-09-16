@@ -34,7 +34,19 @@ export const PHASES = ['red', 'yellow', 'blue'];
  * @property {string} name
  * @property {string|null} phase          which supply phase this branch sits on; null above branch level
  * @property {string|null} meter_device_id the registry device measuring it, if any
+ * @property {'lighting'|'aircon'|'other'} [load] what the circuit carries — RM-092. A circuit without
+ *           one takes the nearest circuit above it's; a building meter with none is a site:check warning.
  */
+
+/**
+ * What a branch circuit carries — RM-092. The operator reads reports by what the energy was FOR, and a
+ * panel schedule names circuits by colour and phase. Three categories, in the order reports list them.
+ * A site declares one per branch in its own circuits.mjs, because which circuit feeds the lights is
+ * wiring, and wiring is written down rather than inferred.
+ */
+export const LOADS = Object.freeze(['lighting', 'aircon', 'other']);
+
+export const LOAD_LABELS = Object.freeze({ lighting: 'Lighting', aircon: 'Aircon', other: 'Others' });
 
 /** The same cap the spatial tree uses, for the same reason: `parent_id` is editable and a walk
  * over a cycle would otherwise not terminate. */
@@ -82,6 +94,39 @@ export function circuitPath(circuits, id) {
     cursor = cursor.parent_id ? byId.get(cursor.parent_id) : undefined;
   }
   return chain.reverse();
+}
+
+/**
+ * A circuit's load category: its own, else the nearest circuit above it's. `null` when nothing on its
+ * path declares one this build knows — never a guess, because a guessed category puts a circuit's
+ * energy into a report about something it does not carry. Walks `circuitPath`, so it is cycle-safe.
+ */
+export function loadOf(circuits, id) {
+  const path = circuitPath(circuits, id);
+  for (let i = path.length - 1; i >= 0; i--) {
+    if (LOADS.includes(path[i].load)) return path[i].load;
+  }
+  return null;
+}
+
+/**
+ * The building meters grouped by load category, in `LOADS` order, each group in site order — RM-092.
+ *
+ * Only BUILDING meters, from `buildingMeterIds`: a sub-meter is detail inside a branch already counted,
+ * so an outlet can never be added to the outlet branch's own figure. A meter whose circuit has no
+ * category is left out of every group — site:check warns about it — rather than filed under "other",
+ * which would be a statement about wiring nobody made.
+ */
+export function buildingMetersByLoad(circuits) {
+  const groups = new Map();
+  for (const meterId of buildingMeterIds(circuits)) {
+    const circuit = circuits.find((c) => c.meter_device_id === meterId);
+    const load = circuit ? loadOf(circuits, circuit.id) : null;
+    if (load === null) continue;
+    if (!groups.has(load)) groups.set(load, []);
+    groups.get(load).push(meterId);
+  }
+  return LOADS.filter((load) => groups.has(load)).map((load) => ({ load, meterIds: groups.get(load) }));
 }
 
 /**

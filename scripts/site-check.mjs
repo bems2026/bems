@@ -24,7 +24,7 @@
  * without saying so. Neither is visible by looking at the app.
  */
 import { DEVICE_CLASSES, DPS_MAPS } from '../shared/registry.mjs';
-import { PHASES, MAX_CIRCUIT_DEPTH } from '../shared/circuits.mjs';
+import { PHASES, MAX_CIRCUIT_DEPTH, LOADS, buildingMeterIds, loadOf } from '../shared/circuits.mjs';
 
 /** Same rule `scripts/site-new.mjs` applies: the id is a directory name, a module path and a
  * database primary key. */
@@ -194,6 +194,9 @@ export function checkSite({ slug, site, devices, circuits }) {
     if (c.parent_id != null && !byCircuitId.has(c.parent_id)) {
       err('circuit_parent_missing', `circuit "${c.id}" names parent "${c.parent_id}", which does not exist`);
     }
+    if (c.load != null && !LOADS.includes(c.load)) {
+      err('circuit_load_invalid', `circuit "${c.id}" declares load "${c.load}" (known: ${LOADS.join(', ')})`);
+    }
     if (c.phase != null && !PHASES.includes(c.phase)) {
       err('circuit_phase_invalid', `circuit "${c.id}" declares phase "${c.phase}" (known: ${PHASES.join(', ')})`);
     }
@@ -221,6 +224,16 @@ export function checkSite({ slug, site, devices, circuits }) {
       }
       node = byCircuitId.get(node.parent_id);
       if (!node) break; // already reported as circuit_parent_missing
+    }
+  }
+
+  // RM-092: reports group the building by what each branch carries. A building meter whose circuit
+  // says nothing is left out of every group — said here, rather than quietly filed under "other".
+  const known = [...byCircuitId.values()];
+  for (const meterId of buildingMeterIds(known)) {
+    const circuit = known.find((c) => c.meter_device_id === meterId);
+    if (circuit && loadOf(known, circuit.id) === null) {
+      warn('circuit_load_missing', `circuit "${circuit.id}" has no load category (${LOADS.join(', ')}) — reports cannot group its energy`);
     }
   }
 

@@ -228,3 +228,53 @@ test('every building meter is a real, metered device in the registry', () => {
     assert.ok(device.ctx, `${id} has no context key, so it reports no energy to sum`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// What a circuit carries — RM-092
+// ---------------------------------------------------------------------------
+
+test('a circuit takes its load category from itself, else from the nearest circuit above it', async () => {
+  const { loadOf } = await import('../shared/circuits.mjs');
+  const tree = [
+    { id: 'panel', parent_id: null, kind: 'panel', name: 'Panel', phase: null, meter_device_id: null, load: 'lighting' },
+    { id: 'sub', parent_id: 'panel', kind: 'panel', name: 'Sub', phase: null, meter_device_id: null },
+    { id: 'leaf', parent_id: 'sub', kind: 'branch', name: 'Leaf', phase: 'red', meter_device_id: 'm1' },
+    { id: 'own', parent_id: 'sub', kind: 'branch', name: 'Own', phase: 'red', meter_device_id: 'm2', load: 'aircon' },
+  ];
+  assert.equal(loadOf(tree, 'leaf'), 'lighting');
+  assert.equal(loadOf(tree, 'own'), 'aircon');
+  assert.equal(loadOf(tree, 'nope'), null);
+});
+
+test('a load category nobody declared, or one this build does not know, is no category — never a guess', async () => {
+  const { loadOf } = await import('../shared/circuits.mjs');
+  assert.equal(loadOf([{ id: 'a', parent_id: null, kind: 'branch', name: 'A', phase: 'red', meter_device_id: 'm' }], 'a'), null);
+  assert.equal(loadOf([{ id: 'a', parent_id: null, kind: 'branch', name: 'A', phase: 'red', meter_device_id: 'm', load: 'heating' }], 'a'), null);
+});
+
+test('reading a category over a cycle in hand-written data ends', async () => {
+  const { loadOf } = await import('../shared/circuits.mjs');
+  const cyclic = [
+    { id: 'a', parent_id: 'b', kind: 'branch', name: 'A', phase: null, meter_device_id: null },
+    { id: 'b', parent_id: 'a', kind: 'branch', name: 'B', phase: null, meter_device_id: null },
+  ];
+  assert.equal(loadOf(cyclic, 'a'), null);
+});
+
+test('the building meters group by category, in category order, and a sub-meter never joins its branch', async () => {
+  const { buildingMetersByLoad } = await import('../shared/circuits.mjs');
+  const tree = [
+    { id: 'panel', parent_id: null, kind: 'panel', name: 'Panel', phase: null, meter_device_id: null },
+    { id: 'outlets', parent_id: 'panel', kind: 'branch', name: 'Outlets', phase: 'red', meter_device_id: 'mtr_out', load: 'other' },
+    { id: 'outlet_sub', parent_id: 'outlets', kind: 'branch', name: 'Outlet 1', phase: 'red', meter_device_id: 'co1', load: 'other' },
+    { id: 'lights_b', parent_id: 'panel', kind: 'branch', name: 'Lights B', phase: 'red', meter_device_id: 'mtr_lb', load: 'lighting' },
+    { id: 'ac', parent_id: 'panel', kind: 'branch', name: 'AC', phase: 'yellow', meter_device_id: 'mtr_ac', load: 'aircon' },
+    { id: 'lights_a', parent_id: 'panel', kind: 'branch', name: 'Lights A', phase: 'yellow', meter_device_id: 'mtr_la', load: 'lighting' },
+    { id: 'unsaid', parent_id: 'panel', kind: 'branch', name: 'Unsaid', phase: 'yellow', meter_device_id: 'mtr_x' },
+  ];
+  assert.deepEqual(buildingMetersByLoad(tree), [
+    { load: 'lighting', meterIds: ['mtr_lb', 'mtr_la'] },
+    { load: 'aircon', meterIds: ['mtr_ac'] },
+    { load: 'other', meterIds: ['mtr_out'] },
+  ]);
+});
