@@ -3420,7 +3420,7 @@ Why this exists is the 2026-09-16 entry in §0. Operator decisions, 2026-09-16:
       2.47:1), relieved by legends, number tables and hover values.
     - **The dark screen palette fails the lightness band** (`--green-bright` 0.71, `--purple-bright`
       0.81), and so do the base tokens. It is the app-wide chart palette, Analytics' too, so it is
-      recorded as FI-027 rather than changed inside this work.
+      recorded as FI-028 rather than changed inside this work.
 - [ ] **RM-096 (L) — four tabs:** Overview, Circuits, Usage patterns, Compare.
 - [ ] **RM-097 (M) — plain words:** no p50/p95, load factor, load duration or DSM ceiling on the page or
   in the PDF.
@@ -8115,7 +8115,7 @@ may not.
 
 ### Charts
 
-- [ ] **FI-027 (S)** — The dark theme's chart series tokens fail the dataviz lightness band. Measured
+- [ ] **FI-028 (S)** — The dark theme's chart series tokens fail the dataviz lightness band. Measured
   2026-09-17 with the categorical validator against `--bg-surface` #1e1e1e: `--green-bright` #3dbb8a is
   at L 0.71 and `--purple-bright` #c4b5fd at 0.81, and the base tokens (`--green` #32b585, `--purple`
   #a78bfa) still fail. Contrast and colour-blind separation pass. It affects every chart in the app
