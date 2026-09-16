@@ -34,8 +34,8 @@ describe('ExportDrawer', () => {
     draw();
     expect(screen.getByRole('dialog', { name: 'Export August 2026' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /PDF/ })).toBeChecked();
-    expect(screen.getByRole('radio', { name: /Simple CSV/ })).not.toBeChecked();
-    expect(screen.getByRole('radio', { name: /Per-device CSV/ })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: /Building by day/ })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: /Devices, whole period/ })).not.toBeChecked();
   });
 
   it('lists every section, with coverage and the refusals locked and saying why', () => {
@@ -100,28 +100,28 @@ describe('ExportDrawer', () => {
 
   it('offers no sections for a CSV, and says what the file holds instead', async () => {
     const { onExport } = draw();
-    fireEvent.click(screen.getByRole('radio', { name: /Simple CSV/ }));
+    fireEvent.click(screen.getByRole('radio', { name: /Building by day/ }));
     expect(screen.queryByRole('checkbox', { name: 'Energy per day' })).toBeNull();
     expect(screen.getByText(/one row per day/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Download CSV' }));
-    await waitFor(() => expect(onExport).toHaveBeenCalledWith('daily-csv', expect.any(Array)));
+    await waitFor(() => expect(onExport).toHaveBeenCalledWith('daily-csv', expect.any(Array), expect.any(Function), expect.any(AbortSignal)));
   });
 
   it('says why an export cannot run now, and will not start it', () => {
     draw({ unavailable: { 'device-csv': 'No per-device rows were stored for this period.' } });
-    const radio = screen.getByRole('radio', { name: /Per-device CSV/ });
+    const radio = screen.getByRole('radio', { name: /Devices, whole period/ });
     expect(radio).toBeDisabled();
     expect(radio).toHaveAccessibleDescription('No per-device rows were stored for this period.');
   });
 
   it('remembers the last choice for this viewer', () => {
     const { unmount } = draw();
-    fireEvent.click(screen.getByRole('radio', { name: /Simple CSV/ }));
+    fireEvent.click(screen.getByRole('radio', { name: /Building by day/ }));
     unmount();
 
     draw();
-    expect(screen.getByRole('radio', { name: /Simple CSV/ })).toBeChecked();
+    expect(screen.getByRole('radio', { name: /Building by day/ })).toBeChecked();
     expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull();
   });
 
@@ -135,8 +135,8 @@ describe('ExportDrawer', () => {
     });
     draw();
     expect(screen.getByRole('radio', { name: /PDF/ })).toBeChecked();
-    fireEvent.click(screen.getByRole('radio', { name: /Simple CSV/ }));
-    expect(screen.getByRole('radio', { name: /Simple CSV/ })).toBeChecked();
+    fireEvent.click(screen.getByRole('radio', { name: /Building by day/ }));
+    expect(screen.getByRole('radio', { name: /Building by day/ })).toBeChecked();
   });
 
   it('ignores a remembered choice from an older build that names sections this one does not have', () => {

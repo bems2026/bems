@@ -179,7 +179,7 @@ describe('the circuit scope', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /^export$/i }));
     const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('radio', { name: /per-device csv/i }));
+    fireEvent.click(within(dialog).getByRole('radio', { name: /devices, whole period/i }));
     expect(within(dialog).getByText(/each share is still of the whole building/i)).toBeInTheDocument();
 
     const download = within(dialog).getByRole('button', { name: /download csv/i });
@@ -205,6 +205,6 @@ describe('the circuit scope', () => {
     await waitFor(() => expect(pdf).toBeEnabled());
     fireEvent.click(pdf);
     await waitFor(() => expect(pdf).toBeChecked());
-    expect(within(dialog).getByText(/applies to the per-device CSV only/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/applies to the device CSVs only/i)).toBeInTheDocument();
   });
 });

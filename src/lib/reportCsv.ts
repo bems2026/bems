@@ -1,6 +1,7 @@
 import { toCsv, type CsvColumn } from './csv';
 import { coverageOf, type PeriodDeviceReport, type ReportPeriod } from './supabaseReports';
 import type { DailyRow } from './reportSeries';
+import type { DeviceDayRow } from './circuitSeries';
 import { emissionsPerDay, pricePerDay, type Factor, type Rate } from './energyCost';
 import { energyFlagOf, energyFlagText, usableEnergy } from './boundedEnergy';
 
@@ -135,6 +136,77 @@ export function deviceCsv({
     { key: 'coverage_pct', header: 'Coverage (%)' },
     { key: 'online_sample_count', header: 'Samples observed' },
     { key: 'expected_sample_count', header: 'Samples expected' },
+    { key: 'note', header: 'Note' },
+  ];
+  return toCsv(flat, columns);
+}
+
+const MADE_FROM: Record<string, string> = {
+  minute: 'minute readings',
+  hour: 'hourly averages',
+  mixed: 'minute readings and hourly averages',
+};
+
+/**
+ * Devices, one row per day — RM-098. Each device's bounded energy per local day from phase42's
+ * `report_device_daily_energy`, so the days sum to the report's own per-device figure, and a counter jump
+ * is as absent here as there — with what it took out said in its own column.
+ *
+ * The rules the page keeps, kept: a day nothing was recorded on is empty, never 0 kWh; a partly recorded
+ * day says so; and where an older day's figures came from (minute readings or hourly averages) is named,
+ * because an hourly average cannot show a short peak.
+ */
+export function deviceDailyCsv({
+  rows,
+  nameOf,
+  circuitOf,
+  useOf,
+}: {
+  rows: readonly DeviceDayRow[];
+  nameOf: (id: string) => string;
+  circuitOf: (id: string) => string | null;
+  useOf: (id: string) => string | null;
+}): string {
+  // Day by day, and within a day by device id, so the same period exports the same file every time.
+  const sorted = [...rows].sort((a, b) => a.local_day.localeCompare(b.local_day) || a.device_id.localeCompare(b.device_id));
+
+  const flat = sorted.map((r) => {
+    const recorded = r.online_minutes > 0 && r.energy_kwh !== null;
+    const c = coverageOf(r.online_minutes, r.expected_minutes);
+    return {
+      date: r.local_day.slice(0, 10),
+      device_id: r.device_id,
+      device: nameOf(r.device_id),
+      circuit: circuitOf(r.device_id),
+      use: useOf(r.device_id),
+      energy: recorded ? round(Number(r.energy_kwh), 3) : null,
+      removed: r.removed_kwh !== null && Number(r.removed_kwh) > 0.001 ? round(Number(r.removed_kwh), 3) : null,
+      peak: recorded ? round(r.peak_power_w, 0) : null,
+      average: recorded ? round(r.avg_power_w, 0) : null,
+      minutes: r.online_minutes,
+      expected: r.expected_minutes,
+      recorded_pct: c ? Math.round(c.ratio * 100) : null,
+      status: !recorded ? 'no data' : c?.band === 'complete' ? 'complete' : 'partial',
+      made_from: r.resolution ? (MADE_FROM[r.resolution] ?? r.resolution) : null,
+      note: r.removed_kwh !== null && Number(r.removed_kwh) > 0.001 ? 'counter jump removed' : null,
+    };
+  });
+
+  const columns: CsvColumn<(typeof flat)[number]>[] = [
+    { key: 'date', header: 'Date' },
+    { key: 'device_id', header: 'Device ID' },
+    { key: 'device', header: 'Device' },
+    { key: 'circuit', header: 'Circuit' },
+    { key: 'use', header: 'Use' },
+    { key: 'energy', header: 'Energy (kWh)' },
+    { key: 'removed', header: 'Counter jump not counted (kWh)' },
+    { key: 'peak', header: 'Highest power (W)' },
+    { key: 'average', header: 'Average power (W)' },
+    { key: 'minutes', header: 'Minutes recorded' },
+    { key: 'expected', header: 'Minutes in day' },
+    { key: 'recorded_pct', header: 'Recorded (%)' },
+    { key: 'status', header: 'Day status' },
+    { key: 'made_from', header: 'Made from' },
     { key: 'note', header: 'Note' },
   ];
   return toCsv(flat, columns);

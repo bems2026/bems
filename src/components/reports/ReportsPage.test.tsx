@@ -138,7 +138,7 @@ describe('ReportsPage', () => {
     render(<ReportsPage />);
     await waitFor(() => expect(reports.getDevicePeriodReports).toHaveBeenCalled());
     fireEvent.click(await screen.findByRole('button', { name: 'Export' }));
-    const csv = screen.getByRole('radio', { name: /Per-device CSV/ });
+    const csv = screen.getByRole('radio', { name: /Devices, whole period/ });
     await waitFor(() => expect(csv).toHaveAccessibleDescription(/No per-device rows/));
     expect(csv).toBeDisabled();
   });
@@ -230,7 +230,7 @@ describe('ReportsPage — weekly', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Export' }));
     // The per-device CSV is offered once the week's device rows arrive, which is after its label does —
     // the race RM-081's loader made visible, now waited for in the drawer rather than on a button.
-    const csv = screen.getByRole('radio', { name: /Per-device CSV/ });
+    const csv = screen.getByRole('radio', { name: /Devices, whole period/ });
     await waitFor(() => expect(csv).toBeEnabled());
     fireEvent.click(csv);
     fireEvent.click(screen.getByRole('button', { name: 'Download CSV' }));

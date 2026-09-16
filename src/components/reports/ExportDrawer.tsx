@@ -23,21 +23,34 @@ import { useExportAction } from '@/lib/useExportAction';
  * generated, so nobody files a whole-building PDF believing it is one branch's.
  */
 
-export type ExportFormat = 'pdf' | 'daily-csv' | 'device-csv';
+export type ExportFormat = 'pdf' | 'daily-csv' | 'device-csv' | 'device-daily-csv' | 'readings-csv';
+
+/** Which formats follow the part of the building the page is narrowed to. */
+const FOLLOWS_SCOPE: readonly ExportFormat[] = ['device-csv', 'device-daily-csv', 'readings-csv'];
 
 const STORAGE_KEY = 'ibems.reportExport.v1';
 
 const FORMATS: readonly { id: ExportFormat; label: string; hint: string }[] = [
-  { id: 'pdf', label: 'PDF document', hint: 'The report as a paged document, with the sections chosen below.' },
+  { id: 'pdf', label: 'PDF document', hint: 'The report as a document, with the sections chosen below.' },
   {
     id: 'daily-csv',
-    label: 'Simple CSV',
-    hint: 'One row per day: energy, peak demand, readings coverage and whether the day was complete — with cost and emissions once a rate or factor has been entered.',
+    label: 'Building by day (CSV)',
+    hint: 'One row per day for the whole building: energy, highest demand, how much was recorded — with cost and emissions once a rate or factor has been entered.',
   },
   {
     id: 'device-csv',
-    label: 'Per-device CSV',
-    hint: 'One row per device: its branch, energy, share of the building, peak and average power, and coverage.',
+    label: 'Devices, whole period (CSV)',
+    hint: 'One row per device: its circuit, energy, share of the building, highest and average power, and how much was recorded.',
+  },
+  {
+    id: 'device-daily-csv',
+    label: 'Devices by day (CSV)',
+    hint: 'One row per device per day: energy, highest and average power, and minutes recorded — with any counter jump that was not counted.',
+  },
+  {
+    id: 'readings-csv',
+    label: 'Every reading (CSV)',
+    hint: 'Every reading each device took: time, voltage, current, power and its energy counter. Older hours are hourly averages. A month is a large file and takes a while.',
   },
 ];
 
@@ -77,7 +90,7 @@ interface Props {
   periodLabel: string;
   onClose: () => void;
   /** Performs the export and resolves with what was saved, in words. */
-  onExport: (format: ExportFormat, sections: ReportSectionId[]) => Promise<string>;
+  onExport: (format: ExportFormat, sections: ReportSectionId[], report: (progress: string) => void, signal: AbortSignal) => Promise<string>;
   /** Formats that cannot run for this period, each with the reason. */
   unavailable?: Partial<Record<ExportFormat, string>>;
   /** A word under a section, such as a chart whose data could not be loaded and will be left out. */
@@ -100,8 +113,11 @@ export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {},
   const chosen = new Set<ReportSectionId>(choice.sections);
   const blockedReason = unavailable[format];
 
-  const run = useCallback(() => onExport(format, normaliseSections(choice.sections)), [onExport, format, choice.sections]);
-  const { state, start } = useExportAction(run);
+  const run = useCallback(
+    (report: (progress: string) => void, signal: AbortSignal) => onExport(format, normaliseSections(choice.sections), report, signal),
+    [onExport, format, choice.sections]
+  );
+  const { state, start, cancel } = useExportAction(run);
   const working = state.status === 'working';
 
   const toggle = (id: ReportSectionId) =>
@@ -149,8 +165,10 @@ export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {},
       {scopeLabel ? (
         <p className="report-export__hint">
           {format === 'device-csv'
-            ? `Only the devices on ${scopeLabel}; each share is still of the whole building.`
-            : `The whole building — the ${scopeLabel} scope applies to the per-device CSV only.`}
+            ? `Only ${scopeLabel}; each share is still of the whole building.`
+            : FOLLOWS_SCOPE.includes(format)
+              ? `Only ${scopeLabel}.`
+              : `The whole building — the ${scopeLabel} choice applies to the device CSVs only.`}
         </p>
       ) : null}
 
@@ -190,7 +208,7 @@ export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {},
         <p className="report-export__summary">
           {periodLabel} ·{' '}
           {format === 'pdf' ? `${normaliseSections(choice.sections).length} sections · PDF` : FORMATS.find((f) => f.id === format)?.label}
-          {format === 'device-csv' && scopeLabel ? ` · ${scopeLabel}` : ''}
+          {FOLLOWS_SCOPE.includes(format) && scopeLabel ? ` · ${scopeLabel}` : ''}
         </p>
         <button
           type="button"
@@ -203,6 +221,14 @@ export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {},
         </button>
       </div>
 
+      {state.status === 'working' && state.progress ? (
+        <p className="reports-note report-export__progress" role="status">
+          {state.progress}{' '}
+          <button type="button" className="report-retry-btn" onClick={cancel}>
+            Cancel
+          </button>
+        </p>
+      ) : null}
       {state.status === 'done' ? (
         <p className="reports-note" role="status">
           {state.message}

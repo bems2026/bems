@@ -15,7 +15,8 @@ import { useCallback, useRef, useState } from 'react';
 
 export type ExportState =
   | { status: 'idle' }
-  | { status: 'working' }
+  /** `progress` — RM-098: what a long export has done so far, in words ("12,400 readings…"). */
+  | { status: 'working'; progress?: string }
   | { status: 'done'; message: string }
   | { status: 'error'; message: string };
 
@@ -42,27 +43,45 @@ export function nextPaint(): Promise<void> {
   });
 }
 
-export function useExportAction(run: () => Promise<string>, { yieldFrame = nextPaint }: ExportActionOptions = {}) {
+/**
+ * RM-098: an export that takes a while — every reading of a month is hundreds of requests — reports its
+ * progress through `report` and stops when `signal` is aborted by `cancel`. A short export ignores both.
+ */
+export type ExportRun = (report: (progress: string) => void, signal: AbortSignal) => Promise<string>;
+
+export function useExportAction(run: ExportRun, { yieldFrame = nextPaint }: ExportActionOptions = {}) {
   const [state, setState] = useState<ExportState>({ status: 'idle' });
   const busy = useRef(false);
+  const controller = useRef<AbortController | null>(null);
 
   const start = useCallback(() => {
     if (busy.current) return;
     busy.current = true;
+    const abort = new AbortController();
+    controller.current = abort;
     setState({ status: 'working' });
     void (async () => {
       try {
         await yieldFrame();
-        const message = await run();
+        const message = await run((progress) => {
+          if (!abort.signal.aborted) setState({ status: 'working', progress });
+        }, abort.signal);
         setState({ status: 'done', message });
       } catch (err) {
         // Surfaced, never swallowed: a press that silently does nothing on a kiosk gets pressed again.
-        setState({ status: 'error', message: err instanceof Error ? err.message : String(err) });
+        setState(
+          abort.signal.aborted
+            ? { status: 'error', message: 'Cancelled — nothing was saved.' }
+            : { status: 'error', message: err instanceof Error ? err.message : String(err) }
+        );
       } finally {
         busy.current = false;
+        controller.current = null;
       }
     })();
   }, [run, yieldFrame]);
 
-  return { state, start };
+  const cancel = useCallback(() => controller.current?.abort(), []);
+
+  return { state, start, cancel };
 }

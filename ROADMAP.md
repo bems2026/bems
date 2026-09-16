@@ -3461,7 +3461,38 @@ Why this exists is the 2026-09-16 entry in §0. Operator decisions, 2026-09-16:
   - **Tests.** A page test walks all four tabs and fails on p50, p95, p99, median, baseline, DSM, load
     factor, load duration or percentile. Every pinned string moved with its wording.
   - **The PDF's wording changes with RM-099**, which rebuilds the document as Simple or Detailed.
-- [ ] **RM-098 (M) — two new CSVs:** devices one row per day, and every reading (time, V, A, W).
+- [x] **RM-098 (M) — two new CSVs, both following the category or circuit chosen. 2026-09-17.**
+  - **Devices by day** (`deviceDailyCsv`)
+    - One row per device per local day, from phase42's bounded daily energy, so the days sum to the
+      report's figure.
+    - A "Counter jump not counted (kWh)" column; highest and average power; minutes recorded and minutes
+      in the day.
+    - Day status, and whether the day was made from minute readings or hourly averages.
+    - A day nothing was recorded on is empty, never 0 kWh.
+    - Until phase42 is applied the drawer says the format needs the database update.
+  - **Every reading** (`src/lib/readingsExport.ts`)
+    - Each power-measuring device in the scope, reading by reading: building-local time, voltage,
+      current, power and energy counter.
+    - An hourly row, marked "hourly average", for an hour whose minute readings retention has pruned —
+      decided by the data, not by a date.
+    - An offline row prints no figures ("offline — not a reading").
+    - The reading that carried a counter jump is noted "counter jumped +67.28 kWh while drawing 49 W — not
+      counted", by the same rule the reports use.
+    - **How it fetches:**
+      - pages keyed on the timestamp string, stopping only on an empty page;
+      - the export stops if the cursor does not advance;
+      - an exact count must match the rows fetched, or it stops and says to try again;
+      - two devices at a time, with progress ("12,400 readings so far") and a Cancel button;
+      - the file is assembled as a Blob from parts, never one giant string.
+  - **The drawer** offers five formats: PDF, Building by day, Devices whole period, Devices by day, Every
+    reading. Each says whether it follows the scope. Filenames gain `-devices-daily` and `-readings`.
+  - **Tests.**
+    - `readingsExport.test.ts` (12), against a fake query builder with a 500-row cap: every row returned,
+      a count mismatch refused, a stuck cursor refused, hourly rows only where minutes are gone, cancel,
+      offline rows, the jump note, formula neutralisation, local time.
+    - `reportCsv.test.ts` (+4).
+    - `useExportAction.test.ts` (+2): progress, and cancel saying nothing was saved.
+    - `reportFiles.test.ts` (+1).
 - [ ] **RM-099 (M) — a Simple or Detailed PDF** that follows the category or circuit chosen.
 
 ### Analytics data quality — RM-076 to RM-079 (2026-09-14)

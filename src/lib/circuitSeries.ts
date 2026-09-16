@@ -141,12 +141,18 @@ export function densifyHours(rows: readonly ArchiveRow[], startIso: string, endI
   return slots;
 }
 
-/** Each branch meter's power, hour by hour, across the period. */
-export async function getCircuitTrend(period: ReportPeriod, start: string, meterIds: readonly string[], { signal }: Request = {}): Promise<CircuitTrend> {
+/** The period's window, from `report_window` — the bounds the stored report itself was generated over. */
+export async function getReportWindow(period: ReportPeriod, start: string, { signal }: Request = {}): Promise<{ win_start: string; win_end: string }> {
   const win = await rpc<WindowRow>('report_window', { p_period: period, p_start: start, p_tz: TZ }, signal);
   if (win.error) throw new Error(`report_window failed: ${win.error.message}`);
   const w = win.data?.[0];
   if (!w) throw new Error(`report_window returned no window for ${period} ${start}`);
+  return { win_start: w.win_start, win_end: w.win_end };
+}
+
+/** Each branch meter's power, hour by hour, across the period. */
+export async function getCircuitTrend(period: ReportPeriod, start: string, meterIds: readonly string[], { signal }: Request = {}): Promise<CircuitTrend> {
+  const w = await getReportWindow(period, start, { signal });
 
   const series = await Promise.all(
     meterIds.map(async (meterId) => {

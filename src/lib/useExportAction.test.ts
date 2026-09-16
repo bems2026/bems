@@ -62,4 +62,32 @@ describe('useExportAction', () => {
     await act(async () => result.current.start());
     expect(run).toHaveBeenCalledTimes(2);
   });
+
+  it('reports a long export’s progress while it works — RM-098', async () => {
+    let finish!: (message: string) => void;
+    let report!: (progress: string) => void;
+    const run = vi.fn((r: (progress: string) => void) => {
+      report = r;
+      return new Promise<string>((resolve) => { finish = resolve; });
+    });
+    const { result } = renderHook(() => useExportAction(run, noWait));
+    await act(async () => result.current.start());
+    act(() => report('12,400 readings so far'));
+    expect(result.current.state).toEqual({ status: 'working', progress: '12,400 readings so far' });
+    await act(async () => finish('Saved'));
+    expect(result.current.state).toEqual({ status: 'done', message: 'Saved' });
+  });
+
+  it('stops when cancelled, says nothing was saved, and can be run again', async () => {
+    const run = vi.fn(
+      (_report: (progress: string) => void, signal: AbortSignal) =>
+        new Promise<string>((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))))
+    );
+    const { result } = renderHook(() => useExportAction(run, noWait));
+    await act(async () => result.current.start());
+    await act(async () => result.current.cancel());
+    expect(result.current.state).toEqual({ status: 'error', message: 'Cancelled — nothing was saved.' });
+    await act(async () => result.current.start());
+    expect(run).toHaveBeenCalledTimes(2);
+  });
 });

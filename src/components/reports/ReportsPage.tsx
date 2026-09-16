@@ -5,8 +5,11 @@ import { InfoHint } from '@/components/ui/InfoHint';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { supabase } from '@/config/supabase';
-import { downloadCsv } from '@/lib/csv';
-import { dailyCsv, deviceCsv } from '@/lib/reportCsv';
+import { downloadCsv, downloadCsvParts } from '@/lib/csv';
+import { dailyCsv, deviceCsv, deviceDailyCsv } from '@/lib/reportCsv';
+import { fetchReadingsForExport, readingsCsvParts, type ReadingsClient } from '@/lib/readingsExport';
+import { getReportWindow } from '@/lib/circuitSeries';
+import { LOAD_LABELS } from '@shared/circuits.mjs';
 import { reportFilename } from '@/lib/reportFiles';
 import type { ReportSectionId } from '@/lib/reportSections';
 import { buildPdfReport } from '@/lib/reportPdf/buildReport';
@@ -18,7 +21,19 @@ import { siteDateTime } from '@/lib/siteTime';
 import { ReportControlBar } from './ReportControlBar';
 import { ReportSkeleton } from './ReportSkeleton';
 import { ReportCharts, type ChartsData } from './ReportCharts';
-import { ALL_SCOPE, branchOf, buildBreakdown, decodeScope, encodeScope, scopeLabel, scopeOptions, scopeRows, type ReportScope } from '@/lib/circuitBreakdown';
+import {
+  ALL_SCOPE,
+  branchOf,
+  buildBreakdown,
+  decodeScope,
+  encodeScope,
+  loadOfDevice,
+  measuredDeviceIds,
+  scopeLabel,
+  scopeOptions,
+  scopeRows,
+  type ReportScope,
+} from '@/lib/circuitBreakdown';
 import type { TabDef } from '@/components/ui/Tabs';
 import { UsagePatterns } from './UsagePatterns';
 import { CircuitDeepDive } from './CircuitDeepDive';
@@ -237,6 +252,15 @@ export function ReportsPage() {
   } else if (narrowed && scopedRows?.length === 0) {
     exportUnavailable['device-csv'] = `No device on ${narrowed} reported for this period. Choose All circuits to export every device.`;
   }
+  // RM-098: the per-day file is phase42's bounded daily energy, so it waits for that and says so.
+  const daily = report.deviceDaily;
+  if (daily.status === 'error') {
+    exportUnavailable['device-daily-csv'] = 'The daily figures per circuit could not be loaded. Retry them on the Circuits tab first.';
+  } else if (daily.status !== 'ready' || !daily.data) {
+    exportUnavailable['device-daily-csv'] = 'The daily figures per circuit are still loading.';
+  } else if (!daily.data.available) {
+    exportUnavailable['device-daily-csv'] = 'Needs the database update (phase42) — until it is applied, per-device days are not available.';
+  }
 
   if (!supabase) {
     return (
@@ -260,8 +284,47 @@ export function ReportsPage() {
    * `ExportDrawer` shows that beside its button. Names come from `reportFilename`, never from the
    * on-screen label, so they cannot vary with the reader's locale.
    */
-  const runExport = async (format: ExportFormat, sections: ReportSectionId[]): Promise<string> => {
+  const loadLabelOf = (id: string) => {
+    const load = loadOfDevice(id);
+    return load ? (LOAD_LABELS[load] as string) : null;
+  };
+  const runExport = async (format: ExportFormat, sections: ReportSectionId[], progress: (text: string) => void, signal: AbortSignal): Promise<string> => {
     if (!selected) throw new Error('No report period is selected.');
+
+    if (format === 'device-daily-csv') {
+      const data = report.deviceDaily.data;
+      if (!data || !data.available) throw new Error('The daily figures per circuit are not available.');
+      const dayRows = scopeRows(data.rows, scope);
+      if (dayRows.length === 0) throw new Error(narrowed ? `No device on ${narrowed} has daily figures for this period.` : 'No device has daily figures for this period.');
+      const name = reportFilename(period, selected, 'devices-daily', 'csv', narrowed);
+      downloadCsv(name, deviceDailyCsv({ rows: dayRows, nameOf, circuitOf: branchOf, useOf: loadLabelOf }));
+      return `Saved ${name} · ${dayRows.length} device-days${narrowed ? ` on ${narrowed}` : ''}`;
+    }
+
+    if (format === 'readings-csv') {
+      if (!supabase) throw new Error('Stored readings are not configured in this build.');
+      const ids = scopeRows(
+        measuredDeviceIds().map((device_id) => ({ device_id })),
+        scope
+      ).map((r) => r.device_id);
+      if (ids.length === 0) throw new Error(`No device on ${narrowed ?? 'this building'} takes readings.`);
+      progress('Finding the period…');
+      const win = await getReportWindow(period, selected, { signal });
+      const readings = await fetchReadingsForExport(supabase as unknown as ReadingsClient, ids, { startIso: win.win_start, endIso: win.win_end }, {
+        signal,
+        onProgress: (p) => progress(`${p.fetched.toLocaleString(undefined)} readings so far · ${nameOf(p.deviceId)}`),
+      });
+      const parts = readingsCsvParts({
+        devices: ids.map((id) => ({ id, name: nameOf(id), circuit: branchOf(id), use: loadLabelOf(id) })),
+        readings,
+        utcOffsetMinutes: SITE.utc_offset_minutes,
+        timezone: SITE.timezone,
+      });
+      const name = reportFilename(period, selected, 'readings', 'csv', narrowed);
+      downloadCsvParts(name, parts);
+      const count = readings.reduce((a, d) => a + d.raw.length + d.hourly.length, 0);
+      return `Saved ${name} · ${count.toLocaleString(undefined)} rows from ${ids.length} devices`;
+    }
 
     if (format === 'device-csv') {
       if (!rows || !scopedRows || scopedRows.length === 0) throw new Error('No per-device rows were stored for this period.');

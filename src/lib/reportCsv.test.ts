@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { dailyCsv, deviceCsv } from './reportCsv';
+import { dailyCsv, deviceCsv, deviceDailyCsv } from './reportCsv';
+import type { DeviceDayRow } from './circuitSeries';
 import type { DailyRow } from './reportSeries';
 import type { PeriodDeviceReport } from './supabaseReports';
 import type { Factor, Rate } from './energyCost';
@@ -154,5 +155,47 @@ describe('deviceCsv — the per-device CSV', () => {
   it('neutralises a device name a spreadsheet would otherwise run as a formula', () => {
     const csv = deviceCsv({ ...base, rows: [row()], nameOf: () => '=HYPERLINK("http://x")' });
     expect(lines(csv)[1]).toContain('"\'=HYPERLINK(""http://x"")"');
+  });
+});
+
+describe('deviceDailyCsv — devices, one row per day (RM-098)', () => {
+  const day = (device_id: string, local_day: string, o: Partial<DeviceDayRow> = {}): DeviceDayRow => ({
+    device_id,
+    local_day,
+    energy_kwh: 1.234,
+    counter_kwh: 1.234,
+    removed_kwh: null,
+    clipped_hours: 0,
+    peak_power_w: 612.4,
+    avg_power_w: 51.4,
+    online_minutes: 1440,
+    expected_minutes: 1440,
+    resolution: 'minute',
+    ...o,
+  });
+  const base = { nameOf: (id: string) => `name ${id}`, circuitOf: () => 'Lights B', useOf: () => 'Lighting' };
+
+  it('writes a row per device per day, day by day, with its units in the header', () => {
+    const csv = deviceDailyCsv({ ...base, rows: [day('b', '2026-09-08'), day('a', '2026-09-07'), day('b', '2026-09-07')] });
+    expect(lines(csv)[0]).toBe(
+      'Date,Device ID,Device,Circuit,Use,Energy (kWh),Counter jump not counted (kWh),Highest power (W),Average power (W),Minutes recorded,Minutes in day,Recorded (%),Day status,Made from,Note'
+    );
+    expect(lines(csv).slice(1).map((l) => l.split(',').slice(0, 2).join(' '))).toEqual(['2026-09-07 a', '2026-09-07 b', '2026-09-08 b']);
+    expect(lines(csv)[1]).toBe('2026-09-07,a,name a,Lights B,Lighting,1.234,,612,51,1440,1440,100,complete,minute readings,');
+  });
+
+  it('leaves a day with nothing recorded empty — never 0 kWh — and says so', () => {
+    const csv = deviceDailyCsv({ ...base, rows: [day('a', '2026-09-09', { energy_kwh: null, counter_kwh: null, peak_power_w: null, avg_power_w: null, online_minutes: 0, resolution: null })] });
+    expect(lines(csv)[1]).toBe('2026-09-09,a,name a,Lights B,Lighting,,,,,0,1440,0,no data,,');
+  });
+
+  it('says what a counter jump took out of a day', () => {
+    const csv = deviceDailyCsv({ ...base, rows: [day('a', '2026-09-08', { energy_kwh: 0.713, counter_kwh: 77.502, removed_kwh: 76.789, clipped_hours: 1, online_minutes: 1434 })] });
+    expect(lines(csv)[1]).toBe('2026-09-08,a,name a,Lights B,Lighting,0.713,76.789,612,51,1434,1440,100,complete,minute readings,counter jump removed');
+  });
+
+  it('calls a partly recorded day partial, and names where older figures came from', () => {
+    const csv = deviceDailyCsv({ ...base, rows: [day('a', '2026-08-17', { online_minutes: 359, resolution: 'mixed' })] });
+    expect(lines(csv)[1]).toMatch(/,25,partial,minute readings and hourly averages,$/);
   });
 });

@@ -17,7 +17,7 @@ import type { ReportPeriod } from './supabaseReports';
  * joined by single hyphens; a name with nothing sayable in it adds nothing rather than a stray hyphen.
  */
 
-export type ReportFileKind = 'report' | 'daily' | 'devices';
+export type ReportFileKind = 'report' | 'daily' | 'devices' | 'devices-daily' | 'readings';
 
 export function reportFilename(
   period: ReportPeriod,
@@ -29,7 +29,8 @@ export function reportFilename(
   // Digits and hyphens only: whatever else reached here is not part of a date.
   const day = start.slice(0, 10).replace(/[^0-9-]/g, '');
   const stamp = period === 'week' ? day : day.slice(0, 7);
-  const suffix = kind === 'daily' ? '-daily' : '';
+  // Each file kind its own name, so no export of a period can overwrite another of the same period.
+  const suffix = kind === 'daily' ? '-daily' : kind === 'devices-daily' ? '-devices-daily' : kind === 'readings' ? '-readings' : '';
   const slug = (scope ?? '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')

@@ -42,6 +42,28 @@ export function toCsv<T extends object>(rows: readonly T[], columns: readonly Cs
   return lines.join('\r\n');
 }
 
+/** Pure. One CSV line from cell values, with the same escaping and neutralisation `toCsv` applies — for a
+ *  file built in parts rather than as one string (RM-098). */
+export function csvLine(values: readonly unknown[]): string {
+  return values.map(escapeCell).join(',');
+}
+
+/**
+ * The same download as `downloadCsv`, from parts — RM-098. A month of every reading is half a million
+ * rows; a Blob assembled from parts never holds the whole file as one JavaScript string.
+ */
+export function downloadCsvParts(filename: string, parts: readonly string[]): void {
+  const blob = new Blob(['﻿', ...parts], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 /**
  * Hands the CSV to the browser as a download.
  *
