@@ -66,8 +66,9 @@ failed first, so for that whole stretch CI ran neither the build nor any test su
 **RM-075 hardens the backup** — 19 tables where there were 10, page keys covering whole primary
 keys, restore order checked against the migrations — and along the way corrected RM-042's
 evidence (its outlet rows disagree, because the legacy table predates RM-047b's correction) and
-four stale claims that the space tree was empty. **Watch 2026-09-15:** the first real retention
-pass, which deletes raw readings for the first time.
+four stale claims that the space tree was empty. **The first real retention passes ran on 2026-09-15
+18:39 UTC and 2026-09-16 00:39 UTC**, and every pruned row was checked against a raw export taken
+beforehand: 180 device-hours, no mismatch, nothing left behind. See §0.
 **EX-170 corrects the deploy note.** `CLAUDE.md` and the Pi brief named two services to restart
 after a `server/` or `shared/` change, and there are three: `ibems-ingest` was left out. Measured
 the same day, read-only, the Pi's ingest daemon was still running `shared/sites/` modules replaced
@@ -195,7 +196,7 @@ had copied the old branches, because the services restarted before the flow was 
 devices were offline before and after the deploy — `acu_main` and the outside temperature sensor, both
 unpaired since RM-016.
 
-### 2026-09-15 — the first real retention pass, checked before it runs; phase41 waits to be applied
+### 2026-09-15/16 — the first real retention passes ran, and match the raw export; phase41 waits to be applied
 
 **Apply `supabase/phase41_totals_rollup_integrated.sql` before 2026-10-08 (RM-087).** Paste it into the
 Supabase SQL editor like every phase file, then run the read-back in RM-087. Without it, the first
@@ -213,6 +214,17 @@ both rollups truncate the cutoff to the hour. Checked before it runs:
   covers every pass until 2026-09-17.
 - **The ingest buffer drains.** "Supabase unreachable, buffered (1 pending)" appears 26–100 times a day,
   all week; each is one write retried the next minute, and no buffer file is left behind.
+
+**They ran, and they are right.** The 12:39 UTC restart (RM-088/RM-089) moved the six-hourly check, so
+the first pass ran at **18:39 UTC** rather than 18:18 — retention asks every six hours from when the
+daemon started. It rolled **60 device-hours into `readings_hourly` and pruned 2,520 raw readings**, plus
+3 hours and 126 rows of building totals: 20 devices across the three complete hours of 16 August, which
+is what a cutoff truncated to the hour should take. The 00:39 UTC pass took the next six hours (120
+device-hours, 7,040 readings). **Checked against the raw export row by row:** 9,560 exported readings
+became 180 device-hours, each bucket's sample count, online count and peak watts equal to the rows it
+replaced, 0 mismatches, and no raw row left before the cutoff; the 478 exported totals rows became 9
+hours on the same terms. The hourly buckets' integrated columns are empty, as they must be — these rows
+predate phase32's series — which is exactly the case RM-087's phase41 fixes before 2026-10-08.
 
 ### 2026-09-15 — phase40 is applied; CO6 and CO7 are corrected
 
@@ -3655,8 +3667,8 @@ ever cleared, and put its controls in three rows. This section is that page's ov
         ingest copies the bridge's device list at start and every five minutes, so a restart before the
         flow deploy leaves the old branches in `devices` until the next sync.
 - [ ] **RM-089 (S)** — **A lost packet no longer fails a Supabase request.** Written and verified
-      2026-09-15; **live since the restart at 12:39 UTC, and open until a day of logs says whether it
-      worked.**
+      2026-09-15; **live since the restart at 12:39 UTC. 17.6 hours in: zero.** Open until a full day of
+      logs is in.
       - **The symptom.** Ingest logged "Supabase unreachable, buffered (1 pending): TypeError: fetch
         failed" 26–100 times a day all week, in bursts, and a read from the Pi during one burst failed as
         `AggregateError [ETIMEDOUT]` listing both IPv4 addresses and both IPv6 ones.
@@ -3673,6 +3685,8 @@ ever cleared, and put its controls in three rows. This section is that page's ov
       - **To close.** Compare a day of "Supabase unreachable" lines after the restart with the week
         before it: 29, 35, 26, 68, 100 and 50 a day from 2026-09-09 to 2026-09-14, and 45 in the 24 hours
         before the fix. If they do not fall, the cause is elsewhere and this entry should say so.
+        **At 2026-09-16 06:18 UTC, 17.6 hours after the restart: zero, and zero failed device syncs.** The
+        old rate would have given about 33 in that time. A full day's count closes this.
 - [ ] **RM-087 (S)** — **phase41: the hourly totals rollup keeps phase32's integrated cross-check.**
       Written and rehearsed 2026-09-15; **waiting for the operator to apply it, before 2026-10-08.**
       - **The defect.** phase32 (RM-057) stores the legacy power integration beside the summed building
