@@ -8,8 +8,9 @@ high-water mark.
 - **RM-091:** `phase42` bounds each hour's counter rise by the circuit's own power, in the generators and
   per day. **Applied by the operator on 2026-09-17 and read back**: the week of 7 September's L.O Yellow
   row is 4.617 kWh with 76.789 removed, the only row restated anywhere, and the building row is untouched.
-  **RM-091a**'s `phase43` (the readings policies' role check, once per statement) is rehearsed and waits
-  for the operator, with a signed-in timing probe to run before and after.
+  **RM-091a**'s `phase43` (the readings policies' role check, once per statement) was applied the same day:
+  a signed-in month read went from 5.2 s to 3.3 s. **RM-091b** splits the page's daily-energy read into
+  groups of four devices, each about a third of that statement.
 - **RM-092/093:** branch circuits carry Lighting / Aircon / Others, and a report narrows to one.
 - **RM-094/095:** each circuit's energy per day and power through the week or month, charted.
 - **RM-096/097:** four tabs (Overview, Circuits, Usage patterns, Compare) with no statistician's words.
@@ -940,12 +941,11 @@ Everything else is small, and the build order below is honest about size.
   two weeks (RM-020), so their averages mean nothing and their tiers should be set on what they
   feed rather than on what they have measured.
 
-### Migrations — one waits: phase43
+### Migrations — all applied
 
-**`supabase/phase43_readings_policy_speed.sql` (RM-091a) is written and rehearsed, and waits for the
-operator**, with the signed-in timing probe in RM-091a to run before and after it.
-**`supabase/phase42_bounded_device_energy.sql` (RM-091) was applied by the operator on 2026-09-17 and read
-back the same day** — see RM-091. Every earlier migration is applied, the latest before it
+**`supabase/phase43_readings_policy_speed.sql` (RM-091a) and `supabase/phase42_bounded_device_energy.sql`
+(RM-091) were both applied by the operator on 2026-09-17 and read back the same day** — see those entries.
+Every earlier migration is applied, the latest before them
 `phase41_totals_rollup_integrated.sql` (RM-087) on 2026-09-16, read back the same day, and
 `phase40_report_curve_speed.sql` (RM-086) on 2026-09-15, read back the same day.
 `phase27_period_reports.sql` was applied 2026-09-08; `period_reports` holds 80 rows and
@@ -3376,8 +3376,15 @@ Why this exists is the 2026-09-16 entry in §0. Operator decisions, 2026-09-16:
     - The four branches: about 61.51 kWh against the building's 61.73.
   - Files: `supabase/phase42_bounded_device_energy.sql`, `supabase/rehearse.sh`,
     `test/phase42-bounded-device-energy-schema.test.mjs`, `docs/storage-contract.md`.
-- [ ] **RM-091a (S) — `phase43_readings_policy_speed.sql`: the readings policies check the role once per
-  statement. Written and rehearsed 2026-09-17; waits for the operator.**
+- [x] **RM-091a (S) — `phase43_readings_policy_speed.sql`: the readings policies check the role once per
+  statement. Written and rehearsed 2026-09-17; applied by the operator and read back the same day.**
+  - **Read back by the operator.** `pg_policies` shows both `readings_select_authenticated` and
+    `readings_hourly_select_authenticated` as `(( SELECT auth.role() AS role) = 'authenticated'::text)`.
+  - **The signed-in timing probe** below (all eleven measuring devices, September to date, 17 days)
+    measured **5,232 ms before and 3,269 ms after** — one run each.
+  - **The same read as the service role**, which skips RLS: 1.2–1.5 s warm and 3.8 s cold. A full month has
+    nearly twice these readings, so one statement for every device stays too close to the signed-in
+    statement timeout — RM-091b.
   - **Why.** `readings` and `readings_hourly` let signed-in readers in with `auth.role() = 'authenticated'`,
     called bare, so Postgres evaluates it for every row a query touches. phase40 (RM-086) measured the same
     shape on the totals tables: 3.5 s as the service role, cancelled by the signed-in statement timeout on
@@ -3403,6 +3410,21 @@ Why this exists is the 2026-09-16 entry in §0. Operator decisions, 2026-09-16:
     rollback;
     ```
   - **Read back:** the probe's Execution Time before and after, and the Circuits tab on a month signed in.
+- [x] **RM-091b (S) — the Circuits tab reads daily energy four devices at a time. 2026-09-17.**
+  - **The change.** `getDeviceDailyEnergy` (`src/lib/circuitSeries.ts`) sends `DAILY_ENERGY_GROUP` = 4
+    devices per statement, all groups concurrently, and merges the rows in device-then-day order.
+    "Not installed" from any group is an answer for the whole read; any other failure throws.
+  - **Measured live as the service role,** September to date:
+    - one statement for all eleven devices: 1.3–3.8 s;
+    - three concurrent groups: 0.7–1.4 s each, **1.4 s wall** — the same wait, with each statement doing
+      about a third of the work.
+  - **Observed and not explained.** For about two minutes during that measurement, every month read timed
+    out at about 9 s (57014) — even one device, as the service role — while a simple read answered in
+    0.6 s. The next 16 calls, in the same shapes, took 0.7–3.8 s. My own concurrent measurement calls may
+    have loaded the database at that moment, but nothing established that. If the Circuits tab reports a
+    statement timeout again, this is where to start.
+  - **Tests.** `circuitSeries.test.ts` +2: grouping and merged order; a missing function or a failure in
+    any group. A neuter setting the group size to 400 fails the grouping test.
 - [x] **RM-092 (S) — a `load` category on each branch circuit. 2026-09-17.**
   - `shared/circuits.mjs` gains `LOADS` (`lighting`, `aircon`, `other`), `LOAD_LABELS` (Lighting,
     Aircon, Others), `loadOf(circuits, id)` and `buildingMetersByLoad(circuits)`.
@@ -4144,8 +4166,7 @@ ever cleared, and put its controls in three rows. This section is that page's ov
       **Deferred by operator decision, 2026-09-15.** `report_window` accepts only a whole week or
       month (`phase37_report_series.sql:66`) and counts the unfinished part of a period as missing,
       so these cannot be served honestly from today's functions. Needs `phase44_report_ranges.sql`
-      (renumbered 2026-09-16: phase42 is RM-091's, and phase43 is held for RM-091a if a signed-in
-      month read proves slow)
+      (renumbered 2026-09-16: phase42 is RM-091's and phase43 RM-091a's)
       (range variants clamped to `now()`, per-device energy from each device's own counters, a
       weekday-by-hour heatmap past 37 days to stay under the 900-cell cap), a billing-cycle day
       setting, a provisional "in progress" banner, and a rehearsal asserting the bars sum to the

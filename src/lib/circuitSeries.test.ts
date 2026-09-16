@@ -81,6 +81,40 @@ describe('getDeviceDailyEnergy', () => {
     await expect(getDeviceDailyEnergy('month', '2026-09-01', ['dev_a'])).rejects.toThrow(/cap/);
   });
 
+  it('splits many devices into small concurrent reads, and returns every row in device then day order — RM-091b', async () => {
+    // Measured 2026-09-17 signed in: all eleven measuring devices for September-to-date took 3.3 s in one
+    // statement, which a full month roughly doubles toward the signed-in statement timeout.
+    const ids = Array.from({ length: 9 }, (_, i) => `dev_${i}`);
+    rpc.mockImplementation((_fn: string, args?: { p_device_ids: string[] }) => ({
+      data: [...(args?.p_device_ids ?? [])].reverse().flatMap((id) => [dayRow({ device_id: id, local_day: '2026-09-02' }), dayRow({ device_id: id, local_day: '2026-09-01' })]),
+      error: null,
+    }));
+    const result = await getDeviceDailyEnergy('month', '2026-09-01', ids);
+    // Only the calls that carried arguments: this mock is also invoked once, argument-less, by the harness.
+    expect(rpc.mock.calls.filter(([, args]) => args).map(([, args]) => (args as { p_device_ids: string[] }).p_device_ids)).toEqual([
+      ['dev_0', 'dev_1', 'dev_2', 'dev_3'],
+      ['dev_4', 'dev_5', 'dev_6', 'dev_7'],
+      ['dev_8'],
+    ]);
+    expect(result.available).toBe(true);
+    const rows = result.available ? result.rows : [];
+    expect(rows).toHaveLength(18);
+    expect(rows.slice(0, 4).map((r) => `${r.device_id} ${r.local_day}`)).toEqual(['dev_0 2026-09-01', 'dev_0 2026-09-02', 'dev_1 2026-09-01', 'dev_1 2026-09-02']);
+  });
+
+  it('says the function is not there if any group says so, and throws if any group fails', async () => {
+    const ids = Array.from({ length: 6 }, (_, i) => `dev_${i}`);
+    rpc.mockImplementation((_fn: string, args?: { p_device_ids: string[] }) =>
+      args?.p_device_ids.includes('dev_5') ? { data: null, error: { code: 'PGRST202', message: 'Could not find the function' } } : { data: [], error: null }
+    );
+    await expect(getDeviceDailyEnergy('month', '2026-09-01', ids)).resolves.toEqual({ available: false });
+
+    rpc.mockImplementation((_fn: string, args?: { p_device_ids: string[] }) =>
+      args?.p_device_ids.includes('dev_5') ? { data: null, error: { code: '57014', message: 'canceling statement due to statement timeout' } } : { data: [], error: null }
+    );
+    await expect(getDeviceDailyEnergy('month', '2026-09-01', ids)).rejects.toThrow(/statement timeout/);
+  });
+
   it('asks for nothing when there is nothing to ask about', async () => {
     await expect(getDeviceDailyEnergy('week', '2026-09-07', [])).resolves.toEqual({ available: true, rows: [] });
     expect(rpc).not.toHaveBeenCalled();

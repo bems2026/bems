@@ -103,17 +103,32 @@ async function rpc<T>(fn: string, args: Record<string, unknown>, signal?: AbortS
   return { data: (data ?? null) as T[] | null, error };
 }
 
-/** Each device's bounded energy per local day of the period. */
+/**
+ * How many devices one daily-energy statement reads — RM-091b. Measured signed in on 2026-09-17, all eleven
+ * measuring devices for September-to-date took 3.3 s in one statement (5.2 s before phase43), and a full
+ * month has nearly twice the readings: close enough to the signed-in statement timeout that a cold cache
+ * could cross it. Four devices a statement is about a third of that each, read concurrently.
+ */
+export const DAILY_ENERGY_GROUP = 4;
+
+/** Each device's bounded energy per local day of the period, in device then day order. */
 export async function getDeviceDailyEnergy(period: ReportPeriod, start: string, deviceIds: readonly string[], { signal }: Request = {}): Promise<DeviceDaily> {
   if (deviceIds.length === 0) return { available: true, rows: [] };
-  const { data, error } = await rpc<DeviceDayRow>(
-    'report_device_daily_energy',
-    { p_period: period, p_start: start, p_tz: TZ, p_device_ids: [...deviceIds] },
-    signal
+  const groups: string[][] = [];
+  for (let i = 0; i < deviceIds.length; i += DAILY_ENERGY_GROUP) groups.push(deviceIds.slice(i, i + DAILY_ENERGY_GROUP));
+
+  const answers = await Promise.all(
+    groups.map((ids) => rpc<DeviceDayRow>('report_device_daily_energy', { p_period: period, p_start: start, p_tz: TZ, p_device_ids: ids }, signal))
   );
-  if (isMissingFunction(error)) return { available: false };
-  if (error) throw new Error(`report_device_daily_energy failed: ${error.message}`);
-  const rows = assertNotTruncated(data ?? [], API_ROW_CAP, `report_device_daily_energy(${period}, ${start})`);
+  // Not installed is one fact about the database, whichever group noticed it first.
+  if (answers.some((a) => isMissingFunction(a.error))) return { available: false };
+  const failed = answers.find((a) => a.error);
+  if (failed?.error) throw new Error(`report_device_daily_energy failed: ${failed.error.message}`);
+
+  const order = new Map(deviceIds.map((id, i) => [id, i]));
+  const rows = answers
+    .flatMap((a, i) => assertNotTruncated(a.data ?? [], API_ROW_CAP, `report_device_daily_energy(${period}, ${start}, group ${i + 1})`))
+    .sort((x, y) => (order.get(x.device_id) ?? 0) - (order.get(y.device_id) ?? 0) || x.local_day.localeCompare(y.local_day));
   return { available: true, rows };
 }
 
