@@ -36,6 +36,8 @@ Supabase dropouts ingest has logged all week point to. **FI-011** closes the las
 the build order: a generated monthly report is now pushed through the alert channel EX-103 already
 built, in wording that keeps the page's rules — a partial month's total is a floor, a stored zero
 from nothing observed is not a measurement, and the stored share is never called readings coverage.
+**FI-009 is closed the same day**, not done: of the three selectors it named, one no longer exists and
+two read every device by design, so no unblocked coding item is left anywhere in this file.
 
 **Previously audited:** 2026-09-14 — **RM-076 to RM-078, Analytics data quality**, from three operator
 reports: L.O Red "reporting less than it measured", L.O Red reading differently on Overview and
@@ -145,8 +147,9 @@ happen.
 > **PICKING THIS UP FRESH? Read §0 first, then this paragraph.** Every unticked item below is
 > blocked on something outside the code: a person at the office, hardware that is not on the
 > network, an operator decision, or elapsed time. There is no unblocked coding task left in
-> Track B. The one remaining code item anywhere is FI-009, and its own entry explains why it was
-> left alone. Do not go looking for work in the code; the useful work now is on the building.
+> Track B, and **since 2026-09-16 none anywhere**: FI-011 shipped, and FI-009 was closed after
+> reading the code it names rather than reasoning about it again. Do not go looking for work in the
+> code; the useful work now is on the building.
 **Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
 live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
 discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
@@ -747,10 +750,9 @@ from that pass is outstanding.
 **Code, and deliberately not done**
 - **FI-019** (the bridge on `0.0.0.0:1880`) and **FI-020** (a switch's freshness is
   unmeasurable) were found on 2026-09-01 and recorded rather than fixed — each entry says why.
-- **FI-009** is the only other unblocked coding task in the file. Its own entry explains why it was left:
-  each of the three selectors needs value-level rather than reference-level comparison to gain
-  anything, and `FloorPlanView` genuinely reads every device. Filtering inside a zustand selector
-  is also a documented loop hazard here. Low value, real risk.
+- ~~**FI-009** is the only other unblocked coding task in the file.~~ **Closed 2026-09-16** after
+  reading what it names: `EnergyBreakdownCard` holds no selector any more, and the other two read every
+  device because that is what they draw and count. Its entry carries the evidence.
 
 ### Do this first, 2026-08-28
 
@@ -993,7 +995,8 @@ column landed all went **local**, with no cloud fallbacks.
    fixed in EX-094.
 5. ~~**FI-011 (S)** — push the monthly report through the alert channel EX-103 already built.~~
    **Done 2026-09-16.** See its entry: monthly only, and the wording keeps the page's rules.
-6. **FI-009 (S)** — narrow the three remaining whole-map store selectors.
+6. ~~**FI-009 (S)** — narrow the three remaining whole-map store selectors.~~ **Closed 2026-09-16,
+   not done:** the selectors it names are either gone or reading every device by design. See its entry.
 7. **RM-026 Deye** — as soon as the logger is on the network; see its entry for the decision
    between the two integration shapes. Re-verified absent 2026-08-26 evening.
 8. ~~**RM-027 (M)** — site identity.~~ **DONE 2026-08-27**: applied, deployed, verified live.
@@ -7992,7 +7995,7 @@ may not.
   should declare that it has no measurable freshness and the UI should say "not measured"
   instead of implying live. The second is smaller and more honest; the first is better.
 - ~~**FI-013** (S) The Outlet tab never polls its devices.~~ **Done 2026-08-25** — EX-038b.
-- **FI-009** (S) Narrow the three remaining whole-map store selectors — `FloorPlanView`, `AlertsPopover`, `EnergyBreakdownCard`. Left alone in the Phase 9 pass because each needs value-level rather than reference-level comparison to gain anything, and FloorPlanView genuinely reads every device.
+- ~~**FI-009** (S) Narrow the three remaining whole-map store selectors — `FloorPlanView`, `AlertsPopover`, `EnergyBreakdownCard`.~~ **Closed 2026-09-16, not done**, after reading all three rather than reasoning about the shape of a selector a third time. `EnergyBreakdownCard` no longer selects anything: it reads `useBranchEnergy`, which holds one subscription shared with Analytics' card — the narrowing this asked for, arrived at from the other direction. `FloorPlanView` hands every reading to the lighting and outlet plans, which draw every fixture. `AlertsPopover` derives its badge from every device's latest reading and must keep doing so while it is closed, which is what a badge is for. Seven readers of `latestReadings` remain, each deriving over many devices; narrowing one would mean projecting to derived values whose identity changes on the same tick anyway. Reopen it only on a measurement that shows a cost — a profile of one tick — rather than on the shape of the code.
 - ~~**FI-010** (M) The 24h chart has the same offline-blindness the 7d/30d charts just lost.~~ **Done 2026-08-25** — EX-102. The ring buffer records `online` per sample and `pointValue` suppresses a point marked offline, so an unreporting device leaves a gap rather than a flat line. Needs a flow deploy to take effect.
 - ~~**FI-011** (S) Push delivery for the monthly report, once FI-005's channel exists.~~ **Done
   2026-09-16.** Email and Google Sheets stayed rejected for the reason this entry always gave — an
