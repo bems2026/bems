@@ -89,7 +89,7 @@ describe('buildPdfReport', () => {
     // with no load; a missing one with no word would read as a chart the reader forgot to tick.
     const report = buildPdfReport(input({ sections: ['hourProfile', 'durationCurve'], charts: { ...input().charts, curve: null } }));
     expect(report.charts.map((c) => c.section)).toEqual(['hourProfile']);
-    expect(report.omitted).toEqual(['Load duration']);
+    expect(report.omitted).toEqual(['Time at each demand level']);
   });
 
   it('carries the chosen sections, with coverage and the refusals put back', () => {
@@ -100,18 +100,19 @@ describe('buildPdfReport', () => {
   it('states a period with no real reading as not observed, and its peak as missing', () => {
     const report = buildPdfReport(input({ charts: { ...input().charts, summary: summary({ usable_minutes: 0 }) } }));
     expect(report.notObserved).toBe(true);
-    expect(report.keyFigures?.find((k) => k.label === 'Peak demand')?.value).toBe('—');
+    expect(report.keyFigures?.find((k) => k.label === 'Highest demand')?.value).toBe('—');
   });
 
   it('qualifies the peak when the period was not fully observed', () => {
     const report = buildPdfReport(input({ building: building({ online_sample_count: Math.round(FULL * 0.4) }) }));
-    expect(report.keyFigures?.find((k) => k.label === 'Peak demand')?.value).toBe('2.14 kW (partial period)');
+    expect(report.keyFigures?.find((k) => k.label === 'Highest demand')?.value).toBe('2.14 kW (partial period)');
   });
 
   it('gates a thin window as not a baseline yet, ahead of its numbers', () => {
     const thin = buildPdfReport(input({ charts: { ...input().charts, summary: summary({ usable_minutes: 500 }) } }));
     expect(thin.baseline?.gate?.length).toBeGreaterThan(0);
-    expect(thin.baseline?.rows.map(([label]) => label)).toContain('Median (p50)');
+    expect(thin.baseline?.rows.map(([label]) => label).join(' ')).toMatch(/Usual demand/);
+    expect(thin.baseline?.rows.map(([label]) => label).join(' ')).not.toMatch(/p50|p95|p99|median/i);
 
     const full = buildPdfReport(input({ charts: { ...input().charts, daily: Array.from({ length: 5 }, (_, i) => dailyRow(i)) } }));
     expect(full.baseline?.gate).toBeNull();
@@ -141,7 +142,7 @@ describe('buildPdfReport', () => {
 
   it('compares with the previous period when both were fully observed', () => {
     const report = buildPdfReport(input({ previous: building({ period_start: '2026-07-01', energy_kwh: 120 }) }));
-    expect(report.comparison?.heading).toMatch(/August 2026 against July 2026/);
+    expect(report.comparison?.heading).toMatch(/August 2026 compared with July 2026/);
     expect(report.comparison?.lines.join(' ')).toMatch(/20\.00 kWh \(16\.7%\) less/);
   });
 
@@ -149,6 +150,53 @@ describe('buildPdfReport', () => {
     const report = buildPdfReport(input({ previous: building({ period_start: '2026-07-01', energy_kwh: 120, online_sample_count: Math.round(FULL * 0.48) }) }));
     expect(report.comparison?.lines.join(' ')).toMatch(/Not comparable/);
     expect(report.comparison?.lines.join(' ')).toMatch(/48%/);
+  });
+
+  it('draws the circuit charts for the part chosen, and names the building’s own charts as the whole building — RM-099', () => {
+    const report = buildPdfReport(
+      input({
+        sections: ['dailyEnergy', 'circuitEnergy', 'circuitTrend'],
+        scopeLabel: 'Lighting',
+        circuits: {
+          series: [{ id: 'a', label: 'Lights A', colourIndex: 0 }],
+          days: [{ day: '2026-08-01', label: '1', values: [1.2], observed: true, complete: true }],
+          trend: null,
+        },
+      })
+    );
+    expect(report.charts.map((c) => c.title)).toEqual(['Energy per day (whole building)', 'Energy per day, by circuit — Lighting']);
+    expect(report.omitted).toEqual(['Power through the period, by circuit']);
+  });
+
+  it('keeps a Simple document to its own sections, and carries the corrections', () => {
+    const week = { period: 'week' as const, expected_sample_count: 10080 };
+    const report = buildPdfReport(
+      input({
+        detail: 'simple',
+        sections: ['dailyEnergy', 'heatmap', 'devices'],
+        rows: [device('meter_a', { ...week, energy_kwh: 4.617, peak_power_w: 251.2, energy_removed_kwh: 76.789 })],
+      })
+    );
+    expect(report.sections).toEqual(['coverage', 'dailyEnergy', 'notSaid']);
+    expect(report.corrections?.join(' ')).toMatch(/76\.79 kWh/);
+  });
+
+  it('uses no statistician’s words anywhere in the document it assembles — RM-097', () => {
+    const report = buildPdfReport(input({ previous: building({ period_start: '2026-07-01', energy_kwh: 120 }) }));
+    // What a reader sees: the figures' labels, the tables, the charts' titles and numbers, the comparison and
+    // the limits — not the section ids or the summary's field names, which are code.
+    const strings = (v: unknown): string[] =>
+      typeof v === 'string' ? [v] : Array.isArray(v) ? v.flatMap(strings) : v && typeof v === 'object' ? Object.values(v).flatMap(strings) : [];
+    const words = strings({
+      keyFigures: report.keyFigures,
+      baseline: report.baseline,
+      charts: report.charts.map((c) => ({ title: c.title, table: c.table })),
+      omitted: report.omitted,
+      comparison: report.comparison,
+      caveats: report.caveats,
+      corrections: report.corrections,
+    }).join(' | ');
+    expect(words).not.toMatch(/\bp(50|95|99)\b|median|baseline|DSM|load factor|load duration|percentile/i);
   });
 
   it('has no comparison when there is no earlier period to compare with', () => {

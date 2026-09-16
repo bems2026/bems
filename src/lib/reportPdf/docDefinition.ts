@@ -1,6 +1,6 @@
-import { COMPARISON_NOT_ADJUSTED, COVERAGE_LEDE } from '@shared/reportProse.mjs';
+import { NOT_SAID_TITLE, PLAIN_COMPARISON_LIMITS, PLAIN_COMPARISON_TITLE } from '@shared/reportProse.mjs';
 import type { DemandSummary } from '@/lib/reportSeries';
-import { normaliseSections, REPORT_SECTIONS, type ReportSectionId } from '@/lib/reportSections';
+import { normaliseSections, REPORT_SECTIONS, type ReportDetail, type ReportSectionId } from '@/lib/reportSections';
 
 /**
  * The report as a pdfmake document definition.
@@ -22,6 +22,10 @@ import { normaliseSections, REPORT_SECTIONS, type ReportSectionId } from '@/lib/
  * builder emits sections in one fixed order, so coverage precedes every figure and the refusals
  * close the document for any selection a reader can make. A section with no data behind it is
  * skipped rather than printed empty.
+ *
+ * SIMPLE OR DETAILED — RM-099. A Simple document says how much was recorded in one line and draws its
+ * charts without the number tables under them; a Detailed one keeps every table. Both keep the two rules:
+ * recording first, limits last. And both say, on the cover, which part of the building they are about.
  */
 
 export interface PdfChart {
@@ -77,6 +81,12 @@ export interface PdfReport {
   comparison?: { heading: string; lines: readonly string[] } | null;
   /** Charts the reader chose whose data could not be loaded when the document was made — RM-081b. */
   omitted?: readonly string[];
+  /** RM-099. Absent means Detailed. */
+  detail?: ReportDetail;
+  /** The category or circuit the document is narrowed to; absent or null for the whole building. */
+  scopeLabel?: string | null;
+  /** Figures the document corrected or refused, one sentence each — RM-090. */
+  corrections?: readonly string[];
 }
 
 /** A4 minus 40pt margins each side. Charts are generated at exactly this width. */
@@ -87,10 +97,9 @@ const n = (v: number | null | undefined, digits = 0) =>
   v === null || v === undefined || !Number.isFinite(v) ? EM_DASH : v.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
 
 const RESOLUTION_NOTE: Record<string, string> = {
-  minute: 'These figures are computed from minute-by-minute samples.',
-  mixed:
-    'These figures are computed partly from minute-by-minute samples and partly from hourly averages, because the raw rows for the older part of this period have been rolled up.',
-  hour: 'These figures are computed from hourly averages only. The minute-by-minute rows behind this period have been rolled up, and an average cannot reach the peaks the samples had.',
+  minute: 'Made from minute-by-minute readings.',
+  mixed: 'Older days are hourly averages, which can hide short peaks.',
+  hour: 'Made from hourly averages, which can hide short peaks.',
 };
 
 const deviceTable = (rows: readonly PdfDeviceRow[]) => ({
@@ -98,7 +107,7 @@ const deviceTable = (rows: readonly PdfDeviceRow[]) => ({
     headerRows: 1,
     widths: ['*', 'auto', 'auto', 'auto', 'auto'],
     body: [
-      ['Device', 'Energy (kWh)', 'Peak (W)', 'Average (W)', 'Coverage'].map((h) => ({ text: h, style: 'th' })),
+      ['Device', 'Energy (kWh)', 'Highest (W)', 'Average (W)', 'Recorded'].map((h) => ({ text: h, style: 'th' })),
       ...rows.map((d) => [d.name, d.energyKwh ?? EM_DASH, d.peakW ?? EM_DASH, d.avgW ?? EM_DASH, d.coverage]),
     ],
   },
@@ -114,7 +123,8 @@ const deviceTableWithNotes = (rows: readonly PdfDeviceRow[]) => [
 ];
 
 export function buildDocDefinition(r: PdfReport) {
-  const chosen = new Set(normaliseSections(r.sections ?? REPORT_SECTIONS.map((s) => s.id)));
+  const detail: ReportDetail = r.detail ?? 'detailed';
+  const chosen = new Set(normaliseSections(r.sections ?? REPORT_SECTIONS.map((s) => s.id), detail));
   const has = (id: ReportSectionId) => chosen.has(id);
   const content: unknown[] = [];
 
@@ -123,6 +133,9 @@ export function buildDocDefinition(r: PdfReport) {
     { text: r.title, style: 'coverTitle' },
     { text: r.siteName, style: 'coverSite' },
     { text: r.periodLabel, style: 'coverPeriod' },
+    // Which part of the building this document is about, before anything else is.
+    { text: r.scopeLabel ? `${r.scopeLabel} — the circuit sections are narrowed to it` : 'The whole building', style: 'coverMeta' },
+    { text: detail === 'simple' ? 'Simple report' : 'Detailed report', style: 'coverMeta' },
     {
       // The frame, said once and early. A PDF is read somewhere else, and a timestamp with no
       // frame is read in the reader's own — which for a building on the other side of the
@@ -130,14 +143,23 @@ export function buildDocDefinition(r: PdfReport) {
       text: `Generated ${r.generatedAt} (${r.timezone}). All times and dates in this document are the building's own, not the reader's.`,
       style: 'coverMeta',
     },
-    r.buildId ? { text: `Built from ${r.buildId}`, style: 'coverMeta' } : { text: '' },
+    r.buildId ? { text: `Software build ${r.buildId.replace(/^index-/, '').replace(/\.js$/, '')}`, style: 'coverMeta' } : { text: '' },
     { text: '', pageBreak: 'after' }
   );
 
   // --- coverage, before anything it qualifies — always ------------------------------------------
-  content.push({ text: 'Coverage', style: 'h2' }, { text: COVERAGE_LEDE, style: 'note' });
+  content.push({ text: 'How much was recorded', style: 'h2' }, { text: 'Every figure in this report comes from these minutes.', style: 'note' });
 
-  if (r.summary) {
+  if (r.summary && detail === 'simple') {
+    const s = r.summary;
+    const share = s.expected_minutes > 0 ? `${Math.round((s.usable_minutes / s.expected_minutes) * 100)}%` : EM_DASH;
+    const gap = s.longest_gap_minutes === null ? `${EM_DASH} (not measurable)` : `${n(s.longest_gap_minutes)} min`;
+    content.push({
+      text: `Recorded ${share} of the period (${n(s.usable_minutes)} of ${n(s.expected_minutes)} minutes) · ${r.observedDays} days recorded, ${r.completeDays} in full · longest gap ${gap}`,
+      style: 'figureLine',
+    });
+    if (s.resolution && RESOLUTION_NOTE[s.resolution]) content.push({ text: RESOLUTION_NOTE[s.resolution], style: 'note' });
+  } else if (r.summary) {
     const s = r.summary;
     const pct = (a: number, b: number) => (b > 0 ? `${Math.round((a / b) * 100)}%` : EM_DASH);
     content.push({
@@ -146,18 +168,18 @@ export function buildDocDefinition(r: PdfReport) {
         widths: ['*', 120],
         body: [
           [{ text: 'Measure', style: 'th' }, { text: 'Value', style: 'th' }],
-          ['Minutes with a real reading', `${n(s.usable_minutes)} of ${n(s.expected_minutes)}  (${pct(s.usable_minutes, s.expected_minutes)})`],
+          ['Minutes recorded', `${n(s.usable_minutes)} of ${n(s.expected_minutes)}  (${pct(s.usable_minutes, s.expected_minutes)})`],
           // Both figures, named. The gap between them is meters writing rows while observing
           // nothing — 9,415 of August 2026's. One number alone either overstates the coverage
           // or disagrees with the stored report.
-          ['Minutes with a row of any kind', `${n(s.observed_minutes)}  (${pct(s.observed_minutes, s.expected_minutes)})`],
+          ['Minutes the meters sent, including empty ones', `${n(s.observed_minutes)}  (${pct(s.observed_minutes, s.expected_minutes)})`],
           [
-            'Longest single gap',
+            'Longest gap',
             // Never 0: once the raw rows are pruned the gap is unmeasurable rather than absent,
             // and zero is the most reassuring possible way to report an outage.
             s.longest_gap_minutes === null ? `${EM_DASH} (not measurable)` : `${n(s.longest_gap_minutes)} min`,
           ],
-          ['Days observed', `${r.observedDays} (${r.completeDays} of them complete)`],
+          ['Days recorded', `${r.observedDays} (${r.completeDays} in full)`],
         ],
       },
       layout: 'lightHorizontalLines',
@@ -168,9 +190,14 @@ export function buildDocDefinition(r: PdfReport) {
     }
   } else {
     content.push({
-      text: 'No coverage figures have been generated for this period, so nothing below can be qualified by them.',
+      text: 'How much was recorded could not be worked out for this period, so nothing below can be qualified by it.',
       style: 'note',
     });
+  }
+
+  // --- corrected figures, before any figure they touch ------------------------------------------
+  if (r.corrections && r.corrections.length > 0) {
+    content.push({ text: 'Corrected figures', style: 'h3' }, { ul: [...r.corrections], style: 'note' });
   }
 
   // --- headline ------------------------------------------------------------------------------
@@ -180,7 +207,7 @@ export function buildDocDefinition(r: PdfReport) {
       r.notObserved
         ? // A stored zero from rows that held no reading says the building used nothing. It did not
           // say that; nobody was watching.
-          { text: 'Not observed — not one minute of this period carried a real reading, so no energy figure is stated.', style: 'note' }
+          { text: 'Not recorded — not one minute of this period carried a real reading, so no energy figure is stated.', style: 'note' }
         : r.energyKwh === null
           ? { text: 'No energy figure has been generated for this period.', style: 'note' }
           : { text: `${r.energyKwh.toFixed(2)} kWh`, style: 'figure' }
@@ -190,7 +217,7 @@ export function buildDocDefinition(r: PdfReport) {
         table: {
           headerRows: 1,
           widths: ['*', 'auto'],
-          body: [[{ text: 'Key figure', style: 'th' }, { text: 'Value', style: 'th' }], ...r.keyFigures.map((k) => [k.label, k.value])],
+          body: [[{ text: 'Figure', style: 'th' }, { text: 'Value', style: 'th' }], ...r.keyFigures.map((k) => [k.label, k.value])],
         },
         layout: 'lightHorizontalLines',
         margin: [0, 6, 0, 4],
@@ -212,7 +239,7 @@ export function buildDocDefinition(r: PdfReport) {
         headerRows: 1,
         widths: ['*', 'auto'],
         body: [
-          [{ text: 'Derived figure', style: 'th' }, { text: 'Value', style: 'th' }],
+          [{ text: 'Cost and emissions', style: 'th' }, { text: 'Value', style: 'th' }],
           ['Cost', r.cost ? `${r.cost.text}${r.cost.qualified ? ' (partial period)' : ''}` : `${EM_DASH} no rate has been entered`],
           ['Emissions', r.carbon ? `${r.carbon.text}${r.carbon.qualified ? ' (partial period)' : ''}` : `${EM_DASH} no emission factor has been entered`],
         ],
@@ -234,8 +261,13 @@ export function buildDocDefinition(r: PdfReport) {
       style: 'note',
     });
   }
-  for (const chart of r.charts) {
-    if (chart.section !== undefined && !has(chart.section)) continue;
+  const drawn = r.charts.filter((chart) => chart.section === undefined || has(chart.section));
+  for (const chart of drawn) {
+    if (detail === 'simple') {
+      // Simple: the picture and what it shows, and no number table under it.
+      content.push({ text: chart.title, style: 'h2' }, { svg: chart.svg, width: CONTENT_WIDTH }, { text: chart.desc, style: 'note' });
+      continue;
+    }
     content.push(
       { text: chart.title, style: 'h2' },
       { svg: chart.svg, width: CONTENT_WIDTH },
@@ -258,6 +290,10 @@ export function buildDocDefinition(r: PdfReport) {
     );
   }
 
+  if (detail === 'simple' && drawn.length > 0) {
+    content.push({ text: 'The numbers behind each chart are in the Detailed PDF and the CSV exports.', style: 'note' });
+  }
+
   // --- per device ------------------------------------------------------------------------------
   if (has('devices') && r.deviceRows.length > 0) {
     content.push({ text: 'By device', style: 'h2' }, ...deviceTableWithNotes(r.deviceRows));
@@ -265,7 +301,7 @@ export function buildDocDefinition(r: PdfReport) {
 
   // --- baseline demand ---------------------------------------------------------------------------
   if (has('baseline') && r.baseline) {
-    content.push({ text: 'Baseline demand', style: 'h2' });
+    content.push({ text: 'Usual and high demand', style: 'h2' });
     // The "not a baseline yet" gate precedes the numbers it qualifies, as it does on the page.
     for (const line of r.baseline.gate ?? []) content.push({ text: line, style: 'note' });
     content.push(
@@ -273,7 +309,7 @@ export function buildDocDefinition(r: PdfReport) {
         table: {
           headerRows: 1,
           widths: ['*', 'auto'],
-          body: [[{ text: 'Measure', style: 'th' }, { text: 'Value', style: 'th' }], ...r.baseline.rows.map(([label, value]) => [label, value])],
+          body: [[{ text: 'Figure', style: 'th' }, { text: 'Value', style: 'th' }], ...r.baseline.rows.map(([label, value]) => [label, value])],
         },
         layout: 'lightHorizontalLines',
         margin: [0, 4, 0, 4],
@@ -286,12 +322,12 @@ export function buildDocDefinition(r: PdfReport) {
   if (has('circuits') && r.circuits) {
     content.push({ text: 'By circuit', style: 'h2' });
     content.push({
-      text: 'The building total is the sum of the branch circuits. The devices sit inside those branches, so adding the two tables together would count the same energy twice.',
+      text: 'Devices sit inside their circuit — adding the two tables together would count the same energy twice.',
       style: 'note',
     });
     if (r.circuits.untracked) content.push({ text: r.circuits.untracked, style: 'note' });
     if (r.circuits.branches.length > 0) content.push({ text: 'Branch circuits', style: 'h3' }, ...deviceTableWithNotes(r.circuits.branches));
-    if (r.circuits.devices.length > 0) content.push({ text: 'Devices within those branches', style: 'h3' }, ...deviceTableWithNotes(r.circuits.devices));
+    if (r.circuits.devices.length > 0) content.push({ text: 'Devices on these circuits', style: 'h3' }, ...deviceTableWithNotes(r.circuits.devices));
   }
 
   // --- comparison, never without what it was not adjusted for -------------------------------------
@@ -300,8 +336,8 @@ export function buildDocDefinition(r: PdfReport) {
       stack: [
         { text: r.comparison.heading, style: 'h2' },
         ...r.comparison.lines.map((line) => ({ text: line, style: 'note' })),
-        { text: 'What this comparison was not adjusted for', style: 'h3' },
-        { ul: COMPARISON_NOT_ADJUSTED.map((c) => ({ text: [{ text: c.lead, bold: true }, ' ', c.body] })), style: 'note' },
+        { text: PLAIN_COMPARISON_TITLE, style: 'h3' },
+        { ul: PLAIN_COMPARISON_LIMITS.map((c) => ({ text: [{ text: c.lead, bold: true }, ' ', c.body] })), style: 'note' },
       ],
       unbreakable: true,
     });
@@ -310,7 +346,7 @@ export function buildDocDefinition(r: PdfReport) {
   // --- the closing refusals, last — always -------------------------------------------------------
   content.push({
     stack: [
-      { text: 'What this report does not say', style: 'h2' },
+      { text: NOT_SAID_TITLE, style: 'h2' },
       {
         ul: r.caveats.map((c) => ({ text: [{ text: c.lead, bold: true }, ' ', c.body] })),
         style: 'note',
@@ -341,6 +377,7 @@ export function buildDocDefinition(r: PdfReport) {
       h2: { fontSize: 13, bold: true, margin: [0, 14, 0, 4] as [number, number, number, number] },
       h3: { fontSize: 10.5, bold: true, margin: [0, 8, 0, 2] as [number, number, number, number] },
       figure: { fontSize: 20, bold: true, margin: [0, 2, 0, 4] as [number, number, number, number] },
+      figureLine: { fontSize: 11, bold: true, margin: [0, 2, 0, 4] as [number, number, number, number] },
       note: { fontSize: 9, color: '#475569', margin: [0, 2, 0, 4] as [number, number, number, number] },
       th: { bold: true, fontSize: 9 },
       footer: { fontSize: 8, color: '#475569' },

@@ -194,7 +194,7 @@ describe('the circuit scope', () => {
     expect(String(body)).toContain(SHARE.replace('%', ''));
   });
 
-  it('keeps the PDF about the whole building, and says so', async () => {
+  it('narrows the PDF’s circuit sections, and says the building’s own charts stay the whole building', async () => {
     render(<ReportsPage />);
     fireEvent.change(await scopeSelect(), { target: { value: `circuit:${CHOSEN.id}` } });
     await devicesLoaded();
@@ -205,6 +205,6 @@ describe('the circuit scope', () => {
     await waitFor(() => expect(pdf).toBeEnabled());
     fireEvent.click(pdf);
     await waitFor(() => expect(pdf).toBeChecked());
-    expect(within(dialog).getByText(/applies to the device CSVs only/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/circuit sections follow/i)).toBeInTheDocument();
   });
 });

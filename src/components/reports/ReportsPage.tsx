@@ -11,7 +11,7 @@ import { fetchReadingsForExport, readingsCsvParts, type ReadingsClient } from '@
 import { getReportWindow } from '@/lib/circuitSeries';
 import { LOAD_LABELS } from '@shared/circuits.mjs';
 import { reportFilename } from '@/lib/reportFiles';
-import type { ReportSectionId } from '@/lib/reportSections';
+import type { ReportDetail, ReportSectionId } from '@/lib/reportSections';
 import { buildPdfReport } from '@/lib/reportPdf/buildReport';
 import { bootedScript } from '@/lib/buildVersion';
 import { BUILDING_METER_IDS } from '@shared/registry.mjs';
@@ -45,7 +45,7 @@ import { ReportKpis } from './ReportKpis';
 import { CoverageTag, ReportFigure } from './ReportFigure';
 import { useReportData } from './useReportData';
 import { carbonOf, costOf, type DayEnergy } from '@/lib/energyCost';
-import { loadShareSegments } from '@/lib/circuitCharts';
+import { circuitDayPoints, circuitRefs, loadShareSegments, trendChartInput } from '@/lib/circuitCharts';
 
 /**
  * Energy reports, weekly or monthly — Phase 12, generalised by RM-041.
@@ -288,7 +288,13 @@ export function ReportsPage() {
     const load = loadOfDevice(id);
     return load ? (LOAD_LABELS[load] as string) : null;
   };
-  const runExport = async (format: ExportFormat, sections: ReportSectionId[], progress: (text: string) => void, signal: AbortSignal): Promise<string> => {
+  const runExport = async (
+    format: ExportFormat,
+    sections: ReportSectionId[],
+    progress: (text: string) => void,
+    signal: AbortSignal,
+    detail: ReportDetail = 'detailed'
+  ): Promise<string> => {
     if (!selected) throw new Error('No report period is selected.');
 
     if (format === 'device-daily-csv') {
@@ -346,6 +352,15 @@ export function ReportsPage() {
 
     if (!charts || !rows) throw new Error('The report has not finished loading.');
     const started = performance.now();
+    // RM-099: the circuit charts for the part of the building chosen, when their series are here. One that
+    // is not is named in the document as left out, never drawn empty.
+    const refs = circuitRefs(scope);
+    const dailyData = report.deviceDaily.data;
+    const circuitInput = {
+      series: refs,
+      days: dailyData && dailyData.available ? circuitDayPoints(dailyData.rows, refs) : null,
+      trend: report.trend.data ? trendChartInput(report.trend.data, refs, SITE.utc_offset_minutes) : null,
+    };
     const pdf = buildPdfReport({
       period,
       periodLabel,
@@ -356,22 +371,26 @@ export function ReportsPage() {
       building,
       previous,
       rows,
+      scopedRows: scopedRows ?? rows,
       charts,
       cost: priced.cost,
       carbon: priced.carbon,
       nameOf,
       meterIds: BUILDING_METER_IDS as readonly string[],
       sections,
+      detail,
+      scopeLabel: narrowed,
+      circuits: circuitInput,
     });
     const assembled = performance.now();
-    const name = reportFilename(period, selected, 'report', 'pdf');
+    const name = reportFilename(period, selected, 'report', 'pdf', [narrowed, detail === 'simple' ? 'simple' : null].filter(Boolean).join(' '));
     // pdfmake is still loaded only here, on the first export — never on a page load.
     const { downloadReportPdf } = await import('@/lib/reportPdf/download');
     await downloadReportPdf(pdf, name);
     // Measured, not assumed: generation on the kiosk's Pi has never been timed (RM-072a), and RM-083c
     // moves it to a worker only if this says it is slow there.
     console.info(`[ibems] pdf: assembled in ${Math.round(assembled - started)} ms, rendered in ${Math.round(performance.now() - assembled)} ms`);
-    return `Saved ${name} · ${pdf.sections?.length ?? 0} sections`;
+    return `Saved ${name} · ${detail === 'simple' ? 'Simple' : 'Detailed'}, ${pdf.sections?.length ?? 0} sections`;
   };
 
   return (

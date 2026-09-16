@@ -1,6 +1,6 @@
 import { useCallback, useId, useState } from 'react';
 import { OverlayPanel } from '@/components/ui/OverlayPanel';
-import { REPORT_SECTIONS, normaliseSections, type ReportSectionId } from '@/lib/reportSections';
+import { REPORT_SECTIONS, normaliseSections, sectionsFor, type ReportDetail, type ReportSectionId } from '@/lib/reportSections';
 import { useExportAction } from '@/lib/useExportAction';
 
 /**
@@ -57,22 +57,27 @@ const FORMATS: readonly { id: ExportFormat; label: string; hint: string }[] = [
 interface Choice {
   format: ExportFormat;
   sections: ReportSectionId[];
+  /** RM-099: a Simple PDF (figures and charts) or a Detailed one (every table too). */
+  detail: ReportDetail;
 }
 
 const ALL_SECTIONS = REPORT_SECTIONS.map((s) => s.id);
 
 function loadChoice(): Choice {
-  const fallback: Choice = { format: 'pdf', sections: ALL_SECTIONS };
+  // A first export is the Simple one: the operator asked for a report most people can read at a glance.
+  const fallback: Choice = { format: 'pdf', sections: ALL_SECTIONS, detail: 'simple' };
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return fallback;
-    const parsed = JSON.parse(raw) as { format?: unknown; sections?: unknown };
+    const parsed = JSON.parse(raw) as { format?: unknown; sections?: unknown; detail?: unknown };
     const format = FORMATS.find((f) => f.id === parsed.format)?.id ?? 'pdf';
     // A remembered choice from an older build may name sections this one does not have.
     const sections = Array.isArray(parsed.sections)
       ? normaliseSections(parsed.sections.filter((s): s is string => typeof s === 'string'))
       : ALL_SECTIONS;
-    return { format, sections };
+    // A choice remembered from before RM-099 made the full document, which is what Detailed is.
+    const detail: ReportDetail = parsed.detail === 'simple' || parsed.detail === 'detailed' ? parsed.detail : 'detailed';
+    return { format, sections, detail };
   } catch {
     return fallback;
   }
@@ -90,7 +95,13 @@ interface Props {
   periodLabel: string;
   onClose: () => void;
   /** Performs the export and resolves with what was saved, in words. */
-  onExport: (format: ExportFormat, sections: ReportSectionId[], report: (progress: string) => void, signal: AbortSignal) => Promise<string>;
+  onExport: (
+    format: ExportFormat,
+    sections: ReportSectionId[],
+    report: (progress: string) => void,
+    signal: AbortSignal,
+    detail: ReportDetail
+  ) => Promise<string>;
   /** Formats that cannot run for this period, each with the reason. */
   unavailable?: Partial<Record<ExportFormat, string>>;
   /** A word under a section, such as a chart whose data could not be loaded and will be left out. */
@@ -114,8 +125,9 @@ export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {},
   const blockedReason = unavailable[format];
 
   const run = useCallback(
-    (report: (progress: string) => void, signal: AbortSignal) => onExport(format, normaliseSections(choice.sections), report, signal),
-    [onExport, format, choice.sections]
+    (report: (progress: string) => void, signal: AbortSignal) =>
+      onExport(format, normaliseSections(choice.sections, choice.detail), report, signal, choice.detail),
+    [onExport, format, choice.sections, choice.detail]
   );
   const { state, start, cancel } = useExportAction(run);
   const working = state.status === 'working';
@@ -123,7 +135,8 @@ export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {},
   const toggle = (id: ReportSectionId) =>
     update({
       ...choice,
-      sections: chosen.has(id) ? choice.sections.filter((s) => s !== id) : normaliseSections([...choice.sections, id]),
+      // Kept across both depths, so a section ticked for Detailed is still ticked when a reader comes back to it.
+      sections: chosen.has(id) ? choice.sections.filter((s) => s !== id) : [...new Set([...choice.sections, id])],
     });
 
   const hint = FORMATS.find((f) => f.id === format)?.hint;
@@ -168,15 +181,42 @@ export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {},
             ? `Only ${scopeLabel}; each share is still of the whole building.`
             : FOLLOWS_SCOPE.includes(format)
               ? `Only ${scopeLabel}.`
-              : `The whole building — the ${scopeLabel} choice applies to the device CSVs only.`}
+              : format === 'pdf'
+                ? `The circuit sections follow ${scopeLabel}; the building’s own charts stay the whole building, and say so.`
+                : `The whole building — the ${scopeLabel} choice applies to the device CSVs only.`}
         </p>
+      ) : null}
+
+      {format === 'pdf' ? (
+        <div className="report-export__group" role="group" aria-label="How much detail">
+          <span className="report-export__legend">How much detail</span>
+          <div className="report-chips">
+            {(['simple', 'detailed'] as const).map((d) => (
+              <button
+                key={d}
+                type="button"
+                className={`analytics-scope-btn${choice.detail === d ? ' analytics-scope-btn--active' : ''}`}
+                aria-pressed={choice.detail === d}
+                disabled={working}
+                onClick={() => update({ ...choice, detail: d })}
+              >
+                {d === 'simple' ? 'Simple' : 'Detailed'}
+              </button>
+            ))}
+          </div>
+          <p className="report-export__hint">
+            {choice.detail === 'simple'
+              ? 'Key figures and charts, without the tables of numbers.'
+              : 'Every chart with its numbers, every table, and the comparison.'}
+          </p>
+        </div>
       ) : null}
 
       {format === 'pdf' ? (
         <fieldset className="report-export__group">
           <legend className="report-export__legend">Sections</legend>
           <ul className="report-export__sections">
-            {REPORT_SECTIONS.map((s) => {
+            {sectionsFor(choice.detail).map((s) => {
               // Why a section is locked, or what will happen to it — read to a screen reader with it.
               const note = s.locked ?? sectionNotes[s.id];
               const noteId = `${baseId}-${s.id}-note`;
@@ -207,7 +247,9 @@ export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {},
       <div className="report-export__actions">
         <p className="report-export__summary">
           {periodLabel} ·{' '}
-          {format === 'pdf' ? `${normaliseSections(choice.sections).length} sections · PDF` : FORMATS.find((f) => f.id === format)?.label}
+          {format === 'pdf'
+            ? `${normaliseSections(choice.sections, choice.detail).length} sections · ${choice.detail === 'simple' ? 'Simple' : 'Detailed'} PDF`
+            : FORMATS.find((f) => f.id === format)?.label}
           {FOLLOWS_SCOPE.includes(format) && scopeLabel ? ` · ${scopeLabel}` : ''}
         </p>
         <button

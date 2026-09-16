@@ -52,6 +52,7 @@ describe('ExportDrawer', () => {
 
   it('says under a section when its chart could not be loaded and will be left out', () => {
     draw({ sectionNotes: { durationCurve: 'Could not be loaded, so it will be left out of the PDF.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Detailed' }));
     expect(screen.getByRole('checkbox', { name: 'Time at each demand level' })).toHaveAccessibleDescription(/left out of the PDF/);
   });
 
@@ -64,6 +65,7 @@ describe('ExportDrawer', () => {
 
   it('exports the sections chosen, with the locked ones, in the order the document reads', async () => {
     const { onExport } = draw();
+    fireEvent.click(screen.getByRole('button', { name: 'Detailed' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Energy per day' }));
     fireEvent.click(screen.getByRole('button', { name: 'Generate PDF' }));
 
@@ -105,7 +107,9 @@ describe('ExportDrawer', () => {
     expect(screen.getByText(/one row per day/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Download CSV' }));
-    await waitFor(() => expect(onExport).toHaveBeenCalledWith('daily-csv', expect.any(Array), expect.any(Function), expect.any(AbortSignal)));
+    await waitFor(() =>
+      expect(onExport).toHaveBeenCalledWith('daily-csv', expect.any(Array), expect.any(Function), expect.any(AbortSignal), expect.any(String))
+    );
   });
 
   it('says why an export cannot run now, and will not start it', () => {
@@ -144,5 +148,23 @@ describe('ExportDrawer', () => {
     draw();
     expect(screen.getByRole('checkbox', { name: 'By device' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Energy per day' })).not.toBeChecked();
+  });
+
+  it('opens on a Simple PDF, whose sections are the pictures, and offers every section in Detailed — RM-099', async () => {
+    const { onExport } = draw();
+    expect(screen.getByRole('button', { name: 'Simple' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('checkbox', { name: 'Busy hours' })).toBeNull();
+    expect(screen.getByRole('checkbox', { name: 'Energy by use' })).toBeChecked();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Detailed' }));
+    expect(screen.getByRole('checkbox', { name: 'Busy hours' })).toBeChecked();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Simple' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Generate PDF' }));
+    await waitFor(() => expect(onExport).toHaveBeenCalledTimes(1));
+    const [, sections, , , detail] = vi.mocked(onExport).mock.calls[0];
+    expect(detail).toBe('simple');
+    expect(sections).not.toContain('heatmap');
+    expect(sections).toContain('circuitEnergy');
   });
 });

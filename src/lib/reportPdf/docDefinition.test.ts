@@ -81,7 +81,7 @@ describe('the cover', () => {
   });
 
   it('carries the build it was made by, so a figure can be traced back', () => {
-    expect(allText(buildDocDefinition(report()).content).join(' ')).toContain('index-DBofVb9f.js');
+    expect(allText(buildDocDefinition(report()).content).join(' ')).toContain('Software build DBofVb9f');
   });
 });
 
@@ -90,8 +90,8 @@ describe('the ordering is the argument', () => {
     // Asserted as an ordering property, not by eyeballing the output. A report that leads with
     // a total and footnotes the coverage has said the quotable thing first.
     const def = buildDocDefinition(report());
-    expect(index(def, 'Coverage')).toBeGreaterThan(-1);
-    expect(index(def, 'Coverage')).toBeLessThan(index(def, '90.95'));
+    expect(index(def, 'How much was recorded')).toBeGreaterThan(-1);
+    expect(index(def, 'How much was recorded')).toBeLessThan(index(def, '90.95'));
   });
 
   it('closes with what the report does not say', () => {
@@ -201,7 +201,7 @@ describe('it never invents a number it does not have', () => {
     // that used nothing, which is the one thing this whole page is built to refuse.
     const def = buildDocDefinition(report({ summary: null, energyKwh: null }));
     const text = allText(def.content).join(' ');
-    expect(text).toMatch(/No coverage figures have been generated/i);
+    expect(text).toMatch(/How much was recorded could not be worked out/i);
     expect(text).toMatch(/No energy figure has been generated/i);
     expect(text).not.toMatch(/0\.00 kWh/);
   });
@@ -209,7 +209,7 @@ describe('it never invents a number it does not have', () => {
   it('says a period nobody observed was not observed, rather than printing its stored zero', () => {
     // Live, 2026-09-15: the week of 2026-08-10 is stored as 0 kWh from 10 rows holding no reading.
     const text = allText(buildDocDefinition(report({ energyKwh: 0, notObserved: true })).content).join(' ');
-    expect(text).toMatch(/Not observed/);
+    expect(text).toMatch(/Not recorded/);
     expect(text).not.toMatch(/0\.00 kWh/);
   });
 
@@ -279,7 +279,7 @@ describe('sections', () => {
     ];
     for (const sections of choices) {
       const def = buildDocDefinition(full({ sections: sections as ReportSectionId[] }));
-      const coverageAt = index(def, 'Minutes with a real reading');
+      const coverageAt = index(def, 'Minutes recorded');
       expect(coverageAt, `coverage missing for ${sections.join(',')}`).toBeGreaterThan(-1);
       for (const figure of ['90.95', 'Peak demand', 'Energy per day', 'C.O Yellow meter', 'Outlet branch', 'Median (p50)']) {
         const at = index(def, figure);
@@ -291,7 +291,7 @@ describe('sections', () => {
 
   it('includes coverage and the refusals even when a reader leaves them out', () => {
     const text = allText(buildDocDefinition(full({ sections: ['dailyEnergy'] })).content).join(' ');
-    expect(text).toContain('Minutes with a real reading');
+    expect(text).toContain('Minutes recorded');
     expect(text).toContain('What this report does not say');
   });
 
@@ -316,7 +316,7 @@ describe('sections', () => {
   it('carries a comparison only with what it was not adjusted for', () => {
     const text = allText(buildDocDefinition(full({ sections: ['comparison'] })).content).join(' ');
     expect(text).toContain('August 2026 against July 2026');
-    expect(text).toContain('It is a difference, not a saving.');
+    expect(text).toContain('A difference, not a saving.');
   });
 
   it('includes the circuit and baseline sections when chosen', () => {
@@ -339,5 +339,68 @@ describe('sections', () => {
     expect(text).toContain('Energy per day');
     expect(text).toContain('Peak demand');
     expect(text).toContain('C.O Yellow meter');
+  });
+});
+
+describe('Simple and Detailed — RM-099', () => {
+  const chart = (section: ReportSectionId, title: string) => ({
+    section,
+    title,
+    svg: '<svg xmlns="http://www.w3.org/2000/svg"/>',
+    desc: 'What it shows.',
+    table: { headers: ['Day', 'kWh'], rows: [['17', '1.00']] },
+  });
+
+  it('draws a Simple document’s charts without the number tables under them, and says where the numbers are', () => {
+    const def = buildDocDefinition(report({ detail: 'simple', charts: [chart('dailyEnergy', 'Energy per day')] }));
+    const text = allText(def.content).join(' ');
+    expect(text).toContain('Energy per day');
+    expect(text).not.toContain('14.68');
+    expect(text).toMatch(/numbers behind each chart are in the Detailed PDF and the CSV exports/);
+  });
+
+  it('says how much was recorded in one line in a Simple document, still before any figure', () => {
+    const def = buildDocDefinition(report({ detail: 'simple' }));
+    const at = index(def, 'Recorded 27% of the period');
+    expect(at).toBeGreaterThan(-1);
+    expect(at).toBeLessThan(index(def, '90.95'));
+    expect(allText(def.content[def.content.length - 1]).join(' ')).toMatch(/not normalised by floor area/i);
+  });
+
+  it('keeps recording first and the limits last for every Simple choice of sections', () => {
+    const simple = REPORT_SECTIONS.filter((s) => !s.locked && s.detail === 'both').map((s) => s.id);
+    for (const sections of [[], simple, ...simple.map((id) => [id])]) {
+      const def = buildDocDefinition(report({ detail: 'simple', sections: sections as ReportSectionId[], charts: [chart('dailyEnergy', 'Energy per day')] }));
+      const first = index(def, 'How much was recorded');
+      expect(first).toBeGreaterThan(-1);
+      for (const figure of ['90.95', 'Energy per day']) {
+        const at = index(def, figure);
+        if (at > -1) expect(first).toBeLessThan(at);
+      }
+      expect(allText(def.content[def.content.length - 1]).join(' ')).toMatch(/not normalised by floor area/i);
+    }
+  });
+
+  it('leaves the Detailed-only sections out of a Simple document, whatever was ticked', () => {
+    const text = allText(
+      buildDocDefinition(
+        report({ detail: 'simple', sections: ['devices', 'heatmap'], charts: [chart('heatmap', 'Busy hours')] })
+      ).content
+    ).join(' ');
+    expect(text).not.toContain('Busy hours');
+    expect(text).not.toContain('By device');
+  });
+
+  it('names the part of the building a narrowed document is about, on its cover', () => {
+    const text = allText(buildDocDefinition(report({ scopeLabel: 'Lighting' })).content.slice(0, 8)).join(' ');
+    expect(text).toMatch(/Lighting — the circuit sections are narrowed to it/);
+    expect(allText(buildDocDefinition(report()).content.slice(0, 8)).join(' ')).toContain('The whole building');
+  });
+
+  it('lists the figures it corrected before any figure', () => {
+    const def = buildDocDefinition(report({ corrections: ['L.O Yellow meter: Corrected: a 76.79 kWh jump in the meter’s counter is not counted'] }));
+    const at = index(def, '76.79 kWh jump');
+    expect(at).toBeGreaterThan(index(def, 'How much was recorded'));
+    expect(at).toBeLessThan(index(def, '90.95'));
   });
 });

@@ -1,12 +1,27 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-16 — **RM-090: the weekly report for 7 September said L.O Yellow, a lighting
+**Last audited:** 2026-09-17 — **The Reports page is rebuilt around the operator's report of 2026-09-16,
+RM-090 to RM-099.** The week of 7 September gave L.O Yellow, a lighting circuit, 81.41 kWh: stored
+readings kept the 2026-09-08 counter jump RM-052 fixed in the bridge, and a report sums each day's
+high-water mark.
+- **RM-090:** the page refuses any stored figure its circuit could not have drawn.
+- **RM-091:** `phase42` bounds each hour's counter rise by the circuit's own power, in the generators and
+  per day. It is rehearsed and **waits for the operator to apply it, before about 2026-10-03**; it will
+  correct that one row to about 4.62 kWh.
+- **RM-092/093:** branch circuits carry Lighting / Aircon / Others, and a report narrows to one.
+- **RM-094/095:** each circuit's energy per day and power through the week or month, charted.
+- **RM-096/097:** four tabs (Overview, Circuits, Usage patterns, Compare) with no statistician's words.
+- **RM-098:** CSVs of devices by day and of every reading.
+- **RM-099:** a Simple or Detailed PDF following the scope.
+
+The dark theme's chart palette failing the dataviz lightness band is recorded as FI-028.
+
+**2026-09-16 — RM-090: the weekly report for 7 September said L.O Yellow, a lighting
 circuit, used 81.41 kWh, and the page now refuses that figure.** The stored readings still carry the
 2026-09-08 counter jump RM-052 fixed in the bridge, and a report sums each day's high-water mark. The
 page checks every stored figure against the most its circuit could draw in the period, prints an
 impossible one as "Not possible" and leaves it out of every total, share, chart, CSV and PDF, and says
-"Corrected" beside a figure phase42 has repaired. RM-091 to RM-099 — phase42, load categories, branch
-graphs, the two new CSVs, a Simple or Detailed PDF and plain words — are planned in §2.
+"Corrected" beside a figure phase42 has repaired.
 
 **Earlier, 2026-09-15 — RM-080: CO6 and CO7 were drawn in each other's places.** The
 three code copies of the office layout are swapped and pinned; the two live `device_config` rows
@@ -3493,7 +3508,32 @@ Why this exists is the 2026-09-16 entry in §0. Operator decisions, 2026-09-16:
     - `reportCsv.test.ts` (+4).
     - `useExportAction.test.ts` (+2): progress, and cancel saying nothing was saved.
     - `reportFiles.test.ts` (+1).
-- [ ] **RM-099 (M) — a Simple or Detailed PDF** that follows the category or circuit chosen.
+- [x] **RM-099 (M) — a Simple or Detailed PDF that follows the category or circuit chosen. 2026-09-17.**
+  - **The drawer's choice.** It opens on **Simple** (the key figures and the charts), and **Detailed** adds
+    the "when" charts, every table and the comparison. `reportSections.ts` marks each section as `both`
+    or `detailed`, and `normaliseSections(chosen, detail)` keeps the locked two in both. A choice
+    remembered from before this change opens as Detailed, which is what it made.
+  - **The document.**
+    - The cover says which part of the building it is about ("Lighting — the circuit sections are narrowed
+      to it", or "The whole building") and which depth. "Built from index-….js" is now "Software build …".
+    - "How much was recorded" comes first: one line in Simple, the full table in Detailed.
+    - "Corrected figures" lists every figure RM-090 corrected or refused, before any figure.
+    - Simple charts carry no number tables, and one line points to the Detailed PDF and the CSVs.
+    - The limits close both.
+  - **The charts.** **Energy by use**, **Energy per day by circuit** and **Power through the period by
+    circuit** are new. The circuit charts follow the scope; the building's own charts are titled
+    "(whole building)" when the document is narrowed. The circuit and device tables follow the scope.
+  - **The words.** The PDF's own words are plain now: usual / high / highest demand in kW, busy hours,
+    time at each demand level, "compared with", and the short limits.
+  - **Filenames** carry the scope and `-simple`.
+  - **Tests.**
+    - `docDefinition.test.ts` +6: no tables in Simple; the one-line recording figure still first; every
+      Simple choice keeps recording first and limits last; Detailed-only sections left out of Simple;
+      the scope on the cover; corrections before figures.
+    - `buildReport.test.ts` +3: scoped circuit charts and "(whole building)"; Simple's own sections and
+      corrections; no statistician's words in anything a reader sees, and a neuter putting "p99" back
+      fails it.
+    - `ExportDrawer.test.tsx` +1.
 
 ### Analytics data quality — RM-076 to RM-079 (2026-09-14)
 
