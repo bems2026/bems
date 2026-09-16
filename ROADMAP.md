@@ -26,7 +26,8 @@ of the whole building, and the page says the headline figures, findings and char
 **RM-087** came out of checking the first real retention pass before it ran: the hourly totals rollup
 never filled phase32's integrated columns, so from 2026-10-08 every pruned hour would lose the only
 independent cross-check on the building total. `phase41_totals_rollup_integrated.sql` fixes it and is
-rehearsed; **it waits for the operator to paste it, before 2026-10-08.** Nothing has been lost, and the
+rehearsed, and **applied and read back on 2026-09-16: 1.6 / 2.6 / 3.6 where the old function left
+NULLs.** Nothing has been lost, and the
 rows the first passes prune were exported and copied off the Pi beforehand. **RM-088** corrects the
 branch wiring from the operator's own account: light switches L1–L4 are on L.O Red and L5–L7 on L.O
 Yellow — which the site file had called the outdoor aircon unit — and the aircon is CARE ACU's only
@@ -198,10 +199,12 @@ unpaired since RM-016.
 
 ### 2026-09-15/16 — the first real retention passes ran, and match the raw export; phase41 waits to be applied
 
-**Apply `supabase/phase41_totals_rollup_integrated.sql` before 2026-10-08 (RM-087).** Paste it into the
-Supabase SQL editor like every phase file, then run the read-back in RM-087. Without it, the first
-retention pass to reach phase32's integrated series — 2026-10-08, thirty days after the series began —
-stores NULL for every hour it prunes and deletes the rows that held the value.
+**`supabase/phase41_totals_rollup_integrated.sql` is applied (RM-087), on 2026-09-16, and read back.**
+Without it, the first retention pass to reach phase32's integrated series — 2026-10-08, thirty days
+after the series began — would have stored NULL for every hour it pruned and deleted the rows that held
+the value. The read-back in RM-087, run against the live database, returned 1.6, 2.6 and 3.6 where the
+old function left NULLs, and its transaction rolled back: no row before 2026 in `building_totals`, no
+bucket before 2026 in `building_totals_hourly`, and the oldest real rows unchanged.
 
 **The first pass is due at 18:18 UTC tonight, not 15:52.** Retention asks every six hours from when the
 ingest daemon started, and the oldest reading ages past thirty days at 15:52 UTC, so the 18:18 check is
@@ -871,10 +874,10 @@ Everything else is small, and the build order below is honest about size.
   two weeks (RM-020), so their averages mean nothing and their tiers should be set on what they
   feed rather than on what they have measured.
 
-### Migrations — one waiting: phase41
+### Migrations — all applied
 
-**`supabase/phase41_totals_rollup_integrated.sql` (RM-087) is not applied yet.** Paste it before
-2026-10-08 and read it back as RM-087 says. **Every earlier migration is applied**, the latest
+**Every migration in this repository is applied**, the latest
+`phase41_totals_rollup_integrated.sql` (RM-087) on 2026-09-16, read back the same day, and
 `phase40_report_curve_speed.sql` (RM-086) on 2026-09-15, read back the same day.
 `phase27_period_reports.sql` was applied 2026-09-08; `period_reports` holds 80 rows and
 `period_building_reports` 4, regenerated at the moment
@@ -3687,8 +3690,9 @@ ever cleared, and put its controls in three rows. This section is that page's ov
         before the fix. If they do not fall, the cause is elsewhere and this entry should say so.
         **At 2026-09-16 06:18 UTC, 17.6 hours after the restart: zero, and zero failed device syncs.** The
         old rate would have given about 33 in that time. A full day's count closes this.
-- [ ] **RM-087 (S)** — **phase41: the hourly totals rollup keeps phase32's integrated cross-check.**
-      Written and rehearsed 2026-09-15; **waiting for the operator to apply it, before 2026-10-08.**
+- [x] **RM-087 (S)** — **phase41: the hourly totals rollup keeps phase32's integrated cross-check.**
+      Written and rehearsed 2026-09-15; **applied by the operator and read back 2026-09-16**, three weeks
+      before the first pass that would have lost a value.
       - **The defect.** phase32 (RM-057) stores the legacy power integration beside the summed building
         total as `building_totals.energy_kwh_*_integrated` — the only independent measurement of those
         circuits — and added `building_totals_hourly.energy_kwh_*_integrated_max`. It never redefined
@@ -3723,6 +3727,12 @@ ever cleared, and put its controls in three rows. This section is that page's ov
         still live. The cutoff can select only the two rows the script inserts — the oldest real reading
         is 2026-08-16 — and the rollback removes them and their bucket. This exact script was run in the
         rehearsal's database after phase41 on 2026-09-15 and returned 1, 2, and 1.6, 2.6, 3.6.
+      - **Closed 2026-09-16.** The operator applied the file and ran that script against the live
+        database: **1.6, 2.6 and 3.6**, so the deployed function carries the series. Read back afterwards,
+        the rollback had left nothing — no row before 2026 in `building_totals`, no bucket before 2026 in
+        `building_totals_hourly`, and the oldest real rows unchanged (`building_totals` from
+        2026-08-17 00:00, the earliest hourly bucket 2026-08-16 15:00). The retention passes since are
+        still exact against the raw export, and none has failed.
 - [ ] **RM-083c (S)** — **Time the PDF on the kiosk's Pi, and move it to a worker only if it is slow.**
       Each export now logs `[ibems] pdf: assembled in N ms, rendered in N ms` to the console. Generate one
       month's PDF on the kiosk, read the line, and record it here. Above one second, move
