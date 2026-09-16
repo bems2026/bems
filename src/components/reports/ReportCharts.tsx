@@ -54,6 +54,8 @@ export interface ChartsData {
   matrix: MatrixRow[] | null;
   curve: CurveRow[] | null;
   segments: CircuitSegment[];
+  /** The building by what each circuit carries — RM-096's "Energy by use". */
+  useSegments?: CircuitSegment[];
   untracked?: { label: string; kwh: number | null };
   ceilingW: number | null;
   /** Carried in the same bundle because the PDF and the baseline report both need it beside
@@ -68,6 +70,8 @@ interface Props extends ChartsData {
   width?: number;
   /** Charts whose data is still on its way; each holds its place at its own aspect ratio. */
   loading?: Partial<Record<ReportChartKind, boolean>>;
+  /** Which charts this tab draws — RM-096. Every building chart when absent. */
+  only?: readonly ReportChartKind[];
 }
 
 const num = (v: number | null | undefined, digits = 0) =>
@@ -113,11 +117,14 @@ export function ReportCharts({
   matrix,
   curve,
   segments,
+  useSegments = NONE,
   untracked,
   ceilingW,
   width = REPORT_CHART_WIDTH,
   loading = {},
+  only = ['daily', 'hours', 'breakdown', 'heat', 'curve'],
 }: Props) {
+  const shows = (kind: ReportChartKind) => only.includes(kind);
   const label = formatPeriod(period, start);
   const hourRows = hours ?? NONE;
   const matrixRows = matrix ?? NONE;
@@ -141,14 +148,14 @@ export function ReportCharts({
   );
   const dailyTable = useCallback(
     (): ChartTable => ({
-      headers: ['Day', 'Energy (kWh)', 'Peak (W)', 'Readings', 'Observed'],
+      headers: ['Day', 'Energy (kWh)', 'Highest (W)', 'Minutes recorded', 'Recorded between'],
       rows: daily.map((r) => [
         r.local_day,
         r.usable_sample_count > 0 ? num(r.energy_kwh, 2) : null,
         num(r.peak_power_w),
         // Rows and readings are different facts and the table shows both, because the
         // difference is the whole reason this column exists.
-        `${r.usable_sample_count} of ${r.sample_count}`,
+        r.usable_sample_count,
         r.first_seen_minute === null ? null : `${hhmm(r.first_seen_minute)}–${hhmm(r.last_seen_minute)}`,
       ]),
     }),
@@ -156,19 +163,19 @@ export function ReportCharts({
   );
 
   const hoursScene = useCallback(
-    () => loadProfileChart(toHourPoints(hourRows), spec('rep-lp', reportChartHeight('hours', daily.length), `Demand by hour — ${label}`)),
+    () => loadProfileChart(toHourPoints(hourRows), spec('rep-lp', reportChartHeight('hours', daily.length), `A typical day, hour by hour — ${label}`)),
     [hourRows, daily.length, spec, label]
   );
   const hoursTable = useCallback(
     (): ChartTable => ({
-      headers: ['Hour', 'Samples', 'Median (W)', 'p95 (W)', 'Peak (W)'],
+      headers: ['Hour', 'Minutes recorded', 'Usual (W)', 'High (W)', 'Highest (W)'],
       rows: toHourPoints(hourRows).map((h) => [`${String(h.hour).padStart(2, '0')}:00`, h.n, num(h.p50), num(h.p95), num(h.max)]),
     }),
     [hourRows]
   );
 
   const breakdownScene = useCallback(
-    () => circuitBreakdownChart(segments, spec('rep-cb', reportChartHeight('breakdown', daily.length), `Where the energy went — ${label}`), { untracked }),
+    () => circuitBreakdownChart(segments, spec('rep-cb', reportChartHeight('breakdown', daily.length), `By circuit — ${label}`), { untracked }),
     [segments, untracked, daily.length, spec, label]
   );
   const breakdownTable = useCallback((): ChartTable => {
@@ -179,15 +186,27 @@ export function ReportCharts({
     };
   }, [segments]);
 
+  const useScene = useCallback(
+    () => circuitBreakdownChart(useSegments, spec('rep-us', reportChartHeight('useShare', daily.length), `Energy by use — ${label}`)),
+    [useSegments, daily.length, spec, label]
+  );
+  const useTable = useCallback((): ChartTable => {
+    const total = useSegments.reduce((a, x) => a + (x.kwh ?? 0), 0);
+    return {
+      headers: ['Use', 'Energy (kWh)', 'Share'],
+      rows: useSegments.map((s) => [s.label, num(s.kwh, 2), s.kwh === null || total <= 0 ? null : `${((s.kwh / total) * 100).toFixed(1)}%`]),
+    };
+  }, [useSegments]);
+
   const heatScene = useCallback(
-    () => demandHeatmapChart(toHeatCells(matrixRows), spec('rep-hm', reportChartHeight('heat', daily.length), `Demand by day and hour — ${label}`)),
+    () => demandHeatmapChart(toHeatCells(matrixRows), spec('rep-hm', reportChartHeight('heat', daily.length), `Busy hours — ${label}`)),
     [matrixRows, daily.length, spec, label]
   );
   // 744 cells is not a table anyone reads. The per-hour numbers are already in the load profile
   // above; what this one adds is the shape, so its table is the daily roll-up.
   const heatTable = useCallback(
     (): ChartTable => ({
-      headers: ['Day', 'Hours with readings', 'Busiest hour', 'Peak (W)'],
+      headers: ['Day', 'Hours recorded', 'Busiest hour', 'Highest (W)'],
       rows: daily.map((r) => {
         const forDay = matrixRows.filter((c) => c.local_day.slice(0, 10) === r.local_day.slice(0, 10) && c.usable_sample_count > 0);
         const busiest = [...forDay].sort((a, b) => (b.avg_power_w ?? 0) - (a.avg_power_w ?? 0))[0];
@@ -203,13 +222,13 @@ export function ReportCharts({
   );
 
   const curveScene = useCallback(
-    () => durationCurveChart(toDurationPoints(curveRows), spec('rep-dc', reportChartHeight('curve', daily.length), `Load duration — ${label}`), { thresholdW: ceilingW }),
+    () => durationCurveChart(toDurationPoints(curveRows), spec('rep-dc', reportChartHeight('curve', daily.length), `Time at each demand level — ${label}`), { thresholdW: ceilingW }),
     [curveRows, ceilingW, daily.length, spec, label]
   );
   // Every tenth point: 101 rows of a smooth curve is noise, and the shape is the finding.
   const curveTable = useCallback(
     (): ChartTable => ({
-      headers: ['Share of period', 'At or above (W)'],
+      headers: ['Share of time', 'Demand at or above (W)'],
       rows: toDurationPoints(curveRows)
         .filter((_, i) => i % 10 === 0)
         .map((p) => [`${p.pct}%`, num(p.w)]),
@@ -223,19 +242,36 @@ export function ReportCharts({
 
   return (
     <section className="report-charts" aria-label={`Charts for ${label}`}>
-      <ChartSlot scope="Energy per day" build={dailyScene} table={dailyTable} />
-      {hours ? <ChartSlot scope="Demand by hour" build={hoursScene} table={hoursTable} /> : placeholder('hours')}
-      {loading.breakdown ? (
-        placeholder('breakdown')
-      ) : (
-        <ChartSlot scope="Where the energy went" build={breakdownScene} table={breakdownTable} summaryLabel="Show the circuits" />
-      )}
-      {matrix ? (
-        <ChartSlot scope="Demand by day and hour" build={heatScene} table={heatTable} summaryLabel="Show the daily roll-up" />
-      ) : (
-        placeholder('heat')
-      )}
-      {curve ? <ChartSlot scope="Load duration" build={curveScene} table={curveTable} summaryLabel="Show the curve" /> : placeholder('curve')}
+      {shows('daily') ? <ChartSlot scope="Energy per day" build={dailyScene} table={dailyTable} /> : null}
+      {shows('useShare') ? (
+        loading.useShare ? (
+          placeholder('useShare')
+        ) : (
+          <ChartSlot scope="Energy by use" build={useScene} table={useTable} summaryLabel="Show the uses" />
+        )
+      ) : null}
+      {shows('breakdown') ? (
+        loading.breakdown ? (
+          placeholder('breakdown')
+        ) : (
+          <ChartSlot scope="By circuit" build={breakdownScene} table={breakdownTable} summaryLabel="Show the circuits" />
+        )
+      ) : null}
+      {shows('hours') ? hours ? <ChartSlot scope="A typical day" build={hoursScene} table={hoursTable} /> : placeholder('hours') : null}
+      {shows('heat') ? (
+        matrix ? (
+          <ChartSlot scope="Busy hours" build={heatScene} table={heatTable} summaryLabel="Show each day" />
+        ) : (
+          placeholder('heat')
+        )
+      ) : null}
+      {shows('curve') ? (
+        curve ? (
+          <ChartSlot scope="Time at each demand level" build={curveScene} table={curveTable} summaryLabel="Show the levels" />
+        ) : (
+          placeholder('curve')
+        )
+      ) : null}
     </section>
   );
 }

@@ -150,7 +150,7 @@ export function demandHeatmapChart(cells: readonly HeatCell[], spec: ChartSpec):
     });
   }
 
-  const desc = `Demand by day and hour, ${Math.round(lo)}–${Math.round(hi)} W across ${days.length} days. ${
+  const desc = `Busy hours: average demand by day and hour, ${Math.round(lo)}–${Math.round(hi)} W across ${days.length} days. ${
     missing > 0 ? `${missing} of ${cells.length} hours were never observed and are hatched.` : 'Every hour was observed.'
   }`;
 

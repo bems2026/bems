@@ -121,7 +121,8 @@ export function durationCurveChart(
       x: box.right,
       // Above the rule when there is room, below it when the rule is near the top.
       y: ty - 4 < box.y + 10 ? ty + 12 : ty - 4,
-      text: `DSM ceiling ${formatW(threshold)}`,
+      // RM-097: the Automation page calls this setting "Max total draw", so the chart does too.
+      text: `Max total draw ${formatW(threshold)}`,
       fill: palette.threshold,
       size: 9,
       anchor: 'end',
@@ -130,10 +131,10 @@ export function durationCurveChart(
     const share = shareAbove(points, threshold);
     desc =
       share === null || share <= 0
-        ? `Load sorted high to low. The building never reached the ${formatW(threshold)} DSM ceiling in this period.`
-        : `Load sorted high to low. The building was at or above the ${formatW(threshold)} DSM ceiling for ${share.toFixed(1)}% of the period.`;
+        ? `Demand sorted from highest to lowest. The building never reached its ${formatW(threshold)} max total draw in this period.`
+        : `Demand sorted from highest to lowest. The building was at or above its ${formatW(threshold)} max total draw for ${share.toFixed(1)}% of the time.`;
   } else {
-    desc = 'Load sorted high to low across the period. No DSM ceiling is set, so none is drawn.';
+    desc = 'Demand sorted from highest to lowest across the period. No max total draw is set, so none is drawn.';
   }
 
   marks.push({ kind: 'line', x1: box.x, y1: box.bottom, x2: box.right, y2: box.bottom, stroke: palette.ink, width: 1 });
@@ -147,9 +148,9 @@ export function durationCurveChart(
       y: box.y,
       w: step,
       h: box.h,
-      label: `${Number.isInteger(p.pct) ? p.pct : p.pct.toFixed(1)}% of the period`,
+      label: `${Number.isInteger(p.pct) ? p.pct : p.pct.toFixed(1)}% of the time`,
       value: `At or above ${formatW(p.w)}`,
-      ...(threshold !== null && p.w >= threshold ? { note: 'At or above the DSM ceiling' } : {}),
+      ...(threshold !== null && p.w >= threshold ? { note: 'At or above the max total draw' } : {}),
     }));
 
   return { width, height, idPrefix, title, desc, defs, marks, hits };

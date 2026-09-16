@@ -40,7 +40,7 @@ describe('ExportDrawer', () => {
 
   it('lists every section, with coverage and the refusals locked and saying why', () => {
     draw();
-    for (const name of ['Coverage', 'What this report does not say']) {
+    for (const name of ['How much was recorded', 'What this report does not say']) {
       const box = screen.getByRole('checkbox', { name });
       expect(box).toBeChecked();
       expect(box).toBeDisabled();
@@ -52,12 +52,12 @@ describe('ExportDrawer', () => {
 
   it('says under a section when its chart could not be loaded and will be left out', () => {
     draw({ sectionNotes: { durationCurve: 'Could not be loaded, so it will be left out of the PDF.' } });
-    expect(screen.getByRole('checkbox', { name: 'Load duration' })).toHaveAccessibleDescription(/left out of the PDF/);
+    expect(screen.getByRole('checkbox', { name: 'Time at each demand level' })).toHaveAccessibleDescription(/left out of the PDF/);
   });
 
   it('will not let a locked section be unticked', () => {
     draw();
-    const coverage = screen.getByRole('checkbox', { name: 'Coverage' });
+    const coverage = screen.getByRole('checkbox', { name: 'How much was recorded' });
     fireEvent.click(coverage);
     expect(coverage).toBeChecked();
   });

@@ -99,12 +99,21 @@ describe('the report-type tabs', () => {
   it('offers four readings of the same period', async () => {
     render(<ReportsPage />);
     const tabs = await screen.findAllByRole('tab');
-    expect(tabs.map((t) => t.textContent)).toEqual(['Summary', 'Baseline', 'Circuits', 'Compare']);
+    expect(tabs.map((t) => t.textContent)).toEqual(['Overview', 'Circuits', 'Usage patterns', 'Compare']);
   });
 
-  it('starts on the summary', async () => {
+  it('starts on the overview', async () => {
     render(<ReportsPage />);
-    expect(await screen.findByRole('tab', { name: /summary/i })).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByRole('tab', { name: /overview/i })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('uses no statistician’s words anywhere a reader looks — RM-097', async () => {
+    const { container } = render(<ReportsPage />);
+    await screen.findByText(/100\.00 kWh/);
+    for (const name of [/overview/i, /circuits/i, /usage patterns/i, /compare/i]) {
+      await openTab(name);
+      await waitFor(() => expect(container.textContent).not.toMatch(/\bp(50|95|99)\b|median|baseline|DSM|load factor|load duration|percentile/i));
+    }
   });
 
   it('keeps the period picker across tabs, because the period is the page subject', async () => {
@@ -130,7 +139,7 @@ describe('the comparison refuses rather than guessing', () => {
     // one report whose job is to be careful about what a number means.
     render(<ReportsPage />);
     await openTab(/compare/i);
-    expect(await screen.findByText(/choose a baseline period/i)).toBeInTheDocument();
+    expect(await screen.findByText(/choose an earlier month to compare/i)).toBeInTheDocument();
     // The figure specifically, not the word: "It is a difference, not a saving" is in the
     // caveats below and is supposed to be there whether or not a comparison was made.
     expect(screen.queryByRole('term', { name: 'Difference' })).toBeNull();
@@ -140,7 +149,7 @@ describe('the comparison refuses rather than guessing', () => {
   it('differences two fully observed periods', async () => {
     render(<ReportsPage />);
     await openTab(/compare/i);
-    const select = await screen.findByRole('combobox', { name: /baseline period/i });
+    const select = await screen.findByRole('combobox', { name: /earlier period/i });
     fireEvent.change(select, { target: { value: '2026-06-01' } });
     await waitFor(() => expect(screen.getByText(/Difference/)).toBeInTheDocument());
     // 100 against a 120 baseline: 20 kWh less, said in words as well as in the sign.
@@ -157,11 +166,11 @@ describe('the comparison refuses rather than guessing', () => {
     ]);
     render(<ReportsPage />);
     await openTab(/compare/i);
-    const select = await screen.findByRole('combobox', { name: /baseline period/i });
+    const select = await screen.findByRole('combobox', { name: /earlier period/i });
     fireEvent.change(select, { target: { value: '2026-06-01' } });
 
     await waitFor(() => expect(screen.getByText(/Not comparable/i)).toBeInTheDocument());
-    expect(screen.getByText(/baseline period was not fully observed/i)).toBeInTheDocument();
+    expect(screen.getByText(/earlier period was not fully recorded/i)).toBeInTheDocument();
     expect(screen.getByText(/48%/)).toBeInTheDocument();
     expect(screen.queryByText(/Difference/)).toBeNull();
   });
@@ -171,23 +180,23 @@ describe('the comparison refuses rather than guessing', () => {
     // a saving, and the reader has no way to know it is two months' weather.
     render(<ReportsPage />);
     await openTab(/compare/i);
-    expect(await screen.findByText(/It is not weather-adjusted\./)).toBeInTheDocument();
-    expect(screen.getByText(/It is a difference, not a saving\./)).toBeInTheDocument();
+    expect(await screen.findByText(/Not adjusted for weather\./)).toBeInTheDocument();
+    expect(screen.getByText(/A difference, not a saving\./)).toBeInTheDocument();
   });
 });
 
-describe('the baseline report gates itself', () => {
-  it('says a thin window is not a baseline yet', async () => {
+describe('usage patterns gate themselves', () => {
+  it('says a thin window is too little to show a usual pattern', async () => {
     // The gate fires on the window's own thinness, not on anything the reader chose.
     render(<ReportsPage />);
-    await openTab(/baseline/i);
-    expect(await screen.findByText(/This is not a baseline yet/i)).toBeInTheDocument();
+    await openTab(/usage patterns/i);
+    expect(await screen.findByText(/Too little recorded to show a usual pattern yet/i)).toBeInTheDocument();
   });
 
-  it('carries the caveats the CLI report carries, from the same source', async () => {
+  it('carries the report’s limits, in the same claims the CLI report makes, said shorter', async () => {
     render(<ReportsPage />);
-    await openTab(/baseline/i);
-    expect(await screen.findByText(/It is not normalised by floor area or occupancy\./)).toBeInTheDocument();
-    expect(screen.getByText(/It is not a forecast\./)).toBeInTheDocument();
+    await openTab(/usage patterns/i);
+    expect(await screen.findByText(/Not per square metre or per person\./)).toBeInTheDocument();
+    expect(screen.getByText(/Not a forecast\./)).toBeInTheDocument();
   });
 });

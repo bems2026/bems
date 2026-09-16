@@ -55,12 +55,12 @@ describe('load profile', () => {
     hour === 3 ? { hour, n: 0, p50: null, p95: null, max: null } : { hour, n: 30, p50: 400 + hour, p95: 900, max: 1500 }
   );
 
-  it('offers one hit per hour, median first, with the spread and the peak in the note', () => {
+  it('offers one hit per hour, the usual demand first, with high and highest in the note', () => {
     const hits = loadProfileChart(hours, spec('h', 220)).hits ?? [];
     expect(hits).toHaveLength(24);
     expect(hits[0].label).toBe('00:00');
-    expect(hits[0].value).toBe('Median 400 W');
-    expect(hits[0].note).toBe('p95 900 W · peak 1,500 W'.replace('1,500', (1500).toLocaleString(undefined)));
+    expect(hits[0].value).toBe('Usual 400 W');
+    expect(hits[0].note).toBe('high 900 W · highest 1,500 W'.replace('1,500', (1500).toLocaleString(undefined)));
     expect(hits[3].value).toBe('No data');
   });
 });
@@ -107,7 +107,7 @@ describe('duration curve', () => {
       { pct: 100, w: 5.3 },
     ];
     const hits = durationCurveChart(points, spec('c', 220)).hits ?? [];
-    expect(hits.map((h) => h.label)).toEqual(['0% of the period', '100% of the period']);
+    expect(hits.map((h) => h.label)).toEqual(['0% of the time', '100% of the time']);
     expect(hits[0].value).toBe(`At or above ${(4551).toLocaleString(undefined)} W`);
   });
 });

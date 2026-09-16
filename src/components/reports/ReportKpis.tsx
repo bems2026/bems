@@ -41,7 +41,7 @@ const pct = (part: number, whole: number) => Math.round((part / whole) * 100);
 function CoverageTile({ summary }: { summary: DemandSummary | null | undefined }) {
   return (
     <div>
-      <dt>Readings coverage</dt>
+      <dt>Recorded</dt>
       <dd>
         {summary === undefined ? (
           <span className="reports-figure reports-figure--missing">Loading…</span>
@@ -52,8 +52,7 @@ function CoverageTile({ summary }: { summary: DemandSummary | null | undefined }
             {/* Real readings, not rows. August 2026 is 48% as rows and 27% as readings — RM-072g. */}
             <span className="reports-figure">{pct(summary.usable_minutes, summary.expected_minutes)}%</span>
             <span className="reports-figure__caveat report-kpi__sub">
-              {summary.usable_minutes.toLocaleString(undefined)} of {summary.expected_minutes.toLocaleString(undefined)} minutes held a
-              real reading
+              {summary.usable_minutes.toLocaleString(undefined)} of {summary.expected_minutes.toLocaleString(undefined)} minutes
             </span>
           </>
         )}
@@ -95,7 +94,7 @@ function ComparisonTile({ period, building, previous }: { period: ReportPeriod; 
                   { label: formatPeriod(period, building.period_start), c: result.reportingCoverage },
                 ]
                   .filter((x) => x.c?.band !== 'complete')
-                  .map((x) => `${x.label} ${observedShare(x.c)} observed`)
+                  .map((x) => `${x.label} ${observedShare(x.c)} recorded`)
                   .join(', ') || result.reason
               : result.reason}
           </span>
@@ -118,7 +117,7 @@ export function ReportKpis({ period, building, summary, notObserved, cost, carbo
         </dd>
       </div>
       <div>
-        <dt>Peak demand</dt>
+        <dt>Highest demand</dt>
         <dd>
           <ReportFigure value={peakKw} unit="kW" digits={2} coverage={coverage} period={period} notObserved={notObserved} />
         </dd>

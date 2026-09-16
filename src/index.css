@@ -6399,6 +6399,68 @@ body::before {
   border: 0;
 }
 
+/* RM-096 — what else the period recorded, as one line of small figures under the headline tiles
+   rather than a card of its own. Wraps on a narrow screen. */
+.report-glance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+  margin: 0 0 var(--sp-4);
+}
+
+.report-glance > div {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+
+.report-glance dt {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.report-glance dd {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--txt);
+  font-variant-numeric: tabular-nums;
+}
+
+/* RM-096 — the detail behind the "Recorded" figure, one tap away rather than a card in the way. */
+.report-recorded__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--txt);
+}
+
+.report-recorded[open] > .report-recorded__summary,
+.report-devices[open] > .report-recorded__summary {
+  margin-bottom: var(--sp-4);
+}
+
+/* RM-096 — Lighting / Aircon / Others, the same scope as the control bar's select. */
+.report-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-4);
+}
+
+.report-scope-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.report-devices {
+  padding: var(--sp-4);
+}
+
 @media (max-width: 480px) {
   .report-kpis .report-kpi--hero {
     grid-column: 1 / -1;
@@ -9061,6 +9123,8 @@ button.space-plan__pin {
   .report-period-list__item,
   /* RM-083b: each format and section row in the export drawer is a tap target on the kiosk. */
   .report-export__option,
+  /* RM-096: the disclosures that open the recording detail and the device list. */
+  .report-recorded__summary,
   /* RM-071: a 30x30 icon button that DELETES a schedule rule, on a touchscreen. Square and in
      normal flow beside the arm switch, so it grows rather than needing a hit-area expander —
      the switch's own expander is 44 wide and the row's 8px gap keeps them from cross-talking. */

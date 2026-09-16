@@ -36,24 +36,24 @@ export interface ReportSection {
 export const REPORT_SECTIONS: readonly ReportSection[] = [
   {
     id: 'coverage',
-    label: 'Coverage',
-    locked: 'Always included: every figure in the report is a claim about the minutes this section counts.',
+    label: 'How much was recorded',
+    locked: 'Always included: every figure in the report comes from the minutes this counts.',
   },
   { id: 'keyFigures', label: 'Key figures' },
   { id: 'costCarbon', label: 'Cost and emissions, with their sources' },
   { id: 'dailyEnergy', label: 'Energy per day' },
-  { id: 'hourProfile', label: 'Demand by hour of the day' },
+  { id: 'hourProfile', label: 'A typical day, hour by hour' },
   { id: 'breakdown', label: 'Where the energy went' },
-  { id: 'heatmap', label: 'Demand by day and hour' },
-  { id: 'durationCurve', label: 'Load duration' },
+  { id: 'heatmap', label: 'Busy hours' },
+  { id: 'durationCurve', label: 'Time at each demand level' },
   { id: 'devices', label: 'By device' },
-  { id: 'baseline', label: 'Baseline demand statistics' },
+  { id: 'baseline', label: 'Usual and high demand' },
   { id: 'circuits', label: 'By circuit' },
-  { id: 'comparison', label: 'Comparison with the previous period' },
+  { id: 'comparison', label: 'Compared with the previous period' },
   {
     id: 'notSaid',
     label: 'What this report does not say',
-    locked: 'Always included: a document that leaves the building has to carry the limits of its own figures.',
+    locked: 'Always included: a document that leaves the building carries the limits of its own figures.',
   },
 ];
 

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ReportCaveats } from './ReportCaveats';
-import { COMPARISON_NOT_ADJUSTED, NOT_SAID, NOT_SAID_TITLE } from '@shared/reportProse.mjs';
+import { NOT_SAID_TITLE, PLAIN_COMPARISON_LIMITS, PLAIN_COMPARISON_TITLE, PLAIN_NOT_SAID } from '@shared/reportProse.mjs';
 import { compare, describeDifference } from '@/lib/ipmvp';
 import { formatPeriod, type PeriodBuildingReport, type ReportPeriod } from '@/lib/supabaseReports';
 
@@ -46,16 +46,16 @@ export function ComparisonReport({ period, periods, selected }: Props) {
     <>
       <section className="devices-table-card reports-summary" aria-label="Period comparison">
         <h2 className="card-title">
-          {reporting ? formatPeriod(period, reporting.period_start) : '—'} against a baseline
+          {reporting ? formatPeriod(period, reporting.period_start) : '—'} compared with an earlier {period}
         </h2>
         <label className="reports-picker">
-          <span className="reports-picker__label">Baseline period</span>
+          <span className="reports-picker__label">Earlier period</span>
           <select
             className="reports-picker__select"
             value={baselineStart ?? ''}
             onChange={(e) => setBaselineStart(e.target.value || null)}
           >
-            <option value="">Choose a baseline…</option>
+            <option value="">Choose an earlier {period}…</option>
             {periods
               .filter((p) => p.period_start.slice(0, 10) !== selected)
               .map((p) => (
@@ -68,17 +68,17 @@ export function ComparisonReport({ period, periods, selected }: Props) {
 
         {result === null ? (
           <p className="reports-note">
-            Choose a baseline period to compare {reporting ? formatPeriod(period, reporting.period_start) : 'this period'} against.
+            Choose an earlier {period} to compare {reporting ? formatPeriod(period, reporting.period_start) : 'this period'} with.
           </p>
         ) : result.comparable ? (
           <>
             <dl className="reports-summary__grid">
               <div>
-                <dt>Baseline</dt>
+                <dt>Earlier</dt>
                 <dd>{result.baselineKwh.toFixed(2)} kWh</dd>
               </div>
               <div>
-                <dt>Reporting</dt>
+                <dt>This {period}</dt>
                 <dd>{result.reportingKwh.toFixed(2)} kWh</dd>
               </div>
               <div>
@@ -109,8 +109,8 @@ export function ComparisonReport({ period, periods, selected }: Props) {
         )}
       </section>
 
-      <ReportCaveats title="What this comparison was not adjusted for" items={COMPARISON_NOT_ADJUSTED} />
-      <ReportCaveats title={NOT_SAID_TITLE} items={NOT_SAID} />
+      <ReportCaveats title={PLAIN_COMPARISON_TITLE} items={PLAIN_COMPARISON_LIMITS} />
+      <ReportCaveats title={NOT_SAID_TITLE} items={PLAIN_NOT_SAID} />
     </>
   );
 }

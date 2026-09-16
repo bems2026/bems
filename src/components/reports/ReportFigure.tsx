@@ -15,7 +15,8 @@ import { energyFlagText, type EnergyFlag } from '@/lib/boundedEnergy';
 const COVERAGE_TONE: Record<Coverage['band'], { label: string; tone: string }> = {
   complete: { label: 'Complete', tone: 'good' },
   partial: { label: 'Partial', tone: 'warn' },
-  sparse: { label: 'Sparse', tone: 'bad' },
+  // RM-097: "Sparse" was a statistician's word for most of the period going unrecorded.
+  sparse: { label: 'Mostly missing', tone: 'bad' },
   none: { label: 'No data', tone: 'bad' },
 };
 
@@ -23,11 +24,11 @@ const COVERAGE_TONE: Record<Coverage['band'], { label: string; tone: string }> =
 function coverageNote(band: Coverage['band'], period: ReportPeriod): string {
   switch (band) {
     case 'complete':
-      return `the whole ${period} was observed`;
+      return `the whole ${period} was recorded`;
     case 'partial':
-      return `over half the ${period} was observed — this total is understated`;
+      return `over half the ${period} was recorded — the real total is higher`;
     case 'sparse':
-      return `only a fraction of the ${period} was observed — this total is not the ${period}’s consumption`;
+      return `only a small part of the ${period} was recorded — this is not the ${period}’s total`;
     case 'none':
       return `the ${period} passed with nothing recorded`;
   }
@@ -36,7 +37,7 @@ function coverageNote(band: Coverage['band'], period: ReportPeriod): string {
 export function CoverageTag({ coverage, period }: { coverage: Coverage | null; period: ReportPeriod }) {
   // "Unknown" is not "none": one means the period recorded nothing, the other means we cannot
   // even say what full coverage would have been. Neutral badge, no tone.
-  if (!coverage) return <span className="badge">Coverage unknown</span>;
+  if (!coverage) return <span className="badge">Recording unknown</span>;
   const copy = COVERAGE_TONE[coverage.band];
   return (
     <span className={`badge badge--${copy.tone}`} title={coverageNote(coverage.band, period)}>

@@ -61,8 +61,8 @@ export function loadProfileChart(points: readonly HourProfilePoint[], spec: Char
   const desc =
     scale === null
       ? 'No hour in this period carried a reading, so there is nothing to draw.'
-      : `Demand by hour of the day: median, the p50–p95 spread, and the peak. ${
-          missing > 0 ? `${missing} of ${points.length} hours were never observed and are left blank.` : 'Every hour was observed.'
+      : `A typical day, hour by hour: the usual demand, the range up to high demand, and the highest. ${
+          missing > 0 ? `${missing} of ${points.length} hours were never recorded and are left blank.` : 'Every hour was recorded.'
         }`;
 
   if (scale === null) {
@@ -170,9 +170,10 @@ export function loadProfileChart(points: readonly HourProfilePoint[], spec: Char
     lx += 22 + label.length * CHAR_W + 14;
   };
 
-  key((x) => [{ kind: 'line', x1: x, y1: ly, x2: x + 17, y2: ly, stroke: palette.series[0], width: 2 }], 'median');
-  key((x) => [{ kind: 'rect', x, y: ly - 5, w: 17, h: 10, fill: palette.series[1], opacity: 0.18 }], 'p50–p95');
-  key((x) => [{ kind: 'line', x1: x, y1: ly, x2: x + 17, y2: ly, stroke: palette.series[1], width: 1, opacity: 0.75 }], 'peak');
+  // RM-097: the median is "usual", the p50–p95 band "usual to high", the peak "highest".
+  key((x) => [{ kind: 'line', x1: x, y1: ly, x2: x + 17, y2: ly, stroke: palette.series[0], width: 2 }], 'usual');
+  key((x) => [{ kind: 'rect', x, y: ly - 5, w: 17, h: 10, fill: palette.series[1], opacity: 0.18 }], 'usual to high');
+  key((x) => [{ kind: 'line', x1: x, y1: ly, x2: x + 17, y2: ly, stroke: palette.series[1], width: 1, opacity: 0.75 }], 'highest');
   if (missing > 0) {
     key((x) => [{ kind: 'rect', x, y: ly - 5, w: 17, h: 10, fill: `url(#${gapId})`, opacity: 0.4 }], 'no data');
   }
@@ -182,10 +183,10 @@ export function loadProfileChart(points: readonly HourProfilePoint[], spec: Char
     const { x, w } = band(i);
     const base = { x, y: box.y, w, h: box.h, label: `${String(p.hour).padStart(2, '0')}:00` };
     if (!observedAt(p)) return { ...base, value: 'No data' };
-    const spread = [p.p95 === null ? null : `p95 ${watts(p.p95)}`, p.max === null ? null : `peak ${watts(p.max)}`]
+    const spread = [p.p95 === null ? null : `high ${watts(p.p95)}`, p.max === null ? null : `highest ${watts(p.max)}`]
       .filter((s): s is string => s !== null)
       .join(' · ');
-    return { ...base, value: `Median ${watts(p.p50 as number)}`, ...(spread ? { note: spread } : {}) };
+    return { ...base, value: `Usual ${watts(p.p50 as number)}`, ...(spread ? { note: spread } : {}) };
   });
 
   return { width, height, idPrefix, title, desc, defs, marks, hits };

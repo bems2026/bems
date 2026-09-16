@@ -63,8 +63,8 @@ export function compare({ baseline, reporting }: ComparisonInput): ComparisonRes
   const reportingCoverage = coverageOf(reporting.online_sample_count, reporting.expected_sample_count);
 
   const thin = [
-    { label: 'baseline', c: baselineCoverage },
-    { label: 'reporting', c: reportingCoverage },
+    { label: 'earlier', c: baselineCoverage },
+    { label: 'this', c: reportingCoverage },
   ].filter((x) => x.c?.band !== 'complete');
 
   if (thin.length > 0) {
@@ -73,9 +73,9 @@ export function compare({ baseline, reporting }: ComparisonInput): ComparisonRes
       // Named, with its figure. "Not comparable" on its own invites the reader to assume a bug;
       // saying which period was watched, and how little, points at the building instead.
       reason:
-        `The ${thin.map((x) => x.label).join(' and ')} period ${thin.length === 1 ? 'was' : 'were'} not fully observed ` +
+        `${thin.length === 1 ? `The ${thin[0].label} period was not fully recorded` : 'Neither period was fully recorded'} ` +
         `(${thin.map((x) => `${x.label} ${x.c ? `${Math.round(x.c.ratio * 100)}%` : 'unknown'}`).join(', ')}). ` +
-        'A difference between two periods of unequal coverage is a difference in how much was watched, not in how much was used.',
+        'Two periods recorded unevenly differ in how much was recorded, not in how much was used.',
       baselineCoverage,
       reportingCoverage,
     };
@@ -112,5 +112,5 @@ export function describeDifference(c: Comparison, period: ReportPeriod): string 
   const direction = c.differenceKwh < 0 ? 'less' : 'more';
   const pctText = pct === null ? '' : ` (${pct.toFixed(1)}%)`;
   if (c.differenceKwh === 0) return `The two ${period}s used the same energy to the kilowatt-hour.`;
-  return `The reporting ${period} used ${magnitude.toFixed(2)} kWh${pctText} ${direction} than the baseline ${period}.`;
+  return `This ${period} used ${magnitude.toFixed(2)} kWh${pctText} ${direction} than the earlier ${period}.`;
 }

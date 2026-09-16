@@ -11,7 +11,7 @@
 /** Plot width. The kiosk is 1024 wide; the PDF asks for 515pt and sets its own. */
 export const REPORT_CHART_WIDTH = 640;
 
-export type ReportChartKind = 'daily' | 'hours' | 'breakdown' | 'heat' | 'curve';
+export type ReportChartKind = 'daily' | 'hours' | 'breakdown' | 'heat' | 'curve' | 'useShare' | 'circuitDaily' | 'circuitTrend';
 
 /** The order the report reads in — see `ReportCharts` for why shape comes before totals. */
 export const REPORT_CHART_ORDER: readonly ReportChartKind[] = ['daily', 'hours', 'breakdown', 'heat', 'curve'];
@@ -24,7 +24,12 @@ export function reportChartHeight(kind: ReportChartKind, dayCount: number): numb
     case 'hours':
       return 220;
     case 'breakdown':
+    case 'useShare':
       return 100;
+    // RM-095: the circuit charts carry a legend row under their day labels.
+    case 'circuitDaily':
+    case 'circuitTrend':
+      return 250;
     case 'heat':
       return dayCount > 10 ? 320 : 200;
     case 'curve':

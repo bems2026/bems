@@ -91,7 +91,7 @@ describe('ReportKpis', () => {
     draw({ building: building({ peak_total_power_w: null }) });
     // By text, not by role name: a `<dt>` (role "term") takes its name from author attributes only,
     // never from its content, so `getByRole('term', { name })` cannot match anything.
-    const peak = screen.getByText('Peak demand').nextElementSibling as HTMLElement;
+    const peak = screen.getByText('Highest demand').nextElementSibling as HTMLElement;
     expect(peak).toHaveTextContent('—');
     expect(peak).not.toHaveTextContent(/0\.00/);
   });

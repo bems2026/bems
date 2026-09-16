@@ -122,12 +122,14 @@ describe('ReportsPage — when something fails', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     heatmapThrows.current = true;
     render(<ReportsPage />);
+    expect(await screen.findByText(/100\.00 kWh/)).toBeInTheDocument();
 
+    // RM-096: the busy hours chart lives on Usage patterns.
+    fireEvent.click(await screen.findByRole('tab', { name: /usage patterns/i }));
     expect(await screen.findByText(/could not be drawn/)).toBeInTheDocument();
-    expect(screen.getByRole('table', { name: /Per-device report/ })).toBeInTheDocument();
-    expect(screen.getByText(/100\.00 kWh/)).toBeInTheDocument();
-    // The four charts that did not throw are still drawn.
-    expect(screen.getAllByRole('img').length).toBeGreaterThanOrEqual(4);
+    // The rest of the tab is still there: its demand tiles, and the two charts that did not throw.
+    expect(screen.getByText('Usual demand')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByRole('img').length).toBeGreaterThanOrEqual(2));
   });
 
   it('keeps the charts when the tariffs cannot be read, and never claims no rate was entered', async () => {
@@ -138,7 +140,8 @@ describe('ReportsPage — when something fails', () => {
 
     expect(await screen.findByText(/rates could not be loaded/i)).toBeInTheDocument();
     expect(screen.queryByText(/no rate has been entered/)).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getAllByRole('img').length).toBeGreaterThanOrEqual(5));
+    // The Overview's two charts — energy per day, and energy by use.
+    await waitFor(() => expect(screen.getAllByRole('img').length).toBeGreaterThanOrEqual(2));
   });
 
   it('offers Retry on a section that failed, and draws it once it answers', async () => {
@@ -146,19 +149,20 @@ describe('ReportsPage — when something fails', () => {
       .mockRejectedValueOnce(new Error('report_hour_matrix failed: canceling statement due to statement timeout'))
       .mockResolvedValue([]);
     render(<ReportsPage />);
+    // The figures that did load are not hostage to the ones that did not.
+    expect(await screen.findByText(/100\.00 kWh/)).toBeInTheDocument();
 
+    fireEvent.click(await screen.findByRole('tab', { name: /usage patterns/i }));
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(/day-by-hour heatmap could not be loaded/i);
+    expect(alert).toHaveTextContent(/busy hours chart could not be loaded/i);
     expect(alert).toHaveTextContent(/statement timeout/);
-    // The figures that did load are not hostage to the ones that did not — RM-081b: nor are the four
-    // charts whose own series arrived. Live, the curve's timeout used to take two loaded charts with it.
-    expect(screen.getByText(/100\.00 kWh/)).toBeInTheDocument();
-    await waitFor(() => expect(screen.getAllByRole('img').length).toBeGreaterThanOrEqual(4));
-    expect(screen.queryByText(/^Demand by day and hour/)).not.toBeInTheDocument();
+    // RM-081b: nor are the charts whose own series arrived.
+    await waitFor(() => expect(screen.getAllByRole('img').length).toBeGreaterThanOrEqual(2));
+    expect(screen.queryByText(/^Busy hours/)).not.toBeInTheDocument();
 
     fireEvent.click(within(alert).getByRole('button', { name: /retry/i }));
-    await waitFor(() => expect(screen.getAllByRole('img').length).toBeGreaterThanOrEqual(5));
-    expect(screen.queryByText(/day-by-hour heatmap could not be loaded/i)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByRole('img').length).toBeGreaterThanOrEqual(3));
+    expect(screen.queryByText(/busy hours chart could not be loaded/i)).not.toBeInTheDocument();
   });
 
   it('says it is loading, rather than showing an empty page', async () => {

@@ -100,7 +100,7 @@ describe('ReportsPage', () => {
 
     render(<ReportsPage />);
 
-    expect(await screen.findAllByText(/Sparse · 13%/)).not.toHaveLength(0);
+    expect(await screen.findAllByText(/Mostly missing · 13%/)).not.toHaveLength(0);
     const caveats = await screen.findAllByText(/partial month/);
     expect(caveats.length).toBeGreaterThan(0);
   });
@@ -136,11 +136,11 @@ describe('ReportsPage', () => {
     // RM-083b moved the export into a drawer; the property is unchanged — an empty table is not an export.
     vi.mocked(reports.getDevicePeriodReports).mockResolvedValue([]);
     render(<ReportsPage />);
-    await screen.findByText(/No per-device rows for/);
-    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
+    await waitFor(() => expect(reports.getDevicePeriodReports).toHaveBeenCalled());
+    fireEvent.click(await screen.findByRole('button', { name: 'Export' }));
     const csv = screen.getByRole('radio', { name: /Per-device CSV/ });
+    await waitFor(() => expect(csv).toHaveAccessibleDescription(/No per-device rows/));
     expect(csv).toBeDisabled();
-    expect(csv).toHaveAccessibleDescription(/No per-device rows/);
   });
 });
 

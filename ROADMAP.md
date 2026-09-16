@@ -3421,9 +3421,46 @@ Why this exists is the 2026-09-16 entry in §0. Operator decisions, 2026-09-16:
     - **The dark screen palette fails the lightness band** (`--green-bright` 0.71, `--purple-bright`
       0.81), and so do the base tokens. It is the app-wide chart palette, Analytics' too, so it is
       recorded as FI-028 rather than changed inside this work.
-- [ ] **RM-096 (L) — four tabs:** Overview, Circuits, Usage patterns, Compare.
-- [ ] **RM-097 (M) — plain words:** no p50/p95, load factor, load duration or DSM ceiling on the page or
-  in the PDF.
+- [x] **RM-096 (L) — four tabs, each one question. 2026-09-17.** Landed with RM-097 in one change,
+  because both rewrite the same pinned strings.
+  - **Overview** (how much)
+    - The heading with its "Recorded" badge and the key figure tiles.
+    - One line of small figures (commands, unusual readings, voltage, current R / Y / B) in place of the
+      "Also recorded" card.
+    - **Energy per day** and **Energy by use** (Lighting / Aircon / Others).
+    - "How much was recorded" in a disclosure.
+  - **Circuits** (`CircuitDeepDive.tsx`, rewritten)
+    - Lighting / Aircon / Others chips setting the same scope as the control bar.
+    - The chosen part's energy, share of the building, circuit count and highest circuit demand.
+    - An "Adds up" / "Check the meters" badge comparing the circuits' sum with the building's own figure
+      (RM-054's thresholds).
+    - The share bar, **Energy per day by circuit** and **Power through the week or month** (RM-095). The
+      daily chart reads "appears once the database update (phase42) is applied" until it is.
+    - The branch circuits table, then the devices on them in a disclosure.
+  - **Usage patterns** (`UsagePatterns.tsx`, replacing `BaselineReport.tsx`)
+    - The gate, and usual, high and highest demand tiles in kW.
+    - The findings as tiles, and the typical day, busy hours and time-at-each-level charts.
+    - Three short limits.
+  - **Compare:** its figures unchanged, the wording plain.
+  - **Loading.** The circuit series load only while the Circuits tab or the export drawer is open.
+    `ReportCharts` draws a chosen subset (`only`).
+  - **New CSS** (`.report-glance`, `.report-chips`, `.report-recorded__summary`, `.report-scope-note`)
+    passes the 8-point grid guard. The disclosure summary joins the one coarse-pointer block.
+- [x] **RM-097 (M) — plain words on the page. 2026-09-17.**
+  - **Wording changes**
+    - Median, p95 and peak become usual, high and highest; p99 is gone from the page.
+    - "Load factor" becomes "How steady"; "Overnight base load" becomes "Left on overnight".
+    - "Load duration" becomes "Time at each demand level"; "DSM ceiling" becomes "Max total draw", the
+      Automation page's own label.
+    - "Coverage" becomes "Recorded" and "How much was recorded"; "Sparse" becomes "Mostly missing".
+    - "Demand by hour" becomes "A typical day, hour by hour"; the heatmap becomes "Busy hours".
+    - Baseline / reporting become earlier / this; "Anomalies" becomes "Unusual readings".
+  - **Shared text.** `shared/reportProse.mjs` gains `PLAIN_NOT_SAID`, `PLAIN_COMPARISON_LIMITS` and
+    `tooLittleRecorded`: the same claims, shorter, beside the full sentences. The CLI deliverable keeps the
+    full sentences.
+  - **Tests.** A page test walks all four tabs and fails on p50, p95, p99, median, baseline, DSM, load
+    factor, load duration or percentile. Every pinned string moved with its wording.
+  - **The PDF's wording changes with RM-099**, which rebuilds the document as Simple or Detailed.
 - [ ] **RM-098 (M) — two new CSVs:** devices one row per day, and every reading (time, V, A, W).
 - [ ] **RM-099 (M) — a Simple or Detailed PDF** that follows the category or circuit chosen.
 

@@ -8,12 +8,12 @@ import { CIRCUITS } from '@shared/siteConfig.mjs';
 import { LOADS, LOAD_LABELS, loadOf } from '@shared/circuits.mjs';
 
 /**
- * RM-082c — one branch circuit at a time.
+ * RM-082c — one branch circuit at a time; RM-093 — or one category of load.
  *
- * The scope narrows what is stored per device: the device table, the Circuits tab and the per-device
- * CSV. It cannot narrow the headline figures, the findings or the charts, because per-device series
- * are not stored — so the page says so, rather than leaving a reader to believe a building-wide chart
- * is about the one branch they chose. And a branch's share stays a share of the WHOLE building: narrowed
+ * The scope narrows the Circuits tab — its figures, its charts and its tables — and the per-device CSV.
+ * The Overview and Usage patterns are the whole building's series (RM-096), and they say so in one line
+ * with the way to the Circuits tab, rather than leaving a reader to believe a building-wide chart is
+ * about the part they chose. And a branch's share stays a share of the WHOLE building: narrowed
  * to one branch, a share of what is left on screen would read 100%.
  *
  * Every device and branch here comes from the circuit tree, never from a literal id.
@@ -108,7 +108,12 @@ beforeEach(() => {
 afterEach(cleanup);
 
 const scopeSelect = () => screen.findByRole('combobox', { name: /^circuit$/i });
-const deviceTable = () => screen.findByRole('table', { name: /per-device report/i });
+const branchTable = () => screen.findByRole('table', { name: /branch circuits/i });
+const deviceTable = () => screen.findByRole('table', { name: /devices on these circuits/i });
+/** Data rows of a table: every row but its header. */
+const dataRows = (table: HTMLElement) => within(table).getAllByRole('row').length - 1;
+const openCircuits = async () => fireEvent.click(await screen.findByRole('tab', { name: /^circuits$/i }));
+const devicesLoaded = () => waitFor(() => expect(reports.getDevicePeriodReports).toHaveBeenCalled());
 
 describe('the circuit scope', () => {
   it('offers every branch of the building, named from the circuit tree, and starts on all of them', async () => {
@@ -121,43 +126,46 @@ describe('the circuit scope', () => {
       ...meters.map((m) => circuitOf(m).name),
     ]);
     // Nothing is narrowed, so there is nothing to explain.
-    expect(screen.queryByText(/still describe the whole building/i)).toBeNull();
+    expect(screen.queryByText(/this tab shows the whole building/i)).toBeNull();
   });
 
-  it('narrows the per-device table to one branch, and says what it cannot narrow', async () => {
+  it('narrows the Circuits tab to one branch, and the Overview says it is still the whole building', async () => {
     render(<ReportsPage />);
-    const before = within(await deviceTable()).getAllByRole('row').length;
-
     fireEvent.change(await scopeSelect(), { target: { value: `circuit:${CHOSEN.id}` } });
+    // RM-096: the Overview is the building's series, and says so in one line with the way to the branch.
+    expect(await screen.findByText(/this tab shows the whole building/i)).toBeInTheDocument();
 
-    await waitFor(async () => {
-      const after = within(await deviceTable()).getAllByRole('row').length;
-      expect(before - after).toBe(registry.length - onBranch(CHOSEN).length);
-    });
-    expect(screen.getByText(new RegExp(`${onBranch(CHOSEN).length} of ${registry.length} devices`))).toBeInTheDocument();
-    expect(screen.getByText(/still describe the whole building/i)).toBeInTheDocument();
+    await openCircuits();
+    await waitFor(async () => expect(dataRows(await branchTable())).toBe(1));
+    // The devices on it, without its own meter — which is in the table above.
+    expect(dataRows(await deviceTable())).toBe(onBranch(CHOSEN).length - 1);
+    expect(screen.getByRole('heading', { name: CHOSEN.name })).toBeInTheDocument();
   });
 
   it('narrows to a category of load — every branch that carries it, with the devices on them — RM-093', async () => {
     render(<ReportsPage />);
-    await deviceTable();
+    await openCircuits();
+    await branchTable();
     for (const load of CARRIED) {
       const branches = meters.filter((m) => loadOfMeter(m) === load).map(circuitOf);
-      const expected = branches.flatMap(onBranch).length;
-      fireEvent.change(await scopeSelect(), { target: { value: `load:${load}` } });
-      await waitFor(async () => expect(within(await deviceTable()).getAllByRole('row').length - 1).toBe(expected));
+      const devicesOn = branches.flatMap(onBranch).length - branches.length;
       const label = LOAD_LABELS[load as keyof typeof LOAD_LABELS];
-      expect(screen.getByText(new RegExp(`${expected} of ${registry.length} devices`))).toBeInTheDocument();
-      expect(screen.getAllByText(label, { selector: 'strong' }).length).toBeGreaterThan(0);
+      // The tab's own chips set the same scope the control bar's select does.
+      fireEvent.click(screen.getByRole('button', { name: label }));
+      await waitFor(async () => expect(dataRows(await branchTable())).toBe(branches.length));
+      if (devicesOn > 0) expect(dataRows(await deviceTable())).toBe(devicesOn);
+      expect(screen.getByRole('heading', { name: label })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: label })).toHaveAttribute('aria-pressed', 'true');
+      expect(await scopeSelect()).toHaveValue(`load:${load}`);
     }
   });
 
   it('keeps a branch share of the whole building when the Circuits tab is narrowed to it', async () => {
     render(<ReportsPage />);
     fireEvent.change(await scopeSelect(), { target: { value: `circuit:${CHOSEN.id}` } });
-    fireEvent.click(await screen.findByRole('tab', { name: /circuits/i }));
+    await openCircuits();
 
-    const branches = await screen.findByRole('table', { name: /branch circuits/i });
+    const branches = await branchTable();
     expect(within(branches).getByText(SHARE)).toBeInTheDocument();
     expect(within(branches).queryByText('100.0%')).toBeNull();
     // Still the rule the tab exists for, in its narrowed form.
@@ -167,7 +175,7 @@ describe('the circuit scope', () => {
   it('exports only that branch in the per-device CSV, named for it, with shares of the whole building', async () => {
     render(<ReportsPage />);
     fireEvent.change(await scopeSelect(), { target: { value: `circuit:${CHOSEN.id}` } });
-    await deviceTable();
+    await devicesLoaded();
 
     fireEvent.click(screen.getByRole('button', { name: /^export$/i }));
     const dialog = await screen.findByRole('dialog');
@@ -189,7 +197,7 @@ describe('the circuit scope', () => {
   it('keeps the PDF about the whole building, and says so', async () => {
     render(<ReportsPage />);
     fireEvent.change(await scopeSelect(), { target: { value: `circuit:${CHOSEN.id}` } });
-    await deviceTable();
+    await devicesLoaded();
     fireEvent.click(screen.getByRole('button', { name: /^export$/i }));
     const dialog = await screen.findByRole('dialog');
     // The PDF waits for the charts' series; until then the drawer offers another format instead.

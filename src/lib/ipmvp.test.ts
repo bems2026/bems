@@ -57,9 +57,9 @@ describe('compare — the refusals', () => {
       reporting: period({ period_start: '2026-09-01' }),
     });
     expect(r.comparable).toBe(false);
-    expect((r as { reason: string }).reason).toMatch(/baseline/);
+    expect((r as { reason: string }).reason).toMatch(/earlier period was not fully recorded/);
     expect((r as { reason: string }).reason).toMatch(/48%/);
-    expect((r as { reason: string }).reason).toMatch(/how much was watched, not in how much was used/i);
+    expect((r as { reason: string }).reason).toMatch(/how much was recorded, not in how much was used/i);
   });
 
   it('refuses when the reporting period was not fully observed', () => {
@@ -68,7 +68,7 @@ describe('compare — the refusals', () => {
       reporting: period({ period_start: '2026-09-01', online_sample_count: 21421 }),
     });
     expect(r.comparable).toBe(false);
-    expect((r as { reason: string }).reason).toMatch(/reporting/);
+    expect((r as { reason: string }).reason).toMatch(/this period was not fully recorded/);
   });
 
   it('names both when both are thin', () => {
@@ -76,7 +76,7 @@ describe('compare — the refusals', () => {
       baseline: period({ online_sample_count: 20000 }),
       reporting: period({ period_start: '2026-09-01', online_sample_count: 30000 }),
     });
-    expect((r as { reason: string }).reason).toMatch(/baseline and reporting/);
+    expect((r as { reason: string }).reason).toMatch(/Neither period was fully recorded \(earlier \d+%, this \d+%\)/);
   });
 
   it('refuses when a period reports no energy at all', () => {

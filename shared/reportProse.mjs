@@ -127,3 +127,40 @@ export const COMPARISON_NOT_ADJUSTED = [
       'to do, with what they know about the building that the meters do not.',
   },
 ];
+
+/*
+ * PLAIN WORDS FOR THE REPORTS PAGE — RM-097.
+ *
+ * The operator asked for a report page anyone in the office can read: no p50 or p95, no "baseline",
+ * no "DSM ceiling", fewer sentences. These are the SAME limits as the sentences above, said shorter,
+ * and they live beside them so the two cannot drift apart. The CLI deliverable (`server/baselineReport.mjs`)
+ * keeps the full sentences, because a university document is read differently from a kiosk.
+ */
+
+/** The page's closing limits, shortest form. Same three claims as `NOT_SAID`'s first, second and last. */
+export const PLAIN_NOT_SAID = [
+  { lead: 'Gaps are not counted.', body: 'Hours with no recording are left out of every figure, and they are not average hours.' },
+  { lead: 'Not per square metre or per person.', body: 'Floor area and occupancy are not recorded.' },
+  { lead: 'Not a forecast.', body: 'It shows what happened.' },
+];
+
+/** The comparison's limits, shortest form — `COMPARISON_NOT_ADJUSTED`, said plainly. */
+export const PLAIN_COMPARISON_LIMITS = [
+  { lead: 'Not adjusted for weather.', body: 'A hotter week can use more energy with nothing wasted.' },
+  { lead: 'Not adjusted for people or opening hours.', body: 'A quiet week and an efficient one look the same here.' },
+  { lead: 'It cannot see what changed.', body: 'Equipment added, removed or repaired moves the figure.' },
+  { lead: 'A difference, not a saving.', body: 'Why it changed is for you to judge.' },
+];
+
+export const PLAIN_COMPARISON_TITLE = 'What this comparison does not adjust for';
+
+/** `NOT_A_BASELINE_TITLE`, plainly. */
+export const TOO_LITTLE_TITLE = 'Too little recorded to show a usual pattern yet';
+
+/** `notABaselineYet`, plainly: the same floor, one sentence. */
+export function tooLittleRecorded(minutes, days) {
+  return [
+    `This period has ${minutes} recorded minute(s) across ${days} day(s). A usual pattern needs at least ` +
+      `${BASELINE_MIN_SAMPLES} minutes across ${BASELINE_MIN_DAYS} days, so read the figures below as a sample.`,
+  ];
+}

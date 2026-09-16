@@ -74,9 +74,11 @@ describe('loadProfileChart', () => {
   it('names its three series, because prose cannot say which one is the blue line', () => {
     const scene = loadProfileChart(full(), SPEC);
     const labels = texts(scene.marks).map((t) => t.text);
-    expect(labels).toContain('median');
-    expect(labels).toContain('p50–p95');
-    expect(labels).toContain('peak');
+    // RM-097: in the office's words — no median, no p50–p95, no peak.
+    expect(labels).toContain('usual');
+    expect(labels).toContain('usual to high');
+    expect(labels).toContain('highest');
+    expect(labels.some((l) => /p50|p95|median/i.test(l))).toBe(false);
     // And the hatch only earns a key when something is actually missing.
     expect(labels).not.toContain('no data');
     const withGap = loadProfileChart(full().map((p) => (p.hour === 5 ? unobserved(5) : p)), SPEC);

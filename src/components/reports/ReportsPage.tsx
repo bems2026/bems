@@ -13,26 +13,24 @@ import { buildPdfReport } from '@/lib/reportPdf/buildReport';
 import { bootedScript } from '@/lib/buildVersion';
 import { BUILDING_METER_IDS } from '@shared/registry.mjs';
 import { SITE } from '@shared/siteConfig.mjs';
-import { coverageOf, formatPeriod, isQuotable, type PeriodDeviceReport, type ReportPeriod } from '@/lib/supabaseReports';
+import { coverageOf, formatPeriod, isQuotable, type ReportPeriod } from '@/lib/supabaseReports';
 import { siteDateTime } from '@/lib/siteTime';
 import { ReportControlBar } from './ReportControlBar';
 import { ReportSkeleton } from './ReportSkeleton';
 import { ReportCharts, type ChartsData } from './ReportCharts';
 import { ALL_SCOPE, branchOf, buildBreakdown, decodeScope, encodeScope, scopeLabel, scopeOptions, scopeRows, type ReportScope } from '@/lib/circuitBreakdown';
 import type { TabDef } from '@/components/ui/Tabs';
-import { BaselineReport } from './BaselineReport';
+import { UsagePatterns } from './UsagePatterns';
 import { CircuitDeepDive } from './CircuitDeepDive';
 import { ComparisonReport } from './ComparisonReport';
 import { CoverageBanner } from './CoverageBanner';
 import { ExportDrawer, type ExportFormat } from './ExportDrawer';
 import { ReportSectionNote } from './ReportSectionNote';
 import { ReportKpis } from './ReportKpis';
-import { ReportFindings } from './ReportFindings';
-import { ReportTable, type ReportColumn } from './ReportTable';
 import { CoverageTag, ReportFigure } from './ReportFigure';
 import { useReportData } from './useReportData';
 import { carbonOf, costOf, type DayEnergy } from '@/lib/energyCost';
-import { energyFlagOf } from '@/lib/boundedEnergy';
+import { loadShareSegments } from '@/lib/circuitCharts';
 
 /**
  * Energy reports, weekly or monthly — Phase 12, generalised by RM-041.
@@ -53,6 +51,10 @@ import { energyFlagOf } from '@/lib/boundedEnergy';
  * tariff read costs the cost line, a hung heatmap query costs the four hourly charts, and a
  * malformed row costs one card — and each says so where it would have been, with a Retry.
  *
+ * FOUR TABS, EACH ONE QUESTION — RM-096. Overview: how much, with the few figures and two charts that say
+ * it. Circuits: where it went and what it was for, circuit by circuit. Usage patterns: when. Compare: what
+ * changed. The words are the office's (RM-097): no p50 or p95, no "baseline", no "DSM ceiling".
+ *
  * THE HEADLINE COMES FIRST AND LARGEST — RM-082. The period is named with its coverage badge, then
  * the key figures, then the coverage in detail, then what else the period recorded, then the
  * charts and the device table. Coverage still travels with every figure it qualifies: each
@@ -63,9 +65,9 @@ import { energyFlagOf } from '@/lib/boundedEnergy';
 /**
  * Four readings of the same period, not four pages.
  *
- * The summary answers how much, the baseline answers whether the window is even a benchmark, the
- * circuits answer where it went, and the comparison answers what changed — and every one of them
- * is about the period the picker above them selects. Tabs rather than routes for that reason: the
+ * The overview answers how much, the circuits answer where it went and what for, the usage patterns
+ * answer when, and the comparison answers what changed — and every one of them is about the period the
+ * picker above them selects. Tabs rather than routes for that reason: the
  * period is the page's subject, and a tab that reset it would be a different page pretending.
  *
  * NO PANEL FETCHES ON MOUNT, which is `Tabs`' own stated requirement — selection follows focus,
@@ -73,9 +75,9 @@ import { energyFlagOf } from '@/lib/boundedEnergy';
  * this level, keyed on the period, and handed down.
  */
 const REPORT_TABS: TabDef[] = [
-  { id: 'summary', label: 'Summary' },
-  { id: 'baseline', label: 'Baseline' },
+  { id: 'overview', label: 'Overview' },
   { id: 'circuits', label: 'Circuits' },
+  { id: 'patterns', label: 'Usage patterns' },
   { id: 'compare', label: 'Compare' },
 ];
 
@@ -93,7 +95,7 @@ function generatedLabel(iso: string): string | null {
 }
 
 export function ReportsPage() {
-  const [tab, setTab] = useState('summary');
+  const [tab, setTab] = useState('overview');
   const devices = useDeviceStore((s) => s.devices);
   /**
    * Week or month — RM-041. The operator asked for both, and they answer different questions: a
@@ -105,15 +107,16 @@ export function ReportsPage() {
    */
   const [period, setPeriod] = useState<ReportPeriod>('month');
   const [exportOpen, setExportOpen] = useState(false);
-  const report = useReportData(period);
+  // RM-094: the circuit series load only while something shows them — the Circuits tab, or an export.
+  const report = useReportData(period, undefined, { circuits: tab === 'circuits' || exportOpen });
   const { periods, selected, select, core, hours, matrix, curve, pricing, ceiling } = report;
   const months = periods.data;
   const rows = report.devices.data;
 
   /**
-   * One branch circuit, or the whole building — RM-082c. It narrows what is stored per device: the
-   * device table, the Circuits tab and the per-device CSV. Everything else on the page is a building
-   * series, and per-device series are not stored, so it stays the building's and the page says so.
+   * The whole building, one category of load, or one branch circuit — RM-082c and RM-093. It narrows the
+   * Circuits tab, its charts and the per-device exports. The Overview and Usage patterns are the whole
+   * building's series, and they say so in one line when a narrower part is chosen.
    * Kept across periods and tabs: which part of the building a reader is looking at is not a property
    * of the month.
    */
@@ -134,6 +137,8 @@ export function ReportsPage() {
    * disagree. See `src/lib/circuitBreakdown.ts` for why none of it is written here.
    */
   const { segments, untracked } = useMemo(() => buildBreakdown(rows ?? [], nameOf), [rows, nameOf]);
+  /** RM-096: the building by what each circuit carries — Lighting, Aircon, Others. */
+  const useSegments = useMemo(() => loadShareSegments(rows ?? []), [rows]);
 
   /** The charts need the daily series; each of the other three draws when its own series arrives
    *  (RM-081b). The ceiling is optional: a failed read draws the curve without its line. */
@@ -146,12 +151,13 @@ export function ReportsPage() {
             matrix: matrix.data,
             curve: curve.data,
             segments,
+            useSegments,
             untracked,
             ceilingW: ceiling.data ?? null,
             summary: core.data.summary,
           }
         : null,
-    [core.data, hours.data, matrix.data, curve.data, segments, untracked, ceiling.data]
+    [core.data, hours.data, matrix.data, curve.data, segments, useSegments, untracked, ceiling.data]
   );
 
   /**
@@ -305,51 +311,23 @@ export function ReportsPage() {
     return `Saved ${name} · ${pdf.sections?.length ?? 0} sections`;
   };
 
-  const rowCoverage = (r: PeriodDeviceReport) => coverageOf(r.online_sample_count, r.expected_sample_count);
-  const deviceColumns: ReportColumn<PeriodDeviceReport>[] = [
-    { id: 'device', header: 'Device', cell: (r) => nameOf(r.device_id) },
-    {
-      id: 'energy',
-      header: 'Energy',
-      unit: 'kWh',
-      numeric: true,
-      cell: (r) => <ReportFigure value={r.energy_kwh} unit="" digits={2} coverage={rowCoverage(r)} period={period} flag={energyFlagOf(r)} />,
-    },
-    {
-      id: 'peak',
-      header: 'Peak',
-      unit: 'W',
-      numeric: true,
-      cell: (r) => <ReportFigure value={r.peak_power_w} unit="" digits={0} coverage={rowCoverage(r)} period={period} />,
-    },
-    {
-      id: 'average',
-      header: 'Average',
-      unit: 'W',
-      numeric: true,
-      cell: (r) => <ReportFigure value={r.avg_power_w} unit="" digits={0} coverage={rowCoverage(r)} period={period} />,
-    },
-    { id: 'coverage', header: 'Coverage', cell: (r) => <CoverageTag coverage={rowCoverage(r)} period={period} /> },
-  ];
-
   return (
     <>
       <PageHeader
         title="Reports"
         sub={
           <>
-            {period === 'week' ? 'Weekly' : 'Monthly'} energy, demand and activity per device{' '}
+            {period === 'week' ? 'Weekly' : 'Monthly'} energy, where it went, and when{' '}
             <InfoHint>
-              Generated server-side once a month has ended and settled, from the same hourly archive the long-range
-              charts read. Every figure carries the share of the month actually observed — a partial month produces a
-              real number that is not the month&rsquo;s consumption.
+              Made from stored readings a couple of days after each {period} ends. Every figure says how much of the {period} was
+              recorded — a partly recorded {period} gives a real number that is lower than what was used.
             </InfoHint>
           </>
         }
       />
 
-      {/* RM-082b: every control in one sticky bar — what kind of period, which one, which reading
-          of it, and what to take away — instead of the header and two rows below it. */}
+      {/* RM-082b: every control in one sticky bar — what kind of period, which one, which part of the
+          building, which reading of it, and what to take away. */}
       <ReportControlBar
         period={period}
         onPeriodChange={setPeriod}
@@ -363,49 +341,44 @@ export function ReportsPage() {
         tab={tab}
         onTabChange={setTab}
         actions={
-          // RM-083b: one Export, opening the drawer that asks what to take away, instead of a PDF
-          // button and a CSV button that could each only ever export everything.
           <button type="button" className="devices-add-btn" onClick={() => setExportOpen(true)} disabled={!selected} aria-haspopup="dialog">
             <Download size={16} aria-hidden="true" /> Export
           </button>
         }
       />
 
-      {narrowed ? (
-        // RM-082c: said once, under the control that caused it and on every tab — the headline figures,
-        // the findings and the charts cannot be narrowed, and nothing about them changes to show it.
-        <p className="reports-note" role="note">
-          Narrowed to <strong>{narrowed}</strong>
-          {rows && scopedRows
-            ? `: the device table, the Circuits tab and the per-device CSV show ${scopedRows.length} of ${rows.length} devices.`
-            : ': the device table, the Circuits tab and the per-device CSV.'}{' '}
-          The headline figures, findings and charts still describe the whole building — per-device series are not stored,
-          so they cannot be narrowed.
+      {narrowed && tab !== 'circuits' && tab !== 'compare' ? (
+        // RM-096: the Overview and Usage patterns are the whole building's series; the chosen part of it
+        // lives on Circuits. Said in one line with the way there, instead of a paragraph.
+        <p className="reports-note report-scope-note" role="note">
+          This tab shows the whole building. <strong>{narrowed}</strong> is on the Circuits tab.{' '}
+          <button type="button" className="report-retry-btn" onClick={() => setTab('circuits')}>
+            Open Circuits
+          </button>
         </p>
       ) : null}
 
       {periods.status === 'loading' ? (
-        <ReportSkeleton label={period === 'week' ? 'weekly' : 'monthly'} period={period} parts={['kpis', 'charts', 'table']} />
+        <ReportSkeleton label={period === 'week' ? 'weekly' : 'monthly'} period={period} parts={['kpis', 'charts']} />
       ) : null}
       <ReportSectionNote section={periods} what="the list of reports" quietWhileLoading />
 
       {months?.length === 0 ? (
         <p className="reports-note">
-          <FileText size={16} aria-hidden="true" /> No {period} has completed since reporting was switched on. The first
-          report appears a couple of days after the end of the first full {period}.
+          <FileText size={16} aria-hidden="true" /> No {period} has completed since reporting was switched on. The first report appears
+          a couple of days after the end of the first full {period}.
         </p>
       ) : null}
 
-      {tab === 'summary' && building ? (
+      {/* ---- Overview ---------------------------------------------------------------------- */}
+      {tab === 'overview' && building ? (
         <ErrorBoundary scope="The headline figures" variant="inline" resetKey={building}>
           <header className="report-heading">
             <h2 className="report-heading__title">
               {formatPeriod(period, building.period_start)} · {period === 'week' ? 'Weekly' : 'Monthly'} report
             </h2>
             <CoverageTag coverage={buildingCoverage} period={period} />
-            {generatedLabel(building.generated_at) ? (
-              <p className="report-heading__meta">Generated {generatedLabel(building.generated_at)}</p>
-            ) : null}
+            {generatedLabel(building.generated_at) ? <p className="report-heading__meta">Made {generatedLabel(building.generated_at)}</p> : null}
           </header>
           <ReportKpis
             period={period}
@@ -417,168 +390,125 @@ export function ReportsPage() {
             pricing={pricing}
             previous={previous}
           />
+          {/* What else the period recorded, as one line of small figures rather than a card. */}
+          <dl className="report-glance" aria-label={`Also recorded for ${formatPeriod(period, building.period_start)}`}>
+            <div>
+              <dt>Commands</dt>
+              <dd>
+                {building.command_count}{' '}
+                <span className="reports-figure__caveat">
+                  ({building.command_count_manual} by hand · {building.command_count_schedule} scheduled · {building.command_count_autoshed} auto-shed)
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt>Unusual readings</dt>
+              <dd>{building.anomaly_count}</dd>
+            </div>
+            <div>
+              <dt>Average voltage</dt>
+              <dd>
+                <ReportFigure value={building.avg_voltage} unit="V" period={period} />
+              </dd>
+            </div>
+            <div>
+              <dt>Current R / Y / B</dt>
+              <dd>
+                <ReportFigure value={building.phase_current_red_avg} unit="" digits={2} period={period} />
+                {' / '}
+                <ReportFigure value={building.phase_current_yellow_avg} unit="" digits={2} period={period} />
+                {' / '}
+                {/* Blue is NULL by design — no Blue-phase meter is installed. */}
+                <ReportFigure value={building.phase_current_blue_avg} unit="A" digits={2} period={period} />
+              </dd>
+            </div>
+          </dl>
         </ErrorBoundary>
       ) : null}
 
-      {tab === 'summary' && selected ? (
+      {tab === 'overview' && selected ? (
         <>
           <ReportSectionNote section={core} what="the daily figures" quietWhileLoading />
-          {core.data ? (
-            <ErrorBoundary scope="The coverage summary" variant="inline" resetKey={core.data}>
-              <CoverageBanner
-                summary={core.data.summary}
-                observedDays={core.data.daily.filter((d) => d.usable_sample_count > 0).length}
-                completeDays={
-                  core.data.daily.filter((d) => d.expected_samples > 0 && d.usable_sample_count / d.expected_samples >= 0.95).length
-                }
-                label={periodLabel}
-              />
-            </ErrorBoundary>
-          ) : null}
-          {/* RM-084: after the coverage that qualifies them, before the records and charts. */}
-          {core.data ? (
-            <ErrorBoundary scope="The findings" variant="inline" resetKey={core.data}>
-              <ReportFindings
-                label={periodLabel}
-                daily={core.data.daily}
-                hours={hours.data}
-                hoursLoading={hours.status === 'loading'}
-                summary={core.data.summary}
-              />
-            </ErrorBoundary>
-          ) : null}
-        </>
-      ) : null}
-
-      {tab === 'summary' && building ? (
-        <ErrorBoundary scope="The period’s other records" variant="inline" resetKey={building}>
-          <section className="devices-table-card reports-summary" aria-label={`Also recorded for ${formatPeriod(period, building.period_start)}`}>
-            <h2 className="card-title">Also recorded</h2>
-            <dl className="reports-summary__grid">
-              <div>
-                <dt>Average voltage</dt>
-                <dd>
-                  <ReportFigure value={building.avg_voltage} unit="V" period={period} />
-                </dd>
-              </div>
-              <div>
-                <dt>Phase current R / Y / B</dt>
-                <dd>
-                  <ReportFigure value={building.phase_current_red_avg} unit="" digits={2} period={period} />
-                  {' / '}
-                  <ReportFigure value={building.phase_current_yellow_avg} unit="" digits={2} period={period} />
-                  {' / '}
-                  {/* Blue is NULL by design — no Blue-phase meter is installed. */}
-                  <ReportFigure value={building.phase_current_blue_avg} unit="A" digits={2} period={period} />
-                </dd>
-              </div>
-              <div>
-                <dt>Commands</dt>
-                <dd>
-                  {building.command_count} total · {building.command_count_manual} manual ·{' '}
-                  {building.command_count_schedule} scheduled · {building.command_count_autoshed} auto-shed
-                </dd>
-              </div>
-              <div>
-                <dt>Anomalies</dt>
-                <dd>{building.anomaly_count}</dd>
-              </div>
-            </dl>
-          </section>
-        </ErrorBoundary>
-      ) : null}
-
-      {tab === 'summary' && selected ? (
-        <>
-          <ReportSectionNote section={hours} what="the hour-of-day profile" quietWhileLoading />
-          <ReportSectionNote section={matrix} what="the day-by-hour heatmap" quietWhileLoading />
-          <ReportSectionNote section={curve} what="the load duration curve" quietWhileLoading />
-          <ReportSectionNote section={ceiling} what="the demand ceiling" quietWhileLoading />
+          <ReportSectionNote section={report.devices} what="the per-device figures" quietWhileLoading />
           {charts ? (
             <ReportCharts
               period={period}
               start={selected}
               {...charts}
-              loading={{
-                hours: hours.status === 'loading',
-                heat: matrix.status === 'loading',
-                curve: curve.status === 'loading',
-                breakdown: report.devices.status === 'loading',
-              }}
+              only={['daily', 'useShare']}
+              loading={{ useShare: report.devices.status === 'loading' }}
             />
           ) : chartsLoading ? (
             <ReportSkeleton label={periodLabel} period={period} parts={['charts']} />
           ) : null}
-        </>
-      ) : null}
-
-      {tab === 'baseline' && selected ? (
-        <>
-          <ReportSectionNote section={core} what="the daily figures" />
-          <ReportSectionNote section={hours} what="the hour-of-day profile" quietWhileLoading />
-          <ReportSectionNote section={matrix} what="the day-by-hour heatmap" quietWhileLoading />
-          <ReportSectionNote section={curve} what="the load duration curve" quietWhileLoading />
-          {charts ? (
-            <ErrorBoundary scope="The baseline report" variant="inline" resetKey={charts}>
-              <BaselineReport period={period} start={selected} summary={charts.summary ?? null} charts={charts} />
-            </ErrorBoundary>
-          ) : null}
-        </>
-      ) : null}
-
-      {tab === 'circuits' && selected ? (
-        <>
-          <ReportSectionNote section={report.devices} what="the per-device figures" />
-          {rows && scopedRows ? (
-            <ErrorBoundary scope="The circuit report" variant="inline" resetKey={scopedRows}>
-              <CircuitDeepDive
-                period={period}
-                start={selected}
-                rows={scopedRows}
-                buildingRows={rows}
-                scopeLabel={narrowed}
-                nameOf={nameOf}
+          {core.data ? (
+            <ErrorBoundary scope="How much was recorded" variant="inline" resetKey={core.data}>
+              <CoverageBanner
+                summary={core.data.summary}
+                observedDays={core.data.daily.filter((d) => d.usable_sample_count > 0).length}
+                completeDays={core.data.daily.filter((d) => d.expected_samples > 0 && d.usable_sample_count / d.expected_samples >= 0.95).length}
+                label={periodLabel}
+                collapsible
               />
             </ErrorBoundary>
           ) : null}
         </>
       ) : null}
 
-      {tab === 'compare' && months ? (
-        <ErrorBoundary scope="The comparison" variant="inline" resetKey={scopeKey}>
-          <ComparisonReport period={period} periods={months} selected={selected} />
-        </ErrorBoundary>
+      {/* ---- Circuits ------------------------------------------------------------------------ */}
+      {tab === 'circuits' && selected ? (
+        <>
+          <ReportSectionNote section={report.devices} what="the per-device figures" />
+          {report.devices.status === 'loading' ? <ReportSkeleton label={periodLabel} period={period} parts={['kpis', 'table']} /> : null}
+          {rows && rows.length > 0 ? (
+            <ErrorBoundary scope="The circuit report" variant="inline" resetKey={rows}>
+              <CircuitDeepDive
+                period={period}
+                start={selected}
+                rows={rows}
+                scope={scope}
+                scopes={SCOPES}
+                onScopeChange={setScope}
+                nameOf={nameOf}
+                building={building}
+                deviceDaily={report.deviceDaily}
+                trend={report.trend}
+              />
+            </ErrorBoundary>
+          ) : null}
+          {rows?.length === 0 ? <p className="reports-note">No per-device rows for {periodLabel}.</p> : null}
+        </>
       ) : null}
 
-      {tab === 'summary' && selected ? (
+      {/* ---- Usage patterns ------------------------------------------------------------------- */}
+      {tab === 'patterns' && selected ? (
         <>
-          <ReportSectionNote section={report.devices} what="the per-device figures" quietWhileLoading />
-          {report.devices.status === 'loading' ? (
-            // Silent when the charts' skeleton is already saying what is loading.
-            <ReportSkeleton label={periodLabel} period={period} parts={['table']} announce={!chartsLoading} />
+          <ReportSectionNote section={core} what="the daily figures" />
+          <ReportSectionNote section={hours} what="the typical day chart" quietWhileLoading />
+          <ReportSectionNote section={matrix} what="the busy hours chart" quietWhileLoading />
+          <ReportSectionNote section={curve} what="the demand levels chart" quietWhileLoading />
+          <ReportSectionNote section={ceiling} what="the max total draw" quietWhileLoading />
+          {charts ? (
+            <ErrorBoundary scope="The usage patterns" variant="inline" resetKey={charts}>
+              <UsagePatterns
+                period={period}
+                start={selected}
+                charts={charts}
+                hoursLoading={hours.status === 'loading'}
+                loading={{ hours: hours.status === 'loading', heat: matrix.status === 'loading', curve: curve.status === 'loading' }}
+              />
+            </ErrorBoundary>
+          ) : chartsLoading ? (
+            <ReportSkeleton label={periodLabel} period={period} parts={['kpis', 'charts']} />
           ) : null}
         </>
       ) : null}
 
-      {tab === 'summary' && scopedRows && scopedRows.length > 0 ? (
-        <ErrorBoundary scope="The per-device table" variant="inline" resetKey={scopedRows}>
-          <div className="report-table-card">
-            <ReportTable
-              columns={deviceColumns}
-              rows={scopedRows}
-              rowKey={(r) => r.device_id}
-              label={`Per-device report for ${periodLabel}${narrowed ? `, ${narrowed}` : ''}`}
-            />
-          </div>
+      {/* ---- Compare ---------------------------------------------------------------------------- */}
+      {tab === 'compare' && months ? (
+        <ErrorBoundary scope="The comparison" variant="inline" resetKey={scopeKey}>
+          <ComparisonReport period={period} periods={months} selected={selected} />
         </ErrorBoundary>
-      ) : null}
-
-      {tab === 'summary' && rows?.length === 0 && selected ? (
-        <p className="reports-note">No per-device rows for {periodLabel}.</p>
-      ) : null}
-
-      {tab === 'summary' && narrowed && rows && rows.length > 0 && scopedRows?.length === 0 ? (
-        <p className="reports-note">No device on {narrowed} reported for {periodLabel}.</p>
       ) : null}
 
       {exportOpen && selected ? (
