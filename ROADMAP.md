@@ -3393,8 +3393,34 @@ Why this exists is the 2026-09-16 entry in §0. Operator decisions, 2026-09-16:
   - **Tests.** `circuitSeries.test.ts` (11): missing function against refusal and timeout, the row cap,
     empty hours, rows outside the window. `useReportData.test.ts` (+4): idle until asked, both read when
     asked, "not available" not retried, a failure confined.
-- [ ] **RM-095 (M) — Energy per day by circuit, and Power through the week or month,** as report charts
-  that also print, with a fixed colour per circuit.
+- [x] **RM-095 (M) — Energy per day by circuit, and Power through the week or month. 2026-09-17.**
+  Report scenes, so the page and the PDF draw one picture.
+  - **`charts/circuitDailyEnergyChart.ts`**
+    - Stacked bars per day, in circuit order.
+    - A day no circuit recorded is one hatched block per outage, never a zero bar.
+    - A partly recorded day is lighter with a broken top edge.
+    - Legend in panel order. Hover on the whole day column gives the total, each circuit, and any
+      counter jump not counted.
+  - **`charts/circuitPowerTrendChart.ts`**
+    - One line per circuit in watts on one axis, broken at every hour without a reading.
+    - Day boundaries at the building's midnight, and a legend.
+    - Hover a day at a time: each circuit's average and highest.
+  - **`src/lib/circuitCharts.ts`**
+    - `circuitRefs(scope)` gives each branch its colour by its place on the panel, kept when narrowed.
+    - `circuitDayPoints` shapes the daily rows; a day is partial when any circuit was.
+    - `trendChartInput` places days at local midnight from the site's own offset.
+    - `loadShareSegments` sums building meters by category and leaves a category out, with the reason,
+      when one of its meters is impossible.
+  - **`circuitBreakdownChart`** segments carry a fixed `colourIndex`, so a missing neighbour no longer
+    repaints the rest.
+  - **Tests:** `circuitCharts.test.ts` (11), `circuitCharts.test.ts` in lib (9), breakdown +1.
+  - **Palette, measured with the dataviz validator.**
+    - The print palette passes every check.
+    - The light screen palette passes, with a contrast warning on amber and green lines (2.09:1 and
+      2.47:1), relieved by legends, number tables and hover values.
+    - **The dark screen palette fails the lightness band** (`--green-bright` 0.71, `--purple-bright`
+      0.81), and so do the base tokens. It is the app-wide chart palette, Analytics' too, so it is
+      recorded as FI-027 rather than changed inside this work.
 - [ ] **RM-096 (L) — four tabs:** Overview, Circuits, Usage patterns, Compare.
 - [ ] **RM-097 (M) — plain words:** no p50/p95, load factor, load duration or DSM ceiling on the page or
   in the PDF.
@@ -8086,6 +8112,15 @@ may not.
 ---
 
 ## 3. Future improvements (backlog)
+
+### Charts
+
+- [ ] **FI-027 (S)** — The dark theme's chart series tokens fail the dataviz lightness band. Measured
+  2026-09-17 with the categorical validator against `--bg-surface` #1e1e1e: `--green-bright` #3dbb8a is
+  at L 0.71 and `--purple-bright` #c4b5fd at 0.81, and the base tokens (`--green` #32b585, `--purple`
+  #a78bfa) still fail. Contrast and colour-blind separation pass. It affects every chart in the app
+  (Analytics' lines and every report chart), so the fix is a re-stepped dark series in `index.css`,
+  re-measured in both themes, not a report-only override.
 
 ### Onboarding
 - ~~**FI-001** (L) Zero-touch device discovery.~~ **Done 2026-08-25** — engine EX-039b, wizard

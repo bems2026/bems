@@ -23,6 +23,8 @@ export interface CircuitSegment {
    * Not drawn, and not called unmetered: the description says what it is instead.
    */
   excluded?: string;
+  /** RM-095: the palette index this segment's circuit or category always takes. Position when absent. */
+  colourIndex?: number;
 }
 
 export interface BreakdownOptions {
@@ -50,7 +52,7 @@ export function circuitBreakdownChart(
   const padX = 10;
   const barW = width - padX * 2;
 
-  const metered = segments.filter((s): s is { label: string; kwh: number } => typeof s.kwh === 'number' && Number.isFinite(s.kwh));
+  const metered = segments.filter((s): s is CircuitSegment & { kwh: number } => typeof s.kwh === 'number' && Number.isFinite(s.kwh));
   const excluded = segments.filter((s) => s.excluded);
   const unmetered = segments.filter((s) => !s.excluded && (typeof s.kwh !== 'number' || !Number.isFinite(s.kwh)));
   const total = metered.reduce((a, s) => a + s.kwh, 0);
@@ -89,7 +91,7 @@ export function circuitBreakdownChart(
 
   metered.forEach((s, i) => {
     const w = (s.kwh / total) * barW;
-    const colour = palette.series[i % palette.series.length];
+    const colour = palette.series[(s.colourIndex ?? i) % palette.series.length];
     const pct = (s.kwh / total) * 100;
     marks.push({ kind: 'rect', x, y: barY, w, h: BAR_H, fill: colour });
     hits.push({ x, y: barY, w, h: BAR_H, label: s.label, value: `${fmt(s.kwh)} kWh`, note: `${pct.toFixed(1)}% of the metered total` });

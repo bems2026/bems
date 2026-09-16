@@ -128,3 +128,15 @@ describe('circuitBreakdownChart', () => {
     expect(circuitBreakdownChart(SEGMENTS, SPEC)).toEqual(circuitBreakdownChart(SEGMENTS, SPEC));
   });
 });
+
+describe('circuitBreakdownChart colours — RM-095', () => {
+  it('gives a segment its own colour when it carries one, so a missing neighbour does not repaint it', () => {
+    const segments: CircuitSegment[] = [
+      { label: 'First', kwh: null, colourIndex: 0 },
+      { label: 'Second', kwh: 10, colourIndex: 1 },
+      { label: 'Third', kwh: 20, colourIndex: 2 },
+    ];
+    const fills = bars(circuitBreakdownChart(segments, SPEC).marks).map((s) => s.fill);
+    expect(fills).toEqual([SPEC.palette.series[1], SPEC.palette.series[2]]);
+  });
+});
