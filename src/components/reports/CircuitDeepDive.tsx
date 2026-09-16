@@ -113,9 +113,9 @@ export function CircuitDeepDive({ period, start, rows, buildingRows, scopeLabel 
         <p className="reports-note">
           {scopeLabel ? (
             <>
-              Only the {scopeLabel} branch and the devices on it. Its share is of the whole building, whose total is the sum
-              of every branch meter. The devices below sit <em>inside</em> this branch — adding the two tables together would
-              count the same energy twice.
+              Only {scopeLabel} and the devices on it. Each share is of the whole building, whose total is the sum of every
+              branch meter. The devices below sit <em>inside</em> these branches — adding the two tables together would count
+              the same energy twice.
             </>
           ) : (
             <>

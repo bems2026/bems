@@ -1,7 +1,7 @@
 import { useId, type ReactNode } from 'react';
 import { Tabs, type TabDef } from '@/components/ui/Tabs';
 import type { ReportPeriod } from '@/lib/supabaseReports';
-import type { BranchOption } from '@/lib/circuitBreakdown';
+import type { ScopeOption } from '@/lib/circuitBreakdown';
 import { PeriodPicker } from './PeriodPicker';
 
 /**
@@ -29,13 +29,13 @@ interface Props {
   selected: string | null;
   onSelect: (start: string) => void;
   /**
-   * RM-082c: the branch circuits the per-device figures can be narrowed to, the one chosen (`null`
-   * for the whole building), and how to change it. Offered only when there are two or more — a
-   * building on one branch has nothing to narrow.
+   * What the report can be narrowed to — RM-082c for one branch, RM-093 for a category of load — the
+   * encoded value chosen (`all` for the whole building), and how to change it. Offered only when there
+   * are two or more branches: a building on one branch has nothing to narrow.
    */
-  branches?: readonly BranchOption[];
-  scope?: string | null;
-  onScopeChange?: (id: string | null) => void;
+  scopes?: readonly ScopeOption[];
+  scope?: string;
+  onScopeChange?: (value: string) => void;
   tabs: TabDef[];
   tab: string;
   onTabChange: (id: string) => void;
@@ -48,8 +48,8 @@ export function ReportControlBar({
   starts,
   selected,
   onSelect,
-  branches = [],
-  scope = null,
+  scopes = [],
+  scope = 'all',
   onScopeChange,
   tabs,
   tab,
@@ -81,7 +81,7 @@ export function ReportControlBar({
       {/* A select rather than buttons: one per branch is a row that grows with the panel, and a second
           site's panel is not this one's. The same control, and so the same touch floor, as the period
           select it sits beside. */}
-      {branches.length > 1 && onScopeChange ? (
+      {scopes.filter((s) => s.group === 'circuit').length > 1 && onScopeChange ? (
         <div className="reports-picker">
           <label className="reports-picker__label" htmlFor={scopeId}>
             Circuit
@@ -89,15 +89,37 @@ export function ReportControlBar({
           <select
             id={scopeId}
             className="reports-picker__select"
-            value={scope ?? ''}
-            onChange={(e) => onScopeChange(e.target.value === '' ? null : e.target.value)}
+            value={scope}
+            onChange={(e) => onScopeChange(e.target.value)}
           >
-            <option value="">All circuits</option>
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.label}
-              </option>
-            ))}
+            {scopes
+              .filter((s) => s.group === null)
+              .map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            {/* RM-093: what the energy was for first, because that is the question the operator asks. */}
+            {scopes.some((s) => s.group === 'use') ? (
+              <optgroup label="By use">
+                {scopes
+                  .filter((s) => s.group === 'use')
+                  .map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                    </option>
+                  ))}
+              </optgroup>
+            ) : null}
+            <optgroup label="One circuit">
+              {scopes
+                .filter((s) => s.group === 'circuit')
+                .map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+            </optgroup>
           </select>
         </div>
       ) : null}

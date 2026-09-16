@@ -1,7 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import { BUILDING_METER_IDS, DEVICE_REGISTRY } from '@shared/registry.mjs';
 import { CIRCUITS } from '@shared/siteConfig.mjs';
-import { branchOptions, scopeRows, type CircuitTree } from './circuitBreakdown';
+import { LOADS, LOAD_LABELS, loadOf } from '@shared/circuits.mjs';
+import {
+  branchOptions,
+  decodeScope,
+  encodeScope,
+  loadOfDevice,
+  scopeLabel,
+  scopeMeterIds,
+  scopeOptions,
+  scopeRows,
+  type CircuitTree,
+  type LoadId,
+} from './circuitBreakdown';
 import type { PeriodDeviceReport } from './supabaseReports';
 
 /**
@@ -109,5 +121,95 @@ describe('a deeper panel', () => {
       registry: [{ id: 'm-a' }, { id: 'x', branch_circuit: 'B' }],
     };
     expect(() => scopeRows([row('m-a'), row('x')], 'a', loop)).not.toThrow();
+  });
+});
+
+/**
+ * RM-093 — a report narrowed to what the energy was FOR: Lighting, Aircon or Others, as the site's
+ * circuit tree declares them (RM-092), or to one circuit. One value in one select, so it is encoded.
+ */
+describe('report scopes', () => {
+  const all = registry.map((d) => row(d.id));
+  const loadOfCircuit = (id: string) => loadOf(circuits as never, id) as string | null;
+
+  it('round-trips through the select value, and anything unrecognised is the whole building', () => {
+    for (const option of scopeOptions()) {
+      expect(encodeScope(decodeScope(option.value))).toBe(option.value);
+    }
+    expect(decodeScope('all')).toEqual({ kind: 'all' });
+    expect(decodeScope('load:heating')).toEqual({ kind: 'all' });
+    expect(decodeScope('circuit:no-such-circuit')).toEqual({ kind: 'all' });
+    expect(decodeScope('')).toEqual({ kind: 'all' });
+  });
+
+  it('offers the whole building, then each category the branches carry, then each branch', () => {
+    const options = scopeOptions();
+    expect(options[0]).toEqual({ value: 'all', label: 'All circuits', group: null });
+    const loads = [...new Set(branchOptions().map((b) => loadOfCircuit(b.id)))].filter(Boolean);
+    const uses = options.filter((o) => o.group === 'use');
+    expect(uses.map((o) => o.value)).toEqual((LOADS as readonly string[]).filter((l) => loads.includes(l)).map((l) => `load:${l}`));
+    expect(options.filter((o) => o.group === 'circuit').map((o) => o.label)).toEqual(branchOptions().map((b) => b.label));
+  });
+
+  it('narrows to a category: the branches that carry it, their meters and the devices on them, nothing else', () => {
+    for (const load of LOADS as readonly string[]) {
+      const branches = branchOptions().filter((b) => loadOfCircuit(b.id) === load);
+      if (branches.length === 0) continue;
+      const expected = branches.flatMap((b) => scopeRows(all, b.id).map((r) => r.device_id)).sort();
+      expect(scopeRows(all, { kind: 'load', load: load as LoadId }).map((r) => r.device_id).sort()).toEqual(expected);
+      expect(scopeMeterIds({ kind: 'load', load: load as LoadId })).toEqual(
+        meters.filter((m) => branches.some((b) => circuits.find((c) => c.id === b.id)?.meter_device_id === m))
+      );
+      expect(scopeLabel({ kind: 'load', load: load as LoadId })).toBe(LOAD_LABELS[load as LoadId]);
+    }
+  });
+
+  it('puts every building meter in exactly one category here, so the categories add up to the building', () => {
+    const counted = (LOADS as readonly LoadId[]).flatMap((load) => scopeMeterIds({ kind: 'load', load }));
+    expect([...counted].sort()).toEqual([...meters].sort());
+  });
+
+  it('says which part of the building a scope is, and nothing for the whole of it', () => {
+    const first = branchOptions()[0];
+    expect(scopeLabel({ kind: 'all' })).toBeNull();
+    expect(scopeLabel({ kind: 'circuit', circuitId: first.id })).toBe(first.label);
+    expect(scopeMeterIds({ kind: 'all' })).toEqual([...meters]);
+    expect(scopeRows(all, { kind: 'all' })).toEqual(all);
+  });
+
+  it('gives a device the category of the branch it hangs from', () => {
+    for (const d of registry) {
+      const kept = (LOADS as readonly LoadId[]).filter((load) => scopeRows([row(d.id)], { kind: 'load', load }).length === 1);
+      expect(loadOfDevice(d.id)).toBe(kept[0] ?? null);
+    }
+  });
+});
+
+describe('scopes on a deeper panel', () => {
+  const tree: CircuitTree = {
+    circuits: [
+      { id: 'main', parent_id: null, name: 'Main', meter_device_id: null },
+      { id: 'east', parent_id: 'main', name: 'East', meter_device_id: 'm-east', load: 'lighting' },
+      { id: 'east-sockets', parent_id: 'east', name: 'East sockets', meter_device_id: 'm-east-sockets' },
+      { id: 'west', parent_id: 'main', name: 'West', meter_device_id: 'm-west', load: 'other' },
+      { id: 'north', parent_id: 'main', name: 'North', meter_device_id: 'm-north', load: 'lighting' },
+    ],
+    registry: [{ id: 'm-east' }, { id: 'm-east-sockets' }, { id: 'm-west' }, { id: 'm-north' }, { id: 'socket-1', branch_circuit: 'East sockets' }],
+  };
+  const rows = tree.registry.map((d) => row(d.id));
+
+  it('offers a category once however many branches carry it, and only categories that are carried', () => {
+    expect(scopeOptions(tree).filter((o) => o.group === 'use').map((o) => o.value)).toEqual(['load:lighting', 'load:other']);
+  });
+
+  it('gathers every branch of a category with what hangs beneath them', () => {
+    expect(scopeRows(rows, { kind: 'load', load: 'lighting' }, tree).map((r) => r.device_id)).toEqual(['m-east', 'm-east-sockets', 'm-north', 'socket-1']);
+    expect(scopeMeterIds({ kind: 'load', load: 'lighting' }, tree)).toEqual(['m-east', 'm-north']);
+    expect(loadOfDevice('socket-1', tree)).toBe('lighting');
+  });
+
+  it('offers no categories when the branches carry fewer than two — one would be the whole building again', () => {
+    const one: CircuitTree = { ...tree, circuits: tree.circuits.map((c) => (c.id === 'west' ? { ...c, load: 'lighting' } : c)) };
+    expect(scopeOptions(one).some((o) => o.group === 'use')).toBe(false);
   });
 });

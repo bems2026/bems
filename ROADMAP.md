@@ -3362,7 +3362,22 @@ Why this exists is the 2026-09-16 entry in §0. Operator decisions, 2026-09-16:
     missing category).
   - No daemon reads `load`, so running services behave identically until they restart onto it. The
     frontend needs `npm run build` (RM-093 is the first reader).
-- [ ] **RM-093 (M) — narrow a report to a category or one circuit.**
+- [x] **RM-093 (M) — narrow a report to a category of load or to one circuit. 2026-09-17.**
+  - **The scope.** `src/lib/circuitBreakdown.ts` gains
+    `ReportScope = all | load | circuit`, with:
+    - `encodeScope` and `decodeScope` (anything the tree does not offer is the whole building, never
+      an empty report);
+    - `scopeOptions` (the whole building, then each category the branches carry — only when they
+      carry two or more — then each branch);
+    - `scopeLabel`, `scopeMeterIds` (building meters only), and `loadOfDevice`.
+    - `scopeRows` takes a scope, and still takes a bare circuit id.
+  - **The select.** The control bar's "Circuit" select groups its options: All circuits, *By use*
+    (Lighting, Aircon, Others), then *One circuit*. The page's scope note, the device table, the
+    Circuits tab and the per-device CSV name follow whichever is chosen.
+  - **Tests.** `circuitScope.test.ts` +9: round-trips, option order, a category's branches, meters and
+    devices, every building meter in exactly one category, a deeper panel with inherited categories,
+    and no categories offered when the branches carry fewer than two. `ReportsPage.scope.test.tsx`
+    narrows to each category the site carries.
 - [ ] **RM-094 (M) — per-circuit daily energy and hourly power for the period** (the phase42 function,
   and `readings_archive`).
 - [ ] **RM-095 (M) — Energy per day by circuit, and Power through the week or month,** as report charts

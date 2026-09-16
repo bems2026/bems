@@ -1,6 +1,6 @@
 import { BUILDING_METER_IDS, DEVICE_REGISTRY, METERED } from '@shared/registry.mjs';
 import { CIRCUITS } from '@shared/siteConfig.mjs';
-import { buildingMeterIds, circuitPath } from '@shared/circuits.mjs';
+import { LOADS, LOAD_LABELS, buildingMeterIds, circuitPath, loadOf } from '@shared/circuits.mjs';
 import type { PeriodDeviceReport } from './supabaseReports';
 import { usableEnergy } from './boundedEnergy';
 import type { CircuitSegment } from '@/components/reports/charts/circuitBreakdownChart';
@@ -26,6 +26,8 @@ interface Circuit {
   parent_id: string | null;
   name: string;
   meter_device_id: string | null;
+  /** What the circuit carries — RM-092. Inherited from above when absent. */
+  load?: string;
 }
 
 interface RegistryDevice {
@@ -95,6 +97,96 @@ function circuitOfDevice(tree: CircuitTree, deviceId: string): Circuit | undefin
   return named ? tree.circuits.find((c) => c.name === named) : undefined;
 }
 
+/** What a branch circuit carries — RM-092, in the site's own `circuits.mjs`. */
+export type LoadId = 'lighting' | 'aircon' | 'other';
+
+/**
+ * Which part of the building a report is narrowed to — RM-093: the whole of it, everything that carries
+ * one kind of load (all the lighting branches together), or one branch.
+ */
+export type ReportScope = { kind: 'all' } | { kind: 'load'; load: LoadId } | { kind: 'circuit'; circuitId: string };
+
+export const ALL_SCOPE: ReportScope = { kind: 'all' };
+
+export interface ScopeOption {
+  /** The scope, encoded for one `<select>` value. */
+  value: string;
+  label: string;
+  /** `use` for a category, `circuit` for a branch, `null` for the whole building. */
+  group: 'use' | 'circuit' | null;
+}
+
+const loadOfCircuit = (tree: CircuitTree, id: string) => loadOf(tree.circuits as never, id) as LoadId | null;
+
+/** The branches a scope takes in, in site order. The whole building is every branch. */
+function scopeBranches(scope: ReportScope, tree: CircuitTree): BranchOption[] {
+  const branches = branchOptions(tree);
+  if (scope.kind === 'all') return branches;
+  if (scope.kind === 'load') return branches.filter((b) => loadOfCircuit(tree, b.id) === scope.load);
+  return branches.filter((b) => b.id === scope.circuitId);
+}
+
+export function encodeScope(scope: ReportScope): string {
+  return scope.kind === 'all' ? 'all' : scope.kind === 'load' ? `load:${scope.load}` : `circuit:${scope.circuitId}`;
+}
+
+/**
+ * A select value back into a scope. Anything this tree does not offer — a category no branch carries, a
+ * circuit that is not a branch, a value from an older build — is the whole building, never an empty
+ * report that would read as a part of the building that used nothing.
+ */
+export function decodeScope(value: string, tree: CircuitTree = SITE_TREE): ReportScope {
+  const [kind, ...rest] = value.split(':');
+  const id = rest.join(':');
+  if (kind === 'load' && (LOADS as readonly string[]).includes(id)) {
+    const scope: ReportScope = { kind: 'load', load: id as LoadId };
+    return scopeBranches(scope, tree).length > 0 ? scope : ALL_SCOPE;
+  }
+  if (kind === 'circuit' && branchOptions(tree).some((b) => b.id === id)) return { kind: 'circuit', circuitId: id };
+  return ALL_SCOPE;
+}
+
+/**
+ * What a reader can narrow to: the whole building, each category the branches carry, then each branch.
+ * Categories are offered only when the branches carry two or more of them — with one, "Lighting" would
+ * be the whole building under another name.
+ */
+export function scopeOptions(tree: CircuitTree = SITE_TREE): ScopeOption[] {
+  const branches = branchOptions(tree);
+  const carried = new Set(branches.map((b) => loadOfCircuit(tree, b.id)).filter((l): l is LoadId => l !== null));
+  const uses =
+    carried.size >= 2
+      ? (LOADS as readonly LoadId[]).filter((l) => carried.has(l)).map((l) => ({ value: `load:${l}`, label: LOAD_LABELS[l] as string, group: 'use' as const }))
+      : [];
+  return [
+    { value: 'all', label: 'All circuits', group: null },
+    ...uses,
+    ...branches.map((b) => ({ value: `circuit:${b.id}`, label: b.label, group: 'circuit' as const })),
+  ];
+}
+
+/** What a narrowed report calls itself: the category or the branch. `null` for the whole building. */
+export function scopeLabel(scope: ReportScope, tree: CircuitTree = SITE_TREE): string | null {
+  if (scope.kind === 'all') return null;
+  if (scope.kind === 'load') return LOAD_LABELS[scope.load] as string;
+  return branchOptions(tree).find((b) => b.id === scope.circuitId)?.label ?? null;
+}
+
+/** The building meters a scope sums, in site order — never a sub-meter, so nothing is counted twice. */
+export function scopeMeterIds(scope: ReportScope, tree: CircuitTree = SITE_TREE): string[] {
+  const ids = new Set(scopeBranches(scope, tree).map((b) => b.id));
+  return (buildingMeterIds(tree.circuits) as string[]).filter((meterId) => {
+    const circuit = tree.circuits.find((c) => c.meter_device_id === meterId);
+    return circuit !== undefined && ids.has(circuit.id);
+  });
+}
+
+/** The category of the branch a device hangs from, or `null` when the tree does not place it. */
+export function loadOfDevice(deviceId: string, tree: CircuitTree = SITE_TREE): LoadId | null {
+  const own = circuitOfDevice(tree, deviceId);
+  return own ? loadOfCircuit(tree, own.id) : null;
+}
+
 /**
  * The rows on one branch circuit, or every row when none is chosen — RM-082c.
  *
@@ -105,17 +197,21 @@ function circuitOfDevice(tree: CircuitTree, deviceId: string): Circuit | undefin
  */
 export function scopeRows<T extends { device_id: string }>(
   rows: readonly T[],
-  circuitId: string | null,
+  scope: ReportScope | string | null,
   tree: CircuitTree = SITE_TREE
 ): T[] {
-  if (circuitId === null) return [...rows];
-  const onBranch = new Map<string, boolean>();
+  // A bare circuit id is RM-082c's form, kept for its callers.
+  const resolved: ReportScope = scope === null ? ALL_SCOPE : typeof scope === 'string' ? { kind: 'circuit', circuitId: scope } : scope;
+  if (resolved.kind === 'all') return [...rows];
+  // RM-093: a category is every branch that carries it, each with what hangs beneath it.
+  const wanted = new Set(resolved.kind === 'circuit' ? [resolved.circuitId] : scopeBranches(resolved, tree).map((b) => b.id));
+  const inScope = new Map<string, boolean>();
   return rows.filter((r) => {
-    let known = onBranch.get(r.device_id);
+    let known = inScope.get(r.device_id);
     if (known === undefined) {
       const own = circuitOfDevice(tree, r.device_id);
-      known = own ? (circuitPath(tree.circuits, own.id) as { id: string }[]).some((c) => c.id === circuitId) : false;
-      onBranch.set(r.device_id, known);
+      known = own ? (circuitPath(tree.circuits, own.id) as { id: string }[]).some((c) => wanted.has(c.id)) : false;
+      inScope.set(r.device_id, known);
     }
     return known;
   });

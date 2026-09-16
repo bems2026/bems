@@ -18,7 +18,7 @@ import { siteDateTime } from '@/lib/siteTime';
 import { ReportControlBar } from './ReportControlBar';
 import { ReportSkeleton } from './ReportSkeleton';
 import { ReportCharts, type ChartsData } from './ReportCharts';
-import { branchOf, branchOptions, buildBreakdown, scopeRows } from '@/lib/circuitBreakdown';
+import { ALL_SCOPE, branchOf, buildBreakdown, decodeScope, encodeScope, scopeLabel, scopeOptions, scopeRows, type ReportScope } from '@/lib/circuitBreakdown';
 import type { TabDef } from '@/components/ui/Tabs';
 import { BaselineReport } from './BaselineReport';
 import { CircuitDeepDive } from './CircuitDeepDive';
@@ -80,10 +80,11 @@ const REPORT_TABS: TabDef[] = [
 ];
 
 /**
- * The branch circuits a reader can narrow the per-device figures to — RM-082c. Read from the circuit
- * tree once: it is this deployment's wiring, which does not change while the page is open.
+ * What a reader can narrow the per-device figures to — one branch circuit (RM-082c), or every branch
+ * that carries one kind of load (RM-093). Read from the circuit tree once: it is this deployment's
+ * wiring, which does not change while the page is open.
  */
-const BRANCHES = branchOptions();
+const SCOPES = scopeOptions();
 
 /** When the stored report was generated, in the building's own time; nothing when unreadable. */
 function generatedLabel(iso: string): string | null {
@@ -116,9 +117,10 @@ export function ReportsPage() {
    * Kept across periods and tabs: which part of the building a reader is looking at is not a property
    * of the month.
    */
-  const [scope, setScope] = useState<string | null>(null);
-  const branch = BRANCHES.find((b) => b.id === scope) ?? null;
-  const scopedRows = useMemo(() => (rows ? scopeRows(rows, branch?.id ?? null) : null), [rows, branch]);
+  const [scope, setScope] = useState<ReportScope>(ALL_SCOPE);
+  /** The part of the building the page is narrowed to, by name — `null` for the whole of it. */
+  const narrowed = scopeLabel(scope);
+  const scopedRows = useMemo(() => (rows ? scopeRows(rows, scope) : null), [rows, scope]);
 
   const nameOf = useCallback(
     (id: string) => devices.find((d) => d.id === id)?.display_name ?? id,
@@ -226,8 +228,8 @@ export function ReportsPage() {
         : 'The per-device figures are still loading.';
   } else if (rows.length === 0) {
     exportUnavailable['device-csv'] = 'No per-device rows were stored for this period.';
-  } else if (branch && scopedRows?.length === 0) {
-    exportUnavailable['device-csv'] = `No device on ${branch.label} reported for this period. Choose All circuits to export every device.`;
+  } else if (narrowed && scopedRows?.length === 0) {
+    exportUnavailable['device-csv'] = `No device on ${narrowed} reported for this period. Choose All circuits to export every device.`;
   }
 
   if (!supabase) {
@@ -258,12 +260,12 @@ export function ReportsPage() {
     if (format === 'device-csv') {
       if (!rows || !scopedRows || scopedRows.length === 0) throw new Error('No per-device rows were stored for this period.');
       // RM-082c: the narrowed rows, with the whole period's beside them so each share is still of the building.
-      const name = reportFilename(period, selected, 'devices', 'csv', branch?.label);
+      const name = reportFilename(period, selected, 'devices', 'csv', narrowed);
       downloadCsv(
         name,
         deviceCsv({ period, start: selected, rows: scopedRows, buildingRows: rows, nameOf, branchOf, meterIds: BUILDING_METER_IDS as readonly string[] })
       );
-      return `Saved ${name} · ${scopedRows.length} devices${branch ? ` on ${branch.label}` : ''}`;
+      return `Saved ${name} · ${scopedRows.length} devices${narrowed ? ` on ${narrowed}` : ''}`;
     }
 
     if (format === 'daily-csv') {
@@ -354,9 +356,9 @@ export function ReportsPage() {
         starts={months ? months.map((m) => m.period_start.slice(0, 10)) : []}
         selected={selected}
         onSelect={select}
-        branches={BRANCHES}
-        scope={branch?.id ?? null}
-        onScopeChange={setScope}
+        scopes={SCOPES}
+        scope={encodeScope(scope)}
+        onScopeChange={(value) => setScope(decodeScope(value))}
         tabs={REPORT_TABS}
         tab={tab}
         onTabChange={setTab}
@@ -369,11 +371,11 @@ export function ReportsPage() {
         }
       />
 
-      {branch ? (
+      {narrowed ? (
         // RM-082c: said once, under the control that caused it and on every tab — the headline figures,
         // the findings and the charts cannot be narrowed, and nothing about them changes to show it.
         <p className="reports-note" role="note">
-          Narrowed to <strong>{branch.label}</strong>
+          Narrowed to <strong>{narrowed}</strong>
           {rows && scopedRows
             ? `: the device table, the Circuits tab and the per-device CSV show ${scopedRows.length} of ${rows.length} devices.`
             : ': the device table, the Circuits tab and the per-device CSV.'}{' '}
@@ -534,7 +536,7 @@ export function ReportsPage() {
                 start={selected}
                 rows={scopedRows}
                 buildingRows={rows}
-                scopeLabel={branch?.label ?? null}
+                scopeLabel={narrowed}
                 nameOf={nameOf}
               />
             </ErrorBoundary>
@@ -565,7 +567,7 @@ export function ReportsPage() {
               columns={deviceColumns}
               rows={scopedRows}
               rowKey={(r) => r.device_id}
-              label={`Per-device report for ${periodLabel}${branch ? `, ${branch.label}` : ''}`}
+              label={`Per-device report for ${periodLabel}${narrowed ? `, ${narrowed}` : ''}`}
             />
           </div>
         </ErrorBoundary>
@@ -575,8 +577,8 @@ export function ReportsPage() {
         <p className="reports-note">No per-device rows for {periodLabel}.</p>
       ) : null}
 
-      {tab === 'summary' && branch && rows && rows.length > 0 && scopedRows?.length === 0 ? (
-        <p className="reports-note">No device on {branch.label} reported for {periodLabel}.</p>
+      {tab === 'summary' && narrowed && rows && rows.length > 0 && scopedRows?.length === 0 ? (
+        <p className="reports-note">No device on {narrowed} reported for {periodLabel}.</p>
       ) : null}
 
       {exportOpen && selected ? (
@@ -586,7 +588,7 @@ export function ReportsPage() {
           onExport={runExport}
           unavailable={exportUnavailable}
           sectionNotes={exportSectionNotes}
-          scopeLabel={branch?.label ?? null}
+          scopeLabel={narrowed}
         />
       ) : null}
     </>

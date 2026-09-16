@@ -5,6 +5,7 @@ import * as reports from '@/lib/supabaseReports';
 import * as csv from '@/lib/csv';
 import { BUILDING_METER_IDS, DEVICE_REGISTRY } from '@shared/registry.mjs';
 import { CIRCUITS } from '@shared/siteConfig.mjs';
+import { LOADS, LOAD_LABELS, loadOf } from '@shared/circuits.mjs';
 
 /**
  * RM-082c — one branch circuit at a time.
@@ -44,7 +45,7 @@ vi.mock('@/lib/supabaseTariffs', () => ({
   getEmissionFactors: vi.fn().mockResolvedValue([]),
 }));
 
-type Circuit = { id: string; name: string; meter_device_id: string | null };
+type Circuit = { id: string; name: string; meter_device_id: string | null; parent_id: string | null; load?: string };
 type Device = { id: string; branch_circuit?: string | null };
 
 const circuits = CIRCUITS as readonly Circuit[];
@@ -60,6 +61,9 @@ const kwhOf = (id: string) => (id === meters[0] ? 30 : meters.includes(id) ? 10 
 const TOTAL = meters.reduce((a, id) => a + kwhOf(id), 0);
 const CHOSEN = circuitOf(meters[1]);
 const SHARE = `${((10 / TOTAL) * 100).toFixed(1)}%`;
+/** RM-093: the categories the building meters' branches carry, as the tree declares them. */
+const loadOfMeter = (meterId: string) => loadOf(circuits as never, circuitOf(meterId).id) as string | null;
+const CARRIED = (LOADS as readonly string[]).filter((l) => meters.some((m) => loadOfMeter(m) === l));
 
 const buildingRow = (): reports.PeriodBuildingReport => ({
   period: 'month',
@@ -110,8 +114,12 @@ describe('the circuit scope', () => {
   it('offers every branch of the building, named from the circuit tree, and starts on all of them', async () => {
     render(<ReportsPage />);
     const select = await scopeSelect();
-    expect(select).toHaveValue('');
-    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['All circuits', ...meters.map((m) => circuitOf(m).name)]);
+    expect(select).toHaveValue('all');
+    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'All circuits',
+      ...CARRIED.map((l) => LOAD_LABELS[l as keyof typeof LOAD_LABELS]),
+      ...meters.map((m) => circuitOf(m).name),
+    ]);
     // Nothing is narrowed, so there is nothing to explain.
     expect(screen.queryByText(/still describe the whole building/i)).toBeNull();
   });
@@ -120,7 +128,7 @@ describe('the circuit scope', () => {
     render(<ReportsPage />);
     const before = within(await deviceTable()).getAllByRole('row').length;
 
-    fireEvent.change(await scopeSelect(), { target: { value: CHOSEN.id } });
+    fireEvent.change(await scopeSelect(), { target: { value: `circuit:${CHOSEN.id}` } });
 
     await waitFor(async () => {
       const after = within(await deviceTable()).getAllByRole('row').length;
@@ -130,9 +138,23 @@ describe('the circuit scope', () => {
     expect(screen.getByText(/still describe the whole building/i)).toBeInTheDocument();
   });
 
+  it('narrows to a category of load — every branch that carries it, with the devices on them — RM-093', async () => {
+    render(<ReportsPage />);
+    await deviceTable();
+    for (const load of CARRIED) {
+      const branches = meters.filter((m) => loadOfMeter(m) === load).map(circuitOf);
+      const expected = branches.flatMap(onBranch).length;
+      fireEvent.change(await scopeSelect(), { target: { value: `load:${load}` } });
+      await waitFor(async () => expect(within(await deviceTable()).getAllByRole('row').length - 1).toBe(expected));
+      const label = LOAD_LABELS[load as keyof typeof LOAD_LABELS];
+      expect(screen.getByText(new RegExp(`${expected} of ${registry.length} devices`))).toBeInTheDocument();
+      expect(screen.getAllByText(label, { selector: 'strong' }).length).toBeGreaterThan(0);
+    }
+  });
+
   it('keeps a branch share of the whole building when the Circuits tab is narrowed to it', async () => {
     render(<ReportsPage />);
-    fireEvent.change(await scopeSelect(), { target: { value: CHOSEN.id } });
+    fireEvent.change(await scopeSelect(), { target: { value: `circuit:${CHOSEN.id}` } });
     fireEvent.click(await screen.findByRole('tab', { name: /circuits/i }));
 
     const branches = await screen.findByRole('table', { name: /branch circuits/i });
@@ -144,7 +166,7 @@ describe('the circuit scope', () => {
 
   it('exports only that branch in the per-device CSV, named for it, with shares of the whole building', async () => {
     render(<ReportsPage />);
-    fireEvent.change(await scopeSelect(), { target: { value: CHOSEN.id } });
+    fireEvent.change(await scopeSelect(), { target: { value: `circuit:${CHOSEN.id}` } });
     await deviceTable();
 
     fireEvent.click(screen.getByRole('button', { name: /^export$/i }));
@@ -166,7 +188,7 @@ describe('the circuit scope', () => {
 
   it('keeps the PDF about the whole building, and says so', async () => {
     render(<ReportsPage />);
-    fireEvent.change(await scopeSelect(), { target: { value: CHOSEN.id } });
+    fireEvent.change(await scopeSelect(), { target: { value: `circuit:${CHOSEN.id}` } });
     await deviceTable();
     fireEvent.click(screen.getByRole('button', { name: /^export$/i }));
     const dialog = await screen.findByRole('dialog');
