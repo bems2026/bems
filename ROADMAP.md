@@ -203,6 +203,13 @@ had copied the old branches, because the services restarted before the flow was 
 devices were offline before and after the deploy — `acu_main` and the outside temperature sensor, both
 unpaired since RM-016.
 
+**Swept afterwards, 2026-09-16.** `npm run preflight` on the Pi reads **Ready**, with one warning, and
+that warning is the known pair: 18 of 20 devices reporting. Everything else passed — credentials, the
+database, the vendor account, 17 devices broadcasting on the segment, the bridge answering, six units
+active, and **the bridge still bound to loopback after the flow deploy**, which is the check worth
+having after writing to a live flow. `npm run site:check` reads the corrected wiring as coherent: 20
+devices across 6 circuits. Neither wrote anything.
+
 ### 2026-09-15/16 — the first real retention passes ran, and match the raw export; phase41 waits to be applied
 
 **`supabase/phase41_totals_rollup_integrated.sql` is applied (RM-087), on 2026-09-16, and read back.**
