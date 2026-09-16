@@ -63,6 +63,17 @@ export function branchOf(deviceId: string): string | null {
  * The wiring a scope is read from. The page uses this deployment's; a test can hand in a deeper
  * panel than this building has, which is the only way to know the scope works below one level.
  */
+/** Every device that measures power: the branch meters and the sub-meters beneath them. From the registry,
+ *  so no device is named here. The Reports page reads their daily energy (RM-094). */
+export function measuredDeviceIds(): string[] {
+  return [...new Set([...(BUILDING_METER_IDS as readonly string[]), ...registry.filter((d) => meteredIds.has(d.id)).map((d) => d.id)])];
+}
+
+/** The meters the building total is the sum of, in site order. */
+export function buildingMeters(): string[] {
+  return [...(BUILDING_METER_IDS as readonly string[])];
+}
+
 export interface CircuitTree {
   circuits: readonly Circuit[];
   registry: readonly { id: string; branch_circuit?: string | null }[];

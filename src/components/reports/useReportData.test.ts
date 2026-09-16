@@ -5,6 +5,8 @@ import * as reports from '@/lib/supabaseReports';
 import * as series from '@/lib/reportSeries';
 import * as tariffs from '@/lib/supabaseTariffs';
 import * as config from '@/lib/supabaseConfig';
+import * as circuits from '@/lib/circuitSeries';
+import { BUILDING_METER_IDS } from '@shared/registry.mjs';
 
 /**
  * RM-081. The Reports page fetched everything in one `Promise.all` and kept one error string that
@@ -38,6 +40,10 @@ vi.mock('@/lib/reportSeries', async (importOriginal) => {
 });
 vi.mock('@/lib/supabaseTariffs', () => ({ getTariffs: vi.fn(), getEmissionFactors: vi.fn() }));
 vi.mock('@/lib/supabaseConfig', () => ({ fetchScheduleContext: vi.fn() }));
+vi.mock('@/lib/circuitSeries', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/circuitSeries')>();
+  return { ...actual, getDeviceDailyEnergy: vi.fn(), getCircuitTrend: vi.fn() };
+});
 
 const month = (start: string): reports.PeriodBuildingReport => ({
   period: 'month',
@@ -88,6 +94,8 @@ beforeEach(() => {
   vi.mocked(tariffs.getEmissionFactors).mockResolvedValue([]);
   // A string, as the context map holds it — `dsmRowToContext` renders every value to text.
   vi.mocked(config.fetchScheduleContext).mockResolvedValue({ 'global.dsm.max_total_kw': '2.21' });
+  vi.mocked(circuits.getDeviceDailyEnergy).mockResolvedValue({ available: true, rows: [] });
+  vi.mocked(circuits.getCircuitTrend).mockResolvedValue({ startMs: 0, endMs: 0, series: [] });
 });
 
 afterEach(cleanup);
@@ -248,5 +256,42 @@ describe('ceilingWatts', () => {
 
   it.each([[undefined], [null], [0], [-1], ['not a number']])('treats %s as no ceiling set, never as a ceiling of zero', (kw) => {
     expect(ceilingWatts({ 'global.dsm.max_total_kw': kw })).toBeNull();
+  });
+});
+
+describe('the Circuits tab’s sections — RM-094', () => {
+  it('fetches nothing for the circuits until something shows them, and says idle rather than loading', async () => {
+    const { result } = renderHook(() => useReportData('month', FAST));
+    await waitFor(() => expect(allReady(result.current)).toBe(true));
+    expect(result.current.deviceDaily.status).toBe('idle');
+    expect(result.current.trend.status).toBe('idle');
+    expect(circuits.getDeviceDailyEnergy).not.toHaveBeenCalled();
+    expect(circuits.getCircuitTrend).not.toHaveBeenCalled();
+  });
+
+  it('reads every measured device’s days and every branch meter’s hours once the circuits are shown', async () => {
+    const { result } = renderHook(() => useReportData('month', FAST, { circuits: true }));
+    await waitFor(() => expect(result.current.trend.status).toBe('ready'));
+    await waitFor(() => expect(result.current.deviceDaily.status).toBe('ready'));
+    const meters = [...(BUILDING_METER_IDS as readonly string[])];
+    expect(circuits.getDeviceDailyEnergy).toHaveBeenCalledWith('month', '2026-08-01', expect.arrayContaining(meters), signalled);
+    expect(circuits.getCircuitTrend).toHaveBeenCalledWith('month', '2026-08-01', meters, signalled);
+    expect(result.current.deviceDaily.data).toEqual({ available: true, rows: [] });
+  });
+
+  it('passes "not on this database yet" through as an answer, not as an error to retry', async () => {
+    vi.mocked(circuits.getDeviceDailyEnergy).mockResolvedValue({ available: false });
+    const { result } = renderHook(() => useReportData('month', FAST, { circuits: true }));
+    await waitFor(() => expect(result.current.deviceDaily.status).toBe('ready'));
+    expect(result.current.deviceDaily.data).toEqual({ available: false });
+    expect(circuits.getDeviceDailyEnergy).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a failed power read to the power chart', async () => {
+    vi.mocked(circuits.getCircuitTrend).mockRejectedValue(new Error('readings_archive failed for a meter: statement timeout'));
+    const { result } = renderHook(() => useReportData('month', FAST, { circuits: true }));
+    await waitFor(() => expect(result.current.trend.status).toBe('error'));
+    await waitFor(() => expect(result.current.deviceDaily.status).toBe('ready'));
+    expect(result.current.core.status).toBe('ready');
   });
 });

@@ -21,6 +21,8 @@ import {
 } from '@/lib/reportSeries';
 import { getEmissionFactors, getTariffs, type FactorEntry, type TariffEntry } from '@/lib/supabaseTariffs';
 import { fetchScheduleContext } from '@/lib/supabaseConfig';
+import { getCircuitTrend, getDeviceDailyEnergy, type CircuitTrend, type DeviceDaily } from '@/lib/circuitSeries';
+import { buildingMeters, measuredDeviceIds } from '@/lib/circuitBreakdown';
 import { createReportCache, retryTransient, withTimeout, type ReportCache, type RetryOptions } from '@/lib/reportLoader';
 
 /**
@@ -46,6 +48,11 @@ import { createReportCache, retryTransient, withTimeout, type ReportCache, type 
  *   curve    duration curve                             → the load duration chart
  *   pricing  tariffs + emission factors                 → cost and emissions only
  *   ceiling  the DSM ceiling                            → the line across the duration curve
+ *   deviceDaily  each measured device's energy per day  → the Circuits tab's daily chart, the daily CSV
+ *   trend        each branch meter's power per hour     → the Circuits tab's power chart
+ *
+ * THE LAST TWO LOAD ONLY WHEN ASKED — RM-094. They are the Circuits tab's and the exports', and the
+ * page's rule is that nothing fetches for a panel nobody opened; `want` says who is looking.
  *
  * DERIVED BY KEY, NEVER CLEARED IN AN EFFECT — the same rule `ReportsPage` has held since c5d4e18.
  * Every outcome is tagged with the request it answers, and a section whose tag does not match the
@@ -57,7 +64,7 @@ import { createReportCache, retryTransient, withTimeout, type ReportCache, type 
  * to a period already read answers at once.
  */
 
-export type SectionName = 'periods' | 'devices' | 'core' | 'hours' | 'matrix' | 'curve' | 'pricing' | 'ceiling';
+export type SectionName = 'periods' | 'devices' | 'core' | 'hours' | 'matrix' | 'curve' | 'pricing' | 'ceiling' | 'deviceDaily' | 'trend';
 export type SectionStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 export interface Section<T> {
@@ -91,6 +98,13 @@ export interface ReportData {
   curve: Section<CurveRow[]>;
   pricing: Section<PricingData>;
   ceiling: Section<number | null>;
+  deviceDaily: Section<DeviceDaily>;
+  trend: Section<CircuitTrend>;
+}
+
+/** Which of the on-demand sections a caller is showing — RM-094. */
+export interface ReportWants {
+  circuits?: boolean;
 }
 
 export interface ReportDataOptions {
@@ -110,6 +124,8 @@ export const DEFAULT_TIMEOUTS: Record<SectionName, number> = {
   curve: 45_000,
   pricing: 20_000,
   ceiling: 20_000,
+  deviceDaily: 30_000,
+  trend: 45_000,
 };
 
 /** What each section is, in the words a timeout message uses. */
@@ -122,6 +138,8 @@ const LABELS: Record<SectionName, string> = {
   curve: 'The load duration curve',
   pricing: 'The tariffs and emission factors',
   ceiling: 'The demand ceiling',
+  deviceDaily: 'The daily figures per circuit',
+  trend: 'The power per circuit',
 };
 
 /**
@@ -195,7 +213,7 @@ function useSection<T>(
 
 const startOf = (row: PeriodBuildingReport) => row.period_start.slice(0, 10);
 
-export function useReportData(period: ReportPeriod, options?: ReportDataOptions): ReportData {
+export function useReportData(period: ReportPeriod, options?: ReportDataOptions, want: ReportWants = {}): ReportData {
   // Read once. Callers pass object literals, and a new object each render must not refetch.
   const [opts] = useState<Resolved>(() => ({
     timeouts: { ...DEFAULT_TIMEOUTS, ...options?.timeouts },
@@ -253,6 +271,17 @@ export function useReportData(period: ReportPeriod, options?: ReportDataOptions)
     (signal: AbortSignal) => fetchScheduleContext({ signal }).then((ctx) => ceilingWatts(ctx)),
     []
   );
+  // Every device that measures power, read once per period and narrowed in the browser, so changing the
+  // scope never asks the database again.
+  const loadDeviceDaily = useCallback(
+    (signal: AbortSignal) => getDeviceDailyEnergy(period, requireStart(selected), measuredDeviceIds(), { signal }),
+    [period, selected]
+  );
+  const loadTrend = useCallback(
+    (signal: AbortSignal) => getCircuitTrend(period, requireStart(selected), buildingMeters(), { signal }),
+    [period, selected]
+  );
+  const onDemand = (section: string) => (want.circuits ? at(section) : null);
 
   return {
     periods,
@@ -265,6 +294,8 @@ export function useReportData(period: ReportPeriod, options?: ReportDataOptions)
     curve: useSection('curve', at('curve'), loadCurve, cache, opts),
     pricing: useSection('pricing', enabled ? 'pricing' : null, loadPricing, cache, opts),
     ceiling: useSection('ceiling', enabled ? 'ceiling' : null, loadCeiling, cache, opts),
+    deviceDaily: useSection('deviceDaily', onDemand('deviceDaily'), loadDeviceDaily, cache, opts),
+    trend: useSection('trend', onDemand('trend'), loadTrend, cache, opts),
   };
 }
 

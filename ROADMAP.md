@@ -3378,8 +3378,21 @@ Why this exists is the 2026-09-16 entry in §0. Operator decisions, 2026-09-16:
     devices, every building meter in exactly one category, a deeper panel with inherited categories,
     and no categories offered when the branches carry fewer than two. `ReportsPage.scope.test.tsx`
     narrows to each category the site carries.
-- [ ] **RM-094 (M) — per-circuit daily energy and hourly power for the period** (the phase42 function,
-  and `readings_archive`).
+- [x] **RM-094 (M) — per-circuit daily energy and hourly power for any stored period. 2026-09-17.**
+  - **`src/lib/circuitSeries.ts`**
+    - `getDeviceDailyEnergy` calls phase42's `report_device_daily_energy` for every device that
+      measures power, once per period, and the scope is applied in the browser. `PGRST202` or `42883`
+      (phase42 not applied) resolves to `{ available: false }`: an answer the page explains, not an error
+      to retry. A refusal or a timeout still throws.
+    - `getCircuitTrend` reads the window from `report_window`, then each branch meter's hours from
+      `readings_archive`. `densifyHours` gives every hour a slot, and an hour nothing was recorded in
+      stays empty, never 0 W.
+  - **`useReportData`** gains `deviceDaily` and `trend` sections. They load only when a caller asks
+    (`want.circuits`), so the page still fetches nothing for a panel nobody opened. A failed power read
+    stays confined to the power chart.
+  - **Tests.** `circuitSeries.test.ts` (11): missing function against refusal and timeout, the row cap,
+    empty hours, rows outside the window. `useReportData.test.ts` (+4): idle until asked, both read when
+    asked, "not available" not retried, a failure confined.
 - [ ] **RM-095 (M) — Energy per day by circuit, and Power through the week or month,** as report charts
   that also print, with a fixed colour per circuit.
 - [ ] **RM-096 (L) — four tabs:** Overview, Circuits, Usage patterns, Compare.
