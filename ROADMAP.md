@@ -923,9 +923,12 @@ Everything else is small, and the build order below is honest about size.
   two weeks (RM-020), so their averages mean nothing and their tiers should be set on what they
   feed rather than on what they have measured.
 
-### Migrations — all applied
+### Migrations — one waits: phase42
 
-**Every migration in this repository is applied**, the latest
+**`supabase/phase42_bounded_device_energy.sql` (RM-091) is written and rehearsed, and waits to be
+applied by the operator — before about 2026-10-03**, when September's monthly report is generated and
+would otherwise carry the L.O Yellow counter jump. Its read-back is in RM-091. Every earlier migration
+is applied, the latest
 `phase41_totals_rollup_integrated.sql` (RM-087) on 2026-09-16, read back the same day, and
 `phase40_report_curve_speed.sql` (RM-086) on 2026-09-15, read back the same day.
 `phase27_period_reports.sql` was applied 2026-09-08; `period_reports` holds 80 rows and
@@ -3294,13 +3297,54 @@ Why this exists is the 2026-09-16 entry in §0. Operator decisions, 2026-09-16:
     `src/lib/reportCsv.ts`, `src/lib/reportPdf/buildReport.ts`, `src/lib/reportPdf/docDefinition.ts`, and
     their tests.
 - [ ] **RM-091 (M) — `phase42_bounded_device_energy.sql`: the generators use the rule, and the one row is
-  corrected.**
-  - `report_device_daily_energy(period, start, tz, device_ids)` returns one row per device per local day:
-    bounded energy, the counter, removed kWh, peak, average and minutes. Gap days are included.
-  - `generate_period_report` and `generate_monthly_report` sum it, with their building halves unchanged.
-  - A guarded one-time correction subtracts the removed kWh from stored `period_reports` rows only. It
-    never touches coverage, `generated_at`, building rows or the legacy tables.
-  - Rehearsed on the Pi, applied by the operator, then read back. **Apply before about 2026-10-03.**
+  corrected. Written and rehearsed 2026-09-17; waits for the operator to apply it — before about
+  2026-10-03.**
+  - **What it adds.**
+    - `period_reports.energy_removed_kwh` and `energy_restated_at`.
+    - `report_device_daily_energy(period, start, tz, device_ids)`: one row per device per local day of
+      the period, gap days included, with the bounded energy, the counter, what was removed, clipped
+      hours, peak, average, minutes recorded, minutes in the day and resolution. `security invoker`;
+      signed-in readers and the service role may run it, anonymous readers may not.
+  - **What it changes.** `generate_period_report` and `generate_monthly_report` sum that function for
+    per-device energy, and the period generator keeps what was removed beside the figure.
+    `test/phase42-bounded-device-energy-schema.test.mjs` holds three things:
+    - both generators' building halves, declarations and hours are phase27's and phase12's text byte
+      for byte;
+    - the correction updates three columns of one table and deletes nothing;
+    - the cap's constants are `src/lib/boundedEnergy.ts`'s.
+  - **The one-time correction** subtracts what was removed only from a stored row that provably contains
+    it: its figure must still equal the sum of the counters it was built from, within 0.01 kWh. It never
+    touches coverage, `generated_at`, the building rows or the legacy tables, and a second paste changes
+    nothing.
+  - **Rehearsed on the Pi's Docker, `== REHEARSAL PASSED ==`.**
+    - Every earlier assertion still holds, June's figures and the monthly-equals-period check included.
+    - A new stage seeds the six fixture days `boundedEnergy.test.ts` uses, with the same answers, plus a
+      minute-resolution jump (51.19 -> 1.19 kWh). It also seeds stored rows as the old generators wrote
+      them, then applies phase42 twice: two rows corrected, then none.
+    - Stale rows and a figure not built from these counters are left alone. The generators reproduce the
+      corrections, and July agrees between the period table and the legacy table.
+  - **Neuters.**
+    - Rehearsal: without the bound, it fails at fixture A (67.50 where 0.30 is right); without the proof
+      that the stored figure contains the jump, it corrects the unprovable row to 2.95.
+    - Text test: an edited building half fails its byte-for-byte check.
+  - **To apply:** paste the file into the Supabase SQL editor. The NOTICE should say it corrected
+    **1** row. I read the rest back over the API. The operator can time a signed-in month read, which
+    decides RM-091a:
+    ```sql
+    begin;
+    set local role authenticated;
+    select set_config('request.jwt.claims', '{"role":"authenticated"}', true);
+    explain analyze select * from report_device_daily_energy('month', date '2026-09-01', 'Asia/Manila',
+      array['mtr_lo_red','mtr_arec_acu','mtr_co_yellow','mtr_lo_yellow']);
+    rollback;
+    ```
+  - **Expected read-back:**
+    - 2026-09-08 L.O Yellow: counter 77.502, energy about 0.713, removed about 76.789, and no other
+      removal anywhere.
+    - The week of 2026-09-07 `mtr_lo_yellow` row: about 4.617 kWh, with `generated_at` unchanged.
+    - The four branches: about 61.51 kWh against the building's 61.73.
+  - Files: `supabase/phase42_bounded_device_energy.sql`, `supabase/rehearse.sh`,
+    `test/phase42-bounded-device-energy-schema.test.mjs`, `docs/storage-contract.md`.
 - [ ] **RM-092 (S) — a `load` category on each branch circuit** (Lighting / Aircon / Others) in the site
   setup, checked by `site:check`.
 - [ ] **RM-093 (M) — narrow a report to a category or one circuit.**

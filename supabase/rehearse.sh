@@ -150,6 +150,15 @@ psql < "$HERE/phase41_totals_rollup_integrated.sql" >/dev/null
 psql < "$HERE/phase41_totals_rollup_integrated.sql" >/dev/null
 echo "   ok — the totals rollup re-applies cleanly"
 
+# RE-APPLYING PHASE42 — RM-091. It redefines both report generators, and the phase37 re-application
+# above dropped and recreated `report_window`, taking phase42's service_role grant on it with it. Twice,
+# because its header says a second paste changes nothing. Its one-time correction is exercised by its
+# own stage at the end of this file, where there are stored rows for it to find.
+echo "== re-applying phase42, twice =="
+psql < "$HERE/phase42_bounded_device_energy.sql" >/dev/null
+psql < "$HERE/phase42_bounded_device_energy.sql" >/dev/null
+echo "   ok — the bounded generators re-apply cleanly"
+
 echo "== seeding =="
 psql <<'SQL'
 insert into devices (id, display_name, class) values
@@ -1299,6 +1308,219 @@ begin
   assert n = 2, format('phase40: both totals policies must wrap auth.role() in a select, found %s', n);
 
   raise notice 'phase40: the duration curve in one pass — assertions passed';
+end $$;
+SQL
+
+# ---- phase42: a counter may not add more than its circuit could draw ---------------------------
+#
+# THE SIX DAYS `src/lib/boundedEnergy.test.ts` USES, WITH THE SAME ANSWERS, plus one on raw minute
+# readings. Seeded in July 2026 so nothing above, which is all June, moves. Local hour h of local day D
+# in Asia/Manila is (D - 1 day) 16:00 UTC + h.
+#
+# The stored rows are written as the generators BEFORE phase42 would have written them — each device's
+# week is the sum of its days' counter maxima — and then phase42 is applied again, so its one-time
+# correction runs against rows it has to prove before it may touch them.
+echo "== phase42: seeding a counter jump, a healthy day, a gap, a restart and stored reports =="
+psql <<'SQL' >/dev/null
+insert into devices (id, display_name, class) values
+  ('mtr_jump',   'Jumping Counter Meter', 'meter'),
+  ('mtr_steady', 'Steady Meter',          'meter'),
+  ('mtr_raw',    'Raw Minute Meter',      'meter')
+on conflict (id) do nothing;
+
+insert into readings_hourly (device_id, hour, power_w_avg, power_w_max, voltage_avg, current_avg,
+                             energy_kwh_today_max, sample_count, online_sample_count)
+values
+  -- A, Mon 2026-07-06: 0.15 -> 67.40 in one hour at 50 W, then a repaired base at 0.30.
+  ('mtr_jump', timestamptz '2026-07-05 16:00:00+00', 50, 60, 230, 0.2, 0.10, 60, 60),
+  ('mtr_jump', timestamptz '2026-07-05 17:00:00+00', 50, 60, 230, 0.2, 0.15, 60, 60),
+  ('mtr_jump', timestamptz '2026-07-05 18:00:00+00', 50, 60, 230, 0.2, 67.40, 60, 60),
+  ('mtr_jump', timestamptz '2026-07-05 19:00:00+00', 50, 60, 230, 0.2, 67.45, 60, 60),
+  ('mtr_jump', timestamptz '2026-07-05 20:00:00+00', 50, 60, 230, 0.2, 0.30, 60, 60),
+  ('mtr_jump', timestamptz '2026-07-05 21:00:00+00', 50, 60, 230, 0.2, 0.35, 60, 60),
+  -- B, Tue 2026-07-07: healthy.
+  ('mtr_jump', timestamptz '2026-07-07 00:00:00+00', 300, 400, 230, 1.3, 0.2, 60, 60),
+  ('mtr_jump', timestamptz '2026-07-07 01:00:00+00', 300, 400, 230, 1.3, 0.5, 60, 60),
+  ('mtr_jump', timestamptz '2026-07-07 02:00:00+00', 300, 400, 230, 1.3, 0.9, 60, 60),
+  -- D, Wed 2026-07-08: nine hours offline between two readings; the rise across them is real.
+  ('mtr_jump', timestamptz '2026-07-07 17:00:00+00', 100, 100, 230, 0.4, 0.2, 60, 60),
+  ('mtr_jump', timestamptz '2026-07-08 02:00:00+00', 100, 100, 230, 0.4, 1.0, 60, 60),
+  -- C, Mon 2026-07-13: the counter restarted between 09:00 and 10:00.
+  ('mtr_jump', timestamptz '2026-07-13 00:00:00+00', 400, 500, 230, 1.7, 1.0, 60, 60),
+  ('mtr_jump', timestamptz '2026-07-13 01:00:00+00', 400, 500, 230, 1.7, 1.4, 60, 60),
+  ('mtr_jump', timestamptz '2026-07-13 02:00:00+00', 400, 500, 230, 1.7, 0.1, 60, 60),
+  ('mtr_jump', timestamptz '2026-07-13 03:00:00+00', 400, 500, 230, 1.7, 0.5, 60, 60),
+  -- F, Tue 2026-07-14: a jump in an hour that carried no power reading.
+  ('mtr_jump', timestamptz '2026-07-13 16:00:00+00', 80, 90, 230, 0.3, 0.1, 60, 60),
+  ('mtr_jump', timestamptz '2026-07-13 17:00:00+00', null, null, null, null, 30.0, 60, 60),
+  -- A steady meter on B's day, whose stored week is stale but holds no jump.
+  ('mtr_steady', timestamptz '2026-07-07 00:00:00+00', 300, 400, 230, 1.3, 0.2, 60, 60),
+  ('mtr_steady', timestamptz '2026-07-07 01:00:00+00', 300, 400, 230, 1.3, 0.5, 60, 60),
+  ('mtr_steady', timestamptz '2026-07-07 02:00:00+00', 300, 400, 230, 1.3, 0.9, 60, 60);
+
+-- G, Thu 2026-07-09 10:00-11:59 local, on RAW minute readings at 600 W: 0.01 kWh a minute, and a 50 kWh
+-- jump in the register at 11:30. Hour 10 reaches 0.59 and hour 11 reaches 51.19; the bound credits hour
+-- 11 its measured 0.6 kWh.
+insert into readings (device_id, ts, voltage, current, power_w, energy_kwh_today, online)
+select 'mtr_raw',
+       timestamptz '2026-07-09 02:00:00+00' + (n || ' minutes')::interval,
+       230, 2.6, 600,
+       n * 0.01 + case when n >= 90 then 50 else 0 end,
+       true
+  from generate_series(0, 119) n;
+
+-- As the old generators stored them: each week is its days' counter maxima summed.
+insert into period_reports (period, period_start, device_id, energy_kwh, peak_power_w, avg_power_w,
+                            online_sample_count, expected_sample_count, generated_at)
+values
+  ('week',  date '2026-07-06', 'mtr_jump',   69.35, 400, 120, 660, 10080, timestamptz '2026-07-15 00:00:00+00'),
+  ('week',  date '2026-07-06', 'mtr_raw',    51.19, 600, 600, 120, 10080, timestamptz '2026-07-15 00:00:00+00'),
+  -- Stale, but nothing removable in it: must not be touched.
+  ('week',  date '2026-07-06', 'mtr_steady',  5.00, 400, 300, 180, 10080, timestamptz '2026-07-15 00:00:00+00'),
+  -- A jump IS removable from July (97.05), but this stored figure was not built from these counters
+  -- (100.75): the correction cannot prove the jump is in it, so it must leave it alone. 100.00 rather
+  -- than anything below 97.05, so it is this guard that refuses it and not the one against a negative.
+  ('month', date '2026-07-01', 'mtr_jump',  100.00, 500, 200, 960, 44640, timestamptz '2026-08-03 00:00:00+00');
+
+insert into period_building_reports (period, period_start, energy_kwh, online_sample_count, expected_sample_count, generated_at)
+values ('week', date '2026-07-06', 70.0, 10080, 10080, timestamptz '2026-07-15 00:00:00+00')
+on conflict (period, period_start) do nothing;
+SQL
+
+echo "== phase42: applying it over the stored rows, twice =="
+psql < "$HERE/phase42_bounded_device_energy.sql" >/dev/null
+psql < "$HERE/phase42_bounded_device_energy.sql" >/dev/null
+echo "   ok"
+
+psql <<'SQL'
+do $$
+declare
+  r record;
+  n int;
+  v numeric;
+  v2 numeric;
+  t timestamptz;
+  txt text;
+begin
+  -- ---- the rule, day by day ----------------------------------------------------------------
+  select count(*) into n from report_device_daily_energy('week', date '2026-07-06', 'Asia/Manila', array['mtr_jump']);
+  assert n = 7, format('phase42: a week is 7 day rows for one device, got %s', n);
+
+  select * into r from report_device_daily_energy('week', date '2026-07-06', 'Asia/Manila', array['mtr_jump'])
+   where local_day = date '2026-07-06';
+  assert r.energy_kwh = 0.30 and r.counter_kwh = 67.45 and r.removed_kwh = 67.15 and r.clipped_hours = 1,
+    format('phase42 A (jump): expected 0.30 / 67.45 / 67.15 / 1, got %s / %s / %s / %s', r.energy_kwh, r.counter_kwh, r.removed_kwh, r.clipped_hours);
+  assert r.resolution = 'hour', format('phase42 A: hourly rows are hour resolution, got %s', r.resolution);
+  assert r.online_minutes = 360, format('phase42 A: six hours online, got %s minutes', r.online_minutes);
+
+  select * into r from report_device_daily_energy('week', date '2026-07-06', 'Asia/Manila', array['mtr_jump'])
+   where local_day = date '2026-07-07';
+  assert r.energy_kwh = 0.9 and r.counter_kwh = 0.9 and r.removed_kwh is null and r.clipped_hours = 0,
+    format('phase42 B (healthy): expected 0.9 / 0.9 / null / 0, got %s / %s / %s / %s', r.energy_kwh, r.counter_kwh, r.removed_kwh, r.clipped_hours);
+
+  select * into r from report_device_daily_energy('week', date '2026-07-06', 'Asia/Manila', array['mtr_jump'])
+   where local_day = date '2026-07-08';
+  assert r.energy_kwh = 1.0 and r.removed_kwh is null,
+    format('phase42 D (gap): a nine-hour gap must not be clipped, got %s removed %s', r.energy_kwh, r.removed_kwh);
+
+  -- A day nothing was recorded on is a row of nothing — never a missing row, never zeros.
+  select * into r from report_device_daily_energy('week', date '2026-07-06', 'Asia/Manila', array['mtr_jump'])
+   where local_day = date '2026-07-10';
+  assert r.energy_kwh is null and r.counter_kwh is null and r.online_minutes = 0 and r.expected_minutes = 1440 and r.resolution is null,
+    format('phase42: an empty day must be null with 0 of 1440 minutes, got %s / %s / %s / %s', r.energy_kwh, r.online_minutes, r.expected_minutes, r.resolution);
+
+  select * into r from report_device_daily_energy('week', date '2026-07-13', 'Asia/Manila', array['mtr_jump'])
+   where local_day = date '2026-07-13';
+  assert r.energy_kwh = 1.8 and r.counter_kwh = 1.4 and r.removed_kwh is null,
+    format('phase42 C (restart): both runs count, expected 1.8 / 1.4 / null, got %s / %s / %s', r.energy_kwh, r.counter_kwh, r.removed_kwh);
+
+  select * into r from report_device_daily_energy('week', date '2026-07-13', 'Asia/Manila', array['mtr_jump'])
+   where local_day = date '2026-07-14';
+  assert r.energy_kwh = 0.1 and r.counter_kwh = 30.0 and r.removed_kwh = 29.9 and r.clipped_hours = 1,
+    format('phase42 F (no power in the jump hour): expected 0.1 / 30.0 / 29.9 / 1, got %s / %s / %s / %s', r.energy_kwh, r.counter_kwh, r.removed_kwh, r.clipped_hours);
+
+  select * into r from report_device_daily_energy('week', date '2026-07-06', 'Asia/Manila', array['mtr_raw'])
+   where local_day = date '2026-07-09';
+  assert r.energy_kwh = 1.19 and r.counter_kwh = 51.19 and r.removed_kwh = 50.00 and r.resolution = 'minute' and r.online_minutes = 120,
+    format('phase42 G (raw minutes): expected 1.19 / 51.19 / 50.00 / minute / 120, got %s / %s / %s / %s / %s',
+           r.energy_kwh, r.counter_kwh, r.removed_kwh, r.resolution, r.online_minutes);
+
+  select count(*) into n from report_device_daily_energy('week', date '2026-07-06', 'Asia/Manila', array['no_such_device']);
+  assert n = 0, format('phase42: an unknown device returns nothing, got %s rows', n);
+
+  -- The June fixture this file has always asserted is a healthy counter, and the rule leaves it be.
+  select sum(energy_kwh) into v from report_device_daily_energy('week', date '2026-06-01', 'Asia/Manila', array['mtr_hist']);
+  assert v = 0.59, format('phase42: mtr_hist''s healthy week must stay 0.59, got %s', v);
+
+  -- ---- the one-time correction -------------------------------------------------------------
+  select energy_kwh, energy_removed_kwh, energy_restated_at, generated_at, peak_power_w, online_sample_count
+    into r from period_reports where period = 'week' and period_start = date '2026-07-06' and device_id = 'mtr_jump';
+  assert r.energy_kwh = 2.20 and r.energy_removed_kwh = 67.15,
+    format('phase42 correction: expected 2.20 with 67.15 removed (once, though applied twice), got %s / %s', r.energy_kwh, r.energy_removed_kwh);
+  assert r.energy_restated_at is not null, 'phase42 correction: a corrected row records when';
+  assert r.generated_at = timestamptz '2026-07-15 00:00:00+00' and r.peak_power_w = 400 and r.online_sample_count = 660,
+    'phase42 correction: nothing but the energy may be restated';
+
+  select energy_kwh, energy_removed_kwh into v, v2 from period_reports
+   where period = 'week' and period_start = date '2026-07-06' and device_id = 'mtr_raw';
+  assert v = 1.19 and v2 = 50.00, format('phase42 correction: the raw-minute week must be 1.19 with 50.00 removed, got %s / %s', v, v2);
+
+  select energy_kwh, energy_removed_kwh into v, v2 from period_reports
+   where period = 'week' and period_start = date '2026-07-06' and device_id = 'mtr_steady';
+  assert v = 5.00 and v2 is null, format('phase42 correction: a stale row with nothing removable must be untouched, got %s / %s', v, v2);
+
+  select energy_kwh, energy_restated_at into v, t from period_reports
+   where period = 'month' and period_start = date '2026-07-01' and device_id = 'mtr_jump';
+  assert v = 100.00 and t is null,
+    format('phase42 correction: a stored figure not built from these counters must be left alone, got %s / %s', v, t);
+
+  select count(*) into n from period_reports where energy_restated_at is not null;
+  assert n = 2, format('phase42 correction: exactly two rows prove a removable jump, %s were restated', n);
+
+  select energy_kwh, generated_at into v, t from period_building_reports where period = 'week' and period_start = date '2026-07-06';
+  assert v = 70.0 and t = timestamptz '2026-07-15 00:00:00+00', 'phase42 correction: the building row is never touched';
+
+  -- ---- the generators ------------------------------------------------------------------------
+  perform generate_period_report('week', date '2026-07-06');
+  select energy_kwh, energy_removed_kwh, energy_restated_at into v, v2, t from period_reports
+   where period = 'week' and period_start = date '2026-07-06' and device_id = 'mtr_jump';
+  assert v = 2.20 and v2 = 67.15, format('phase42 generator: week 07-06 must be 2.20 with 67.15 removed, got %s / %s', v, v2);
+  assert t is not null, 'phase42 generator: regenerating keeps the record that the row was once corrected';
+  select energy_kwh into v from period_reports where period = 'week' and period_start = date '2026-07-06' and device_id = 'mtr_steady';
+  assert v = 0.9, format('phase42 generator: the steady meter regenerates to its counter, 0.9, got %s', v);
+
+  perform generate_period_report('week', date '2026-07-13');
+  select energy_kwh, energy_removed_kwh into v, v2 from period_reports
+   where period = 'week' and period_start = date '2026-07-13' and device_id = 'mtr_jump';
+  assert v = 1.9 and v2 = 29.9, format('phase42 generator: week 07-13 must be 1.9 with 29.9 removed, got %s / %s', v, v2);
+
+  -- The month, from both generators, agreeing to the last digit — the equality this file rests on.
+  perform generate_period_report('month', date '2026-07-01');
+  perform generate_monthly_report(date '2026-07-01');
+  select energy_kwh, energy_removed_kwh into v, v2 from period_reports
+   where period = 'month' and period_start = date '2026-07-01' and device_id = 'mtr_jump';
+  assert v = 4.10 and v2 = 97.05, format('phase42 generator: July must be 4.10 with 97.05 removed, got %s / %s', v, v2);
+  select energy_kwh into v2 from monthly_reports where month = date '2026-07-01' and device_id = 'mtr_jump';
+  assert v2 = v, format('phase42 generator: the legacy month (%s) must equal the period month (%s)', v2, v);
+
+  -- ---- who may run it ------------------------------------------------------------------------
+  assert has_function_privilege('authenticated', 'public.report_device_daily_energy(text, date, text, text[])', 'execute'),
+    'phase42: signed-in readers must be able to run the daily function';
+  assert not has_function_privilege('anon', 'public.report_device_daily_energy(text, date, text, text[])', 'execute'),
+    'phase42: anonymous readers must not';
+  assert has_function_privilege('service_role', 'public.report_device_daily_energy(text, date, text, text[])', 'execute')
+     and has_function_privilege('service_role', 'public.report_window(text, date, text)', 'execute'),
+    'phase42: the generators run as service_role and reach both functions';
+
+  -- Unknown periods still raise, through report_window.
+  begin
+    perform * from report_device_daily_energy('fortnight', date '2026-07-06');
+    assert false, 'phase42: an unknown period must raise';
+  exception when invalid_parameter_value then
+    null;
+  end;
+
+  raise notice 'phase42: the bounded counter — assertions passed';
 end $$;
 SQL
 

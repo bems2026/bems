@@ -200,8 +200,14 @@ because buffered rows flush late and the rollup runs every six hours, so a month
 
 Three things that are easy to get wrong here:
 
-- **Energy is a sum of daily maxima, never an average.** `energy_kwh_today` is a cumulative
-  counter that resets at local midnight, not a rate.
+- **Energy is a sum of each day's bounded rises of the counter, never an average.**
+  `energy_kwh_today` is a cumulative counter that resets at local midnight, not a rate. Until
+  phase42 (RM-091) a day's energy was its highest value, which let a register that jumped 67 kWh
+  while its lighting circuit drew 49 W put 81.4 kWh into one week. Now each hour's rise is credited
+  only up to what the device could have drawn — the day's peak power across the span, +10 % and
+  5 Wh — and past that, the hour's measured power. A healthy counter's rises sum to its highest
+  value, so this changes nothing but a jump. `report_device_daily_energy` computes it per day, both
+  generators sum it, and `period_reports.energy_removed_kwh` keeps what was taken out.
 - **Days are grouped in the site's timezone** (`Asia/Manila` by default). Grouping in UTC
   would split every device-day across two report-days and undercount the month's last day.
 - **Coverage travels with every figure.** Each row carries `online_sample_count` and
