@@ -37,6 +37,7 @@ import {
   RETENTION_CHECK_MS,
 } from './retention.mjs';
 import { runReportGeneration, REPORT_CHECK_MS } from './reports.mjs';
+import { monthlyReportNotices } from './reportNotice.mjs';
 import { createFleetAlarm, loadKnownOnline, KNOWN_ONLINE_DAYS } from './fleetAlarm.mjs';
 import { createNotifier, fleetMessage } from './notify.mjs';
 
@@ -367,6 +368,16 @@ async function reportPass() {
     const { generated, generatedWeeks = [], failed, reason } = await runReportGeneration({ client: supabase });
     if (generated.length > 0) {
       console.log(`[ibems-ingest] reports: generated months ${generated.join(', ')}`);
+      // FI-011: the month goes to the alert channel, for the reader who will never open the
+      // dashboard. Its own try/catch, because a push that failed is not a report that failed, and
+      // logging it as one would send somebody looking for a missing report that exists.
+      try {
+        for (const notice of await monthlyReportNotices({ client: supabase, months: generated })) {
+          await notifier.notify(notice.title, notice.body, notice.priority);
+        }
+      } catch (err) {
+        console.error(`[ibems-ingest] reports: generated, but could not push the notice: ${String(err)}`);
+      }
     }
     if (generatedWeeks.length > 0) {
       // Named as weeks, because a bare list of dates beside a list of first-of-months reads as

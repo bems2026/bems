@@ -32,7 +32,10 @@ rows the first passes prune were exported and copied off the Pi beforehand. **RM
 branch wiring from the operator's own account: light switches L1–L4 are on L.O Red and L5–L7 on L.O
 Yellow — which the site file had called the outdoor aircon unit — and the aircon is CARE ACU's only
 load. **RM-089** gives every daemon's connections time for a lost packet to be retried, which the
-Supabase dropouts ingest has logged all week point to.
+Supabase dropouts ingest has logged all week point to. **FI-011** closes the last unblocked item in
+the build order: a generated monthly report is now pushed through the alert channel EX-103 already
+built, in wording that keeps the page's rules — a partial month's total is a floor, a stored zero
+from nothing observed is not a measurement, and the stored share is never called readings coverage.
 
 **Previously audited:** 2026-09-14 — **RM-076 to RM-078, Analytics data quality**, from three operator
 reports: L.O Red "reporting less than it measured", L.O Red reading differently on Overview and
@@ -732,7 +735,7 @@ below, which carry the evidence.
 
 **Elapsed time**
 - **FI-012** — partition `readings` *if* growth ever outgrows the prune. Conditional; not due.
-- **FI-011** — push delivery for the monthly report, once a notification channel is configured.
+- ~~**FI-011** — push delivery for the monthly report.~~ **Done 2026-09-16.** See its entry.
 
 **The 2026-09-01 control-path work is fully applied** *(EX-133 – EX-144)*
 All three flow writes landed and were verified live: the bridge rebuild carrying
@@ -988,7 +991,8 @@ column landed all went **local**, with no cloud fallbacks.
 4. **EX-096 device removal, end to end** — never run against a real device, because nothing
    has been enrolled yet. The first enrolment is also the first real test of the `switch` path
    fixed in EX-094.
-5. **FI-011 (S)** — push the monthly report through the alert channel EX-103 already built.
+5. ~~**FI-011 (S)** — push the monthly report through the alert channel EX-103 already built.~~
+   **Done 2026-09-16.** See its entry: monthly only, and the wording keeps the page's rules.
 6. **FI-009 (S)** — narrow the three remaining whole-map store selectors.
 7. **RM-026 Deye** — as soon as the logger is on the network; see its entry for the decision
    between the two integration shapes. Re-verified absent 2026-08-26 evening.
@@ -7990,12 +7994,29 @@ may not.
 - ~~**FI-013** (S) The Outlet tab never polls its devices.~~ **Done 2026-08-25** — EX-038b.
 - **FI-009** (S) Narrow the three remaining whole-map store selectors — `FloorPlanView`, `AlertsPopover`, `EnergyBreakdownCard`. Left alone in the Phase 9 pass because each needs value-level rather than reference-level comparison to gain anything, and FloorPlanView genuinely reads every device.
 - ~~**FI-010** (M) The 24h chart has the same offline-blindness the 7d/30d charts just lost.~~ **Done 2026-08-25** — EX-102. The ring buffer records `online` per sample and `pointValue` suppresses a point marked offline, so an unreporting device leaves a gap rather than a flat line. Needs a flow deploy to take effect.
-- **FI-011** (S) Push delivery for the monthly report, once FI-005's channel exists. Reports
-  are deliberately pull-only today — email or Google Sheets sync would put an SMTP credential
-  or a service-account key on a deployment whose repository is public, to solve a problem the
-  CSV download already solves in one step (File -> Import). Worth revisiting only as a second
-  consumer of the alert channel, never as a reason to build one. Reasoning recorded in
-  `docs/adr-001-timeseries-store.md`.
+- ~~**FI-011** (S) Push delivery for the monthly report, once FI-005's channel exists.~~ **Done
+  2026-09-16.** Email and Google Sheets stayed rejected for the reason this entry always gave — an
+  SMTP credential or a service-account key would have to live next to a public checkout, to solve a
+  problem the CSV download already solves (File -> Import). What it left open was "a second consumer
+  of the alert channel", and that is what shipped: ntfy, no account, the topic the fleet alarm
+  already uses.
+  - **`server/reportNotice.mjs`** turns one stored `period_building_reports` row into the message, and
+    reads the rows for the months a pass generated — one query, oldest first, and a month whose row
+    does not come back is skipped rather than announced from what the generator was asked to build.
+  - **The wording carries the page's rules**, which is the whole risk of a push: it is read on a phone
+    by someone who will not open the page to check. A partial month says what share of its expected
+    samples were recorded and calls its total **a floor**; a month with no samples reads **"not
+    observed"** and prints no kWh at all; a missing figure is said rather than shown as a zero; and the
+    stored share is **never called "readings coverage"**, because `online_sample_count` counts rows
+    written — August 2026 is 48% by rows against 27% by readings, and RM-073 is still open on that.
+    Every one of those is a test in `server/reportNotice.test.mjs`.
+  - **Monthly only.** Weekly reports are generated too (RM-041), and four pushes a month is how a
+    channel gets muted — after which the fleet alarm it also carries goes unread.
+  - **Where it runs.** `ingest.mjs`'s report pass sends them, in its own try/catch: a push that failed
+    is not a report that failed, and logging it as one would send somebody looking for a report that
+    exists. The notifier is already inert without `NTFY_TOPIC`.
+  - **Not yet seen in the wild.** No month generates until 2026-10-03, and ingest carries the code
+    only from its next restart. Tests are the whole of the evidence so far.
 - **FI-012** (M) Partition `readings` by month if growth ever outgrows the current prune. The
   prune is a single unbounded `DELETE` in one transaction — fine at today's volumes, and the
   first thing to degrade as the table grows. Partitioning turns it into a `DROP TABLE` while
