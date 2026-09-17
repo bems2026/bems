@@ -1728,6 +1728,83 @@ drop table rehearse_phase44_before;
 drop table rehearse_phase44_first;
 SQL
 
+# ---- phase45: the aircon's full commanded state on the audit row ----------------------------------
+#
+# The loop at the top applied it once to an empty table. Twice more here, over rows that exist, and
+# then the constraints are held to what server/auditedDispatch.mjs writes: all three columns or none,
+# only on an ON command, and only the vocabulary shared/acState.mjs enforces.
+echo "== phase45: re-applying twice, then checking what the aircon columns refuse =="
+psql < "$HERE/phase45_command_ac_state.sql" >/dev/null
+psql < "$HERE/phase45_command_ac_state.sql" >/dev/null
+psql <<'SQL'
+insert into devices (id, display_name, class) values ('acu_rehearse', 'Rehearsal Aircon', 'acu_ir')
+  on conflict (id) do nothing;
+
+do $$
+declare
+  u uuid;
+  n int;
+  refused boolean;
+begin
+  insert into auth.users default values returning id into u;
+
+  -- What auditedDispatch writes for an ON: all three, from the vocabulary. Accepted.
+  insert into commands (device_id, action, target, requested_by, status, source, target_c, ac_mode, ac_fan, ac_swing)
+    values ('acu_rehearse', 'on', 'AC_POWER', u, 'dispatched', 'ibems-app', 22, 'dry', 'high', true);
+  -- An OFF and a relay-shaped row carry none. Accepted, as every row before phase45 was.
+  insert into commands (device_id, action, target, requested_by, status, source)
+    values ('acu_rehearse', 'off', 'AC_POWER', u, 'dispatched', 'ibems-app');
+  select count(*) into n from commands where device_id = 'acu_rehearse';
+  assert n = 2, format('phase45: the two well-formed rows must be accepted, found %s', n);
+
+  -- Each refusal is attempted in its own block so one success cannot hide behind another.
+  refused := false;
+  begin
+    insert into commands (device_id, action, target, requested_by, status, source, ac_mode, ac_fan, ac_swing)
+      values ('acu_rehearse', 'on', 'AC_POWER', u, 'dispatched', 'ibems-app', 'turbo', 'auto', false);
+  exception when check_violation then refused := true;
+  end;
+  assert refused, 'phase45: a mode outside the vocabulary must be refused';
+
+  refused := false;
+  begin
+    insert into commands (device_id, action, target, requested_by, status, source, ac_mode, ac_fan, ac_swing)
+      values ('acu_rehearse', 'on', 'AC_POWER', u, 'dispatched', 'ibems-app', 'cool', 'max', false);
+  exception when check_violation then refused := true;
+  end;
+  assert refused, 'phase45: a fan speed outside the vocabulary must be refused';
+
+  refused := false;
+  begin
+    insert into commands (device_id, action, target, requested_by, status, source, ac_mode)
+      values ('acu_rehearse', 'on', 'AC_POWER', u, 'dispatched', 'ibems-app', 'cool');
+  exception when check_violation then refused := true;
+  end;
+  assert refused, 'phase45: a partial state (mode without fan and swing) must be refused';
+
+  refused := false;
+  begin
+    insert into commands (device_id, action, target, requested_by, status, source, ac_mode, ac_fan, ac_swing)
+      values ('acu_rehearse', 'off', 'AC_POWER', u, 'dispatched', 'ibems-app', 'cool', 'auto', false);
+  exception when check_violation then refused := true;
+  end;
+  assert refused, 'phase45: an OFF must not carry an aircon state';
+
+  -- The outcome patch shape: a row opened at dispatching gains the state on update.
+  insert into commands (device_id, action, target, requested_by, status, source)
+    values ('acu_rehearse', 'on', 'AC_POWER', u, 'dispatching', 'ibems-app');
+  update commands set status = 'dispatched', ac_mode = 'cool', ac_fan = 'auto', ac_swing = false, target_c = 24
+    where device_id = 'acu_rehearse' and status = 'dispatching';
+  select count(*) into n from commands where device_id = 'acu_rehearse' and ac_mode = 'cool' and target_c = 24;
+  assert n = 1, format('phase45: the outcome patch must land the state, found %s', n);
+
+  delete from commands where device_id = 'acu_rehearse';
+  raise notice 'phase45: the aircon state columns — assertions passed';
+end $$;
+
+delete from devices where id = 'acu_rehearse';
+SQL
+
 echo
 echo "== REHEARSAL PASSED =="
 echo "Every migration applied in order against PostgreSQL 16, and every function behaved as"
