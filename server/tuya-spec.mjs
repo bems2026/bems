@@ -48,7 +48,9 @@ function toCapability(prop) {
   return {
     code: prop.code,
     dp: Number(prop.abilityId),
-    access: prop.accessMode === 'rw' ? 'rw' : 'ro',
+    // `wr` is the vendor's spelling of WRITE-ONLY (the IR remote's `control`, `delay_time`), not a
+    // transposed `rw`. Folding it into `ro` reported four real dps as drift on 2026-09-17.
+    access: prop.accessMode === 'rw' ? 'rw' : prop.accessMode === 'wr' ? 'wo' : 'ro',
     kind: spec.type,
     scale: spec.scale,
     unit: spec.unit,

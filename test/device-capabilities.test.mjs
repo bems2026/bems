@@ -30,9 +30,11 @@ test('every profile declares well-formed capabilities', () => {
     for (const cap of profile.capabilities) {
       assert.match(cap.code, /^[a-z0-9_]+$/, `${id}.${cap.code}: snake_case code`);
       assert.ok(Number.isInteger(cap.dp) && cap.dp > 0, `${id}.${cap.code}: integer dp`);
-      assert.ok(['ro', 'rw'].includes(cap.access), `${id}.${cap.code}: access ro|rw`);
+      // `wo` is the vendor's write-only (`accessMode: "wr"`), first met on the IR remote's `control`.
+      assert.ok(['ro', 'rw', 'wo'].includes(cap.access), `${id}.${cap.code}: access ro|rw|wo`);
       assert.ok(
-        ['bool', 'value', 'enum', 'string', 'bitmap'].includes(cap.kind),
+        // `raw` is a byte payload — the IR hub's learned code (`ir_study_code`).
+        ['bool', 'value', 'enum', 'string', 'bitmap', 'raw'].includes(cap.kind),
         `${id}.${cap.code}: known kind`,
       );
       assert.ok(SEMANTICS.includes(cap.semantic), `${id}.${cap.code}: known semantic`);

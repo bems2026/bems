@@ -60,6 +60,9 @@ const UNIT_TO_CANONICAL = {
   w: { canonical: 'W', factor: 1 },
   kwh: { canonical: 'kWh', factor: 1 },
   s: { canonical: 's', factor: 1 },
+  // The IR hub's sensors, 2026-09-17. The vendor spells Celsius with the single code point U+2103.
+  '℃': { canonical: '°C', factor: 1 },
+  '%': { canonical: '%', factor: 1 },
 };
 
 /**
@@ -272,6 +275,87 @@ export const CAPABILITY_PROFILES = Object.freeze({
             scale: 3, unit: 'kWh' }),
       cap({ code: 'net_state', dp: 124, access: 'ro', kind: 'enum', semantic: 'diagnostic',
             range: ['cloud_net', 'local_net', 'no_net'] }),
+    ]),
+  }),
+
+  /**
+   * Lasco Wifi IR Pro Max ("Smart IR") — the aircon's IR hub, `acu_main`. Vendor category `wnykq`.
+   * Measured 2026-09-17 after it was re-paired; announces protocol v3.3 on the LAN.
+   *
+   * The only dps the hub itself holds. Its two sensors are the room's temperature and humidity (it
+   * is mounted in the room, away from the indoor unit), and the two IR dps are how a code is sent
+   * and how a learned one comes back. The vendor offers NO standard instruction set for it
+   * (`functions: []`); the standard codes `va_temperature`/`va_humidity` appear only as status.
+   *
+   * `ir_send` is vendor-writable and deliberately NOT writable here: it emits any IR code at all,
+   * which is a remote for every appliance in the room rather than a setting. The aircon's
+   * commands reach it only through the `acu_ir` command and the flow's own code library.
+   */
+  wnykq_ir_hub: Object.freeze({
+    id: 'wnykq_ir_hub',
+    label: 'IR hub with temperature and humidity',
+    standard_instruction: false,
+    channels: 1,
+    capabilities: Object.freeze([
+      cap({ code: 'temp_current', dp: 101, access: 'ro', kind: 'value', semantic: 'instant',
+            scale: 1, unit: '℃', min: -200, max: 800, step: 1 }),
+      cap({ code: 'humidity_value', dp: 102, access: 'ro', kind: 'value', semantic: 'instant',
+            scale: 0, unit: '%', min: 0, max: 100, step: 1 }),
+      cap({ code: 'ir_send', dp: 201, access: 'rw', kind: 'string', semantic: 'diagnostic', maxlen: 3072 }),
+      cap({ code: 'ir_study_code', dp: 202, access: 'ro', kind: 'raw', semantic: 'diagnostic', maxlen: 128 }),
+    ]),
+  }),
+
+  /**
+   * "Air Conditioning" — the VIRTUAL aircon remote the IR hub was paired with. Vendor category
+   * `infrared_ac`, `sub: true`. Measured 2026-09-17.
+   *
+   * It has no network presence of its own: the vendor cloud composes an IR frame from these dps
+   * and sends it through the hub. So it is reachable only through the cloud, and only as a remote
+   * of `acu_main` — never as a device of its own, which is why it is a `remote_profile` on the
+   * aircon rather than a registry entry.
+   *
+   * dps 101..105 are the aircon's state; `mode` "0".."4" is cool/heat/auto/fan/dry and `fan`
+   * "0".."3" is auto/low/medium/high (Tuya's IR AC reference). `temperature` is declared 10..40
+   * but the remote's own standard set (`T`) takes 16..30, which is the bound `shared/acState.mjs`
+   * enforces. The standard set (PowerOn, PowerOff, T, M, F) has no swing, so iBEMS addresses it by
+   * DP instruction — measured working for reads; issuing is verified by the on-site test.
+   *
+   * NOTHING IS WRITABLE THROUGH THE `set` VERB. A single-field write would be composed by the
+   * vendor from ITS remembered state, not the state this system last commanded — the full state
+   * goes as one `acu_ir` command instead. dps 1..13 and 201/202 are the hub's IR plumbing surfaced
+   * on the remote, recorded so `npm run tuya:spec` checks them and never written.
+   */
+  tuya_ir_ac_remote: Object.freeze({
+    id: 'tuya_ir_ac_remote',
+    label: 'Virtual aircon remote',
+    standard_instruction: true,
+    channels: 1,
+    capabilities: Object.freeze([
+      cap({ code: 'control', dp: 1, access: 'wo', kind: 'enum', semantic: 'diagnostic',
+            range: ['send_ir', 'study', 'study_exit', 'study_key'] }),
+      cap({ code: 'study_code', dp: 2, access: 'ro', kind: 'raw', semantic: 'diagnostic', maxlen: 128 }),
+      cap({ code: 'ir_code', dp: 3, access: 'rw', kind: 'string', semantic: 'diagnostic', maxlen: 255 }),
+      cap({ code: 'key_code', dp: 4, access: 'rw', kind: 'string', semantic: 'diagnostic', maxlen: 255 }),
+      cap({ code: 'key_code2', dp: 5, access: 'rw', kind: 'string', semantic: 'diagnostic', maxlen: 255 }),
+      cap({ code: 'key_code3', dp: 6, access: 'rw', kind: 'string', semantic: 'diagnostic', maxlen: 255 }),
+      cap({ code: 'key_study', dp: 7, access: 'rw', kind: 'raw', semantic: 'diagnostic', maxlen: 128 }),
+      cap({ code: 'key_study2', dp: 8, access: 'rw', kind: 'raw', semantic: 'diagnostic', maxlen: 128 }),
+      cap({ code: 'key_study3', dp: 9, access: 'rw', kind: 'raw', semantic: 'diagnostic', maxlen: 128 }),
+      cap({ code: 'delay_time', dp: 10, access: 'wo', kind: 'value', semantic: 'setting',
+            scale: 0, unit: 'ms', min: 0, max: 65535, step: 1 }),
+      cap({ code: 'key_code4', dp: 11, access: 'wo', kind: 'string', semantic: 'diagnostic', maxlen: 255 }),
+      cap({ code: 'key_study4', dp: 12, access: 'wo', kind: 'raw', semantic: 'diagnostic', maxlen: 128 }),
+      cap({ code: 'type', dp: 13, access: 'rw', kind: 'value', semantic: 'diagnostic',
+            scale: 0, unit: '', min: 0, max: 255, step: 1 }),
+      cap({ code: 'switch_power', dp: 101, access: 'rw', kind: 'bool', semantic: 'setting' }),
+      cap({ code: 'mode', dp: 102, access: 'rw', kind: 'enum', semantic: 'setting', range: ['0', '1', '2', '3', '4'] }),
+      cap({ code: 'temperature', dp: 103, access: 'rw', kind: 'value', semantic: 'setting',
+            scale: 0, unit: '', min: 10, max: 40, step: 1 }),
+      cap({ code: 'fan', dp: 104, access: 'rw', kind: 'enum', semantic: 'setting', range: ['0', '1', '2', '3'] }),
+      cap({ code: 'swing', dp: 105, access: 'rw', kind: 'bool', semantic: 'setting' }),
+      cap({ code: 'ir_send', dp: 201, access: 'rw', kind: 'string', semantic: 'diagnostic', maxlen: 3072 }),
+      cap({ code: 'ir_study_code', dp: 202, access: 'rw', kind: 'raw', semantic: 'diagnostic', maxlen: 128 }),
     ]),
   }),
 });

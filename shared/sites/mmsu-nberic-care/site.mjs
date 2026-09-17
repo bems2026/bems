@@ -185,4 +185,23 @@ export const SITE = Object.freeze({
      */
     dispatch: 'local-first',
   }),
+
+  /**
+   * The aircon's IR path — 2026-09-17.
+   *
+   * `local_ir_verified` says whether somebody has watched the unit obey the flow's hand-captured IR
+   * library (OFF and 16..30 °C) since the hub was re-paired, and written down which mode, fan and
+   * swing those codes carry (`shared/acState.mjs` LOCAL_LIBRARY_STATE).
+   *
+   * It matters because a wrong IR code does not fail. The hub accepts it, the flow answers 200, the
+   * audit row says `dispatched via=local` — and the aircon does something else, or nothing. So
+   * while this is false, dispatch sends ON states through the vendor cloud first (which composes
+   * the frame from the remote's own brand library) and keeps the local library as the fallback.
+   * OFF stays local-first either way: it is one code, and the cheapest one to see working.
+   *
+   * Flip it only after the on-site acceptance test in ROADMAP.md, with its evidence.
+   */
+  aircon: Object.freeze({
+    local_ir_verified: false,
+  }),
 });

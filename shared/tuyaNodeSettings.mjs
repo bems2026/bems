@@ -74,8 +74,13 @@ export const TUYA_NODE_VERSIONS = {
  * online, which is exactly the "tolerating a lower version" trap described above: working was
  * never evidence the declaration was right.
  *
- * The two that remain do not announce on the LAN at all, so their versions stay unverifiable by
- * this method.
+ * The two that remained did not announce on the LAN at all, so their versions stayed unverifiable
+ * by this method.
+ *
+ * `NBRIC IR Blaster` left the list on 2026-09-17. It was re-paired as a Lasco "Smart IR" hub with a
+ * new device id and key, and a passive listen on the Pi decoded its discovery broadcast on UDP 6667
+ * announcing **v3.3** — the value the node already declared, now measured rather than inherited.
+ * `Outside Temp` stays: it has never been installed, so there is nothing to hear.
  *
  * `ACU` left the list once its situation was understood rather than guessed at. It shares a
  * device id and local key with `AREC ACU` **by design**: the aircon is the only load on the
@@ -86,7 +91,7 @@ export const TUYA_NODE_VERSIONS = {
  * therefore measured, not assumed — it is the same physical device, so it is 3.5. It had been
  * declared 3.3, which is why it alone logged 39 discovery timeouts in ten minutes.
  */
-export const TUYA_VERSION_UNVERIFIED = new Set(['Outside Temp', 'NBRIC IR Blaster']);
+export const TUYA_VERSION_UNVERIFIED = new Set(['Outside Temp']);
 
 /** Compares a live/baseline flow against the declarations above. Pure; no I/O. */
 export function findSettingsDrift(flowNodes) {

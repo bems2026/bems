@@ -153,14 +153,22 @@ export const BUILT_IN_DEVICES = [
     class: 'acu_ir',
     room: null,
     dps_map: null,
-    capability_profile: null, // IR, not dps — see `profileFor`
+    // Re-paired 2026-09-17 as a Lasco "Smart IR" hub (vendor category `wnykq`, announces v3.3).
+    // The hub's own dps are its room sensors and its IR send/learn pair; the aircon's state lives
+    // on a VIRTUAL remote in the vendor cloud ("Air", `infrared_ac`), which has no network presence
+    // of its own and so is described here as this device's remote rather than as a device.
+    capability_profile: 'wnykq_ir_hub',
+    remote_profile: 'tuya_ir_ac_remote',
+    // The live Node-RED node this device is read and commanded through. Its vendor id stays in the
+    // flow on the Pi and never enters this public repository; the name is how the server finds it.
+    flow_node: 'NBRIC IR Blaster',
     ctx: null,
-    state_ctx: 'ac_dash_state', // { power, setTemp, roomTemp, humidity, outTemp }
-    // What its `roomTemp` is a temperature OF. Return air is the air drawn over the coil, not
-    // the air in the room, so a closed-loop rule aimed at 24 settles the room somewhat warmer
-    // than 24 — by however much the unit's own draw-down is. Recorded here rather than left to
-    // be discovered, because the rule editor states it where the choice is made.
-    measures: 'return_air',
+    state_ctx: 'ac_dash_state', // { power, setTemp, roomTemp, humidity, outTemp, hubHealth, sensedAt, mode, fan, swing, … }
+    // What its `roomTemp` is a temperature OF. Until 2026-09-17 this said `return_air`, from when the
+    // reading was assumed to come from the indoor unit. It comes from the IR hub's own sensor, and
+    // the operator confirms the hub is mounted in the room, away from the unit — so it is room air,
+    // and a closed-loop rule on it aims at the room itself.
+    measures: 'room_air',
     // The aircon is the only load on CARE ACU (operator, 2026-09-15). This endpoint commands it and
     // `mtr_arec_acu` measures it, so both belong to that branch; it was on none before.
     branch_circuit: 'CARE ACU',
