@@ -31,6 +31,9 @@
  *   --dispatch=<classes>  comma-separated device classes GET /api/capabilities reports as
  *                         really reaching hardware (e.g. `--dispatch=switch` reproduces the
  *                         real Pi's lights-only state). Default: none, i.e. gate closed.
+ *   --acu-cloud=<route>   what /api/capabilities says about the aircon's vendor-cloud route:
+ *                         ready | unconfigured | unresolved | local-only. Default `unconfigured`;
+ *                         `ready` previews the aircon panel with mode, fan and swing sendable.
  *   --cmd-drop=<id|all> that command never responds at all (exercises the client's abort)
  *   --faults=<list>    shape the seeded 24h history after faults measured on the live building
  *                      (ROADMAP RM-076/RM-077), comma-separated: `flicker` (one sample of the first
@@ -54,6 +57,7 @@ import { FROZEN_AFTER_MS } from '../shared/measurementFreeze.mjs';
 import { runValueFreezeTracker } from '../node-red-bridge/valueFreezeTracker.mjs';
 import { CAPABILITY_PROFILES, channelCodesFor } from '../shared/deviceCapabilities.mjs';
 import { COMMAND_ROUTE, ACCEPTED_STATUS, validateCommand, buildAck } from '../shared/commands.mjs';
+import { resolveAcState } from '../shared/acState.mjs';
 import { CONTEXT_ROUTE, CONTEXT_ACCEPTED_STATUS, validateContextWrite, buildContextAck } from '../shared/context.mjs';
 
 // ---------------------------------------------------------------------------
@@ -73,6 +77,10 @@ const CMD_FAIL = val('cmd-fail', '');
 // only a real Pi with the gate open would otherwise produce. Same purpose as --cmd-fail
 // above: make a state that needs hardware reachable without hardware.
 const DISPATCH_CLASSES = val('dispatch', '') ? val('dispatch', '').split(',').filter(Boolean) : [];
+// What /api/capabilities says about the aircon's vendor-cloud route. `unconfigured` by default, which is
+// the true answer for a process with no vendor credentials; `--acu-cloud=ready` previews the panel on a
+// deployment where mode, fan and swing can be sent.
+const ACU_CLOUD_ROUTE = val('acu-cloud', 'unconfigured');
 const FAULTS = val('faults', '') ? val('faults', '').split(',').filter(Boolean) : [];
 const CMD_DROP = val('cmd-drop', '');
 // How often a metered device is treated as having reported, in seconds. 0 (the default) keeps
@@ -181,6 +189,8 @@ for (const d of DEVICE_REGISTRY) {
  */
 const commanded = new Map();
 const pinned = (key, simulated) => (commanded.has(key) ? commanded.get(key) : simulated);
+/** The aircon's last commanded state in this session, or null — see handleCommand. */
+let commandedAc = null;
 
 /**
  * Capability writes that have been accepted, keyed `<device_id>:<code>`.
@@ -404,13 +414,20 @@ function snapshot() {
       ? { arrivals: Object.fromEntries(PLAN.branchCtx.map((k) => [k, k === STALE_ID ? started : arrivalAt(t)])) }
       : {}),
     // 1dp, matching what a Tuya temp/humidity DPS yields after its /10 scaling.
+    // The shape the Aircon tab's state manager writes since 2026-09-17: the hub's sensors with their
+    // session health and sense time, and the last COMMANDED state with when and how it was sent.
     aircon: {
       state: {
         power: pinned('AC_POWER', occ > 0.3),
-        setTemp: 24,
+        setTemp: commandedAc?.setpoint_c ?? 24,
         roomTemp: (25.4 + wobble(1, t, 0.6)).toFixed(1),
         humidity: (62 + wobble(2, t, 4)).toFixed(1),
         outTemp: (31.8 + wobble(3, t, 1.5)).toFixed(1),
+        hubHealth: true,
+        sensedAt: t,
+        ...(commandedAc
+          ? { mode: commandedAc.mode, fan: commandedAc.fan, swing: commandedAc.swing, commandedAt: commandedAc.at, commandVia: 'local' }
+          : {}),
       },
     },
   };
@@ -595,6 +612,14 @@ function handleCommand(req, res) {
     const commit = () => {
       if (cmd.action === 'set') commandedCaps.set(`${cmd.device_id}:${cmd.capability}`, cmd.value);
       else commanded.set(cmd.target, cmd.action === 'on');
+      // The aircon keeps its whole commanded state, resolved the way the real dispatcher resolves it,
+      // so the panel's "last sent" line and a setpoint-only command behave as they do on the Pi.
+      if (cmd.target === 'AC_POWER') {
+        const prior = commandedAc
+          ? { setpoint_c: commandedAc.setpoint_c, ac_mode: commandedAc.mode, ac_fan: commandedAc.fan, ac_swing: commandedAc.swing }
+          : {};
+        commandedAc = { ...resolveAcState(cmd, prior), at: Date.now() };
+      }
       const ack = buildAck(cmd, Date.now());
       rememberReplay(cmd.command_id, ack);
       send(res, ACCEPTED_STATUS, ack);
@@ -680,6 +705,8 @@ const server = http.createServer((req, res) => {
         // fallback is configured on this deployment" so a developer can actually see it.
         dispatch_policy: SITE.policy?.dispatch ?? 'local-first',
         cloud_fallback_configured: false,
+        acu_cloud_route: DEVICE_REGISTRY.some((d) => d.class === 'acu_ir') ? ACU_CLOUD_ROUTE : null,
+        acu_local_ir_verified: SITE.aircon?.local_ir_verified === true,
       });
 
     case '/api/readings/latest':

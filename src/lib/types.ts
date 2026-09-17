@@ -9,6 +9,9 @@ export type DeviceClass = 'outlet_dual' | 'switch' | 'meter' | 'acu_ir' | 'senso
 export type DpsMap = 'type_a' | 'type_b' | 'type_c' | null;
 export type DeviceStatus = 'active' | 'skipped' | 'disabled';
 export type SwitchState = 'on' | 'off';
+/** The aircon vocabulary — `AC_MODES` / `AC_FANS` in shared/acState.mjs, in vendor enum order. */
+export type AcMode = 'cool' | 'heat' | 'auto' | 'fan' | 'dry';
+export type AcFan = 'auto' | 'low' | 'medium' | 'high';
 
 /** `GET /api/devices` — one entry. Static for the process lifetime. */
 export interface Device {
@@ -88,10 +91,19 @@ export interface Reading {
   state: SwitchState | null;
   /** `outlet_dual` only. */
   socket_states?: { 1: SwitchState; 2: SwitchState };
-  /** `acu_ir` only. */
+  /**
+   * `acu_ir` only. `setpoint_c` and the `ac_*` fields are what this system last COMMANDED — an IR
+   * aircon has no readback. `room_temp_c` and `humidity_pct` are the IR hub's own sensors.
+   */
   setpoint_c?: number;
   room_temp_c?: number;
   humidity_pct?: number;
+  ac_mode?: AcMode;
+  ac_fan?: AcFan;
+  ac_swing?: boolean;
+  /** When the last aircon command was sent, and which path carried it. */
+  commanded_at?: string;
+  command_via?: 'local' | 'cloud';
   /** `sensor_temp_humidity` only. */
   temp_c?: number;
   /**
@@ -236,6 +248,20 @@ export interface CommandRequest {
    * takes a code rather than a relay state, so "on" alone cannot say what to turn on to. See
    * shared/commands.mjs, which validates the same bounds server-side. */
   target_c?: number;
+  /**
+   * ACU only: the rest of the state. Each is optional — the dispatcher fills an omitted one from the
+   * last COMMANDED state, so a command is always one complete, absolute aircon state on the wire.
+   */
+  mode?: AcMode;
+  fan?: AcFan;
+  swing?: boolean;
+}
+
+/** The mode, fan and swing an aircon command carries beside its setpoint. */
+export interface AcStateRequest {
+  mode?: AcMode;
+  fan?: AcFan;
+  swing?: boolean;
 }
 
 /**
@@ -345,4 +371,13 @@ export interface Capabilities {
   /** `'database'` or `'build'` — where the proxy got the floor above. During a Supabase outage
    * it falls back to the build value, and a page presenting that as current would be wrong. */
   policy_source?: string;
+  /**
+   * Whether an aircon state the local IR library cannot express (any mode but its own, any fan
+   * speed, swing) has anywhere to go: `ready`, `unconfigured`, `unresolved` (the vendor cloud did not
+   * answer or has no single remote) or `local-only`. `null` at a site with no aircon; absent on a
+   * proxy that predates it.
+   */
+  acu_cloud_route?: 'ready' | 'unconfigured' | 'unresolved' | 'local-only' | null;
+  /** Whether somebody has watched the unit obey the local IR library since the hub was re-paired. */
+  acu_local_ir_verified?: boolean;
 }

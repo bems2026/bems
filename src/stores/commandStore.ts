@@ -4,7 +4,7 @@ import { TIMING } from '@/lib/timing';
 import { useDeviceStore } from './deviceStore';
 import { isTotals } from '@/lib/types';
 import { isReadingStale } from '@/lib/staleness';
-import type { ReadingsLatestRow, SocketIndex, SwitchState } from '@/lib/types';
+import type { AcStateRequest, ReadingsLatestRow, SocketIndex, SwitchState } from '@/lib/types';
 
 export type PendingPhase = 'sending' | 'confirming' | 'failed';
 
@@ -127,7 +127,8 @@ interface CommandState {
    * stores and owns acknowledgement.
    */
   cloudRecoveries: Record<string, number>;
-  send: (deviceId: string, socket: SocketIndex | undefined, desired: SwitchState, targetC?: number) => Promise<void>;
+  /** `ac` is the aircon's mode, fan and swing — ACU only, each optional (see `CommandRequest`). */
+  send: (deviceId: string, socket: SocketIndex | undefined, desired: SwitchState, targetC?: number, ac?: AcStateRequest) => Promise<void>;
   /** Runs after `ingestReadings` on every live frame — reconciles pending commands against
    * what the feed actually reports. */
   reconcile: (rows: ReadingsLatestRow[], nowMs?: number) => void;
@@ -146,7 +147,7 @@ export const useCommandStore = create<CommandState>((set, get) => ({
   pending: {},
   cloudRecoveries: {},
 
-  send: async (deviceId, socket, desired, targetC) => {
+  send: async (deviceId, socket, desired, targetC, ac) => {
     const key = targetKey(deviceId, socket);
     const command_id = newCommandId();
     const reading = useDeviceStore.getState().latestReadings[deviceId];
@@ -175,7 +176,17 @@ export const useCommandStore = create<CommandState>((set, get) => ({
         ? { pending: { ...s.pending, [key]: { ...s.pending[key], issuedAt: Date.now() } } }
         : s));
 
-      const ack = await sendCommand({ device_id: deviceId, socket, action: desired, command_id, ...(targetC === undefined ? {} : { target_c: targetC }) });
+      const ack = await sendCommand({
+        device_id: deviceId,
+        socket,
+        action: desired,
+        command_id,
+        ...(targetC === undefined ? {} : { target_c: targetC }),
+        // Only the fields given, so a relay command's body is byte-identical to what it always was.
+        ...(ac?.mode === undefined ? {} : { mode: ac.mode }),
+        ...(ac?.fan === undefined ? {} : { fan: ac.fan }),
+        ...(ac?.swing === undefined ? {} : { swing: ac.swing }),
+      });
       // Only 'cloud' is recorded. 'local' is the ordinary case and would be noise; null is a
       // dry run, where no path was attempted at all; a missing field is an older bridge.
       if (ack?.via === 'cloud') {

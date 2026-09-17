@@ -3720,6 +3720,96 @@ body::before {
   color: var(--muted-2);
 }
 
+/* The full aircon state (2026-09-17): what was last COMMANDED, the controls that compose the next
+   state, and where that state will go. The commanded line sits apart from the two sensor readouts on
+   purpose — an IR unit cannot report its mode, so it must never look like a third measurement. */
+.control-ir-unit__sent {
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-xs);
+  color: var(--txt);
+}
+.control-ir-unit__sent-meta {
+  color: var(--muted-2);
+}
+.control-ir-state {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+.control-ir-state .control-ir-setpoint {
+  margin-top: 0;
+}
+.control-ir-setpoint__policy {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-xxs);
+  color: var(--warn);
+}
+.control-ir-swing {
+  min-height: 32px;
+  padding: 4px 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--muted);
+  font: 600 var(--fs-xs) inherit;
+  cursor: pointer;
+}
+.control-ir-swing--on {
+  background: var(--txt);
+  border-color: var(--txt);
+  color: var(--bg-page); /* see .devices-filter-chip--active's comment on why not #ffffff */
+}
+.control-ir-swing:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.control-ir-unit__path {
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+}
+.control-ir-unit__path--blocked {
+  color: var(--warn);
+}
+
+/* A row of mutually exclusive pills — `components/ui/PillGroup.tsx`. The same inverted active chip
+   `.analytics-scope-btn--active` uses, on the same inset track, so a pressed pill reads identically
+   wherever it appears. Wraps rather than scrolls: five modes fit at 800px, and at 375px two rows
+   are easier to hit than a strip that hides its last option. */
+.pill-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 3px;
+  border-radius: var(--r-sm);
+  background: var(--bg-inset);
+  width: fit-content;
+  max-width: 100%;
+}
+.pill-group__pill {
+  border: none;
+  cursor: pointer;
+  min-height: 32px;
+  padding: 4px 14px;
+  border-radius: var(--r-sm);
+  font: 600 var(--fs-xs) inherit;
+  background: transparent;
+  color: var(--muted);
+}
+.pill-group__pill:hover:not(.pill-group__pill--active):not(:disabled) {
+  background: var(--bg-surface);
+  color: var(--txt);
+}
+.pill-group__pill--active {
+  background: var(--txt);
+  color: var(--bg-page);
+}
+.pill-group__pill:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 .control-log-card__title {
   display: flex;
   align-items: center;
@@ -7758,6 +7848,68 @@ fieldset.device-meta-editor__field > legend {
   color: var(--muted-2);
 }
 
+/* What the cloud project holds and what each device is here (2026-09-17). A disclosure, closed unless
+   a rebind is waiting, so the enrol form stays the first thing on an 800×480 kiosk. */
+.enroll-wizard__detected {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm, 6px);
+  padding: 0 12px;
+}
+.enroll-wizard__detected > summary {
+  cursor: pointer;
+  padding: 10px 0;
+  min-height: 24px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--txt);
+}
+.enroll-wizard__detected-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.enroll-wizard__detected-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-faint);
+}
+.enroll-wizard__detected-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.enroll-wizard__detected-name {
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: var(--txt);
+}
+.enroll-wizard__detected-kind {
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+.enroll-wizard__detected-reason {
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--muted-2);
+}
+.enroll-wizard__detected-row .enroll-wizard__preview {
+  align-self: flex-start;
+}
+.enroll-wizard__rebind {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm, 6px);
+}
+
 /* ---------------------------------------------------------------------------
    Spaces panel — RM-028. Sits alongside DeviceMetaEditor on the Devices page and
    borrows its head/close/field treatment rather than inventing a second panel
@@ -9409,6 +9561,11 @@ button.space-plan__pin {
   .devices-filter-chip,
   .analytics-scope-btn,
   .automation-write-btn,
+  /* The aircon's state controls (2026-09-17) — on the Control page, which is a kiosk page. */
+  .pill-group__pill,
+  .control-ir-swing,
+  .control-ir-setpoint__select,
+  .enroll-wizard__detected > summary,
   /* The panel chrome RM-059 introduced, and the fleet control that adds hardware. */
   .overlay-panel__close,
   .devices-add-btn,

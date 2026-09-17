@@ -20,6 +20,20 @@ export interface CloudDevice {
   claimed?: boolean;
   category?: string;
   product_name?: string;
+  /** A sub-device with no network presence of its own — the IR hub's aircon remote is one. */
+  sub?: boolean;
+  /** The flow node that polls it, when claimed and the server could say. */
+  claimed_by?: string | null;
+}
+
+/**
+ * A flow node whose device the cloud project no longer has — what re-pairing in Smart Life leaves
+ * behind. `class` is the registry class bound to it; a rebind is only ever offered to a device of
+ * that kind, and a node with no bound class is never offered one.
+ */
+export interface OrphanNode {
+  name: string;
+  class: string | null;
 }
 
 export type CloudFleetStatus = 'loading' | 'ready' | 'unconfigured' | 'error';
@@ -34,9 +48,10 @@ export interface CloudFleet {
    * flow. Carrying the distinction lets the wizard say "unknown" instead of implying "none".
    */
   claimedKnown: boolean;
+  orphanNodes: OrphanNode[];
 }
 
-export const EMPTY_FLEET: CloudFleet = { byId: {}, status: 'loading', claimedKnown: false };
+export const EMPTY_FLEET: CloudFleet = { byId: {}, status: 'loading', claimedKnown: false, orphanNodes: [] };
 
 export function fleetById(devices: CloudDevice[]): Record<string, CloudDevice> {
   const out: Record<string, CloudDevice> = {};
@@ -51,11 +66,16 @@ export function fleetById(devices: CloudDevice[]): Record<string, CloudDevice> {
  */
 export async function fetchCloudFleet(): Promise<CloudFleet> {
   try {
-    const data = await fetchJson<{ devices?: CloudDevice[]; claimed_known?: boolean }>('/tuya/devices');
-    return { byId: fleetById(data.devices ?? []), status: 'ready', claimedKnown: data.claimed_known === true };
+    const data = await fetchJson<{ devices?: CloudDevice[]; claimed_known?: boolean; orphan_nodes?: OrphanNode[] }>('/tuya/devices');
+    return {
+      byId: fleetById(data.devices ?? []),
+      status: 'ready',
+      claimedKnown: data.claimed_known === true,
+      orphanNodes: Array.isArray(data.orphan_nodes) ? data.orphan_nodes : [],
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    if (message.includes('501')) return { byId: {}, status: 'unconfigured', claimedKnown: false };
-    return { byId: {}, status: 'error', claimedKnown: false };
+    if (message.includes('501')) return { byId: {}, status: 'unconfigured', claimedKnown: false, orphanNodes: [] };
+    return { byId: {}, status: 'error', claimedKnown: false, orphanNodes: [] };
   }
 }

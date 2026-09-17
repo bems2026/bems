@@ -46,6 +46,13 @@ interface CapabilitiesState {
   /** `'database'` when the proxy read the live row, `'build'` when it fell back. A page showing
    * a floor it got from the build during an outage should be able to say so. */
   policySource: string | null;
+  /**
+   * The aircon's cloud route (`ready` / `unconfigured` / `unresolved` / `local-only`) and whether its
+   * local IR library has been verified on the unit. `null` until a proxy that reports them answers,
+   * and `acuCloudRoute` also `null` at a site with no aircon.
+   */
+  acuCloudRoute: 'ready' | 'unconfigured' | 'unresolved' | 'local-only' | null;
+  acuLocalIrVerified: boolean | null;
   load: () => Promise<void>;
 }
 
@@ -63,6 +70,8 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
   cloudFallbackConfigured: null,
   acuMinRoomTargetC: null,
   policySource: null,
+  acuCloudRoute: null,
+  acuLocalIrVerified: null,
 
   // Same retry-with-backoff shape as useLiveConnection.ts's device-catalogue fetch — a
   // failed load here must never get stuck reporting "unknown" forever just because one
@@ -71,7 +80,7 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
     retry.cancel();
     const attempt = async (): Promise<void> => {
       try {
-        const { hardware_dispatch_enabled, dispatch_classes, audit_buffer_pending, dispatch_policy, cloud_fallback_configured, acu_min_room_target_c, acu_min_setpoint_c, policy_source } = await getCapabilities();
+        const { hardware_dispatch_enabled, dispatch_classes, audit_buffer_pending, dispatch_policy, cloud_fallback_configured, acu_min_room_target_c, acu_min_setpoint_c, policy_source, acu_cloud_route, acu_local_ir_verified } = await getCapabilities();
         retry.succeeded();
         set({
           hardwareDispatchEnabled: hardware_dispatch_enabled,
@@ -86,6 +95,8 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
           // window — a proxy that predates phase35 still serves only the old one.
           acuMinRoomTargetC: typeof acu_min_room_target_c === 'number' ? acu_min_room_target_c : typeof acu_min_setpoint_c === 'number' ? acu_min_setpoint_c : null,
           policySource: typeof policy_source === 'string' ? policy_source : null,
+          acuCloudRoute: typeof acu_cloud_route === 'string' ? acu_cloud_route : null,
+          acuLocalIrVerified: typeof acu_local_ir_verified === 'boolean' ? acu_local_ir_verified : null,
         });
       } catch {
         retry.retryAfterFailure(attempt);

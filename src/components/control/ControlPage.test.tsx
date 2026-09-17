@@ -56,7 +56,7 @@ afterEach(() => {
   useSpaceTreeStore.setState({ nodes: [], status: 'ready', canEdit: false, mutating: false, error: null });
   useDeviceConfigStore.setState({ saved: {}, draft: {} });
   useCommandStore.setState({ pending: {} });
-  useCapabilitiesStore.setState({ hardwareDispatchEnabled: null, dispatchClasses: null });
+  useCapabilitiesStore.setState({ hardwareDispatchEnabled: null, dispatchClasses: null, acuCloudRoute: null, acuLocalIrVerified: null });
   useControlLog.setState({ entries: [] });
   // Back to visible, which is both the default and what every test above assumes. A leaked
   // `false` here would hide the plan for an unrelated test and read as a missing card.
@@ -449,4 +449,74 @@ describe('the plan card is optional, the controls are not', () => {
     expect(screen.getAllByRole('switch', { name: 'Light Switch 1' }).length).toBeGreaterThan(0);
   });
 
+});
+
+// ---------------------------------------------------------------------------
+// ACU full state — 2026-09-17.
+//
+// The re-paired IR hub made the aircon commandable as a whole state: mode, setpoint, fan and swing.
+// The panel sends ONE absolute state per command, shows the hub's own room temperature and humidity
+// beside what was last COMMANDED, and says where a state will go before Send — refusing to offer a
+// Send that has nowhere to go.
+// ---------------------------------------------------------------------------
+
+describe('ACU full state', () => {
+  const acuReading = (over = {}) => ({
+    acu_main: { device_id: 'acu_main', ts: new Date().toISOString(), online: true, state: 'on' as const, ...over },
+  });
+
+  it('sends the chosen mode, fan and swing with the setpoint, in one command', () => {
+    vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack({ device_id: 'acu_main', target: 'AC_POWER' }));
+    useCapabilitiesStore.setState({ acuCloudRoute: 'ready', acuLocalIrVerified: true });
+    useDeviceStore.setState({ devices: [acu()] });
+    render(<ControlPage />);
+    fireEvent.click(within(screen.getByRole('group', { name: 'Mode' })).getByRole('button', { name: 'Dry' }));
+    fireEvent.click(within(screen.getByRole('group', { name: 'Fan' })).getByRole('button', { name: 'High' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Swing' }));
+    fireEvent.change(screen.getByLabelText('SETPOINT'), { target: { value: '22' } });
+    fireEvent.click(screen.getByRole('button', { name: /Send ON at 22/ }));
+    // The confirmation names the whole state, not just the temperature.
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(/Dry · 22 °C · fan high · swing on/);
+    fireEvent.click(screen.getByRole('button', { name: /Yes, send 22/ }));
+    expect(bridgeClient.sendCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ device_id: 'acu_main', action: 'on', target_c: 22, mode: 'dry', fan: 'high', swing: true }),
+    );
+  });
+
+  it('shows the hub\'s room temperature and humidity, and what was last sent', () => {
+    useDeviceStore.setState({
+      devices: [acu()],
+      latestReadings: acuReading({ room_temp_c: 28.6, humidity_pct: 59, setpoint_c: 24, ac_mode: 'cool', ac_fan: 'auto', ac_swing: false, command_via: 'local', commanded_at: new Date().toISOString() }),
+    });
+    render(<ControlPage />);
+    const card = screen.getByText('IR AIRCON').closest('.control-ir-card') as HTMLElement;
+    expect(within(card).getByText(/28\.6/)).toBeInTheDocument();
+    expect(within(card).getByText(/59/)).toBeInTheDocument();
+    expect(within(card).getByText(/Cool · 24 °C · fan auto · swing off/)).toBeInTheDocument();
+  });
+
+  it('opens on the last commanded mode, fan and swing', () => {
+    useDeviceStore.setState({ devices: [acu()], latestReadings: acuReading({ setpoint_c: 26, ac_mode: 'heat', ac_fan: 'low', ac_swing: true }) });
+    render(<ControlPage />);
+    expect(within(screen.getByRole('group', { name: 'Mode' })).getByRole('button', { name: 'Heat' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(screen.getByRole('group', { name: 'Fan' })).getByRole('button', { name: 'Low' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('switch', { name: 'Swing' })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('says a state the local library holds goes over the LAN', () => {
+    useCapabilitiesStore.setState({ acuCloudRoute: 'ready', acuLocalIrVerified: true });
+    useDeviceStore.setState({ devices: [acu()] });
+    render(<ControlPage />);
+    expect(screen.getByText(/over the LAN/)).toBeInTheDocument();
+  });
+
+  it('refuses to offer a state only the cloud can send when the cloud is not answering — and OFF still works', () => {
+    useCapabilitiesStore.setState({ acuCloudRoute: 'unresolved', acuLocalIrVerified: true });
+    useDeviceStore.setState({ devices: [acu()] });
+    render(<ControlPage />);
+    fireEvent.click(within(screen.getByRole('group', { name: 'Mode' })).getByRole('button', { name: 'Dry' }));
+    expect(screen.getByRole('button', { name: /Send ON at/ })).toBeDisabled();
+    expect(screen.getByText(/vendor cloud is not answering/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send OFF' })).not.toBeDisabled();
+  });
 });
