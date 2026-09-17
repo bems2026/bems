@@ -19,6 +19,11 @@ high-water mark.
 
 The dark theme's chart palette failing the dataviz lightness band is recorded as FI-028.
 
+**Also 2026-09-17 — RM-089 closed.** In the 36.9 hours since the 2026-09-15 restart, ingest has logged
+one "Supabase unreachable" and one failed device sync, 11 seconds apart, both aborted by the request's
+own timeout rather than failing to connect, and no "fetch failed" at all. The week before logged 26–100 a
+day, which would have given 40 to 150 in the same time.
+
 **Also 2026-09-17 — EX-172:** the Windows workstation's intermittent `proxy.test.mjs` ECONNRESET was
 Node 24.15.0 itself crashing the spawned proxy (libuv#5107). `server/nodeRuntime.test.mjs` now fails
 the server suite on an affected runtime, so the workstation needs Node 24.16.0 or later.
@@ -250,7 +255,8 @@ someone says what feeds it.
 
 **RM-089 is the likely cause of the "Supabase unreachable" bursts.** Node gives each connection
 attempt 250 ms; the Pi's IPv6 addresses fail at once, and a lost SYN is retried only after a second,
-so one lost packet failed a whole request. Every daemon now allows 3.5 s.
+so one lost packet failed a whole request. Every daemon now allows 3.5 s. *(Confirmed and closed
+2026-09-17: see its entry.)*
 
 **Both deploy steps were run by the operator the same evening and read back.** The three services
 restarted at 12:39 UTC onto `e414ab8`, with no error logged since. The regenerated flow was deployed from
@@ -4085,9 +4091,9 @@ ever cleared, and put its controls in three rows. This section is that page's ov
         the `devices` table both read back the corrected branches. The order matters for the table:
         ingest copies the bridge's device list at start and every five minutes, so a restart before the
         flow deploy leaves the old branches in `devices` until the next sync.
-- [ ] **RM-089 (S)** — **A lost packet no longer fails a Supabase request.** Written and verified
-      2026-09-15; **live since the restart at 12:39 UTC. 17.6 hours in: zero.** Open until a full day of
-      logs is in.
+- [x] **RM-089 (S)** — **A lost packet no longer fails a Supabase request.** Written and verified
+      2026-09-15; **live since the restart at 12:39 UTC; closed 2026-09-17 on 36.9 hours of logs** —
+      two lines against 40 to 150 at the old rate, and neither of them a failed connection.
       - **The symptom.** Ingest logged "Supabase unreachable, buffered (1 pending): TypeError: fetch
         failed" 26–100 times a day all week, in bursts, and a read from the Pi during one burst failed as
         `AggregateError [ETIMEDOUT]` listing both IPv4 addresses and both IPv6 ones.
@@ -4105,7 +4111,17 @@ ever cleared, and put its controls in three rows. This section is that page's ov
         before it: 29, 35, 26, 68, 100 and 50 a day from 2026-09-09 to 2026-09-14, and 45 in the 24 hours
         before the fix. If they do not fall, the cause is elsewhere and this entry should say so.
         **At 2026-09-16 06:18 UTC, 17.6 hours after the restart: zero, and zero failed device syncs.** The
-        old rate would have given about 33 in that time. A full day's count closes this.
+        old rate would have given about 33 in that time.
+      - **Closed.** Counted from the ingest journal at 2026-09-17 01:32 UTC, **36.9 hours** after the
+        restart:
+        - **0** "fetch failed" — the connection failure this entry is about.
+        - **1** "device sync failed" (07:45:06 UTC on 2026-09-16) and **1** "Supabase unreachable,
+          buffered (1 pending)" (07:45:17), both `AbortError: This operation was aborted`: the request's
+          own timeout firing, not a connection that could not be made. Two requests in one 11-second
+          episode; the buffered write was retried and drained as before.
+        - The week before logged 26–100 a day, which is 40 to 150 in the same 36.9 hours.
+        An abort is a slow answer rather than a lost packet, so it is outside what this change can fix. If
+        aborts start to cluster, that is a new entry, starting from the Supabase side's latency at the time.
 - [x] **RM-087 (S)** — **phase41: the hourly totals rollup keeps phase32's integrated cross-check.**
       Written and rehearsed 2026-09-15; **applied by the operator and read back 2026-09-16**, three weeks
       before the first pass that would have lost a value.
