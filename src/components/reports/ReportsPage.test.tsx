@@ -86,6 +86,23 @@ describe('ReportsPage', () => {
     expect(screen.queryByText(/partial month/)).not.toBeInTheDocument();
   });
 
+  it('says beside the heading when a report’s Recorded share was corrected, and what it said before — RM-073', async () => {
+    // phase44 recounted every stored report in minutes that hold a reading; the operator decided it says so.
+    const sparse = 4 * 24 * 60;
+    vi.mocked(reports.getReportPeriods).mockResolvedValue([
+      buildingRow({ online_sample_count: sparse, online_sample_count_before: FULL_JULY, coverage_restated_at: '2026-09-17T06:00:00Z' }),
+    ]);
+    render(<ReportsPage />);
+    expect(await screen.findAllByText(/Mostly missing · 13%/)).not.toHaveLength(0);
+    expect(await screen.findByText(/^Recorded share corrected on .*: this report said 100%, counting rows the meters sent with no reading in them\.$/)).toBeInTheDocument();
+  });
+
+  it('says nothing about a correction on a report that was never restated', async () => {
+    render(<ReportsPage />);
+    expect(await screen.findByText(/Complete · 100%/)).toBeInTheDocument();
+    expect(screen.queryByText(/Recorded share corrected/)).not.toBeInTheDocument();
+  });
+
   it('never lets a barely-observed month quote a bare total', async () => {
     // This is the whole point. Four days of a 31-day month yields a real 41.2 kWh that is
     // not the month's consumption — the same shape of error as the truncated chart Phase 9

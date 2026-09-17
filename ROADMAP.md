@@ -46,8 +46,11 @@ four defects, **RM-109 to RM-112**:
   minute;
 - four charts said "observed" where the page says "recorded".
 
-**FI-029** gives the light theme and the print palette a purple darker than their blue. **RM-073 is
-decided: restate, with a note.** It becomes phase44, together with counting distinct minutes.
+**FI-029** gives the light theme and the print palette a purple darker than their blue. All four fixes and
+FI-029 are live and were read back on the kiosk's build. **RM-073 is decided — restate, with a note — and
+`phase44_recorded_minutes.sql` is written and rehearsed, and waits for the operator.** It counts distinct
+minutes that hold a reading, and recounts every stored report. The week of 2026-08-17 goes from
+"Complete · 98%" to 16%, beside a note saying what the report used to say.
 
 **Also 2026-09-17 — RM-089 closed.** In the 36.9 hours since the 2026-09-15 restart, ingest has logged
 one "Supabase unreachable" and one failed device sync, 11 seconds apart, both aborted by the request's
@@ -981,8 +984,10 @@ Everything else is small, and the build order below is honest about size.
   two weeks (RM-020), so their averages mean nothing and their tiers should be set on what they
   feed rather than on what they have measured.
 
-### Migrations — all applied
+### Migrations — one waits: phase44
 
+**`supabase/phase44_recorded_minutes.sql` (RM-073, RM-111) is written and rehearsed, and waits for the
+operator** — see RM-073 for what it changes on the live project and how to read it back.
 **`supabase/phase43_readings_policy_speed.sql` (RM-091a) and `supabase/phase42_bounded_device_energy.sql`
 (RM-091) were both applied by the operator on 2026-09-17 and read back the same day** — see those entries.
 Every earlier migration is applied, the latest before them
@@ -3801,6 +3806,13 @@ saved.
     the period's length.
   - **The real count** is phase44's (RM-073), which counts distinct minutes rather than rows. The true
     figure for that week is 10,074, with 6 minutes genuinely missing.
+  - **Read back live** on the rebuilt kiosk bundle: the week reads "10,080 of 10,080 minutes".
+    - At 375px no chart on Overview, Circuits or Usage patterns reaches past the screen (widest right edge
+      347px of 375), and every plot scrolls inside its own box (RM-109).
+    - The Overview and the Circuits tab both say "across 3 uses" (RM-110).
+    - Nothing on the page says "observed" (RM-112).
+    - At 800px the key-figure tiles sit in two rows of four columns, with no tile alone — the harness
+      concern RM-100–108 left for a signed-in look.
   - **Not changed.** Ingest's first cycle after a restart still writes. A restart is rare, and the report
     side must count minutes whatever writes them.
   - **Held by** `reportSeries.test.ts`.
@@ -5156,8 +5168,46 @@ emission factor carrying provenance. What has landed:
 
 - [ ] **RM-073 (M)** — Correct `generate_period_report`'s `online_sample_count` to count usable
       observations rather than rows, and regenerate. **Decided by the operator 2026-09-17: restate, with
-      a note in the report.** In progress as `phase44`, which also counts distinct minutes rather than rows
-      (RM-111). `phase44_report_ranges.sql` for RM-085 becomes phase45.
+      a note in the report. `supabase/phase44_recorded_minutes.sql` is written and rehearsed, and waits
+      for the operator.** RM-085's planned ranges file becomes phase45.
+      - **What it does.**
+        - `report_recorded_minutes_building` and `report_recorded_minutes_devices` count a window's
+          distinct minutes that hold a reading. A rolled-up hour counts at most 60.
+        - Both generators store those counts, and `report_demand_summary` counts the same way. Undo the
+          substitutions and each is phase42's or phase37's text, byte for byte.
+        - Every stored report is recounted. A changed row keeps `online_sample_count_before` and
+          `coverage_restated_at`.
+        - The legacy monthly tables get the same counts, with no note, so RM-042's comparison still
+          holds.
+      - **Previewed read-only on the live project** (building rows):
+
+        | Period | Stored | Recounted | Share |
+        |---|---|---|---|
+        | August 2026 | 21,421 | 12,055 of 44,640 | 48.0% → 27.0% |
+        | week of 2026-08-10 | 10 | 0 of 10,080 | 0.1% → 0.0% |
+        | week of 2026-08-17 | 9,900 | 1,640 of 10,080 | 98.2% → 16.3% |
+        | week of 2026-08-24 | 10,071 | 8,975 of 10,080 | 99.9% → 89.0% |
+        | week of 2026-08-31 | 10,080 | 10,025 of 10,080 | 100.0% → 99.5% |
+        | week of 2026-09-07 | 10,082 | 10,074 of 10,080 | 100.0% → 99.9% |
+
+        The page's Recorded tile already prints the recounted figures, 1,640 for the week of 2026-08-17,
+        beside a heading badge of "Complete · 98%". After phase44 the two agree.
+      - **The note.** `coverageRestatement` (`src/lib/supabaseReports.ts`) returns the note only when the
+        whole percent a reader sees changed, so 100% → 99.9% says nothing. The Overview heading and the
+        PDF's "Corrected figures" list print, for example: "Recorded share corrected on Sep 17, 2026: this
+        report said 98%, counting rows the meters sent with no reading in them."
+      - **Guards.**
+        - `test/phase44-recorded-minutes-schema.test.mjs`: 10 tests. Neuter checks: a changed peak
+          expression and a restatement that writes `generated_at` each fail.
+        - `supabase/rehearse.sh`: a phase44 stage with a restart's duplicate minute, frozen rows, a
+          61-sample hour and a raw hour overlapping its rollup. phase42's generators store 142 and 106; after
+          phase44, 70 and 70, with the notes, energy untouched, a second paste changing nothing, and the
+          summary giving the same 70. `== REHEARSAL PASSED ==` on the Pi's Docker.
+        - `supabaseReports.test.ts`, `buildReport.test.ts` and `ReportsPage.test.tsx`.
+      - **To apply and read back.** Paste the file into the SQL editor; its notice reports how many rows it
+        restated. Then, read-only: `period_building_reports` for the week of 2026-08-17 reads 1,640 with
+        9,900 before, and August 12,055 with 21,421 before. No energy or `generated_at` moves. The page
+        heading shows the note for those two, not for 2026-09-07.
       *(The decision it was blocked on, as recorded before:)*
       RM-072g measured what it would change: August 2026's stored coverage moves 48.0% → 26.9%.
       Regenerating rewrites every stored coverage figure, including for months that have already

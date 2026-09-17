@@ -1568,6 +1568,166 @@ end $$;
 rollback;
 SQL
 
+# ---- phase44: a report's Recorded figure counts minutes that hold a reading, once each ---------------
+#
+# Last, because phase42's stage above re-applies phase42 and so puts back the generators that count rows.
+# The fixtures are the week of Mon 2026-08-03 local and the month of August 2026, which nothing else here
+# touches. Every count below is built so the wrong rule gives a different number:
+#
+#   building, 02:00 UTC on 08-03: minutes :00-:09 with power (10), a restart's second row at :05:40 (still
+#     10 minutes), and :10-:19 frozen with no power (0). Rows: 21. Minutes with a reading: 10.
+#   building, hourly 08-04 02:00: 61 samples averaging 500 W — a restart hour claiming 61. Counts 60.
+#   building, hourly 08-05 02:00: 60 samples, no average — a frozen hour. Counts 0.
+#   device mtr_min, 02:00 UTC on 08-03: minutes :00-:09 online (10), a second row at :05:40, three offline
+#     rows. The same hour also rolled up as 45 online samples — raw wins, so 10, not 45.
+#   device mtr_min, hourly 08-04 02:00: 61 online samples. Counts 60.
+#
+# So the building and the device each hold 70 recorded minutes. phase42's generators store 142 and 106.
+echo "== phase44: generating with the row-counting generators, then applying phase44 over them =="
+psql <<'SQL'
+insert into devices (id, display_name, class) values ('mtr_min', 'Minutes Meter', 'meter') on conflict (id) do nothing;
+
+insert into building_totals (ts, site_id, total_power_w)
+select timestamptz '2026-08-03 02:00:00+00' + make_interval(mins => m), 'mmsu-nberic-care', 400 + m from generate_series(0, 9) m
+union all
+select timestamptz '2026-08-03 02:05:40+00', 'mmsu-nberic-care', 405
+union all
+select timestamptz '2026-08-03 02:10:00+00' + make_interval(mins => m), 'mmsu-nberic-care', null from generate_series(0, 9) m;
+
+insert into building_totals_hourly (hour, total_power_w_avg, total_power_w_max, avg_voltage_avg,
+  phase_current_red_avg, phase_current_yellow_avg, phase_current_blue_avg,
+  energy_kwh_today_max, energy_kwh_week_max, energy_kwh_month_max, sample_count)
+values
+  (timestamptz '2026-08-04 02:00:00+00', 500, 600, 230, 1, 1, null, 1, 1, 1, 61),
+  (timestamptz '2026-08-05 02:00:00+00', null, null, null, null, null, null, 1, 1, 1, 60);
+
+insert into readings (device_id, ts, power_w, online)
+select 'mtr_min', timestamptz '2026-08-03 02:00:00+00' + make_interval(mins => m), 40, true from generate_series(0, 9) m
+union all
+select 'mtr_min', timestamptz '2026-08-03 02:05:40+00', 41, true
+union all
+select 'mtr_min', timestamptz '2026-08-03 02:20:00+00' + make_interval(mins => m), null, false from generate_series(0, 2) m;
+
+insert into readings_hourly (device_id, hour, power_w_avg, power_w_max, voltage_avg, current_avg,
+                             energy_kwh_today_max, sample_count, online_sample_count)
+values
+  ('mtr_min', timestamptz '2026-08-03 02:00:00+00', 40, 41, 230, 0.2, 0.01, 45, 45),
+  ('mtr_min', timestamptz '2026-08-04 02:00:00+00', 40, 41, 230, 0.2, 0.02, 61, 61);
+
+select * from generate_period_report('week', date '2026-08-03');
+select * from generate_period_report('month', date '2026-08-01');
+select * from generate_monthly_report(date '2026-08-01');
+
+do $$
+declare n int;
+begin
+  select online_sample_count into n from period_building_reports where period = 'week' and period_start = date '2026-08-03';
+  assert n = 142, format('phase44 fixture: the row-counting generator must store 142 building rows, stored %s', n);
+  select online_sample_count into n from period_reports where period = 'week' and period_start = date '2026-08-03' and device_id = 'mtr_min';
+  assert n = 106, format('phase44 fixture: the row-counting generator must store 106 device rows, stored %s', n);
+end $$;
+
+-- What must not move, kept in a real table because the next statements run in other sessions.
+drop table if exists rehearse_phase44_before;
+create table rehearse_phase44_before as
+  select period, period_start, energy_kwh, peak_total_power_w, generated_at from period_building_reports;
+SQL
+
+psql < "$HERE/phase44_recorded_minutes.sql" >/dev/null
+psql <<'SQL'
+drop table if exists rehearse_phase44_first;
+create table rehearse_phase44_first as
+  select 'b' as kind, period, period_start, null::text as device_id, online_sample_count, online_sample_count_before, coverage_restated_at
+    from period_building_reports
+  union all
+  select 'd', period, period_start, device_id, online_sample_count, online_sample_count_before, coverage_restated_at
+    from period_reports;
+SQL
+psql < "$HERE/phase44_recorded_minutes.sql" >/dev/null
+echo "   ok — applied twice"
+
+psql <<'SQL'
+do $$
+declare
+  r record;
+  n int;
+  w record;
+begin
+  -- ---- the helpers --------------------------------------------------------------------------------
+  select rw.win_start, rw.win_end into w from report_window('week', date '2026-08-03') rw;
+  n := report_recorded_minutes_building(w.win_start, w.win_end);
+  assert n = 70, format('phase44: the building holds 70 recorded minutes (10 raw + 60 capped + 0 frozen), counted %s', n);
+  select d.minutes into n from report_recorded_minutes_devices(w.win_start, w.win_end) d where d.device_id = 'mtr_min';
+  assert n = 70, format('phase44: mtr_min holds 70 recorded minutes (10 raw, not the overlapping 45, + 60 capped), counted %s', n);
+
+  -- ---- the restatement ----------------------------------------------------------------------------
+  select * into r from period_building_reports where period = 'week' and period_start = date '2026-08-03';
+  assert r.online_sample_count = 70 and r.online_sample_count_before = 142 and r.coverage_restated_at is not null,
+    format('phase44: the week''s building row must read 70, was 142, restated; got %s / %s / %s', r.online_sample_count, r.online_sample_count_before, r.coverage_restated_at);
+  select * into r from period_reports where period = 'week' and period_start = date '2026-08-03' and device_id = 'mtr_min';
+  assert r.online_sample_count = 70 and r.online_sample_count_before = 106 and r.coverage_restated_at is not null,
+    format('phase44: mtr_min''s week row must read 70, was 106, restated; got %s / %s / %s', r.online_sample_count, r.online_sample_count_before, r.coverage_restated_at);
+  select * into r from period_building_reports where period = 'month' and period_start = date '2026-08-01';
+  assert r.online_sample_count = 70 and r.online_sample_count_before = 142,
+    format('phase44: August''s building row must read 70, was 142; got %s / %s', r.online_sample_count, r.online_sample_count_before);
+
+  -- The legacy monthly tables get the same counts and no note, so they keep agreeing until RM-042.
+  select online_sample_count into n from monthly_building_reports where month = date '2026-08-01';
+  assert n = 70, format('phase44: the legacy August building row must read 70, got %s', n);
+  select online_sample_count into n from monthly_reports where month = date '2026-08-01' and device_id = 'mtr_min';
+  assert n = 70, format('phase44: the legacy August mtr_min row must read 70, got %s', n);
+
+  -- Every restated row keeps what it said, and nothing but the count moved.
+  select count(*) into n from period_building_reports where coverage_restated_at is not null and online_sample_count_before is null;
+  assert n = 0, format('phase44: %s restated building row(s) lost what they said', n);
+  select count(*) into n from period_building_reports b join rehearse_phase44_before s using (period, period_start)
+   where b.energy_kwh is distinct from s.energy_kwh or b.peak_total_power_w is distinct from s.peak_total_power_w
+      or b.generated_at is distinct from s.generated_at;
+  assert n = 0, format('phase44: the restatement moved energy, peak or generated_at on %s building row(s)', n);
+
+  -- ---- the second paste changed nothing ----------------------------------------------------------
+  select count(*) into n from (
+    select 'b', period, period_start, null::text, online_sample_count, online_sample_count_before, coverage_restated_at from period_building_reports
+    union all
+    select 'd', period, period_start, device_id, online_sample_count, online_sample_count_before, coverage_restated_at from period_reports
+    except
+    select kind, period, period_start, device_id, online_sample_count, online_sample_count_before, coverage_restated_at from rehearse_phase44_first
+  ) changed;
+  assert n = 0, format('phase44: the second application changed %s row(s)', n);
+
+  -- ---- the generators now store minutes, and leave the note alone -------------------------------
+  perform generate_period_report('week', date '2026-08-03');
+  select * into r from period_building_reports where period = 'week' and period_start = date '2026-08-03';
+  assert r.online_sample_count = 70 and r.online_sample_count_before = 142,
+    format('phase44: regenerated, the building row must still read 70 and keep its note; got %s / %s', r.online_sample_count, r.online_sample_count_before);
+  select online_sample_count into n from period_reports where period = 'week' and period_start = date '2026-08-03' and device_id = 'mtr_min';
+  assert n = 70, format('phase44: regenerated, mtr_min must store 70, stored %s', n);
+  perform generate_monthly_report(date '2026-08-01');
+  select online_sample_count into n from monthly_building_reports where month = date '2026-08-01';
+  assert n = 70, format('phase44: the legacy generator must store 70, stored %s', n);
+
+  -- ---- the summary the page prints beside it is the same number --------------------------------
+  select * into r from report_demand_summary('week', date '2026-08-03');
+  assert r.usable_minutes = 70, format('phase44: the summary''s usable minutes must equal the stored 70, got %s', r.usable_minutes);
+  assert r.observed_minutes = 140, format('phase44: observed minutes are 20 raw minutes + 60 + 60 capped hours = 140, got %s', r.observed_minutes);
+
+  -- ---- who may call what -------------------------------------------------------------------------
+  assert has_function_privilege('service_role', 'public.report_recorded_minutes_building(timestamptz, timestamptz)', 'execute'),
+    'phase44: the service role must be able to count building minutes';
+  assert not has_function_privilege('authenticated', 'public.report_recorded_minutes_devices(timestamptz, timestamptz)', 'execute'),
+    'phase44: a signed-in reader has no business with the device minute counter';
+  assert not has_function_privilege('anon', 'public.report_recorded_minutes_building(timestamptz, timestamptz)', 'execute'),
+    'phase44: an anonymous caller must not count minutes';
+  assert has_function_privilege('authenticated', 'public.report_demand_summary(text, date, text)', 'execute'),
+    'phase44: the summary must stay readable signed in';
+
+  raise notice 'phase44: recorded minutes — assertions passed';
+end $$;
+
+drop table rehearse_phase44_before;
+drop table rehearse_phase44_first;
+SQL
+
 echo
 echo "== REHEARSAL PASSED =="
 echo "Every migration applied in order against PostgreSQL 16, and every function behaved as"

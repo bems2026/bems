@@ -215,6 +215,17 @@ Three things that are easy to get wrong here:
   device offline for most of a month still produces a real, small, confident-looking number —
   the same class of error as the truncated chart Phase 9 fixed. With the field devices down
   since 2026-08-20 (RM-001), this is the current state of the data, not a hypothetical.
+- **`online_sample_count` is minutes that hold a reading, each counted once** (phase44, RM-073).
+  A building minute counts when a row in it carries `total_power_w`, and a device minute counts
+  when the device was online in it. A rolled-up hour counts its samples, never more than 60, and
+  only when its average holds a reading. Until phase44 it counted rows. That overstated coverage
+  twice over: a stopped meter keeps writing empty rows (the week of 2026-08-17 read 98% and held a
+  reading in 16% of its minutes), and an ingest restart writes a second row into one minute.
+  `report_recorded_minutes_building` and `report_recorded_minutes_devices` are the one definition.
+  The generators store it, and `report_demand_summary` counts the same way. Every stored report
+  was recounted when phase44 was applied; a row whose count changed keeps the old one in
+  `online_sample_count_before`, with `coverage_restated_at`, and the page and the PDF print that
+  note.
 
 Reports are **pull, not push**: read in-app and downloadable as CSV. There is no email or
 webhook delivery, deliberately — that would put an SMTP credential or an API key on a

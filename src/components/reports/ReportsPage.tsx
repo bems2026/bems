@@ -16,7 +16,7 @@ import { buildPdfReport } from '@/lib/reportPdf/buildReport';
 import { bootedScript } from '@/lib/buildVersion';
 import { BUILDING_METER_IDS } from '@shared/registry.mjs';
 import { SITE } from '@shared/siteConfig.mjs';
-import { coverageOf, formatPeriod, isQuotable, type ReportPeriod } from '@/lib/supabaseReports';
+import { coverageOf, coverageRestatement, formatPeriod, isQuotable, type ReportPeriod } from '@/lib/supabaseReports';
 import { siteDateTime } from '@/lib/siteTime';
 import { ReportControlBar } from './ReportControlBar';
 import { Tabs } from '@/components/ui/Tabs';
@@ -463,6 +463,8 @@ export function ReportsPage() {
             </h2>
             <CoverageTag coverage={buildingCoverage} period={period} />
             {generatedLabel(building.generated_at) ? <p className="report-heading__meta">Made {generatedLabel(building.generated_at)}</p> : null}
+            {/* RM-073: a restated share says so beside the badge it changed, never silently. */}
+            {coverageRestatement(building) ? <p className="report-heading__meta">{coverageRestatement(building)?.text}</p> : null}
           </header>
           <ReportKpis
             period={period}

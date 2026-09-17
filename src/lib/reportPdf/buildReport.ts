@@ -11,7 +11,7 @@ import { circuitPowerTrendChart, type TrendDay, type TrendSeries } from '@/compo
 import type { Scene } from '@/components/reports/charts/types';
 import type { ChartsData } from '@/components/reports/ReportCharts';
 import { toDailyPoints, toDurationPoints, toHeatCells, toHourPoints } from '@/lib/reportSeries';
-import { coverageOf, formatPeriod, isQuotable, type PeriodBuildingReport, type PeriodDeviceReport, type ReportPeriod } from '@/lib/supabaseReports';
+import { coverageOf, coverageRestatement, formatPeriod, isQuotable, type PeriodBuildingReport, type PeriodDeviceReport, type ReportPeriod } from '@/lib/supabaseReports';
 import { compare, describeDifference } from '@/lib/ipmvp';
 import { provenanceLines, type Carboned, type Costed } from '@/lib/energyCost';
 import { buildBreakdown } from '@/lib/circuitBreakdown';
@@ -262,11 +262,16 @@ export function buildPdfReport(input: PdfReportInput): PdfReport {
     };
   }
 
-  // Every figure the document corrected or refused, said once near the top — RM-090.
-  const corrections = scopedRows.flatMap((r) => {
-    const flag = energyFlagOf(r);
-    return flag ? [`${nameOf(r.device_id)}: ${energyFlagText(flag)}`] : [];
-  });
+  // Every figure the document corrected or refused, said once near the top — RM-090. A restated Recorded
+  // share leads, because every other figure in the document is qualified by it — RM-073.
+  const restated = building ? coverageRestatement(building) : null;
+  const corrections = [
+    ...(restated ? [restated.text] : []),
+    ...scopedRows.flatMap((r) => {
+      const flag = energyFlagOf(r);
+      return flag ? [`${nameOf(r.device_id)}: ${energyFlagText(flag)}`] : [];
+    }),
+  ];
 
   const context: ChartContext = {
     charts,

@@ -13,6 +13,7 @@
  */
 
 import { supabase } from '@/config/supabase';
+import { SITE } from '@shared/siteConfig.mjs';
 
 export interface MonthlyDeviceReport {
   month: string;
@@ -168,6 +169,43 @@ export interface PeriodBuildingReport {
   online_sample_count: number;
   expected_sample_count: number;
   generated_at: string;
+  /** phase44 (RM-073): what `online_sample_count` said before it was recounted, and when. Absent before phase44. */
+  online_sample_count_before?: number | null;
+  coverage_restated_at?: string | null;
+}
+
+export interface CoverageRestatement {
+  /** The share the report used to print, and the share it prints now — whole percent. */
+  was: number;
+  now: number;
+  text: string;
+}
+
+/**
+ * Pure. RM-073 — what a restated report used to say, or `null` when there is nothing a reader would notice.
+ *
+ * phase44 recounted every stored report's Recorded figure in minutes that hold a reading. Until then it
+ * counted rows, and a meter that stopped observing kept writing rows: the week of 2026-08-17 was stored
+ * as 98% and held a reading in 16% of its minutes. The operator decided the stored figures are restated
+ * WITH a note, so the page and the PDF say so beside the figure. A recount that leaves the whole percent
+ * where it was — a restart's extra minute — is not worth a note.
+ */
+export function coverageRestatement(row: {
+  online_sample_count: number;
+  expected_sample_count: number;
+  online_sample_count_before?: number | null;
+  coverage_restated_at?: string | null;
+}): CoverageRestatement | null {
+  const { online_sample_count: now, expected_sample_count: expected, online_sample_count_before: before, coverage_restated_at: at } = row;
+  if (!at || typeof before !== 'number' || !(expected > 0)) return null;
+  const was = Math.round((before / expected) * 100);
+  const is = Math.round((now / expected) * 100);
+  if (was === is) return null;
+  const when = new Date(at);
+  const on = Number.isNaN(when.getTime())
+    ? at.slice(0, 10)
+    : when.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: SITE.timezone });
+  return { was, now: is, text: `Recorded share corrected on ${on}: this report said ${was}%, counting rows the meters sent with no reading in them.` };
 }
 
 /**

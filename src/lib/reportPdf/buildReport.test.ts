@@ -168,6 +168,15 @@ describe('buildPdfReport', () => {
     expect(report.omitted).toEqual(['Power through the period, by circuit']);
   });
 
+  it('says a restated Recorded share first among the corrections, with what the report used to say — RM-073', () => {
+    const report = buildPdfReport(
+      input({
+        building: building({ period: 'week', online_sample_count: 1640, expected_sample_count: 10080, online_sample_count_before: 9900, coverage_restated_at: '2026-09-17T06:00:00Z' }),
+      })
+    );
+    expect(report.corrections?.[0]).toMatch(/^Recorded share corrected on .*: this report said 98%/);
+  });
+
   it('keeps a Simple document to its own sections, and carries the corrections', () => {
     const week = { period: 'week' as const, expected_sample_count: 10080 };
     const report = buildPdfReport(

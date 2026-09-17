@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { coverageOf, isQuotable, formatMonth } from './supabaseReports';
+import { coverageOf, isQuotable, formatMonth, coverageRestatement } from './supabaseReports';
 
 const FULL_JULY = 31 * 24 * 60; // one sample per minute
 
@@ -70,5 +70,36 @@ describe('formatMonth', () => {
 
   it('returns the input unchanged rather than inventing a date it cannot parse', () => {
     expect(formatMonth('not-a-month')).toBe('not-a-month');
+  });
+});
+
+describe('coverageRestatement — RM-073', () => {
+  const week = (o: Record<string, unknown> = {}) => ({
+    online_sample_count: 1640,
+    expected_sample_count: 10080,
+    online_sample_count_before: 9900,
+    coverage_restated_at: '2026-09-17T06:00:00Z',
+    ...o,
+  });
+
+  it('says what a restated report used to say, and why, when the share a reader sees changed', () => {
+    // Live, week of 2026-08-17: stored "Complete · 98%" from rows, 1,640 of 10,080 minutes held a reading.
+    const note = coverageRestatement(week());
+    expect(note).not.toBeNull();
+    expect(note?.was).toBe(98);
+    expect(note?.now).toBe(16);
+    expect(note?.text).toMatch(/^Recorded share corrected on .*2026: this report said 98%, counting rows the meters sent with no reading in them\.$/);
+    expect(note?.text).toMatch(/Sep/);
+  });
+
+  it('stays silent when the correction does not change the share a reader sees', () => {
+    // Week of 2026-09-07: 10,082 rows -> 10,074 minutes is 100% -> 100%, a restart's worth.
+    expect(coverageRestatement(week({ online_sample_count: 10074, online_sample_count_before: 10082 }))).toBeNull();
+  });
+
+  it('stays silent for a report that was never restated, or before phase44 added the columns', () => {
+    expect(coverageRestatement(week({ coverage_restated_at: null }))).toBeNull();
+    expect(coverageRestatement({ online_sample_count: 1640, expected_sample_count: 10080 })).toBeNull();
+    expect(coverageRestatement(week({ expected_sample_count: 0 }))).toBeNull();
   });
 });
