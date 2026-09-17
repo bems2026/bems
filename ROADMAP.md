@@ -17,7 +17,10 @@ high-water mark.
 - **RM-098:** CSVs of devices by day and of every reading.
 - **RM-099:** a Simple or Detailed PDF following the scope.
 
-The dark theme's chart palette failing the dataviz lightness band is recorded as FI-028.
+**FI-028, the same day:** the dark theme's chart series are re-stepped into the dataviz lightness band.
+Green, red and Analytics' sky blue keep their hue a step darker. Purple also moves toward magenta,
+because dropping it to blue's lightness would have made the two indistinguishable for a deuteranope.
+The light theme and the print palette already have that blue/purple collapse, recorded as **FI-029**.
 
 **Also 2026-09-17 — RM-089 closed.** In the 36.9 hours since the 2026-09-15 restart, ingest has logged
 one "Supabase unreachable" and one failed device sync, 11 seconds apart, both aborted by the request's
@@ -3532,7 +3535,7 @@ Why this exists is the 2026-09-16 entry in §0. Operator decisions, 2026-09-16:
       2.47:1), relieved by legends, number tables and hover values.
     - **The dark screen palette fails the lightness band** (`--green-bright` 0.71, `--purple-bright`
       0.81), and so do the base tokens. It is the app-wide chart palette, Analytics' too, so it is
-      recorded as FI-028 rather than changed inside this work.
+      recorded as FI-028 rather than changed inside this work. *(FI-028 landed 2026-09-17.)*
 - [x] **RM-096 (L) — four tabs, each one question. 2026-09-17.** Landed with RM-097 in one change,
   because both rewrite the same pinned strings.
   - **Overview** (how much)
@@ -8329,12 +8332,67 @@ may not.
 
 ### Charts
 
-- [ ] **FI-028 (S)** — The dark theme's chart series tokens fail the dataviz lightness band. Measured
+- [x] **FI-028 (S)** — The dark theme's chart series tokens fail the dataviz lightness band. Measured
   2026-09-17 with the categorical validator against `--bg-surface` #1e1e1e: `--green-bright` #3dbb8a is
   at L 0.71 and `--purple-bright` #c4b5fd at 0.81, and the base tokens (`--green` #32b585, `--purple`
   #a78bfa) still fail. Contrast and colour-blind separation pass. It affects every chart in the app
   (Analytics' lines and every report chart), so the fix is a re-stepped dark series in `index.css`,
   re-measured in both themes, not a report-only override.
+  **Done 2026-09-17.**
+  - **What changed, dark theme only** (the light values are untouched):
+
+    | Token | Was | Now | OKLCH L |
+    |---|---|---|---|
+    | `--green-bright` | #3dbb8a | #26ab7b | 0.71 → 0.66, same hue and chroma |
+    | `--purple-bright` | #c4b5fd | #924ed5 | 0.81 → 0.57, hue 293° → 304° |
+    | `--red-bright` | #e56f63 | #df695e | 0.68 → 0.66, same hue |
+    | `--sky-bright` (new) | #0ea5e9, a literal | #059ddf | 0.685 → 0.66, same hue |
+
+  - **Analytics' seven-colour cycle failed too.** Measured the same way, slots 5 and 6 (`--red-bright` and
+    the literal #0ea5e9) were over the band. The literal cannot differ by theme, so it became `--sky-bright`,
+    defined in both theme blocks; the light value is unchanged.
+  - **Why purple is not just darker.** Re-stepped into the band at blue's own lightness (#987ce9),
+    purple is ΔE 0.1 from `--blue-bright` under simulated deuteranopia. Its old lightness was what kept
+    the two apart, and "Power through the week" draws the four report series as lines that cross, so every
+    pair matters, not only neighbours. A search over the band for violet hues found #924ed5. For every
+    pair of the four it measures ΔE ≥ 15.9 with full colour vision and ≥ 9.6 under protanopia and
+    deuteranopia, and it is 3.4:1 on `--bg-surface` and 3.1:1 on `--bg-surface-2`.
+  - **Not changed: the base tokens.** `--green` and `--purple` are the text tier, and `test/contrast.test.mjs`
+    measures them; no chart draws with them on screen. The dark palette's mirror in
+    `docs/assets/src/tokens.css` is also unchanged, because it only feeds the README pictures, which were not
+    re-rendered.
+  - **Validator, after the change.** All checks pass for:
+    - the dark report series, adjacent and all pairs, on both surfaces;
+    - the dark Analytics cycle;
+    - the light Analytics cycle, unchanged: the contrast warning on amber, green and sky lines is still
+      relieved by legends and hover values;
+    - the print palette, unchanged.
+  - **Held by** `src/components/reports/charts/palette.test.ts`. For both themes, it reads the report
+    series and Analytics' `PALETTE` array from source and checks:
+    - the lightness band;
+    - chroma of at least 0.10;
+    - that neighbours are apart, with full colour vision (ΔE ≥ 15) and under protanopia and deuteranopia
+      (≥ 8, Machado 2009).
+
+    For the dark theme it also checks 3:1 on both surfaces, and every pair of the report series.
+  - **Neuter checks.** Purple at #987ce9 fails the every-pair test, and the literal #0ea5e9 back in
+    Analytics fails the band.
+  - **Checked in a browser** (mock bridge, dev server): Analytics' lines computed to the new values in dark
+    and to the old ones in light, with no console errors. A screenshot was not possible with the pane
+    hidden, so the eye check joins the signed-in Reports check.
+- [ ] **FI-029 (S)** — **Blue and purple are one colour to a deuteranope, in the light theme and in print.**
+  Found while doing FI-028.
+  - **Measured.** Every-pair separation between `--blue-bright` #3b82f6 and `--purple-bright` #8b5cf6 is
+    ΔE 1.3 under simulated deuteranopia and 12.0 with full colour vision. The print palette's #1e5ce4 and
+    #7c3aed measure 1.7 and 12.5.
+  - **Why the usual check missed it.** Neighbours pass, and the validator checks neighbours by default.
+    But "Power through the week" and Analytics draw these series as lines that cross, and in a PDF read
+    on paper there is no hover to tell them apart.
+  - **Relief today:** a legend on every chart, number tables in the Detailed PDF, and hover values on
+    screen.
+  - **The fix** is the one FI-028 made for the dark theme: a purple that differs from blue in lightness
+    as well as hue. It changes the PDF's colours, so re-check the print guards in `palette.test.ts` and
+    extend its every-pair test to the light theme and to `PRINT_PALETTE`.
 
 ### Onboarding
 - ~~**FI-001** (L) Zero-touch device discovery.~~ **Done 2026-08-25** — engine EX-039b, wizard

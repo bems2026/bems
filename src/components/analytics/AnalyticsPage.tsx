@@ -28,8 +28,11 @@ import { useNowTick } from '@/lib/useNowTick';
 const MAX_CHART_POINTS = 140;
 const SELECTED_POINTS = 140;
 /** v4's own 7-color cycle (amber, blue, green, purple, plus 3 more) — decoration only, so
- * literal hex/bright vars are fine here the same way `scene3d/tokens.ts`'s SCENE_PALETTE is. */
-const PALETTE = ['var(--accent)', 'var(--blue-bright)', 'var(--green-bright)', 'var(--purple-bright)', 'var(--red-bright)', '#0ea5e9', '#db2777'];
+ * bright vars and a literal are fine here the same way `scene3d/tokens.ts`'s SCENE_PALETTE is.
+ * The first four are the report series, in the same order. A slot that needs a different step in
+ * the dark theme must be a token: `#0ea5e9` was too light there and became `--sky-bright` (FI-028).
+ * `reports/charts/palette.test.ts` reads this array and checks every slot in both themes. */
+const PALETTE = ['var(--accent)', 'var(--blue-bright)', 'var(--green-bright)', 'var(--purple-bright)', 'var(--red-bright)', 'var(--sky-bright)', '#db2777'];
 
 /** A scope is an Analytics group id from the catalog, no longer a closed union. */
 type Scope = string;

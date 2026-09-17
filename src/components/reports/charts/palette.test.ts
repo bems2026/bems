@@ -273,3 +273,162 @@ describe('SCREEN_PALETTE defers to the stylesheet', () => {
     expect(SCREEN_PALETTE.heat).toHaveLength(PRINT_PALETTE.heat.length);
   });
 });
+
+/**
+ * FI-028 — the screen charts' series colours, measured the way a categorical palette has to be.
+ *
+ * Everything above measures ink on paper. This measures the colours the screen draws with — the
+ * report series and Analytics' longer cycle, which share their tokens — in BOTH themes, with the
+ * checks the data-viz validator makes:
+ *
+ *   - OKLCH lightness inside the theme's band. A dark-theme series lighter than L 0.67 glows
+ *     against the surface and outshouts the text; `--green-bright` #3dbb8a (0.71) and
+ *     `--purple-bright` #c4b5fd (0.81) did, and `#0ea5e9` (0.685) did on Analytics.
+ *   - Chroma of at least 0.10, below which a hue reads as grey.
+ *   - Neighbours apart by OKLab ΔE×100 ≥ 15 for full colour vision, and ≥ 8 under simulated
+ *     protanopia and deuteranopia (Machado, Oliveira & Fernandes 2009, severity 1.0).
+ *   - On a dark surface, 3:1 for every series (WCAG 1.4.11).
+ *
+ * One check is stricter than the validator's default. "Power through the week" draws the four
+ * report series as lines that CROSS, so for the dark theme every pair must be apart, not only
+ * neighbours. The old, too-light purple passed that by being lighter than blue; a purple re-stepped
+ * into the band at blue's lightness does not (ΔE 0.1 under deuteranopia), which is why the dark
+ * purple leans toward magenta and sits darker. The light theme and the print palette FAIL this
+ * today — blue against purple is ΔE 1.3 and 1.7 under deuteranopia — and that is FI-029, not a
+ * reason to leave the dark theme failing too.
+ */
+describe('the screen series colours pass the data-viz checks in both themes — FI-028', () => {
+  const ANALYTICS = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'analytics', 'AnalyticsPage.tsx'), 'utf8');
+
+  function block(opener: string): string {
+    const start = CSS.indexOf(opener);
+    if (start === -1) throw new Error(`no ${opener.trim()} block in index.css`);
+    return CSS.slice(start, CSS.indexOf('\n}', start));
+  }
+  const THEMES = {
+    light: { block: block('\n:root {'), band: [0.43, 0.77] as const },
+    dark: { block: block("\n:root[data-theme='dark'] {"), band: [0.48, 0.67] as const },
+  };
+  type Theme = keyof typeof THEMES;
+
+  /** A token's value in a theme: the dark block overrides, and falls back to the light one. */
+  function tokenIn(theme: Theme, name: string): string {
+    for (const source of theme === 'dark' ? [THEMES.dark.block, THEMES.light.block] : [THEMES.light.block]) {
+      const m = source.match(new RegExp(`\\n\\s+${name}:\\s*([^;]+);`));
+      if (m) return m[1].replace(/\/\*.*$/, '').trim();
+    }
+    throw new Error(`${name} is not defined for the ${theme} theme`);
+  }
+  const resolve = (theme: Theme, value: string) => {
+    const v = /^var\((--[a-z0-9-]+)\)$/.exec(value);
+    return v ? tokenIn(theme, v[1]) : value;
+  };
+
+  /** Analytics' cycle, read from the page's own source so the test follows the code. */
+  const analyticsCycle = (): string[] => {
+    const m = /const PALETTE = \[([^\]]+)\]/.exec(ANALYTICS);
+    if (!m) throw new Error('AnalyticsPage.tsx no longer declares its PALETTE array');
+    return m[1].split(',').map((s) => s.trim().replace(/^'|'$/g, ''));
+  };
+
+  // --- OKLab and colour-vision simulation --------------------------------------------------
+  const linear = (hex: string) => {
+    const { r, g, b } = rgb(hex);
+    return [r, g, b].map(channel);
+  };
+  function oklabOfLinear([r, g, b]: number[]): [number, number, number] {
+    const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+    const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+    const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    return [
+      0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+      1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+      0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+    ];
+  }
+  const MACHADO = {
+    protan: [
+      [0.152286, 1.052583, -0.204868],
+      [0.114503, 0.786281, 0.099216],
+      [-0.003882, -0.048116, 1.051998],
+    ],
+    deutan: [
+      [0.367322, 0.860646, -0.227968],
+      [0.280085, 0.672501, 0.047413],
+      [-0.01182, 0.04294, 0.968881],
+    ],
+  };
+  type Vision = 'normal' | keyof typeof MACHADO;
+  function oklab(hex: string, vision: Vision = 'normal'): [number, number, number] {
+    const lin = linear(hex);
+    if (vision === 'normal') return oklabOfLinear(lin);
+    const seen = MACHADO[vision].map((row) => Math.min(1, Math.max(0, row[0] * lin[0] + row[1] * lin[1] + row[2] * lin[2])));
+    return oklabOfLinear(seen);
+  }
+  const lightness = (hex: string) => oklab(hex)[0];
+  const chroma = (hex: string) => Math.hypot(oklab(hex)[1], oklab(hex)[2]);
+  const apart = (a: string, b: string, vision: Vision = 'normal') => {
+    const [p, q] = [oklab(a, vision), oklab(b, vision)];
+    return 100 * Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+  };
+  const pairsOf = (colours: string[], all: boolean) =>
+    all ? colours.flatMap((a, i) => colours.slice(i + 1).map((b) => [a, b] as const)) : colours.slice(1).map((b, i) => [colours[i], b] as const);
+
+  it('reproduces the known OKLab anchors, so a passing palette means something', () => {
+    expect(lightness('#ffffff')).toBeCloseTo(1, 3);
+    expect(lightness('#000000')).toBeCloseTo(0, 3);
+    const red = oklab('#ff0000');
+    expect(red[0]).toBeCloseTo(0.628, 3);
+    expect(red[1]).toBeCloseTo(0.2249, 3);
+    expect(red[2]).toBeCloseTo(0.1258, 3);
+    // A grey stays that grey under either simulation, and red and green collapse under both.
+    expect(apart('#808080', '#808080', 'deutan')).toBeCloseTo(0, 1);
+    expect(apart('#d62728', '#2ca02c', 'deutan')).toBeLessThan(apart('#d62728', '#2ca02c'));
+  });
+
+  it('reads the palettes it is about to judge', () => {
+    expect(SCREEN_PALETTE.series).toHaveLength(4);
+    expect(analyticsCycle().slice(0, 4)).toEqual(SCREEN_PALETTE.series);
+    expect(analyticsCycle().length).toBeGreaterThanOrEqual(7);
+  });
+
+  describe.each(['light', 'dark'] as const)('%s theme', (theme) => {
+    const [lo, hi] = THEMES[theme].band;
+    const report = () => SCREEN_PALETTE.series.map((v) => resolve(theme, v));
+    const cycle = () => analyticsCycle().map((v) => resolve(theme, v));
+
+    it(`every series sits in the lightness band L ${lo}–${hi}, with colour in it`, () => {
+      for (const hex of cycle()) {
+        expect(lightness(hex), `${hex} lightness`).toBeGreaterThanOrEqual(lo);
+        expect(lightness(hex), `${hex} lightness`).toBeLessThanOrEqual(hi);
+        expect(chroma(hex), `${hex} chroma`).toBeGreaterThanOrEqual(0.1);
+      }
+    });
+
+    it('neighbours are apart for full colour vision and under protanopia and deuteranopia', () => {
+      for (const colours of [report(), cycle()]) {
+        for (const [a, b] of pairsOf(colours, false)) {
+          expect(apart(a, b), `${a} vs ${b}`).toBeGreaterThanOrEqual(15);
+          expect(apart(a, b, 'protan'), `${a} vs ${b}, protanopia`).toBeGreaterThanOrEqual(8);
+          expect(apart(a, b, 'deutan'), `${a} vs ${b}, deuteranopia`).toBeGreaterThanOrEqual(8);
+        }
+      }
+    });
+  });
+
+  it('dark: every series clears 3:1 on both surfaces a chart is drawn on', () => {
+    const surfaces = ['--bg-surface', '--bg-surface-2'].map((t) => tokenIn('dark', t));
+    for (const hex of analyticsCycle().map((v) => resolve('dark', v))) {
+      for (const surface of surfaces) expect(contrast(hex, surface), `${hex} on ${surface}`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('dark: the four report series stay apart in EVERY pair, because their lines cross', () => {
+    const colours = SCREEN_PALETTE.series.map((v) => resolve('dark', v));
+    for (const [a, b] of pairsOf(colours, true)) {
+      expect(apart(a, b), `${a} vs ${b}`).toBeGreaterThanOrEqual(15);
+      expect(apart(a, b, 'protan'), `${a} vs ${b}, protanopia`).toBeGreaterThanOrEqual(8);
+      expect(apart(a, b, 'deutan'), `${a} vs ${b}, deuteranopia`).toBeGreaterThanOrEqual(8);
+    }
+  });
+});

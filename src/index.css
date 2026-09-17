@@ -128,6 +128,10 @@
   --purple: #7c3aed; /* 5.2-5.7:1 */
   --purple-bright: #8b5cf6;
 
+  /* Analytics' sixth series. A token rather than the literal it was, because the dark theme needs
+   * its own step of it (FI-028). No text role and no -text shade: it is only ever a chart line. */
+  --sky-bright: #0ea5e9;
+
   /**
    * Sequential ramp — the ONLY ordered scale in this palette, for the reports' day-by-hour
    * demand heatmap. Every other colour here is categorical: it says which thing, not how much.
@@ -338,7 +342,10 @@
   --blue-soft: rgb(95 139 229 / 0.16);
 
   --green: #32b585; /* 7.2:1 */
-  --green-bright: #3dbb8a; /* 7.7:1 */
+  /* FI-028: the -bright tier is what charts draw series with, and a dark-theme series lighter than
+   * OKLCH L 0.67 glows against the surface. #3dbb8a sat at 0.71; this is the same hue and chroma at
+   * 0.66. 6.4:1 on the page, 5.2:1 on --bg-surface-2. `palette.test.ts` holds the band. */
+  --green-bright: #26ab7b;
   --green-soft: rgb(37 168 120 / 0.16);
 
   /* 5.0:1 on --bg-surface, 4.7:1 on --bg-surface-2. Was #e06155, verified at 4.8:1 against
@@ -347,7 +354,7 @@
    * passes everywhere it currently appears and fails the first time it is placed somewhere new.
    * Raised by six per channel, which is below a visible difference and above the bar. */
   --red: #f8796d;
-  --red-bright: #e56f63; /* 6.1:1 */
+  --red-bright: #df695e; /* 5.6:1 — FI-028: was #e56f63 at L 0.68, now 0.66, same hue */
   /* Derived from --red-bright, matching the light theme's convention (its --red-soft is
    * --red-bright #ef4444 at 0.1). The dark copy had been tracking --red instead, which meant the
    * chip lightened further every time --red was lightened — pushing badge text back under AA
@@ -355,7 +362,15 @@
   --red-soft: rgb(229 111 99 / 0.16);
 
   --purple: #a78bfa; /* 6.9:1 */
-  --purple-bright: #c4b5fd; /* 10.2:1 */
+  /* FI-028. #c4b5fd sat at OKLCH L 0.81, far above the dark band's 0.67 — and that lightness was
+   * the only thing keeping it apart from --blue-bright. Re-stepped into the band at blue's own
+   * lightness it collapses into blue for a deuteranope (ΔE 0.1), and "Power through the week"
+   * draws both as lines that cross. So it sits darker (L 0.57) and leans a little toward magenta
+   * (hue 304° against light's 293°): every pair of the four report series is then ΔE ≥ 15 for
+   * full colour vision and ≥ 9.6 under protanopia and deuteranopia. 3.8:1 on the page, 3.1:1 on
+   * --bg-surface-2 — enough for a line, and it carries no text. */
+  --purple-bright: #924ed5;
+  --sky-bright: #059ddf; /* 6.2:1 — FI-028: #0ea5e9 sat at L 0.685; same hue at 0.66 */
 
   /* The heat ramp INVERTS, it does not merely darken. "More" must read as more ink on paper
      and as more light on a dark screen; carrying the light theme's ramp across would make an
