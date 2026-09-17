@@ -19,6 +19,10 @@ high-water mark.
 
 The dark theme's chart palette failing the dataviz lightness band is recorded as FI-028.
 
+**Also 2026-09-17 — EX-172:** the Windows workstation's intermittent `proxy.test.mjs` ECONNRESET was
+Node 24.15.0 itself crashing the spawned proxy (libuv#5107). `server/nodeRuntime.test.mjs` now fails
+the server suite on an affected runtime, so the workstation needs Node 24.16.0 or later.
+
 **2026-09-16 — RM-090: the weekly report for 7 September said L.O Yellow, a lighting
 circuit, used 81.41 kWh, and the page now refuses that figure.** The stored readings still carry the
 2026-09-08 counter jump RM-052 fixed in the bridge, and a report sums each day's high-water mark. The
@@ -3224,6 +3228,28 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       A developer on Windows had two red tests they were expected to know were "just Windows".
       The fix is `pathToFileURL(...).href`, which is the correct ESM specifier on **every**
       platform rather than a Windows special-case — verified 311/311 on both — `server/envHygiene.test.mjs`
+- [x] **EX-172** *(2026-09-17)* The intermittent `fetch failed` / `read ECONNRESET` in
+      `server/proxy.test.mjs` on the Windows workstation was Node crashing, not the tests.
+      About one run of the file in thirty failed, in a different test each time, and a rerun passed;
+      Linux CI never failed. Instrumenting both ends showed the **spawned proxy process dying with
+      status 0xC0000409** partway through its outbound `fetch` — nothing on stderr, no `exit` event —
+      and Windows resetting the test's open socket. The cause is libuv#5107: on every outbound TCP
+      connect, libuv's Windows code calls `RtlGetVersion()` with an `OSVERSIONINFOW` whose size field
+      was never set, and when leftover stack data holds the larger struct's size the call overruns the
+      stack cookie. Node 24.15.0 (libuv 1.51.0) has it; the fix is in 24.16.0 and 26.1.0, and was never
+      backported to 22.x. Idle, listen-only and single-fetch children did not crash in 1000 spawns
+      each, nor did the proxy with no request: the odds depend on the call path, and this file, where
+      every test spawns a proxy that fetches while serving a request, is where they were high enough
+      to notice.
+      **Measured on the workstation:** `proxy.test.mjs` 30 times per runtime, 1/30
+      failed on 24.15.0 and 0/30 on 24.21.0; the proxy spawned and sent one authenticated
+      request died with 0xC0000409 3 times in about 2,200 spawns on 24.15.0 (where one of the four
+      probe processes also stopped silently after 100) and 0 times in 2,800 on 24.21.0.
+      Nothing in the tests can prevent a runtime crash, and retrying would have hidden one, so
+      `server/nodeRuntime.test.mjs` fails the server suite on an affected Windows runtime, naming
+      the bug and the version to install — every run, rather than one in thirty. **`npm run
+      test:server` stays red on the workstation until its Node is 24.16.0 or later.** —
+      `server/nodeRuntime.mjs`, `server/nodeRuntime.test.mjs`
 - [x] **EX-126** Migration rehearsal kept rather than discarded: every phase file applied in order against a real PostgreSQL 16 in a throwaway container, with the Supabase-provided symbols stubbed, then all six functions driven against seeded data. The guard tests below check intent; this checks that Postgres will actually run the file — `supabase/rehearse.sh`
 - [x] **EX-123** Schema guard tests asserting RLS shape per migration — `test/device-config-schema.test.mjs`, `test/phase8-anomalies-schema.test.mjs`, `test/phase9-history-schema.test.mjs`, `test/phase10-archive-schema.test.mjs`, `test/phase11-totals-retention-schema.test.mjs`, `test/phase12-monthly-reports-schema.test.mjs`
 - [x] **EX-125** First tests against the proxy's WebSocket relay and against a bridge that hangs rather than refuses — `server/proxy.test.mjs`
