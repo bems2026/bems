@@ -93,6 +93,19 @@ test('leaves the existing light endpoint exactly as it was', () => {
 test('every added node is placed on a real tab, or it would not deploy', () => {
   const out = build();
   const added = out.filter((n) => String(n.id).startsWith('bems_'));
-  assert.equal(added.length, 8);
+  // 7, not 8, since 2026-09-17: the ACU endpoint no longer has a parallel "200 response" node.
+  assert.equal(added.length, 7);
   for (const n of added) assert.ok(['tabS', 'tabA'].includes(n.z), `${n.id} has no tab`);
+});
+
+test('a fresh install gets the same /acu validator the aircon refactor writes — one source, no drift', async () => {
+  const { ACU_AUTH_FN } = await import('../node-red-bridge/airconSources.mjs');
+  assert.equal(find(build(), (n) => n.name === 'ACU auth + validate').func, ACU_AUTH_FN);
+});
+
+test('the ACU endpoint has no parallel 200 — AC Master Logic replies once it knows what happened', () => {
+  const out = build();
+  const auth = find(out, (n) => n.name === 'ACU auth + validate');
+  assert.deepEqual(auth.wires, [['acu'], ['bems_acu_reply']]);
+  assert.equal(find(out, (n) => n.id === 'bems_acu_ok'), undefined);
 });

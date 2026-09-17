@@ -1,0 +1,566 @@
+[
+  {
+    "id": "5ae2a6bf87435d7a",
+    "type": "tab",
+    "label": "Aircon",
+    "disabled": false,
+    "info": "",
+    "env": []
+  },
+  {
+    "id": "28c8288b5a370301",
+    "type": "group",
+    "z": "5ae2a6bf87435d7a",
+    "name": "AC Dropdown Control",
+    "style": {
+      "label": true
+    },
+    "nodes": [
+      "7301d59fe01a962c",
+      "4d59cec67e18861f"
+    ],
+    "x": 504,
+    "y": 39,
+    "w": 442,
+    "h": 82
+  },
+  {
+    "id": "c39382fef63ae43e",
+    "type": "group",
+    "z": "5ae2a6bf87435d7a",
+    "name": "BEMS Environment Monitoring",
+    "style": {
+      "label": true
+    },
+    "nodes": [
+      "4bf44bced9cfcca4"
+    ],
+    "x": 974,
+    "y": 39,
+    "w": 252,
+    "h": 82
+  },
+  {
+    "id": "7d8606a4843d3022",
+    "type": "group",
+    "z": "5ae2a6bf87435d7a",
+    "style": {
+      "stroke": "#999999",
+      "stroke-opacity": "1",
+      "fill": "none",
+      "fill-opacity": "1",
+      "label": true,
+      "label-position": "nw",
+      "color": "#a4a4a4"
+    },
+    "nodes": [
+      "c2240e7a471dc6a4",
+      "208c3e7a3bc515cb",
+      "b81e2ec20fc4f7d4",
+      "bf5fd306c574852e"
+    ],
+    "x": 34,
+    "y": 39,
+    "w": 432,
+    "h": 122
+  },
+  {
+    "id": "2117824a3d22ad1a",
+    "type": "group",
+    "z": "5ae2a6bf87435d7a",
+    "style": {
+      "stroke": "#999999",
+      "stroke-opacity": "1",
+      "fill": "none",
+      "fill-opacity": "1",
+      "label": true,
+      "label-position": "nw",
+      "color": "#a4a4a4"
+    },
+    "nodes": [
+      "ae816c4f373cc99a",
+      "d52d030d809aa099"
+    ],
+    "x": 34,
+    "y": 299,
+    "w": 572,
+    "h": 82
+  },
+  {
+    "id": "8bfebf18683f851a",
+    "type": "mqtt in",
+    "z": "5ae2a6bf87435d7a",
+    "name": "ESP32 AC Sniffer",
+    "topic": "nbric/ac/status",
+    "qos": "2",
+    "datatype": "json",
+    "broker": "a8746c9ecc2718e2",
+    "nl": false,
+    "rap": false,
+    "inputs": 0,
+    "x": 1060,
+    "y": 220,
+    "wires": [
+      [
+        "9f117dc60f29f8c4"
+      ]
+    ]
+  },
+  {
+    "id": "ae0a6d7639d18c4a",
+    "type": "tuya-smart-device",
+    "z": "5ae2a6bf87435d7a",
+    "deviceName": "Outside Temp",
+    "disableAutoStart": true,
+    "deviceId": "__REDACTED_DEVICE_ID_OutsideTemp__",
+    "deviceKey": "__REDACTED_LOCAL_KEY__",
+    "storeAsCreds": false,
+    "deviceIp": "",
+    "retryTimeout": "1000",
+    "findTimeout": "10000",
+    "tuyaVersion": "3.3",
+    "eventMode": "event-both",
+    "logLevel": "log-level-debug",
+    "x": 880,
+    "y": 280,
+    "wires": [
+      [
+        "638b576ec55e303f"
+      ],
+      [
+        "638b576ec55e303f"
+      ]
+    ]
+  },
+  {
+    "id": "638b576ec55e303f",
+    "type": "function",
+    "z": "5ae2a6bf87435d7a",
+    "name": "Extract DP 103",
+    "func": "// Master Hub Logic for DP 103 (temp_current)\nlet dps = (msg.payload && msg.payload.DP_data) ? msg.payload.DP_data.dps : msg.payload.dps;\n\nif (dps && dps['103'] !== undefined) {\n    let ambientTemp = dps['103'];\n    \n    // Engineering Validation: Ignore values that are clearly errors\n    if (ambientTemp > 0 && ambientTemp < 100) { \n        msg.payload = ambientTemp;\n        msg.topic = \"Breaker_Ambient_Temp\";\n        return msg;\n    }\n}\nreturn null;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1080,
+    "y": 280,
+    "wires": [
+      [
+        "9f117dc60f29f8c4"
+      ]
+    ]
+  },
+  {
+    "id": "9f117dc60f29f8c4",
+    "type": "function",
+    "z": "5ae2a6bf87435d7a",
+    "name": "Dashboard State Manager",
+    "func": "let state = flow.get(\"ac_dash_state\") || { \n    power: \"OFFLINE\", \n    setTemp: \"--\", \n    roomTemp: \"--\", \n    humidity: \"--\", \n    outTemp: \"--\" \n};\n\nif (msg.topic === \"nbric/ac/status\") {\n    if (msg.payload && msg.payload.power) state.power = msg.payload.power;\n    if (msg.payload && msg.payload.temp) state.setTemp = msg.payload.temp;\n} else if (msg.topic === \"Temperature\") {\n    state.roomTemp = msg.payload;\n} else if (msg.topic === \"Humidity\") {\n    state.humidity = msg.payload;\n} else if (msg.topic === \"Breaker_Ambient_Temp\") {\n    state.outTemp = msg.payload;\n}\n\nflow.set(\"ac_dash_state\", state);\nreturn { payload: state };",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1360,
+    "y": 160,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "ba2d33fe224252bf",
+    "type": "inject",
+    "z": "5ae2a6bf87435d7a",
+    "name": "Load UI on Refresh",
+    "props": [],
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "0.5",
+    "topic": "refresh",
+    "x": 1070,
+    "y": 160,
+    "wires": [
+      [
+        "9f117dc60f29f8c4"
+      ]
+    ]
+  },
+  {
+    "id": "7301d59fe01a962c",
+    "type": "function",
+    "z": "5ae2a6bf87435d7a",
+    "g": "28c8288b5a370301",
+    "name": "AC Master Logic",
+    "func": "const head = \"020ece0000000000060011000f002a0026003f0077\";\nconst library = {\n    \"OFF\": \"001&^0070C4D364800004C0F00200000000E1@%\",\n    \"16\": \"001&^0070C4D364800024C0F00000000000D2@%\",\n    \"17\": \"001&^0070C4D364800024C070000000000052@%\",\n    \"18\": \"001&^0070C4D364800024C0B0000000000092@%\",\n    \"19\": \"001&^0070C4D364800024C030000000000012@%\",\n    \"20\": \"001&^0070C4D364800024C0D00000000000E2@%\",\n    \"21\": \"001&^0070C4D364800024C050000000000062@%\",\n    \"22\": \"001&^0070C4D364800024C0900000000000A2@%\",\n    \"23\": \"001&^0070C4D364800024C010000000000022@%\",\n    \"24\": \"001&^0070C4D364800024C0E00000000000C2@%\",\n    \"25\": \"001&^0070C4D364800024C060000000000042@%\",\n    \"26\": \"001&^0070C4D364800024C0A0000000000082@%\",\n    \"27\": \"001&^0070C4D364800024C020000000000002@%\",\n    \"28\": \"001&^0070C4D364800024C0C00000000000FC@%\",\n    \"29\": \"001&^0070C4D364800024C04000000000007C@%\",\n    \"30\": \"001&^0070C4D364800024C0800000000000BC@%\"\n};\n\nlet key = library[msg.payload];\n\nmsg.payload = {\n    \"dps\": 201,\n    \"set\": JSON.stringify({\n        \"control\": \"send_ir\",\n        \"head\": head,\n        \"key1\": key,\n        \"type\": 0,\n        \"delay\": 300\n    })\n};\n\nreturn msg;",
+    "outputs": 1,
+    "x": 610,
+    "y": 80,
+    "wires": [
+      [
+        "4d59cec67e18861f"
+      ]
+    ]
+  },
+  {
+    "id": "4d59cec67e18861f",
+    "type": "tuya-smart-device",
+    "z": "5ae2a6bf87435d7a",
+    "g": "28c8288b5a370301",
+    "deviceName": "NBRIC IR Blaster",
+    "disableAutoStart": true,
+    "deviceId": "__REDACTED_DEVICE_ID_NBRICIRBlaster__",
+    "deviceKey": "__REDACTED_LOCAL_KEY__",
+    "storeAsCreds": false,
+    "deviceIp": "",
+    "retryTimeout": "1000",
+    "findTimeout": "10000",
+    "tuyaVersion": "3.3",
+    "eventMode": "event-both",
+    "logLevel": "log-level-debug",
+    "x": 830,
+    "y": 80,
+    "wires": [
+      [
+        "4bf44bced9cfcca4"
+      ],
+      [
+        "4bf44bced9cfcca4"
+      ]
+    ]
+  },
+  {
+    "id": "4bf44bced9cfcca4",
+    "type": "function",
+    "z": "5ae2a6bf87435d7a",
+    "g": "c39382fef63ae43e",
+    "name": "Parse DPS 101/102",
+    "func": "// This version handles different Tuya node data structures\nlet dps = msg.payload.dps || (msg.payload.data ? msg.payload.data.dps : null);\n\nif (dps) {\n    let tempRaw = dps['101'];\n    let humRaw = dps['102'];\n    \n    let messages = [null, null];\n\n    if (tempRaw !== undefined) {\n        messages[0] = { payload: tempRaw / 10, topic: \"Temperature\" };\n    }\n    \n    if (humRaw !== undefined) {\n        messages[1] = { payload: humRaw, topic: \"Humidity\" };\n    }\n    \n    return messages;\n}\n\nreturn null;",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1100,
+    "y": 80,
+    "wires": [
+      [
+        "9f117dc60f29f8c4"
+      ],
+      [
+        "9f117dc60f29f8c4"
+      ]
+    ]
+  },
+  {
+    "id": "c2240e7a471dc6a4",
+    "type": "inject",
+    "z": "5ae2a6bf87435d7a",
+    "g": "7d8606a4843d3022",
+    "name": "Load on Refresh",
+    "props": [],
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "0.5",
+    "topic": "",
+    "x": 170,
+    "y": 120,
+    "wires": [
+      [
+        "208c3e7a3bc515cb"
+      ]
+    ]
+  },
+  {
+    "id": "208c3e7a3bc515cb",
+    "type": "function",
+    "z": "5ae2a6bf87435d7a",
+    "g": "7d8606a4843d3022",
+    "name": "Get Sched AC",
+    "func": "msg.payload = flow.get('ac_sched') || [];\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 360,
+    "y": 120,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "b81e2ec20fc4f7d4",
+    "type": "inject",
+    "z": "5ae2a6bf87435d7a",
+    "g": "7d8606a4843d3022",
+    "name": "Cron AC",
+    "props": [],
+    "repeat": "60",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "x": 160,
+    "y": 80,
+    "wires": [
+      [
+        "bf5fd306c574852e"
+      ]
+    ]
+  },
+  {
+    "id": "bf5fd306c574852e",
+    "type": "function",
+    "z": "5ae2a6bf87435d7a",
+    "g": "7d8606a4843d3022",
+    "name": "Check Time AC",
+    "func": "let schedules = flow.get('ac_sched') || [];\nlet now = new Date();\nlet currentTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');\nlet currentDay = now.getDay().toString();\n\nlet fireAction = null;\nschedules.forEach(sched => {\n    if (sched.timeStr === currentTime && (sched.day === \"All\" || sched.day === currentDay)) {\n        fireAction = sched.action;\n    }\n});\n\nif (fireAction !== null) {\n    return { payload: fireAction };\n}\nreturn null;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 340,
+    "y": 80,
+    "wires": [
+      [
+        "7301d59fe01a962c"
+      ]
+    ]
+  },
+  {
+    "id": "ae816c4f373cc99a",
+    "type": "function",
+    "z": "5ae2a6bf87435d7a",
+    "g": "2117824a3d22ad1a",
+    "name": "AREC ACU Daily Parser",
+    "func": "let p = msg.payload;\n// Check if the trigger is from the 2-second Injector (number timestamp) or Tuya (object)\nlet isTick = (typeof p === 'number'); \nlet dps = (p && typeof p === 'object') ? (p.data && p.data.dps ? p.data.dps : p.dps) : null;\n\nlet isOnline = flow.get(\"arec_health\") || false;\n\n// Only update connection health if we received an actual hardware packet\nif (!isTick && typeof p === 'string') {\n    if (p === \"CONNECTED\" || (p.event && p.event === \"CONNECTED\")) isOnline = true;\n    else if (p === \"DISCONNECTED\" || p === \"ERROR\" || (p.event && (p.event === \"DISCONNECTED\" || p.event === \"ERROR\"))) isOnline = false;\n} else if (dps) {\n    isOnline = true;\n}\nflow.set(\"arec_health\", isOnline);\n\nlet lastV = parseFloat(flow.get(\"arec_last_v\")) || 0;\nlet lastC = parseFloat(flow.get(\"arec_last_c\")) || 0;\nlet lastP = parseFloat(flow.get(\"arec_last_p\")) || 0;\n\n// For Today's Energy via Riemann Sum\nlet energyToday = parseFloat(flow.get(\"arec_energy_today\")) || 0.0;\nlet lastTime = flow.get(\"arec_last_time\") || Date.now();\nlet lastDay = flow.get(\"arec_last_day\") || new Date().getDate();\nlet now = Date.now();\nlet currentDay = new Date(now).getDate();\n\n// Midnight Reset Logic\nif (currentDay !== lastDay) {\n    energyToday = 0.0;\n    lastDay = currentDay;\n    flow.set(\"arec_last_day\", lastDay);\n}\n\nif (dps) {\n    if (dps[\"107\"] !== undefined) lastV = dps[\"107\"] / 10;\n    if (dps[\"106\"] !== undefined) lastC = dps[\"106\"] / 1000;\n    if (dps[\"105\"] !== undefined) lastP = dps[\"105\"] / 10;\n}\n\n// Riemann Sum Integration (W -> kW -> kWh)\nlet hours = (now - lastTime) / 3600000;\n// Sanity check to prevent massive energy spikes if Node-RED was off for days\nif (hours > 0 && hours < 1) { \n    energyToday += (lastP / 1000) * hours;\n}\n\nflow.set(\"arec_last_time\", now);\nflow.set(\"arec_last_v\", lastV);\nflow.set(\"arec_last_c\", lastC);\nflow.set(\"arec_last_p\", lastP);\nflow.set(\"arec_energy_today\", energyToday);\n\nlet timestamp = new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });\nlet uiData = { \n    name: \"ACU\", \n    titleColor: \"#00e5ff\", \n    voltage: lastV.toFixed(1), \n    current: lastC.toFixed(3), \n    power: lastP.toFixed(1), \n    energy: energyToday.toFixed(3), \n    status: isOnline ? \"CONNECTED\" : \"DISCONNECTED\", \n    statusColor: isOnline ? \"#00e676\" : \"#ff1744\", \n    time: timestamp \n};\n\n// Output 1 goes to UI Template continuously. Output 2 goes to Chart ONLY when Tuya sends data (prevents chart spam)\nreturn [ { payload: uiData }, isTick ? null : { payload: lastP } ];",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 470,
+    "y": 340,
+    "wires": [
+      [],
+      []
+    ]
+  },
+  {
+    "id": "d52d030d809aa099",
+    "type": "inject",
+    "z": "5ae2a6bf87435d7a",
+    "g": "2117824a3d22ad1a",
+    "name": "Live UI & Energy Tick",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "2",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 180,
+    "y": 340,
+    "wires": [
+      [
+        "ae816c4f373cc99a"
+      ]
+    ]
+  },
+  {
+    "id": "bems_acu_in",
+    "type": "http in",
+    "z": "5ae2a6bf87435d7a",
+    "name": "POST /acu",
+    "url": "/acu",
+    "method": "post",
+    "x": 140,
+    "y": 200,
+    "wires": [
+      [
+        "bems_acu_auth"
+      ]
+    ]
+  },
+  {
+    "id": "bems_acu_auth",
+    "type": "function",
+    "z": "5ae2a6bf87435d7a",
+    "name": "ACU auth + validate",
+    "func": "const TOKEN = env.get('LIGHT_API_TOKEN');\nif (!TOKEN || msg.req.headers['x-auth-token'] !== TOKEN) {\n    msg.statusCode = 401;\n    msg.payload = { ok:false, error:'unauthorized' };\n    return [null, msg];\n}\n// AC Master Logic looks the payload up in its IR code library, so anything outside that set\n// resolves to no code and silently does nothing. Rejected here instead, where it can be seen.\nconst mode = String((msg.payload && msg.payload.mode) || '');\nconst ok = mode === 'OFF' || (/^\\d{2}$/.test(mode) && Number(mode) >= 16 && Number(mode) <= 30);\nif (!ok) {\n    msg.statusCode = 400;\n    msg.payload = { ok:false, error:'mode must be OFF or a whole degree 16-30' };\n    return [null, msg];\n}\nmsg.payload = mode;\ndelete msg.loop_prevention;\nreturn [msg, null];",
+    "outputs": 2,
+    "x": 320,
+    "y": 200,
+    "wires": [
+      [
+        "7301d59fe01a962c",
+        "bems_acu_ok"
+      ],
+      [
+        "bems_acu_reply"
+      ]
+    ]
+  },
+  {
+    "id": "bems_acu_ok",
+    "type": "function",
+    "z": "5ae2a6bf87435d7a",
+    "name": "ACU 200 response",
+    "func": "msg.statusCode = 200;\nmsg.payload = { ok: true };\nreturn msg;",
+    "outputs": 1,
+    "x": 170,
+    "y": 260,
+    "wires": [
+      [
+        "bems_acu_reply"
+      ]
+    ]
+  },
+  {
+    "id": "bems_acu_reply",
+    "type": "http response",
+    "z": "5ae2a6bf87435d7a",
+    "name": "ACU reply",
+    "x": 370,
+    "y": 260,
+    "wires": []
+  },
+  {
+    "id": "bems_backoff_status_5ae2a6bf87435d7a",
+    "type": "status",
+    "z": "5ae2a6bf87435d7a",
+    "name": "Tuya device status",
+    "scope": [
+      "ae0a6d7639d18c4a",
+      "4d59cec67e18861f"
+    ],
+    "x": 170,
+    "y": 440,
+    "wires": [
+      [
+        "bems_backoff_fn_5ae2a6bf87435d7a"
+      ]
+    ]
+  },
+  {
+    "id": "bems_backoff_fn_5ae2a6bf87435d7a",
+    "type": "function",
+    "z": "5ae2a6bf87435d7a",
+    "name": "Discovery back-off",
+    "func": "// Exponential back-off on failed discovery. See node-red-bridge/discoveryBackoffPlan.mjs.\n//\n// Driven by a status node scoped to this tab's tuya nodes. The vendor node reports\n// fill 'green' when connected, 'red' when disconnected or errored, and 'yellow'\n// while connecting — yellow is transitional and says nothing about the outcome, so\n// counting it would make the schedule depend on an implementation detail.\nconst IDS_LIST = [\"ae0a6d7639d18c4a\",\"4d59cec67e18861f\"];\nconst BASE = 1000;\nconst MAX = 60000;\n\n// The reporting node is at msg.status.source, NOT msg.source — Node-RED's runtime builds it\n// there (@node-red/runtime/lib/flows/Flow.js, handleStatus: \"message.status.source = {id, type,\n// name}\"). Getting this wrong is SILENT: the id simply does not match, every output is null, and\n// nothing is logged. It cost a live deploy that changed nothing on 2026-09-03. The fallback is\n// belt-and-braces, not an alternative contract.\nconst st = (msg && msg.status) || {};\nconst src = st.source || (msg && msg.source) || {};\nconst idx = IDS_LIST.indexOf(src.id);\nconst out = IDS_LIST.map(function () { return null; });\nif (idx < 0) return out;\n\nconst fill = st.fill;\nif (fill !== 'green' && fill !== 'red') return out;\n\nconst store = context.get('backoff') || {};\nconst entry = store[src.id] || { fails: 0, applied: BASE };\n\nlet want;\nif (fill === 'green') {\n  entry.fails = 0;\n  want = BASE;\n} else {\n  entry.fails = entry.fails + 1;\n  want = BASE * Math.pow(2, entry.fails - 1);\n  if (want > MAX) want = MAX;\n}\n\n// Only on change. Without this the cap would be re-sent every cycle forever, trading a loop of\n// find attempts for a loop of control messages.\nconst changed = want !== entry.applied;\nentry.applied = want;\nstore[src.id] = entry;\ncontext.set('backoff', store);\n\nif (!changed) return out;\nout[idx] = { payload: { operation: 'CONTROL', action: 'SET_RETRY_TIMEOUT', value: want } };\nreturn out;",
+    "outputs": 2,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 410,
+    "y": 440,
+    "wires": [
+      [
+        "ae0a6d7639d18c4a"
+      ],
+      [
+        "4d59cec67e18861f"
+      ]
+    ]
+  },
+  {
+    "id": "bems_stale_status_5ae2a6bf87435d7a",
+    "type": "status",
+    "z": "5ae2a6bf87435d7a",
+    "name": "Tuya find cycle",
+    "scope": [
+      "ae0a6d7639d18c4a",
+      "4d59cec67e18861f"
+    ],
+    "x": 180,
+    "y": 500,
+    "wires": [
+      [
+        "bems_stale_fn_5ae2a6bf87435d7a"
+      ]
+    ]
+  },
+  {
+    "id": "bems_stale_fn_5ae2a6bf87435d7a",
+    "type": "function",
+    "z": "5ae2a6bf87435d7a",
+    "name": "Stale address recovery",
+    "func": "// Force a fresh discovery when a node's find() has stopped broadcasting.\n// See node-red-bridge/staleAddressPlan.mjs for the tuyapi short-circuit this works around.\n//\n// A find/connect cycle CANNOT complete faster than findTimeout unless find() short-circuited,\n// so the yellow -> red latency is the detector. No error text is involved, because Node-RED\n// carries none: the status text for a socket error is 'Error : {}'.\nconst IDS_LIST = [\"ae0a6d7639d18c4a\",\"4d59cec67e18861f\"];\nconst LIMITS = [5000,5000];\nconst STREAK = 3;\nconst COOLDOWN = 60000;\n\n// The reporting node is at msg.status.source — @node-red/runtime/lib/flows/Flow.js, handleStatus:\n//   message.status.source = { id: node.id, type: node.type, name: node.name }\nconst st = (msg && msg.status) || {};\nconst src = st.source || (msg && msg.source) || {};\nconst idx = IDS_LIST.indexOf(src.id);\nconst out = IDS_LIST.map(function () { return null; });\nif (idx < 0) return out;\n\nconst fill = st.fill;\nif (fill !== 'green' && fill !== 'red' && fill !== 'yellow') return out;\n\nconst now = Date.now();\nconst store = flow.get(\"bems_stale_recovery\") || {};\nconst entry = store[src.id] || { hits: 0, lastAt: null, yellowAt: null };\n\nif (fill === 'yellow') {\n  // findDevice() has just started. Only the FIRST yellow of a cycle matters: the vendor node\n  // guards its state transitions, but a re-entered connecting must not restart the clock.\n  if (entry.yellowAt === null) entry.yellowAt = now;\n  store[src.id] = entry;\n  flow.set(\"bems_stale_recovery\", store);\n  return out;\n}\n\nif (fill === 'green') {\n  entry.hits = 0;\n  entry.yellowAt = null;\n  store[src.id] = entry;\n  flow.set(\"bems_stale_recovery\", store);\n  return out;\n}\n\n// red: the cycle failed. How long it took is the whole signal.\nconst started = entry.yellowAt;\nentry.yellowAt = null;\nif (started === null) {\n  // No cycle start seen — nothing can be concluded, so conclude nothing.\n  store[src.id] = entry;\n  flow.set(\"bems_stale_recovery\", store);\n  return out;\n}\n\nif ((now - started) >= LIMITS[idx]) {\n  // A full-length cycle: find() really did broadcast. This is the state we are trying to\n  // restore, so it clears the streak — which is what stops an absent device looping.\n  entry.hits = 0;\n  store[src.id] = entry;\n  flow.set(\"bems_stale_recovery\", store);\n  return out;\n}\n\nentry.hits = entry.hits + 1;\n// lastAt null means never recovered, which is not the same as recovered at the epoch — the\n// cooldown must not block the FIRST recovery.\nif (entry.hits < STREAK || (entry.lastAt !== null && (now - entry.lastAt) < COOLDOWN)) {\n  store[src.id] = entry;\n  flow.set(\"bems_stale_recovery\", store);\n  return out;\n}\n\nentry.hits = 0;\nentry.lastAt = now;\nstore[src.id] = entry;\nflow.set(\"bems_stale_recovery\", store);\n\n// DISCONNECT then CONNECT, in that order and on the one output. closeComm() clears the pending\n// find timer; CONNECT's initTuya() then builds a NEW TuyaDevice, which is the whole point —\n// tuyapi caches the resolved address on the instance, so only a new instance will broadcast.\nout[idx] = [\n  { payload: { operation: 'CONTROL', action: 'DISCONNECT' } },\n  { payload: { operation: 'CONTROL', action: 'CONNECT' } }\n];\nreturn out;",
+    "outputs": 2,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 500,
+    "wires": [
+      [
+        "ae0a6d7639d18c4a"
+      ],
+      [
+        "4d59cec67e18861f"
+      ]
+    ]
+  },
+  {
+    "id": "b41dc00000000012",
+    "type": "link in",
+    "z": "5ae2a6bf87435d7a",
+    "name": "bridge/collect/aircon",
+    "links": [],
+    "x": 685,
+    "y": 400,
+    "wires": [
+      [
+        "b41dc00000000011"
+      ]
+    ]
+  },
+  {
+    "id": "b41dc00000000011",
+    "type": "function",
+    "z": "5ae2a6bf87435d7a",
+    "name": "Bridge collect: Aircon",
+    "func": "// READ-ONLY. Reads this tab's flow context; writes nothing.\nmsg.snapshot = msg.snapshot || {};\nmsg.snapshot.aircon = { state: flow.get('ac_dash_state') || {} };\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 880,
+    "y": 400,
+    "wires": [
+      [
+        "b41dc00000000010"
+      ]
+    ]
+  },
+  {
+    "id": "b41dc00000000010",
+    "type": "link out",
+    "z": "5ae2a6bf87435d7a",
+    "name": "",
+    "mode": "return",
+    "links": [],
+    "x": 1105,
+    "y": 400,
+    "wires": []
+  }
+]

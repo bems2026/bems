@@ -16,7 +16,9 @@
  * and documented instead.
  */
 
-/** Both hubs take `{topic, payload}`; the ACU takes a bare IR code as the payload. */
+import { ACU_AUTH_FN } from './airconSources.mjs';
+
+/** The outlet hub takes `{topic, payload}`; the ACU takes a full aircon state (see airconSources.mjs). */
 const OUTLET_AUTH_FN = `const TOKEN = env.get('LIGHT_API_TOKEN');
 if (!TOKEN || msg.req.headers['x-auth-token'] !== TOKEN) {
     msg.statusCode = 401;
@@ -39,24 +41,8 @@ msg.payload = s;
 delete msg.loop_prevention;
 return [msg, null];`;
 
-const ACU_AUTH_FN = `const TOKEN = env.get('LIGHT_API_TOKEN');
-if (!TOKEN || msg.req.headers['x-auth-token'] !== TOKEN) {
-    msg.statusCode = 401;
-    msg.payload = { ok:false, error:'unauthorized' };
-    return [null, msg];
-}
-// AC Master Logic looks the payload up in its IR code library, so anything outside that set
-// resolves to no code and silently does nothing. Rejected here instead, where it can be seen.
-const mode = String((msg.payload && msg.payload.mode) || '');
-const ok = mode === 'OFF' || (/^\\d{2}$/.test(mode) && Number(mode) >= 16 && Number(mode) <= 30);
-if (!ok) {
-    msg.statusCode = 400;
-    msg.payload = { ok:false, error:'mode must be OFF or a whole degree 16-30' };
-    return [null, msg];
-}
-msg.payload = mode;
-delete msg.loop_prevention;
-return [msg, null];`;
+// The ACU validator lives in airconSources.mjs, shared with the aircon refactor so a fresh install and
+// a refactored flow accept exactly the same bodies.
 
 const RESPOND_FN = `msg.statusCode = 200;
 msg.payload = { ok: true };
@@ -88,8 +74,10 @@ export function addDeviceEndpoints(flows, { switchTabId, acuTabId, outletHubId, 
   if (!has('/acu')) {
     out.push(
       node({ id: 'bems_acu_in', type: 'http in', name: 'POST /acu', url: '/acu', method: 'post', z: acuTabId, wires: [['bems_acu_auth']] }),
-      node({ id: 'bems_acu_auth', type: 'function', name: 'ACU auth + validate', func: ACU_AUTH_FN, outputs: 2, z: acuTabId, wires: [[acuLogicId, 'bems_acu_ok'], ['bems_acu_reply']] }),
-      node({ id: 'bems_acu_ok', type: 'function', name: 'ACU 200 response', func: RESPOND_FN, outputs: 1, z: acuTabId, wires: [['bems_acu_reply']] }),
+      // No parallel "200 response" node: that answered before anything was known, so a dead hub or a
+      // state with no IR code still read as success. AC Master Logic's third output is the reply —
+      // wired by `npm run aircon:pi`, which a fresh install runs next.
+      node({ id: 'bems_acu_auth', type: 'function', name: 'ACU auth + validate', func: ACU_AUTH_FN, outputs: 2, z: acuTabId, wires: [[acuLogicId], ['bems_acu_reply']] }),
       node({ id: 'bems_acu_reply', type: 'http response', name: 'ACU reply', z: acuTabId, wires: [] }),
     );
   }
