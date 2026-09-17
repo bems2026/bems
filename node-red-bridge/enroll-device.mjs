@@ -23,6 +23,7 @@ import { dirname, join } from 'node:path';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { loadDotEnv, createAdminClient } from './nodeRedAdmin.mjs';
 import { createTuyaClient, TUYA_HOSTS } from '../server/tuyaCloud.mjs';
+import { listenForAnnouncement } from '../server/lanDiscovery.mjs';
 import { DEVICE_REGISTRY } from '../shared/registry.mjs';
 import { ENROLLED_DEVICES } from '../shared/registry.enrolled.mjs';
 import { validateEnrollment, registryEntryFor, ENROLLABLE_CLASSES } from '../shared/enrollment.mjs';
@@ -100,10 +101,17 @@ const chosen = devices.find((d) => d.id === draft.tuyaDeviceId);
 
 // The version the device itself announces, never a default: a wrong one fails as
 // `find() timed out`, which reads exactly like a network fault.
+// The cloud has never reported one here (`/v1.0/devices/{id}` has no version field — measured
+// 2026-09-17), so the device's own LAN announcement is heard instead. Only meaningful on the Pi.
 const detail = await cloud.describeDevice(draft.tuyaDeviceId);
-const tuyaVersion = detail?.version ? String(detail.version) : null;
+let tuyaVersion = detail?.version ? String(detail.version) : null;
 if (!tuyaVersion) {
-  console.error('The cloud did not report a protocol version for that device. Refusing to guess one.');
+  console.log('The cloud reports no protocol version; listening for the device\'s own announcement (up to 12 s)...');
+  tuyaVersion = (await listenForAnnouncement(draft.tuyaDeviceId))?.version ?? null;
+}
+if (!tuyaVersion) {
+  console.error('No protocol version: the cloud has none and the device did not announce itself on this network.');
+  console.error('It must be powered and on the device SSID, and this must run on the Pi. Refusing to guess one.');
   process.exit(1);
 }
 if (!detail?.local_key) {

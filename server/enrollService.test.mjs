@@ -147,3 +147,38 @@ test('enrolling an offline device is allowed, and says so', async () => {
   assert.equal(r.ok, true);
   assert.equal(r.summary.vendorOnline, false);
 });
+
+/**
+ * The vendor cloud does not report a protocol version — `/v1.0/devices/{id}` has no such field,
+ * checked on every device in the project on 2026-09-17. Before this, every real enrolment would
+ * have been refused at the credentials step. The version now comes from the device's own LAN
+ * announcement, which is what `TUYA_NODE_VERSIONS` was measured from.
+ */
+test('with no version from the cloud, the device\'s own LAN announcement supplies it', async () => {
+  let asked = null;
+  const { deps: d } = deps({
+    cloud: {
+      listDevices: async () => [{ id: VENDOR, name: 'New Outlet', online: true }],
+      describeDevice: async () => ({ local_key: 'k'.repeat(16) }),
+    },
+    discoverVersion: async (id) => { asked = id; return '3.4'; },
+  });
+  const r = await enrollDevice(draft(), d);
+  assert.equal(r.ok, true);
+  assert.equal(asked, VENDOR);
+  assert.equal(r.summary.tuyaVersion, '3.4');
+});
+
+test('with neither, it still refuses — and says the device must be on this network', async () => {
+  const { deps: d } = deps({
+    cloud: {
+      listDevices: async () => [{ id: VENDOR }],
+      describeDevice: async () => ({ local_key: 'k'.repeat(16) }),
+    },
+    discoverVersion: async () => null,
+  });
+  const r = await enrollDevice(draft(), d);
+  assert.equal(r.ok, false);
+  assert.equal(r.stage, 'credentials');
+  assert.match(r.problems.join(' '), /announce/);
+});

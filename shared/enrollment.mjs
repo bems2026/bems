@@ -34,6 +34,70 @@ export const CLASS_DEFAULTS = {
 const ID_PATTERN = /^[a-z][a-z0-9_]{1,23}$/;
 
 /**
+ * The vendor's device categories this project has met, and what each is here — measured on this
+ * cloud project on 2026-09-17: `pc` the outlets, `tdq` the light relays, `cz` the CT meters, `wnykq`
+ * the IR hub and `infrared_ac` its virtual aircon remote.
+ *
+ * WHY THE ADD DEVICE WIZARD NEEDS IT. It offered every unclaimed cloud device as an outlet or a switch.
+ * When the IR blaster was re-paired, that list gained "Air" — a remote that exists only in the vendor
+ * cloud and has no network presence to connect to — and a node enrolled from it would never have
+ * connected, failing as `find() timed out`, which reads as a network fault.
+ */
+export const VENDOR_KINDS = Object.freeze({
+  pc: Object.freeze({ kind: 'outlet', label: 'Outlet', suggestedClass: 'outlet_dual' }),
+  tdq: Object.freeze({ kind: 'switch', label: 'Light switch', suggestedClass: 'switch' }),
+  cz: Object.freeze({ kind: 'ct_meter', label: 'CT meter', suggestedClass: 'meter' }),
+  wnykq: Object.freeze({ kind: 'ir_hub', label: 'IR hub (temperature + humidity)', suggestedClass: 'acu_ir' }),
+  infrared_ac: Object.freeze({ kind: 'ir_ac_remote', label: 'Aircon remote (virtual)', suggestedClass: 'acu_ir' }),
+});
+
+/**
+ * What one cloud device is, and what the wizard may do with it.
+ *
+ * @param d        a public fleet row: { id, name, category, sub, claimed }
+ * @param context  { registry, claimedBy: flow node name or null, orphanNodes: [{name, class}] }
+ * @returns {{ kind, label, suggestedClass, action: 'enroll'|'rebind'|'linked'|'none', enrollable, reason, rebindNode? }}
+ *
+ * `rebind` is offered when a flow node of the same class points at a vendor id this project no longer
+ * has — which is what re-pairing in Smart Life does, and what happened to the IR blaster. The node's
+ * `findTimeout`, wiring and parsers stay; only its id, key and announced version change.
+ */
+export function classifyVendorDevice(d, { registry = DEVICE_REGISTRY, claimedBy = null, orphanNodes = [] } = {}) {
+  const k = VENDOR_KINDS[d?.category] ?? { kind: 'unknown', label: `Unknown (${d?.category ?? 'no category'})`, suggestedClass: null };
+  const none = (reason) => ({ ...k, action: 'none', enrollable: false, reason });
+
+  if (k.kind === 'ir_ac_remote') {
+    const acus = registry.filter((x) => x.class === 'acu_ir');
+    return acus.length === 1
+      ? {
+        ...k,
+        action: 'linked',
+        enrollable: false,
+        reason: `A virtual remote with no network presence of its own. It is ${acus[0].display_name}'s cloud aircon remote, commanded through its IR hub — nothing to enrol.`,
+      }
+      : none('A virtual remote with no network presence of its own, and this site has no single aircon to bind it to.');
+  }
+  if (claimedBy) return none(`Already in the flow as "${claimedBy}".`);
+  if (d?.sub) return none('A sub-device is reached through its gateway, not on its own.');
+
+  const orphan = k.suggestedClass ? orphanNodes.find((n) => n.class === k.suggestedClass) : undefined;
+  if (orphan) {
+    return {
+      ...k,
+      action: 'rebind',
+      enrollable: false,
+      rebindNode: orphan.name,
+      reason: `"${orphan.name}" points at a device this cloud project no longer has. Rebind it to this one — its wiring and history stay.`,
+    };
+  }
+
+  if (ENROLLABLE_CLASSES.includes(k.suggestedClass)) return { ...k, action: 'enroll', enrollable: true, reason: null };
+  if (k.kind === 'ir_hub') return none('A new aircon is set up deliberately, not from this form — its IR code library is specific to the unit.');
+  if (k.kind === 'ct_meter') return none("A meter's channel mapping is an electrical decision — which clamp is on which circuit.");
+  return none('No device class in this build for this vendor category.');
+}
+
+/**
  * @param draft   { deviceId, class, displayName, room, tuyaDeviceId, branchCircuit }
  * @param context { registry = DEVICE_REGISTRY, cloudDeviceIds = [] }
  * @returns { ok: boolean, problems: string[] }

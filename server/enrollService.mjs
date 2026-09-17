@@ -35,12 +35,23 @@ export async function enrollDevice(draft, deps) {
   const entry = registryEntryFor(draft);
   const chosen = devices.find((d) => d.id === draft.tuyaDeviceId);
 
-  // Both read from the device's own record. A guessed protocol version fails as
-  // `find() timed out`, which reads exactly like a network fault; a missing local key produces
-  // a node that can never connect. Neither is worth defaulting.
+  // A guessed protocol version fails as `find() timed out`, which reads exactly like a network
+  // fault; a missing local key produces a node that can never connect. Neither is worth defaulting.
+  //
+  // THE VERSION COMES FROM THE DEVICE ITSELF when the cloud has none — which, measured on every
+  // device in this project on 2026-09-17, is always: `/v1.0/devices/{id}` carries no version field,
+  // so every real enrolment was being refused here. `discoverVersion` listens for the device's own
+  // LAN announcement (`server/lanDiscovery.mjs`), the source `TUYA_NODE_VERSIONS` was measured from.
   const detail = await cloud.describeDevice(draft.tuyaDeviceId);
+  const version = detail?.version ?? (deps.discoverVersion ? await deps.discoverVersion(draft.tuyaDeviceId).catch(() => null) : null);
   const problems = [];
-  if (!detail?.version) problems.push('the cloud did not report a protocol version for that device');
+  if (!version) {
+    problems.push(
+      deps.discoverVersion
+        ? 'no protocol version: the cloud does not report one, and the device did not announce itself on this network — it must be powered and on the device SSID'
+        : 'the cloud did not report a protocol version for that device',
+    );
+  }
   if (!detail?.local_key) problems.push('the cloud did not return a local key for that device');
   if (problems.length) return { ok: false, stage: 'credentials', problems, summary: null };
 
@@ -50,7 +61,7 @@ export async function enrollDevice(draft, deps) {
   const plan = planEnrollment(
     flows,
     entry,
-    { tuyaDeviceId: draft.tuyaDeviceId, localKey: detail.local_key, tuyaVersion: String(detail.version) },
+    { tuyaDeviceId: draft.tuyaDeviceId, localKey: detail.local_key, tuyaVersion: String(version) },
     placementFor(flows),
   );
   if (plan.problems.length) return { ok: false, stage: 'plan', problems: plan.problems, summary: null };
@@ -67,7 +78,7 @@ export async function enrollDevice(draft, deps) {
     dpsMap: entry.dps_map,
     vendorName: chosen?.name ?? null,
     vendorOnline: chosen?.online ?? null,
-    tuyaVersion: String(detail.version),
+    tuyaVersion: String(version),
     localKeyLength: String(detail.local_key).length,
     nodesBefore: flows.length,
     nodesAfter: plan.flows.length,

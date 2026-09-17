@@ -17,6 +17,7 @@ import { createTuyaClient, TUYA_HOSTS } from './tuyaCloud.mjs';
 import { createAdminClient } from '../node-red-bridge/nodeRedAdmin.mjs';
 import { DEVICE_REGISTRY } from '../shared/registry.mjs';
 import { enrollDevice } from './enrollService.mjs';
+import { listenForAnnouncement } from './lanDiscovery.mjs';
 
 // Environment is NOT loaded here, deliberately. This module is imported by `proxy.mjs`, and a
 // top-level `loadDotEnv` made that import load every secret in `server/.env` into the process —
@@ -84,6 +85,9 @@ export async function handleEnroll(req, res, { readJsonBody, sendJson }) {
       }),
       writeEnrolled: (source) => writeFileSync(ENROLLED_PATH, source),
       placementFor,
+      // The cloud reports no protocol version; the device's own LAN broadcast does. The proxy runs on
+      // the Pi, on the device segment, which is the only place this can be heard.
+      discoverVersion: async (id) => (await listenForAnnouncement(id))?.version ?? null,
       apply,
     });
   } catch (err) {

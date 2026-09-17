@@ -58,7 +58,7 @@ import { roomTargetFloorC } from '../shared/sitePolicy.mjs';
 import { DEVICE_REGISTRY, TIMING, SITE } from '../shared/registry.mjs';
 import { dispatchCommand, DISPATCH_CLASSES } from './dispatchLight.mjs';
 import { createTuyaClient, TUYA_HOSTS } from './tuyaCloud.mjs';
-import { toPublicFleet } from './tuyaFleet.mjs';
+import { toPublicFleet, claimedNodesFrom, orphanNodesFrom } from './tuyaFleet.mjs';
 import { joinMacPresence, readNeighbours, toPublicPresence } from './macPresence.mjs';
 import { createAdminClient } from '../node-red-bridge/nodeRedAdmin.mjs';
 import { auditedDispatch } from './auditedDispatch.mjs';
@@ -66,9 +66,10 @@ import { createJwksCache } from './jwksCache.mjs';
 import { verifyEs256Jwt } from './jwtVerify.mjs';
 import { createBufferedAudit } from './auditQueue.mjs';
 import { bufferCount } from './ingestBuffer.mjs';
-import { buildCloudDispatch } from './cloudDispatchConfig.mjs';
+import { buildCloudDispatch, registryIdForNodeName } from './cloudDispatchConfig.mjs';
 import { handleEnroll } from './enrollRoute.mjs';
 import { handleRemove } from './removeRoute.mjs';
+import { handleRebind } from './rebindRoute.mjs';
 
 /**
  * The Tuya cloud client, or null when the credentials are absent. Built lazily so the proxy
@@ -724,12 +725,20 @@ const server = http.createServer(async (req, res) => {
       // Which vendor devices already have a node. Read fresh rather than cached at startup:
       // enrolling one changes this, and a wizard showing a device it just added as still
       // available is worse than one extra read on a page nobody opens often.
-      let claimed = new Set();
+      let claimed = new Map();
+      let orphans = [];
       let claimedKnown = false;
       try {
         const auth = await createAdminClient({ host: '127.0.0.1', port: BRIDGE_PORT, timeoutMs: 10000 });
         const { flows } = await auth.getFlows(await auth.login());
-        claimed = new Set(flows.filter((n) => n.type === 'tuya-smart-device').map((n) => n.deviceId));
+        // Vendor id -> node name, so the wizard can say WHICH node claims a device.
+        claimed = claimedNodesFrom(flows);
+        // Nodes whose device the project no longer has — a re-pair leaves one behind — each with the
+        // class of the registry device bound to it, which is what a rebind is matched on.
+        orphans = orphanNodesFrom(flows, devices.map((d) => d.id), (name) => {
+          const id = registryIdForNodeName(name);
+          return DEVICE_REGISTRY.find((d) => d.id === id)?.class ?? null;
+        });
         claimedKnown = true;
       } catch (err) {
         // Reported, not swallowed. This read needs NODE_RED_ADMIN_USER/PASS, which the Tuya
@@ -740,7 +749,7 @@ const server = http.createServer(async (req, res) => {
         // because this catch was empty. `claimed_known` lets the page say it does not know.
         console.error(`[ibems-proxy] claimed-set lookup failed, enrolment candidates unfiltered: ${err.message}`);
       }
-      return sendJson(res, 200, { devices: toPublicFleet(devices, claimed), claimed_known: claimedKnown });
+      return sendJson(res, 200, { devices: toPublicFleet(devices, claimed), claimed_known: claimedKnown, orphan_nodes: orphans });
     } catch (err) {
       // The upstream message can name the data centre and the account; log it, do not echo it.
       console.error(`[ibems-proxy] tuya fleet fetch failed: ${err.message}`);
@@ -821,6 +830,11 @@ const server = http.createServer(async (req, res) => {
     // moves nothing. Conflating the two would mean a site that has not opened dispatch could
     // never add a device, which is backwards — you enrol before you switch.
     return handleEnroll(req, res, { readJsonBody, sendJson, token });
+  }
+  if (req.method === 'POST' && url.pathname === '/api/rebind') {
+    // Authenticated like enrolment and for the same reason not behind HARDWARE_DISPATCH_ENABLED:
+    // it moves nothing. It points an orphaned node at the device that replaced it after a re-pair.
+    return handleRebind(req, res, { readJsonBody, sendJson, token });
   }
   if (req.method === 'POST' && url.pathname === '/api/remove') {
     // Same gate reasoning as enrolment, and the same authentication. Unlike enrolment this
