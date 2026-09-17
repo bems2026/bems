@@ -51,12 +51,12 @@ Decided by the operator, 2026-08-25.
   **Lint is in that list because CI runs it and a session once pushed without it** — the
   failure was `react-hooks/globals` in a test, invisible to `tsc` and to vitest, and it
   turned master red for two commits.
-- Any script in its **dry-run** form (they all default to it): `deploy:pi`, `quiesce:pi`,
+- Any script in its **dry-run** form (they all default to it): `deploy:pi`, `quiesce:pi`, `aircon:pi`, `rebind:pi`,
   `enroll:pi`, `remove:pi`, `tuya:devices`.
 
 **Ask first — every time:**
 
-- **Writing the live flow**: `deploy:pi --apply`, `quiesce:pi --apply`, `enroll:pi --apply`,
+- **Writing the live flow**: `deploy:pi --apply`, `quiesce:pi --apply`, `aircon:pi --apply`, `rebind:pi --apply`, `enroll:pi --apply`,
   `remove:pi --apply`, `fix-dp-parsers:pi --apply`, or any `POST /flows`. Back up
   `~/.node-red/flows.json` first, always.
 - **Dispatching to hardware** — anything that moves a relay, including a "harmless" no-op.
@@ -123,7 +123,9 @@ what *was* true and what has already been ruled out.
 | `co4`–`co6` | **All three need power cycling.** `co4` and `co6` are absent from the segment (no ARP entry). `co5` *is* on the segment and answers ARP — the static-`deviceIp` remedy was actually tried on it 2026-08-26 and it refused every TCP connection, so **ARP is not reachability** and it needs power too. **Re-run `npm run tuya:macs` immediately before the trip:** the split moved twice inside one hour on 2026-08-26. |
 | Broker | **Mosquitto is loopback-only since 2026-08-26** (`127.0.0.1` and `::1`), anonymous, and the websockets listener is retired. It previously listened on every interface with `allow_anonymous true` on the device segment. **This config lives only in `/etc/mosquitto/` — nothing in the repo declares it**, same exposure shape as `findTimeout`: a rebuild or package upgrade restores the permissive default silently. Timestamped `.bak` files sit beside both config files. Node-RED (the only client, on `localhost`) is unaffected; **anything off-host now gets `Connection refused`**, which is what RM-005's ESP32 would hit and what forces RM-026's bridge to use host networking. |
 | `l6` | Recovered. Was written up as an RF/hardware fault; a Node-RED restart reconnected it in two seconds and the operator then toggled the real fixture. Only its one-hour stability window is unproven (RM-012). |
-| IR Blaster, Outside Temp | Not in the Tuya cloud project, never connected. **Quiesced** (`disableAutoStart`), so they no longer retry every 10 s. `acu_main` and `sens_outside_temp` now honestly report `online: false`. Reversible with `quiesce:pi --undo`. |
+| IR Blaster | **Re-paired 2026-09-17** as a Lasco "Smart IR" hub; its new id and key were entered into `NBRIC IR Blaster` by hand, the key matches the cloud, and it announces **v3.3**. **Still quiesced** until `npm run aircon:pi -- --apply` (RM-116), which wakes it together with the flow that can read it. The aircon's state lives on a virtual cloud remote "Air" (no network presence). See ROADMAP RM-114 – RM-121. |
+| Outside Temp | Never installed. **Quiesced** and left as-is; `aircon:pi` asserts its node and parser stay byte-identical. Reports `online: false`, and since RM-114 cannot borrow the IR hub's readings. **Never `quiesce:pi --undo` without `--name`** — the default names both nodes. |
+| Tuya IoT Core | **Subscription expired 2026-09-17** (`28841002` on every business call; the token still issues). Cloud fallback, Add Device, presence and `tuya:*` fail until the operator renews it (RM-121). Local control is unaffected. |
 | Cloud dispatch fallback | **Works** — verified against `co1` at `{ok:true}` in 972 ms while it was locally unreachable. Covers all 14 commandable devices. |
 | `server/data/` | **Live state, not scratch.** `jwks.json` is the cached signing key that lets sessions be verified while the internet is down; `command-audit-buffer*.ndjson` is the outage queue of command audit rows waiting to reach Supabase (one file per writing process — the proxy and the scheduler). Files here with rows in them mean **Supabase was unreachable and `ibems-ingest` will drain them**, not that something is broken. Empty is the normal steady state. Do not delete them: each row is a relay that moved. |
 | Commands offline | **They work.** Since 2026-08-26 a real Supabase session is verified locally against the cached key, and the audit row is written to the buffer above before dispatch, so an internet outage no longer removes control of a fleet that is entirely local. Applies to manual, scheduled and auto-shed commands. Break-glass sessions stay **view-only**. The Control page shows the backlog when it is non-zero. |
@@ -318,8 +320,14 @@ anywhere the daemons read.
 # Flow — dry run first, always; --force after any build:flow
 npm run deploy:pi  -- --host=127.0.0.1 [--force] [--apply]
 
-# Silence a permanently unreachable node (reversible with --undo)
-npm run quiesce:pi -- --host=127.0.0.1 [--undo] [--apply]
+# Silence a permanently unreachable node (reversible with --undo; pass --name= to touch one node only)
+npm run quiesce:pi -- --host=127.0.0.1 [--name="<node>"] [--undo] [--apply]
+
+# The Aircon tab for the IR hub (RM-116) — dry run prints the plan; back up flows.json before --apply
+npm run aircon:pi -- --host=127.0.0.1 [--keep-quiesced] [--apply]
+
+# Point a node whose device was re-paired in Smart Life at the new device (key never printed)
+npm run rebind:pi -- --node="<node>" --vendor=<vendor device id> [--apply]
 
 # Devices in and out of the registry + flow, from one validated decision
 npm run enroll:pi  -- --host=127.0.0.1 --list

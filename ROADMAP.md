@@ -1,6 +1,31 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-17 — **The Reports page is rebuilt around the operator's report of 2026-09-16,
+**Last audited:** 2026-09-17 (evening) — **The aircon's IR blaster was re-paired, and the system now knows
+what it is: RM-114 to RM-121.** The operator re-paired it in Smart Life as a Lasco "Smart IR" hub and
+pasted its new id and key into the `NBRIC IR Blaster` node by hand. Measured read-only the same day:
+the node's key matches the vendor cloud's, the hub announces **v3.3** on the LAN (the flow's
+declaration, now verified), and it carries only two sensors (dp 101 `temp_current`, dp 102
+`humidity_value`) and an IR send/learn pair. The aircon's state (`switch_power`, `mode`,
+`temperature`, `fan`, `swing`) lives on **"Air", a virtual remote in the vendor cloud** with no
+network presence.
+- **RM-114:** `buildLatest` would have shown the uninstalled Outside Temp ONLINE, carrying the indoor
+  hub's humidity, the moment the hub reported. Fixed before the hub is woken.
+- **RM-115:** every aircon command is one absolute state. It goes local-first, with the cloud for
+  states the local IR library cannot express. Until the on-site test verifies the library, ON states
+  go cloud-first.
+- **RM-116:** `npm run aircon:pi` refactors the live Aircon tab, planned against the real flow and
+  clean. **Not applied.**
+- **RM-117:** `phase45` records the state sent. Rehearsed. **Not applied.**
+- **RM-118:** Add Device could never have enrolled anything, because the cloud reports no protocol
+  version. It now reads the version from the device's own broadcast, recognises IR hubs and virtual
+  remotes, and gains **Rebind**.
+- **RM-119:** the Control page's aircon panel.
+- **RM-120:** the on-site acceptance test.
+- **RM-121: the Tuya IoT Core subscription expired this afternoon.** Every cloud business call now
+  answers `28841002`. Local control is unaffected; the cloud fallback, mode/fan/swing, Add Device and
+  presence are not. **Renewing it is the first operator action.** See §0.
+
+**Earlier the same day:** **The Reports page is rebuilt around the operator's report of 2026-09-16,
 RM-090 to RM-099.** The week of 7 September gave L.O Yellow, a lighting circuit, 81.41 kWh: stored
 readings kept the 2026-09-08 counter jump RM-052 fixed in the bridge, and a report sums each day's
 high-water mark.
@@ -251,6 +276,47 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
+
+### 2026-09-17 (evening) — the IR blaster is re-paired; what waits on the operator, in order
+
+The code is committed and every suite is green; nothing below is deployed. In order:
+
+1. **Renew the Tuya IoT Core subscription (RM-121).** Tuya developer console → Cloud → Cloud Services →
+   IoT Core → extend. Since about 18:58 local, every business call answers
+   `code 28841002: IoT Core service subscription has expired`, while the token still issues. Until it is
+   renewed:
+   - the vendor-cloud fallback, the aircon's mode/fan/swing route, the Add Device list and
+     `/api/tuya/presence` all fail;
+   - `acu_cloud_route` reads `unresolved`, and the aircon panel disables states only the cloud can send
+     and says why.
+
+   Local control of every device is unaffected.
+2. **Pull and build on the Pi**:
+   ```
+   ssh <user>@<host> "cd /home/bems/bems && git pull --ff-only && npm run build"
+   ```
+3. **Dry-run the Aircon tab refactor (RM-116), then apply it with a backup, as one line**:
+   ```
+   ssh <user>@<host> "cd /home/bems/bems && npm run aircon:pi -- --host=127.0.0.1"
+   ssh <user>@<host> "cd /home/bems/bems && cp ~/.node-red/flows.json ~/.node-red/flows.json.bak-aircon-$(date +%F) && npm run aircon:pi -- --host=127.0.0.1 --apply"
+   ```
+   The script reads the flow back and re-plans it; it must say "Written and read back".
+4. **Restart the three daemons**:
+   ```
+   ssh <user>@<host> "sudo systemctl restart ibems-ingest ibems-proxy ibems-scheduler"
+   ```
+5. **Apply `supabase/phase45_command_ac_state.sql`** in the Supabase SQL editor (RM-117). Until then the
+   aircon state still lands in each command's note.
+6. **The on-site acceptance test (RM-120)**, with someone watching the unit. It is the only thing that can
+   flip `SITE.aircon.local_ir_verified`.
+
+**Read back after 3–4 (read-only):**
+- `acu_main` reads online with `room_temp_c` and `humidity_pct`, and its `ts` advances within the 60 s
+  poll.
+- `sens_outside_temp` still reads **offline with no humidity**.
+- The fleet reads 19/20.
+- The journal shows `NBRIC IR Blaster` connected, and `Outside Temp` still logs "Auto start probe is
+  disabled".
 
 ### 2026-09-16 — a lighting circuit's week read 81.41 kWh; the report summed a counter jump
 
@@ -904,7 +970,7 @@ Everything else is small, and the build order below is honest about size.
 |---|---|
 | **RM-020** Power-cycle `co4`–`co6` | **SUPERSEDED 2026-09-03 by RM-042 — the power cycle was performed and it cost the rest of the fleet.** Before: `co4`/`co6` absent from the segment, `co5` on it and refusing every TCP connection after the static-address remedy (RM-021), operator unable to act during office hours. After: 4 of 18 devices online — all four meters, and nothing else. Do not read the rest of this row as current; the three outlets are no longer a separable problem from the other eleven. |
 | **RM-007** Kiosk sign-in | Needs one interactive login at the physical screen. `ibems-kiosk` is inactive. |
-| **RM-016** IR Blaster + Outside Temp | Re-pairing needs the devices and the Smart Life account. Quiesced meanwhile, so they cost nothing but still cannot report. **Confirmed by the operator 2026-08-31: neither has been set up.** Verified the same day against the live bridge — `acu_main` and `sens_outside_temp` both report `online: false` with no values, so the Climate card shows `—` and the IR card shows "no reading yet", which is the honest rendering. Their registry `status` is still `active`, which claims more than is true; worth revisiting when they are paired rather than churning it twice. |
+| **RM-016** IR Blaster + Outside Temp | **Updated 2026-09-17: the IR blaster is re-paired and in the project (RM-114 – RM-121); only Outside Temp remains uninstalled.** Earlier: Re-pairing needs the devices and the Smart Life account. Quiesced meanwhile, so they cost nothing but still cannot report. **Confirmed by the operator 2026-08-31: neither has been set up.** Verified the same day against the live bridge — `acu_main` and `sens_outside_temp` both report `online: false` with no values, so the Climate card shows `—` and the IR card shows "no reading yet", which is the honest rendering. Their registry `status` is still `active`, which claims more than is true; worth revisiting when they are paired rather than churning it twice. |
 
 ### Blocked on hardware that is not on the network
 
@@ -3351,6 +3417,179 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 ## 2. Current roadmap (active execution)
 
+
+### The re-paired IR blaster — RM-114 to RM-121 (2026-09-17)
+
+**What the operator did.** They re-paired the aircon's IR blaster into Smart Life and the vendor
+project, then pasted its new device id and local key into the `NBRIC IR Blaster` node in the Node-RED
+editor (deployed 14:36 local). The node stayed quiesced (`disableAutoStart: true`, since EX-098).
+
+**What was measured, read-only, the same day:**
+- **"Smart IR"** is category `wnykq`, product "Lasco Wifi IR Pro Max", online in the cloud. The flow
+  node now points at it, and its local key matches the cloud's (compared, never printed).
+- A passive listen on the Pi decoded its discovery broadcast announcing **v3.3**, the value the node
+  declares. All 18 installed devices announced; every version matched its declaration.
+- Its thing model has four dps:
+  - 101 `temp_current` (value, scale 1, ℃; 286 = 28.6 °C; standard code `va_temperature`);
+  - 102 `humidity_value` (%; standard code `va_humidity`);
+  - 201 `ir_send`;
+  - 202 `ir_study_code`.
+
+  It has no standard instruction set.
+- **"Air"** is category `infrared_ac`, `sub: true`: a virtual remote with no network presence. Its model
+  carries dps 101–105 (`switch_power`, `mode` "0".."4", `temperature`, `fan` "0".."3", `swing`) and the
+  hub's IR plumbing (dps 1–13, 201, 202). Tuya's IR AC reference names the enums: mode 0 cool, 1 heat,
+  2 auto, 3 fan, 4 dry; fan 0 auto, 1 low, 2 medium, 3 high.
+- Its standard set (PowerOn/PowerOff/T/M/F) has no swing. Its shadow held
+  `switch_power:true, mode:"0", temperature:16, fan:"0", swing:false` from the pairing test.
+- Tuya's IR hub API (`/v2.0/infrareds/*`) is **not subscribed** on this project (`28841101`). The
+  thing-model route is how the cloud reaches the remote.
+
+- [x] **RM-114** The Outside Temp would have shown indoor data the moment the hub reported.
+  - **The defect.** `buildLatest` derived `online` for both `ac_dash_state` devices from the same four
+    fields, and gave the outside sensor `ac.humidity`. The uninstalled sensor would have read ONLINE,
+    and the Overview's "Outside" tile would have shown the office's humidity.
+  - **The aircon had its own version of it.** It counted `setTemp`, a value this system commands, as
+    evidence of reporting, and its `ts` was always now.
+  - **The fix.**
+    - Each device now answers from its own fields.
+    - The aircon's `online` needs a real sensor value and a session not reported down, and its `ts` is
+      the hub's sense time (expiring past `STALE_READING_MS`).
+    - The sensor reads only its `state_field`.
+    - `STALE_AFTER_MS_BY_CLASS.acu_ir` is 150 s against a 60 s hub poll.
+    - The reading also serves the last commanded `ac_mode`, `ac_fan`, `ac_swing`, `commanded_at` and
+      `command_via`.
+  - `shared/buildLatest.mjs`, `test/aircon-reading.test.mjs`, `test/reading-freshness.test.mjs`.
+
+- [x] **RM-115** An aircon command is one absolute state, sent local-first.
+  - **Why a whole state.** An IR frame carries power, mode, setpoint, fan and swing together, so
+    `shared/acState.mjs` resolves every command into all five. The mode, fan or swing a command leaves
+    out comes from the last COMMANDED state, so the closed loop's setpoint steps keep the operator's
+    mode. Both paths are handed that one state, so a cloud send can never restore what the cloud
+    remembered.
+  - **How it travels.**
+    - `shared/commands.mjs` accepts `mode`, `fan` and `swing` for `acu_ir` only.
+    - The local route posts `{state}` to `/acu`; the flow answers `422 no_local_code` or
+      `409 device_offline`, and both go to the cloud.
+    - The cloud route issues the state as DP properties on the Air remote. OFF sends power alone.
+    - The remote's id is resolved from the cloud listing as the project's one `infrared_ac` device
+      (`server/acRemote.mjs`); zero or several is a stated reason. It is not in the flow, and it cannot
+      be in this repository.
+    - A cloud send is posted back to the flow as `record_only`.
+  - **The unverified-library rule.** While `SITE.aircon.local_ir_verified` is false, ON states go
+    cloud-first: a wrong IR code does not fail, it succeeds at doing the wrong thing. `local-only`
+    still means no vendor.
+  - **Knock-on changes.**
+    - The scheduler builds the cloud route for aircon commands only.
+    - `cloudDispatchConfig` maps a node through the registry's `flow_node`, and re-reads the flow on a
+      lookup miss.
+    - The audit outcome records the resolved state in columns and in the note.
+    - `/api/capabilities` serves `acu_cloud_route` and `acu_local_ir_verified`.
+  - `shared/acState.mjs`, `server/dispatchLight.mjs`, `server/dispatchCloud.mjs`, `server/acRemote.mjs`,
+    `server/auditedDispatch.mjs`, `server/dispatchAircon.test.mjs`.
+  - **Not yet deployed** — see §0.
+
+- [ ] **RM-116** `npm run aircon:pi` — the Aircon tab, refactored for the hub. **Built; not applied.**
+  - **Changes.**
+    - Un-quiesces the blaster and nothing else about it.
+    - The blaster's parser becomes a generated IR hub parser: catalogue-driven, plausibility-bounded,
+      stamping the sense time and the session's health, with learned codes on output 2.
+    - The state manager writes the hub readings and the full commanded state, keeping the Outside
+      Temp branch as it was.
+    - AC Master Logic is regenerated around the live node's own head and IR library, extracted and
+      checked code for code, with a third output that replies.
+    - `ACU auth + validate` takes the full state, and the parallel "ACU 200 response" is removed. That
+      node answered 200 before anything was known, so a dead hub looked like success and the cloud
+      fallback could never fire.
+    - A 60 s hub poll is added.
+    - The Node-RED aircon cron path and the silent ESP32 sniffer are disabled (`d: true`).
+  - **Invariants.**
+    - Every tuya node's id, key, version and find timeout is unchanged.
+    - Outside Temp stays quiesced, and its parser is byte-identical.
+    - The IR library is identical, and no other tab changes.
+    - There are no dangling wires, and a re-run is a no-op.
+  - **Tests.** The generated sources are executed in a Node-RED-shaped sandbox against a redacted
+    fixture of the live tab.
+  - **Dry run.** Planned against the full live flow read-only: clean, invariants pass, 299 → 300 nodes.
+  - `node-red-bridge/airconSources.mjs`, `node-red-bridge/airconFlowPlan.mjs`,
+    `node-red-bridge/aircon-flow.mjs`, `test/aircon-flow-plan.test.mjs`, `test/aircon-sources.test.mjs`,
+    `test/fixtures/aircon-tab-live-2026-09-17.json`.
+
+- [ ] **RM-117** `supabase/phase45_command_ac_state.sql` — `commands.ac_mode`, `ac_fan`, `ac_swing`.
+  **Rehearsed; not applied.**
+  - **Constraints.** The `shared/acState.mjs` vocabularies; all three or none; only on an ON command.
+    No backfill, no grant.
+  - **Rehearsal.** Run on the Pi in a throwaway container (image already cached): every migration, the
+    privilege invariant, phase45 twice, and a stage that has four malformed rows refused. PASSED.
+  - `supabase/rehearse.sh`, `test/phase45-command-ac-state-schema.test.mjs`.
+
+- [x] **RM-118** Add Device: versions from the device itself, IR hubs and remotes recognised, Rebind.
+  - **Enrolment could never succeed.**
+    - **Cause.** It required `detail.version` from the cloud, and `/v1.0/devices/{id}` has no version
+      field (checked on every device). The `enroll:pi` CLI had its own copy of the same requirement.
+    - **Fix.** `server/lanDiscovery.mjs` listens passively (`reuseAddr`, as tuyapi does) and decodes
+      v3.1 plaintext, v3.3/3.4 AES-ECB and v3.5 AES-GCM, with no dependencies.
+    - **Measured.** Run on the live segment, it decoded all 18 installed devices with every version
+      matching tuyapi's, and no undecoded datagram.
+  - **The wizard offered "Air" as an outlet.**
+    - `classifyVendorDevice` knows the project's five vendor categories.
+    - The remote is "linked" to the site's aircon and never enrollable.
+    - An IR hub or a meter is not enrolled from the form, each with its reason.
+    - A claimed device names its node.
+  - **Rebind.**
+    - **Why.** A re-pair gives a device a new id and key, and the fix was hand-pasting them into the
+      editor, which is what happened here.
+    - **Plan.** `rebindPlan` changes exactly `deviceId`, `deviceKey`, the announced `tuyaVersion` and
+      optionally `disableAutoStart`, on one named node.
+    - **Refusals.** `rebindService` refuses a node whose device is still in the project, a target
+      another node polls, a different kind, a virtual sub-device, a node with no registry device, or a
+      missing version. It reports a version that differs from `TUYA_NODE_VERSIONS`, and never returns
+      the key.
+    - **Entry points.** `POST /api/rebind` and `npm run rebind:pi` share it.
+  - **Checked against the fleet measured today.**
+    - Air → linked to CARE ACU IR.
+    - Smart IR → already in the flow as `NBRIC IR Blaster`.
+    - Outside Temp is an orphan with no bound class, so it is never offered a rebind.
+  - `server/lanDiscovery.mjs`, `shared/enrollment.mjs`, `server/tuyaFleet.mjs`,
+    `node-red-bridge/rebindPlan.mjs`, `server/rebindService.mjs`, `server/rebindRoute.mjs`,
+    `src/components/devices/EnrollWizard.tsx`.
+
+- [x] **RM-119** The Control page's aircon panel sends and shows the full state.
+  - **Controls.** Mode and Fan pill groups, the setpoint and a Swing switch compose one state. The
+    confirmation names all of it.
+  - **Readouts.** The hub's room temperature and humidity sit apart from LAST SENT, which is what was
+    commanded, with when and via which path.
+  - **Where it goes.** The panel says where a state will go before Send (over the LAN, through the
+    cloud, or nowhere with the reason and Send ON disabled). OFF always stays available.
+  - **Checked** in the browser against the mock at 800×600 and 375 px in both themes.
+  - `src/components/control/IrCommandCenterCard.tsx`, `src/components/control/acControl.ts`,
+    `src/components/ui/PillGroup.tsx`.
+  - **Not yet built on the Pi.**
+
+- [ ] **RM-120** The on-site acceptance test. **Operator, with someone watching the unit.** Each step
+  moves the real aircon, so each is the operator's to run.
+  1. Send OFF. Expect `via=local`.
+  2. Send ON 24 °C in the library's state, and **record what the unit's display shows for mode, fan and
+     swing**. If it is not cool / auto / off, correct `LOCAL_LIBRARY_STATE` in `shared/acState.mjs`.
+     Then set `SITE.aircon.local_ir_verified: true`.
+  3. Send Dry, fan High, swing on. Expect `via=cloud` (needs RM-121), and the unit to follow.
+  4. Send 26 °C with the same mode, fan and swing. The unit keeps them.
+  5. Take the hub off the network. A local send answers 409 and goes via the cloud.
+  6. Arm one ACU rule for 15 minutes. Its steps keep the mode.
+
+  Until step 2 is done, ON states are cloud-first by design.
+
+- [ ] **RM-121** **The Tuya IoT Core subscription expired on 2026-09-17.**
+  - **Measured.** Every business call answers `code 28841002: IoT Core service subscription has
+    expired`. The token still issues. The proxy has logged it since about 18:58 local.
+  - **Blocked until renewal.** The vendor-cloud fallback for every device, the aircon's
+    mode/fan/swing route, the Add Device list, `/api/tuya/presence`, `npm run tuya:devices` and
+    `npm run tuya:spec`.
+  - **Unaffected.** Local control, ingest and reports.
+  - **The fix is an account action:** Tuya developer console → Cloud → Cloud Services → IoT Core →
+    extend.
+  - **Related, optional.** Subscribing "IR Control Hub Open Service" would add Tuya's own AC status
+    endpoint. Nothing here needs it.
 
 ### Reports, corrected and made plain — RM-090 to RM-099 (2026-09-16)
 
@@ -7623,6 +7862,11 @@ fall back to it).
       once it stops happening.
 
 - [ ] **RM-016** Two flow nodes reference devices that are not in the Tuya cloud project.
+      **2026-09-17: the IR half is resolved; Outside Temp remains.** The operator re-paired the blaster
+      (a Lasco "Smart IR" hub) and entered its id and key into `NBRIC IR Blaster`, which is now in the
+      project with a matching key and announces v3.3. Waking it and everything it feeds is RM-114 to
+      RM-121. `Outside Temp` has never been installed; its node stays quiesced and its flow unchanged,
+      and RM-114 stops it borrowing the hub's readings. This entry closes when it is installed or removed.
       *Acceptance:* each is re-paired into the project, or removed from the flow and registry.
       **Resolution chosen 2026-08-25: leave them, quiesce them.** Re-pairing needs the physical
       devices and the Smart Life account, so it stays with the operator; removal was declined
@@ -8736,6 +8980,29 @@ may not.
       *The figures themselves corroborate.* 2026-08-29 and 08-30 come in at 1.54 and 1.26 kWh
       against 21.83 on the 27th: that is a Saturday and a Sunday, and it is exactly the
       weekday/weekend separation the three-day minimum exists to protect.
+
+### Aircon
+
+- [ ] **FI-030** Bind an aircon remote explicitly when a site has more than one.
+  - **Today.** `server/acRemote.mjs` takes the project's sole `infrared_ac` device and refuses with a
+    reason when there are several.
+  - **What a second aircon needs.** Somewhere to record which remote commands which `acu_ir` device.
+    That place is not this public repository. It is probably a `device_config` column, or the IR hub
+    API's own remote list once subscribed.
+- [ ] **FI-031** Learn local IR codes beyond the library's one mode.
+  - **Why.** The flow already records a learned code (dp 202 → the state manager's context). A guided
+    "point the remote and press" flow, one state at a time, would let more states go over the LAN
+    without the vendor cloud.
+  - **The question to settle first.** How many states are worth learning: 5 modes × 15 degrees × 4 fans
+    × 2 swings is 600 codes.
+- [ ] **FI-032** Store the IR hub's room temperature and humidity.
+  - **Today.** `server/shapeRows.mjs` stores electrical fields only, so the aircon's room readings exist
+    live and nowhere else. Reports cannot show the room the energy was spent on.
+- [ ] **FI-033** Enrol a new aircon from the page (Milestone 6).
+  - **Today.** An IR hub is recognised but not enrollable: its node, parser, command logic and `/acu`
+    endpoint are generated only by `aircon:pi` against an existing tab.
+  - **What it needs.** A generator for the whole Aircon tab on a flow that has none, with its IR library
+    supplied rather than extracted.
 
 ### Robustness
 - **FI-026** (S) **One-sample health flickers on the hand-built tabs.** The ring buffer on 2026-09-14

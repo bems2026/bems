@@ -51,6 +51,24 @@ Note also that `GET /v1.0/devices/{id}/status` returns last-known values for an 
 rather than failing, so a successful status read is **not** proof the device is reachable. The
 `online` flag is the thing to trust, and a command is the only real test.
 
+### The aircon amends this, deliberately (2026-09-17)
+
+The IR hub re-paired on 2026-09-17 changed what "fallback" means for one device. The aircon's local
+path is a hand-captured library of sixteen IR codes (OFF and 16–30 °C in one mode). The vendor cloud
+composes a frame for any state from the virtual "Air" remote's own brand library. So for `acu_ir`:
+
+- **A state the library has no code for is not a local failure.** The flow says `422 no_local_code`,
+  and the cloud is how that state is sent at all. The audit note says so, not "fallback".
+- **While the library is unverified on the unit** (`SITE.aircon.local_ir_verified: false`), ON states go
+  to the cloud FIRST. Local dispatch cannot fail visibly here: a wrong code is accepted by the hub and
+  simply does the wrong thing, which is worse than a vendor in the path. OFF stays local-first.
+- `local-only` still means no vendor, whatever the library can express. The Control page says a state
+  cannot be sent before Send, rather than after.
+
+Everything else in this record is unchanged. Relays are local-first with the cloud as fallback only,
+and scheduled relay commands still have no cloud route. See `server/dispatchLight.mjs`
+(`dispatchAircon`) and ROADMAP RM-115.
+
 ## Doing less harm in the first place
 
 Worth doing regardless, because they reduce how often this happens:

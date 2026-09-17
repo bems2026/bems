@@ -117,11 +117,13 @@ zero are different facts and the UI renders them differently.
 | `energy_kwh_week` | number \| absent | this bridge's accumulator base + `energy_kwh_today` |
 | `energy_kwh_month` | number \| absent | as above |
 | `stale_after_ms` | number \| absent | the device's own override, else its class's budget |
-| `online` | boolean | `<ctx>_health` for metered devices; `switch` class — see below; `acu_ir`/`sensor_temp_humidity` — whether any field of `ac_dash_state` parses as a number |
+| `online` | boolean | `<ctx>_health` for metered devices; `switch` class — see below; `acu_ir` — `ac_dash_state.roomTemp` or `humidity` parses as a number and `hubHealth` is not `false`, and `sensedAt` (when present) is within `STALE_READING_MS`; `sensor_temp_humidity` — its own `state_field` (`outTemp`) parses as a number. Each answers from its own fields only (RM-114) |
 | `state` | `"on" \| "off" \| null` | see below |
 | `socket_states` | object \| absent | `outlet_dual` only |
-| `setpoint_c`, `room_temp_c`, `humidity_pct` | number \| absent | `acu_ir` only, from `ac_dash_state` |
-| `temp_c` | number \| absent | `sensor_temp_humidity` only |
+| `setpoint_c`, `room_temp_c`, `humidity_pct` | number \| absent | `acu_ir` only, from `ac_dash_state`. `room_temp_c` and `humidity_pct` are the IR hub's own sensors (dps 101/102); `setpoint_c` is COMMANDED |
+| `ac_mode`, `ac_fan`, `ac_swing` | `cool…dry` / `auto…high` / boolean \| absent | `acu_ir` only: the last COMMANDED mode, fan and swing (`ac_dash_state.mode`/`fan`/`swing`), omitted when outside the `shared/acState.mjs` vocabulary |
+| `commanded_at`, `command_via` | ISO 8601 +08:00 / `local \| cloud` \| absent | `acu_ir` only: when the last aircon command was sent and which path carried it |
+| `temp_c` | number \| absent | `sensor_temp_humidity` only, from its own `state_field` — never the IR hub's humidity |
 | `capabilities` | object \| absent | every dp the device reports, decoded — see below |
 | `measurement_frozen` | `true` \| absent | metered devices only: power, voltage and current held identical for `FROZEN_AFTER_MS` while drawing power and online — see below (RM-079) |
 | `frozen_since` | ISO 8601 +08:00 \| absent | with `measurement_frozen`: when those values last changed |
@@ -174,7 +176,11 @@ A switch's `capabilities` ride on the same `lightStatus` entry, under `dp`.
 
 - `switch` — `bems_lights_state[state_key]`, e.g. `bems_lights_state.L3`
 - `outlet_dual` — `"on"` if **either** socket is on in `bems_outlets_state.status`
-- `acu_ir` — `ac_dash_state.power`
+- `acu_ir` — `ac_dash_state.power`, which is what was last COMMANDED: an IR aircon has no readback.
+  The write path is `POST /acu` with one full state `{state: {power, mode, setpoint_c, fan, swing},
+  record_only?}` (the legacy `{mode: "OFF" | "16".."30"}` is accepted for one release). AC Master
+  Logic replies after it knows what happened: `200` sent or recorded, `422 no_local_code`, `409
+  device_offline`, `400`. See `node-red-bridge/airconSources.mjs`.
 - `meter`, `sensor_temp_humidity` — `null` (not a switchable thing)
 
 > **`state` and `socket_states` are transient device state, not readings.** The `readings`

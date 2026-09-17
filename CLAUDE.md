@@ -133,6 +133,16 @@ mock, because it once stopped the live bridge.
   ones. A wrong host fails as `sign invalid`, indistinguishable from a bad secret; an *unenabled*
   one still issues a token and then refuses business calls, which is why the probe verifies with
   a real listing call rather than a token.
+- **The aircon is two vendor devices, and only one is on the network.** Since 2026-09-17 it is driven
+  by a Lasco "Smart IR" hub (`wnykq`, v3.3, node `NBRIC IR Blaster`), whose own dps are the room's
+  temperature and humidity plus IR send/learn. Mode, fan and swing live on "Air", a **virtual**
+  `infrared_ac` remote in the vendor cloud with no network presence: the cloud reaches it, the LAN
+  never can. So a state the flow's hand-captured IR library cannot express needs the cloud, and every
+  command is one full state (`shared/acState.mjs`). Never enrol "Air" as a device — the wizard refuses.
+- **The Tuya cloud subscription lapses, and the failure looks like a bug.** IoT Core is a time-limited
+  trial. On 2026-09-17 it expired: the token still issued, and every business call answered
+  `28841002: IoT Core service subscription has expired`. That broke the cloud fallback, Add Device and
+  presence, while local control carried on. Check the Tuya console before debugging cloud code.
 - **Schedules are Supabase's, not Node-RED's.** The Automation page writes to Supabase and
   `server/scheduler.mjs` fires them through the gated, audited command path. Node-RED's own
   cron schedules read flow context (`sched_N`, `outlet_sched_N`, `ac_sched`) and bypass both
