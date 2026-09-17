@@ -145,7 +145,8 @@ export const TIMING = {
  *   the near-idle branch    59.7 s   a lightly-loaded circuit's arrival buffer only grows
  *              meter                 about once a minute, so it sets this number — not the
  *                                    three busier meters, which ticked at 2.6 s
- *   switches, ACU, sensors   1.0 s   no `ctx`, so `buildLatest` stamps `ts = now`
+ *   switches, sensors        1.0 s   no `ctx`, so `buildLatest` stamps `ts = now`
+ *   the aircon (since 2026-09-17)    stamped with the IR hub's sense time; polled every 60 s
  *
  * Against a 30 s budget, every outlet and one meter were therefore flagged "stale" for roughly
  * half of every minute while Node-RED reported them connected throughout. That is not a display
@@ -158,7 +159,7 @@ export const TIMING = {
  * poll leaves no room for one missed reply or a slow tick, which is the same off-by-one that
  * produced the sawtooth.
  *
- * The three synthesized-timestamp classes keep the original 30 s deliberately. `ts = now` can
+ * The two synthesized-timestamp classes keep the original 30 s deliberately. `ts = now` can
  * never look old, so no budget can fire for them — and a longer one would imply a freshness
  * guarantee this bridge does not actually make. Their `online` flag comes from a real health
  * signal (`lightStatus` for switches, a real measurement for the ACU), which is what does the
@@ -172,7 +173,9 @@ export const STALE_AFTER_MS_BY_CLASS = {
   outlet_dual: 150000, // 2.5x outletPollPlan.POLL_INTERVAL_S; guarded in reading-freshness.test.mjs
   meter: 150000, // clears the slowest measured meter arrival (59.7 s) with the same margin
   switch: TIMING.STALE_AFTER_MS,
-  acu_ir: TIMING.STALE_AFTER_MS,
+  // 2.5x the IR hub poll (node-red-bridge/airconSources.mjs HUB_POLL_INTERVAL_S). Since 2026-09-17
+  // the reading carries the hub's own sense time rather than `ts = now`, so it can genuinely age.
+  acu_ir: 150000,
   sensor_temp_humidity: TIMING.STALE_AFTER_MS,
 };
 

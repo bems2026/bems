@@ -21,6 +21,7 @@ import assert from 'node:assert/strict';
 import { buildLatest, STALE_READING_MS } from '../shared/buildLatest.mjs';
 import { DEVICE_REGISTRY, DEVICE_CLASSES, PHASE_MAP, STALE_AFTER_MS_BY_CLASS, TIMING, staleAfterMsFor } from '../shared/registry.mjs';
 import { POLL_INTERVAL_S } from '../node-red-bridge/outletPollPlan.mjs';
+import { HUB_POLL_INTERVAL_S } from '../node-red-bridge/airconSources.mjs';
 
 const NOW = 1786000000000;
 const meter = (over = {}) => ({ v: '220.0', c: '1.000', p: '220.0', e: '1.0000', h: true, ...over });
@@ -138,9 +139,20 @@ test('the meter budget clears the slowest measured meter arrival', () => {
 test('classes whose timestamp is synthesized keep the original budget', () => {
   // A switch has no `ctx`, so `buildLatest` stamps `ts = now` and no budget can ever fire for
   // it. Giving it a longer one would imply a freshness guarantee that does not exist.
-  for (const cls of ['switch', 'acu_ir', 'sensor_temp_humidity']) {
+  // `acu_ir` left this list on 2026-09-17: its reading now carries the IR hub's own sense time.
+  for (const cls of ['switch', 'sensor_temp_humidity']) {
     assert.equal(STALE_AFTER_MS_BY_CLASS[cls], TIMING.STALE_AFTER_MS, `${cls} should keep the default budget`);
   }
+});
+
+test('the aircon budget is longer than the hub poll that refreshes it', () => {
+  // The IR hub pushes temperature and humidity when they change and answers a GET every
+  // HUB_POLL_INTERVAL_S. Its reading is stamped with the hub's own sense time, so a budget at or
+  // under the poll would reproduce the outlet sawtooth on the aircon card.
+  assert.ok(
+    STALE_AFTER_MS_BY_CLASS.acu_ir > HUB_POLL_INTERVAL_S * 1000,
+    `aircon budget ${STALE_AFTER_MS_BY_CLASS.acu_ir}ms must exceed the ${HUB_POLL_INTERVAL_S}s hub poll`,
+  );
 });
 
 test('every device row carries its own budget, so the frontend never has to guess', () => {

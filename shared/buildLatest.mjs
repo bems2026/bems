@@ -332,7 +332,30 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, st
       // be readable — except there the fallback stayed optimistic, because a missing health map
       // really could mean an older flow. Here there is no such ambiguity: nothing else writes
       // this key, and a placeholder is a positive statement that nothing has reported.
-      r.online = [ac.roomTemp, ac.outTemp, ac.humidity, ac.setTemp].some((v) => num(v) !== undefined);
+      //
+      // EACH DEVICE ANSWERS FROM ITS OWN FIELDS — 2026-09-17. This used to be one test over
+      // `roomTemp`, `outTemp`, `humidity` and `setTemp` for both devices, which was harmless only
+      // while nothing wrote any of them. The IR blaster was then re-paired as a Lasco "Smart IR"
+      // hub whose own dps 101/102 feed `roomTemp` and `humidity`, and the uninstalled outside
+      // sensor would have read ONLINE the moment the hub did. `setTemp` is gone from the evidence
+      // too: it is a value this system COMMANDED, and a command is not a measurement.
+      if (d.class === 'acu_ir') {
+        const measured = num(ac.roomTemp) !== undefined || num(ac.humidity) !== undefined;
+        // `hubHealth` is the hub parser's session signal. Absent on an older flow, so only an
+        // explicit false overrides the measurement test.
+        r.online = ac.hubHealth !== false && measured;
+        // When the hub last actually sensed something. Absent on an older flow, which keeps the
+        // `ts = now` it always had rather than inventing a time.
+        const sensedAt = num(ac.sensedAt);
+        if (sensedAt !== undefined && sensedAt > 0) {
+          r.ts = iso8(sensedAt, offsetMinutes);
+          if (nowMs - sensedAt > STALE_READING_MS) r.online = false;
+        }
+      } else {
+        // The sensor's own field and nothing else. `state_field` is `outTemp` for the one outdoor
+        // probe this site has; an entry without one has no field to be evidenced by.
+        r.online = d.state_field ? num(ac[d.state_field]) !== undefined : false;
+      }
     } else {
       r.online = true;
     }
@@ -395,14 +418,25 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, st
       r.socket_states = { 1: s1 ? 'on' : 'off', 2: s2 ? 'on' : 'off' };
       r.state = (s1 || s2) ? 'on' : 'off';
     } else if (d.class === 'acu_ir') {
+      // `state`, `setpoint_c` and the four fields after them are what this system last COMMANDED —
+      // an IR aircon has no readback. `room_temp_c` and `humidity_pct` are the hub's own sensors.
       r.state = bool(ac.power) ? 'on' : 'off';
       if (num(ac.setTemp) !== undefined) r.setpoint_c = num(ac.setTemp);
       if (num(ac.roomTemp) !== undefined) r.room_temp_c = num(ac.roomTemp);
       if (num(ac.humidity) !== undefined) r.humidity_pct = num(ac.humidity);
+      // Spelled out rather than imported from `shared/acState.mjs`: this function is inlined into a
+      // Node-RED node and may not import. `test/aircon-reading.test.mjs` holds the two lists equal.
+      if (['cool', 'heat', 'auto', 'fan', 'dry'].indexOf(ac.mode) >= 0) r.ac_mode = ac.mode;
+      if (['auto', 'low', 'medium', 'high'].indexOf(ac.fan) >= 0) r.ac_fan = ac.fan;
+      if (typeof ac.swing === 'boolean') r.ac_swing = ac.swing;
+      const commandedAt = num(ac.commandedAt);
+      if (commandedAt !== undefined && commandedAt > 0) r.commanded_at = iso8(commandedAt, offsetMinutes);
+      if (ac.commandVia === 'local' || ac.commandVia === 'cloud') r.command_via = ac.commandVia;
     } else if (d.class === 'sensor_temp_humidity') {
       r.state = null;
-      if (num(ac.outTemp) !== undefined) r.temp_c = num(ac.outTemp);
-      if (num(ac.humidity) !== undefined) r.humidity_pct = num(ac.humidity);
+      // Its own field only — never `ac.humidity`, which is the indoor hub's. See the online note.
+      const field = d.state_field ? num(ac[d.state_field]) : undefined;
+      if (field !== undefined) r.temp_c = field;
     } else {
       r.state = null;
     }

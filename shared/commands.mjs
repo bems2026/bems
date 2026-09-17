@@ -39,6 +39,7 @@
 import { iso8 } from './buildLatest.mjs';
 import { capabilityForDevice, validateCapabilityValue } from './deviceCapabilities.mjs';
 import { setpointPolicyWarning } from './sitePolicy.mjs';
+import { AC_MODES, AC_FANS } from './acState.mjs';
 
 export const COMMAND_ROUTE = '/api/command';
 
@@ -115,7 +116,7 @@ export function validateCommand(body, registry, policy = {}) {
     return { ok: false, status: 400, code: 'invalid_body', error: 'request body must be a JSON object' };
   }
 
-  const { device_id, socket, action, command_id, target_c, capability, value } = body;
+  const { device_id, socket, action, command_id, target_c, capability, value, mode, fan, swing } = body;
 
   if (typeof device_id !== 'string' || device_id.length === 0) {
     return { ok: false, status: 400, code: 'invalid_body', error: 'device_id must be a non-empty string' };
@@ -228,10 +229,37 @@ export function validateCommand(body, registry, policy = {}) {
     if (policyWarning) warnings.push(policyWarning);
   }
 
+  /**
+   * THE REST OF THE AIRCON'S STATE — mode, fan and swing. The IR hub re-pairing (2026-09-17)
+   * brought a vendor remote that can express all three, and `shared/acState.mjs` explains why a
+   * command is still one absolute state rather than a field-by-field change.
+   *
+   * Optional, and absent from `cmd` when absent from the body, so a setpoint-only command — every
+   * command the closed loop sends, and every one sent before this — stays byte-identical. The
+   * dispatcher fills the gaps from the last commanded state.
+   */
+  const acFields = { mode, fan, swing };
+  const givenAc = Object.keys(acFields).filter((k) => acFields[k] !== undefined);
+  if (givenAc.length > 0) {
+    if (device.class !== 'acu_ir') {
+      return { ok: false, status: 400, code: 'ac_state_not_applicable', error: `${device_id} is not an aircon — omit ${givenAc.join(', ')}` };
+    }
+    if (mode !== undefined && !AC_MODES.includes(mode)) {
+      return { ok: false, status: 400, code: 'invalid_mode', error: `mode must be one of: ${AC_MODES.join(', ')}` };
+    }
+    if (fan !== undefined && !AC_FANS.includes(fan)) {
+      return { ok: false, status: 400, code: 'invalid_fan', error: `fan must be one of: ${AC_FANS.join(', ')}` };
+    }
+    if (swing !== undefined && typeof swing !== 'boolean') {
+      return { ok: false, status: 400, code: 'invalid_swing', error: 'swing must be true or false' };
+    }
+  }
+  const acState = Object.fromEntries(givenAc.map((k) => [k, acFields[k]]));
+
   const target = resolveTarget(device, socket);
   // On `cmd`, not beside it: `buildAck` and the proxy's audit both take the command object, and
   // a warning that travels separately is one a caller can forget to carry.
-  return { ok: true, cmd: { command_id, device_id, socket, action, target, target_c, ...(warnings.length > 0 ? { warnings } : {}) } };
+  return { ok: true, cmd: { command_id, device_id, socket, action, target, target_c, ...acState, ...(warnings.length > 0 ? { warnings } : {}) } };
 }
 
 /**
