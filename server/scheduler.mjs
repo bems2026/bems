@@ -31,6 +31,7 @@ import { planShed } from './shedPlan.mjs';
 import { planSetpoint } from './acuLoopPlan.mjs';
 import { createNotifier } from './notify.mjs';
 import { dispatchCommand, DISPATCH_CLASSES } from './dispatchLight.mjs';
+import { buildCloudDispatch } from './cloudDispatchConfig.mjs';
 import { auditedDispatch } from './auditedDispatch.mjs';
 import { createBufferedAudit } from './auditQueue.mjs';
 import { fileURLToPath } from 'node:url';
@@ -249,6 +250,17 @@ async function writeAcuState(ruleId, patch) {
   }
 }
 
+/**
+ * The vendor-cloud route for AIRCON commands only, built on first use and kept. `null` on a
+ * deployment with no vendor credentials, which is the ordinary one — the aircon then has only its
+ * local library, exactly as the proxy would. See the `dispatch` option in `fire`.
+ */
+let acuCloud;
+function acuCloudDispatch() {
+  if (acuCloud === undefined) acuCloud = buildCloudDispatch(process.env);
+  return acuCloud;
+}
+
 /** The live reading, straight from the bridge rather than via Supabase — shedding should react
  * to what the building is drawing now, not to a row written up to a minute ago. */
 async function fetchLatest() {
@@ -361,11 +373,27 @@ async function fire(cmd, reasonNote) {
     },
     dispatchEnabled: HARDWARE_DISPATCH_ENABLED,
     dispatchClasses: DISPATCH_CLASSES,
-    // No `cloud` opt: scheduled and auto-shed commands have always been local-only in practice,
-    // because this daemon never built a vendor client. The policy is passed anyway so the
-    // failure detail says WHY there was no fallback, rather than leaving the reader to infer it
-    // from a missing credential.
-    dispatch: (d, c) => dispatchCommand(d, c, { bridgeHost: BRIDGE_HOST, bridgePort: BRIDGE_PORT, lightApiToken: LIGHT_API_TOKEN, policy: SITE.policy?.dispatch ?? 'local-first' }),
+    // No `cloud` opt for relays: scheduled and auto-shed commands have always been local-only in
+    // practice, and widening that is a decision this change does not make. The policy is passed
+    // anyway so the failure detail says WHY there was no fallback.
+    //
+    // THE AIRCON IS THE EXCEPTION (2026-09-17). Its loop sends a setpoint and keeps the mode the
+    // operator last commanded; if that mode is anything but the local IR library's own, the only
+    // path that can express the step is the vendor cloud. Without it an armed rule on a "dry"
+    // aircon would fail every step. `readLatest` is what supplies that last commanded state.
+    dispatch: (d, c) => dispatchCommand(d, c, {
+      bridgeHost: BRIDGE_HOST,
+      bridgePort: BRIDGE_PORT,
+      lightApiToken: LIGHT_API_TOKEN,
+      policy: SITE.policy?.dispatch ?? 'local-first',
+      ...(d.class === 'acu_ir'
+        ? {
+          cloud: acuCloudDispatch(),
+          readLatest: async (device) => (await fetchLatest()).readings[device.id] ?? null,
+          localIrVerified: SITE.aircon?.local_ir_verified === true,
+        }
+        : {}),
+    }),
     insertAudit: audit.insertAudit,
     updateAudit: audit.updateAudit,
     log: (msg) => console.error(`[ibems-scheduler] ${msg}`),

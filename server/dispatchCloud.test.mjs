@@ -23,7 +23,9 @@ test('an outlet command with no socket is refused rather than guessed', () => {
   assert.equal(cloudRouteFor(outlet, { action: 'off' }), null);
 });
 
-test('the aircon has no cloud route — its IR blaster is not in the cloud project', () => {
+test('the aircon has no RELAY cloud route — its cloud route is the full state (dispatchAircon.test.mjs)', () => {
+  // Until 2026-09-17 this said the IR blaster was not in the cloud project. It is now, and the
+  // aircon reaches the cloud as a full state on its virtual remote — never as a switch code.
   assert.equal(cloudRouteFor(acu, { action: 'off' }), null);
 });
 
@@ -129,16 +131,18 @@ test('with no cloud configured, reports the local failure unchanged', async () =
   } finally { globalThis.fetch = originalFetch; }
 });
 
-test('the aircon never reaches the cloud, even when local fails', async () => {
-  // Its IR blaster is not in the cloud project, so a cloud attempt would fail at the API and
-  // bury the real local reason behind a second, misleading one.
+test('with no aircon remote resolver, the aircon posts nothing to the cloud and keeps the local reason', async () => {
+  // A cloud configuration built before the IR hub was re-paired has no `acRemoteId`. The aircon
+  // must not then be sent to some other id: nothing is posted, and the failure says why.
   let cloudCalled = false;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => { throw new Error('ECONNREFUSED'); };
   try {
     const r = await dispatchCommand(acu, { action: 'off' }, bridgeOpts(async () => { cloudCalled = true; }));
     assert.equal(r.ok, false);
-    assert.equal(cloudCalled, false, 'no cloud attempt for a device with no cloud route');
+    assert.equal(cloudCalled, false, 'nothing posted without a resolved remote');
+    assert.equal(r.reason, 'bridge_unreachable', 'the local reason leads');
+    assert.match(r.detail, /no aircon remote resolver/);
   } finally { globalThis.fetch = originalFetch; }
 });
 

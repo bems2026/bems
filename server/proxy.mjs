@@ -161,6 +161,30 @@ async function readDeviceOnline(device) {
   return row ? row.online === true : null;
 }
 
+/**
+ * The same read, returning the whole row — the aircon needs its last COMMANDED mode, fan and swing
+ * to turn a setpoint-only command into a full state (`shared/acState.mjs`). `null` when the bridge
+ * could not be asked, which the dispatcher treats exactly as `readDeviceOnline`'s `null`.
+ */
+async function readDeviceLatest(device) {
+  const rows = await fetchReadingsOnce();
+  if (!rows) return null;
+  return rows.find((r) => r.device_id === device.id) ?? null;
+}
+
+/**
+ * Whether the aircon's full state can reach the vendor cloud from here — for the Control page, so
+ * it can say "this needs the cloud, and there is none" before somebody presses Send rather than
+ * after. `null` at a site with no aircon at all.
+ */
+async function acuCloudRoute() {
+  if (!DEVICE_REGISTRY.some((d) => d.class === 'acu_ir')) return null;
+  if (DISPATCH_POLICY === 'local-only') return 'local-only';
+  if (!CLOUD_DISPATCH?.client || !CLOUD_DISPATCH.acRemoteId) return 'unconfigured';
+  const remote = await CLOUD_DISPATCH.acRemoteId().catch(() => ({ ok: false }));
+  return remote.ok ? 'ready' : 'unresolved';
+}
+
 const PROXY_PORT = Number(process.env.PROXY_PORT) || 8080;
 const BRIDGE_HOST = process.env.BRIDGE_HOST || '127.0.0.1';
 const BRIDGE_PORT = Number(process.env.BRIDGE_PORT) || 1880;
@@ -588,6 +612,10 @@ async function handleCommand(req, res, token) {
       // refusal explicit rather than relying on nobody having set the credentials.
       policy: DISPATCH_POLICY,
       readOnline: readDeviceOnline,
+      // The aircon: its last commanded state fills a partial command, and an unverified local IR
+      // library sends ON states through the cloud first. See dispatchLight.mjs `dispatchAircon`.
+      readLatest: readDeviceLatest,
+      localIrVerified: SITE.aircon?.local_ir_verified === true,
     }),
     insertAudit: audit.insertAudit,
     updateAudit: audit.updateAudit,
@@ -779,6 +807,12 @@ const server = http.createServer(async (req, res) => {
       // Where that number came from. A page reporting a floor it got from the build during a
       // database outage should be able to say so rather than presenting it as current.
       policy_source: livePolicy.status().source,
+      // The aircon's two paths (2026-09-17). `acu_cloud_route` is whether a state the local IR
+      // library cannot express (any mode but its own, any fan, swing) has anywhere to go:
+      // ready | unconfigured | unresolved | local-only, or null with no aircon. The second is whether
+      // somebody has watched the unit obey the local library since the hub was re-paired.
+      acu_cloud_route: await acuCloudRoute(),
+      acu_local_ir_verified: SITE.aircon?.local_ir_verified === true,
     });
   }
   if (req.method === 'POST' && url.pathname === '/api/enroll') {

@@ -14,6 +14,7 @@
 import { dispatchViaCloud } from './dispatchCloud.mjs';
 import { TIMING } from '../shared/registry.mjs';
 import { resolveTarget } from '../shared/commands.mjs';
+import { resolveAcState } from '../shared/acState.mjs';
 
 export const LIGHT_DISPATCH_TIMEOUT_MS = TIMING.COMMAND_TIMEOUT_MS;
 
@@ -37,14 +38,6 @@ export const DISPATCH_CLASSES = ['switch', 'outlet_dual', 'acu_ir'];
  *
  * Returns `{ok:true}` or `{ok:false, detail}` — never throws.
  */
-/** `on`/`off` plus an optional setpoint -> the IR code AC Master Logic looks up. `target_c` is
- * validated upstream by shared/commands.mjs; 25 is the fallback the retired dashboard switch
- * used, so a command with no setpoint behaves exactly as that did. */
-export function acuMode(cmd) {
-  if (cmd.action === 'off') return 'OFF';
-  return String(cmd.target_c ?? 25);
-}
-
 /** The bridge path and body for one command. Exported for the tests that pin the wire shape. */
 export function routeFor(device, cmd) {
   if (device.class === 'switch') {
@@ -60,7 +53,10 @@ export function routeFor(device, cmd) {
     return { path: `/outlet/${target}`, body: { state: cmd.action === 'on' } };
   }
   if (device.class === 'acu_ir') {
-    return { path: '/acu', body: { mode: acuMode(cmd) } };
+    // One complete state, resolved once by `dispatchAircon` so the cloud path is handed the same
+    // one. It used to be a bare IR key ("OFF", "24"), which could say nothing about mode, fan or
+    // swing. A caller that did not resolve gets the defaults rather than a missing body.
+    return { path: '/acu', body: { state: cmd.ac_state ?? resolveAcState(cmd) } };
   }
   return null;
 }
@@ -143,12 +139,111 @@ async function dispatchLocal(device, cmd, { bridgeHost, bridgePort, lightApiToke
   }
   if (!res.ok) {
     const body = await res.text().catch(() => '');
+    // The aircon endpoint says WHY it refused, because it can: AC Master Logic replies after it
+    // knows whether a code was sent. Both of these are the flow declining rather than failing, and
+    // both are exactly what the cloud exists to carry.
+    const flowError = (() => {
+      try {
+        return JSON.parse(body)?.error;
+      } catch {
+        return undefined;
+      }
+    })();
+    if (res.status === 422 && flowError === 'no_local_code') {
+      return { ok: false, reason: 'no_local_code', detail: 'the local IR library has no code for this aircon state' };
+    }
+    if (res.status === 409 && flowError === 'device_offline') {
+      return { ok: false, reason: 'device_offline', detail: 'the flow reports the IR hub session down, so nothing was sent' };
+    }
     // Separate from `bridge_unreachable` because the remedies are different: an error status is
     // the flow rejecting the message (a bad token, a route that no longer exists), while a
     // refused connection is Node-RED being down or the wrong host entirely.
     return { ok: false, reason: 'bridge_rejected', detail: `bridge endpoint returned HTTP ${res.status}: ${body}` };
   }
   return { ok: true };
+}
+
+/**
+ * Tells the flow what the vendor cloud carried, so `ac_dash_state` — and so the app — shows the
+ * state that was actually commanded, whichever path moved it. Best-effort: the command already
+ * happened, and a failed record is a stale "last sent" readout, not a failed command.
+ */
+async function recordAcState(state, { bridgeHost, bridgePort, lightApiToken }) {
+  try {
+    await fetch(`http://${bridgeHost}:${bridgePort}/acu`, {
+      method: 'POST',
+      headers: { 'x-auth-token': lightApiToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ state, record_only: true }),
+      signal: AbortSignal.timeout(LIGHT_DISPATCH_TIMEOUT_MS),
+    });
+  } catch {
+    // See above: deliberately swallowed.
+  }
+}
+
+/**
+ * The aircon's dispatch order — 2026-09-17. See `server/dispatchAircon.test.mjs` for each rule.
+ *
+ * LOCAL FIRST, as for every other device, with two things the relay path does not have:
+ *
+ *   - A state the local IR library has no code for is not a failure of the LAN — the flow says
+ *     `no_local_code` — and the cloud, which composes the frame from the remote's own brand library,
+ *     is how it is sent at all. The detail says so, so the audit row does not call it a fallback.
+ *   - While the site has not verified the local library on this unit (`localIrVerified`), an ON
+ *     state goes to the cloud FIRST. A wrong IR code does not fail; the hub accepts it and the unit
+ *     does something else, and nothing in this system could notice. OFF stays local-first: one code,
+ *     and the cheapest to watch working.
+ *
+ * `local-only` overrides both — no vendor in the path, whatever the library can or cannot express.
+ */
+async function dispatchAircon(device, cmd, opts = {}) {
+  const latest = opts.readLatest ? await opts.readLatest(device).catch(() => null) : null;
+  const acState = resolveAcState(cmd, latest ?? {});
+  const full = { ...cmd, ac_state: acState };
+
+  let online = null;
+  if (latest && typeof latest.online === 'boolean') online = latest.online;
+  else if (opts.readOnline) online = await opts.readOnline(device).catch(() => null);
+
+  const localOnly = opts.policy === 'local-only';
+  const cloudConfigured = Boolean(opts.cloud?.client);
+  const cloudAllowed = cloudConfigured && !localOnly;
+
+  const tryLocal = () =>
+    online === false
+      ? Promise.resolve({ ok: false, reason: 'device_offline', detail: 'the bridge reports the IR hub offline, so a local send cannot reach it' })
+      : dispatchLocal(device, full, opts);
+  const tryCloud = async () => {
+    const r = await dispatchViaCloud(device, full, opts.cloud);
+    if (r.ok) await recordAcState(acState, opts);
+    return r;
+  };
+
+  if (cloudAllowed && acState.power === 'on' && opts.localIrVerified !== true) {
+    const cloud = await tryCloud();
+    if (cloud.ok) {
+      return { ok: true, via: 'cloud', ac_state: acState, detail: 'sent through the vendor cloud first: the local IR library is not yet verified on this unit' };
+    }
+    const local = await tryLocal();
+    if (local.ok) return { ok: true, via: 'local', ac_state: acState, detail: `cloud failed (${cloud.detail}); sent over the LAN` };
+    return { ok: false, via: 'none', reason: local.reason, ac_state: acState, detail: `cloud: ${cloud.detail} | local: ${local.detail}` };
+  }
+
+  const local = await tryLocal();
+  if (local.ok) return { ok: true, via: 'local', ac_state: acState };
+  if (localOnly) {
+    return { ...local, via: 'local', ac_state: acState, detail: `${local.detail} (this site is local-only, so no vendor fallback was attempted)` };
+  }
+  if (!cloudConfigured) return { ...local, via: 'local', ac_state: acState };
+
+  const cloud = await tryCloud();
+  if (cloud.ok) {
+    const detail = local.reason === 'no_local_code'
+      ? 'this state has no local IR code; sent through the vendor cloud'
+      : `local failed (${local.detail}); recovered via cloud`;
+    return { ok: true, via: 'cloud', ac_state: acState, detail };
+  }
+  return { ok: false, via: 'none', reason: local.reason, ac_state: acState, detail: `local: ${local.detail} | cloud: ${cloud.detail}` };
 }
 
 /**
@@ -181,6 +276,10 @@ async function dispatchLocal(device, cmd, { bridgeHost, bridgePort, lightApiToke
  * Returns `{ok, via, reason?, detail?}` — never throws.
  */
 export async function dispatchCommand(device, cmd, opts) {
+  // The aircon's relay verbs carry a full state and have their own ordering; a capability write to
+  // it would take the ordinary path below (there is none today — nothing on its profiles is writable).
+  if (device?.class === 'acu_ir' && cmd?.action !== 'set') return dispatchAircon(device, cmd, opts);
+
   // A 2xx from the bridge is NOT proof the relay moved. The Node-RED endpoint answers as soon
   // as it accepts the message; the tuya node then fails asynchronously, after the response has
   // gone. Observed on the Pi 2026-08-25: commanding `co1` returned ok in 209 ms while Node-RED

@@ -186,7 +186,7 @@ function decide(rule, ctx) {
   }
 
   const base = commanded ?? observed;
-  // Never `acuMode`'s fallback of 25. Inventing a base is inventing a command, and the first
+  // Never the dispatcher's default of 25 (`AC_DEFAULTS` in shared/acState.mjs). Inventing a base is inventing a command, and the first
   // step from a fabricated base moves the room in a direction nobody chose.
   if (base === null) return { reason: 'no_commanded_setpoint' };
 

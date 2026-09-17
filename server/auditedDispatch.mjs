@@ -34,6 +34,7 @@
 
 /** Written before dispatch is attempted; replaced by the outcome once it is known. */
 import { capabilityForDevice } from '../shared/deviceCapabilities.mjs';
+import { describeAcState } from '../shared/acState.mjs';
 
 export const STATUS_IN_FLIGHT = 'dispatching';
 
@@ -109,13 +110,32 @@ export async function auditedDispatch({
 
   const result = await dispatch(device, cmd);
   const status = result.ok ? 'dispatched' : 'failed';
+
+  /**
+   * THE AIRCON'S RESOLVED STATE — 2026-09-17. The row above was written before dispatch filled in
+   * the mode, fan and swing the command left out, so the state that was actually sent can only land
+   * here. It goes in two places: columns (`supabase/phase45_command_ac_state.sql`, queryable) and
+   * the note (prose, which survives a database that has not been migrated).
+   */
+  const acState = result.ac_state ?? null;
+  const acNoted = acState ? `${note}; aircon: ${describeAcState(acState)}` : note;
+  const acColumns = acState && acState.power === 'on'
+    ? { target_c: acState.setpoint_c, ac_mode: acState.mode, ac_fan: acState.fan, ac_swing: acState.swing }
+    : {};
+
   // A command that only landed through the vendor cloud is recorded as such. It means the
   // device stopped answering on the LAN, which is a fault worth seeing even though the relay
   // did move — collapsing it into a bare 'dispatched' would hide the one signal that says a
   // device needs attention. See docs/adr-002-device-recovery-path.md.
-  const viaNote = result.ok && result.via === 'cloud' ? `${note}; via cloud fallback — ${result.detail}` : note;
-  const finalNote = result.ok ? viaNote : `${note}; dispatch failed: ${result.detail}`;
-  if (result.ok && result.via === 'cloud') log(`${cmd.device_id} did not answer locally; recovered via cloud`);
+  //
+  // The aircon is the exception to "cloud means fallback": a state the local IR library cannot
+  // express goes through the cloud by design, so its note carries the dispatcher's own reason.
+  const cloudNote = acState ? `via cloud — ${result.detail}` : `via cloud fallback — ${result.detail}`;
+  const okNote = result.via === 'cloud' ? `${acNoted}; ${cloudNote}` : result.detail ? `${acNoted}; ${result.detail}` : acNoted;
+  const finalNote = result.ok ? okNote : `${acNoted}; dispatch failed: ${result.detail}`;
+  if (result.ok && result.via === 'cloud') {
+    log(acState ? `${cmd.device_id} sent via cloud: ${result.detail}` : `${cmd.device_id} did not answer locally; recovered via cloud`);
+  }
   if (!result.ok) log(`hardware dispatch failed for ${cmd.device_id}: ${result.detail}`);
 
   let statusRecorded = true;
@@ -125,7 +145,14 @@ export async function auditedDispatch({
     // going bad before it goes dark. Left unset for a dry run, which never reaches here: NULL
     // means "no path attempted", honestly different from 'none', which claims both were tried.
     // See supabase/phase18_command_via.sql.
-    let updated = await updateAudit(inserted.id, { status, note: finalNote, via: result.via ?? null });
+    let updated = await updateAudit(inserted.id, { status, note: finalNote, via: result.via ?? null, ...acColumns });
+
+    // The same order-independence as `via` below, for phase45's aircon columns: the state is
+    // already in the note, so a database without the columns loses nothing but the query.
+    if (!updated.ok && Object.keys(acColumns).length > 0 && /(ac_mode|ac_fan|ac_swing|target_c)/.test(updated.detail ?? '') && /does not exist|column/i.test(updated.detail ?? '')) {
+      log(`command ${inserted.id}: the commands table has no aircon state columns yet (apply supabase/phase45_command_ac_state.sql); the state is in the note`);
+      updated = await updateAudit(inserted.id, { status, note: finalNote, via: result.via ?? null });
+    }
 
     // `supabase/phase18_command_via.sql` is applied by hand, so there is a window where this
     // code is deployed and the column is not there. PostgREST rejects an UPDATE naming an

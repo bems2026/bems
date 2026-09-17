@@ -16,14 +16,16 @@
  * WHAT IT CANNOT DO, so nothing downstream assumes otherwise:
  *   - A device with no cloud connection either — what Tuya reporting `offline` means — is
  *     reachable by neither path, and power really is the only recovery.
- *   - `acu_ir` is driven by an IR blaster that is **not in the cloud project at all**
- *     (ROADMAP RM-016), so the aircon has no cloud route. `cloudRouteFor` returns null for it
- *     rather than constructing a command that would fail at the API.
+ *   - `acu_ir` has no RELAY route, and `cloudRouteFor` still returns null for it. Since the IR hub
+ *     was re-paired into the project (2026-09-17) it has an AIRCON route instead: the full state,
+ *     as DP properties on the virtual "Air" remote the vendor composes an IR frame from. See
+ *     `cloudAcRouteFor` and `shared/acState.mjs`.
  *   - Meters and sensors expose no RELAY, so neither path can switch them. They do hold
  *     writable settings, and `cloudCapabilityRouteFor` below reaches those.
  */
 
 import { CAPABILITY_PROFILES, capabilityForDevice, divisorFor } from '../shared/deviceCapabilities.mjs';
+import { acStateToDps } from '../shared/acState.mjs';
 
 /** Codes read from the devices themselves via `GET /v1.0/devices/{id}/functions`, not guessed. */
 const SOCKET_CODE = { 1: 'switch_1', 2: 'switch_2' };
@@ -85,6 +87,22 @@ export function cloudCapabilityRouteFor(device, cmd) {
     : { instruction: 'dp', body: { properties: JSON.stringify({ [cap.code]: raw }) } };
 }
 
+/**
+ * The aircon's cloud route: its complete resolved state as DP properties on the "Air" remote.
+ *
+ * DP instruction rather than the remote's standard set (PowerOn / PowerOff / T / M / F), because
+ * the standard set has no swing. The whole state goes in one issue, never one field — the vendor
+ * composes the IR frame from whatever it is given plus what IT remembers, and what it remembers
+ * is not what this system last commanded. OFF is the one exception: `acStateToDps` sends power
+ * alone, so the vendor has nothing to switch the unit on to apply.
+ *
+ * Returns null without a resolved state rather than inventing one.
+ */
+export function cloudAcRouteFor(cmd) {
+  if (!cmd?.ac_state) return null;
+  return { instruction: 'dp', body: { properties: JSON.stringify(acStateToDps(cmd.ac_state)) } };
+}
+
 /** The vendor endpoint each instruction set is served by. */
 export function cloudPathFor(instruction, tuyaId) {
   const id = encodeURIComponent(tuyaId);
@@ -98,8 +116,24 @@ export function cloudPathFor(instruction, tuyaId) {
  * @param client           a `createTuyaClient` instance
  * Returns `{ok:true}` or `{ok:false, detail}` — never throws, matching `dispatchCommand`.
  */
-export async function dispatchViaCloud(device, cmd, { client, tuyaDeviceIdFor }) {
+export async function dispatchViaCloud(device, cmd, { client, tuyaDeviceIdFor, acRemoteId } = {}) {
   if (!client) return { ok: false, detail: 'cloud dispatch not configured' };
+
+  // The aircon is addressed through its virtual remote, whose id is resolved rather than mapped.
+  if (device?.class === 'acu_ir' && cmd?.action !== 'set') {
+    const route = cloudAcRouteFor(cmd);
+    if (!route) return { ok: false, detail: 'no resolved aircon state to send' };
+    const remote = acRemoteId
+      ? await acRemoteId(device).catch((e) => ({ ok: false, reason: String(e?.message ?? e) }))
+      : { ok: false, reason: 'no aircon remote resolver configured' };
+    if (!remote?.ok) return { ok: false, detail: `no cloud route for the aircon: ${remote?.reason}` };
+    try {
+      await client.call('POST', cloudPathFor(route.instruction, remote.id), { body: route.body });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, detail: `cloud dispatch failed: ${String(err.message ?? err)}` };
+    }
+  }
 
   const capability = cmd?.action === 'set';
   const route = capability ? cloudCapabilityRouteFor(device, cmd) : cloudRouteFor(device, cmd);

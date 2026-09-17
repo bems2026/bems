@@ -775,7 +775,7 @@ const acuHot = (setpoint = 25, room = 27) => ({
   room_temp_c: room,
 });
 
-test('a hot room steps the setpoint DOWN, reaching the bridge as an IR degree', async () => {
+test('a hot room steps the setpoint DOWN, reaching the bridge as a full state', async () => {
   const r = await run({ ...OPEN }, [], (s) => s.lightRequests.length >= 1, {
     acuRules: [acuRule()],
     acuState: [{ rule_id: 'acu-r1', commanded_c: 25, last_step_at: null, last_direction: null, alert_kind: null }],
@@ -783,7 +783,20 @@ test('a hot room steps the setpoint DOWN, reaching the bridge as an IR degree', 
     settleMs: 900,
   });
   assert.equal(r.lightRequests[0].url, '/acu');
-  assert.deepEqual(r.lightRequests[0].body, { mode: '24' }, 'one degree down from 25');
+  assert.equal(r.lightRequests[0].body.state.setpoint_c, 24, 'one degree down from 25');
+  assert.equal(r.lightRequests[0].body.state.power, 'on');
+});
+
+test('a loop step keeps the mode, fan and swing the operator last commanded', async () => {
+  // The loop sends a setpoint and nothing else. If the dispatcher did not fill the rest from the
+  // last commanded state, every step would silently put a "dry, fan high" aircon back to cool/auto.
+  const r = await run({ ...OPEN }, [], (s) => s.lightRequests.length >= 1, {
+    acuRules: [acuRule()],
+    acuState: [{ rule_id: 'acu-r1', commanded_c: 25, last_step_at: null, last_direction: null, alert_kind: null }],
+    latest: [{ ...acuHot(25, 27), ac_mode: 'dry', ac_fan: 'high', ac_swing: true }],
+    settleMs: 900,
+  });
+  assert.deepEqual(r.lightRequests[0].body.state, { power: 'on', mode: 'dry', setpoint_c: 24, fan: 'high', swing: true });
 });
 
 test('the audit row records WHICH setpoint, the source, and who the rule belongs to', async () => {

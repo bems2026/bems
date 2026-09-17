@@ -59,3 +59,25 @@ test('when configured, it exposes a client and a vendor-id lookup', () => {
   assert.equal(cd.tuyaDeviceIdFor('l1'), 'vendor-l1');
   assert.equal(cd.tuyaDeviceIdFor('unknown'), undefined);
 });
+
+test('the aircon maps through the flow node its registry entry names', () => {
+  // `flow_node` on acu_main, not a pattern in this file: the node name is a site fact.
+  assert.equal(registryIdForNodeName('NBRIC IR Blaster'), 'acu_main');
+  const map = vendorIdMapFrom([{ type: 'tuya-smart-device', deviceName: 'NBRIC IR Blaster', deviceId: 'vendor-hub' }], registryIdForNodeName);
+  assert.equal(map.acu_main, 'vendor-hub');
+});
+
+test('when configured, it also exposes the aircon remote resolver', () => {
+  const cd = buildCloudDispatch(env, opts());
+  assert.equal(typeof cd.acRemoteId, 'function');
+});
+
+test('a lookup that misses re-reads the flow, so a rebind needs no proxy restart', () => {
+  let flow = FLOW;
+  let now = 0;
+  const cd = buildCloudDispatch(env, { readFile: () => flow, flowPath: 'x', now: () => now });
+  assert.equal(cd.tuyaDeviceIdFor('co5'), undefined);
+  flow = JSON.stringify([...JSON.parse(FLOW), { type: 'tuya-smart-device', deviceName: 'CO5', deviceId: 'vendor-co5-new' }]);
+  now = 61_000;
+  assert.equal(cd.tuyaDeviceIdFor('co5'), 'vendor-co5-new');
+});

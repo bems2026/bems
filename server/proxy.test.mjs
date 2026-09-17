@@ -415,7 +415,7 @@ test('GET /api/capabilities reflects HARDWARE_DISPATCH_ENABLED — false by defa
     assert.equal(res.status, 200);
     // deepEqual, not a subset match: this endpoint tells the UI what it is allowed to claim
     // about hardware, so a field appearing unnoticed is exactly what should fail a test.
-    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: false, dispatch_classes: [], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_room_target_c: BUILD_FLOOR, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build' });
+    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: false, dispatch_classes: [], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_room_target_c: BUILD_FLOOR, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build', acu_cloud_route: 'unconfigured', acu_local_ir_verified: false });
   } finally {
     cleanup();
   }
@@ -425,7 +425,7 @@ test('GET /api/capabilities reports true once the gate is explicitly opened', as
   const { proxyUrl, cleanup } = await setup({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-light-token' });
   try {
     const res = await fetch(`${proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
-    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: true, dispatch_classes: ['switch', 'outlet_dual', 'acu_ir'], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_room_target_c: BUILD_FLOOR, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build' });
+    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: true, dispatch_classes: ['switch', 'outlet_dual', 'acu_ir'], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_room_target_c: BUILD_FLOOR, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build', acu_cloud_route: 'unconfigured', acu_local_ir_verified: false });
   } finally {
     cleanup();
   }
@@ -937,7 +937,7 @@ test('dispatch open + outlet command: routed to /outlet/<target> and audited as 
   }
 });
 
-test('dispatch open + ACU command: routed to /acu as an IR code, not a relay state', async () => {
+test('dispatch open + ACU command: routed to /acu as one full aircon state, not a relay state', async () => {
   const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch();
   try {
     const res = await fetch(`${proxyUrl}/api/command`, {
@@ -950,7 +950,13 @@ test('dispatch open + ACU command: routed to /acu as an IR code, not a relay sta
     });
     assert.equal(res.status, 202);
     assert.equal(lightState.requests[0].url, '/acu');
-    assert.deepEqual(lightState.requests[0].body, { mode: '26' }, 'the setpoint becomes the IR library key');
+    // Since 2026-09-17 the setpoint travels inside the complete state the flow's validator takes;
+    // with no history and no mode given, the rest is the defaults (shared/acState.mjs).
+    assert.deepEqual(
+      lightState.requests[0].body,
+      { state: { power: 'on', mode: 'cool', setpoint_c: 26, fan: 'auto', swing: false } },
+      'the setpoint travels inside one full aircon state',
+    );
     assert.equal(supabaseState.insertedCommands[0].status, 'dispatched');
   } finally {
     cleanup();
@@ -981,7 +987,7 @@ test('an ACU setpoint below the room-comfort policy is DISPATCHED, warned about,
     assert.equal(ack.warnings?.[0]?.code, 'below_room_comfort_policy');
     assert.equal(ack.warnings[0].floor, 24);
     assert.equal(lightState.requests.length, 1, 'it really is dispatched now');
-    assert.deepEqual(lightState.requests[0].body, { mode: '18' });
+    assert.equal(lightState.requests[0].body.state.setpoint_c, 18);
     assert.equal(supabaseState.insertedCommands.length, 1);
     assert.match(supabaseState.insertedCommands[0].note, /below this building's 24°C room-comfort policy/);
   } finally {
@@ -1024,7 +1030,7 @@ test('the HARDWARE bound still refuses — a policy warning is not a licence to 
   }
 });
 
-test('an ACU command with no setpoint falls back to 25, exactly what the retired dashboard switch sent', async () => {
+test('an ACU command with no setpoint and no history falls back to 25, exactly what the retired dashboard switch sent', async () => {
   const { proxyUrl, lightState, cleanup } = await setupDispatch();
   try {
     await fetch(`${proxyUrl}/api/command`, {
@@ -1032,13 +1038,61 @@ test('an ACU command with no setpoint falls back to 25, exactly what the retired
       headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ device_id: 'acu_main', action: 'on' }),
     });
-    assert.deepEqual(lightState.requests[0].body, { mode: '25' });
+    assert.deepEqual(lightState.requests[0].body, { state: { power: 'on', mode: 'cool', setpoint_c: 25, fan: 'auto', swing: false } });
   } finally {
     cleanup();
   }
 });
 
-test('an ACU off command sends the OFF code rather than a temperature', async () => {
+test('an ACU mode, fan and swing reach the bridge inside the state, and the audit row records it', async () => {
+  const { proxyUrl, lightState, supabaseState, cleanup } = await setupDispatch();
+  try {
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'acu_main', action: 'on', target_c: 24, mode: 'dry', fan: 'high', swing: true }),
+    });
+    assert.equal(res.status, 202);
+    assert.deepEqual(lightState.requests[0].body, { state: { power: 'on', mode: 'dry', setpoint_c: 24, fan: 'high', swing: true } });
+    const row = supabaseState.insertedCommands[0];
+    assert.match(row.note, /aircon: Dry · 24 °C · fan high · swing on/);
+  } finally {
+    cleanup();
+  }
+});
+
+test('an unknown aircon mode is refused before anything is recorded or sent', async () => {
+  const { proxyUrl, lightState, supabaseState, cleanup } = await setupDispatch();
+  try {
+    const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'acu_main', action: 'on', mode: 'turbo' }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal((await res.json()).code, 'invalid_mode');
+    assert.equal(lightState.requests.length, 0);
+    assert.equal(supabaseState.insertedCommands.length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test('GET /api/capabilities says whether the aircon can reach the cloud, and whether its local library is verified', async () => {
+  // A deployment with no vendor credentials: mode, fan and swing have nowhere to go but the
+  // local library, and the Control page must be able to say so before somebody presses Send.
+  const { proxyUrl, cleanup } = await setupDispatch();
+  try {
+    const res = await fetch(`${proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
+    const body = await res.json();
+    assert.equal(body.acu_cloud_route, 'unconfigured');
+    assert.equal(body.acu_local_ir_verified, false);
+  } finally {
+    cleanup();
+  }
+});
+
+test('an ACU off command sends power off, which the flow maps to its OFF code', async () => {
   const { proxyUrl, lightState, cleanup } = await setupDispatch();
   try {
     await fetch(`${proxyUrl}/api/command`, {
@@ -1046,7 +1100,7 @@ test('an ACU off command sends the OFF code rather than a temperature', async ()
       headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ device_id: 'acu_main', action: 'off' }),
     });
-    assert.deepEqual(lightState.requests[0].body, { mode: 'OFF' });
+    assert.equal(lightState.requests[0].body.state.power, 'off');
   } finally {
     cleanup();
   }

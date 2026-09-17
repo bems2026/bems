@@ -216,3 +216,59 @@ test('does not retry when the patch failed for some other reason', async () => {
   assert.equal(attempts.length, 1, 'no second attempt for an unrelated failure');
   assert.equal(out.statusRecorded, false);
 });
+
+// --- the aircon's full state ------------------------------------------------------------------
+
+const ACU = { id: 'acu_main', class: 'acu_ir' };
+const ACU_STATE = { power: 'on', mode: 'dry', setpoint_c: 22, fan: 'high', swing: true };
+
+test('the aircon state that was actually sent is recorded on the outcome, in columns and in prose', async () => {
+  // Record-first means the row is written before dispatch resolves the full state, so the state
+  // lands on the outcome patch — and in the note, which survives a database without phase45.
+  const { args, calls } = harness({
+    device: ACU,
+    cmd: { device_id: 'acu_main', action: 'on', target_c: 22 },
+    dispatchClasses: ['acu_ir'],
+    dispatch: async () => ({ ok: true, via: 'cloud', ac_state: ACU_STATE, detail: 'this state has no local IR code; sent through the vendor cloud' }),
+  });
+  await auditedDispatch(args);
+  const patch = calls.updates[0].patch;
+  assert.deepEqual([patch.target_c, patch.ac_mode, patch.ac_fan, patch.ac_swing], [22, 'dry', 'high', true]);
+  assert.match(patch.note, /Dry · 22 °C · fan high · swing on/);
+  assert.match(patch.note, /no local IR code/);
+  assert.equal(/cloud fallback/.test(patch.note), false, 'a state only the cloud can send is not a fallback');
+});
+
+test('an OFF records no setpoint column, and the note says Off', async () => {
+  const { args, calls } = harness({
+    device: ACU,
+    cmd: { device_id: 'acu_main', action: 'off' },
+    dispatchClasses: ['acu_ir'],
+    dispatch: async () => ({ ok: true, via: 'local', ac_state: { ...ACU_STATE, power: 'off' } }),
+  });
+  await auditedDispatch(args);
+  const patch = calls.updates[0].patch;
+  assert.equal('target_c' in patch, false);
+  assert.equal(patch.ac_mode, undefined);
+  assert.match(patch.note, /aircon: Off/);
+});
+
+test('retries without the aircon columns when phase45 is not applied yet', async () => {
+  const attempts = [];
+  const { args } = harness({
+    device: ACU,
+    cmd: { device_id: 'acu_main', action: 'on' },
+    dispatchClasses: ['acu_ir'],
+    dispatch: async () => ({ ok: true, via: 'local', ac_state: ACU_STATE }),
+    updateAudit: async (id, patch) => {
+      attempts.push(patch);
+      if ('ac_mode' in patch) return { ok: false, detail: `column "ac_mode" of relation "commands" does not exist` };
+      return { ok: true };
+    },
+  });
+  const out = await auditedDispatch(args);
+  assert.equal(attempts.length, 2);
+  assert.equal('ac_mode' in attempts[1], false);
+  assert.match(attempts[1].note, /Dry · 22 °C/, 'the state still lands, in the note');
+  assert.equal(out.statusRecorded, true);
+});
