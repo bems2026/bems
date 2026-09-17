@@ -187,7 +187,7 @@ export function ReportCharts({
   }, [segments]);
 
   const useScene = useCallback(
-    () => circuitBreakdownChart(useSegments, spec('rep-us', reportChartHeight('useShare', daily.length), `Energy by use — ${label}`)),
+    () => circuitBreakdownChart(useSegments, spec('rep-us', reportChartHeight('useShare', daily.length), `Energy by use — ${label}`), { of: 'uses' }),
     [useSegments, daily.length, spec, label]
   );
   const useTable = useCallback((): ChartTable => {

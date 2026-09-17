@@ -58,7 +58,7 @@ export const PRINT_PALETTE: ChartPalette = {
   grid: '#e2e8f0',
   surface: '#ffffff',
   /** Four, matching the four branch meters this building actually has. */
-  series: ['#ae4d03', '#1e5ce4', '#037756', '#7c3aed'],
+  series: ['#ae4d03', '#1e5ce4', '#037756', '#6200be'],
   good: '#037756',
   warn: '#ae4d03',
   bad: '#b91c1c',

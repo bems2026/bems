@@ -70,7 +70,7 @@ export function loadProfileChart(points: readonly HourProfilePoint[], spec: Char
       kind: 'text',
       x: width / 2,
       y: box.y + box.h / 2,
-      text: 'Nothing was observed in this period',
+      text: 'Nothing was recorded in this period',
       fill: palette.textMuted,
       size: 12,
       anchor: 'middle',

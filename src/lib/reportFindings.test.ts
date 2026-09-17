@@ -89,7 +89,7 @@ describe('loadFactor', () => {
   });
 
   it('refuses without a reading or without a peak, rather than dividing by nothing', () => {
-    expect(loadFactor([day('2026-08-03', { usable_sample_count: 0 })], summary()).reason).toMatch(/nothing was observed/i);
+    expect(loadFactor([day('2026-08-03', { usable_sample_count: 0 })], summary()).reason).toMatch(/nothing was recorded/i);
     expect(loadFactor([day('2026-08-03')], summary({ max_w: null })).ratio).toBeNull();
     expect(loadFactor([day('2026-08-03')], null).ratio).toBeNull();
   });

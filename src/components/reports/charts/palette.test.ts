@@ -290,12 +290,12 @@ describe('SCREEN_PALETTE defers to the stylesheet', () => {
  *   - On a dark surface, 3:1 for every series (WCAG 1.4.11).
  *
  * One check is stricter than the validator's default. "Power through the week" draws the four
- * report series as lines that CROSS, so for the dark theme every pair must be apart, not only
- * neighbours. The old, too-light purple passed that by being lighter than blue; a purple re-stepped
- * into the band at blue's lightness does not (ΔE 0.1 under deuteranopia), which is why the dark
- * purple leans toward magenta and sits darker. The light theme and the print palette FAIL this
- * today — blue against purple is ΔE 1.3 and 1.7 under deuteranopia — and that is FI-029, not a
- * reason to leave the dark theme failing too.
+ * report series as lines that CROSS, so every pair must be apart, not only neighbours — in both
+ * themes and on paper. The dark theme's old, too-light purple passed that by being lighter than blue;
+ * a purple re-stepped into the band at blue's lightness does not (ΔE 0.1 under deuteranopia), which is
+ * why the dark purple leans toward magenta and sits darker (FI-028). The light theme and the print
+ * palette failed it outright — blue against purple was ΔE 1.3 and 1.7 under deuteranopia — until
+ * FI-029 gave both a purple darker than their blue.
  */
 describe('the screen series colours pass the data-viz checks in both themes — FI-028', () => {
   const ANALYTICS = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'analytics', 'AnalyticsPage.tsx'), 'utf8');
@@ -423,12 +423,19 @@ describe('the screen series colours pass the data-viz checks in both themes — 
     }
   });
 
-  it('dark: the four report series stay apart in EVERY pair, because their lines cross', () => {
-    const colours = SCREEN_PALETTE.series.map((v) => resolve('dark', v));
+  const everyPairApart = (colours: string[]) => {
     for (const [a, b] of pairsOf(colours, true)) {
       expect(apart(a, b), `${a} vs ${b}`).toBeGreaterThanOrEqual(15);
       expect(apart(a, b, 'protan'), `${a} vs ${b}, protanopia`).toBeGreaterThanOrEqual(8);
       expect(apart(a, b, 'deutan'), `${a} vs ${b}, deuteranopia`).toBeGreaterThanOrEqual(8);
     }
+  };
+
+  it.each(['light', 'dark'] as const)('%s: the four report series stay apart in EVERY pair, because their lines cross', (theme) => {
+    everyPairApart(SCREEN_PALETTE.series.map((v) => resolve(theme, v)));
+  });
+
+  it('print: the four series stay apart in every pair on paper too, where there is no hover to tell them apart — FI-029', () => {
+    everyPairApart([...PRINT_PALETTE.series]);
   });
 });

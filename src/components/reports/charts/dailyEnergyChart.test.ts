@@ -191,7 +191,7 @@ describe('dailyEnergyChart', () => {
     // reads as a month of zero consumption. niceScale returns null here on purpose.
     const scene = dailyEnergyChart([day(1, { observed: false, kwh: null }), day(2, { observed: false, kwh: null })], SPEC);
     expect(bars(scene.marks)).toHaveLength(0);
-    expect(texts(scene.marks).some((t) => /nothing was observed/i.test(t.text))).toBe(true);
+    expect(texts(scene.marks).some((t) => /nothing was recorded/i.test(t.text))).toBe(true);
   });
 
   it('survives an empty period without producing NaN geometry', () => {
@@ -209,5 +209,12 @@ describe('dailyEnergyChart', () => {
     const dayLabels = texts(scene.marks).filter((t) => /^\d+$/.test(t.text));
     expect(dayLabels.length).toBeLessThan(31);
     expect(dayLabels.length).toBeGreaterThan(4);
+  });
+  it('says recorded, the page’s one word for it, in its description', () => {
+    const full = dailyEnergyChart([day(1), day(2), day(3)], SPEC);
+    const gappy = dailyEnergyChart([day(1), day(2, { observed: false, kwh: null }), day(3)], SPEC);
+    expect(full.desc).toContain('All 3 days were recorded.');
+    expect(gappy.desc).toContain('1 of 3 days were not recorded');
+    expect(full.desc + gappy.desc).not.toMatch(/observed/);
   });
 });

@@ -36,6 +36,19 @@ Green, red and Analytics' sky blue keep their hue a step darker. Purple also mov
 because dropping it to blue's lightness would have made the two indistinguishable for a deuteranope.
 The light theme and the print palette already have that blue/purple collapse, recorded as **FI-029**.
 
+**Later the same day, the Reports page was read signed in, and it holds.** The corrected L.O Yellow week,
+the Circuits tab, the Lighting scope, the plain words, both new CSVs and both PDFs were checked against
+the live project, with no statement timeouts, at 800×480 and 375 px in both themes. The read-back found
+four defects, **RM-109 to RM-112**:
+- at phone width the right third of every report chart was cut off;
+- "Energy by use" counted three uses as "3 circuits";
+- a week showed "10,082 of 10,080 minutes", because every ingest restart writes a second row into one
+  minute;
+- four charts said "observed" where the page says "recorded".
+
+**FI-029** gives the light theme and the print palette a purple darker than their blue. **RM-073 is
+decided: restate, with a note.** It becomes phase44, together with counting distinct minutes.
+
 **Also 2026-09-17 — RM-089 closed.** In the 36.9 hours since the 2026-09-15 restart, ingest has logged
 one "Supabase unreachable" and one failed device sync, 11 seconds apart, both aborted by the request's
 own timeout rather than failing to connect, and no "fetch failed" at all. The week before logged 26–100 a
@@ -3740,6 +3753,66 @@ kiosk has none (RM-007). The next signed-in look should confirm the KPI grid at 
 showed the fourth tile wrapping alone under the hero, which is RM-082a's `auto-fit` grid and predates
 this work.
 
+### Read back signed in — RM-109 to RM-112 (2026-09-17)
+
+The Reports page was checked in the workstation's browser, signed in by the operator, against the live
+project and the Pi's build of RM-100 to RM-108. Exports were captured inside the page, so no file was
+saved.
+
+**What holds:**
+- **Week of 7 September.** L.O Yellow shows **4.62 kWh, Corrected**, titled "a 76.79 kWh jump in the meter's
+  counter is not counted". Lighting is 9.1% of the building.
+- **Circuits tab.** "The circuits add up to 61.51 of the building's 61.73 kWh". Every circuit's day stack
+  sums to its table figure within rounding. Both circuit charts drew, with no statement timeout.
+- **Lighting scope.** 5.58 kWh, 9.1%, 2 circuits, both charts and both tables narrowed.
+- **Plain words.** A text sweep of Usage patterns and Compare found none of p50/p95/p99, percentile,
+  median, coverage, baseline, samples, load factor or DSM.
+- **Devices by day CSV (Lighting).** 14 device-days. 2026-09-08 L.O Yellow is 0.713 kWh with 76.789 in
+  "Counter jump not counted".
+- **Every reading CSV (Lighting).** 20,122 minute rows from 2 devices in 7.6 s (1.87 MB). The 02:36 row
+  says "counter jumped +67.28 kWh while drawing 49 W — not counted", and 27 rows are offline.
+- **PDFs (Lighting, week).** Simple is 8 sections, 3 pages and 33 KB; Detailed is 16 sections, 8 pages and
+  57 KB. The console timed the first at 6,418 ms (mostly loading pdfmake and its fonts) and the second at
+  103 ms. RM-083c still wants the kiosk's own figure.
+- **Layout.** At 800×480 and 375 px, light and dark, on all four tabs: no page-level horizontal overflow,
+  and no text under 4.5:1 against its composited background.
+
+- [x] **RM-109 (S) — a report chart fits a phone. 2026-09-17.**
+  - **The defect.** `.report-charts` is a grid, and its implicit column was as wide as its widest content,
+    the drawings' 460px minimum. At 375px every figure was 493px wide in a 319px column, and
+    `.app-content` clips horizontal overflow, so the right third of every chart was cut off with nothing to
+    scroll. The page reported no overflow at all, which is why the earlier sweeps passed.
+  - **The fix.** The column is `minmax(0, 1fr)` and the figure has `min-width: 0`, so the horizontal scroll
+    `.report-chart__plot` already had takes over.
+  - **Held by** `test/reports-css.test.mjs`, with positive controls.
+- [x] **RM-110 (S) — "Energy by use" counts uses. 2026-09-17.** The bar read "61.5 kWh across 3 circuits"
+  for Lighting, Aircon and Others, which are four circuits.
+  - `circuitBreakdownChart` takes `of: 'uses'`: "across 3 uses", and "1 circuit" in the singular.
+  - The Overview, the Circuits tab (unless it is narrowed to circuits) and the PDF pass it.
+  - **Held by** `circuitBreakdownChart.test.ts` and `ReportsPage.scope.test.tsx` (Overview and Circuits tab).
+- [x] **RM-111 (S) — never more minutes recorded than the period has. 2026-09-17.**
+  - **What the page said.** The week of 7 September read "10,082 of 10,080 minutes".
+  - **Measured live, read-only.** `building_totals` holds 10,082 rows in **10,074** distinct minutes. All 8
+    doubled minutes (07:15, 07:33, 08:43 and 12:56 UTC on the 7th; 00:36, 07:31 and 07:52 on the 8th; 04:40
+    on the 13th) are minutes in which `ibems-ingest` was restarted. A scheduled tick had already written
+    the minute on its boundary, and the new daemon's first cycle ran at once, seconds later, under a
+    different `ts`. So `onConflict: 'ts'` could not merge them.
+  - **The page's guard.** `toDemandSummary` (`src/lib/reportSeries.ts`) holds observed and usable minutes to
+    the period's length.
+  - **The real count** is phase44's (RM-073), which counts distinct minutes rather than rows. The true
+    figure for that week is 10,074, with 6 minutes genuinely missing.
+  - **Not changed.** Ingest's first cycle after a restart still writes. A restart is rare, and the report
+    side must count minutes whatever writes them.
+  - **Held by** `reportSeries.test.ts`.
+- [x] **RM-112 (S) — one word for it: recorded. 2026-09-17.**
+  - The daily energy, busy hours, duration and typical-day charts and the load-factor reason said
+    "observed", where every newer surface says "recorded". The reason is what shows as a finding's
+    refusal.
+  - The busy-hours range and legend printed "1832 W". They now use the reader's grouping, as the other
+    charts do.
+  - The "not observed" figure label for a stored zero is RM-081's and is kept.
+  - **Held by** the four chart tests and `reportFindings.test.ts`.
+
 ### Analytics data quality — RM-076 to RM-079 (2026-09-14)
 
 Why this exists is the 2026-09-14 entry in §0. The principle it follows: **energy comes from registers,
@@ -4315,8 +4388,9 @@ ever cleared, and put its controls in three rows. This section is that page's ov
 - [ ] **RM-085 (L)** — **Arbitrary windows: last 24 hours, month to date, billing cycle, custom.**
       **Deferred by operator decision, 2026-09-15.** `report_window` accepts only a whole week or
       month (`phase37_report_series.sql:66`) and counts the unfinished part of a period as missing,
-      so these cannot be served honestly from today's functions. Needs `phase44_report_ranges.sql`
-      (renumbered 2026-09-16: phase42 is RM-091's and phase43 RM-091a's)
+      so these cannot be served honestly from today's functions. Needs `phase45_report_ranges.sql`
+      (renumbered 2026-09-16: phase42 is RM-091's and phase43 RM-091a's; and 2026-09-17: phase44 is
+      RM-073's)
       (range variants clamped to `now()`, per-device energy from each device's own counters, a
       weekday-by-hour heatmap past 37 days to stay under the 900-cell cap), a billing-cycle day
       setting, a provisional "in progress" banner, and a rehearsal asserting the bars sum to the
@@ -5081,7 +5155,10 @@ emission factor carrying provenance. What has landed:
       taken after.
 
 - [ ] **RM-073 (M)** — Correct `generate_period_report`'s `online_sample_count` to count usable
-      observations rather than rows, and regenerate. **Blocked on a decision, not on code.**
+      observations rather than rows, and regenerate. **Decided by the operator 2026-09-17: restate, with
+      a note in the report.** In progress as `phase44`, which also counts distinct minutes rather than rows
+      (RM-111). `phase44_report_ranges.sql` for RM-085 becomes phase45.
+      *(The decision it was blocked on, as recorded before:)*
       RM-072g measured what it would change: August 2026's stored coverage moves 48.0% → 26.9%.
       Regenerating rewrites every stored coverage figure, including for months that have already
       been reported to the university, and some months will cross the 50% boundary that
@@ -8485,8 +8562,20 @@ may not.
   - **Checked in a browser** (mock bridge, dev server): Analytics' lines computed to the new values in dark
     and to the old ones in light, with no console errors. A screenshot was not possible with the pane
     hidden, so the eye check joins the signed-in Reports check.
-- [ ] **FI-029 (S)** — **Blue and purple are one colour to a deuteranope, in the light theme and in print.**
-  Found while doing FI-028.
+- [x] **FI-029 (S)** — **Blue and purple are one colour to a deuteranope, in the light theme and in print.**
+  Found while doing FI-028. **Done 2026-09-17**, taking RM-105's light-theme half with it.
+  - **What changed.**
+    - Light `--purple` #7c3aed → **#6200be**. It is the text tier and the print palette's fourth series,
+      mirrored in `palette.ts`.
+    - Light `--purple-bright` #8b5cf6 → **#6f27e1**, the screen charts.
+    - Both keep their hue and sit darker than their blue.
+    - As text, `--purple` is now 8.2–9.3:1 (was 5.0–5.7), and `test/contrast.test.mjs` passes. Its only CSS
+      use is the Control log's IR tag.
+  - **After.** Every pair of the four report series, on screen in both themes and in print, is ΔE ≥ 15 for
+    full colour vision and ≥ 8 under protanopia and deuteranopia. The validator passes light, print and
+    Analytics' light cycle, which keeps its existing contrast relief on amber, green and sky.
+  - **Held by** `palette.test.ts`: the every-pair test now runs for light, dark and `PRINT_PALETTE`. A
+    neuter restoring #8b5cf6 fails it.
   - **Measured.** Every-pair separation between `--blue-bright` #3b82f6 and `--purple-bright` #8b5cf6 is
     ΔE 1.3 under simulated deuteranopia and 12.0 with full colour vision. The print palette's #1e5ce4 and
     #7c3aed measure 1.7 and 12.5.

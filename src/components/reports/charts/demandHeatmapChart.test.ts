@@ -118,7 +118,7 @@ describe('demandHeatmapChart', () => {
 
   it('says nothing was observed rather than drawing a blank grid', () => {
     const scene = demandHeatmapChart(grid(3, () => null), SPEC);
-    expect(texts(scene.marks).some((t) => /nothing was observed/i.test(t.text))).toBe(true);
+    expect(texts(scene.marks).some((t) => /nothing was recorded/i.test(t.text))).toBe(true);
   });
 
   it('survives every cell holding the same value', () => {
@@ -131,5 +131,14 @@ describe('demandHeatmapChart', () => {
   it('is deterministic', () => {
     const g = grid(5, (d, h) => (h === 3 ? null : d * 100 + h));
     expect(demandHeatmapChart(g, SPEC)).toEqual(demandHeatmapChart(g, SPEC));
+  });
+  it('says recorded, the page’s one word for it, and writes watts in the reader’s grouping', () => {
+    const scene = demandHeatmapChart(grid(7, (d, h) => 33 + d * h * 11), SPEC);
+    const hi = Math.max(...grid(7, (d, h) => 33 + d * h * 11).filter((c) => c.value !== null).map((c) => c.value as number));
+    const grouped = `${Math.round(hi).toLocaleString(undefined)} W`;
+    expect(scene.desc).toContain('Every hour was recorded.');
+    expect(scene.desc).not.toMatch(/observed/);
+    expect(scene.desc).toContain(grouped);
+    expect(texts(scene.marks).some((t) => t.text === grouped)).toBe(true);
   });
 });

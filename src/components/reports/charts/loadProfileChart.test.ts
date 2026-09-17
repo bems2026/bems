@@ -119,7 +119,7 @@ describe('loadProfileChart', () => {
   it('says nothing was observed rather than drawing an empty grid', () => {
     const scene = loadProfileChart(Array.from({ length: 24 }, (_, h) => unobserved(h)), SPEC);
     expect(medianPath(scene.marks)).toBeUndefined();
-    expect(texts(scene.marks).some((t) => /nothing was observed/i.test(t.text))).toBe(true);
+    expect(texts(scene.marks).some((t) => /nothing was recorded/i.test(t.text))).toBe(true);
   });
 
   it('counts the unobserved hours in its description', () => {

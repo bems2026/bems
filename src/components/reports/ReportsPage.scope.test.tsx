@@ -170,6 +170,20 @@ describe('the circuit scope', () => {
     }
   });
 
+  it('counts the energy-by-use bar in uses, on the Overview and on the Circuits tab, never as circuits', async () => {
+    // Lighting, Aircon and Others over four branch meters read '61.5 kWh across 3 circuits' on the live page.
+    const across = new RegExp(`across ${CARRIED.length} uses?\\b`);
+    const asCircuits = new RegExp(`across ${CARRIED.length} (metered )?circuits?\\b`);
+    render(<ReportsPage />);
+    await waitFor(() => expect(screen.getAllByText(across).length).toBeGreaterThan(0));
+    expect(screen.queryAllByText(asCircuits)).toHaveLength(0);
+
+    await openCircuits();
+    await branchTable();
+    await waitFor(() => expect(screen.getAllByText(across).length).toBeGreaterThan(0));
+    expect(screen.queryAllByText(asCircuits)).toHaveLength(0);
+  });
+
   it('keeps a branch share of the whole building when the Circuits tab is narrowed to it', async () => {
     render(<ReportsPage />);
     await chooseScope(CHOSEN.name);

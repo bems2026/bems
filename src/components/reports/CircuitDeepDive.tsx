@@ -113,8 +113,8 @@ export function CircuitDeepDive({ period, start, rows, scope, nameOf, building, 
         idPrefix: 'cir-share',
         title: shareTitle,
         desc: '',
-      }),
-    [shareSegments, shareTitle]
+      }, { of: narrowed ? 'circuits' : 'uses' }),
+    [shareSegments, shareTitle, narrowed]
   );
   const shareTable = useMemo(
     () => (): ChartTable => {

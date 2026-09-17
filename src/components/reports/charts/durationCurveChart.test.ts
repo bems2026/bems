@@ -88,7 +88,7 @@ describe('durationCurveChart', () => {
   it('says nothing was observed rather than drawing an empty grid', () => {
     const scene = durationCurveChart([], SPEC);
     expect(paths(scene.marks)).toHaveLength(0);
-    expect(texts(scene.marks).some((t) => /nothing was observed/i.test(t.text))).toBe(true);
+    expect(texts(scene.marks).some((t) => /nothing was recorded/i.test(t.text))).toBe(true);
   });
 
   it('ignores points the series could not compute', () => {

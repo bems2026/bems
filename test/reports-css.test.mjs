@@ -18,6 +18,12 @@
  *    off the top of an 800x480 kiosk. The `thead` is sticky inside a bounded scroll box, and it is
  *    painted, because a transparent sticky header shows the rows sliding beneath it.
  *
+ *  - A CHART FITS A PHONE (found live 2026-09-17). `.report-charts` is a grid, and a grid's implicit
+ *    column is as wide as its widest content: the drawings' 460px minimum. At 375px every figure was
+ *    493px in a 319px column, and `.app-content` clips horizontal overflow, so the right third of every
+ *    chart was cut off with nothing to scroll. The column has to be allowed to shrink, so the scroll
+ *    `.report-chart__plot` already provides takes over.
+ *
  * Positive controls first: a synthetic sheet missing each promise must be flagged.
  */
 import { test } from 'node:test';
@@ -103,6 +109,17 @@ function tableFindings(source) {
   return findings;
 }
 
+function chartColumnFindings(source) {
+  const grid = declarationsOf(source, '.report-charts');
+  const figure = declarationsOf(source, '.report-chart');
+  const findings = [];
+  if (!/minmax\(\s*0(px)?\s*,\s*1fr\s*\)/.test(grid['grid-template-columns'] ?? '')) {
+    findings.push('.report-charts has no column that can shrink below its drawings');
+  }
+  if (figure['min-width'] !== '0') findings.push('.report-chart can still be held open by its content');
+  return findings;
+}
+
 test('positive control: a sheet without the hero lift or the sticky header is flagged', () => {
   const flat = `
     .report-kpis .report-kpi--hero { grid-column: span 2; }
@@ -128,6 +145,10 @@ test('positive control: a sheet without the hero lift or the sticky header is fl
     '.report-table-scroll has no max-height, so nothing scrolls under the header',
     '.report-table-scroll does not scroll both ways',
   ]);
+  assert.deepEqual(chartColumnFindings('.report-charts { display: grid; } .report-chart { position: relative; }'), [
+    '.report-charts has no column that can shrink below its drawings',
+    '.report-chart can still be held open by its content',
+  ]);
 });
 
 test('positive control: a sheet that keeps both promises is clean', () => {
@@ -143,6 +164,7 @@ test('positive control: a sheet that keeps both promises is clean', () => {
   assert.deepEqual(primaryFindings(kept), []);
   assert.deepEqual(heroFindings(kept), []);
   assert.deepEqual(tableFindings(kept), []);
+  assert.deepEqual(chartColumnFindings('.report-charts { grid-template-columns: minmax(0, 1fr); } .report-chart { min-width: 0; }'), []);
 });
 
 test('RM-104: the hero KPI tile is the one lifted surface, in tokens the contrast guard measures', () => {
@@ -155,4 +177,8 @@ test('RM-108: the export is the one primary action, and it answers a hover and a
 
 test('RM-107: a report table keeps its column headers while its rows scroll', () => {
   assert.deepEqual(tableFindings(css), []);
+});
+
+test('a report chart fits a phone: its column shrinks, and the drawing scrolls inside the plot', () => {
+  assert.deepEqual(chartColumnFindings(css), []);
 });

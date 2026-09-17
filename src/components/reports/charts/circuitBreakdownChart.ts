@@ -34,6 +34,11 @@ export interface BreakdownOptions {
    * broken chart rather than a finding.
    */
   untracked?: { label: string; kwh: number | null };
+  /**
+   * What a segment is. The Overview's and Circuits tab's "Energy by use" bars are Lighting, Aircon and
+   * Others — three uses over four circuits — and a label counting them as "3 circuits" was wrong.
+   */
+  of?: 'circuits' | 'uses';
 }
 
 const BAR_H = 34;
@@ -81,7 +86,8 @@ export function circuitBreakdownChart(
     return { width, height, idPrefix, title, desc, defs, marks };
   }
 
-  const desc = `Share of ${fmt(total)} kWh across ${metered.length} metered circuits. ${notes.join(' ')}`.trim();
+  const parts = partsLabel(metered.length, options.of ?? 'circuits');
+  const desc = `Share of ${fmt(total)} kWh across ${options.of === 'uses' ? parts : parts.replace(/ (circuits?)$/, ' metered $1')}. ${notes.join(' ')}`.trim();
 
   const barY = 22;
   let x = padX;
@@ -123,7 +129,7 @@ export function circuitBreakdownChart(
     kind: 'text',
     x: padX,
     y: barY - 6,
-    text: `${fmt(total)} kWh across ${metered.length} circuits`,
+    text: `${fmt(total)} kWh across ${parts}`,
     fill: palette.textMuted,
     size: 9,
     anchor: 'start',
@@ -151,6 +157,12 @@ export function circuitBreakdownChart(
 }
 
 /** Two decimals below 10 kWh, one above — a month's total does not need hundredths. */
+/** "1 circuit", "4 circuits", "3 uses". */
+function partsLabel(n: number, of: 'circuits' | 'uses'): string {
+  const noun = of === 'uses' ? 'use' : 'circuit';
+  return `${n} ${noun}${n === 1 ? '' : 's'}`;
+}
+
 function fmt(kwh: number): string {
   return kwh >= 10 ? kwh.toFixed(1) : kwh.toFixed(2);
 }

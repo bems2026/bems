@@ -55,7 +55,7 @@ export function dailyEnergyChart(points: readonly DailyEnergyPoint[], spec: Char
 
   const desc = scale === null
     ? `No day in this period carried a reading, so there is nothing to draw.`
-    : `Energy per day. ${missing > 0 ? `${missing} of ${points.length} days were not observed and are drawn as gaps.` : `All ${points.length} days were observed.`}`;
+    : `Energy per day. ${missing > 0 ? `${missing} of ${points.length} days were not recorded and are drawn as gaps.` : `All ${points.length} days were recorded.`}`;
 
   if (scale === null) {
     // No axis, no grid, no bars. A confident empty grid over a period nobody watched reads as a
@@ -64,7 +64,7 @@ export function dailyEnergyChart(points: readonly DailyEnergyPoint[], spec: Char
       kind: 'text',
       x: width / 2,
       y: box.y + box.h / 2,
-      text: 'Nothing was observed in this period',
+      text: 'Nothing was recorded in this period',
       fill: palette.textMuted,
       size: 12,
       anchor: 'middle',

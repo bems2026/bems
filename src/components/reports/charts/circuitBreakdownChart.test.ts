@@ -139,4 +139,23 @@ describe('circuitBreakdownChart colours — RM-095', () => {
     const fills = bars(circuitBreakdownChart(segments, SPEC).marks).map((s) => s.fill);
     expect(fills).toEqual([SPEC.palette.series[1], SPEC.palette.series[2]]);
   });
+  it('counts uses as uses when the segments are uses, never as circuits', () => {
+    // Lighting, Aircon and Others are three uses across four circuits; the label said '3 circuits'.
+    const uses: CircuitSegment[] = [
+      { label: 'Lighting', kwh: 5.58 },
+      { label: 'Aircon', kwh: 24.19 },
+      { label: 'Others', kwh: 31.74 },
+    ];
+    const scene = circuitBreakdownChart(uses, SPEC, { of: 'uses' });
+    const words = [...texts(scene.marks).map((t) => t.text), scene.desc].join(' | ');
+    expect(words).toContain('61.5 kWh across 3 uses');
+    expect(words).not.toMatch(/circuit/);
+  });
+
+  it('says one circuit, not one circuits', () => {
+    const scene = circuitBreakdownChart([{ label: 'L.O Red', kwh: 0.97 }], SPEC);
+    const words = [...texts(scene.marks).map((t) => t.text), scene.desc].join(' | ');
+    expect(words).toContain('across 1 circuit');
+    expect(words).not.toMatch(/1 (metered )?circuits/);
+  });
 });

@@ -120,7 +120,7 @@ const CHARTS: readonly {
     label: 'Energy by use',
     has: ({ charts: c }) => (c.useSegments ?? []).length > 0,
     build: ({ charts: c, building }) => ({
-      scene: circuitBreakdownChart(c.useSegments ?? [], spec('pdf-us', 100, `Energy by use${building}`)),
+      scene: circuitBreakdownChart(c.useSegments ?? [], spec('pdf-us', 100, `Energy by use${building}`), { of: 'uses' }),
       table: { headers: ['Use', 'Energy (kWh)'], rows: (c.useSegments ?? []).map((s) => [s.label, f(s.kwh)]) },
     }),
   },

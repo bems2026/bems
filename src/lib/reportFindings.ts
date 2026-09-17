@@ -102,7 +102,7 @@ export function loadFactor(daily: readonly DailyRow[], summary: DemandSummary | 
     weight += observed;
     weighted += d.avg_power_w * observed;
   }
-  if (weight === 0) return refuse('Nothing was observed in this period, so there is no average demand to set against the peak.');
+  if (weight === 0) return refuse('Nothing was recorded in this period, so there is no average demand to set against the peak.');
 
   const peak = summary.max_w;
   if (typeof peak !== 'number' || !Number.isFinite(peak) || peak <= 0) {

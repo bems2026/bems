@@ -12,6 +12,7 @@ import {
   type HourRow,
   type MatrixRow,
   type CurveRow,
+  toDemandSummary,
 } from './reportSeries';
 
 /**
@@ -161,5 +162,36 @@ describe('the matrix cap matches the one the SQL enforces', () => {
     // phase37's report_hour_matrix raises above 900. If these two ever disagree, the client
     // would either reject a legal answer or trust a truncated one.
     expect(MAX_MATRIX_CELLS).toBe(900);
+  });
+});
+
+describe('toDemandSummary', () => {
+  const row = (o: Record<string, unknown> = {}) => ({
+    n: 10082,
+    p50_w: 100,
+    p95_w: 1350,
+    p99_w: 1900,
+    max_w: 2426,
+    min_w: 20,
+    observed_minutes: 10082,
+    usable_minutes: 10082,
+    expected_minutes: 10080,
+    longest_gap_minutes: 3,
+    resolution: 'minute',
+    ...o,
+  });
+
+  it('never says more minutes were recorded than the period has', () => {
+    // Live, week of 2026-09-07: 10,082 rows in 10,074 distinct minutes, because every ingest restart writes a
+    // second row inside the minute the previous tick already wrote. The page read "10,082 of 10,080 minutes".
+    const s = toDemandSummary(row());
+    expect(s.usable_minutes).toBe(10080);
+    expect(s.observed_minutes).toBe(10080);
+    expect(s.expected_minutes).toBe(10080);
+  });
+
+  it('leaves an honest count alone, and a period with no expected minutes untouched', () => {
+    expect(toDemandSummary(row({ usable_minutes: 2710, observed_minutes: 5000 }))).toMatchObject({ usable_minutes: 2710, observed_minutes: 5000 });
+    expect(toDemandSummary(row({ expected_minutes: 0, usable_minutes: 0, observed_minutes: 0 }))).toMatchObject({ usable_minutes: 0, expected_minutes: 0 });
   });
 });

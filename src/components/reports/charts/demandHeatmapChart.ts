@@ -28,6 +28,9 @@ const LEGEND_H = 26;
 const SWATCH = 10;
 const CHAR_W = 4.9;
 
+/** `1,832 W` in the reader's own grouping, the form the load profile and trend charts use. */
+const watts = (w: number) => `${Math.round(w).toLocaleString(undefined)} W`;
+
 export function demandHeatmapChart(cells: readonly HeatCell[], spec: ChartSpec): Scene {
   const { width, height, palette, idPrefix, title } = spec;
   const marks: Mark[] = [];
@@ -43,7 +46,7 @@ export function demandHeatmapChart(cells: readonly HeatCell[], spec: ChartSpec):
       kind: 'text',
       x: width / 2,
       y: height / 2,
-      text: 'Nothing was observed in this period',
+      text: 'Nothing was recorded in this period',
       fill: palette.textMuted,
       size: 12,
       anchor: 'middle',
@@ -127,14 +130,14 @@ export function demandHeatmapChart(cells: readonly HeatCell[], spec: ChartSpec):
   // --- legend: the ramp, its two ends in watts, and the hatch in words ---
   const ly = height - LEGEND_H + 12;
   let lx = PAD_LEFT;
-  marks.push({ kind: 'text', x: lx, y: ly + 7, text: `${Math.round(lo)} W`, fill: palette.textMuted, size: 8, anchor: 'start' });
+  marks.push({ kind: 'text', x: lx, y: ly + 7, text: watts(lo), fill: palette.textMuted, size: 8, anchor: 'start' });
   lx += String(Math.round(lo)).length * CHAR_W + 14;
   palette.heat.forEach((colour) => {
     marks.push({ kind: 'rect', x: lx, y: ly, w: SWATCH * 2, h: SWATCH, fill: colour });
     lx += SWATCH * 2;
   });
   lx += 5;
-  marks.push({ kind: 'text', x: lx, y: ly + 7, text: `${Math.round(hi)} W`, fill: palette.textMuted, size: 8, anchor: 'start' });
+  marks.push({ kind: 'text', x: lx, y: ly + 7, text: watts(hi), fill: palette.textMuted, size: 8, anchor: 'start' });
   lx += String(Math.round(hi)).length * CHAR_W + 22;
 
   if (missing > 0) {
@@ -150,8 +153,8 @@ export function demandHeatmapChart(cells: readonly HeatCell[], spec: ChartSpec):
     });
   }
 
-  const desc = `Busy hours: average demand by day and hour, ${Math.round(lo)}–${Math.round(hi)} W across ${days.length} days. ${
-    missing > 0 ? `${missing} of ${cells.length} hours were never observed and are hatched.` : 'Every hour was observed.'
+  const desc = `Busy hours: average demand by day and hour, ${watts(lo)} to ${watts(hi)} across ${days.length} days. ${
+    missing > 0 ? `${missing} of ${cells.length} hours were never recorded and are hatched.` : 'Every hour was recorded.'
   }`;
 
   return { width, height, idPrefix, title, desc, defs, marks, hits };

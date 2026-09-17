@@ -86,6 +86,21 @@ export interface DemandSummary {
 
 // --- pure mappers ---------------------------------------------------------------------------
 
+/**
+ * The summary with its minute counts held to the period's length.
+ *
+ * `report_demand_summary` counts ROWS in `building_totals`, and a row is not always its own minute:
+ * every ingest restart runs a cycle at once, inside the minute the last scheduled tick already wrote,
+ * so each restart adds a second row to one minute. The week of 2026-09-07 held 10,082 rows in 10,074
+ * distinct minutes, and the page said "10,082 of 10,080 minutes". The database is corrected to count
+ * distinct minutes by phase44; until then, and after it as a guard, no period records more minutes
+ * than it has.
+ */
+export function toDemandSummary(row: DemandSummary): DemandSummary {
+  const cap = (minutes: number) => (row.expected_minutes > 0 ? Math.min(minutes, row.expected_minutes) : minutes);
+  return { ...row, observed_minutes: cap(row.observed_minutes), usable_minutes: cap(row.usable_minutes) };
+}
+
 export function toDailyPoints(rows: readonly DailyRow[]): DailyEnergyPoint[] {
   return rows.map((r) => ({
     // A bare date the SQL already resolved in the building's own zone. Kept as written and
@@ -176,5 +191,5 @@ export async function getDemandCurve(period: ReportPeriod, start: string, { sign
 
 export async function getDemandSummary(period: ReportPeriod, start: string, { signal }: SeriesRequest = {}): Promise<DemandSummary | null> {
   const rows = await call<DemandSummary>('report_demand_summary', window(period, start), 2, signal);
-  return rows[0] ?? null;
+  return rows[0] ? toDemandSummary(rows[0]) : null;
 }

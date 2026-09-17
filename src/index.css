@@ -125,8 +125,14 @@
   --red-bright: #ef4444;
   --red-soft: rgb(239 68 68 / 0.1);
 
-  --purple: #7c3aed; /* 5.2-5.7:1 */
-  --purple-bright: #8b5cf6;
+  /* FI-029: blue and purple were one colour to a deuteranope — #1e5ce4 against #7c3aed measured ΔE 1.7
+   * under simulated deuteranopia, and #3b82f6 against #8b5cf6 on screen 1.3 — so the lines of
+   * "Power through the week" could not be told apart, and on paper there is no hover to help. Both
+   * purples now sit darker than their blue: 8.2-9.3:1 as text (was 5.0-5.7), and every pair of the
+   * four report series is ΔE >= 15 for full colour vision and >= 8 under protanopia and deuteranopia.
+   * `--purple` is also the print palette's fourth series; `palette.test.ts` holds both. */
+  --purple: #6200be;
+  --purple-bright: #6f27e1;
 
   /* Analytics' sixth series. A token rather than the literal it was, because the dark theme needs
    * its own step of it (FI-028). No text role and no -text shade: it is only ever a chart line. */
@@ -7082,8 +7088,13 @@ body::before {
 /* Report charts — RM-072. Only the genuinely page-specific pieces, per CLAUDE.md: the table
    inside each figure is `.devices-table`, the coverage badges are `.badge--*`, and the surface
    is `.devices-table-card`'s, because a chart is not a new kind of card. */
+/* One column that may shrink below the drawings' 460px minimum. A grid's implicit column is as wide
+   as its widest content, and `.app-content` clips horizontal overflow — so on a 375px phone every
+   figure was 493px in a 319px column and its right third was cut off, with nothing to scroll. With
+   the column bounded, `.report-chart__plot` below scrolls the drawing instead, as it was meant to. */
 .report-charts {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--sp-4);
   margin-top: var(--sp-4);
 }
@@ -7091,6 +7102,7 @@ body::before {
 .report-chart {
   /* The tooltip anchors here rather than inside the plot, whose horizontal scroll would clip it. */
   position: relative;
+  min-width: 0;
   margin: 0;
   padding: var(--sp-4);
   background: var(--bg-surface);
