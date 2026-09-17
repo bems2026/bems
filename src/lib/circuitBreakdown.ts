@@ -250,11 +250,17 @@ export function buildBreakdown(
   const refused = new Set(rows.filter((r) => r.energy_kwh !== null && usableEnergy(r) === null).map((r) => r.device_id));
   const meterIds = BUILDING_METER_IDS as readonly string[];
 
-  const segments: CircuitSegment[] = meterIds.map((id) =>
-    refused.has(id)
-      ? { label: nameOf(id), kwh: null, excluded: 'its stored figure is more than it could have drawn' }
-      : { label: nameOf(id), kwh: energy.get(id) ?? null }
-  );
+  // RM-106: colour follows the entity, never its rank. The chart falls back to array position
+  // when a segment carries no index, so a refused meter would have moved every later circuit one
+  // colour along — the same circuit wearing one colour this week and another next. The index is
+  // the branch's place in the panel, the rule `circuitRefs` already uses for the Circuits tab.
+  const order = new Map(branchOptions().map((b, i) => [b.id, i]));
+  const segments: CircuitSegment[] = meterIds.map((id) => {
+    const colourIndex = order.get(circuitForMeter(id)?.id ?? '') ?? 0;
+    return refused.has(id)
+      ? { label: nameOf(id), kwh: null, excluded: 'its stored figure is more than it could have drawn', colourIndex }
+      : { label: nameOf(id), kwh: energy.get(id) ?? null, colourIndex };
+  });
 
   /**
    * Devices the period reported on that no meter can account for — the seven light switches

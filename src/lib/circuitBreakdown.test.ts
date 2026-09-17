@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildBreakdown } from './circuitBreakdown';
+import { branchOptions, buildBreakdown } from './circuitBreakdown';
 import { BUILDING_METER_IDS, DEVICE_REGISTRY, METERED } from '@shared/registry.mjs';
 import { CIRCUITS } from '@shared/siteConfig.mjs';
 import type { PeriodDeviceReport } from './supabaseReports';
@@ -63,6 +63,24 @@ describe('buildBreakdown', () => {
     expect(segments[0].kwh).toBeNull();
     expect(segments[0].excluded).toMatch(/more than it could have drawn/);
     expect(segments[1].excluded).toBeUndefined();
+  });
+
+  it('colours each segment by its branch, so a refused neighbour never repaints it — RM-106', () => {
+    // The chart falls back to array position when a segment carries no colourIndex. Refusing the
+    // second meter would then move every later circuit one colour to the left, and the same circuit
+    // would wear one colour this week and another next week. Colour follows the entity, never its rank.
+    const branches = branchOptions();
+    const rows = meterIds.map((id, i) =>
+      i === 1 ? { ...row(id, 81.406), peak_power_w: 251.2, expected_sample_count: 10080 } : { ...row(id, 10), peak_power_w: 500 }
+    );
+    const { segments } = buildBreakdown(rows, nameOf);
+    const metered = segments.slice(0, meterIds.length);
+    expect(metered[1].excluded).toMatch(/more than it could have drawn/);
+    metered.forEach((s, i) => {
+      const circuit = (CIRCUITS as { id: string; meter_device_id: string | null }[]).find((c) => c.meter_device_id === meterIds[i]);
+      expect(s.colourIndex).toBe(branches.findIndex((b) => b.id === circuit?.id));
+    });
+    expect(metered[2].colourIndex).toBe(2);
   });
 
   it('names the devices no meter accounts for rather than omitting them', () => {
