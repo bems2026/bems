@@ -47,10 +47,14 @@ four defects, **RM-109 to RM-112**:
 - four charts said "observed" where the page says "recorded".
 
 **FI-029** gives the light theme and the print palette a purple darker than their blue. All four fixes and
-FI-029 are live and were read back on the kiosk's build. **RM-073 is decided — restate, with a note — and
-`phase44_recorded_minutes.sql` is written and rehearsed, and waits for the operator.** It counts distinct
-minutes that hold a reading, and recounts every stored report. The week of 2026-08-17 goes from
-"Complete · 98%" to 16%, beside a note saying what the report used to say.
+FI-029 are live and were read back on the kiosk's build. **RM-073 is done: phase44 was applied by the
+operator and read back the same day.** Every stored report now counts distinct minutes that hold a
+reading. The week of 2026-08-17 went from "Complete · 98%" to 16%, beside a note saying what the report
+used to say.
+
+**RM-113, the same afternoon: every PDF export on the kiosk failed** with "File 'Roboto-Medium.ttf' not
+found in virtual file system". pdfmake's font file registered itself only if pdfmake had already
+evaluated, and a rebuild changed which one evaluated first. The export now registers the fonts itself.
 
 **Also 2026-09-17 — RM-089 closed.** In the 36.9 hours since the 2026-09-15 restart, ingest has logged
 one "Supabase unreachable" and one failed device sync, 11 seconds apart, both aborted by the request's
@@ -984,10 +988,10 @@ Everything else is small, and the build order below is honest about size.
   two weeks (RM-020), so their averages mean nothing and their tiers should be set on what they
   feed rather than on what they have measured.
 
-### Migrations — one waits: phase44
+### Migrations — all applied
 
-**`supabase/phase44_recorded_minutes.sql` (RM-073, RM-111) is written and rehearsed, and waits for the
-operator** — see RM-073 for what it changes on the live project and how to read it back.
+**`supabase/phase44_recorded_minutes.sql` (RM-073, RM-111) was applied by the operator on 2026-09-17 and
+read back the same day** — see RM-073.
 **`supabase/phase43_readings_policy_speed.sql` (RM-091a) and `supabase/phase42_bounded_device_energy.sql`
 (RM-091) were both applied by the operator on 2026-09-17 and read back the same day** — see those entries.
 Every earlier migration is applied, the latest before them
@@ -3824,6 +3828,23 @@ saved.
     charts do.
   - The "not observed" figure label for a stored zero is RM-081's and is kept.
   - **Held by** the four chart tests and `reportFindings.test.ts`.
+- [x] **RM-113 (S) — the PDF export registers its own fonts. 2026-09-17.**
+  - **The failure.** After phase44 was applied, the operator's first export on the kiosk (a month, all
+    circuits, Detailed) failed with "The export could not be completed: File 'Roboto-Medium.ttf' not found
+    in virtual file system". It reproduced in the workstation's browser on the same build for Simple and
+    Detailed alike. The same export had worked that morning on the build before.
+  - **The cause, read in the built chunk.** `pdfmake/build/fonts/Roboto.js` ends with `if (_global.pdfMake
+    ...) _global.pdfMake.addFontContainer(fontContainer)`, and pdfmake assigns the global only when its own
+    entry module evaluates. `download.ts` imported both at once and trusted that side effect, so the
+    bundler's evaluation order decided whether any font was registered. The rebuild for RM-109–112 flipped
+    it, and the first bold text asked for a file nobody had written. The failure is not in the data and
+    not in phase44.
+  - **The fix.** `download.ts` takes the container's default export and calls
+    `pdfMake.addFontContainer(roboto)` itself, on every export, before `createPdf`. Registering twice only
+    rewrites the same four files.
+  - **Held by** `src/lib/reportPdf/download.test.ts`, whose mocked container registers nothing on import
+    (the order that broke the kiosk). It checks that the fonts are registered before the document is
+    created, and again on the next export.
 
 ### Analytics data quality — RM-076 to RM-079 (2026-09-14)
 
@@ -5166,10 +5187,22 @@ emission factor carrying provenance. What has landed:
       the first time, so a backup taken before it and copied off the Pi is worth more than one
       taken after.
 
-- [ ] **RM-073 (M)** — Correct `generate_period_report`'s `online_sample_count` to count usable
+- [x] **RM-073 (M)** — Correct `generate_period_report`'s `online_sample_count` to count usable
       observations rather than rows, and regenerate. **Decided by the operator 2026-09-17: restate, with
-      a note in the report. `supabase/phase44_recorded_minutes.sql` is written and rehearsed, and waits
-      for the operator.** RM-085's planned ranges file becomes phase45.
+      a note in the report. `supabase/phase44_recorded_minutes.sql` was applied by the operator the same
+      day and read back.** RM-085's planned ranges file becomes phase45.
+      - **Read back live** (service role, GET only):
+        - The six building rows match the preview below exactly: August 12,055 (was 21,421), weeks of 08-10
+          0 (10), 08-17 1,640 (9,900), 08-24 8,975 (10,071), 08-31 10,025 (10,080), 09-07 10,074 (10,082).
+          All share one `coverage_restated_at`.
+        - 65 device rows restated. Most moved by a restart's few minutes; the branch meters moved more, e.g.
+          August `mtr_co_yellow` 11,071 → 10,483.
+        - Energy and `generated_at` unchanged on every building row. L.O Yellow's week of 09-07 is still
+          4.617 kWh with 76.789 removed.
+        - Legacy `monthly_building_reports` for August reads 12,055, so RM-042's comparison still holds.
+        - Without a key, the building helper answers 401.
+        - Signed in, August's heading reads "Mostly missing · 27%" with "Recorded share corrected on Sep 17,
+          2026: this report said 48%, counting rows the meters sent with no reading in them."
       - **What it does.**
         - `report_recorded_minutes_building` and `report_recorded_minutes_devices` count a window's
           distinct minutes that hold a reading. A rolled-up hour counts at most 60.

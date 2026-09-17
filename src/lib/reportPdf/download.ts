@@ -14,10 +14,14 @@ import { buildDocDefinition, type PdfReport } from './docDefinition';
  *
  *   1. **pdfmake 0.3 is Promise-based.** `createPdf(def).getBlob(cb)` — the callback form in
  *      every tutorial and every LLM's memory — is the 0.2 API. On 0.3 it hangs forever.
- *   2. **Fonts must come from the font CONTAINER.** `build/fonts/Roboto.js` self-registers via
- *      `addFontContainer` and works. `build/vfs_fonts.js` registers the font FILES but no font
- *      DEFINITIONS, so `font: 'Roboto'` is unknown and rendering hangs in exactly the same way —
- *      which is how one of these bugs looks like the other.
+ *   2. **Fonts must come from the font CONTAINER.** `build/vfs_fonts.js` registers the font FILES but
+ *      no font DEFINITIONS, so `font: 'Roboto'` is unknown and rendering hangs in exactly the same way —
+ *      which is how one of these bugs looks like the other. And the container must be REGISTERED HERE,
+ *      not trusted to register itself: `build/fonts/Roboto.js` calls `addFontContainer` only if `pdfMake`
+ *      is already on the global when it evaluates, and pdfmake puts itself there only when its own
+ *      module evaluates. Both are imported at once, so the order is the bundler's. On 2026-09-17 a
+ *      rebuild flipped it and every export on the kiosk failed with "File 'Roboto-Medium.ttf' not found
+ *      in virtual file system" — the first bold text asking for a font nobody had registered.
  *   3. SVG `<text>` resolves fonts through a different path than pdfmake's own text. In the
  *      browser that resolves against the virtual filesystem and is fine; in Node it hits the
  *      real one. One more reason this never runs server-side.
@@ -34,13 +38,12 @@ export async function downloadReportPdf(report: PdfReport, filename: string): Pr
   if (inFlight) return inFlight;
 
   inFlight = (async () => {
-    const [{ default: pdfMake }] = await Promise.all([
+    const [{ default: pdfMake }, { default: roboto }] = await Promise.all([
       import('pdfmake/build/pdfmake'),
-      // Loaded for its side effect: the container calls `addFontContainer` on the global as soon
-      // as it evaluates. Awaited alongside rather than after, because it does not depend on the
-      // first — but it must have run before `createPdf`.
       import('pdfmake/build/fonts/Roboto.js'),
     ]);
+    // Every export, explicitly — see (2) above. Registering twice only rewrites the same four files.
+    pdfMake.addFontContainer(roboto);
 
     // 0.3 returns a Promise. `.download()` does the anchor dance itself, which is the one part
     // of this that is not worth hand-rolling — see `csv.ts`'s `downloadCsv` for the same three

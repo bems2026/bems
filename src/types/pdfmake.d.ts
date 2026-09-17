@@ -22,7 +22,7 @@ declare module 'pdfmake/build/pdfmake' {
      *  type: `src/lib/reportPdf/docDefinition.ts` is the authority on our document's shape, and
      *  a second partial description of it here would be a second thing to keep in step. */
     createPdf(docDefinition: unknown): CreatedPdf;
-    /** What `build/fonts/Roboto.js` calls on the global as it evaluates. */
+    /** Registers a font container's files and definitions. `download.ts` calls it on every export. */
     addFontContainer(container: unknown): void;
     addVirtualFileSystem(vfs: unknown): void;
     addFonts(fonts: Record<string, Record<string, string>>): void;
@@ -32,7 +32,8 @@ declare module 'pdfmake/build/pdfmake' {
   export default pdfMake;
 }
 
-/** Imported for its side effect: it registers itself on the global as soon as it evaluates. */
+/** The Roboto container. It registers itself only if `pdfMake` is already global when it evaluates, which is
+ * not guaranteed, so `download.ts` passes it to `addFontContainer` explicitly. */
 declare module 'pdfmake/build/fonts/Roboto.js' {
   const fontContainer: { vfs: Record<string, string>; fonts: Record<string, Record<string, string>> };
   export default fontContainer;
