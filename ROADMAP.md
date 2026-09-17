@@ -17,6 +17,20 @@ high-water mark.
 - **RM-098:** CSVs of devices by day and of every reading.
 - **RM-099:** a Simple or Detailed PDF following the scope.
 
+**RM-100 to RM-108, the same day, from a UI/UX audit of the page against the kiosk it actually has —
+800×480, not the 1024×600 this file had been measuring against.** The control bar is one line at 800px
+(58px, was ~117): the tabs are a strip of their own, the circuit select and the Circuits-tab chips are
+one **Circuit** button with the uses as pills and the branches as a list (RM-102), and the period list is
+a calendar of stored reports with the two jumps under it (RM-103). The hero KPI is the one lifted surface
+(RM-104), a month's table keeps its column headers (RM-107), Export is the page's one primary action
+(RM-108), and the building-level breakdown colours a circuit by its place in the panel rather than its
+rank, so a refused meter no longer repaints its neighbours between weeks (RM-106). Measured in Firefox at
+800×480, 375 and 800×1100 in both themes; every static guard and 1,959 + 1,107 tests green. What the
+audit found already shipped and guarded — the 8-point grid, hairline tables, value-first tooltips,
+shape-matched skeletons, 44px targets — it left alone; what the operator's brief asked for that this file
+had already decided against (Tailwind, toasts, arbitrary date ranges, a gradient hero) was put to the
+operator and kept decided.
+
 **FI-028, the same day:** the dark theme's chart series are re-stepped into the dataviz lightness band.
 Green, red and Analytics' sky blue keep their hue a step darker. Purple also moves toward magenta,
 because dropping it to blue's lightness would have made the two indistinguishable for a deuteranope.
@@ -3634,6 +3648,97 @@ Why this exists is the 2026-09-16 entry in §0. Operator decisions, 2026-09-16:
       corrections; no statistician's words in anything a reader sees, and a neuter putting "p99" back
       fails it.
     - `ExportDrawer.test.tsx` +1.
+
+### Reports, on the kiosk it has — RM-100 to RM-108 (2026-09-17)
+
+The operator asked for a four-pillar UI/UX overhaul of the Reports page — data-ink, filtering, data viz,
+export ergonomics. The audit that preceded it found most of the four already shipped and held by tests
+(RM-072 to RM-099: the 8-point grid, hairline tables, the value-first tooltip, shape-matched skeletons,
+the 44px block), and four of the brief's asks already decided against in this file. Those four went to
+the operator with the reasons and stayed decided: **token CSS, not Tailwind** (RM-071); **an inline
+outcome, not a toast** (RM-071); **a calendar of stored reports, not arbitrary ranges** (RM-085 stays
+deferred); **a token-only lift on the hero, not a gradient** (FI-008 cannot measure one). What was left
+was measured rather than assumed, and one measurement changed the shape of the work: **the kiosk is
+800×480.** RM-082d had tuned the control bar against 1024×600.
+
+- [x] **RM-100 (S) — the kiosk's size, read from the display. 2026-09-17.** `/sys/class/drm/card1-DSI-1/modes`
+  holds one mode, `800x480`. This file said both; §4 records which was wrong. Every 1024 in `src/`
+  corrected (`ReportControlBar.tsx`, `index.css`, `ReportCharts.tsx`, `reportChartSizes.ts`).
+- [x] **RM-101 (M) — one bar, one line. 2026-09-17.** At 800px the RM-082b bar — period type, stepper, two
+  presets, a labelled select, four tabs, Export — wrapped to three lines, which is why RM-082d could not
+  let it stick on the kiosk. The tabs decide the *reading* of a report, not the report: they are a strip
+  of their own beneath the bar (`.report-tabs-strip`). The presets moved into the calendar (RM-103), the
+  select became one button (RM-102), and the stepper's and scope's minimum widths were cut to what their
+  longest label needs. **Measured in Firefox at 800×480: 58px, one line** (~62px on the touchscreen's
+  44px floor). With the 73px nav that is 27–28% of 480 — barely under the third RM-082d rejected — so
+  **the sticky threshold stays at 720px tall** and the kiosk scrolls to the bar; the number is in the
+  CSS comment for whoever revisits it. `ReportsPage.tabs.test.tsx` +1: the bar holds no tablist and no
+  combobox, and the tabs are still a tablist named "Report type".
+- [x] **RM-102 (M) — `ScopePicker`: one button narrows the report. 2026-09-17.** RM-082c's `<select>` in
+  the bar and RM-096's chips on the Circuits tab were two controls for one state. One button now,
+  named "Circuit" plus the choice (the visible text inside the accessible name, so a voice user can
+  say what they see), and behind it the two questions in the order the operator asks them: **By use**
+  as pills — All, Lighting, Aircon, Others, `aria-pressed` — and **One circuit** as a list with
+  `aria-current`. Choosing closes it and hands focus back, in an effect rather than during render
+  (`react-hooks/refs` refused the first draft, rightly). The Circuits-tab chips are gone; the popover is
+  `useAnchoredPopover` like the period picker's, 380px so the four pills sit on one row, clamped to a
+  phone. Both button and items are in the one coarse-pointer block. `src/components/reports/ScopePicker.tsx`,
+  `ScopePicker.test.tsx` (5), `ReportsPage.scope.test.tsx` rewritten to drive the button.
+- [x] **RM-103 (M) — a calendar of stored reports. 2026-09-17.** The period list was a column of names
+  grouped by year — three the day it shipped, a scroll of 240 in twenty years. `src/lib/periodCalendar.ts`
+  (pure; 6 tests) lays the stored starts out as twelve month cells a year, or a row of week-starts under
+  each month on the weekday the stored weeks use, Monday when none is stored. **Still the stored reports,
+  never the calendar's idea of what exists**: a cell with no report is disabled and titled "No report
+  for March 2026", in the stepper's own words; every cell carries its full name for a screen reader
+  ("June 2026", "Week of …") and its short one on screen. A year stepper walks only years that have a
+  report; Latest and Same-period-last-year sit under the grid, unchanged in behaviour. Opens scrolled to
+  the period being read, before paint, once the hook has sized the panel — a passive effect ran before
+  the panel had a height to scroll within, which the screenshot caught. Five columns for the fifth week
+  of a month, which wrapped; a themed thin scrollbar, because Firefox drew a white one in the dark theme.
+  `PeriodPicker.test.tsx` rewritten (12).
+- [x] **RM-104 (S) — the hero KPI is the one lifted surface. 2026-09-17.** `--shadow-card` and the
+  `--card-lip` highlight the app's cards carry, a 3px rule of `--accent-text` along the top, and
+  `--border-strong`; every other tile stays flat, so the lift means something. All tokens, so the
+  contrast guard measures it. Held by `test/reports-css.test.mjs`.
+- [x] **RM-106 (S) — the breakdown colours a circuit by its place in the panel. 2026-09-17.** `buildBreakdown`
+  set no `colourIndex`, so `circuitBreakdownChart` fell back to array position — and RM-090 refusing one
+  meter's figure moved every later circuit one colour along. The same circuit wore one colour this week
+  and another the next, on the chart whose whole job is telling circuits apart across periods. Now the
+  index is the branch's position in `branchOptions()`, the rule `circuitRefs` already used for the
+  Circuits tab. `circuitBreakdown.test.ts` +1: refusing the second meter leaves the third's colour.
+- [x] **RM-107 (S) — a month's table keeps its column headers. 2026-09-17.** Thirty-one 40px rows scrolled
+  the captions off an 800×480 screen by the fourth day. `.report-table-scroll` is a box no taller than
+  `min(70vh, 640px)` that scrolls both ways; `thead th` is sticky and painted, with the hairline as an
+  inset shadow because a collapsed-border table leaves the border behind when the cell moves; the corner
+  cell sticks both ways above the row headers. A row hover paints `--bg-surface-2` — a scan aid that
+  follows the pointer and leaves nothing behind, not a stripe. Read back in Firefox at 800×1100 with the
+  box scrolled to the 6th. Held by `test/reports-css.test.mjs`.
+- [x] **RM-108 (S) — Export is the page's one primary action. 2026-09-17.** Export in the bar and
+  Generate/Download in the drawer wore `.devices-add-btn`, the least prominent control on the bar.
+  `.report-primary-btn` is the inverted chip the active pills already wear (`--txt` on `--bg-page`,
+  measured in both themes), 40px, lifts a pixel on hover and settles on press inside the global
+  reduced-motion rule, 44px on the touchscreen. The done line under the button carries a tick beside the
+  words; the working line carries a moving 2px bar, so a month of every reading is visibly alive between
+  progress messages. **Not done: a byte count in the done line.** The PDF path uses pdfmake's own
+  `.download()`, which `download.ts` deliberately keeps rather than hand-rolling a blob and anchor, and the
+  line already names the file and counts what it wrote. Held by `test/reports-css.test.mjs` and
+  `ExportDrawer.test.tsx`.
+- **RM-105 — not this session.** The plan had a re-stepped series token set for both themes, measured with
+  the dataviz validator (light: the print tier `--accent-text/--blue/--green/--purple`, which passes with
+  no contrast warning and makes page and paper agree; dark: a set inside the 0.48–0.67 band). Between
+  planning and coding, **FI-028 landed from the workstation** with the dark half and a both-themes test,
+  and opened **FI-029** — blue and purple are one colour to a deuteranope in the light theme and in
+  print — with the fix described. Left to that line of work rather than collide in `index.css` and
+  `palette.test.ts` on the same day. The light-theme measurement above stands for whoever takes FI-029:
+  `#ae4d03 #1e5ce4 #037756 #7c3aed` passes every check but that one, and it is the pair FI-029 names.
+
+**How it was read back.** A throwaway harness (deleted, not committed) mounted the real bar, tabs strip,
+a hero tile and a 31-row `ReportTable` against the real stylesheet on a spare port, and headless Firefox
+took it at 800×480, 375×812 and 800×1100 in both themes, with each popover open and the table box
+scrolled. The signed-in page was not re-read this session: the Reports page needs a session, and the
+kiosk has none (RM-007). The next signed-in look should confirm the KPI grid at 800px — the harness
+showed the fourth tile wrapping alone under the hero, which is RM-082a's `auto-fit` grid and predates
+this work.
 
 ### Analytics data quality — RM-076 to RM-079 (2026-09-14)
 
@@ -8511,8 +8616,12 @@ may not.
   - **Where it runs.** `ingest.mjs`'s report pass sends them, in its own try/catch: a push that failed
     is not a report that failed, and logging it as one would send somebody looking for a report that
     exists. The notifier is already inert without `NTFY_TOPIC`.
-  - **Not yet seen in the wild.** No month generates until 2026-10-03, and ingest carries the code
-    only from its next restart. Tests are the whole of the evidence so far.
+  - **Not yet seen in the wild.** No month generates until 2026-10-03. Tests are the whole of the
+    evidence so far. **Ingest carries the code since 2026-09-17 12:04**: the three daemons had been
+    started 2026-09-15 20:39, before this landed and before RM-092's `shared/circuits.mjs`, and a
+    read-only check of `ActiveEnterTimestamp` against the files' mtimes found it — the EX-170 shape
+    again, caught in the first-moves checks this time. Restarted together, read back: a clean start,
+    the retention pass that was due ran, no minute of readings lost.
 - **FI-012** (M) Partition `readings` by month if growth ever outgrows the current prune. The
   prune is a single unbounded `DELETE` in one transaction — fine at today's volumes, and the
   first thing to degrade as the table grows. Partitioning turns it into a `DROP TABLE` while
@@ -8684,6 +8793,12 @@ may not.
 
 ## 4. Known contradictions & doc drift
 
+
+**Resolved 2026-09-17 by RM-100:**
+
+| Was | Now |
+|---|---|
+| This file said the kiosk is **1024×600** (RM-082d and the sticky-bar comment in `index.css`, `ReportControlBar.tsx`, the chart-width comments) *and* **800×480** (RM-071c/e, EX-158's kiosk row). The Reports control bar's sticky threshold was measured against the first. | The display is **800×480** — read from the Pi's own DRM connector (`DSI-1` reports one mode, `800x480`), not from either document. Every 1024 in `src/` is corrected; RM-101 re-measured the bar at that width. |
 
 **Resolved 2026-09-13 by EX-170:**
 

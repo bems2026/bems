@@ -90,7 +90,13 @@ describe('ExportDrawer', () => {
     expect(screen.getByRole('button', { name: /Preparing/ })).toBeDisabled();
 
     finish('PDF saved · 7 pages');
-    expect(await screen.findByRole('status')).toHaveTextContent('PDF saved · 7 pages');
+    const done = await screen.findByRole('status');
+    expect(done).toHaveTextContent('PDF saved · 7 pages');
+    // RM-108: the outcome is a marked line under the button — a tick and the words — not a toast
+    // that a kiosk nobody is watching would dismiss on its own.
+    expect(done).toHaveClass('report-export__done');
+    expect(done.querySelector('svg')).not.toBeNull();
+    expect(generate).toHaveClass('report-primary-btn');
     expect(onExport).toHaveBeenCalledTimes(1);
   });
 

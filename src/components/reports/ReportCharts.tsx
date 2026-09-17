@@ -66,7 +66,7 @@ export interface ChartsData {
 interface Props extends ChartsData {
   period: ReportPeriod;
   start: string;
-  /** Plot width. The kiosk is 1024 wide; the PDF asks for 515pt. */
+  /** Plot width, in viewBox units — it scales to the card. The kiosk is 800 wide; the PDF asks for 515pt. */
   width?: number;
   /** Charts whose data is still on its way; each holds its place at its own aspect ratio. */
   loading?: Partial<Record<ReportChartKind, boolean>>;

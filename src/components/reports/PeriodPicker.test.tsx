@@ -16,6 +16,8 @@ import { PeriodPicker } from './PeriodPicker';
 afterEach(cleanup);
 
 const MONTHS = ['2026-08-01', '2026-07-01', '2026-06-01'];
+/** The stepper's label opens the calendar; the presets live inside it since RM-103. */
+const openCalendar = (label: string) => fireEvent.click(screen.getByRole('button', { name: label }));
 
 describe('PeriodPicker', () => {
   it('is a group named for the kind of period it picks', () => {
@@ -52,9 +54,11 @@ describe('PeriodPicker', () => {
   it('jumps to the latest report, and does not offer to when it is already showing', () => {
     const onSelect = vi.fn();
     const { rerender } = render(<PeriodPicker period="month" starts={MONTHS} selected="2026-06-01" onSelect={onSelect} />);
+    openCalendar('June 2026');
     fireEvent.click(screen.getByRole('button', { name: 'Latest' }));
     expect(onSelect).toHaveBeenCalledWith('2026-08-01');
     rerender(<PeriodPicker period="month" starts={MONTHS} selected="2026-08-01" onSelect={onSelect} />);
+    openCalendar('August 2026');
     expect(screen.getByRole('button', { name: 'Latest' })).toBeDisabled();
   });
 
@@ -63,10 +67,12 @@ describe('PeriodPicker', () => {
     const { rerender } = render(
       <PeriodPicker period="month" starts={[...MONTHS, '2025-08-01']} selected="2026-08-01" onSelect={onSelect} />
     );
+    openCalendar('August 2026');
     fireEvent.click(screen.getByRole('button', { name: 'Same month last year' }));
     expect(onSelect).toHaveBeenCalledWith('2025-08-01');
 
     rerender(<PeriodPicker period="month" starts={MONTHS} selected="2026-08-01" onSelect={onSelect} />);
+    openCalendar('August 2026');
     const unavailable = screen.getByRole('button', { name: 'Same month last year' });
     expect(unavailable).toBeDisabled();
     expect(unavailable).toHaveAccessibleDescription(/No report for August 2025/);
@@ -76,6 +82,7 @@ describe('PeriodPicker', () => {
     // 364 days keeps the weekday. 365 would land on a Tuesday and match no stored week.
     const onSelect = vi.fn();
     render(<PeriodPicker period="week" starts={['2026-08-31', '2026-08-24', '2025-09-01']} selected="2026-08-31" onSelect={onSelect} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Week of / }));
     fireEvent.click(screen.getByRole('button', { name: 'Same week last year' }));
     expect(onSelect).toHaveBeenCalledWith('2025-09-01');
   });
@@ -88,7 +95,7 @@ describe('PeriodPicker', () => {
     expect(onSelect).toHaveBeenCalledWith('2026-08-24');
   });
 
-  it('opens every stored report grouped by year, and choosing one selects it and closes the list', () => {
+  it('opens a calendar on the year being read — a month with a report can be chosen, one without says so — and choosing closes it (RM-103)', () => {
     const onSelect = vi.fn();
     render(<PeriodPicker period="month" starts={[...MONTHS, '2025-12-01']} selected="2026-08-01" onSelect={onSelect} />);
     const current = screen.getByRole('button', { name: 'August 2026' });
@@ -96,19 +103,51 @@ describe('PeriodPicker', () => {
 
     fireEvent.click(current);
     expect(current).toHaveAttribute('aria-expanded', 'true');
-    const list = screen.getByRole('dialog', { name: 'Choose a report month' });
-    expect(within(list).getByRole('group', { name: '2025' })).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: 'Choose a report month' });
+    const year = within(dialog).getByRole('group', { name: '2026' });
+    expect(within(year).getAllByRole('button')).toHaveLength(12);
+    // Short on the cell, full for a screen reader — the same pair the week cells use.
+    expect(within(year).getByRole('button', { name: 'June 2026' })).toHaveTextContent('Jun');
+    const march = within(year).getByRole('button', { name: 'March 2026' });
+    expect(march).toBeDisabled();
+    expect(march).toHaveAttribute('title', 'No report for March 2026');
 
-    fireEvent.click(within(list).getByRole('button', { name: 'June 2026' }));
+    fireEvent.click(within(year).getByRole('button', { name: 'June 2026' }));
     expect(onSelect).toHaveBeenCalledWith('2026-06-01');
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('marks the report being read in that list', () => {
+  it('steps the calendar through the years that have reports, and no further', () => {
+    render(<PeriodPicker period="month" starts={[...MONTHS, '2025-12-01']} selected="2026-08-01" onSelect={() => {}} />);
+    openCalendar('August 2026');
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: 'Next year' })).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Previous year' }));
+    expect(within(dialog).getByRole('group', { name: '2025' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Previous year' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'December 2025' })).toBeEnabled();
+  });
+
+  it('marks the report being read in the calendar', () => {
     render(<PeriodPicker period="month" starts={MONTHS} selected="2026-07-01" onSelect={() => {}} />);
-    fireEvent.click(screen.getByRole('button', { name: 'July 2026' }));
-    const list = screen.getByRole('dialog', { name: 'Choose a report month' });
-    expect(within(list).getByRole('button', { name: 'July 2026' })).toHaveAttribute('aria-current', 'true');
-    expect(within(list).getByRole('button', { name: 'June 2026' })).not.toHaveAttribute('aria-current');
+    openCalendar('July 2026');
+    const dialog = screen.getByRole('dialog', { name: 'Choose a report month' });
+    expect(within(dialog).getByRole('button', { name: 'July 2026' })).toHaveAttribute('aria-current', 'true');
+    expect(within(dialog).getByRole('button', { name: 'June 2026' })).not.toHaveAttribute('aria-current');
+  });
+
+  it('lays weeks out as a row of start days under each month, named in full for a screen reader', () => {
+    const onSelect = vi.fn();
+    render(<PeriodPicker period="week" starts={['2026-08-31', '2026-08-24']} selected="2026-08-31" onSelect={onSelect} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Week of / }));
+    const dialog = screen.getByRole('dialog', { name: 'Choose a report week' });
+    const august = within(dialog).getByRole('group', { name: 'Aug' });
+    const cells = within(august).getAllByRole('button');
+    expect(cells.map((c) => c.textContent)).toEqual(['3', '10', '17', '24', '31']);
+    expect(cells[0]).toBeDisabled();
+    expect(cells[3]).toBeEnabled();
+    expect(cells[3]).toHaveAccessibleName(/^Week of .*24.*2026/); // the reader's locale orders the date
+    fireEvent.click(cells[3]);
+    expect(onSelect).toHaveBeenCalledWith('2026-08-24');
   });
 });

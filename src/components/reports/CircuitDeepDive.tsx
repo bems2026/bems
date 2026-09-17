@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { SITE } from '@shared/siteConfig.mjs';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { coverageOf, formatPeriod, type PeriodBuildingReport, type PeriodDeviceReport, type ReportPeriod } from '@/lib/supabaseReports';
-import { buildBreakdown, decodeScope, encodeScope, scopeLabel, scopeMeterIds, scopeRows, type ReportScope, type ScopeOption } from '@/lib/circuitBreakdown';
+import { buildBreakdown, scopeLabel, scopeMeterIds, scopeRows, type ReportScope } from '@/lib/circuitBreakdown';
 import { energyFlagOf, usableEnergy } from '@/lib/boundedEnergy';
 import { energyDisagreement } from '@/lib/energyDisagreement';
 import { circuitDayPoints, circuitRefs, loadLabelOfCircuit, loadShareSegments, trendChartInput } from '@/lib/circuitCharts';
@@ -46,8 +46,6 @@ interface Props {
   /** Every row of the period; the tab narrows them itself. */
   rows: readonly PeriodDeviceReport[];
   scope: ReportScope;
-  scopes: readonly ScopeOption[];
-  onScopeChange: (scope: ReportScope) => void;
   nameOf: (id: string) => string;
   building: PeriodBuildingReport | null;
   deviceDaily: Section<DeviceDaily>;
@@ -72,7 +70,7 @@ function CircuitChart({ scope, build, table, summaryLabel }: { scope: string; bu
   );
 }
 
-export function CircuitDeepDive({ period, start, rows, scope, scopes, onScopeChange, nameOf, building, deviceDaily, trend }: Props) {
+export function CircuitDeepDive({ period, start, rows, scope, nameOf, building, deviceDaily, trend }: Props) {
   const label = formatPeriod(period, start);
   const narrowed = scopeLabel(scope);
   const refs = useMemo(() => circuitRefs(scope), [scope]);
@@ -231,22 +229,8 @@ export function CircuitDeepDive({ period, start, rows, scope, scopes, onScopeCha
   return (
     <>
       <section className="devices-table-card reports-summary report-circuits" aria-label={`Circuit summary for ${label}`}>
-        <div className="report-chips" role="group" aria-label="Show">
-          {scopes
-            .filter((s) => s.group !== 'circuit')
-            .map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={`analytics-scope-btn${encodeScope(scope) === option.value ? ' analytics-scope-btn--active' : ''}`}
-                aria-pressed={encodeScope(scope) === option.value}
-                onClick={() => onScopeChange(decodeScope(option.value))}
-              >
-                {option.label}
-              </button>
-            ))}
-        </div>
-
+        {/* RM-102: the use pills that stood here are inside the control bar's Circuit button now — one
+            control for one state, and the bar is where a reader narrows the report. */}
         <h2 className="card-title">{narrowed ?? 'All circuits'}</h2>
         <dl className="report-kpis">
           <div className="report-kpi--hero">

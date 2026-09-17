@@ -107,7 +107,14 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-const scopeSelect = () => screen.findByRole('combobox', { name: /^circuit$/i });
+/** RM-102: the control bar's Circuit button, whose name carries what the report is narrowed to. */
+const scopeButton = () => screen.findByRole('button', { name: /^circuit /i });
+/** Open the Circuit button and choose one entry — a use pill or a circuit item — by its label. */
+const chooseScope = async (label: string) => {
+  fireEvent.click(await scopeButton());
+  const dialog = await screen.findByRole('dialog', { name: /narrow the report/i });
+  fireEvent.click(within(dialog).getByRole('button', { name: label }));
+};
 const branchTable = () => screen.findByRole('table', { name: /branch circuits/i });
 const deviceTable = () => screen.findByRole('table', { name: /devices on these circuits/i });
 /** Data rows of a table: every row but its header. */
@@ -118,20 +125,24 @@ const devicesLoaded = () => waitFor(() => expect(reports.getDevicePeriodReports)
 describe('the circuit scope', () => {
   it('offers every branch of the building, named from the circuit tree, and starts on all of them', async () => {
     render(<ReportsPage />);
-    const select = await scopeSelect();
-    expect(select).toHaveValue('all');
-    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual([
-      'All circuits',
+    expect(await scopeButton()).toHaveAccessibleName('Circuit All circuits');
+    fireEvent.click(await scopeButton());
+    const dialog = await screen.findByRole('dialog', { name: /narrow the report/i });
+    expect(within(within(dialog).getByRole('group', { name: /by use/i })).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'All',
       ...CARRIED.map((l) => LOAD_LABELS[l as keyof typeof LOAD_LABELS]),
-      ...meters.map((m) => circuitOf(m).name),
     ]);
+    expect(within(within(dialog).getByRole('group', { name: /one circuit/i })).getAllByRole('button').map((b) => b.textContent)).toEqual(
+      meters.map((m) => circuitOf(m).name)
+    );
+    fireEvent.keyDown(dialog, { key: 'Escape' });
     // Nothing is narrowed, so there is nothing to explain.
     expect(screen.queryByText(/this tab shows the whole building/i)).toBeNull();
   });
 
   it('narrows the Circuits tab to one branch, and the Overview says it is still the whole building', async () => {
     render(<ReportsPage />);
-    fireEvent.change(await scopeSelect(), { target: { value: `circuit:${CHOSEN.id}` } });
+    await chooseScope(CHOSEN.name);
     // RM-096: the Overview is the building's series, and says so in one line with the way to the branch.
     expect(await screen.findByText(/this tab shows the whole building/i)).toBeInTheDocument();
 
@@ -150,19 +161,18 @@ describe('the circuit scope', () => {
       const branches = meters.filter((m) => loadOfMeter(m) === load).map(circuitOf);
       const devicesOn = branches.flatMap(onBranch).length - branches.length;
       const label = LOAD_LABELS[load as keyof typeof LOAD_LABELS];
-      // The tab's own chips set the same scope the control bar's select does.
-      fireEvent.click(screen.getByRole('button', { name: label }));
+      // RM-102: the use pills are inside the control bar's Circuit button — the one control for this state.
+      await chooseScope(label);
       await waitFor(async () => expect(dataRows(await branchTable())).toBe(branches.length));
       if (devicesOn > 0) expect(dataRows(await deviceTable())).toBe(devicesOn);
       expect(screen.getByRole('heading', { name: label })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: label })).toHaveAttribute('aria-pressed', 'true');
-      expect(await scopeSelect()).toHaveValue(`load:${load}`);
+      expect(await scopeButton()).toHaveAccessibleName(`Circuit ${label}`);
     }
   });
 
   it('keeps a branch share of the whole building when the Circuits tab is narrowed to it', async () => {
     render(<ReportsPage />);
-    fireEvent.change(await scopeSelect(), { target: { value: `circuit:${CHOSEN.id}` } });
+    await chooseScope(CHOSEN.name);
     await openCircuits();
 
     const branches = await branchTable();
@@ -174,7 +184,7 @@ describe('the circuit scope', () => {
 
   it('exports only that branch in the per-device CSV, named for it, with shares of the whole building', async () => {
     render(<ReportsPage />);
-    fireEvent.change(await scopeSelect(), { target: { value: `circuit:${CHOSEN.id}` } });
+    await chooseScope(CHOSEN.name);
     await devicesLoaded();
 
     fireEvent.click(screen.getByRole('button', { name: /^export$/i }));
@@ -196,7 +206,7 @@ describe('the circuit scope', () => {
 
   it('narrows the PDF’s circuit sections, and says the building’s own charts stay the whole building', async () => {
     render(<ReportsPage />);
-    fireEvent.change(await scopeSelect(), { target: { value: `circuit:${CHOSEN.id}` } });
+    await chooseScope(CHOSEN.name);
     await devicesLoaded();
     fireEvent.click(screen.getByRole('button', { name: /^export$/i }));
     const dialog = await screen.findByRole('dialog');

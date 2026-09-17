@@ -8,7 +8,7 @@
  * nobody could find.
  */
 
-/** Plot width. The kiosk is 1024 wide; the PDF asks for 515pt and sets its own. */
+/** Plot width, in viewBox units — it scales to the card. The kiosk is 800 wide (RM-100); the PDF asks for 515pt and sets its own. */
 export const REPORT_CHART_WIDTH = 640;
 
 export type ReportChartKind = 'daily' | 'hours' | 'breakdown' | 'heat' | 'curve' | 'useShare' | 'circuitDaily' | 'circuitTrend';

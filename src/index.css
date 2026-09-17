@@ -6365,8 +6365,18 @@ body::before {
   border-radius: var(--r-card);
 }
 
+/* RM-104 — the one lifted surface on the report. The headline figure already leads by size
+   (--fs-3xl) and by span; this gives it the same lift the app's cards carry — --shadow-card and the
+   --card-lip highlight — and a rule of --accent-text along its top, all of them tokens the contrast
+   guard measures. Not a gradient: text over a gradient is only checkable in a browser (FI-008), and
+   this page's figures carry qualifiers that must stay readable in both themes. Every other tile
+   stays flat, so the lift means something. test/reports-css.test.mjs holds this. */
 .report-kpis .report-kpi--hero {
   grid-column: span 2;
+  border-color: var(--border-strong);
+  border-top: 3px solid var(--accent-text);
+  box-shadow: var(--shadow-card), inset 0 1px 0 var(--card-lip);
+  transition: background-color 0.25s ease, border-color 0.25s ease;
 }
 
 .report-kpis dt {
@@ -6493,8 +6503,14 @@ body::before {
   border-radius: var(--r-card);
 }
 
+/* RM-107 — a month is thirty-one 40px rows, and on the 800x480 kiosk the column captions were off
+   the top of the screen by the fourth day. The table scrolls inside a box no taller than the
+   screen can show, and the header stays. `overflow: auto` on both axes, because a sticky element
+   sticks to its nearest scroll container and `overflow-x: auto` alone made the wrapper one with no
+   height to stick within. test/reports-css.test.mjs holds this. */
 .report-table-scroll {
-  overflow-x: auto;
+  max-height: min(70vh, 640px);
+  overflow: auto;
 }
 
 .report-table {
@@ -6514,11 +6530,30 @@ body::before {
 }
 
 .report-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--muted);
   white-space: nowrap;
+  background: var(--bg-surface);
   border-bottom-color: var(--border);
+  /* In a collapsed-border table the border stays put while the sticky cell moves; the shadow is
+     the line that travels with the header. */
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+/* The corner cell sticks both ways, above the row headers sliding beneath it. */
+.report-table thead th:first-child {
+  left: 0;
+  z-index: 2;
+}
+
+/* A scan aid for a wide row, not a stripe: it follows the pointer and leaves nothing behind. */
+.report-table tbody tr:hover > th,
+.report-table tbody tr:hover > td {
+  background: var(--bg-surface-2);
 }
 
 .report-table tbody th[scope='row'] {
@@ -6557,7 +6592,7 @@ body::before {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--sp-2) var(--sp-4);
+  gap: var(--sp-2);
   margin: 0 0 var(--sp-4);
   padding: var(--sp-2) var(--sp-4);
   background: var(--glass);
@@ -6567,9 +6602,14 @@ body::before {
   border-radius: var(--r-card);
 }
 
-.report-controls .reports-periods,
-.report-controls .tabs {
+.report-controls .reports-periods {
   margin: 0;
+}
+
+/* RM-101 — the tabs are a strip of their own beneath the bar: they decide the reading of a report,
+   not the report, and carrying them in the bar was what wrapped it to three lines on the kiosk. */
+.report-tabs-strip {
+  margin: 0 0 var(--sp-4);
 }
 
 .report-controls__actions {
@@ -6586,9 +6626,13 @@ body::before {
   }
 }
 
-/* RM-082d — sticky only where it leaves room to read: wider than 640px, so the bar sits on one or two
-   lines, and at least 720px tall. Measured on the live page 2026-09-15 at the kiosk's 1024x600, the
-   bar was 117px under a 73px nav — 190px of a 600px screen covered for the whole report. */
+/* RM-082d — sticky only where it leaves room to read: wider than 640px, so the bar sits on one line,
+   and at least 720px tall. Measured on the live page 2026-09-15 at 1024x600 the three-line bar was
+   117px under a 73px nav — 190px of a 600px screen covered for the whole report.
+   RM-101 (2026-09-17): the kiosk is 800x480 (DSI-1 reports `800x480`), not 1024x600, and the bar
+   is one line there now — measured at 58px with a fine pointer, ~62px with the 44px touch floor.
+   Sticky would still cover 131–135px of 480, 27–28%, barely under the third RM-082d rejected, so
+   the threshold stays and the kiosk scrolls to the bar. */
 @media (min-width: 641px) and (min-height: 720px) {
   .report-controls {
     position: sticky;
@@ -6621,9 +6665,13 @@ body::before {
   cursor: pointer;
 }
 
+/* Wide enough for "Week of Aug 31, 2026" without reflowing between weeks, and no wider: at 800px
+   the whole bar has to fit on one line (RM-101), and 176px here was what pushed Export onto a
+   second one. */
 .report-stepper__current {
   justify-content: space-between;
-  min-width: 176px;
+  min-width: 148px;
+  white-space: nowrap;
   font-weight: 600;
 }
 
@@ -6636,10 +6684,16 @@ body::before {
   cursor: not-allowed;
 }
 
-.report-period-list {
+/* RM-103 — the calendar behind the period label. Twelve cells a year, or a row of week-starts under
+   each month; a period with no report is a cell that cannot be chosen and says so on hover. The
+   two jumps (Latest, same period last year) sit under the grid rather than in the control bar. */
+.report-calendar {
   position: fixed;
   z-index: 70;
   overflow-y: auto;
+  /* Twelve rows of weeks scroll inside the popover; the bar follows the theme, not the platform. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
   padding: var(--sp-2);
   background: var(--bg-surface);
   border: 1px solid var(--border);
@@ -6647,19 +6701,163 @@ body::before {
   box-shadow: var(--shadow-pop, 0 8px 24px rgb(0 0 0 / 0.18));
 }
 
-.report-period-list__year + .report-period-list__year {
-  margin-top: var(--sp-2);
+.report-calendar__years {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-2);
 }
 
-.report-period-list__heading {
+.report-calendar__year {
   margin: 0;
-  padding: 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+
+.report-calendar__grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-1);
+}
+
+.report-calendar__weeks {
+  display: grid;
+  gap: var(--sp-1);
+}
+
+.report-calendar__row {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.report-calendar__month {
+  margin: 0;
   font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--muted);
 }
 
-.report-period-list__item {
+/* Five columns, because a month has four or five week-starts and the fifth must not wrap. */
+.report-calendar__days {
+  display: grid;
+  grid-template-columns: repeat(5, 40px);
+  gap: var(--sp-1);
+}
+
+.report-calendar__cell {
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0 var(--sp-2);
+  background: none;
+  color: var(--txt);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.report-calendar__cell:not(:disabled):hover {
+  background: var(--bg-surface-2);
+  border-color: var(--border);
+}
+
+.report-calendar__cell:disabled {
+  color: var(--muted-2);
+  cursor: not-allowed;
+}
+
+/* The period being read: the same inverted chip the active pills wear, measured in both themes. */
+.report-calendar__cell--current,
+.report-calendar__cell--current:not(:disabled):hover {
+  background: var(--txt);
+  color: var(--bg-page);
+  border-color: var(--txt);
+  font-weight: 700;
+}
+
+.report-calendar__jumps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0 0;
+  padding: var(--sp-2) 0 0;
+  border-top: 1px solid var(--border-faint);
+}
+
+/* RM-102 — one button narrows the report, and behind it the two questions in the order the operator
+   asks them: what the energy was FOR (pills — at most three uses and the whole building) and which
+   ONE circuit (a list, because a panel can have any number of branches). Same recipe as the period
+   stepper it sits beside and the list behind that, so the bar reads as one instrument. */
+.report-scope {
+  display: inline-flex;
+  align-items: center;
+}
+
+.report-scope__current {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-1);
+  min-width: 120px;
+  min-height: 32px;
+  padding: 0 var(--sp-2);
+  background: var(--bg-surface);
+  color: var(--txt);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.report-scope__current:hover,
+.report-scope__current[aria-expanded='true'] {
+  border-color: var(--txt);
+}
+
+.report-scope__pop {
+  position: fixed;
+  z-index: 70;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+  padding: var(--sp-2);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-pop, 0 8px 24px rgb(0 0 0 / 0.18));
+}
+
+.report-scope__group + .report-scope__group {
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border-faint);
+}
+
+.report-scope__legend {
+  margin: 0 0 var(--sp-2);
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* The pills inside the popover: no trailing margin, the group's own spacing carries it. */
+.report-scope__pop .report-chips {
+  margin: 0;
+  padding: 0 var(--sp-2);
+}
+
+.report-scope__item {
   display: block;
   width: 100%;
   padding: var(--sp-2);
@@ -6673,12 +6871,12 @@ body::before {
   cursor: pointer;
 }
 
-.report-period-list__item:hover,
-.report-period-list__item--current {
+.report-scope__item:hover,
+.report-scope__item--current {
   background: var(--bg-surface-2);
 }
 
-.report-period-list__item--current {
+.report-scope__item--current {
   font-weight: 700;
 }
 
@@ -6782,6 +6980,47 @@ body::before {
   color: var(--muted);
 }
 
+/* RM-108 — the one primary action on the report. Export in the control bar and Generate/Download in
+   the drawer wear the inverted chip the active pills already wear (--txt on --bg-page, measured in
+   both themes), and answer a hover with a lift and a press with a settle. The transition sits inside
+   the global prefers-reduced-motion rule, which zeroes it. On the kiosk's touchscreen it is a 44px
+   target (the coarse-pointer block). test/reports-css.test.mjs holds this. */
+.report-primary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 40px;
+  padding: 0 var(--sp-4);
+  background: var(--txt);
+  color: var(--bg-page);
+  border: 1px solid var(--txt);
+  border-radius: var(--r-inner);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.report-primary-btn:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-card);
+}
+
+.report-primary-btn:not(:disabled):active {
+  transform: scale(0.97);
+  box-shadow: none;
+}
+
+.report-primary-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.report-primary-btn[aria-busy='true'] {
+  cursor: progress;
+}
+
 .report-export__actions {
   display: flex;
   flex-wrap: wrap;
@@ -6790,6 +7029,48 @@ body::before {
   gap: var(--sp-2) var(--sp-4);
   padding-top: var(--sp-4);
   border-top: 1px solid var(--border);
+}
+
+/* The outcome, under the button that made it: a tick and the words, and it stays until the next
+   action. The working line carries a moving bar so a long export (a month of every reading) is
+   visibly alive between progress messages. */
+.report-export__done {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+
+.report-export__done svg {
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--good);
+}
+
+.report-export__progress {
+  position: relative;
+  padding-bottom: var(--sp-2);
+}
+
+.report-export__progress::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, transparent 0%, var(--accent-text) 50%, transparent 100%);
+  background-size: 50% 100%;
+  animation: report-export-progress 1.2s linear infinite;
+}
+
+@keyframes report-export-progress {
+  from {
+    background-position: -50% 0;
+  }
+  to {
+    background-position: 150% 0;
+  }
 }
 
 .report-export__summary {
@@ -9135,9 +9416,15 @@ button.space-plan__pin {
   .report-stepper__step,
   .report-stepper__current,
   .report-stepper__preset,
-  .report-period-list__item,
+  /* RM-103: each cell of the calendar behind the period label. */
+  .report-calendar__cell,
+  /* RM-102: the scope button and each use pill and circuit item behind it. */
+  .report-scope__current,
+  .report-scope__item,
   /* RM-083b: each format and section row in the export drawer is a tap target on the kiosk. */
   .report-export__option,
+  /* RM-108: Export in the bar, Generate/Download in the drawer. */
+  .report-primary-btn,
   /* RM-096: the disclosures that open the recording detail and the device list. */
   .report-recorded__summary,
   /* RM-071: a 30x30 icon button that DELETES a schedule rule, on a touchscreen. Square and in

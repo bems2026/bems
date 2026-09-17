@@ -1,3 +1,4 @@
+import { Check } from 'lucide-react';
 import { useCallback, useId, useState } from 'react';
 import { OverlayPanel } from '@/components/ui/OverlayPanel';
 import { REPORT_SECTIONS, normaliseSections, sectionsFor, type ReportDetail, type ReportSectionId } from '@/lib/reportSections';
@@ -254,7 +255,7 @@ export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {},
         </p>
         <button
           type="button"
-          className="devices-add-btn"
+          className="report-primary-btn"
           onClick={start}
           disabled={working || blockedReason !== undefined}
           aria-busy={working || undefined}
@@ -272,8 +273,9 @@ export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {},
         </p>
       ) : null}
       {state.status === 'done' ? (
-        <p className="reports-note" role="status">
-          {state.message}
+        <p className="reports-note report-export__done" role="status">
+          <Check size={16} aria-hidden="true" />
+          <span>{state.message}</span>
         </p>
       ) : null}
       {state.status === 'error' ? (

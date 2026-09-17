@@ -19,6 +19,7 @@ import { SITE } from '@shared/siteConfig.mjs';
 import { coverageOf, formatPeriod, isQuotable, type ReportPeriod } from '@/lib/supabaseReports';
 import { siteDateTime } from '@/lib/siteTime';
 import { ReportControlBar } from './ReportControlBar';
+import { Tabs } from '@/components/ui/Tabs';
 import { ReportSkeleton } from './ReportSkeleton';
 import { ReportCharts, type ChartsData } from './ReportCharts';
 import {
@@ -419,15 +420,16 @@ export function ReportsPage() {
         scopes={SCOPES}
         scope={encodeScope(scope)}
         onScopeChange={(value) => setScope(decodeScope(value))}
-        tabs={REPORT_TABS}
-        tab={tab}
-        onTabChange={setTab}
         actions={
-          <button type="button" className="devices-add-btn" onClick={() => setExportOpen(true)} disabled={!selected} aria-haspopup="dialog">
+          <button type="button" className="report-primary-btn" onClick={() => setExportOpen(true)} disabled={!selected} aria-haspopup="dialog">
             <Download size={16} aria-hidden="true" /> Export
           </button>
         }
       />
+
+      {/* RM-101: the tabs decide the reading of the report, not the report — a strip of their own, so
+          the bar above stays one line on the kiosk. */}
+      <Tabs tabs={REPORT_TABS} activeId={tab} onChange={setTab} label="Report type" className="report-tabs-strip" />
 
       {narrowed && tab !== 'circuits' && tab !== 'compare' ? (
         // RM-096: the Overview and Usage patterns are the whole building's series; the chosen part of it
@@ -549,8 +551,6 @@ export function ReportsPage() {
                 start={selected}
                 rows={rows}
                 scope={scope}
-                scopes={SCOPES}
-                onScopeChange={setScope}
                 nameOf={nameOf}
                 building={building}
                 deviceDaily={report.deviceDaily}

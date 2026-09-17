@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, fireEvent, within } from '@testing-library/react';
 import { ReportsPage } from './ReportsPage';
 import * as reports from '@/lib/supabaseReports';
 
@@ -114,6 +114,18 @@ describe('the report-type tabs', () => {
       await openTab(name);
       await waitFor(() => expect(container.textContent).not.toMatch(/\bp(50|95|99)\b|median|baseline|DSM|load factor|load duration|percentile/i));
     }
+  });
+
+  it('keeps the control bar to the period, the scope and the export — the tabs are a strip of their own beneath it (RM-101)', async () => {
+    // On the 800x480 kiosk one bar carrying the tabs as well wrapped to three lines and could not
+    // stay in reach. The bar is what decides the report; the tabs decide the reading of it.
+    render(<ReportsPage />);
+    const bar = (await screen.findByRole('button', { name: /^circuit /i })).closest('.report-controls');
+    expect(bar).not.toBeNull();
+    expect(within(bar as HTMLElement).queryByRole('tablist')).not.toBeInTheDocument();
+    expect(within(bar as HTMLElement).queryByRole('combobox')).not.toBeInTheDocument();
+    expect(within(bar as HTMLElement).getByRole('button', { name: /^export$/i })).toBeInTheDocument();
+    expect(screen.getByRole('tablist', { name: /report type/i })).toBeInTheDocument();
   });
 
   it('keeps the period picker across tabs, because the period is the page subject', async () => {
