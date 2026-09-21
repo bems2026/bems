@@ -380,4 +380,9 @@ export interface Capabilities {
   acu_cloud_route?: 'ready' | 'unconfigured' | 'unresolved' | 'local-only' | null;
   /** Whether somebody has watched the unit obey the local IR library since the hub was re-paired. */
   acu_local_ir_verified?: boolean;
+  /**
+   * The IR protocol the flow generates frames in (`tcl112`), or null when it can send only its
+   * captured library — 2026-09-22. With one, every state the remote can express goes over the LAN.
+   */
+  acu_local_ir_protocol?: string | null;
 }

@@ -15,7 +15,7 @@ import { formatWithUnit } from '@/lib/format';
 import { siteTimeShort } from '@/lib/siteTime';
 import { setpointOptions, seedSetpoint, setpointWarning } from './setpointOptions';
 import { AC_MODE_OPTIONS, AC_FAN_OPTIONS, seedDraft, draftSummary, commandedSummary, dispatchPathFor, type AcDraft } from './acControl';
-import { localIrKey } from '@shared/acState.mjs';
+import { localIrSource } from '@shared/acState.mjs';
 import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
 import { SITE } from '@shared/registry.mjs';
 import { roomTargetFloorC } from '@shared/sitePolicy.mjs';
@@ -74,6 +74,7 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
   const lastIr = useControlLog((s) => s.entries.find((e) => e.tag === 'IR'));
   const cloudRoute = useCapabilitiesStore((s) => s.acuCloudRoute);
   const localVerified = useCapabilitiesStore((s) => s.acuLocalIrVerified);
+  const localProtocol = useCapabilitiesStore((s) => s.acuLocalIrProtocol);
   const { ask, modalProps } = useConfirm();
   const roomFloorC = useRoomTargetFloor();
 
@@ -87,7 +88,7 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
   const update = (patch: Partial<AcDraft>) => setChosen((d) => ({ ...d, ...patch }));
 
   const policyNote = setpointWarning(draft.setpoint_c, roomFloorC);
-  const path = dispatchPathFor(draft, { cloud: cloudRoute, verified: localVerified });
+  const path = dispatchPathFor(draft, { cloud: cloudRoute, verified: localVerified, protocol: localProtocol });
   const blocked = 'blocked' in path ? path.blocked : null;
   const summary = draftSummary(draft);
 
@@ -117,9 +118,11 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
   const pathText = blocked
     ? blocked
     : 'via' in path && path.via === 'local'
-      ? 'Sent over the LAN by the IR hub.'
-      : localIrKey({ power: 'on', ...draft }) !== null
-        ? 'Sent through the vendor cloud first — the local IR library is not yet verified on this unit.'
+      ? 'generated' in path
+        ? 'Sent over the LAN by the IR hub, as a frame built from the remote\'s own protocol.'
+        : 'Sent over the LAN by the IR hub.'
+      : localIrSource({ power: 'on', ...draft }, { protocol: localProtocol }) !== null
+        ? 'Sent through the vendor cloud first — local IR is not yet verified on this unit; the LAN is the fallback.'
         : 'Sent through the vendor cloud — the local IR library has no code for this state.';
 
   const askDispatch = (action: 'on' | 'off') =>

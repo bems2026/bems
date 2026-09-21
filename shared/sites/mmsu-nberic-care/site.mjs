@@ -228,8 +228,17 @@ export const SITE = Object.freeze({
    * OFF stays local-first either way: it is one code, and the cheapest one to see working.
    *
    * Flip it only after the on-site acceptance test in ROADMAP.md, with its evidence.
+   *
+   * `ir_protocol` — 2026-09-22. The captured library was decoded: every code is a TCL112AC frame
+   * (checksums verified), and the ON codes are cool / fan auto / swing off. So the flow builds any
+   * other state from one captured frame (`shared/irTcl112.mjs`) instead of needing the vendor cloud's
+   * virtual remote — which matters because that cloud is an IoT Core subscription this project does
+   * not keep. `npm run aircon:pi` refuses to install the generator unless it reproduces every captured
+   * code on the live flow. `local_ir_verified` covers generated frames too: the acceptance test sends
+   * one of each.
    */
   aircon: Object.freeze({
     local_ir_verified: false,
+    ir_protocol: 'tcl112',
   }),
 });

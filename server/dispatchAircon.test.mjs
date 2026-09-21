@@ -195,3 +195,27 @@ test('never throws, whatever the bridge and the cloud do', async () => {
     globalThis.fetch = original;
   }
 });
+
+// --- generated frames (2026-09-22) ---------------------------------------------------------------
+
+test('a state the flow sent as a generated frame says so in the detail, for the audit row', async () => {
+  // With SITE.aircon.ir_protocol the flow builds a dry/high/swing frame itself and answers 200 with
+  // `source: generated`. Until the unit is verified, that fact belongs next to the command it moved.
+  await withBridge(() => resp(200, { ok: true, sent: 'local', key: null, source: 'generated' }), async () => {
+    const r = await dispatchCommand(ACU, { action: 'on', target_c: 26, mode: 'dry', fan: 'high', swing: true }, base({ localIrVerified: true }));
+    assert.equal(r.ok, true);
+    assert.equal(r.via, 'local');
+    assert.match(r.detail, /generated/);
+  });
+});
+
+test('a captured frame carries no generated note, and an unparseable 200 is still a success', async () => {
+  await withBridge(() => resp(200, { ok: true, sent: 'local', key: '24', source: 'captured' }), async () => {
+    const r = await dispatchCommand(ACU, { action: 'on', target_c: 24 }, base({ localIrVerified: true }));
+    assert.equal(r.detail, undefined);
+  });
+  await withBridge(() => ({ ok: true, status: 200, text: async () => 'not json' }), async () => {
+    const r = await dispatchCommand(ACU, { action: 'on', target_c: 24 }, base({ localIrVerified: true }));
+    assert.equal(r.ok, true);
+  });
+});

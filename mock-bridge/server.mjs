@@ -777,6 +777,7 @@ const server = http.createServer((req, res) => {
         cloud_fallback_configured: false,
         acu_cloud_route: DEVICE_REGISTRY.some((d) => d.class === 'acu_ir') ? ACU_CLOUD_ROUTE : null,
         acu_local_ir_verified: SITE.aircon?.local_ir_verified === true,
+        acu_local_ir_protocol: SITE.aircon?.ir_protocol ?? null,
       });
 
     case '/api/readings/latest':

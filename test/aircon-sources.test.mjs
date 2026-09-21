@@ -23,6 +23,7 @@ import {
   AC_DASH_STATE_KEYS,
 } from '../node-red-bridge/airconSources.mjs';
 import { LOCAL_LIBRARY_STATE } from '../shared/acState.mjs';
+import { tcl112Code } from '../shared/irTcl112.mjs';
 import { buildLatest } from '../shared/buildLatest.mjs';
 import { DEVICE_REGISTRY, PHASE_MAP } from '../shared/registry.mjs';
 
@@ -172,6 +173,48 @@ test('a state the library cannot express sends nothing and answers 422, so the p
   assert.equal(rec, null);
   assert.equal(reply.statusCode, 422);
   assert.equal(reply.payload.error, 'no_local_code');
+});
+
+// --- generated frames (2026-09-22) — see shared/irTcl112.mjs ------------------------------------
+
+const tclMaster = acMasterLogicSource({ ...LIB, protocol: 'tcl112' });
+
+test('with the TCL112 protocol declared, a state the captured library lacks is generated and sent over the LAN', () => {
+  const state = { power: 'on', mode: 'dry', setpoint_c: 26, fan: 'high', swing: true };
+  const [ir, rec, reply] = run(tclMaster, httpMsg(state), { flow: healthy() });
+  const set = JSON.parse(ir.payload.set);
+  assert.deepEqual([set.control, set.head, set.key1], ['send_ir', LIB.head, tcl112Code(LIB.library['24'], state)]);
+  assert.deepEqual([rec.payload.mode, rec.payload.fan, rec.payload.swing, rec.payload.via], ['dry', 'high', true, 'local']);
+  assert.equal(reply.statusCode, 200);
+  assert.deepEqual([reply.payload.sent, reply.payload.source], ['local', 'generated']);
+});
+
+test('a state the captured library holds is still sent as the captured frame, and says so', () => {
+  const [ir, , reply] = run(tclMaster, httpMsg({ power: 'on', setpoint_c: 24, ...LOCAL_LIBRARY_STATE }), { flow: healthy() });
+  assert.equal(JSON.parse(ir.payload.set).key1, LIB.library['24']);
+  assert.equal(reply.payload.source, 'captured');
+});
+
+test('OFF is always the captured OFF frame, never generated', () => {
+  const [ir, , reply] = run(tclMaster, httpMsg({ power: 'off' }), { flow: healthy() });
+  assert.equal(JSON.parse(ir.payload.set).key1, LIB.library.OFF);
+  assert.equal(reply.payload.source, 'captured');
+});
+
+test('the generated sender still refuses what the remote cannot express, and a dead hub', () => {
+  const [, , bad] = run(tclMaster, httpMsg({ power: 'on', mode: 'dry', setpoint_c: 31, fan: 'high', swing: true }), { flow: healthy() });
+  assert.equal(bad.statusCode, 422);
+  const [ir, , dead] = run(tclMaster, httpMsg({ power: 'on', mode: 'dry', setpoint_c: 26, fan: 'high', swing: true }), { flow: new Map([['acu_hub_health', false]]) });
+  assert.equal(ir, null);
+  assert.equal(dead.statusCode, 409);
+});
+
+test('an unknown protocol is refused at generation, rather than a sender that silently cannot send', () => {
+  assert.throws(() => acMasterLogicSource({ ...LIB, protocol: 'nec' }), /unsupported IR protocol/);
+});
+
+test('regenerating with a protocol still cannot change a single captured code', () => {
+  assert.deepEqual(extractIrLibrary(tclMaster), LIB);
 });
 
 test('a disconnected hub sends nothing and answers 409 instead of a hollow 200', () => {

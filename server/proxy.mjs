@@ -891,6 +891,9 @@ const server = http.createServer(async (req, res) => {
       // somebody has watched the unit obey the local library since the hub was re-paired.
       acu_cloud_route: await acuCloudRoute(),
       acu_local_ir_verified: SITE.aircon?.local_ir_verified === true,
+      // 2026-09-22: the protocol the flow generates frames in (`shared/irTcl112.mjs`), or null when it
+      // can send only its captured library. With one, every state is sendable over the LAN.
+      acu_local_ir_protocol: SITE.aircon?.ir_protocol ?? null,
     });
   }
   if (req.method === 'POST' && url.pathname === '/api/enroll') {

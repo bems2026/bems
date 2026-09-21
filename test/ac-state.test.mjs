@@ -23,6 +23,7 @@ import {
   resolveAcState,
   acStateToDps,
   localIrKey,
+  localIrSource,
 } from '../shared/acState.mjs';
 import { validateCommand } from '../shared/commands.mjs';
 import { DEVICE_REGISTRY } from '../shared/registry.mjs';
@@ -87,6 +88,25 @@ test('the local IR library covers OFF and its own state at 16..30 only', () => {
   assert.equal(localIrKey({ power: 'on', ...LOCAL_LIBRARY_STATE, mode: 'dry', setpoint_c: 24 }), null);
   assert.equal(localIrKey({ power: 'on', ...LOCAL_LIBRARY_STATE, fan: 'high', setpoint_c: 24 }), null);
   assert.equal(localIrKey({ power: 'on', ...LOCAL_LIBRARY_STATE, swing: !LOCAL_LIBRARY_STATE.swing, setpoint_c: 24 }), null);
+});
+
+test('with a declared IR protocol every valid state is locally sendable; without one, only the library', () => {
+  const dry = { power: 'on', mode: 'dry', setpoint_c: 26, fan: 'high', swing: true };
+  const lib = { power: 'on', ...LOCAL_LIBRARY_STATE, setpoint_c: 24 };
+  assert.equal(localIrSource(dry, { protocol: 'tcl112' }), 'generated');
+  assert.equal(localIrSource(lib, { protocol: 'tcl112' }), 'captured');
+  assert.equal(localIrSource({ power: 'off' }, { protocol: 'tcl112' }), 'captured');
+  assert.equal(localIrSource(dry, { protocol: null }), null);
+  assert.equal(localIrSource(lib, { protocol: null }), 'captured');
+  // Outside what the remote can express, even the protocol cannot help.
+  assert.equal(localIrSource({ ...dry, setpoint_c: 31 }, { protocol: 'tcl112' }), null);
+  assert.equal(localIrSource({ ...dry, mode: 'turbo' }, { protocol: 'tcl112' }), null);
+  assert.equal(localIrSource(dry, { protocol: 'nec' }), null, 'an unsupported protocol generates nothing');
+});
+
+test('the library state the captured codes carry is what they decode as, not an assumption', () => {
+  // Decoded 2026-09-22 (test/ir-tcl112.test.mjs): every captured ON code is cool, fan auto, swing off.
+  assert.deepEqual({ ...LOCAL_LIBRARY_STATE }, { mode: 'cool', fan: 'auto', swing: false });
 });
 
 // --- the command contract --------------------------------------------------------------------

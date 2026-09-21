@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { loadDotEnv, createAdminClient } from './nodeRedAdmin.mjs';
 import { planAircon, validateAirconPlan } from './airconFlowPlan.mjs';
-import { DEVICE_REGISTRY } from '../shared/registry.mjs';
+import { DEVICE_REGISTRY, SITE } from '../shared/registry.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 loadDotEnv(join(HERE, '..'));
@@ -36,6 +36,9 @@ const HOST = arg('host', '127.0.0.1');
 const PORT = Number(arg('port', '1880'));
 const APPLY = process.argv.includes('--apply');
 const ENABLE_HUB = !process.argv.includes('--keep-quiesced');
+// The site's declared IR protocol (2026-09-22): with one, AC Master Logic also generates frames for
+// states its captured library lacks. The plan refuses unless the generator rebuilds every captured code.
+const IR_PROTOCOL = SITE.aircon?.ir_protocol ?? null;
 
 // The blaster's node name comes from the registry, not from this script.
 const acu = DEVICE_REGISTRY.find((d) => d.class === 'acu_ir' && d.flow_node);
@@ -45,14 +48,14 @@ if (!acu) {
 }
 
 console.log(`[aircon] ${APPLY ? 'Applying' : 'Dry run (pass --apply to write)'} to http://${HOST}:${PORT}`);
-console.log(`[aircon] aircon ${acu.id} via node "${acu.flow_node}"${ENABLE_HUB ? '' : ' (keeping it quiesced)'}\n`);
+console.log(`[aircon] aircon ${acu.id} via node "${acu.flow_node}"${ENABLE_HUB ? '' : ' (keeping it quiesced)'}; IR protocol ${IR_PROTOCOL ?? 'none (captured library only)'}\n`);
 
 const admin = createAdminClient({ host: HOST, port: PORT, timeoutMs: 20000 });
 const auth = await admin.login();
 const { flows, rev } = await admin.getFlows(auth);
 console.log(`[aircon] read ${flows.length} nodes (rev ${String(rev).slice(0, 8)}…)`);
 
-const plan = planAircon(flows, { flowNode: acu.flow_node, enableHub: ENABLE_HUB });
+const plan = planAircon(flows, { flowNode: acu.flow_node, enableHub: ENABLE_HUB, irProtocol: IR_PROTOCOL });
 if (plan.problems.length) {
   console.error('\n[aircon] Refused:');
   for (const p of plan.problems) console.error(`  - ${p}`);
@@ -77,6 +80,7 @@ for (const id of plan.removed) console.log(`  - ${id}`);
 for (const id of plan.added) console.log(`  + ${plan.flows.find((n) => n.id === id)?.name ?? id}`);
 console.log(`\nNode count: ${flows.length} -> ${plan.flows.length}`);
 console.log('Unchanged by design: Outside Temp, Extract DP 103, every tuya id/key/version/find timeout, the IR library.');
+if (IR_PROTOCOL) console.log(`Generator check passed: every captured ON code was rebuilt exactly as ${IR_PROTOCOL} before this plan was allowed.`);
 
 if (!APPLY) {
   console.log('\n[aircon] Dry run only — nothing was written. Re-run with --apply.');
@@ -95,7 +99,7 @@ if (!res.ok) {
 
 // Read back and re-plan: a correct write leaves nothing to do.
 const { flows: live } = await admin.getFlows(auth);
-const again = planAircon(live, { flowNode: acu.flow_node, enableHub: ENABLE_HUB });
+const again = planAircon(live, { flowNode: acu.flow_node, enableHub: ENABLE_HUB, irProtocol: IR_PROTOCOL });
 if (again.problems.length || again.changes.length || again.added.length || again.removed.length) {
   console.error('\n[aircon] WRITTEN, BUT THE READ-BACK DISAGREES. Inspect the Aircon tab before doing anything else:');
   for (const p of again.problems) console.error(`  - ${p}`);

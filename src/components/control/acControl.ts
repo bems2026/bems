@@ -4,9 +4,9 @@
  * renders, this decides.
  *
  * The contract itself lives in `shared/acState.mjs`, which the server dispatches with, so the path
- * this panel PREDICTS is computed by the same `localIrKey` the dispatcher uses to CHOOSE.
+ * this panel PREDICTS is computed by the same `localIrSource` rule AC Master Logic sends by.
  */
-import { AC_MODES, AC_FANS, AC_DEFAULTS, LOCAL_LIBRARY_STATE, localIrKey, describeAcState } from '@shared/acState.mjs';
+import { AC_MODES, AC_FANS, AC_DEFAULTS, LOCAL_LIBRARY_STATE, localIrSource, describeAcState } from '@shared/acState.mjs';
 import type { AcFan, AcMode, Reading } from '@/lib/types';
 
 export interface AcDraft {
@@ -57,17 +57,21 @@ export function commandedSummary(reading: Reading | undefined): string | null {
  *
  * `cloud` is the proxy's `acu_cloud_route`. Anything but `ready` — including a proxy that has not
  * said — is treated as no cloud: this panel must never promise a path the server will not find.
+ *
+ * `protocol` is `acu_local_ir_protocol` (2026-09-22): with one, the flow builds any state the remote
+ * can express, so a state outside the captured library still goes over the LAN (`generated: true`).
  */
 export function dispatchPathFor(
   draft: AcDraft,
-  caps: { cloud: AcCloudRoute; verified: boolean | null },
-): { via: 'local' | 'cloud' } | { blocked: string } {
+  caps: { cloud: AcCloudRoute; verified: boolean | null; protocol?: string | null },
+): { via: 'local'; generated?: true } | { via: 'cloud' } | { blocked: string } {
   const cloudReady = caps.cloud === 'ready';
-  const local = localIrKey({ power: 'on', ...draft }) !== null;
+  const source = localIrSource({ power: 'on', ...draft }, { protocol: caps.protocol ?? null });
 
-  if (local) {
-    // Unverified library: the server tries the cloud first when it can, and falls back to the LAN.
-    return !caps.verified && cloudReady ? { via: 'cloud' } : { via: 'local' };
+  if (source) {
+    // Unverified on the unit: the server tries the cloud first when it can, and falls back to the LAN.
+    if (!caps.verified && cloudReady) return { via: 'cloud' };
+    return source === 'generated' ? { via: 'local', generated: true } : { via: 'local' };
   }
   if (cloudReady) return { via: 'cloud' };
 

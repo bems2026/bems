@@ -53,6 +53,8 @@ interface CapabilitiesState {
    */
   acuCloudRoute: 'ready' | 'unconfigured' | 'unresolved' | 'local-only' | null;
   acuLocalIrVerified: boolean | null;
+  /** `acu_local_ir_protocol`: the protocol the flow generates frames in, or null. */
+  acuLocalIrProtocol: string | null;
   load: () => Promise<void>;
 }
 
@@ -72,6 +74,7 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
   policySource: null,
   acuCloudRoute: null,
   acuLocalIrVerified: null,
+  acuLocalIrProtocol: null,
 
   // Same retry-with-backoff shape as useLiveConnection.ts's device-catalogue fetch — a
   // failed load here must never get stuck reporting "unknown" forever just because one
@@ -80,7 +83,7 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
     retry.cancel();
     const attempt = async (): Promise<void> => {
       try {
-        const { hardware_dispatch_enabled, dispatch_classes, audit_buffer_pending, dispatch_policy, cloud_fallback_configured, acu_min_room_target_c, acu_min_setpoint_c, policy_source, acu_cloud_route, acu_local_ir_verified } = await getCapabilities();
+        const { hardware_dispatch_enabled, dispatch_classes, audit_buffer_pending, dispatch_policy, cloud_fallback_configured, acu_min_room_target_c, acu_min_setpoint_c, policy_source, acu_cloud_route, acu_local_ir_verified, acu_local_ir_protocol } = await getCapabilities();
         retry.succeeded();
         set({
           hardwareDispatchEnabled: hardware_dispatch_enabled,
@@ -97,6 +100,7 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
           policySource: typeof policy_source === 'string' ? policy_source : null,
           acuCloudRoute: typeof acu_cloud_route === 'string' ? acu_cloud_route : null,
           acuLocalIrVerified: typeof acu_local_ir_verified === 'boolean' ? acu_local_ir_verified : null,
+          acuLocalIrProtocol: typeof acu_local_ir_protocol === 'string' ? acu_local_ir_protocol : null,
         });
       } catch {
         retry.retryAfterFailure(attempt);

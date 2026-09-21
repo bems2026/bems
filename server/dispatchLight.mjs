@@ -160,6 +160,13 @@ async function dispatchLocal(device, cmd, { bridgeHost, bridgePort, lightApiToke
     // refused connection is Node-RED being down or the wrong host entirely.
     return { ok: false, reason: 'bridge_rejected', detail: `bridge endpoint returned HTTP ${res.status}: ${body}` };
   }
+  // The one success body read, and only for the audit note: AC Master Logic says whether it sent a
+  // captured frame or one it GENERATED from the site's IR protocol (2026-09-22). Success never depends
+  // on it — an unreadable body is still the 2xx it was.
+  if (device.class === 'acu_ir') {
+    const source = await res.text().then((t) => JSON.parse(t)?.source).catch(() => undefined);
+    if (source === 'generated') return { ok: true, detail: 'sent over the LAN as a frame generated from the remote\'s IR protocol' };
+  }
   return { ok: true };
 }
 
@@ -225,12 +232,12 @@ async function dispatchAircon(device, cmd, opts = {}) {
       return { ok: true, via: 'cloud', ac_state: acState, detail: 'sent through the vendor cloud first: the local IR library is not yet verified on this unit' };
     }
     const local = await tryLocal();
-    if (local.ok) return { ok: true, via: 'local', ac_state: acState, detail: `cloud failed (${cloud.detail}); sent over the LAN` };
+    if (local.ok) return { ok: true, via: 'local', ac_state: acState, detail: `cloud failed (${cloud.detail}); sent over the LAN${local.detail ? ` — ${local.detail}` : ''}` };
     return { ok: false, via: 'none', reason: local.reason, ac_state: acState, detail: `cloud: ${cloud.detail} | local: ${local.detail}` };
   }
 
   const local = await tryLocal();
-  if (local.ok) return { ok: true, via: 'local', ac_state: acState };
+  if (local.ok) return { ok: true, via: 'local', ac_state: acState, ...(local.detail ? { detail: local.detail } : {}) };
   if (localOnly) {
     return { ...local, via: 'local', ac_state: acState, detail: `${local.detail} (this site is local-only, so no vendor fallback was attempted)` };
   }

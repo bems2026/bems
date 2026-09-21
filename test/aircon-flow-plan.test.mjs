@@ -195,3 +195,35 @@ test('the invariants catch a regenerated library that lost a code', () => {
   const tampered = plan.flows.map((n) => (n.name === 'AC Master Logic' ? { ...n, func: n.func.replace(/"30": "[^"]+",?/, '') } : n));
   assert.match(validateAirconPlan(before, tampered, plan).join(' '), /library/i);
 });
+
+// --- generated frames (2026-09-22) — shared/irTcl112.mjs --------------------------------------
+
+test('with the site protocol, AC Master Logic gains the frame generator and keeps every captured code', () => {
+  const before = liveFlow();
+  const plan = planAircon(before, { irProtocol: 'tcl112' });
+  assert.deepEqual(plan.problems, []);
+  assert.deepEqual(validateAirconPlan(before, plan.flows, plan), []);
+  const master = byName(plan.flows, 'AC Master Logic');
+  assert.match(master.func, /const tcl112Code = function tcl112Code/);
+  assert.deepEqual(extractIrLibrary(master.func), extractIrLibrary(byName(before, 'AC Master Logic').func));
+});
+
+test('adding the generator to an already-refactored tab changes AC Master Logic and nothing else', () => {
+  // The live Pi is here: the 2026-09-17 refactor applied, no protocol yet.
+  const refactored = planAircon(liveFlow()).flows;
+  const plan = planAircon(refactored, { irProtocol: 'tcl112' });
+  assert.deepEqual(plan.changes.map((c) => c.name), ['AC Master Logic']);
+  assert.deepEqual([plan.added, plan.removed], [[], []]);
+  assert.deepEqual(validateAirconPlan(refactored, plan.flows, plan), []);
+  const again = planAircon(plan.flows, { irProtocol: 'tcl112' });
+  assert.deepEqual([again.changes, again.added, again.removed], [[], [], []]);
+});
+
+test('a library that does not decode as the declared protocol is refused, not generated over', () => {
+  // One captured code altered: the generator would no longer reproduce it, so its idea of the
+  // protocol cannot be trusted for any state.
+  const flows = liveFlow().map((n) => (n.name === 'AC Master Logic' ? { ...n, func: n.func.replace(/("22": "001&\^0070)C4/, '$1C5') } : n));
+  assert.match(planAircon(flows, { irProtocol: 'tcl112' }).problems.join(' '), /does not reproduce.*22/);
+  // Without a protocol the same library still plans: it is only ever sent as captured.
+  assert.deepEqual(planAircon(flows).problems, []);
+});

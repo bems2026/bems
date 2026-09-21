@@ -418,7 +418,7 @@ test('GET /api/capabilities reflects HARDWARE_DISPATCH_ENABLED — false by defa
     assert.equal(res.status, 200);
     // deepEqual, not a subset match: this endpoint tells the UI what it is allowed to claim
     // about hardware, so a field appearing unnoticed is exactly what should fail a test.
-    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: false, dispatch_classes: [], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_room_target_c: BUILD_FLOOR, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build', acu_cloud_route: 'unconfigured', acu_local_ir_verified: false });
+    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: false, dispatch_classes: [], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_room_target_c: BUILD_FLOOR, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build', acu_cloud_route: 'unconfigured', acu_local_ir_verified: false, acu_local_ir_protocol: 'tcl112' });
   } finally {
     cleanup();
   }
@@ -428,7 +428,7 @@ test('GET /api/capabilities reports true once the gate is explicitly opened', as
   const { proxyUrl, cleanup } = await setup({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-light-token' });
   try {
     const res = await fetch(`${proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
-    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: true, dispatch_classes: ['switch', 'outlet_dual', 'acu_ir'], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_room_target_c: BUILD_FLOOR, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build', acu_cloud_route: 'unconfigured', acu_local_ir_verified: false });
+    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: true, dispatch_classes: ['switch', 'outlet_dual', 'acu_ir'], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_room_target_c: BUILD_FLOOR, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build', acu_cloud_route: 'unconfigured', acu_local_ir_verified: false, acu_local_ir_protocol: 'tcl112' });
   } finally {
     cleanup();
   }
@@ -1090,6 +1090,9 @@ test('GET /api/capabilities says whether the aircon can reach the cloud, and whe
     const body = await res.json();
     assert.equal(body.acu_cloud_route, 'unconfigured');
     assert.equal(body.acu_local_ir_verified, false);
+    // 2026-09-22: the site declares its IR protocol, so the flow builds any state locally — which is
+    // what lets the page offer mode, fan and swing with no cloud at all.
+    assert.equal(body.acu_local_ir_protocol, 'tcl112');
   } finally {
     cleanup();
   }

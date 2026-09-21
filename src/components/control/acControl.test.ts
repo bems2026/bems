@@ -81,4 +81,22 @@ describe('dispatchPathFor', () => {
     const r = dispatchPathFor(dry, { cloud: null, verified: null });
     expect('blocked' in r).toBe(true);
   });
+
+  // 2026-09-22: the captured codes decode as TCL112, so the flow builds any other state itself.
+  it('with a generated protocol, a state outside the library goes over the LAN, with no cloud at all', () => {
+    expect(dispatchPathFor(dry, { cloud: 'unresolved', verified: false, protocol: 'tcl112' })).toEqual({ via: 'local', generated: true });
+    expect(dispatchPathFor(dry, { cloud: 'unconfigured', verified: true, protocol: 'tcl112' })).toEqual({ via: 'local', generated: true });
+  });
+
+  it('with a generated protocol, verified, the LAN is first even when the cloud is ready', () => {
+    expect(dispatchPathFor(dry, { cloud: 'ready', verified: true, protocol: 'tcl112' })).toEqual({ via: 'local', generated: true });
+  });
+
+  it('with a generated protocol, unverified, the cloud still goes first when it is ready — as for the library', () => {
+    expect(dispatchPathFor(dry, { cloud: 'ready', verified: false, protocol: 'tcl112' })).toEqual({ via: 'cloud' });
+  });
+
+  it('a library state is never called generated', () => {
+    expect(dispatchPathFor(library, { cloud: 'unresolved', verified: true, protocol: 'tcl112' })).toEqual({ via: 'local' });
+  });
 });

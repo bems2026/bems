@@ -34,6 +34,8 @@ import {
   AC_DASH_STATE_KEYS,
   extractIrLibrary,
 } from './airconSources.mjs';
+import { tcl112Code } from '../shared/irTcl112.mjs';
+import { LOCAL_LIBRARY_STATE } from '../shared/acState.mjs';
 
 export const ACU_AUTH_ID = 'bems_acu_auth';
 export const ACU_REPLY_ID = 'bems_acu_reply';
@@ -66,9 +68,13 @@ const updateIfDifferent = (original, patch) => {
  * @param flows  the live flow, as read from the admin API
  * @param opts.flowNode   the blaster's `deviceName` (the registry's `flow_node`)
  * @param opts.enableHub  un-quiesce the blaster (default true; `--keep-quiesced` passes false)
+ * @param opts.irProtocol the site's declared IR protocol (`SITE.aircon.ir_protocol`), or null. With
+ *                        'tcl112', AC Master Logic also generates frames for states the captured
+ *                        library lacks — but only if the generator reproduces every captured ON code
+ *                        on THIS flow exactly; otherwise the plan refuses.
  * @returns {{ flows, changes: {id, name}[], added: string[], removed: string[], problems: string[], roles }}
  */
-export function planAircon(flows, { flowNode = 'NBRIC IR Blaster', enableHub = true } = {}) {
+export function planAircon(flows, { flowNode = 'NBRIC IR Blaster', enableHub = true, irProtocol = null } = {}) {
   const problems = [];
   const refuse = () => ({ flows, changes: [], added: [], removed: [], problems, roles: null });
 
@@ -114,6 +120,22 @@ export function planAircon(flows, { flowNode = 'NBRIC IR Blaster', enableHub = t
     problems.push('could not read the IR code library (head + library) out of AC Master Logic — refusing to regenerate it without every code');
     return refuse();
   }
+  if (irProtocol === 'tcl112') {
+    // The generator is trusted for states nobody captured only because it rebuilds every state
+    // somebody did. One mismatch means this library is not the protocol the site declares.
+    const onKeys = Object.keys(library.library).filter((k) => /^[0-9]+$/.test(k));
+    const template = library.library[onKeys.includes('24') ? '24' : onKeys[0]];
+    const mismatched = onKeys.filter(
+      (k) => tcl112Code(template, { power: 'on', ...LOCAL_LIBRARY_STATE, setpoint_c: Number(k) }) !== library.library[k],
+    );
+    if (!onKeys.length || mismatched.length) {
+      problems.push(`the captured IR library does not reproduce as tcl112 (it does not reproduce ${mismatched.join(', ') || 'any code'} °C) — refusing to generate frames for a protocol this aircon may not speak`);
+      return refuse();
+    }
+  } else if (irProtocol !== null) {
+    problems.push(`unsupported IR protocol "${irProtocol}" — only tcl112 can be generated`);
+    return refuse();
+  }
 
   const auth = byId.get(ACU_AUTH_ID);
   const reply = byId.get(ACU_REPLY_ID);
@@ -134,7 +156,7 @@ export function planAircon(flows, { flowNode = 'NBRIC IR Blaster', enableHub = t
   if (enableHub) put(ir, { disableAutoStart: false });
   put(parser, { name: 'IR hub parser', func: hubParserSource(), outputs: 2, wires: [[stateManager.id], [stateManager.id]] });
   put(stateManager, { func: STATE_MANAGER_SOURCE });
-  put(master, { func: acMasterLogicSource(library), outputs: 3, wires: [[ir.id], [stateManager.id], [ACU_REPLY_ID]] });
+  put(master, { func: acMasterLogicSource({ ...library, protocol: irProtocol }), outputs: 3, wires: [[ir.id], [stateManager.id], [ACU_REPLY_ID]] });
   put(auth, { func: ACU_AUTH_FN, outputs: 2, wires: [[master.id], [ACU_REPLY_ID]] });
   for (const n of legacy) put(n, { d: true });
 

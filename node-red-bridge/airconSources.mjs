@@ -28,6 +28,7 @@
 
 import { AC_MODES, AC_FANS, AC_SETPOINT_MIN_C, AC_SETPOINT_MAX_C, LOCAL_LIBRARY_STATE } from '../shared/acState.mjs';
 import { CAPABILITY_PROFILES, divisorFor } from '../shared/deviceCapabilities.mjs';
+import { tcl112Code } from '../shared/irTcl112.mjs';
 
 /** How often the IR hub is asked for its dps. `STALE_AFTER_MS_BY_CLASS.acu_ir` is held above it. */
 export const HUB_POLL_INTERVAL_S = 60;
@@ -161,19 +162,37 @@ return { payload: state };
  * reply. The reply is emitted only when the message came through `/acu` (`msg.res`), and it says
  * what actually happened:
  *
- *   200 sent      a code went to a connected hub
+ *   200 sent      a code went to a connected hub — `source` says whether it was a captured frame or
+ *                 one generated from the site's declared IR protocol (`SITE.aircon.ir_protocol`)
  *   200 recorded  the proxy is recording a state the vendor cloud carried (`record_only`)
- *   422           no_local_code — the library cannot express this state; the proxy tries the cloud
+ *   422           no_local_code — neither the library nor the protocol can express this state; the
+ *                 proxy tries the cloud
  *   409           device_offline — the hub session is down, so a local send would vanish
  *   400           invalid_state
  */
-export function acMasterLogicSource({ head, library, libraryState = LOCAL_LIBRARY_STATE }) {
+export function acMasterLogicSource({ head, library, libraryState = LOCAL_LIBRARY_STATE, protocol = null }) {
+  if (protocol !== null && protocol !== 'tcl112') throw new Error(`unsupported IR protocol "${protocol}" — only tcl112 can be generated`);
+  // A captured ON frame to build the others on. Which one does not matter — every captured ON code is
+  // reproduced exactly from any other (test/ir-tcl112.test.mjs) — so prefer a middling setpoint.
+  const onKeys = Object.keys(library).filter((k) => /^[0-9]+$/.test(k));
+  const templateKey = onKeys.includes('24') ? '24' : onKeys[0];
+  const generator = protocol === 'tcl112' && templateKey
+    ? `
+// GENERATED FRAMES (2026-09-22). The captured library decodes as TCL112AC, so any state the remote
+// can express is built on one captured ON frame — shared/irTcl112.mjs, inlined because a function node
+// cannot import. OFF and the captured states are always sent exactly as captured.
+const TEMPLATE = library[${json(templateKey)}];
+const tcl112Code = ${tcl112Code.toString()};
+`
+    : `
+const tcl112Code = null; // no protocol declared for this site's aircon: the captured library only
+`;
   return `${header('AC Master Logic, the only sender of IR codes')}
 const head = ${json(head)};
 const library = ${JSON.stringify(library, null, 4)};
 // What the library encodes besides the setpoint — shared/acState.mjs LOCAL_LIBRARY_STATE.
 const LIB = ${json(libraryState)};
-
+${generator}
 const reply = (code, body) => (msg.res ? Object.assign({}, msg, { statusCode: code, payload: body }) : null);
 
 let s = msg.payload;
@@ -194,12 +213,17 @@ if (s.record_only === true) return [null, record("cloud"), reply(200, { ok: true
 let key = null;
 if (s.power === "off") key = "OFF";
 else if (s.mode === LIB.mode && s.fan === LIB.fan && s.swing === LIB.swing) key = String(s.setpoint_c);
-const code = key === null ? undefined : library[key];
+let code = key === null ? undefined : library[key];
+let source = "captured";
+if (code === undefined && s.power === "on" && tcl112Code) {
+    code = tcl112Code(TEMPLATE, s) || undefined;
+    source = "generated";
+}
 if (code === undefined) return [null, null, reply(422, { ok: false, error: "no_local_code" })];
 if (flow.get("acu_hub_health") !== true) return [null, null, reply(409, { ok: false, error: "device_offline" })];
 
 const ir = { payload: { dps: 201, set: JSON.stringify({ control: "send_ir", head: head, key1: code, type: 0, delay: 300 }) } };
-return [ir, record("local"), reply(200, { ok: true, sent: "local", key: key })];
+return [ir, record("local"), reply(200, { ok: true, sent: "local", key: key, source: source })];
 `;
 }
 

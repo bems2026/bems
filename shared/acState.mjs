@@ -39,12 +39,15 @@ export const AC_DEFAULTS = Object.freeze({ mode: 'cool', setpoint_c: 25, fan: 'a
 /**
  * What the hand-captured local IR library encodes besides the setpoint.
  *
- * UNVERIFIED. The flow's `AC Master Logic` holds sixteen codes — OFF and 16..30 — captured before
- * this project began, with no record of the mode, fan or swing they were captured in. "Cool, fan
- * auto, swing off" is the likeliest reading and nothing more. The on-site acceptance test in the
- * ROADMAP records what the unit's own display shows for a local 24 °C; until then the site keeps
- * `aircon.local_ir_verified: false`, and dispatch sends ON states through the cloud first — because
- * a wrong local code does not fail, it succeeds at doing the wrong thing.
+ * DECODED 2026-09-22. The flow's `AC Master Logic` holds sixteen codes — OFF and 16..30 — captured
+ * before this project began, with no record of the mode, fan or swing they were captured in. Decoded
+ * as the TCL112AC frames they are (`shared/irTcl112.mjs`, every checksum verified), every ON code says
+ * cool, fan auto, swing off — so this is now read out of the codes, not assumed.
+ *
+ * What is still unverified is the UNIT: nobody has yet watched it obey these frames since the hub was
+ * re-paired. Until the on-site acceptance test in the ROADMAP, the site keeps
+ * `aircon.local_ir_verified: false`, and dispatch sends ON states through the cloud first when it can —
+ * because a wrong local code does not fail, it succeeds at doing the wrong thing.
  */
 export const LOCAL_LIBRARY_STATE = Object.freeze({ mode: 'cool', fan: 'auto', swing: false });
 
@@ -97,6 +100,28 @@ export function localIrKey(state, library = LOCAL_LIBRARY_STATE) {
   if (state?.power !== 'on') return null;
   const sameShape = state.mode === library.mode && state.fan === library.fan && state.swing === library.swing;
   return sameShape && isSetpoint(state.setpoint_c) ? String(state.setpoint_c) : null;
+}
+
+/** The IR protocols the flow can generate frames in (`shared/irTcl112.mjs`). */
+export const GENERATED_IR_PROTOCOLS = Object.freeze(['tcl112']);
+
+/**
+ * Whether the LAN can send a state, and how: `'captured'` (a frame in the flow's captured library),
+ * `'generated'` (built from the site's declared IR protocol), or `null` (only the vendor cloud can).
+ *
+ * Mirrors AC Master Logic's own order, so the Control page and the dispatcher agree with the flow
+ * about which path a state will take. With a protocol, `null` is left only for states the remote
+ * itself cannot express.
+ *
+ * @param {object} state
+ * @param {{ protocol?: string | null, library?: { mode: string, fan: string, swing: boolean } }} [opts]
+ * @returns {'captured' | 'generated' | null}
+ */
+export function localIrSource(state, { protocol = null, library = LOCAL_LIBRARY_STATE } = {}) {
+  if (localIrKey(state, library) !== null) return 'captured';
+  if (state?.power !== 'on' || !GENERATED_IR_PROTOCOLS.includes(protocol)) return null;
+  const complete = isMode(state.mode) && isFan(state.fan) && typeof state.swing === 'boolean' && isSetpoint(state.setpoint_c);
+  return complete ? 'generated' : null;
 }
 
 /** "Cool · 24 °C · fan auto · swing off", for confirmations and audit notes. */
