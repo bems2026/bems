@@ -182,6 +182,11 @@ A switch's `capabilities` ride on the same `lightStatus` entry, under `dp`.
   record_only?}` (the legacy `{mode: "OFF" | "16".."30"}` is accepted for one release). AC Master
   Logic replies after it knows what happened: `200` sent or recorded, `422 no_local_code`, `409
   device_offline`, `400`. See `node-red-bridge/airconSources.mjs`.
+  A `200` send carries `source`: `captured` (a frame from the flow's captured library, sent exactly as
+  captured) or `generated` (built from the site's declared IR protocol, `SITE.aircon.ir_protocol` —
+  `tcl112` here since 2026-09-22; `shared/irTcl112.mjs`). With a protocol, `422 no_local_code` is left
+  only for a state the remote itself cannot express. `/api/capabilities` serves the protocol as
+  `acu_local_ir_protocol`.
 - `meter`, `sensor_temp_humidity` — `null` (not a switchable thing)
 
 > **`state` and `socket_states` are transient device state, not readings.** The `readings`

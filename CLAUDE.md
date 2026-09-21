@@ -137,12 +137,22 @@ mock, because it once stopped the live bridge.
   by a Lasco "Smart IR" hub (`wnykq`, v3.3, node `NBRIC IR Blaster`), whose own dps are the room's
   temperature and humidity plus IR send/learn. Mode, fan and swing live on "Air", a **virtual**
   `infrared_ac` remote in the vendor cloud with no network presence: the cloud reaches it, the LAN
-  never can. So a state the flow's hand-captured IR library cannot express needs the cloud, and every
-  command is one full state (`shared/acState.mjs`). Never enrol "Air" as a device — the wizard refuses.
-- **The Tuya cloud subscription lapses, and the failure looks like a bug.** IoT Core is a time-limited
-  trial. On 2026-09-17 it expired: the token still issued, and every business call answered
-  `28841002: IoT Core service subscription has expired`. That broke the cloud fallback, Add Device and
-  presence, while local control carried on. Check the Tuya console before debugging cloud code.
+  never can. Every command is one full state (`shared/acState.mjs`). Never enrol "Air" as a device —
+  the wizard refuses.
+- **The aircon's IR codes are TCL112AC, and the flow generates any state from them.** Decoded
+  2026-09-22: all sixteen captured codes are TCL112AC frames (checksums verified), and the ON codes are
+  cool / fan auto / swing off at 16..30 °C. `SITE.aircon.ir_protocol: 'tcl112'` lets AC Master Logic
+  build any other mode, fan or swing from one captured frame (`shared/irTcl112.mjs`) — so mode/fan/swing
+  no longer need the vendor cloud. `aircon:pi` refuses to install the generator unless it rebuilds every
+  captured code exactly. Captured frames (and OFF) are always sent as captured.
+- **Tuya IoT Core is for extracting ids and keys, not a dependency — the operator's decision,
+  2026-09-17.** It is a time-limited trial; on 2026-09-17 it expired (the token still issued, every
+  business call answered `28841002`), which looks like a bug. Onboarding now works without it: keys come
+  from a key tool's export (Add Device → Import keys, or `npm run keys:import`), stored 0600 in
+  `server/data/device-credentials.json` and never served; the proxy hears new devices and their protocol
+  versions on the LAN itself (`server/lanPresence.mjs`); the cloud is merged in only while it answers
+  (`server/deviceSources.mjs`). A local key changes only when a device is re-paired — not on a restart.
+  Check the Tuya console before debugging cloud code.
 - **Schedules are Supabase's, not Node-RED's.** The Automation page writes to Supabase and
   `server/scheduler.mjs` fires them through the gated, audited command path. Node-RED's own
   cron schedules read flow context (`sched_N`, `outlet_sched_N`, `ac_sched`) and bypass both

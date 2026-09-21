@@ -1,6 +1,21 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-22 — **The shared dual-channel meter trades its own channels, and the
+**Last audited:** 2026-09-22 (later) — **Onboarding without IoT Core, and the aircon's own IR
+protocol: RM-126 to RM-129.** The operator decided on 2026-09-17 that Tuya IoT Core is only for
+extracting ids and local keys, not a dependency, and it had just lapsed — taking Add Device, rebind and
+the aircon's mode/fan/swing with it. Built, tested and pushed; **not deployed** (§0).
+- **RM-126:** device facts come from three sources: keys imported from a key tool's export, what the
+  device network announces (a passive listener in the proxy), and the vendor cloud only while it
+  answers. `/api/tuya/devices` no longer fails with the cloud. Orphans for Rebind now need network
+  silence AND a complete list without the device.
+- **RM-127:** Add Device shows which sources answered, where each device's key comes from, and an
+  **Import keys** panel. A device heard with no key says "Needs its key".
+- **RM-128:** the sixteen captured IR codes decode as **TCL112AC** — cool / fan auto / swing off at
+  16..30 °C, every checksum verified. The flow now builds any other state from one captured frame,
+  so mode, fan and swing no longer need the cloud. Recommended over learning codes one at a time.
+- **RM-129:** Home Assistant assessed and not adopted, with the reasons; the cloud-connection policy.
+
+**Earlier on 2026-09-22 — The shared dual-channel meter trades its own channels, and the
 reports gain a Daily period: RM-122 to RM-125.** The operator reported L.O Yellow, a lighting branch,
 logging the outlets' daytime load since Saturday 19 September. Measured read-only against the stored
 rows: the device reports its two CT clamps under each other's dp ranges for hours at a time — its own
@@ -300,6 +315,34 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
+
+### 2026-09-22 (later) — onboarding without IoT Core and the aircon's protocol; what to deploy, in order
+
+Committed and pushed; every suite, lint and the build green. Nothing below is deployed. In order:
+
+1. **Pull and build on the Pi**: `ssh <user>@<host> "cd /home/bems/bems && git pull --ff-only && npm run build"`.
+2. **Dry-run the Aircon tab, then apply it with a backup (RM-128).** Expected: `~ AC Master Logic` only,
+   with "Generator check passed":
+   ```
+   ssh <user>@<host> "cd /home/bems/bems && npm run aircon:pi -- --host=127.0.0.1"
+   ssh <user>@<host> "cd /home/bems/bems && cp ~/.node-red/flows.json ~/.node-red/flows.json.bak-ircodes-$(date +%F) && npm run aircon:pi -- --host=127.0.0.1 --apply"
+   ```
+3. **Restart the three daemons** — the proxy loads four new modules and starts the LAN listener:
+   `ssh <user>@<host> "sudo systemctl restart ibems-ingest ibems-proxy ibems-scheduler"`.
+4. **Import the keys (RM-126/127).** On a workstation, export the Smart Life account's devices with a key
+   tool (JSON or CSV with each device's id and local key; `tinytuya wizard`'s `devices.json` works), then
+   Devices → Add device → Import keys, ticking "lists every device" for a whole-account export. Delete
+   the export file afterwards. (On the Pi instead: `npm run keys:import -- <file>`, then `--apply
+   --complete`.)
+5. **RM-046's sequence at the access point** still stands from the entry below: the lights, outlets and
+   IR hub have been off the segment since 09-21. Nothing in steps 1–4 can bring them back, and the
+   aircon cannot be tested until the hub is.
+6. **The on-site acceptance test (RM-120)**, now including a generated frame.
+
+**Read back after 2–4 (read-only):** `/api/capabilities` has `acu_local_ir_protocol: "tcl112"`;
+`/api/tuya/devices` answers 200 with `sources.lan.listening_since` set and `sources.cloud.status`
+`unavailable` (code 28841002) while IoT Core stays lapsed; `GET /api/credentials` lists the imported
+devices with `credential_length: 16` and no key.
 
 ### 2026-09-22 — the yellow meter trades its channels; what to deploy, in order
 
@@ -3466,6 +3509,97 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 
 
+### Onboarding without IoT Core, and the aircon's own IR protocol — RM-126 to RM-129 (2026-09-22)
+
+**The operator's decision (2026-09-17):** Tuya IoT Core is used only to extract device ids and local
+keys when devices are first paired, one developer-account trial at a time, all linked to the one Smart
+Life account. It is not a runtime dependency. Their own observation, recorded with its limit: a device's
+id and local key do not change while it stays paired — a restart or a new IP does not change them; only
+removing it from Smart Life and pairing it again does.
+
+- [x] **RM-126** Device facts without the vendor cloud. **Built; not deployed.**
+  - **Three sources, merged** (`server/deviceSources.mjs`):
+    - imported keys (`server/credentialImport.mjs` parses a key tool's JSON/CSV or `tinytuya wizard`'s
+      `devices.json`; `server/credentialStore.mjs` keeps them in `server/data/device-credentials.json`,
+      0600, written atomically). A row with no id or no 16-character key is reported by name and
+      skipped; a Bluetooth-only device's "-" key is named as such;
+    - the device network (`server/lanPresence.mjs`): a standing passive listener on the Tuya discovery
+      ports inside the proxy, beside Node-RED's own (`reuseAddr`). A device paired a minute ago appears
+      with its id, product key and announced version; no addresses are kept. `LAN_PRESENCE=off`
+      disables it;
+    - the vendor OpenAPI, only while it answers. Its state is reported with the vendor code alone
+      (`code 28841002: IoT Core subscription expired`) — never the message text, which can name the
+      data-centre host.
+  - **Routes.** `/api/tuya/devices` always answers 200, with `sources` and per-device
+    `credential_source`, `on_lan`, `lan_version`. `POST /api/credentials/import` (authenticated, 1 MiB
+    cap, `complete` flag) and `GET /api/credentials` (lengths only). `npm run keys:import` on the Pi,
+    dry run by default. No reply carries a key; `tuyaFleet.assertNoSecrets` checks every response.
+  - **Enrolment and rebind** take keys from an import first, then the cloud; the version from what the
+    device announces. Their messages no longer assume the cloud is the only source.
+  - **Orphans are concluded cautiously**, because a rebind repoints a node: not quiesced, unheard by a
+    listener that has run 3 min, and absent from a COMPLETE list (a working cloud listing, or an import
+    marked complete). Without a warm listener, rebind listens once for the one device. `tuyaFleet`'s
+    `orphanNodesFrom` ("not in the cloud project" alone) is deleted.
+  - `server/deviceSources.test.mjs`, `server/credentialImport.test.mjs`, `server/lanPresence.test.mjs`,
+    `server/import-keys.test.mjs`, `server/proxy.test.mjs` (the import and listing routes).
+
+- [x] **RM-127** Add Device: Import keys, and which sources answered. **Built; not built on the Pi.**
+  - One line per source; each detected device shows its network presence and version, and where its key
+    comes from (key imported / key from cloud / no key). A device heard with no key is `needs_key`
+    ("Needs its key"), and the import panel opens for it.
+  - The paste is cleared once the proxy has it; the list refreshes at once; the panel stays open over
+    its own result — found in the browser preview, where a successful import had closed it.
+  - Mock: `/api/tuya/devices` and `/api/credentials/import` at contract parity; `npm run mock --
+    --onboarding` seeds a lapsed cloud, imported keys and one keyless new device.
+  - Checked at 375 px (no overflow, 44 px targets) and in both themes (lowest contrast 4.89:1, dark).
+  - `src/components/devices/ImportKeysPanel.tsx`, `src/components/devices/EnrollWizard.tsx`,
+    `src/lib/credentials.ts`, `src/lib/tuyaFleet.ts`, `src/hooks/useCloudFleet.ts`.
+
+- [x] **RM-128** The aircon's IR frames are TCL112AC, and the flow now generates any state. **Built; not
+  applied.**
+  - **Measured.** All sixteen codes in `AC Master Logic` (live-flow fixture of 2026-09-17) decode as
+    TCL112AC: header 23 CB 26 01 00, 112 bits LSB-first, byte 13 the sum of bytes 0–12 — every checksum
+    verifies. The fifteen ON codes are **cool, fan auto, swing off** at 16–30 °C; OFF is the one
+    power-off frame. `LOCAL_LIBRARY_STATE` is now read out of the codes rather than assumed.
+  - **Field layout** from IRremoteESP8266's `Tcl112Protocol` (`src/ir_Tcl.h`): byte 5 bit 2 power;
+    byte 6 bits 0–3 mode (heat 1, dry 2, cool 3, fan 7, auto 8); byte 7 bits 0–3 = 31 − setpoint;
+    byte 8 bits 0–2 fan (auto 0, low 2, medium 3, high 5), bits 3–5 vertical swing (7 on).
+  - **Why generate rather than learn.** Learning captures one full state per button press; every
+    combination is 5 × 4 × 2 × 15 = 600. Generating needs one captured frame, and is trusted because
+    it rebuilds all fifteen captured ON codes byte for byte, from any of them (`test/ir-tcl112.test.mjs`).
+    Learning (dp 201 study / dp 202) stays in the backlog for a unit whose protocol is unknown (FI-037).
+  - **How.** `shared/irTcl112.mjs` (self-contained, inlined into the function node);
+    `SITE.aircon.ir_protocol: 'tcl112'`. AC Master Logic sends a captured frame when one exists (and
+    OFF always), otherwise a generated one, and says which (`source`). `aircon:pi` refuses to install
+    the generator unless it reproduces every captured code on the flow it is writing. The dispatcher
+    notes a generated frame in the audit detail; `/api/capabilities` serves `acu_local_ir_protocol`;
+    the Control page offers mode, fan and swing over the LAN.
+  - **Unchanged rule.** `local_ir_verified` covers generated frames too: until the on-site test, ON
+    states go cloud-first when a cloud is ready — with IoT Core lapsed, that means straight to the LAN.
+  - `shared/irTcl112.mjs`, `node-red-bridge/airconSources.mjs`, `node-red-bridge/airconFlowPlan.mjs`,
+    `shared/acState.mjs` (`localIrSource`), `test/aircon-sources.test.mjs`, `test/aircon-flow-plan.test.mjs`.
+
+- [x] **RM-129** The cloud connection: Home Assistant assessed, not adopted. **Decision record.**
+  - **Why not HA as the device layer.** Its built-in Tuya integration cannot drive `infrared_ac` (the
+    aircon's remote), and the local-key integrations (tuya-local, LocalTuya) duplicate what the flow
+    already does, with a second copy of every key and a second process holding the same device
+    sessions. HA was already rejected as the device layer; this re-check found nothing to reverse it.
+  - **Why not a built-in QR login.** The device-sharing SDK's QR login registers as Home Assistant's
+    own client. Building it into iBEMS would sign in to the vendor under another application's
+    identity. Instead the operator runs a key tool on their own machine and imports its export.
+  - **IoT Core policy.** Tuya offers an official extension of the trial (1, 3 or 6 months, on request)
+    for the occasional extraction. Rotating new developer accounts against one Smart Life account works
+    today but is the kind of use a vendor may close without notice; a key tool through the Smart Life
+    account does not depend on it.
+  - **Still cloud-only:** the relay fallback (ADR-002), `/api/tuya/presence`'s MAC join,
+    `set-device-ip:pi`, `tuya:devices`, `tuya:spec`.
+
+- [ ] **FI-036** A key tool built into iBEMS — **not chosen** (RM-129: it would borrow another
+  application's vendor identity). Revisit only if Tuya publishes a login for third parties.
+- [ ] **FI-037** IR learning for an aircon whose protocol is not known: dp 201 `{"control":"study"}`,
+  the code arrives base64 on dp 202, sent back as `key1: "1" + code`. Not needed for this unit (RM-128);
+  the parser already forwards dp 202 to the state manager.
+
 ### The dual-channel meter's channels, and a Daily period — RM-122 to RM-125 (2026-09-22)
 
 Why this exists is the 2026-09-22 entry in §0. The operator's report, 2026-09-21: L.O Yellow (lighting
@@ -3639,7 +3773,10 @@ editor (deployed 14:36 local). The node stayed quiesced (`disableAutoStart: true
     `server/auditedDispatch.mjs`, `server/dispatchAircon.test.mjs`.
   - **Not yet deployed** — see §0.
 
-- [ ] **RM-116** `npm run aircon:pi` — the Aircon tab, refactored for the hub. **Built; not applied.**
+- [x] **RM-116** `npm run aircon:pi` — the Aircon tab, refactored for the hub. **Applied by the operator
+  2026-09-17 and read back the same evening:** a re-plan found nothing to do, the hub connected at
+  19:50, and `ac_dash_state` carried the hub's temperature and humidity. RM-128 regenerates AC Master
+  Logic on top of it (not yet applied).
   - **Changes.**
     - Un-quiesces the blaster and nothing else about it.
     - The blaster's parser becomes a generated IR hub parser: catalogue-driven, plausibility-bounded,
@@ -3666,7 +3803,9 @@ editor (deployed 14:36 local). The node stayed quiesced (`disableAutoStart: true
     `test/fixtures/aircon-tab-live-2026-09-17.json`.
 
 - [ ] **RM-117** `supabase/phase45_command_ac_state.sql` — `commands.ac_mode`, `ac_fan`, `ac_swing`.
-  **Rehearsed; not applied.**
+  **Applied by the operator 2026-09-17, by their report; not yet read back** — a GET of
+  `commands?select=ac_mode` through the Pi's credentials answers 200 once the columns exist. (Tried
+  2026-09-22; SSH to the Pi was waiting on a Tailscale re-authentication.)
   - **Constraints.** The `shared/acState.mjs` vocabularies; all three or none; only on an ON command.
     No backfill, no grant.
   - **Rehearsal.** Run on the Pi in a throwaway container (image already cached): every migration, the
@@ -3720,14 +3859,18 @@ editor (deployed 14:36 local). The node stayed quiesced (`disableAutoStart: true
   moves the real aircon, so each is the operator's to run.
   1. Send OFF. Expect `via=local`.
   2. Send ON 24 °C in the library's state, and **record what the unit's display shows for mode, fan and
-     swing**. If it is not cool / auto / off, correct `LOCAL_LIBRARY_STATE` in `shared/acState.mjs`.
-     Then set `SITE.aircon.local_ir_verified: true`.
-  3. Send Dry, fan High, swing on. Expect `via=cloud` (needs RM-121), and the unit to follow.
+     swing**. The codes decode as cool / auto / off (RM-128); a unit showing anything else means it
+     does not read TCL112 the way the reference does — stop and record it.
+  3. Send Dry, fan High, swing on — a GENERATED frame (RM-128). Expect `via=local` with the audit detail
+     "generated" while IoT Core is lapsed (`via=cloud` if it is renewed), and the unit to follow. Repeat
+     for Fan and Heat, fan Low: each field of the generated frame is then seen working once.
   4. Send 26 °C with the same mode, fan and swing. The unit keeps them.
-  5. Take the hub off the network. A local send answers 409 and goes via the cloud.
-  6. Arm one ACU rule for 15 minutes. Its steps keep the mode.
+  5. Only after 2–4 pass: set `SITE.aircon.local_ir_verified: true`, with the evidence here.
+  6. Take the hub off the network. A local send answers 409 (and goes via the cloud if one answers).
+  7. Arm one ACU rule for 15 minutes. Its steps keep the mode.
 
-  Until step 2 is done, ON states are cloud-first by design.
+  Until step 5 is done, ON states are cloud-first by design when a cloud is ready.
+  **Blocked on 2026-09-22:** the IR hub is off the segment with the lights and outlets (RM-046, §0).
 
 - [ ] **RM-121** **The Tuya IoT Core subscription expired on 2026-09-17.**
   - **Measured.** Every business call answers `code 28841002: IoT Core service subscription has
@@ -3738,6 +3881,9 @@ editor (deployed 14:36 local). The node stayed quiesced (`disableAutoStart: true
   - **Unaffected.** Local control, ingest and reports.
   - **The fix is an account action:** Tuya developer console → Cloud → Cloud Services → IoT Core →
     extend.
+  - **Superseded in part, 2026-09-22 (RM-126 – RM-129).** The operator's policy is that IoT Core is for
+    extracting keys only. Add Device, rebind and the aircon's mode/fan/swing no longer need it; what
+    still does is listed under RM-129. Renewal is now optional, not the first action.
   - **Related, optional.** Subscribing "IR Control Hub Open Service" would add Tuya's own AC status
     endpoint. Nothing here needs it.
 

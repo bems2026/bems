@@ -52,7 +52,7 @@ Decided by the operator, 2026-08-25.
   failure was `react-hooks/globals` in a test, invisible to `tsc` and to vitest, and it
   turned master red for two commits.
 - Any script in its **dry-run** form (they all default to it): `deploy:pi`, `quiesce:pi`, `aircon:pi`, `rebind:pi`,
-  `enroll:pi`, `remove:pi`, `tuya:devices`.
+  `enroll:pi`, `remove:pi`, `tuya:devices`, `keys:import`.
 
 **Ask first — every time:**
 
@@ -60,6 +60,7 @@ Decided by the operator, 2026-08-25.
   `remove:pi --apply`, `fix-dp-parsers:pi --apply`, or any `POST /flows`. Back up
   `~/.node-red/flows.json` first, always.
 - **Dispatching to hardware** — anything that moves a relay, including a "harmless" no-op.
+- **`keys:import --apply`** — it writes live device credentials. Delete the export file afterwards.
 - **`git commit`, `git push`**, or editing `.env` files.
 
 **Never:**
@@ -125,7 +126,8 @@ what *was* true and what has already been ruled out.
 | `l6` | Recovered. Was written up as an RF/hardware fault; a Node-RED restart reconnected it in two seconds and the operator then toggled the real fixture. Only its one-hour stability window is unproven (RM-012). |
 | IR Blaster | **Re-paired 2026-09-17** as a Lasco "Smart IR" hub; its new id and key were entered into `NBRIC IR Blaster` by hand, the key matches the cloud, and it announces **v3.3**. **Still quiesced** until `npm run aircon:pi -- --apply` (RM-116), which wakes it together with the flow that can read it. The aircon's state lives on a virtual cloud remote "Air" (no network presence). See ROADMAP RM-114 – RM-121. |
 | Outside Temp | Never installed. **Quiesced** and left as-is; `aircon:pi` asserts its node and parser stay byte-identical. Reports `online: false`, and since RM-114 cannot borrow the IR hub's readings. **Never `quiesce:pi --undo` without `--name`** — the default names both nodes. |
-| Tuya IoT Core | **Subscription expired 2026-09-17** (`28841002` on every business call; the token still issues). Cloud fallback, Add Device, presence and `tuya:*` fail until the operator renews it (RM-121). Local control is unaffected. |
+| Tuya IoT Core | **Subscription expired 2026-09-17** (`28841002` on every business call; the token still issues). **The operator's decision: IoT Core is for extracting ids and keys, not a dependency.** Add Device no longer needs it (imported keys + LAN presence, RM-126/127), nor does the aircon's mode/fan/swing (generated TCL112 frames, RM-128). Still cloud-only: the relay fallback, `/api/tuya/presence`, `set-device-ip:pi`, `tuya:*`. |
+| Imported keys | `server/data/device-credentials.json`, 0600, written by Add Device → Import keys or `npm run keys:import`. **Live credentials, not scratch** — never print or copy it; `GET /api/credentials` shows lengths only. |
 | Cloud dispatch fallback | **Works** — verified against `co1` at `{ok:true}` in 972 ms while it was locally unreachable. Covers all 14 commandable devices. |
 | `server/data/` | **Live state, not scratch.** `jwks.json` is the cached signing key that lets sessions be verified while the internet is down; `command-audit-buffer*.ndjson` is the outage queue of command audit rows waiting to reach Supabase (one file per writing process — the proxy and the scheduler). Files here with rows in them mean **Supabase was unreachable and `ibems-ingest` will drain them**, not that something is broken. Empty is the normal steady state. Do not delete them: each row is a relay that moved. |
 | Commands offline | **They work.** Since 2026-08-26 a real Supabase session is verified locally against the cached key, and the audit row is written to the buffer above before dispatch, so an internet outage no longer removes control of a fleet that is entirely local. Applies to manual, scheduled and auto-shed commands. Break-glass sessions stay **view-only**. The Control page shows the backlog when it is non-zero. |
