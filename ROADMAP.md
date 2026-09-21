@@ -1,6 +1,26 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-17 (evening) — **The aircon's IR blaster was re-paired, and the system now knows
+**Last audited:** 2026-09-22 — **The shared dual-channel meter trades its own channels, and the
+reports gain a Daily period: RM-122 to RM-125.** The operator reported L.O Yellow, a lighting branch,
+logging the outlets' daytime load since Saturday 19 September. Measured read-only against the stored
+rows: the device reports its two CT clamps under each other's dp ranges for hours at a time — its own
+`device_state<n>` goes to `monitor` on the channel reading 0 A, its own registers freeze on that side and
+jump by thousands of kWh at each flip — while one tuya session feeds two parsers keyed on dp number, so
+nothing here could have traded them. RM-019's session collapse removed a possible cause, not this one.
+- **RM-122:** a demux node in front of the parsers, deciding from two facts the operator confirmed (the
+  lighting branch cannot exceed 150 W; the outlet branch is never at 0 A) and renumbering the dps before
+  anything reads them. Every stored row now says how its clamp was attributed. **Applied 2026-09-22
+  04:26 and read back** — the demux node is live, the bridge tab redeployed, `channel_map` on both meters.
+- **RM-123:** `npm run scrub:meters` corrects the stored rows with the same classifier and re-integrates
+  the affected days' energy. **Applied 2026-09-22 04:33:** 5,748 rows rewritten (1,800 traded), verified by
+  invariants — every affected row stamped, each day's high-water mark exactly the restated figure, and a
+  re-run finds nothing to do. The bridge's `enacc_*` bases still carry the wrong figures (§0).
+- **RM-124:** a Daily period beside Weekly and Monthly — `phase46`, the daemon, and the page's twenty-four
+  hourly bars, whose sum is the day's headline by construction. Rehearsed. **Not applied.**
+- **RM-125:** the journal is volatile and the Pi was rebooted twice on the 21st; nothing from the 19th
+  survived. Operator decision.
+
+**Before that, 2026-09-17 (evening) — The aircon's IR blaster was re-paired, and the system now knows
 what it is: RM-114 to RM-121.** The operator re-paired it in Smart Life as a Lasco "Smart IR" hub and
 pasted its new id and key into the `NBRIC IR Blaster` node by hand. Measured read-only the same day:
 the node's key matches the vendor cloud's, the hub announces **v3.3** on the LAN (the flow's
@@ -276,6 +296,34 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
+
+### 2026-09-22 — the yellow meter trades its channels; what to deploy, in order
+
+Every suite is green and the rehearsal passed. **Done 2026-09-22, approved by the operator:** the demux is
+in the live flow (04:26, `flows.json` backed up beside it), the bridge tab is redeployed, and the stored
+rows are scrubbed (04:33). What remains, in order, on the Pi:
+
+1. **Correct the bridge's own week and month bases** — the scrub's dry run printed them:
+   `enacc_mtr_co_yellow` weekBase **+2.705** / monthBase **+7.257** kWh; `enacc_mtr_lo_yellow`
+   weekBase **−2.477** / monthBase **−7.103** kWh. Stop Node-RED, edit `~/.node-red/context/<bridge
+   tab>/flow.json`, start Node-RED, as the brief's EX-158 trap describes. Until then the dashboard's
+   "By branch" split for this week and month carries the swap.
+2. **Apply `supabase/phase46_daily_reports.sql`** in the SQL editor (RM-124). Until then the page's Daily
+   button lists no days and, once restarted, the daemon logs the generator refusing `'day'` once per pass.
+3. **Restart the daemons and rebuild the page** — after phase46:
+   ```
+   sudo systemctl restart ibems-ingest ibems-proxy ibems-scheduler
+   npm run build
+   ```
+   `ibems-ingest` is the one that matters: until it restarts, new rows lack `capabilities.channel_map`
+   (the field is on the API already) and no day is generated. Hard-reload the kiosk afterwards.
+4. **Decide RM-125** — a bounded persistent journal.
+
+The week of 09-14 settles on 09-23; the scrub landed before it, so no regeneration is needed.
+
+**Read back after 1–2:** `npm run check:meters -- --hours=6` reads the STORED rows, which the demux now
+corrects before they are written — so from the apply onward it should list nothing new. A flip it does
+list is the demux not deployed, or its two premises no longer holding.
 
 ### 2026-09-17 (evening) — the IR blaster is re-paired; what waits on the operator, in order
 
@@ -3417,6 +3465,103 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 ## 2. Current roadmap (active execution)
 
+
+
+### The dual-channel meter's channels, and a Daily period — RM-122 to RM-125 (2026-09-22)
+
+Why this exists is the 2026-09-22 entry in §0. The operator's report, 2026-09-21: L.O Yellow (lighting
+L5–L7, under 100 W) had been logging the outlets' daytime load since Saturday the 19th. Two premises were
+confirmed by the operator the same day and are declared in `SITE.channel_demux`: the lighting branch
+cannot draw more than 150 W, and the outlet branch is never at 0 A.
+
+- [x] **RM-122** The shared dual-channel meter trades its own channels; the flow now corrects it at the
+      source. **Built; not applied — `npm run demux:pi` (§0).**
+      **What was measured, read-only, from the stored rows and the live flow.** One `tuya-smart-device`
+      session (`C.O yellow`, v3.5) feeds two generated parsers, each a pure map of dp number to context
+      key (105–107 to `co_yel_*`, 115–117 to `lo_yel2_*`); no stage can route dp 115 into `co_yel_last_p`.
+      Yet from 06:21 to 17:20 on the 19th and 05:08 to 09:44 on the 21st (and four flips of 3–15 minutes
+      that afternoon and evening) channel 2 carried the outlet clamp: the device's own `device_state<n>`
+      went to `monitor` on the channel reading exactly 0 W / 0.000 A, its own `today_acc_energy<n>` froze
+      on that side, and at each flip its registers jumped by thousands of kWh (`add_ele2` = 3497.79,
+      `all_energy` +3625.9 at 17:22 on the 19th — the same ~3,625 that poisoned `weekBase`/`monthBase` on
+      09-03, EX-158). Those are dps, not computed values. The two ~40 W loads are distinguishable and
+      travel with the clamp: lighting is 41 W / 0.43 A / PF 0.41 (LED; `monitor` when off), outlet standby
+      is 40 W / 0.23 A / PF 0.75 and never 0 A. The Pi's reboot at 09:17 did not end the episode; the
+      device did, at 09:44. RM-019's session collapse (EX-037b) removed a possible cause and not this one.
+      **The fix.** `shared/channelDemux.mjs` decides the assignment from the two premises only: a channel
+      above the ceiling is the outlet branch (`ceiling`); a channel at `monitor` / 0 A is the lighting
+      branch (`idle`); otherwise the last certain assignment is carried, and a flip needs two agreeing
+      samples. `node-red-bridge/channelDemuxPlan.mjs` puts one function node between the session's data
+      output and both parsers — the parsers stay byte-identical, the status output stays direct — that
+      renumbers dps 103–112 ↔ 113–122 while the assignment is `swapped`, so the legacy integrator, the day
+      baseline, the accumulator and the bridge all read each circuit under its own name. Its decision
+      rides to `/api/readings/latest` as `channel_map` (`docs/bridge-contract.md`) and into
+      `readings.capabilities.channel_map`, so every stored row says how it was attributed.
+      **What stays undetected, by design:** a flip that begins and ends while both channels are ~40 W and
+      neither idle — bounded by the difference between the two loads, a few watts. Measured the first
+      night: four such flips between 23:37 and 03:48 on 09-21/22, visible only by power factor, about
+      14 Wh in all; the demux was seeded `direct` at 04:26 and decides at the first idle or ceiling
+      event of the morning. A third, PF-based rule would close that and rest on an empirical
+      fingerprint rather than a physical fact, so it is not written.
+      **`npm run check:meters` was blind to this.** It looked for a clean trade; the 19th was a hand-off
+      (one channel to 0 as the other took its load). It reports both shapes now, in site time.
+      `shared/channelDemux.mjs`, `test/channel-demux.test.mjs` (22), `node-red-bridge/channelDemuxPlan.mjs`,
+      `node-red-bridge/demux-channels.mjs`, `test/channel-demux-plan.test.mjs` (12, executing the node's
+      code), `test/site-channel-demux.test.mjs`, `test/channel-map-carried.test.mjs`,
+      `shared/sites/mmsu-nberic-care/site.mjs`, `shared/buildLatest.mjs`, `server/shapeRows.mjs`,
+      `shared/channelSwap.mjs`, `server/check-meter-swap.mjs`.
+- [x] **RM-123** The stored rows the swap corrupted, corrected — `npm run scrub:meters`. **Built; dry run
+      read against the live rows; not applied.**
+      The same classifier, replayed over both devices' rows in time order; every swapped minute's two rows
+      trade volts, amps, watts, the per-channel register columns and their capability codes, renamed to
+      the channel each device declares. **Energy is re-integrated, not traded:** the reports credit each
+      hour's rise of `energy_kwh_today` (phase42), and a swapped day's counter mixes correct minutes with
+      traded ones, so on every affected local day both devices' counters are restated as the running
+      integral of the corrected online power from local midnight — the second opinion EX-158 named — and
+      every such row says so in `capabilities.scrub`. Days with no swapped minute are untouched. The apply
+      is a bulk upsert on the primary key, then every affected row is read back against the plan.
+      **The dry run, 2026-09-22 00:04, and the apply at 04:33:** 4,290 paired minutes, five windows,
+      15.0 h swapped; 5,748 rows rewritten (1,800 traded). The first attempt failed with `23502` on
+      `online` — PostgREST's upsert evaluates the INSERT tuple's NOT NULL constraints before the conflict
+      path, so every row's own `online` must travel with it; nothing was written by that attempt, which
+      is what a bulk request inside one transaction guarantees. The read-back compares `capabilities` by
+      content, because jsonb reorders keys. 09-19: C.O 0.706 → 5.258 kWh, L.O 5.214 → 0.588; 09-21: C.O 6.798 →
+      9.503, L.O 3.235 → 0.758 — each day's two figures sum to within 1 % before and after, as a swap
+      must. The bridge's bases banked the wrong figures: C.O weekBase +2.705 / monthBase +7.257,
+      L.O −2.477 / −7.103 — printed by the dry run for the hand correction in §0.
+      `server/scrubMeterSwap.mjs`, `server/scrubMeterSwap.test.mjs` (9), `server/scrub-meter-swap.mjs`.
+- [x] **RM-124** A Daily period, hour by hour, beside Weekly and Monthly. **Built and rehearsed; `phase46`
+      not applied.**
+      **Data.** `phase46_daily_reports.sql`: `report_window` accepts `'day'` (p_start itself, 1440 minutes),
+      so every series function answers for a day unchanged; both stored-report tables admit it;
+      `generate_period_report` is phase44's text byte for byte plus the day branches — a day's building
+      energy is its own daily counter's high-water mark, not the week's month-counter increment, which
+      falls back to the whole month-to-date when the previous day has no rows; and `report_hour_energy`
+      returns each device's hourly credit by phase42's rule, with its average and highest power and its
+      minutes, every hour a row, raising above 900 rows. The rehearsal proves the 24 credits sum exactly
+      to the stored day, that a counter jump is clipped in its hour, and that a month of every device is
+      refused rather than truncated. `server/reports.mjs` generates settled local days (an hour after
+      midnight, fourteen per pass) — the one period reckoned at the site's offset, because a day settled
+      in UTC would keep yesterday off the page until nine in the morning.
+      **Page.** `Daily · Weekly · Monthly`; a day is named with its weekday; the picker turns month pages
+      of days; the Overview's chart is `hourlyEnergyChart` — twenty-four columns 00 to 23, the daily
+      chart's rules one day wide, summing the building's branch meters; the Circuits tab draws each
+      circuit hour by hour through the stacked chart it already had; the PDF gains `Energy per hour` and
+      `Energy per hour, by circuit` and drops the per-day and typical-day sections for a day.
+      `supabase/phase46_daily_reports.sql`, `test/phase46-daily-reports-schema.test.mjs`,
+      `supabase/rehearse.sh`, `server/reports.mjs`, `src/lib/{supabaseReports,reportPeriods,reportFiles,
+      periodCalendar,reportSeries,circuitCharts,reportSections,reportChartSizes}.ts`,
+      `src/components/reports/charts/hourlyEnergyChart.ts`, `src/components/reports/{ReportControlBar,
+      PeriodPicker,useReportData,ReportCharts,CircuitDeepDive,ReportsPage,ExportDrawer,ReportSkeleton}.tsx`,
+      `src/lib/reportPdf/buildReport.ts`, `src/components/reports/ReportsPage.day.test.tsx` (7).
+- [ ] **RM-125** The journal is volatile: `/var/log/journal` is empty, and the Pi was rebooted at 09:17 and
+      17:02 on 2026-09-21, so nothing Node-RED logged on the 19th survived — the database was the only
+      witness to RM-122. Propose `Storage=persistent` with `SystemMaxUse=200M` in
+      `/etc/systemd/journald.conf`. **Operator decision** (SD-card wear against a diagnosable fleet).
+- [ ] **FI-034** `readings_buckets` over the full 30-day raw window hits the statement timeout; the RM-122
+      scan had to be chunked by six days. A `p_until` parameter, or an index note.
+- [ ] **FI-035** The operator described C.O Yellow as "outlets and aircon"; RM-088 records the aircon on
+      CARE ACU alone. Either a second unit is plugged into an outlet or the site file is stale — ask.
 
 ### The re-paired IR blaster — RM-114 to RM-121 (2026-09-17)
 
@@ -7860,6 +8005,10 @@ fall back to it).
       that would notice if this returned by some route nobody predicted — and the confirmed
       event on 2026-08-25 at 00:13 is exactly the kind of thing that is easy to stop believing
       once it stops happening.
+      **It returned, 2026-09-19 — by the device itself, not by any route the flow controls.** The
+      session collapse removed the only software cause there was; the meter re-assigns its clamps
+      on its own. RM-122 corrects it at the source, and the detector now sees the hand-off shape
+      this episode had.
 
 - [ ] **RM-016** Two flow nodes reference devices that are not in the Tuya cloud project.
       **2026-09-17: the IR half is resolved; Outside Temp remains.** The operator re-paired the blaster
