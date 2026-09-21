@@ -1,4 +1,5 @@
 import { DEFAULT_MARGINS, bandScale, linearScale, niceScale, plotBox } from './chartFrame';
+import type { EnergyChartOptions } from './dailyEnergyChart';
 import type { ChartSpec, Def, Hit, Mark, Scene } from './types';
 
 /**
@@ -36,12 +37,15 @@ export interface HourlyEnergyPoint {
 const HOURS = 24;
 const CHAR_W = 4.9;
 
-export function hourlyEnergyChart(points: readonly HourlyEnergyPoint[], spec: ChartSpec): Scene {
+export function hourlyEnergyChart(points: readonly HourlyEnergyPoint[], spec: ChartSpec, { estimate }: EnergyChartOptions = {}): Scene {
   const { width, height, palette, idPrefix, title } = spec;
   const box = plotBox(width, height, DEFAULT_MARGINS);
   const marks: Mark[] = [];
   const defs: Def[] = [];
   const gapId = `${idPrefix}-gap`;
+  // RM-130: an estimate's bars are hatched and outlined, never solid — see dailyEnergyChart.
+  const estimateId = `${idPrefix}-estimate`;
+  if (estimate) defs.push({ kind: 'hatch', id: estimateId, stroke: palette.series[0] });
 
   // Every hour has a column, even when the caller left it out.
   const byHour = new Map(points.map((p) => [p.hour, p]));
@@ -56,9 +60,10 @@ export function hourlyEnergyChart(points: readonly HourlyEnergyPoint[], spec: Ch
   // how much this building uses in an hour.
   const scale = niceScale(observed.map((p) => p.kwh), { zeroBased: true });
 
-  const desc = scale === null
+  const desc = (scale === null
     ? 'No hour of this day carried a reading, so there is nothing to draw.'
-    : `Energy per hour, 00:00 to 23:59. ${missing > 0 ? `${missing} of 24 hours were not recorded and are drawn as gaps.` : 'All 24 hours were recorded.'}`;
+    : `Energy per hour, 00:00 to 23:59. ${missing > 0 ? `${missing} of 24 hours were not recorded and are drawn as gaps.` : 'All 24 hours were recorded.'}`)
+    + (estimate ? ` Estimated, not metered: ${estimate}.` : '');
 
   if (scale === null) {
     marks.push({
@@ -129,7 +134,15 @@ export function hourlyEnergyChart(points: readonly HourlyEnergyPoint[], spec: Ch
       const top = y(value);
       // An hour that was watched and drew nothing still gets a mark — a hairline, not nothing.
       const h = Math.max(box.bottom - top, 0.8);
-      marks.push({ kind: 'rect', x, y: box.bottom - h, w, h, fill: palette.series[0] });
+      marks.push({
+        kind: 'rect',
+        x,
+        y: box.bottom - h,
+        w,
+        h,
+        fill: estimate ? `url(#${estimateId})` : palette.series[0],
+        ...(estimate ? { stroke: palette.series[0], strokeWidth: 1 } : {}),
+      });
       if (p.clipped) {
         marks.push({
           kind: 'line',
@@ -173,7 +186,7 @@ export function hourlyEnergyChart(points: readonly HourlyEnergyPoint[], spec: Ch
       w: slot,
       h: box.h,
       label: `${hh}:00–${hh}:59`,
-      value: measured ? `${(p.kwh as number).toFixed(2)} kWh` : 'No data',
+      value: measured ? `${estimate ? '≈ ' : ''}${(p.kwh as number).toFixed(2)} kWh` : 'No data',
       ...(notes.length ? { note: notes.join(' · ') } : {}),
     };
   });

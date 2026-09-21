@@ -272,7 +272,8 @@ export function buildDocDefinition(r: PdfReport) {
       style: 'note',
     });
   }
-  const drawn = r.charts.filter((chart) => chart.section === undefined || has(chart.section));
+  // RM-130: an estimate's chart is drawn inside its own section below, beside its figures.
+  const drawn = r.charts.filter((chart) => (chart.section === undefined || has(chart.section)) && chart.section !== 'apportioned');
   for (const chart of drawn) {
     if (detail === 'simple') {
       // Simple: the picture and what it shows, and no number table under it.
@@ -337,6 +338,9 @@ export function buildDocDefinition(r: PdfReport) {
         },
         { text: a.note, style: 'note' }
       );
+      for (const chart of r.charts.filter((c) => c.section === 'apportioned' && c.title.startsWith(`${a.label}, per`))) {
+        content.push({ text: chart.title, style: 'h3' }, { svg: chart.svg, width: CONTENT_WIDTH }, { text: chart.desc, style: 'note' });
+      }
     }
   }
 

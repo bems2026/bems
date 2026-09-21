@@ -356,7 +356,7 @@ export function CircuitDeepDive({ period, start, rows, scope, nameOf, building, 
         </div>
       ) : null}
       {/* RM-130: what a branch carries that nobody metered, as the estimate it is — only for branches on this page. */}
-      <ApportionedLoads rows={rows} period={period} meterIds={refs.map((c) => c.meterId)} />
+      <ApportionedLoads rows={rows} period={period} start={start} meterIds={refs.map((c) => c.meterId)} deviceDaily={deviceDaily} hourEnergy={hourEnergy} />
       {deviceRows.length > 0 ? (
         <details className="report-table-card report-devices">
           <summary className="report-recorded__summary">

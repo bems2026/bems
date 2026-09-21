@@ -38,6 +38,18 @@ vi.mock('@/lib/reportSeries', async (importOriginal) => {
   };
 });
 vi.mock('@/lib/supabaseConfig', () => ({ fetchScheduleContext: vi.fn().mockResolvedValue({}) }));
+vi.mock('@/lib/circuitSeries', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/circuitSeries')>();
+  const dayRow = (d: number, energy_kwh: number | null) => ({
+    device_id: 'mtr_co_yellow', local_day: `2026-07-${String(d).padStart(2, '0')}`, energy_kwh, counter_kwh: energy_kwh, removed_kwh: null,
+    clipped_hours: 0, peak_power_w: 800, avg_power_w: 300, online_minutes: energy_kwh === null ? 0 : 1440, expected_minutes: 1440, resolution: 'minute',
+  });
+  return {
+    ...actual,
+    getDeviceDailyEnergy: vi.fn().mockResolvedValue({ available: true, rows: [dayRow(1, 3), dayRow(2, null), dayRow(3, 6)] }),
+    getCircuitTrend: vi.fn().mockResolvedValue(null),
+  };
+});
 // Empty, which is the live state: no tariff entered. An unmocked one rejects, the whole
 // Promise.all never resolves, and every tab that needs the series renders nothing — which reads
 // as a broken panel and is a missing mock.
@@ -101,9 +113,10 @@ describe('the estimated loads section', () => {
     render(<ReportsPage />);
     await openCircuits();
     const section = await screen.findByRole('region', { name: /estimated, not metered/i });
-    expect(within(section).getByText(/director.s office aircon/i)).toBeInTheDocument();
-    expect(within(section).getByText(/about two thirds of C\.O Yellow/i)).toBeInTheDocument();
-    expect(within(section).getByText(/operator.s estimate, 2026-09-22/i)).toBeInTheDocument();
+    expect(within(section).getAllByText(/director.s office aircon/i).length).toBeGreaterThanOrEqual(1);
+    // Said on the figure's line and again in the chart's caption — both must carry it.
+    expect(within(section).getAllByText(/about two thirds of C\.O Yellow/i).length).toBeGreaterThanOrEqual(2);
+    expect(within(section).getAllByText(/operator.s estimate, 2026-09-22/i).length).toBeGreaterThanOrEqual(2);
     // 41.2 × 2/3 (in the figure and again in the note about Energy by use) and the rest, each
     // preceded by ≈ — never a bare figure.
     expect(within(section).getAllByText(/27\.47/).length).toBeGreaterThanOrEqual(1);
@@ -133,5 +146,20 @@ describe('the estimated loads section', () => {
     render(<ReportsPage />);
     await screen.findByText(/100\.00 kWh/);
     expect(screen.queryByRole('region', { name: /estimated, not metered/i })).not.toBeInTheDocument();
+  });
+
+  it('draws the estimate as its own bar chart, hatched, per day for a month, with ≈ in every value', async () => {
+    render(<ReportsPage />);
+    await openCircuits();
+    const section = await screen.findByRole('region', { name: /estimated, not metered/i });
+    const explore = await within(section).findByRole('group', { name: /explore the values in .*director.s office aircon, per day/i });
+    const svg = explore.querySelector('svg') as SVGSVGElement;
+    // Two observed days as hatched bars, one gap; every bar is a pattern fill, none solid.
+    const bars = [...svg.querySelectorAll('rect')].filter((r) => (r.getAttribute('fill') ?? '').includes('-estimate)'));
+    expect(bars).toHaveLength(2);
+    expect([...svg.querySelectorAll('rect')].some((r) => (r.getAttribute('fill') ?? '').includes('-gap)'))).toBe(true);
+    fireEvent.click(within(section).getByText(/show each day/i));
+    expect(await within(section).findByText('≈ 2.00')).toBeInTheDocument();
+    expect(within(section).getByText('≈ 4.00')).toBeInTheDocument();
   });
 });

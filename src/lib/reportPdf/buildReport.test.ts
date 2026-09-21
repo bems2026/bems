@@ -315,3 +315,28 @@ describe('estimated loads — RM-130', () => {
     expect(ac.estimated).toMatch(/≈ 27\.47 kWh \(partial/);
   });
 });
+
+describe('the estimate, charted in the document — RM-130', () => {
+  const coYellow = { period: 'month' as const, period_start: '2026-08-01', device_id: 'mtr_co_yellow', energy_kwh: 41.2, peak_power_w: 812, avg_power_w: 230, online_sample_count: 31 * 24 * 60, expected_sample_count: 31 * 24 * 60 };
+  const days = [
+    { day: '2026-08-01', label: '1', kwh: 2, observed: true, complete: true },
+    { day: '2026-08-02', label: '2', kwh: null, observed: false, complete: false },
+  ];
+
+  it('draws the estimate per day, hatched, as a chart of the apportioned section', () => {
+    const report = buildPdfReport(input({ sections: ['apportioned'], rows: [coYellow], scopedRows: [coYellow], apportionedSeries: [{ id: 'directors_aircon', days, hours: null }] }));
+    const chart = report.charts.find((c) => c.section === 'apportioned');
+    expect(chart?.title).toMatch(/Director's office aircon, per day/);
+    expect(chart?.svg).toMatch(/-estimate\)/);
+    expect(chart?.desc).toMatch(/Estimated, not metered: about two thirds of C\.O Yellow/);
+    expect(chart?.table.rows[0][1]).toBe('≈ 2.00');
+    expect(report.omitted).toEqual([]);
+  });
+
+  it('names the chart as left out when the branch\'s days did not arrive, and keeps the figures', () => {
+    const report = buildPdfReport(input({ sections: ['apportioned'], rows: [coYellow], scopedRows: [coYellow], apportionedSeries: [{ id: 'directors_aircon', days: null, hours: null }] }));
+    expect(report.charts.filter((c) => c.section === 'apportioned')).toEqual([]);
+    expect(report.omitted).toEqual(["Director's office aircon, per day"]);
+    expect(report.apportioned).toHaveLength(1);
+  });
+});

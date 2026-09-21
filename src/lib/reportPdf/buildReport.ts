@@ -19,6 +19,8 @@ import { buildBreakdown } from '@/lib/circuitBreakdown';
 import { energyFlagOf, energyFlagText, usableEnergy } from '@/lib/boundedEnergy';
 import { normaliseSections, type ReportDetail, type ReportSectionId } from '@/lib/reportSections';
 import { apportionedEstimates, shareWords } from '@/lib/apportionment';
+import type { HourlyEnergyPoint } from '@/components/reports/charts/hourlyEnergyChart';
+import type { DailyEnergyPoint } from '@/components/reports/charts/dailyEnergyChart';
 import { LOAD_LABELS } from '@shared/circuits.mjs';
 import { CONTENT_WIDTH, type PdfChart, type PdfDeviceRow, type PdfReport } from './docDefinition';
 
@@ -75,6 +77,8 @@ export interface PdfReportInput {
   /** The category or circuit chosen, by name; `null` for the whole building. */
   scopeLabel?: string | null;
   circuits?: PdfCircuitInput | null;
+  /** RM-130: each estimate's own bars — per day for a week or month, per hour for a day; null when not read. */
+  apportionedSeries?: readonly { id: string; days: readonly DailyEnergyPoint[] | null; hours: readonly HourlyEnergyPoint[] | null }[];
 }
 
 const f = (v: number | null | undefined, digits = 2) => (v === null || v === undefined || !Number.isFinite(v) ? null : v.toFixed(digits));
@@ -344,6 +348,30 @@ export function buildPdfReport(input: PdfReportInput): PdfReport {
         })
     : [];
 
+  // Each estimate's chart, drawn through the same builders as the circuits' with every bar hatched;
+  // one whose series did not arrive is named as left out, like any other chart (RM-081b).
+  const estimateCharts: PdfChart[] = [];
+  const estimateOmitted: string[] = [];
+  if (sections.includes('apportioned')) {
+    const seriesById = new Map((input.apportionedSeries ?? []).map((x) => [x.id, x]));
+    for (const e of apportionedEstimates(rows).filter((e) => shownMeters.has(e.meterId))) {
+      if (e.flag?.kind === 'impossible') continue;
+      const basis = `${shareWords(e.share)} of ${e.branchLabel} — ${e.basis}`;
+      const series = seriesById.get(e.id);
+      const perHour = input.period === 'day';
+      const title = `${e.label}, per ${perHour ? 'hour' : 'day'}`;
+      const points = perHour ? series?.hours : series?.days;
+      if (!points) { estimateOmitted.push(title); continue; }
+      const scene = perHour
+        ? hourlyEnergyChart(points as readonly HourlyEnergyPoint[], spec(`pdf-est-${e.id}`, 220, title), { estimate: basis })
+        : dailyEnergyChart(points as readonly DailyEnergyPoint[], spec(`pdf-est-${e.id}`, 220, title), { estimate: basis });
+      const table = perHour
+        ? { headers: ['Hour', 'Estimated energy (kWh)'], rows: (points as readonly HourlyEnergyPoint[]).map((p) => [`${String(p.hour).padStart(2, '0')}:00`, p.observed && p.kwh !== null ? `≈ ${p.kwh.toFixed(2)}` : null]) }
+        : { headers: ['Day', 'Estimated energy (kWh)'], rows: (points as readonly DailyEnergyPoint[]).map((p) => [p.day, p.observed && p.kwh !== null ? `≈ ${p.kwh.toFixed(2)}` : null]) };
+      estimateCharts.push({ section: 'apportioned', title: scene.title, svg: sceneToSvg(scene, PRINT_PALETTE), desc: scene.desc, table });
+    }
+  }
+
   return {
     title: 'Energy report',
     siteName: input.siteName,
@@ -380,13 +408,16 @@ export function buildPdfReport(input: PdfReportInput): PdfReport {
     cost: cost.total === null ? null : { text: `${cost.total.toFixed(2)} ${cost.currency ?? ''}`.trim(), qualified },
     carbon: carbon.total === null ? null : { text: `${carbon.total.toFixed(1)} kgCO2e`, qualified },
     provenance: provenanceLines(cost, carbon),
-    charts: CHARTS.filter((c) => sections.includes(c.section) && c.has(context)).map((c) => {
-      const { scene, table } = c.build(context);
-      return { section: c.section, title: scene.title, svg: sceneToSvg(scene, PRINT_PALETTE), desc: scene.desc, table };
-    }),
+    charts: [
+      ...CHARTS.filter((c) => sections.includes(c.section) && c.has(context)).map((c) => {
+        const { scene, table } = c.build(context);
+        return { section: c.section, title: scene.title, svg: sceneToSvg(scene, PRINT_PALETTE), desc: scene.desc, table };
+      }),
+      ...estimateCharts,
+    ],
     // RM-081b: a chosen chart whose data could not be read is named, so the document says what it left
     // out rather than silently being one chart shorter than the reader asked for.
-    omitted: CHARTS.filter((c) => sections.includes(c.section) && !c.has(context)).map((c) => c.label),
+    omitted: [...CHARTS.filter((c) => sections.includes(c.section) && !c.has(context)).map((c) => c.label), ...estimateOmitted],
     deviceRows: scopedRows.map(deviceRow),
     baseline: {
       gate: thin ? [TOO_LITTLE_TITLE, ...tooLittleRecorded(summary?.usable_minutes ?? 0, observedDays)] : null,

@@ -80,7 +80,7 @@ function markNode(mark: Mark, palette: ChartPalette): SvgNode {
     case 'rect':
       return {
         tag: 'rect',
-        attrs: attrs({ x: mark.x, y: mark.y, width: mark.w, height: mark.h, fill: mark.fill, opacity: mark.opacity, rx: mark.rx }),
+        attrs: attrs({ x: mark.x, y: mark.y, width: mark.w, height: mark.h, fill: mark.fill, opacity: mark.opacity, rx: mark.rx, stroke: mark.stroke, 'stroke-width': mark.strokeWidth }),
       };
     case 'line':
       return {

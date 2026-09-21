@@ -39,13 +39,27 @@ export interface DailyEnergyPoint {
 /** Roughly this many day labels, thinned evenly. A month of 31 at 9px overlaps below ~500px. */
 const TARGET_LABELS = 10;
 
-export function dailyEnergyChart(points: readonly DailyEnergyPoint[], spec: ChartSpec): Scene {
+/**
+ * AN ESTIMATE IS DRAWN SO IT CANNOT BE READ AS A MEASUREMENT — RM-130. A load nobody metered
+ * (the director's office aircon, a declared share of C.O Yellow) gets the same chart as a circuit,
+ * but every bar is a hatch in the series colour with an outline rather than a solid, every hit value
+ * carries "≈", and the description names the basis. A reader who sees a hatched bar beside the solid
+ * ones is looking at a different kind of number, and the chart says so without a legend.
+ */
+export interface EnergyChartOptions {
+  /** The basis of an estimate, in the office's words; absent for a measurement. */
+  estimate?: string;
+}
+
+export function dailyEnergyChart(points: readonly DailyEnergyPoint[], spec: ChartSpec, { estimate }: EnergyChartOptions = {}): Scene {
   const { width, height, palette, idPrefix, title } = spec;
   const box = plotBox(width, height, DEFAULT_MARGINS);
   const marks: Mark[] = [];
   const defs: Def[] = [];
 
   const gapId = `${idPrefix}-gap`;
+  const estimateId = `${idPrefix}-estimate`;
+  if (estimate) defs.push({ kind: 'hatch', id: estimateId, stroke: palette.series[0] });
   const observed = points.filter((p) => p.observed);
   const missing = points.length - observed.length;
 
@@ -53,9 +67,10 @@ export function dailyEnergyChart(points: readonly DailyEnergyPoint[], spec: Char
   // how much this building uses, so it must not compress the axis for the days that are.
   const scale = niceScale(observed.map((p) => p.kwh), { zeroBased: true });
 
-  const desc = scale === null
+  const desc = (scale === null
     ? `No day in this period carried a reading, so there is nothing to draw.`
-    : `Energy per day. ${missing > 0 ? `${missing} of ${points.length} days were not recorded and are drawn as gaps.` : `All ${points.length} days were recorded.`}`;
+    : `Energy per day. ${missing > 0 ? `${missing} of ${points.length} days were not recorded and are drawn as gaps.` : `All ${points.length} days were recorded.`}`)
+    + (estimate ? ` Estimated, not metered: ${estimate}.` : '');
 
   if (scale === null) {
     // No axis, no grid, no bars. A confident empty grid over a period nobody watched reads as a
@@ -156,8 +171,9 @@ export function dailyEnergyChart(points: readonly DailyEnergyPoint[], spec: Char
         y: box.bottom - h,
         w,
         h,
-        fill: palette.series[0],
+        fill: estimate ? `url(#${estimateId})` : palette.series[0],
         opacity: p.complete ? undefined : 0.5,
+        ...(estimate ? { stroke: palette.series[0], strokeWidth: 1 } : {}),
       });
       if (!p.complete) {
         /**
@@ -211,7 +227,7 @@ export function dailyEnergyChart(points: readonly DailyEnergyPoint[], spec: Char
       w: slot,
       h: box.h,
       label: p.day,
-      value: measured ? `${(p.kwh as number).toFixed(2)} kWh` : 'No data',
+      value: measured ? `${estimate ? '≈ ' : ''}${(p.kwh as number).toFixed(2)} kWh` : 'No data',
       ...(measured && !p.complete ? { note: 'Partly observed, so at least this much' } : {}),
     };
   });

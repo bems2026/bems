@@ -2,6 +2,10 @@ import { CIRCUITS } from '@shared/siteConfig.mjs';
 import type { LoadId } from './circuitBreakdown';
 import { energyFlagOf, usableEnergy, type EnergyFlag } from './boundedEnergy';
 import { coverageOf, type Coverage, type PeriodDeviceReport } from './supabaseReports';
+import { toHourEnergyPoints, type HourEnergyRow } from './reportSeries';
+import type { DeviceDayRow } from './circuitSeries';
+import type { DailyEnergyPoint } from '@/components/reports/charts/dailyEnergyChart';
+import type { HourlyEnergyPoint } from '@/components/reports/charts/hourlyEnergyChart';
 
 /**
  * A load nobody metered, as the estimate it is — RM-130 / FI-035.
@@ -97,4 +101,35 @@ export function shareWords(share: number): string {
   ];
   const hit = named.find(([v]) => Math.abs(v - share) < 0.01);
   return hit ? `about ${hit[1]}` : `about ${Math.round(share * 100)}%`;
+}
+
+/**
+ * The estimate, day by day — the branch's bounded daily energy (phase42) times the share, so the
+ * estimate's bars sit on the same footing as the circuit's and sum to the same period figure. An
+ * unobserved day stays a gap; a partly recorded one stays a floor.
+ */
+export function estimateDayPoints(rows: readonly DeviceDayRow[], e: ApportionedEstimate): DailyEnergyPoint[] {
+  return rows
+    .filter((r) => r.device_id === e.meterId)
+    .sort((a, b) => a.local_day.localeCompare(b.local_day))
+    .map((r) => {
+      const observed = r.online_minutes > 0 && r.energy_kwh !== null;
+      return {
+        day: r.local_day.slice(0, 10),
+        label: String(Number(r.local_day.slice(8, 10))),
+        kwh: observed ? Number(r.energy_kwh) * e.share : null,
+        observed,
+        complete: coverageOf(r.online_minutes, r.expected_minutes)?.band === 'complete',
+      };
+    });
+}
+
+/** The estimate, hour by hour for a day — the branch's hourly credits times the share, power too. */
+export function estimateHourPoints(rows: readonly HourEnergyRow[], e: ApportionedEstimate): HourlyEnergyPoint[] {
+  return toHourEnergyPoints(rows.filter((r) => r.device_id === e.meterId)).map((p) => ({
+    ...p,
+    kwh: p.kwh === null ? null : p.kwh * e.share,
+    avgW: p.avgW === null ? null : p.avgW * e.share,
+    maxW: p.maxW === null ? null : p.maxW * e.share,
+  }));
 }

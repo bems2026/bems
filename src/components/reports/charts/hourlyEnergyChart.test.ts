@@ -34,8 +34,8 @@ const day = (over: (h: number) => Partial<HourlyEnergyPoint> = () => ({})) => Ar
 const rects = (marks: Mark[]) => marks.filter((m): m is Extract<Mark, { kind: 'rect' }> => m.kind === 'rect');
 const texts = (marks: Mark[]) => marks.filter((m): m is Extract<Mark, { kind: 'text' }> => m.kind === 'text');
 const lines = (marks: Mark[]) => marks.filter((m): m is Extract<Mark, { kind: 'line' }> => m.kind === 'line');
-const bars = (marks: Mark[]) => rects(marks).filter((r) => !r.fill.startsWith('url('));
-const gaps = (marks: Mark[]) => rects(marks).filter((r) => r.fill.startsWith('url('));
+const bars = (marks: Mark[]) => rects(marks).filter((r) => r.fill !== 'url(#he-gap)');
+const gaps = (marks: Mark[]) => rects(marks).filter((r) => r.fill === 'url(#he-gap)');
 
 describe('hourlyEnergyChart', () => {
   it('draws one bar per observed hour and a gap for each run of unobserved ones', () => {
@@ -109,5 +109,23 @@ describe('hourlyEnergyChart', () => {
     const b = hourlyEnergyChart(day((h) => (h === 1 ? { observed: false, kwh: null, minutes: 0 } : {})), SPEC);
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
     for (const d of a.defs) expect(d.id.startsWith('he-')).toBe(true);
+  });
+});
+
+describe('an estimate, drawn so it cannot be read as a measurement — RM-130', () => {
+  const est = { estimate: 'about two thirds of C.O Yellow' };
+
+  it('hatches and outlines every bar, prefixes hits with ≈, and names the basis', () => {
+    const scene = hourlyEnergyChart(day(), SPEC, est);
+    const filled = rects(scene.marks).filter((r) => r.fill === 'url(#he-estimate)');
+    expect(filled).toHaveLength(24);
+    for (const r of filled) expect(r.fill).toBe('url(#he-estimate)');
+    expect(filled.every((r) => r.stroke === PRINT_PALETTE.series[0])).toBe(true);
+    expect(scene.hits?.[10].value).toBe('≈ 0.50 kWh');
+    expect(scene.desc).toMatch(/Estimated, not metered: about two thirds/);
+  });
+
+  it('changes nothing when no estimate is declared', () => {
+    expect(JSON.stringify(hourlyEnergyChart(day(), SPEC))).toBe(JSON.stringify(hourlyEnergyChart(day(), SPEC, {})));
   });
 });

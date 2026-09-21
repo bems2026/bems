@@ -40,8 +40,8 @@ const rects = (marks: Mark[]) => marks.filter((m): m is Extract<Mark, { kind: 'r
 const texts = (marks: Mark[]) => marks.filter((m): m is Extract<Mark, { kind: 'text' }> => m.kind === 'text');
 const lines = (marks: Mark[]) => marks.filter((m): m is Extract<Mark, { kind: 'line' }> => m.kind === 'line');
 /** Bars are filled with a series colour; gaps are filled with the hatch pattern. */
-const bars = (marks: Mark[]) => rects(marks).filter((r) => !r.fill.startsWith('url('));
-const gaps = (marks: Mark[]) => rects(marks).filter((r) => r.fill.startsWith('url('));
+const bars = (marks: Mark[]) => rects(marks).filter((r) => r.fill !== 'url(#de-gap)');
+const gaps = (marks: Mark[]) => rects(marks).filter((r) => r.fill === 'url(#de-gap)');
 
 describe('dailyEnergyChart', () => {
   it('draws one bar per observed day and no bar for an unobserved one', () => {
@@ -216,5 +216,34 @@ describe('dailyEnergyChart', () => {
     expect(full.desc).toContain('All 3 days were recorded.');
     expect(gappy.desc).toContain('1 of 3 days were not recorded');
     expect(full.desc + gappy.desc).not.toMatch(/observed/);
+  });
+});
+
+describe('an estimate, drawn so it cannot be read as a measurement — RM-130', () => {
+  const est = { estimate: "about two thirds of C.O Yellow — operator's estimate, 2026-09-22" };
+
+  it('fills every bar with a hatch in the series colour instead of a solid, and outlines it', () => {
+    const scene = dailyEnergyChart([day(1), day(2)], SPEC, est);
+    const filled = rects(scene.marks).filter((r) => !r.fill.startsWith('url(#de-gap'));
+    expect(filled).toHaveLength(2);
+    for (const r of filled) expect(r.fill).toBe('url(#de-estimate)');
+    expect(scene.defs.some((d) => d.kind === 'hatch' && d.id === 'de-estimate' && d.stroke === PRINT_PALETTE.series[0])).toBe(true);
+    expect(filled.every((r) => r.stroke === PRINT_PALETTE.series[0])).toBe(true);
+  });
+
+  it('prefixes every hit value with ≈ and names the basis in the description', () => {
+    const scene = dailyEnergyChart([day(1, { kwh: 6 })], SPEC, est);
+    expect(scene.hits?.[0].value).toBe('≈ 6.00 kWh');
+    expect(scene.desc).toMatch(/Estimated, not metered: about two thirds of C\.O Yellow/);
+  });
+
+  it('still draws an unobserved day as a gap, never as an estimated bar', () => {
+    const scene = dailyEnergyChart([day(1), day(2, { observed: false, kwh: null })], SPEC, est);
+    expect(gaps(scene.marks)).toHaveLength(1);
+    expect(scene.hits?.[1].value).toBe('No data');
+  });
+
+  it('changes nothing when no estimate is declared', () => {
+    expect(JSON.stringify(dailyEnergyChart([day(1)], SPEC))).toBe(JSON.stringify(dailyEnergyChart([day(1)], SPEC, {})));
   });
 });

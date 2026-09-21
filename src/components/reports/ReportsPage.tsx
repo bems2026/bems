@@ -47,6 +47,7 @@ import { CoverageTag, ReportFigure } from './ReportFigure';
 import { useReportData } from './useReportData';
 import { carbonOf, costOf, type DayEnergy } from '@/lib/energyCost';
 import { circuitDayPoints, circuitHourPoints, circuitRefs, loadShareSegments, trendChartInput } from '@/lib/circuitCharts';
+import { apportionedEstimates, estimateDayPoints, estimateHourPoints } from '@/lib/apportionment';
 
 /**
  * Energy reports, weekly or monthly — Phase 12, generalised by RM-041.
@@ -362,6 +363,12 @@ export function ReportsPage() {
     // is not is named in the document as left out, never drawn empty.
     const refs = circuitRefs(scope);
     const dailyData = report.deviceDaily.data;
+    // RM-130: each estimate's own bars, from the same rows the Circuits tab scales them from.
+    const apportionedSeries = apportionedEstimates(rows).map((e) => ({
+      id: e.id,
+      days: period !== 'day' && dailyData && dailyData.available ? estimateDayPoints(dailyData.rows, e) : null,
+      hours: period === 'day' && hourEnergy.data ? estimateHourPoints(hourEnergy.data, e) : null,
+    }));
     const circuitInput = {
       series: refs,
       days: dailyData && dailyData.available ? circuitDayPoints(dailyData.rows, refs) : null,
@@ -389,6 +396,7 @@ export function ReportsPage() {
       detail,
       scopeLabel: narrowed,
       circuits: circuitInput,
+      apportionedSeries,
     });
     const assembled = performance.now();
     const name = reportFilename(period, selected, 'report', 'pdf', [narrowed, detail === 'simple' ? 'simple' : null].filter(Boolean).join(' '));

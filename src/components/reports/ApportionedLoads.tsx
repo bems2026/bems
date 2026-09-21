@@ -1,9 +1,19 @@
-import { useId } from 'react';
-import { apportionedEstimates, shareWords, type ApportionedEstimate } from '@/lib/apportionment';
+import { useCallback, useId, useMemo } from 'react';
+import { ErrorBoundary } from '@/components/common/ErrorBoundary';
+import { apportionedEstimates, estimateDayPoints, estimateHourPoints, shareWords, type ApportionedEstimate } from '@/lib/apportionment';
 import { energyFlagText } from '@/lib/boundedEnergy';
 import { LOAD_LABELS } from '@shared/circuits.mjs';
-import type { PeriodDeviceReport, ReportPeriod } from '@/lib/supabaseReports';
+import { formatPeriod, type PeriodDeviceReport, type ReportPeriod } from '@/lib/supabaseReports';
+import type { DeviceDaily } from '@/lib/circuitSeries';
+import type { HourEnergyRow } from '@/lib/reportSeries';
+import { REPORT_CHART_WIDTH, reportChartHeight } from '@/lib/reportChartSizes';
+import { ChartFigure, type ChartTable } from './ChartFigure';
+import { ChartPlaceholder } from './ReportSkeleton';
 import { ReportFigure } from './ReportFigure';
+import { SCREEN_PALETTE } from './charts/palette';
+import { dailyEnergyChart } from './charts/dailyEnergyChart';
+import { hourlyEnergyChart } from './charts/hourlyEnergyChart';
+import type { Section } from './useReportData';
 
 /**
  * Loads nobody metered, shown as the estimates they are — RM-130 / FI-035.
@@ -23,11 +33,73 @@ import { ReportFigure } from './ReportFigure';
 interface Props {
   rows: readonly PeriodDeviceReport[];
   period: ReportPeriod;
+  start: string;
   /** The branch meters on the page; an estimate is shown only when its branch is among them. */
   meterIds: readonly string[];
+  /** The branch's days (a week or month) and hours (a day), from which the estimate's bars are scaled. */
+  deviceDaily?: Section<DeviceDaily>;
+  hourEnergy?: Section<HourEnergyRow[]>;
 }
 
-function Estimate({ e, period }: { e: ApportionedEstimate; period: ReportPeriod }) {
+const num = (v: number | null) => (v === null || !Number.isFinite(v) ? null : `≈ ${v.toFixed(2)}`);
+
+/**
+ * The estimate's own bar chart — the branch's per-day (or, for a day, per-hour) energy scaled by
+ * the share, drawn through the same builders the circuits use, with every bar hatched and every
+ * value carrying ≈. It is shown on the same footing as the circuit charts because that is where a
+ * reader would look for it, and drawn differently because it is a different kind of number.
+ */
+function EstimateChart({ e, period, start, deviceDaily, hourEnergy }: { e: ApportionedEstimate; period: ReportPeriod; start: string; deviceDaily?: Section<DeviceDaily>; hourEnergy?: Section<HourEnergyRow[]> }) {
+  const label = formatPeriod(period, start);
+  const basis = `${shareWords(e.share)} of ${e.branchLabel} — ${e.basis}`;
+  const spec = useMemo(
+    () => (idPrefix: string, height: number, title: string) => ({ width: REPORT_CHART_WIDTH, height, palette: SCREEN_PALETTE, idPrefix, title, desc: '' }),
+    []
+  );
+  const dayRows = period !== 'day' && deviceDaily?.data?.available ? deviceDaily.data.rows : null;
+  const hourRows = period === 'day' ? (hourEnergy?.data ?? null) : null;
+  const dayPoints = useMemo(() => (dayRows ? estimateDayPoints(dayRows, e) : []), [dayRows, e]);
+  const hourPoints = useMemo(() => (hourRows ? estimateHourPoints(hourRows, e) : []), [hourRows, e]);
+
+  const buildDay = useCallback(
+    () => dailyEnergyChart(dayPoints, spec(`est-${e.id}-d`, reportChartHeight('daily', dayPoints.length), `${e.label}, per day — ${label}`), { estimate: basis }),
+    [dayPoints, spec, e.id, e.label, label, basis]
+  );
+  const tableDay = useCallback(
+    (): ChartTable => ({ headers: ['Day', 'Estimated energy (kWh)'], rows: dayPoints.map((p) => [p.day, p.observed ? num(p.kwh) : null]) }),
+    [dayPoints]
+  );
+  const buildHour = useCallback(
+    () => hourlyEnergyChart(hourPoints, spec(`est-${e.id}-h`, reportChartHeight('hourly', 1), `${e.label}, per hour — ${label}`), { estimate: basis }),
+    [hourPoints, spec, e.id, e.label, label, basis]
+  );
+  const tableHour = useCallback(
+    (): ChartTable => ({
+      headers: ['Hour', 'Estimated energy (kWh)', 'Average (W)'],
+      rows: hourPoints.map((p) => [`${String(p.hour).padStart(2, '0')}:00`, p.observed ? num(p.kwh) : null, p.avgW === null ? null : `≈ ${Math.round(p.avgW)}`]),
+    }),
+    [hourPoints]
+  );
+
+  const loading = period === 'day' ? hourEnergy?.status === 'loading' : deviceDaily?.status === 'loading';
+  if (loading) return <ChartPlaceholder kind={period === 'day' ? 'hourly' : 'daily'} dayCount={period === 'week' ? 7 : 31} />;
+  if (period === 'day' ? !hourRows : !dayRows) return null;
+  const build = period === 'day' ? buildHour : buildDay;
+  const table = period === 'day' ? tableHour : tableDay;
+  return (
+    <ErrorBoundary scope={`${e.label}, charted`} variant="inline" resetKey={build}>
+      <EstimateChartBody build={build} table={table} summaryLabel={period === 'day' ? 'Show each hour' : 'Show each day'} />
+    </ErrorBoundary>
+  );
+}
+
+function EstimateChartBody({ build, table, summaryLabel }: { build: () => ReturnType<typeof dailyEnergyChart>; table: () => ChartTable; summaryLabel: string }) {
+  const scene = useMemo(() => build(), [build]);
+  const rows = useMemo(() => table(), [table]);
+  return <ChartFigure scene={scene} table={rows} summaryLabel={summaryLabel} />;
+}
+
+function Estimate({ e, period, start, deviceDaily, hourEnergy }: { e: ApportionedEstimate; period: ReportPeriod; start: string; deviceDaily?: Section<DeviceDaily>; hourEnergy?: Section<HourEnergyRow[]> }) {
   const refused = e.flag?.kind === 'impossible';
   return (
     <div className="report-apportioned__item">
@@ -76,11 +148,12 @@ function Estimate({ e, period }: { e: ApportionedEstimate; period: ReportPeriod 
         {refused || e.estimatedKwh === null ? 'its share' : `≈ ${e.estimatedKwh.toFixed(2)} kWh`} of it to {LOAD_LABELS[e.load]}. It is not
         moved, because a chart of measurements should not carry an estimate.
       </p>
+      {refused ? null : <EstimateChart e={e} period={period} start={start} deviceDaily={deviceDaily} hourEnergy={hourEnergy} />}
     </div>
   );
 }
 
-export function ApportionedLoads({ rows, period, meterIds }: Props) {
+export function ApportionedLoads({ rows, period, start, meterIds, deviceDaily, hourEnergy }: Props) {
   const headingId = useId();
   const shown = new Set(meterIds);
   const estimates = apportionedEstimates(rows).filter((e) => shown.has(e.meterId));
@@ -95,7 +168,7 @@ export function ApportionedLoads({ rows, period, meterIds }: Props) {
         the operator declared — an estimate, not a measurement.
       </p>
       {estimates.map((e) => (
-        <Estimate key={e.id} e={e} period={period} />
+        <Estimate key={e.id} e={e} period={period} start={start} deviceDaily={deviceDaily} hourEnergy={hourEnergy} />
       ))}
     </section>
   );
