@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { toPublicDevice, toPublicFleet, assertNoSecrets, claimedNodesFrom, orphanNodesFrom } from './tuyaFleet.mjs';
+import { toPublicDevice, toPublicFleet, assertNoSecrets, claimedNodesFrom } from './tuyaFleet.mjs';
 
 const raw = {
   id: 'dev1',
@@ -73,21 +73,7 @@ const FLOW = [
   { type: 'tuya-smart-device', deviceName: 'CO1', deviceId: 'co1-id' },
   { type: 'function', name: 'not a device' },
 ];
-const classFor = (name) => ({ 'NBRIC IR Blaster': 'acu_ir', CO1: 'outlet_dual' })[name] ?? null;
 
 test('claimed nodes map vendor id to node name', () => {
   assert.deepEqual([...claimedNodesFrom(FLOW)], [['hub-old', 'NBRIC IR Blaster'], ['temp-gone', 'Outside Temp'], ['co1-id', 'CO1']]);
-});
-
-test('an orphan is a node whose vendor id the project no longer has, named with its class', () => {
-  const orphans = orphanNodesFrom(FLOW, ['co1-id', 'hub-new'], classFor);
-  assert.deepEqual(orphans, [
-    { name: 'NBRIC IR Blaster', class: 'acu_ir' },
-    // No registry device is bound to it, so no class — and no rebind will ever be offered to it.
-    { name: 'Outside Temp', class: null },
-  ]);
-});
-
-test('orphans carry names and classes only — never the stale vendor id', () => {
-  assert.equal(JSON.stringify(orphanNodesFrom(FLOW, [], classFor)).includes('hub-old'), false);
 });

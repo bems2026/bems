@@ -23,24 +23,33 @@ export function classForNode(name) {
   return DEVICE_REGISTRY.find((d) => d.id === id)?.class ?? null;
 }
 
-export function realRebindDeps({ accessId, accessSecret, host, apply, adminHost = '127.0.0.1', adminPort = 1880 }) {
+/**
+ * The real dependencies. With `sources` (deviceSources.mjs) keys come from an import or the cloud,
+ * the version from LAN presence, and "is this node orphaned" needs both a complete list without its
+ * device and network silence. Without `sources`, the vendor cloud alone decides, as it always did.
+ */
+export function realRebindDeps({ sources = null, accessId, accessSecret, host, apply, adminHost = '127.0.0.1', adminPort = 1880 }) {
+  const cloud = sources ? sources.asDeviceSource() : createTuyaClient({ accessId, accessSecret, host });
   return {
-    cloud: createTuyaClient({ accessId, accessSecret, host }),
+    cloud,
     admin: createAdminClient({ host: adminHost, port: adminPort, timeoutMs: 20000 }),
-    discoverVersion: async (id) => (await listenForAnnouncement(id))?.version ?? null,
+    discoverVersion: sources
+      ? (id) => sources.versionFor(id, { listen: listenForAnnouncement })
+      : async (id) => (await listenForAnnouncement(id))?.version ?? null,
     classForNode,
     declaredVersionFor: (name) => TUYA_NODE_VERSIONS[name],
+    ...(sources ? { isOrphan: (node) => sources.isOrphan(node, classForNode, { listen: listenForAnnouncement }) } : {}),
     apply,
   };
 }
 
-export async function handleRebind(req, res, { readJsonBody, sendJson }) {
+export async function handleRebind(req, res, { readJsonBody, sendJson, sources = null }) {
   const host = TUYA_HOSTS[(process.env.TUYA_REGION ?? '').toLowerCase()];
-  if (!process.env.TUYA_ACCESS_ID || !process.env.TUYA_ACCESS_SECRET || !host) {
+  if (!sources && (!process.env.TUYA_ACCESS_ID || !process.env.TUYA_ACCESS_SECRET || !host)) {
     return sendJson(res, 503, {
       ok: false,
       stage: 'unconfigured',
-      problems: ['the vendor cloud is not configured on this deployment, so the new local key cannot be fetched'],
+      problems: ['no source of device keys is configured on this deployment'],
       summary: null,
     });
   }
@@ -56,10 +65,11 @@ export async function handleRebind(req, res, { readJsonBody, sendJson }) {
   try {
     result = await rebindDevice(
       { nodeName: body?.nodeName, tuyaDeviceId: body?.tuyaDeviceId },
-      realRebindDeps({ accessId: process.env.TUYA_ACCESS_ID, accessSecret: process.env.TUYA_ACCESS_SECRET, host, apply: body?.apply === true }),
+      realRebindDeps({ sources, accessId: process.env.TUYA_ACCESS_ID, accessSecret: process.env.TUYA_ACCESS_SECRET, host, apply: body?.apply === true }),
     );
   } catch (err) {
-    // An upstream that threw — the cloud or Node-RED's admin API. Short, and never the upstream body.
+    // An upstream that threw — Node-RED's admin API, or a cloud used without `sources`. Short, and never
+    // the upstream body.
     return sendJson(res, 502, { ok: false, stage: 'upstream', problems: [String(err?.message ?? err).slice(0, 200)], summary: null });
   }
   return sendJson(res, result.ok ? 200 : 422, result);

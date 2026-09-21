@@ -53,6 +53,7 @@
     "quiesce:pi": "node node-red-bridge/quiesce-dead-nodes.mjs",
     "aircon:pi": "node node-red-bridge/aircon-flow.mjs",
     "rebind:pi": "node node-red-bridge/rebind-device.mjs",
+    "keys:import": "node server/import-keys.mjs",
     "set-device-ip:pi": "node node-red-bridge/set-device-ip.mjs",
     "capability-route:pi": "node node-red-bridge/add-capability-route.mjs"
   },

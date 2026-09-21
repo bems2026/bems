@@ -52,7 +52,7 @@ export async function enrollDevice(draft, deps) {
         : 'the cloud did not report a protocol version for that device',
     );
   }
-  if (!detail?.local_key) problems.push('the cloud did not return a local key for that device');
+  if (!detail?.local_key) problems.push('no local key for that device — it is not in an import, and the vendor cloud did not return one');
   if (problems.length) return { ok: false, stage: 'credentials', problems, summary: null };
 
   const auth = await admin.login();

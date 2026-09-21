@@ -9,16 +9,19 @@
  * disagree about what they refuse. Run it ON THE PI: the protocol version is heard from the device's
  * own LAN broadcast, which exists only on the device segment, and Node-RED listens on loopback.
  *
- * The local key is fetched from the vendor cloud and written into the flow; it is never printed —
- * only its length. Take a backup of ~/.node-red/flows.json first, as for every flow write.
+ * The local key comes from an import (`npm run keys:import`) or, while a subscription is active, the
+ * vendor cloud, and is written into the flow; it is never printed — only its length. Take a backup of
+ * ~/.node-red/flows.json first, as for every flow write.
  */
 
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { loadDotEnv } from './nodeRedAdmin.mjs';
-import { TUYA_HOSTS } from '../server/tuyaCloud.mjs';
+import { createTuyaClient, TUYA_HOSTS } from '../server/tuyaCloud.mjs';
 import { rebindDevice } from '../server/rebindService.mjs';
 import { realRebindDeps } from '../server/rebindRoute.mjs';
+import { createCredentialStore } from '../server/credentialStore.mjs';
+import { createDeviceSources } from '../server/deviceSources.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 loadDotEnv(join(HERE, '..'));
@@ -39,17 +42,18 @@ if (!NODE || !VENDOR) {
   process.exit(2);
 }
 const host = TUYA_HOSTS[(process.env.TUYA_REGION ?? '').toLowerCase()];
-if (!process.env.TUYA_ACCESS_ID || !process.env.TUYA_ACCESS_SECRET || !host) {
-  console.error('The vendor cloud is not configured (TUYA_ACCESS_ID / TUYA_ACCESS_SECRET / TUYA_REGION in server/.env).');
-  process.exit(2);
-}
+const cloud = process.env.TUYA_ACCESS_ID && process.env.TUYA_ACCESS_SECRET && host
+  ? createTuyaClient({ accessId: process.env.TUYA_ACCESS_ID, accessSecret: process.env.TUYA_ACCESS_SECRET, host })
+  : null;
+// No standing presence listener in a one-shot CLI: the orphan check listens once for the old device.
+const sources = createDeviceSources({ store: createCredentialStore(), cloud, presence: null });
 
 console.log(`[rebind] ${APPLY ? 'Applying' : 'Dry run (pass --apply to write)'}: "${NODE}"`);
-console.log('[rebind] listening for the device\'s announcement may take up to 12 s...\n');
+console.log('[rebind] listening for the old and new devices\' announcements may take up to 24 s...\n');
 
 const r = await rebindDevice(
   { nodeName: NODE, tuyaDeviceId: VENDOR },
-  realRebindDeps({ accessId: process.env.TUYA_ACCESS_ID, accessSecret: process.env.TUYA_ACCESS_SECRET, host, apply: APPLY, adminHost: HOST, adminPort: PORT }),
+  realRebindDeps({ sources, apply: APPLY, adminHost: HOST, adminPort: PORT }),
 );
 
 if (!r.ok) {
@@ -59,7 +63,7 @@ if (!r.ok) {
 }
 const s = r.summary;
 console.log(`  node           ${s.nodeName}`);
-console.log(`  new device     ${s.vendorName} (${s.kind}) ${s.vendorOnline ? 'online' : 'offline'}`);
+console.log(`  new device     ${s.vendorName} (${s.kind}) ${s.vendorOnline ? 'online' : s.vendorOnline === false ? 'offline' : 'online state unknown'}`);
 console.log(`  protocol       v${s.tuyaVersion} as announced${s.declaredVersion ? ` (declared v${s.declaredVersion})` : ''}`);
 console.log(`  local key      present, ${s.localKeyLength} chars`);
 console.log(`  fields         ${s.fieldsChanged.join(', ') || 'none'}`);

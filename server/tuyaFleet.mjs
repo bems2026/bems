@@ -20,7 +20,7 @@
  * hub's aircon remote is one, and without this the Add Device wizard offered it for enrolment as an
  * outlet — a node that could never connect.
  */
-const PUBLIC_FIELDS = ['id', 'name', 'online', 'category', 'product_name', 'sub'];
+const PUBLIC_FIELDS = ['id', 'name', 'online', 'category', 'product_name', 'product_id', 'sub', 'credential_source', 'on_lan', 'lan_version'];
 
 /** Anything whose name suggests a credential. Checked against keys, not values. */
 const SECRET_KEY_PATTERN = /key|secret|token|password|uid|sid/i;
@@ -70,25 +70,14 @@ export function toPublicFleet(rawDevices, claimedIds = new Set()) {
   );
 }
 
-/** Vendor id -> the `deviceName` of the flow node that polls it. */
+/**
+ * Vendor id -> the `deviceName` of the flow node that polls it.
+ *
+ * Orphaned nodes — a re-pair's leftovers — are decided in `deviceSources.mjs`, not here: "the cloud
+ * project no longer has it" stopped being enough evidence once the cloud became optional.
+ */
 export function claimedNodesFrom(flows) {
   return new Map(
     (flows ?? []).filter((n) => n?.type === 'tuya-smart-device' && n.deviceId).map((n) => [n.deviceId, n.deviceName]),
   );
-}
-
-/**
- * Flow nodes whose vendor id this cloud project no longer has — what re-pairing a device in Smart Life
- * leaves behind, as it did the IR blaster on 2026-09-17. Named with the class of the registry device
- * bound to each (`classForNode`), which is what lets the wizard offer a rebind only to a device of the
- * same kind; a node with no bound device gets `null` and is never offered one.
- *
- * Names and classes only. The stale vendor id is not a secret, but it is not something a browser
- * needs, and this list is served to one.
- */
-export function orphanNodesFrom(flows, cloudIds, classForNode) {
-  const inProject = new Set(cloudIds ?? []);
-  return (flows ?? [])
-    .filter((n) => n?.type === 'tuya-smart-device' && n.deviceId && !inProject.has(n.deviceId))
-    .map((n) => ({ name: n.deviceName, class: classForNode(n.deviceName) ?? null }));
 }

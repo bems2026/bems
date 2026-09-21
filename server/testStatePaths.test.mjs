@@ -29,7 +29,9 @@ import { dirname, join } from 'node:path';
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** Every env var naming a path under `server/data/`. Additions here need a redirect below. */
-const STATEFUL_ENV_VARS = ['COMMAND_AUDIT_BUFFER_PATH', 'SCHEDULER_AUDIT_BUFFER_PATH', 'JWKS_CACHE_PATH'];
+// DEVICE_CREDENTIALS_PATH (2026-09-17): imported local keys. A test import landing in the real file
+// would put fixture devices into the live Add Device list, with keys that fit no device.
+const STATEFUL_ENV_VARS = ['COMMAND_AUDIT_BUFFER_PATH', 'SCHEDULER_AUDIT_BUFFER_PATH', 'JWKS_CACHE_PATH', 'DEVICE_CREDENTIALS_PATH'];
 
 const TMPDIR_BUILT = /mkdtempSync\(\s*join\(\s*os\.tmpdir\(\)/;
 

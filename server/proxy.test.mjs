@@ -197,6 +197,9 @@ function tempStatePaths() {
     COMMAND_AUDIT_BUFFER_PATH: join(dir, 'command-audit-buffer.ndjson'),
     SCHEDULER_AUDIT_BUFFER_PATH: join(dir, 'command-audit-buffer-scheduler.ndjson'),
     JWKS_CACHE_PATH: join(dir, 'jwks.json'),
+    DEVICE_CREDENTIALS_PATH: join(dir, 'device-credentials.json'),
+    // Not a path, but the same kind of leak: a test proxy must not sit on the device-discovery ports.
+    LAN_PRESENCE: 'off',
   };
 }
 
@@ -1301,14 +1304,103 @@ test('GET /api/tuya/devices requires a session, like every other data route', as
   }
 });
 
-test('GET /api/tuya/devices reports 501 when the deployment has no Tuya credentials', async () => {
-  // A configuration state, not a fault: a site that was never given credentials should lose
-  // this one endpoint rather than see an error for something nobody asked for.
+test('GET /api/tuya/devices answers without Tuya credentials, and says the cloud is unconfigured', async () => {
+  // 2026-09-17: this was a 501. The vendor cloud is now one optional source among three (see
+  // deviceSources.mjs) — a deployment with no IoT Core subscription still onboards from imported keys
+  // and the device network, so the list must not disappear with the cloud.
   const { proxyUrl, cleanup } = await setup();
   try {
     const res = await fetch(`${proxyUrl}/api/tuya/devices`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
-    assert.equal(res.status, 501);
-    assert.deepEqual(await res.json(), { error: 'tuya_not_configured' });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(body.devices, []);
+    assert.equal(body.sources.cloud.status, 'unconfigured');
+    assert.equal(body.sources.imported.count, 0);
+    assert.equal(body.sources.lan.listening_since, null, 'the harness turns LAN presence off');
+    assert.deepEqual(body.orphan_nodes, []);
+  } finally {
+    cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// /api/credentials — local keys imported from an export, instead of the vendor cloud
+// ---------------------------------------------------------------------------
+
+const IMPORT_KEY = 'Zq8#kLm2@pQ4wE7r';
+const importExport = JSON.stringify([
+  { id: 'bf0000000000000000abcd', name: 'Office outlet 9', local_key: IMPORT_KEY, category: 'pc', product_name: 'Smart Plug', sub: false },
+  { id: 'bf0000000000000000beef', name: 'Door sensor', local_key: '', category: 'mcs' },
+]);
+
+test('POST /api/credentials/import requires a session', async () => {
+  const { proxyUrl, cleanup } = await setup();
+  try {
+    const res = await fetch(`${proxyUrl}/api/credentials/import`, { method: 'POST', body: JSON.stringify({ content: importExport }) });
+    assert.equal(res.status, 401);
+  } finally {
+    cleanup();
+  }
+});
+
+test('an import stores the keys, lists the devices, and never echoes a key', async () => {
+  const { proxyUrl, cleanup } = await setup();
+  const auth = { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' };
+  try {
+    const res = await fetch(`${proxyUrl}/api/credentials/import`, { method: 'POST', headers: auth, body: JSON.stringify({ content: importExport, complete: true }) });
+    const text = await res.text();
+    assert.equal(res.status, 200, text);
+    assert.ok(!text.includes(IMPORT_KEY), 'the import reply must not carry a key');
+    const body = JSON.parse(text);
+    assert.equal(body.ok, true);
+    assert.equal(body.format, 'json');
+    assert.equal(body.added, 1);
+    assert.equal(body.complete, true);
+    assert.equal(body.problems.length, 1, 'the keyless row is reported, not stored');
+    assert.match(body.problems[0], /Door sensor/);
+
+    const list = await (await fetch(`${proxyUrl}/api/credentials`, { headers: auth })).text();
+    assert.ok(!list.includes(IMPORT_KEY));
+    const stored = JSON.parse(list).devices;
+    assert.deepEqual(stored.map((d) => [d.name, d.credential_length]), [['Office outlet 9', 16]]);
+
+    const fleet = await (await fetch(`${proxyUrl}/api/tuya/devices`, { headers: auth })).text();
+    assert.ok(!fleet.includes(IMPORT_KEY));
+    const parsed = JSON.parse(fleet);
+    assert.deepEqual(parsed.devices.map((d) => [d.name, d.credential_source, d.category]), [['Office outlet 9', 'imported', 'pc']]);
+    assert.equal(parsed.sources.imported.count, 1);
+    assert.ok(parsed.sources.imported.last_complete_at);
+  } finally {
+    cleanup();
+  }
+});
+
+test('an export that is not one is refused with a reason, and nothing is stored', async () => {
+  const { proxyUrl, cleanup } = await setup();
+  const auth = { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' };
+  try {
+    const res = await fetch(`${proxyUrl}/api/credentials/import`, { method: 'POST', headers: auth, body: JSON.stringify({ content: 'hello, world' }) });
+    assert.equal(res.status, 422);
+    const body = await res.json();
+    assert.equal(body.ok, false);
+    assert.match(body.problems[0], /not a recognised export/);
+    assert.match(body.error, /not a recognised export/, 'the browser client reads `error` from a non-2xx reply');
+    const stored = await (await fetch(`${proxyUrl}/api/credentials`, { headers: auth })).json();
+    assert.deepEqual(stored.devices, []);
+  } finally {
+    cleanup();
+  }
+});
+
+test('an import body over the size cap is refused before it is parsed', async () => {
+  const { proxyUrl, cleanup } = await setup();
+  try {
+    const res = await fetch(`${proxyUrl}/api/credentials/import`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 'x'.repeat(2 * 1024 * 1024) }),
+    });
+    assert.equal(res.status, 413);
   } finally {
     cleanup();
   }

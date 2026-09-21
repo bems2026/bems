@@ -36,9 +36,11 @@ function placementFor(flows) {
   return { z: peer?.z ?? flows.find((n) => n.type === 'tab')?.id, x: 200, y: lowest + 120 };
 }
 
-export async function handleEnroll(req, res, { readJsonBody, sendJson }) {
+export async function handleEnroll(req, res, { readJsonBody, sendJson, sources = null }) {
   const cloudHost = TUYA_HOSTS[(process.env.TUYA_REGION ?? '').toLowerCase()];
-  if (!process.env.TUYA_ACCESS_ID || !process.env.TUYA_ACCESS_SECRET || !cloudHost) {
+  // With `sources` (deviceSources.mjs), keys may come from an import and the version from the LAN, so
+  // a deployment with no vendor credentials can still enrol. Without it, the vendor cloud is required.
+  if (!sources && (!process.env.TUYA_ACCESS_ID || !process.env.TUYA_ACCESS_SECRET || !cloudHost)) {
     return sendJson(res, 503, {
       ok: false,
       stage: 'unconfigured',
@@ -70,11 +72,13 @@ export async function handleEnroll(req, res, { readJsonBody, sendJson }) {
   try {
     result = await enrollDevice(draft, {
       registry: DEVICE_REGISTRY,
-      cloud: createTuyaClient({
-        accessId: process.env.TUYA_ACCESS_ID,
-        accessSecret: process.env.TUYA_ACCESS_SECRET,
-        host: cloudHost,
-      }),
+      cloud: sources
+        ? sources.asDeviceSource()
+        : createTuyaClient({
+          accessId: process.env.TUYA_ACCESS_ID,
+          accessSecret: process.env.TUYA_ACCESS_SECRET,
+          host: cloudHost,
+        }),
       admin: createAdminClient({ host: '127.0.0.1', port: 1880, timeoutMs: 20000 }),
       readEnrolled: () => ({
         source: readFileSync(ENROLLED_PATH, 'utf8'),
@@ -87,7 +91,9 @@ export async function handleEnroll(req, res, { readJsonBody, sendJson }) {
       placementFor,
       // The cloud reports no protocol version; the device's own LAN broadcast does. The proxy runs on
       // the Pi, on the device segment, which is the only place this can be heard.
-      discoverVersion: async (id) => (await listenForAnnouncement(id))?.version ?? null,
+      discoverVersion: sources
+        ? (id) => sources.versionFor(id, { listen: listenForAnnouncement })
+        : async (id) => (await listenForAnnouncement(id))?.version ?? null,
       apply,
     });
   } catch (err) {

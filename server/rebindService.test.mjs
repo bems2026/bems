@@ -107,7 +107,7 @@ test('refuses a node no registry device is bound to — its kind cannot be check
 test('refuses a device the project cannot see', async () => {
   const { deps } = harness();
   const r = await rebindDevice(draft({ tuyaDeviceId: 'ghost' }), deps);
-  assert.match(r.problems.join(' '), /not in this cloud project/);
+  assert.match(r.problems.join(' '), /not among the imported keys/);
 });
 
 test('refuses when neither the cloud nor the network gives a version', async () => {
@@ -138,4 +138,34 @@ test('a flow edited between the read and the write is reported, not clobbered', 
   assert.equal(r.ok, false);
   assert.equal(r.stage, 'flow');
   assert.match(r.problems.join(' '), /changed between/);
+});
+
+test('a target heard on the network with no key anywhere is refused with the way to get one', async () => {
+  const { deps } = harness();
+  const listed = await deps.cloud.listDevices();
+  const target = listed.find((d) => d.id === draft().tuyaDeviceId);
+  deps.cloud = {
+    listDevices: async () => listed.map((d) => (d === target ? { ...d, category: null, credential_source: null } : d)),
+    describeDevice: async () => null,
+  };
+  const r = await rebindDevice(draft(), deps);
+  assert.equal(r.ok, false);
+  assert.equal(r.stage, 'validate');
+  assert.match(r.problems.join(' '), /no local key has been imported/);
+  assert.doesNotMatch(r.problems.join(' '), /unknown category/, 'the missing key is the problem, not the missing category');
+});
+
+test('with an isOrphan check, a node whose device is merely silent-but-listed is refused', async () => {
+  // deviceSources.isOrphan says no (the device is in a complete list, only unplugged): refuse, even
+  // though the vendor listing in this harness does not contain it.
+  const { deps } = harness({ isOrphan: async () => false });
+  const r = await rebindDevice(draft(), deps);
+  assert.equal(r.ok, false);
+  assert.match(r.problems.join(' '), /still heard on the network/);
+});
+
+test('with an isOrphan check saying yes, the rebind proceeds without any vendor listing of the old device', async () => {
+  const { deps } = harness({ isOrphan: async () => true });
+  const r = await rebindDevice(draft(), deps);
+  assert.equal(r.ok, true);
 });

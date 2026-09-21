@@ -86,6 +86,32 @@ test('an unknown category is named, not guessed at', () => {
   assert.match(r.label, /kg/);
 });
 
+test('a device heard on the network with no imported key asks for the key, whatever its kind', () => {
+  // A new pairing announces itself within seconds, with no category — the key tool's export is what
+  // names it and carries its key. Until then there is nothing to enrol from.
+  const r = classifyVendorDevice({ id: 'new', category: null, credential_source: null, on_lan: true }, { registry });
+  assert.equal(r.action, 'needs_key');
+  assert.equal(r.enrollable, false);
+  assert.match(r.reason, /Import keys/);
+});
+
+test('a device already in the flow is reported as such even with no imported key — its key lives in the node', () => {
+  const r = classifyVendorDevice({ id: 'co1', category: null, credential_source: null, on_lan: true }, { registry, claimedBy: 'CO1' });
+  assert.equal(r.action, 'none');
+  assert.match(r.reason, /Already in the flow as "CO1"/);
+});
+
+test('a device from the vendor cloud, where no credential source is named, is classified as before', () => {
+  const r = classifyVendorDevice({ id: 'x', category: 'pc' }, { registry });
+  assert.equal(r.action, 'enroll');
+});
+
+test('the rebind reason does not claim the cloud decided it', () => {
+  const r = classifyVendorDevice({ id: 'hub-new', category: 'wnykq', credential_source: 'imported' }, { registry, orphanNodes: [{ name: 'NBRIC IR Blaster', class: 'acu_ir' }] });
+  assert.doesNotMatch(r.reason, /cloud project/);
+  assert.match(r.reason, /no longer heard/);
+});
+
 test('any other sub-device is refused: it is reached through its gateway', () => {
   const r = classifyVendorDevice({ id: 'zb', category: 'pc', sub: true }, { registry });
   assert.equal(r.enrollable, false);

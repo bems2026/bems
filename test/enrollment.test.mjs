@@ -36,7 +36,7 @@ test('refuses a vendor device already enrolled under another id', () => {
 
 test('refuses a vendor device the cloud project cannot see', () => {
   // The node would never connect, and permanent `find() timed out` reads as a network fault.
-  assert.match(check({ tuyaDeviceId: 'vendor-ghost' }).problems.join(), /not in this cloud project/);
+  assert.match(check({ tuyaDeviceId: 'vendor-ghost' }).problems.join(), /not among the imported keys/);
 });
 
 test('refuses ids that would not survive being a context key', () => {

@@ -5,8 +5,9 @@
  * decides whether a given rebind is one to make at all, and it is strict because the write puts a
  * local key into a live flow and repoints a device that other services read:
  *
- *   - the node must be ORPHANED — its current vendor id no longer in the cloud project. A rebind is
- *     the repair for a re-pair; it is not a way to move a working device's node to another device;
+ *   - the node must be ORPHANED — with `deps.isOrphan` (deviceSources.mjs), its device unheard on the
+ *     network AND absent from a complete device list; without it, absent from the vendor listing. A
+ *     rebind is the repair for a re-pair; it is not a way to move a working device's node elsewhere;
  *   - a registry device must be bound to the node, so the target's KIND can be checked against it —
  *     an aircon node must never be pointed at an outlet;
  *   - the target must be in the project, a real device rather than a virtual sub-device, and not
@@ -44,15 +45,23 @@ export async function rebindDevice(draft, deps) {
   const node = flows.find((n) => n.type === 'tuya-smart-device' && n.deviceName === nodeName);
   const target = devices.find((d) => d.id === tuyaDeviceId);
   if (!node) problems.push(`no tuya-smart-device node named "${nodeName}" in the flow`);
-  if (!target) problems.push('that vendor device is not in this cloud project');
-  if (node && devices.some((d) => d.id === node.deviceId)) {
-    problems.push(`the device "${nodeName}" polls is still in the cloud project — a rebind repairs a re-pair, it does not move a working node`);
+  if (!target) problems.push('that vendor device is not among the imported keys, the cloud project, or the devices heard on the network');
+  // Orphaned or not. With `isOrphan` (deviceSources.mjs) the answer needs BOTH a complete list without
+  // the node's device AND network silence, so an unplugged device is never mistaken for a re-paired
+  // one. Without it — a caller that only has a vendor listing — the listing alone decides, as before.
+  const orphaned = node ? (deps.isOrphan ? await deps.isOrphan(node) : !devices.some((d) => d.id === node.deviceId)) : false;
+  if (node && !orphaned) {
+    problems.push(`the device "${nodeName}" polls is still in the cloud project or still heard on the network — a rebind repairs a re-pair, it does not move a working node`);
   }
   const nodeClass = node ? classForNode(nodeName) : null;
   if (node && !nodeClass) problems.push(`no registry device is bound to "${nodeName}", so the new device's kind cannot be checked against it`);
 
   const kind = target ? VENDOR_KINDS[target.category] : undefined;
-  if (target && target.sub) problems.push(`"${target.name}" is a sub-device with no network presence of its own — a node cannot poll it`);
+  // Heard on the network only (deviceSources.mjs marks it `credential_source: null`): no key, and no
+  // category to check the kind against either. The key is the thing to fix, so say that alone.
+  if (target && target.credential_source === null) {
+    problems.push('that device is announcing on the network, but no local key has been imported for it — import the key tool\'s export first');
+  } else if (target && target.sub) problems.push(`"${target.name}" is a sub-device with no network presence of its own — a node cannot poll it`);
   else if (target && nodeClass && kind?.suggestedClass !== nodeClass) {
     problems.push(`"${target.name}" is ${kind ? `a ${kind.label}` : `an unknown category (${target.category})`} and cannot back "${nodeName}", which is ${nodeClass}`);
   }
@@ -64,7 +73,7 @@ export async function rebindDevice(draft, deps) {
   const version = detail?.version ?? (discoverVersion ? await discoverVersion(tuyaDeviceId).catch(() => null) : null);
   const credProblems = [];
   if (!version) credProblems.push('no protocol version: the cloud does not report one, and the device did not announce itself on this network — it must be powered and on the device SSID');
-  if (!detail?.local_key) credProblems.push('the cloud did not return a local key for that device');
+  if (!detail?.local_key) credProblems.push('no local key for that device — it is not in an import, and the vendor cloud did not return one');
   if (credProblems.length) return fail('credentials', credProblems);
 
   const plan = planRebind(flows, { nodeName, tuyaDeviceId, localKey: detail.local_key, tuyaVersion: String(version) });

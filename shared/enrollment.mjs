@@ -78,6 +78,16 @@ export function classifyVendorDevice(d, { registry = DEVICE_REGISTRY, claimedBy 
       : none('A virtual remote with no network presence of its own, and this site has no single aircon to bind it to.');
   }
   if (claimedBy) return none(`Already in the flow as "${claimedBy}".`);
+  // Heard on the device network, but in no imported export and no cloud listing (2026-09-17). `null`,
+  // not merely absent: a row straight from the vendor cloud carries no credential source at all.
+  if (d?.credential_source === null) {
+    return {
+      ...k,
+      action: 'needs_key',
+      enrollable: false,
+      reason: 'Announcing on the device network, but no local key has been imported for it. Export the account\'s devices from the key tool and use Import keys — it can be enrolled once its key is here.',
+    };
+  }
   if (d?.sub) return none('A sub-device is reached through its gateway, not on its own.');
 
   const orphan = k.suggestedClass ? orphanNodes.find((n) => n.class === k.suggestedClass) : undefined;
@@ -87,7 +97,7 @@ export function classifyVendorDevice(d, { registry = DEVICE_REGISTRY, claimedBy 
       action: 'rebind',
       enrollable: false,
       rebindNode: orphan.name,
-      reason: `"${orphan.name}" points at a device this cloud project no longer has. Rebind it to this one — its wiring and history stay.`,
+      reason: `"${orphan.name}" points at a device that is no longer heard on the network or listed in the account — what re-pairing leaves behind. Rebind it to this one — its wiring and history stay.`,
     };
   }
 
@@ -125,7 +135,7 @@ export function validateEnrollment(draft, { registry = DEVICE_REGISTRY, cloudDev
   } else if (cloudDeviceIds.length && !cloudDeviceIds.includes(draft.tuyaDeviceId)) {
     // Enrolling a device the project cannot see produces a node that can never connect, and
     // the symptom — permanent `find() timed out` — reads as a network fault.
-    problems.push('that vendor device is not in this cloud project');
+    problems.push('that vendor device is not among the imported keys, the cloud project, or the devices heard on the network');
   } else if (registry.some((d) => d.tuya_device_id === draft.tuyaDeviceId)) {
     problems.push('that vendor device is already enrolled');
   }

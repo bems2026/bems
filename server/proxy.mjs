@@ -58,7 +58,11 @@ import { roomTargetFloorC } from '../shared/sitePolicy.mjs';
 import { DEVICE_REGISTRY, TIMING, SITE } from '../shared/registry.mjs';
 import { dispatchCommand, DISPATCH_CLASSES } from './dispatchLight.mjs';
 import { createTuyaClient, TUYA_HOSTS } from './tuyaCloud.mjs';
-import { toPublicFleet, claimedNodesFrom, orphanNodesFrom } from './tuyaFleet.mjs';
+import { toPublicFleet, claimedNodesFrom, assertNoSecrets } from './tuyaFleet.mjs';
+import { createCredentialStore } from './credentialStore.mjs';
+import { parseCredentialExport } from './credentialImport.mjs';
+import { createLanPresence } from './lanPresence.mjs';
+import { createDeviceSources } from './deviceSources.mjs';
 import { joinMacPresence, readNeighbours, toPublicPresence } from './macPresence.mjs';
 import { createAdminClient } from '../node-red-bridge/nodeRedAdmin.mjs';
 import { auditedDispatch } from './auditedDispatch.mjs';
@@ -66,10 +70,10 @@ import { createJwksCache } from './jwksCache.mjs';
 import { verifyEs256Jwt } from './jwtVerify.mjs';
 import { createBufferedAudit } from './auditQueue.mjs';
 import { bufferCount } from './ingestBuffer.mjs';
-import { buildCloudDispatch, registryIdForNodeName } from './cloudDispatchConfig.mjs';
+import { buildCloudDispatch } from './cloudDispatchConfig.mjs';
 import { handleEnroll } from './enrollRoute.mjs';
 import { handleRemove } from './removeRoute.mjs';
-import { handleRebind } from './rebindRoute.mjs';
+import { handleRebind, classForNode } from './rebindRoute.mjs';
 
 /**
  * The Tuya cloud client, or null when the credentials are absent. Built lazily so the proxy
@@ -95,6 +99,25 @@ function getTuyaClient() {
  * flow file and re-authenticate on a path that only runs when something is already wrong.
  */
 const CLOUD_DISPATCH = buildCloudDispatch(process.env);
+
+/**
+ * Where Add Device, enrolment and rebind get device ids, local keys and protocol versions (2026-09-17).
+ *
+ * The vendor OpenAPI used to be the only source, and it is a time-limited subscription the operator
+ * uses once per batch of pairings. So: keys imported from an export (`credentialStore.mjs`), what the
+ * device network announces (`lanPresence.mjs`), and the vendor cloud only while it happens to answer.
+ *
+ * The presence listener binds the Tuya discovery ports with `reuseAddr`, beside Node-RED's own
+ * discovery, and only listens. `LAN_PRESENCE=off` turns it off — the test harness does, and so should
+ * a deployment whose proxy is not on the device segment, where it would only ever hear silence.
+ */
+const CREDENTIAL_STORE = createCredentialStore();
+const LAN_PRESENCE = process.env.LAN_PRESENCE === 'off' ? null : createLanPresence();
+LAN_PRESENCE?.start();
+const DEVICE_SOURCES = createDeviceSources({ store: CREDENTIAL_STORE, cloud: getTuyaClient(), presence: LAN_PRESENCE });
+
+/** An export of a few hundred devices is well under this; anything larger is not an export. */
+const MAX_IMPORT_BODY_BYTES = 1024 * 1024;
 
 /**
  * Which dispatch paths this building permits — see `shared/sites/<id>/site.mjs`.
@@ -393,6 +416,48 @@ async function readJsonBody(req) {
   } catch {
     return null;
   }
+}
+
+/**
+ * `POST /api/credentials/import` — `{content, complete?}`, the text of a key-extraction tool's export.
+ *
+ * Authenticated like enrolment, and like enrolment not behind HARDWARE_DISPATCH_ENABLED: storing a
+ * key moves nothing. The reply reports counts and per-row problems; it never carries a key, and the
+ * problems name rows by name or id only (`credentialImport.mjs`).
+ *
+ * `complete` is the operator saying the export lists EVERY device in the account. Only then may a
+ * device's absence from it count towards calling a flow node orphaned — see `deviceSources.mjs`.
+ */
+async function handleCredentialImport(req, res) {
+  let raw = '';
+  let size = 0;
+  let oversize = false;
+  // Drained to the end rather than cut off, so the client reads the 413 instead of a reset socket.
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > MAX_IMPORT_BODY_BYTES) oversize = true;
+    else raw += chunk;
+  }
+  if (oversize) return sendJson(res, 413, { ok: false, problems: ['the export is larger than any device export should be'] });
+
+  let body;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    return sendJson(res, 400, { ok: false, problems: ['malformed request body'] });
+  }
+  if (typeof body?.content !== 'string') return sendJson(res, 400, { ok: false, problems: ['content must be the export text'] });
+
+  const parsed = parseCredentialExport(body.content);
+  if (!parsed.format || parsed.devices.length === 0) {
+    // `error` as well as `problems`: the browser's fetchJson surfaces only `error` from a non-2xx reply.
+    const reason = parsed.problems[0] ?? 'no row had both a device id and a usable local key';
+    return sendJson(res, 422, { ok: false, error: reason, format: parsed.format, added: 0, updated: 0, total: CREDENTIAL_STORE.publicView().length, complete: false, problems: parsed.problems.length ? parsed.problems : [reason] });
+  }
+  const complete = body.complete === true;
+  const result = CREDENTIAL_STORE.importDevices(parsed.devices, { source: `import:${parsed.format}`, complete });
+  console.log(`[ibems-proxy] credential import: ${parsed.devices.length} device(s), added ${result.added}, updated ${result.updated}, complete=${complete}, ${parsed.problems.length} problem(s)`);
+  return sendJson(res, 200, assertNoSecrets({ ok: true, format: parsed.format, ...result, complete, problems: parsed.problems }));
 }
 
 async function handleLocalLogin(req, res) {
@@ -715,46 +780,50 @@ const server = http.createServer(async (req, res) => {
   if (!authorized) return sendJson(res, 401, { error: 'unauthorized' });
 
   if (req.method === 'GET' && url.pathname === '/api/tuya/devices') {
-    const client = getTuyaClient();
-    // 501, not 500: the deployment has not been given Tuya credentials, which is a
-    // configuration state rather than a fault. The frontend hides the column instead of
-    // showing an error for something nobody asked for.
-    if (!client) return sendJson(res, 501, { error: 'tuya_not_configured' });
+    // Always a 200 since 2026-09-17: the vendor cloud is one optional source (see DEVICE_SOURCES), and
+    // `sources` says which of the three answered. A lapsed subscription used to take this whole list —
+    // and so Add Device — down with it, while the devices and their imported keys were all still there.
+    //
+    // Which vendor devices already have a node. Read fresh rather than cached at startup: enrolling
+    // one changes this, and a wizard showing a device it just added as still available is worse than
+    // one extra read on a page nobody opens often.
+    let flows = null;
     try {
-      const devices = await client.listDevices();
-      // Which vendor devices already have a node. Read fresh rather than cached at startup:
-      // enrolling one changes this, and a wizard showing a device it just added as still
-      // available is worse than one extra read on a page nobody opens often.
-      let claimed = new Map();
-      let orphans = [];
-      let claimedKnown = false;
-      try {
-        const auth = await createAdminClient({ host: '127.0.0.1', port: BRIDGE_PORT, timeoutMs: 10000 });
-        const { flows } = await auth.getFlows(await auth.login());
-        // Vendor id -> node name, so the wizard can say WHICH node claims a device.
-        claimed = claimedNodesFrom(flows);
-        // Nodes whose device the project no longer has — a re-pair leaves one behind — each with the
-        // class of the registry device bound to it, which is what a rebind is matched on.
-        orphans = orphanNodesFrom(flows, devices.map((d) => d.id), (name) => {
-          const id = registryIdForNodeName(name);
-          return DEVICE_REGISTRY.find((d) => d.id === id)?.class ?? null;
-        });
-        claimedKnown = true;
-      } catch (err) {
-        // Reported, not swallowed. This read needs NODE_RED_ADMIN_USER/PASS, which the Tuya
-        // call does not — so it fails independently, and on failure every `claimed` is false,
-        // which is indistinguishable from an empty flow. The wizard then offers devices that
-        // already have a node as available: a wrong list that looks right. That is exactly
-        // what happened when these keys were missing from server/.env, and it stayed invisible
-        // because this catch was empty. `claimed_known` lets the page say it does not know.
-        console.error(`[ibems-proxy] claimed-set lookup failed, enrolment candidates unfiltered: ${err.message}`);
-      }
-      return sendJson(res, 200, { devices: toPublicFleet(devices, claimed), claimed_known: claimedKnown, orphan_nodes: orphans });
+      const auth = await createAdminClient({ host: '127.0.0.1', port: BRIDGE_PORT, timeoutMs: 10000 });
+      ({ flows } = await auth.getFlows(await auth.login()));
     } catch (err) {
-      // The upstream message can name the data centre and the account; log it, do not echo it.
-      console.error(`[ibems-proxy] tuya fleet fetch failed: ${err.message}`);
-      return sendJson(res, 502, { error: 'tuya_unavailable' });
+      // Reported, not swallowed. This read needs NODE_RED_ADMIN_USER/PASS, which nothing else here
+      // does — so it fails independently, and on failure every `claimed` is false, which is
+      // indistinguishable from an empty flow. The wizard then offers devices that already have a node
+      // as available: a wrong list that looks right. That is exactly what happened when these keys
+      // were missing from server/.env, and it stayed invisible because this catch was empty.
+      // `claimed_known` lets the page say it does not know.
+      console.error(`[ibems-proxy] claimed-set lookup failed, enrolment candidates unfiltered: ${err.message}`);
     }
+    try {
+      // Orphans are nodes whose device was re-paired under a new id — concluded cautiously, from LAN
+      // silence AND a complete list without it; see deviceSources.mjs. Without the flow there are none.
+      const listing = await DEVICE_SOURCES.listWithOrphans(flows ?? [], classForNode);
+      if (listing.sources.cloud.status === 'unavailable') {
+        console.warn(`[ibems-proxy] vendor cloud listing unavailable (${listing.sources.cloud.detail}); serving imported and LAN sources`);
+      }
+      return sendJson(res, 200, assertNoSecrets({
+        devices: toPublicFleet(listing.devices, flows ? claimedNodesFrom(flows) : new Map()),
+        claimed_known: flows !== null,
+        orphan_nodes: listing.orphan_nodes,
+        sources: listing.sources,
+      }));
+    } catch (err) {
+      console.error(`[ibems-proxy] device listing failed: ${err.message}`);
+      return sendJson(res, 500, { error: 'device_listing_failed' });
+    }
+  }
+  if (req.method === 'GET' && url.pathname === '/api/credentials') {
+    // What has been imported, without the keys: `publicView` carries each key's length only.
+    return sendJson(res, 200, assertNoSecrets({ devices: CREDENTIAL_STORE.publicView() }));
+  }
+  if (req.method === 'POST' && url.pathname === '/api/credentials/import') {
+    return handleCredentialImport(req, res);
   }
   if (req.method === 'GET' && url.pathname === '/api/tuya/presence') {
     // FI-015. Joins the cloud's per-device MAC against this host's ARP table, which is the one
@@ -829,12 +898,12 @@ const server = http.createServer(async (req, res) => {
     // HARDWARE_DISPATCH_ENABLED: that gate governs moving a relay, and enrolling a device
     // moves nothing. Conflating the two would mean a site that has not opened dispatch could
     // never add a device, which is backwards — you enrol before you switch.
-    return handleEnroll(req, res, { readJsonBody, sendJson, token });
+    return handleEnroll(req, res, { readJsonBody, sendJson, token, sources: DEVICE_SOURCES });
   }
   if (req.method === 'POST' && url.pathname === '/api/rebind') {
     // Authenticated like enrolment and for the same reason not behind HARDWARE_DISPATCH_ENABLED:
     // it moves nothing. It points an orphaned node at the device that replaced it after a re-pair.
-    return handleRebind(req, res, { readJsonBody, sendJson, token });
+    return handleRebind(req, res, { readJsonBody, sendJson, token, sources: DEVICE_SOURCES });
   }
   if (req.method === 'POST' && url.pathname === '/api/remove') {
     // Same gate reasoning as enrolment, and the same authentication. Unlike enrolment this
