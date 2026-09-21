@@ -2,6 +2,7 @@ import { BASELINE_MIN_DAYS, BASELINE_MIN_SAMPLES, PLAIN_NOT_SAID, TOO_LITTLE_TIT
 import { PRINT_PALETTE } from '@/components/reports/charts/palette';
 import { sceneToSvg } from '@/components/reports/charts/sceneToSvg';
 import { dailyEnergyChart } from '@/components/reports/charts/dailyEnergyChart';
+import { hourlyEnergyChart } from '@/components/reports/charts/hourlyEnergyChart';
 import { loadProfileChart } from '@/components/reports/charts/loadProfileChart';
 import { circuitBreakdownChart } from '@/components/reports/charts/circuitBreakdownChart';
 import { demandHeatmapChart } from '@/components/reports/charts/demandHeatmapChart';
@@ -10,7 +11,7 @@ import { circuitDailyEnergyChart, type CircuitDayPoint, type CircuitSeriesDef } 
 import { circuitPowerTrendChart, type TrendDay, type TrendSeries } from '@/components/reports/charts/circuitPowerTrendChart';
 import type { Scene } from '@/components/reports/charts/types';
 import type { ChartsData } from '@/components/reports/ReportCharts';
-import { toDailyPoints, toDurationPoints, toHeatCells, toHourPoints } from '@/lib/reportSeries';
+import { toDailyPoints, toHourEnergyPoints, toDurationPoints, toHeatCells, toHourPoints } from '@/lib/reportSeries';
 import { coverageOf, coverageRestatement, formatPeriod, isQuotable, type PeriodBuildingReport, type PeriodDeviceReport, type ReportPeriod } from '@/lib/supabaseReports';
 import { compare, describeDifference } from '@/lib/ipmvp';
 import { provenanceLines, type Carboned, type Costed } from '@/lib/energyCost';
@@ -40,6 +41,8 @@ export interface PdfCircuitInput {
   series: readonly CircuitSeriesDef[];
   /** `null` when the per-circuit days could not be read, or phase42 is not applied. */
   days: readonly CircuitDayPoint[] | null;
+  /** RM-124: a day's per-circuit hours, in the same shape; `null` when they did not arrive. */
+  hours?: readonly CircuitDayPoint[] | null;
   trend: { series: readonly TrendSeries[]; days: readonly TrendDay[] } | null;
 }
 
@@ -87,6 +90,8 @@ const spec = (idPrefix: string, height: number, title: string) => ({
 interface ChartContext {
   charts: ChartsData;
   circuits: PdfCircuitInput | null;
+  /** The branch meters whose hourly credits sum to the building's — RM-124. */
+  meterIds: readonly string[];
   /** " (whole building)" when the document is narrowed, else empty. */
   building: string;
   /** " — Lighting" when the document is narrowed, else empty. */
@@ -116,6 +121,23 @@ const CHARTS: readonly {
     }),
   },
   {
+    // RM-124: a day, hour by hour, as the sum of the building's branch meters.
+    section: 'hourlyEnergy',
+    label: 'Energy per hour',
+    has: ({ charts: c }) => c.hourEnergy !== null && c.hourEnergy !== undefined,
+    build: ({ charts: c, building, meterIds }) => {
+      const meters = new Set(meterIds);
+      const points = toHourEnergyPoints((c.hourEnergy ?? []).filter((r) => meters.has(r.device_id)));
+      return {
+        scene: hourlyEnergyChart(points, spec('pdf-he', 220, `Energy per hour${building}`)),
+        table: {
+          headers: ['Hour', 'Energy (kWh)', 'Average (W)', 'Minutes recorded'],
+          rows: points.map((p) => [`${String(p.hour).padStart(2, '0')}:00`, p.observed && p.kwh !== null ? f(p.kwh) : null, f(p.avgW, 0), String(p.minutes)]),
+        },
+      };
+    },
+  },
+  {
     section: 'useShare',
     label: 'Energy by use',
     has: ({ charts: c }) => (c.useSegments ?? []).length > 0,
@@ -134,6 +156,19 @@ const CHARTS: readonly {
       return {
         scene: circuitDailyEnergyChart(days, series, spec('pdf-cd', 240, `Energy per day, by circuit${scope}`)),
         table: { headers: ['Day', ...series.map((s) => `${s.label} (kWh)`)], rows: days.map((d) => [d.day, ...d.values.map((v) => f(v))]) },
+      };
+    },
+  },
+  {
+    section: 'circuitHourly',
+    label: 'Energy per hour, by circuit',
+    has: ({ circuits }) => circuits !== null && circuits.hours !== null && circuits.hours !== undefined,
+    build: ({ circuits, scope }) => {
+      const hours = circuits?.hours ?? [];
+      const series = circuits?.series ?? [];
+      return {
+        scene: circuitDailyEnergyChart(hours, series, spec('pdf-ch', 240, `Energy per hour, by circuit${scope}`)),
+        table: { headers: ['Hour', ...series.map((s) => `${s.label} (kWh)`)], rows: hours.map((h) => [h.day, ...h.values.map((v) => f(v))]) },
       };
     },
   },
@@ -221,7 +256,7 @@ export function buildPdfReport(input: PdfReportInput): PdfReport {
   const detail = input.detail ?? 'detailed';
   const scopeLabel = input.scopeLabel ?? null;
   const scopedRows = input.scopedRows ?? rows;
-  const sections = normaliseSections(input.sections, detail);
+  const sections = normaliseSections(input.sections, detail, input.period);
   const buildingCoverage = building ? coverageOf(building.online_sample_count, building.expected_sample_count) : null;
   const qualified = !isQuotable(buildingCoverage);
   const summary = charts.summary ?? null;
@@ -276,6 +311,7 @@ export function buildPdfReport(input: PdfReportInput): PdfReport {
   const context: ChartContext = {
     charts,
     circuits: input.circuits ?? null,
+    meterIds: input.meterIds,
     building: scopeLabel ? ' (whole building)' : '',
     scope: scopeLabel ? ` — ${scopeLabel}` : '',
   };

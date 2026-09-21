@@ -9,6 +9,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  daysNeedingReport,
+  MAX_DAYS_PER_PASS,
   monthsNeedingReport,
   runReportGeneration,
   REPORT_GRACE_DAYS,
@@ -58,6 +60,68 @@ function allWeeksSettled(fromTs = '2026-01-01T00:00:00Z') {
   }
   return out;
 }
+
+/** Every local day (UTC+8) settled by NOW, already reported — the daily twin of the helper above. */
+function allDaysSettled(fromTs = '2026-01-01T00:00:00Z') {
+  const out = [];
+  const DAY = 24 * 60 * 60 * 1000;
+  // A local day `d` ends at d + 1 day - 8 h in UTC, and settles an hour after that.
+  for (let t = Date.parse(fromTs); t + DAY - 8 * 3600 * 1000 + 3600 * 1000 <= NOW; t += DAY) {
+    out.push({ period_start: new Date(t).toISOString().slice(0, 10), generated_at: '2099-01-01T00:00:00Z' });
+  }
+  return out;
+}
+
+// --- daysNeedingReport (pure) --------------------------------------------------------------
+// Local days, at the site's own offset: a day is the reader's day, not UTC's, and it settles an
+// hour after its local midnight — a week's two-day grace would keep yesterday off the page.
+
+test('days: generates nothing when there is no data at all', () => {
+  assert.deepEqual(daysNeedingReport({ generatedDays: [], earliestDataTs: null, nowMs: NOW, offsetMinutes: 480 }), []);
+});
+
+test('days: never reports the current local day, and waits out the grace after local midnight', () => {
+  // NOW is 2026-08-21 12:00Z = 20:00 local on the 21st. The 21st is in progress; the 20th ended at
+  // 16:00Z and settled at 17:00Z, so it is due. At 16:30Z it would not have been.
+  const earliest = '2026-08-19T02:00:00Z';
+  assert.deepEqual(
+    daysNeedingReport({ generatedDays: [], earliestDataTs: earliest, nowMs: NOW, offsetMinutes: 480 }),
+    ['2026-08-19', '2026-08-20'],
+  );
+  assert.deepEqual(
+    daysNeedingReport({ generatedDays: [], earliestDataTs: earliest, nowMs: Date.parse('2026-08-20T16:30:00Z'), offsetMinutes: 480 }),
+    ['2026-08-19'],
+  );
+  assert.deepEqual(
+    daysNeedingReport({ generatedDays: [], earliestDataTs: earliest, nowMs: Date.parse('2026-08-20T17:00:00Z'), offsetMinutes: 480 }),
+    ['2026-08-19', '2026-08-20'],
+  );
+});
+
+test('days: the earliest data\'s LOCAL day is the first one, even when its UTC date differs', () => {
+  // 2026-08-18 20:00Z is already the 19th in Manila. There is no 18th to report.
+  assert.deepEqual(
+    daysNeedingReport({ generatedDays: [], earliestDataTs: '2026-08-18T20:00:00Z', nowMs: NOW, offsetMinutes: 480 }),
+    ['2026-08-19', '2026-08-20'],
+  );
+});
+
+test('days: skips days already generated after they settled, and rebuilds one generated too early', () => {
+  const days = daysNeedingReport({
+    generatedDays: [
+      { period_start: '2026-08-19', generated_at: '2026-08-19T18:00:00Z' }, // after it settled: kept
+      { period_start: '2026-08-20', generated_at: '2026-08-20T10:00:00Z' }, // mid-day: rebuilt once
+    ],
+    earliestDataTs: '2026-08-19T02:00:00Z', nowMs: NOW, offsetMinutes: 480,
+  });
+  assert.deepEqual(days, ['2026-08-20']);
+});
+
+test('days: caps how many one pass will generate, oldest first, so a backlog fills over passes', () => {
+  const days = daysNeedingReport({ generatedDays: [], earliestDataTs: '2026-06-01T00:00:00Z', nowMs: NOW, offsetMinutes: 480 });
+  assert.equal(days.length, MAX_DAYS_PER_PASS);
+  assert.equal(days[0], '2026-06-01');
+});
 
 // --- monthsNeedingReport (pure) ----------------------------------------------------------
 
@@ -139,7 +203,7 @@ test('an unparseable earliest timestamp resolves to "do nothing", never to a gue
 
 // --- runReportGeneration (I/O against a fake client) --------------------------------------
 
-function fakeClient({ generated = [], generatedWeeks = [], hourly = [], raw = [], onRpc } = {}) {
+function fakeClient({ generated = [], generatedWeeks = [], generatedDays = [], hourly = [], raw = [], onRpc } = {}) {
   const calls = { select: [], rpc: [] };
   return {
     calls,
@@ -148,7 +212,11 @@ function fakeClient({ generated = [], generatedWeeks = [], hourly = [], raw = []
       // RM-041: the daemon asks `period_building_reports`, not phase12's table, because that is
       // what the Reports page reads — a month "done" in the old table and absent from the new
       // one is a month the page shows nothing for.
-      if (table === 'period_building_reports') return query.includes('period=eq.week') ? generatedWeeks : generated;
+      if (table === 'period_building_reports') {
+        if (query.includes('period=eq.week')) return generatedWeeks;
+        if (query.includes('period=eq.day')) return generatedDays;
+        return generated;
+      }
       if (table === 'readings_hourly') return hourly;
       return raw;
     },
@@ -187,10 +255,11 @@ test('does nothing, and calls no RPC, when every complete month is already repor
   const client = fakeClient({
     hourly: [{ hour: '2026-07-02T00:00:00Z' }],
     generated: [reported('2026-07-01', '2026-08-03T01:00:00Z')],
-    // Every settled WEEK too, or the pass would still have weeks to generate and call the RPC.
+    // Every settled WEEK and DAY too, or the pass would still have those to generate and call the RPC.
     generatedWeeks: allWeeksSettled(),
+    generatedDays: allDaysSettled(),
   });
-  const r = await runReportGeneration({ client, nowMs: NOW });
+  const r = await runReportGeneration({ client, nowMs: NOW, offsetMinutes: 480 });
   assert.equal(client.calls.rpc.length, 0);
   assert.deepEqual(r.generated, []);
 });
@@ -278,10 +347,11 @@ test('says no month has settled yet, rather than claiming every month has a repo
   // The old line read "every complete month already has one", which is vacuously true when
   // there are no complete months at all - and reads to whoever is scanning the journal as
   // though reports exist.
-  // Data recent enough that NOTHING has settled — not a month and not a week either. An earlier
-  // version seeded every week as already reported, which after RM-041 means reports DO exist and
-  // made this assert the opposite sentence.
-  const client = fakeClient({ hourly: [{ hour: '2026-08-19T00:00:00Z' }] });
+  // Data recent enough that NOTHING has settled — not a month, not a week, and since RM-124 not
+  // a day either: the first row is from today, local time (NOW is 20:00 on the 21st in Manila).
+  // An earlier version seeded every week as already reported, which after RM-041 means reports
+  // DO exist and made this assert the opposite sentence.
+  const client = fakeClient({ hourly: [{ hour: '2026-08-21T02:00:00Z' }] });
   return runReportGeneration({ client, nowMs: NOW }).then((r) => {
     assert.deepEqual(r.generated, []);
     assert.deepEqual(r.generatedWeeks, [], 'the week containing 19 August has not ended by the 21st');
@@ -294,6 +364,7 @@ test('says reports are current only when some actually exist', async () => {
     hourly: [{ hour: '2026-07-02T00:00:00Z' }],
     generated: [reported('2026-07-01', '2026-08-03T01:00:00Z')],
     generatedWeeks: allWeeksSettled('2026-07-02T00:00:00Z'),
+    generatedDays: allDaysSettled('2026-07-02T00:00:00Z'),
   });
   const r = await runReportGeneration({ client, nowMs: NOW });
   assert.match(r.reason, /already has a current report/i);
@@ -400,8 +471,22 @@ test('counts weeks towards "reports exist", not only months', async () => {
     hourly: [{ hour: '2026-08-02T00:00:00Z' }],
     generated: [],
     generatedWeeks: allWeeksSettled('2026-08-02T00:00:00Z'),
+    generatedDays: allDaysSettled('2026-08-02T00:00:00Z'),
   });
   const r = await runReportGeneration({ client, nowMs: NOW });
   assert.deepEqual(r.generated, [], 'no month has settled, so none should be generated');
   assert.match(r.reason, /already has a current report/i);
+});
+
+test('generates each missing day through the RPC as period day, and reports them separately', async () => {
+  const client = fakeClient({
+    hourly: [{ hour: '2026-08-19T02:00:00Z' }],
+    generated: [reported('2026-07-01', '2026-08-03T01:00:00Z')],
+    generatedWeeks: allWeeksSettled(),
+  });
+  const r = await runReportGeneration({ client, nowMs: NOW, offsetMinutes: 480 });
+  const dayCalls = client.calls.rpc.filter((c) => c.fn === 'generate_period_report' && c.args.p_period === 'day');
+  assert.deepEqual(dayCalls.map((c) => c.args.p_start), ['2026-08-19', '2026-08-20']);
+  assert.deepEqual(r.generatedDays, ['2026-08-19', '2026-08-20']);
+  assert.equal(client.calls.rpc.filter((c) => c.fn === 'generate_monthly_report').length, 0, 'no legacy call for a day');
 });

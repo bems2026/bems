@@ -12,10 +12,12 @@ import {
   getDemandCurve,
   getDemandSummary,
   getHourMatrix,
+  getHourEnergy,
   getHourProfile,
   type CurveRow,
   type DailyRow,
   type DemandSummary,
+  type HourEnergyRow,
   type HourRow,
   type MatrixRow,
 } from '@/lib/reportSeries';
@@ -64,7 +66,7 @@ import { createReportCache, retryTransient, withTimeout, type ReportCache, type 
  * to a period already read answers at once.
  */
 
-export type SectionName = 'periods' | 'devices' | 'core' | 'hours' | 'matrix' | 'curve' | 'pricing' | 'ceiling' | 'deviceDaily' | 'trend';
+export type SectionName = 'periods' | 'devices' | 'core' | 'hours' | 'hourEnergy' | 'matrix' | 'curve' | 'pricing' | 'ceiling' | 'deviceDaily' | 'trend';
 export type SectionStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 export interface Section<T> {
@@ -94,6 +96,8 @@ export interface ReportData {
   devices: Section<PeriodDeviceReport[]>;
   core: Section<CoreData>;
   hours: Section<HourRow[]>;
+  /** RM-124: a day's hourly credits per device. Idle for a week or a month. */
+  hourEnergy: Section<HourEnergyRow[]>;
   matrix: Section<MatrixRow[]>;
   curve: Section<CurveRow[]>;
   pricing: Section<PricingData>;
@@ -120,6 +124,7 @@ export const DEFAULT_TIMEOUTS: Record<SectionName, number> = {
   devices: 20_000,
   core: 30_000,
   hours: 30_000,
+  hourEnergy: 30_000,
   matrix: 45_000,
   curve: 45_000,
   pricing: 20_000,
@@ -134,6 +139,7 @@ const LABELS: Record<SectionName, string> = {
   devices: 'The per-device figures',
   core: 'The daily figures',
   hours: 'The typical day chart',
+  hourEnergy: 'The hour by hour chart',
   matrix: 'The busy hours chart',
   curve: 'The demand levels chart',
   pricing: 'The tariffs and emission factors',
@@ -260,6 +266,13 @@ export function useReportData(period: ReportPeriod, options?: ReportDataOptions,
     [period, selected]
   );
   const loadHours = useCallback((signal: AbortSignal) => getHourProfile(period, requireStart(selected), { signal }), [period, selected]);
+  // RM-124: a day's hourly credits, for every measured device at once — one call serves the
+  // Overview (summed over the building meters) and the Circuits tab (one device each). Only a
+  // day asks for them: a week's would be 24 × 7 × 12 rows, and the week has its own charts.
+  const loadHourEnergy = useCallback(
+    (signal: AbortSignal) => getHourEnergy(period, requireStart(selected), measuredDeviceIds(), { signal }),
+    [period, selected]
+  );
   const loadMatrix = useCallback((signal: AbortSignal) => getHourMatrix(period, requireStart(selected), { signal }), [period, selected]);
   const loadCurve = useCallback((signal: AbortSignal) => getDemandCurve(period, requireStart(selected), { signal }), [period, selected]);
   // Priced per day at the rate in force that day, so these are not per-period: one read per visit.
@@ -291,6 +304,7 @@ export function useReportData(period: ReportPeriod, options?: ReportDataOptions,
     core: useSection('core', at('core'), loadCore, cache, opts),
     hours: useSection('hours', at('hours'), loadHours, cache, opts),
     matrix: useSection('matrix', at('matrix'), loadMatrix, cache, opts),
+    hourEnergy: useSection('hourEnergy', period === 'day' ? at('hourEnergy') : null, loadHourEnergy, cache, opts),
     curve: useSection('curve', at('curve'), loadCurve, cache, opts),
     pricing: useSection('pricing', enabled ? 'pricing' : null, loadPricing, cache, opts),
     ceiling: useSection('ceiling', enabled ? 'ceiling' : null, loadCeiling, cache, opts),

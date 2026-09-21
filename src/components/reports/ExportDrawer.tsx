@@ -2,6 +2,7 @@ import { Check } from 'lucide-react';
 import { useCallback, useId, useState } from 'react';
 import { OverlayPanel } from '@/components/ui/OverlayPanel';
 import { REPORT_SECTIONS, normaliseSections, sectionsFor, type ReportDetail, type ReportSectionId } from '@/lib/reportSections';
+import type { ReportPeriod } from '@/lib/supabaseReports';
 import { useExportAction } from '@/lib/useExportAction';
 
 /**
@@ -94,6 +95,8 @@ function saveChoice(choice: Choice) {
 
 interface Props {
   periodLabel: string;
+  /** RM-124: which sections a document of this kind of period can hold. A month when absent. */
+  period?: ReportPeriod;
   onClose: () => void;
   /** Performs the export and resolves with what was saved, in words. */
   onExport: (
@@ -111,7 +114,7 @@ interface Props {
   scopeLabel?: string | null;
 }
 
-export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {}, sectionNotes = {}, scopeLabel = null }: Props) {
+export function ExportDrawer({ periodLabel, period = 'month', onClose, onExport, unavailable = {}, sectionNotes = {}, scopeLabel = null }: Props) {
   const [choice, setChoice] = useState<Choice>(loadChoice);
   const baseId = useId();
 
@@ -127,8 +130,8 @@ export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {},
 
   const run = useCallback(
     (report: (progress: string) => void, signal: AbortSignal) =>
-      onExport(format, normaliseSections(choice.sections, choice.detail), report, signal, choice.detail),
-    [onExport, format, choice.sections, choice.detail]
+      onExport(format, normaliseSections(choice.sections, choice.detail, period), report, signal, choice.detail),
+    [onExport, format, choice.sections, choice.detail, period]
   );
   const { state, start, cancel } = useExportAction(run);
   const working = state.status === 'working';
@@ -217,7 +220,7 @@ export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {},
         <fieldset className="report-export__group">
           <legend className="report-export__legend">Sections</legend>
           <ul className="report-export__sections">
-            {sectionsFor(choice.detail).map((s) => {
+            {sectionsFor(choice.detail, period).map((s) => {
               // Why a section is locked, or what will happen to it — read to a screen reader with it.
               const note = s.locked ?? sectionNotes[s.id];
               const noteId = `${baseId}-${s.id}-note`;
@@ -249,7 +252,7 @@ export function ExportDrawer({ periodLabel, onClose, onExport, unavailable = {},
         <p className="report-export__summary">
           {periodLabel} ·{' '}
           {format === 'pdf'
-            ? `${normaliseSections(choice.sections, choice.detail).length} sections · ${choice.detail === 'simple' ? 'Simple' : 'Detailed'} PDF`
+            ? `${normaliseSections(choice.sections, choice.detail, period).length} sections · ${choice.detail === 'simple' ? 'Simple' : 'Detailed'} PDF`
             : FORMATS.find((f) => f.id === format)?.label}
           {FOLLOWS_SCOPE.includes(format) && scopeLabel ? ` · ${scopeLabel}` : ''}
         </p>

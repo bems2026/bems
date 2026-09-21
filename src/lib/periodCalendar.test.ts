@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { monthCells, weekCells, yearsOf } from './periodCalendar';
+import { dayCells, monthCells, monthName, monthsOf, weekCells, yearsOf } from './periodCalendar';
+import { formatPeriod } from './supabaseReports';
 
 /**
  * RM-103. The period picker's list of every stored report was a column of names grouped by year —
@@ -56,5 +57,31 @@ describe('weekCells', () => {
     const rows = weekCells('2026', []);
     expect(rows.flatMap((r) => r.cells).every((c) => c.start === null)).toBe(true);
     expect(new Date(`${rows[0].cells[0].date}T00:00:00Z`).getUTCDay()).toBe(1);
+  });
+});
+
+describe('dayCells — RM-124', () => {
+  it('lays out one month on a Monday-first grid, leading blanks included, with a start only where a day is stored', () => {
+    // September 2026 starts on a Tuesday, so one blank leads.
+    const rows = dayCells('2026-09', ['2026-09-19', '2026-09-20']);
+    expect(rows.leading).toBe(1);
+    expect(rows.cells).toHaveLength(30);
+    expect(rows.cells[0]).toMatchObject({ date: '2026-09-01', label: '1', start: null });
+    expect(rows.cells[18]).toMatchObject({ date: '2026-09-19', label: '19', start: '2026-09-19' });
+    expect(rows.cells[19].start).toBe('2026-09-20');
+    expect(rows.cells[20].start).toBeNull();
+  });
+
+  it('names a day the way the stepper does, so the reason for an empty cell reads the same', () => {
+    const rows = dayCells('2026-09', []);
+    expect(rows.cells[18].name).toBe(formatPeriod('day', '2026-09-19'));
+  });
+
+  it('lists the months with a stored day, newest first, as the calendar\'s pages', () => {
+    expect(monthsOf(['2026-09-20', '2026-09-19', '2026-08-31'])).toEqual(['2026-09', '2026-08']);
+  });
+
+  it('names a month page for the header', () => {
+    expect(monthName('2026-09')).toMatch(/September 2026/);
   });
 });

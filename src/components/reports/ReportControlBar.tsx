@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { ReportPeriod } from '@/lib/supabaseReports';
+import { PERIOD_ADJECTIVE, type ReportPeriod } from '@/lib/supabaseReports';
 import type { ScopeOption } from '@/lib/circuitBreakdown';
 import { PeriodPicker } from './PeriodPicker';
 import { ScopePicker } from './ScopePicker';
@@ -58,10 +58,10 @@ export function ReportControlBar({
 }: Props) {
   return (
     <div className="report-controls">
-      {/* Week or month — RM-041. Two buttons rather than a select: there are exactly two, and a
-          select would hide one of them behind a click. */}
+      {/* Day, week or month — RM-041, RM-124. Buttons rather than a select: there are exactly three,
+          and a select would hide two of them behind a click. Shortest period first, as a calendar reads. */}
       <div className="reports-periods" role="group" aria-label="Report period">
-        {(['month', 'week'] as const).map((p) => (
+        {(['day', 'week', 'month'] as const).map((p) => (
           <button
             key={p}
             type="button"
@@ -69,7 +69,7 @@ export function ReportControlBar({
             aria-pressed={period === p}
             onClick={() => onPeriodChange(p)}
           >
-            {p === 'month' ? 'Monthly' : 'Weekly'}
+            {PERIOD_ADJECTIVE[p]}
           </button>
         ))}
       </div>

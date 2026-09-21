@@ -1805,6 +1805,105 @@ end $$;
 delete from devices where id = 'acu_rehearse';
 SQL
 
+# ---- phase46: the Daily period ---------------------------------------------------------------------
+#
+# Applied once at the top. Twice more here, then held to what the page relies on: a day is a window of
+# 1440 minutes; the generator stores a day's rows; and the 24 hourly credits of a device sum EXACTLY to
+# the bounded daily energy the same day's report stores — a counter jump inside the day is clipped in
+# the hour it happened, by the same rule, in both. Unobserved hours are rows with nothing in them.
+echo "== phase46: re-applying twice, then a day with a counter jump =="
+psql < "$HERE/phase46_daily_reports.sql" >/dev/null
+psql < "$HERE/phase46_daily_reports.sql" >/dev/null
+psql <<'SQL'
+insert into devices (id, display_name, class) values ('mtr_day', 'Rehearsal Day Meter', 'meter')
+  on conflict (id) do nothing;
+
+-- Local 2026-09-19 (Asia/Manila) is 2026-09-18 16:00Z .. 2026-09-19 16:00Z. Observed from local
+-- 06:00 to 21:59 at one row a minute, 100 W throughout; the counter climbs 0.1 kWh an hour from 0 at
+-- 06:00 and jumps by 50 at 14:00 — an offset the circuit could not have drawn.
+insert into readings (device_id, ts, voltage, current, power_w, energy_kwh_today, online)
+select 'mtr_day',
+       timestamptz '2026-09-18 22:00:00+00' + (n || ' minutes')::interval,
+       230, 0.435, 100,
+       round((n / 600.0 + case when n >= 480 then 50 else 0 end)::numeric, 6),
+       true
+  from generate_series(0, 959) n;
+
+-- The building over two local days, 09-18 and 09-19, every five minutes: its daily counter
+-- resets at local midnight (2026-09-18 16:00Z) and climbs 0.005 a minute, so 09-19's high-water
+-- mark is 1435 x 0.005 = 7.175. Nothing else about the building matters here.
+insert into building_totals (ts, site_id, energy_kwh_today, energy_kwh_month, total_power_w)
+select timestamptz '2026-09-17 16:00:00+00' + (n || ' minutes')::interval,
+       'mmsu-nberic-care',
+       (n % 1440) * 0.005, 100 + n * 0.005, 300
+  from generate_series(0, 2879, 5) n;
+
+do $$
+declare
+  w record;
+  n int;
+  e_day numeric;
+  e_bars numeric;
+  h record;
+  refused boolean;
+begin
+  select * into w from report_window('day', date '2026-09-19', 'Asia/Manila');
+  assert w.expected_minutes = 1440, format('phase46: a day is 1440 minutes, got %s', w.expected_minutes);
+  assert w.win_start = timestamptz '2026-09-18 16:00:00+00', format('phase46: the day opens at local midnight, got %s', w.win_start);
+  assert w.local_start = date '2026-09-19', 'phase46: a day is not truncated to anything';
+
+  perform generate_period_report('day', date '2026-09-19', 'Asia/Manila');
+  select energy_kwh into e_day from period_reports where period = 'day' and period_start = date '2026-09-19' and device_id = 'mtr_day';
+  assert e_day is not null, 'phase46: the generator stores a day row for the device';
+  -- 16 credited hours: the first is the counter at 06:59 (0.098333), the jump hour is clipped to its
+  -- measured 100 W x 1 h = 0.1, the other fourteen rise 0.1 each.
+  assert abs(e_day - 1.598333) < 0.000001, format('phase46: the day''s bounded energy must be 1.598333, stored %s', e_day);
+  select count(*) into n from period_building_reports where period = 'day' and period_start = date '2026-09-19';
+  assert n = 1, format('phase46: one building row for the day, found %s', n);
+  select energy_kwh into e_day from period_building_reports where period = 'day' and period_start = date '2026-09-19';
+  assert abs(e_day - 1435 * 0.005) < 0.000001, format('phase46: the building''s day is its daily counter''s high-water mark, 7.175, got %s', e_day);
+
+  select count(*), sum(energy_kwh) into n, e_bars
+    from report_hour_energy('day', date '2026-09-19', 'Asia/Manila', array['mtr_day']);
+  assert n = 24, format('phase46: a day is 24 hourly rows, got %s', n);
+  select energy_kwh into e_day from period_reports where period = 'day' and period_start = date '2026-09-19' and device_id = 'mtr_day';
+  assert e_bars = e_day, format('phase46: the 24 bars must sum to the stored day exactly, %s vs %s', e_bars, e_day);
+
+  select * into h from report_hour_energy('day', date '2026-09-19', 'Asia/Manila', array['mtr_day']) where local_hour = 14;
+  assert h.clipped, 'phase46: the jump hour is flagged clipped';
+  assert abs(h.energy_kwh - 0.1) < 0.000001, format('phase46: the jump hour is credited its measured power, 0.1, got %s', h.energy_kwh);
+  assert h.online_minutes = 60 and h.avg_power_w = 100 and h.resolution = 'minute',
+    format('phase46: the jump hour keeps its minutes, power and resolution; got %s / %s / %s', h.online_minutes, h.avg_power_w, h.resolution);
+
+  select * into h from report_hour_energy('day', date '2026-09-19', 'Asia/Manila', array['mtr_day']) where local_hour = 3;
+  assert h.energy_kwh is null and h.online_minutes = 0 and h.resolution is null and not h.clipped,
+    'phase46: an unobserved hour is a row with nothing in it, never a zero';
+
+  select count(*) into n from report_hour_energy('week', date '2026-09-14', 'Asia/Manila', array['mtr_day']);
+  assert n = 168, format('phase46: a week of one device is 168 rows, got %s', n);
+
+  refused := false;
+  begin
+    perform count(*) from report_hour_energy('month', date '2026-09-01', 'Asia/Manila', null);
+  exception when program_limit_exceeded then refused := true;
+  end;
+  assert refused, 'phase46: a month of every device must be refused rather than truncated';
+
+  -- Re-running the generator for the day is idempotent: the same rows, once.
+  perform generate_period_report('day', date '2026-09-19', 'Asia/Manila');
+  select count(*) into n from period_reports where period = 'day' and period_start = date '2026-09-19';
+  assert n = 1, format('phase46: regenerating a day must not duplicate its device row, found %s', n);
+
+  raise notice 'phase46: the Daily period — assertions passed';
+end $$;
+
+delete from period_reports where device_id = 'mtr_day';
+delete from period_building_reports where period = 'day' and period_start = date '2026-09-19';
+delete from readings where device_id = 'mtr_day';
+delete from building_totals where ts >= timestamptz '2026-09-17 16:00:00+00' and ts < timestamptz '2026-09-19 16:00:00+00';
+delete from devices where id = 'mtr_day';
+SQL
+
 echo
 echo "== REHEARSAL PASSED =="
 echo "Every migration applied in order against PostgreSQL 16, and every function behaved as"

@@ -11,7 +11,7 @@
 /** Plot width, in viewBox units — it scales to the card. The kiosk is 800 wide (RM-100); the PDF asks for 515pt and sets its own. */
 export const REPORT_CHART_WIDTH = 640;
 
-export type ReportChartKind = 'daily' | 'hours' | 'breakdown' | 'heat' | 'curve' | 'useShare' | 'circuitDaily' | 'circuitTrend';
+export type ReportChartKind = 'daily' | 'hourly' | 'hours' | 'breakdown' | 'heat' | 'curve' | 'useShare' | 'circuitDaily' | 'circuitTrend';
 
 /** The order the report reads in — see `ReportCharts` for why shape comes before totals. */
 export const REPORT_CHART_ORDER: readonly ReportChartKind[] = ['daily', 'hours', 'breakdown', 'heat', 'curve'];
@@ -19,7 +19,9 @@ export const REPORT_CHART_ORDER: readonly ReportChartKind[] = ['daily', 'hours',
 /** The heatmap is the only chart whose height follows its data: one row per day it draws. */
 export function reportChartHeight(kind: ReportChartKind, dayCount: number): number {
   switch (kind) {
+    // RM-124: `hourly` is a day's twenty-four bars, the daily chart's shape one day wide.
     case 'daily':
+    case 'hourly':
       return 230;
     case 'hours':
       return 220;

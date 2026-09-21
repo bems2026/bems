@@ -50,7 +50,7 @@ const TABLE_FIGURES = 3;
 
 export function ReportSkeleton({ label, period, parts, announce = true }: Props) {
   // The heatmap's height follows its day count; a placeholder uses the period's usual length.
-  const days = period === 'week' ? 7 : 31;
+  const days = period === 'day' ? 1 : period === 'week' ? 7 : 31;
 
   return (
     <div className="report-skeleton" aria-busy="true">

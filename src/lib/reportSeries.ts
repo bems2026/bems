@@ -6,6 +6,7 @@ import type { DailyEnergyPoint } from '@/components/reports/charts/dailyEnergyCh
 import type { HourProfilePoint } from '@/components/reports/charts/loadProfileChart';
 import type { HeatCell } from '@/components/reports/charts/demandHeatmapChart';
 import type { DurationPoint } from '@/components/reports/charts/durationCurveChart';
+import type { HourlyEnergyPoint } from '@/components/reports/charts/hourlyEnergyChart';
 
 /**
  * The client for phase37's series functions — the shape behind the reports' charts.
@@ -51,6 +52,20 @@ export interface HourRow {
   p50_w: number | null;
   p95_w: number | null;
   max_w: number | null;
+  resolution: string | null;
+}
+
+/** One device's one local hour, as `report_hour_energy` (phase46) returns it. */
+export interface HourEnergyRow {
+  device_id: string;
+  local_day: string;
+  local_hour: number;
+  /** Credited by phase42's rule; null when the hour carried no counter. */
+  energy_kwh: number | null;
+  clipped: boolean;
+  avg_power_w: number | null;
+  max_power_w: number | null;
+  online_minutes: number;
   resolution: string | null;
 }
 
@@ -122,6 +137,37 @@ export function toHourPoints(rows: readonly HourRow[]): HourProfilePoint[] {
     .map((r) => ({ hour: r.local_hour, n: r.n, p50: r.p50_w, p95: r.p95_w, max: r.max_w }));
 }
 
+/**
+ * The 24 bars of a day — RM-124 — summed over whatever devices the rows carry. The building is a
+ * SUM of its branch meters here (`shared/circuits.mjs`), so the Overview passes the building
+ * meters and the Circuits tab passes one; either way the hour's kWh is what phase42 credited, and
+ * the bars sum to the same figure the stored day reports.
+ *
+ * Always 24 points, 0 to 23: a missing hour is a gap the chart must draw, not a renumbered axis.
+ * An hour is `observed` when any device recorded a minute in it; its kWh is null when no device
+ * carried a counter — those are different facts, as everywhere else on this page. Average power
+ * adds across devices (each is over the same hour); the highest reading does not (peaks do not
+ * coincide), so it is kept only when there is one device to read it from.
+ */
+export function toHourEnergyPoints(rows: readonly HourEnergyRow[]): HourlyEnergyPoint[] {
+  const byHour = new Map<number, HourEnergyRow[]>();
+  for (const r of rows) (byHour.get(r.local_hour) ?? byHour.set(r.local_hour, []).get(r.local_hour)!).push(r);
+  return Array.from({ length: 24 }, (_, hour) => {
+    const rs = byHour.get(hour) ?? [];
+    const credited = rs.filter((r) => r.energy_kwh !== null);
+    const withAvg = rs.filter((r) => r.avg_power_w !== null);
+    return {
+      hour,
+      kwh: credited.length ? credited.reduce((a, r) => a + (r.energy_kwh ?? 0), 0) : null,
+      observed: rs.some((r) => r.online_minutes > 0),
+      clipped: rs.some((r) => r.clipped),
+      avgW: withAvg.length ? withAvg.reduce((a, r) => a + (r.avg_power_w ?? 0), 0) : null,
+      maxW: rs.length === 1 ? rs[0].max_power_w : null,
+      minutes: rs.reduce((a, r) => Math.max(a, r.online_minutes), 0),
+    };
+  });
+}
+
 export function toHeatCells(rows: readonly MatrixRow[]): HeatCell[] {
   return rows.map((r) => ({
     day: r.local_day.slice(0, 10),
@@ -183,6 +229,16 @@ export async function getHourProfile(period: ReportPeriod, start: string, { sign
 
 export async function getHourMatrix(period: ReportPeriod, start: string, { signal }: SeriesRequest = {}): Promise<MatrixRow[]> {
   return call<MatrixRow>('report_hour_matrix', window(period, start), MAX_MATRIX_CELLS + 1, signal);
+}
+
+/**
+ * phase46's per-device hourly credits for the devices named — RM-124. 24 rows per device per day
+ * of the window; the function raises above 900 rather than truncate, and this asks for one more
+ * than that so a cut answer is loud here too.
+ */
+export async function getHourEnergy(period: ReportPeriod, start: string, deviceIds: readonly string[], { signal }: SeriesRequest = {}): Promise<HourEnergyRow[]> {
+  if (deviceIds.length === 0) return [];
+  return call<HourEnergyRow>('report_hour_energy', { ...window(period, start), p_device_ids: [...deviceIds] }, 901, signal);
 }
 
 export async function getDemandCurve(period: ReportPeriod, start: string, { signal }: SeriesRequest = {}): Promise<CurveRow[]> {

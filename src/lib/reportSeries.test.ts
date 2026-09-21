@@ -13,6 +13,8 @@ import {
   type MatrixRow,
   type CurveRow,
   toDemandSummary,
+  toHourEnergyPoints,
+  type HourEnergyRow,
 } from './reportSeries';
 
 /**
@@ -193,5 +195,60 @@ describe('toDemandSummary', () => {
   it('leaves an honest count alone, and a period with no expected minutes untouched', () => {
     expect(toDemandSummary(row({ usable_minutes: 2710, observed_minutes: 5000 }))).toMatchObject({ usable_minutes: 2710, observed_minutes: 5000 });
     expect(toDemandSummary(row({ expected_minutes: 0, usable_minutes: 0, observed_minutes: 0 }))).toMatchObject({ usable_minutes: 0, expected_minutes: 0 });
+  });
+});
+
+describe('toHourEnergyPoints — RM-124', () => {
+  const row = (over: Partial<HourEnergyRow> = {}): HourEnergyRow => ({
+    device_id: 'mtr_co_yellow',
+    local_day: '2026-09-19',
+    local_hour: 10,
+    energy_kwh: 0.75,
+    clipped: false,
+    avg_power_w: 750,
+    max_power_w: 1200,
+    online_minutes: 60,
+    resolution: 'minute',
+    ...over,
+  });
+
+  it('is always twenty-four points, 0 to 23, whatever hours the rows cover', () => {
+    const pts = toHourEnergyPoints([row()]);
+    expect(pts).toHaveLength(24);
+    expect(pts.map((p) => p.hour)).toEqual(Array.from({ length: 24 }, (_, h) => h));
+    expect(pts[10].kwh).toBe(0.75);
+    expect(pts[11]).toMatchObject({ kwh: null, observed: false, minutes: 0 });
+  });
+
+  it('sums the devices it is given hour by hour — the building is a sum of its branch meters', () => {
+    const pts = toHourEnergyPoints([
+      row({ device_id: 'mtr_co_yellow', energy_kwh: 0.75, avg_power_w: 750 }),
+      row({ device_id: 'mtr_lo_yellow', energy_kwh: 0.04, avg_power_w: 40 }),
+      row({ device_id: 'mtr_lo_red', energy_kwh: null, avg_power_w: null, online_minutes: 0, resolution: null }),
+    ]);
+    expect(pts[10].kwh).toBeCloseTo(0.79, 6);
+    expect(pts[10].avgW).toBe(790);
+    expect(pts[10].observed).toBe(true);
+    expect(pts[10].maxW).toBeNull();
+  });
+
+  it('keeps an hour no device carried a counter for as null, never zero', () => {
+    const pts = toHourEnergyPoints([row({ energy_kwh: null, online_minutes: 12 }), row({ device_id: 'b', energy_kwh: null, online_minutes: 12 })]);
+    expect(pts[10].kwh).toBeNull();
+    expect(pts[10].observed).toBe(true);
+    expect(pts[10].minutes).toBe(12);
+  });
+
+  it('flags the hour clipped when any device\'s counter was, and keeps a single device\'s highest reading', () => {
+    const one = toHourEnergyPoints([row({ clipped: true })]);
+    expect(one[10].clipped).toBe(true);
+    expect(one[10].maxW).toBe(1200);
+    const two = toHourEnergyPoints([row(), row({ device_id: 'b', clipped: true })]);
+    expect(two[10].clipped).toBe(true);
+  });
+
+  it('reads minutes as the most any one device recorded, not their sum — they ran in the same hour', () => {
+    const pts = toHourEnergyPoints([row({ online_minutes: 60 }), row({ device_id: 'b', online_minutes: 58 })]);
+    expect(pts[10].minutes).toBe(60);
   });
 });

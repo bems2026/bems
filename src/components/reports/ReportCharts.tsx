@@ -4,6 +4,7 @@ import { ChartFigure, type ChartTable } from './ChartFigure';
 import { ChartPlaceholder } from './ReportSkeleton';
 import { SCREEN_PALETTE } from './charts/palette';
 import { dailyEnergyChart } from './charts/dailyEnergyChart';
+import { hourlyEnergyChart } from './charts/hourlyEnergyChart';
 import { loadProfileChart } from './charts/loadProfileChart';
 import { demandHeatmapChart } from './charts/demandHeatmapChart';
 import { durationCurveChart } from './charts/durationCurveChart';
@@ -13,15 +14,18 @@ import {
   toDailyPoints,
   toDurationPoints,
   toHeatCells,
+  toHourEnergyPoints,
   toHourPoints,
   type CurveRow,
   type DailyRow,
+  type HourEnergyRow,
   type HourRow,
   type MatrixRow,
   type DemandSummary,
 } from '@/lib/reportSeries';
 import { formatPeriod, type ReportPeriod } from '@/lib/supabaseReports';
 import { REPORT_CHART_WIDTH, reportChartHeight, type ReportChartKind } from '@/lib/reportChartSizes';
+import { buildingMeters } from '@/lib/circuitBreakdown';
 
 /**
  * The five charts, in the order the report reads.
@@ -51,6 +55,8 @@ export interface ChartsData {
   daily: DailyRow[];
   /** `null` when this chart's series has not arrived, or could not be read. */
   hours: HourRow[] | null;
+  /** RM-124: a day's hourly credits per device; `null` until they arrive, and for any other period. */
+  hourEnergy?: HourEnergyRow[] | null;
   matrix: MatrixRow[] | null;
   curve: CurveRow[] | null;
   segments: CircuitSegment[];
@@ -114,6 +120,7 @@ export function ReportCharts({
   start,
   daily,
   hours,
+  hourEnergy = null,
   matrix,
   curve,
   segments,
@@ -140,6 +147,31 @@ export function ReportCharts({
       desc: '',
     }),
     [width]
+  );
+
+  // RM-124: the building's day, hour by hour, as the SUM of its branch meters — the same meters
+  // `buildLatest` sums for the live total, so the bars and the headline describe the same wiring.
+  const hourlyRows = hourEnergy ?? NONE;
+  const hourlyPoints = useMemo(() => {
+    const meters = new Set(buildingMeters());
+    return toHourEnergyPoints(hourlyRows.filter((r) => meters.has(r.device_id)));
+  }, [hourlyRows]);
+  const hourlyScene = useCallback(
+    () => hourlyEnergyChart(hourlyPoints, spec('rep-he', reportChartHeight('hourly', 1), `Hour by hour — ${label}`)),
+    [hourlyPoints, spec, label]
+  );
+  const hourlyTable = useCallback(
+    (): ChartTable => ({
+      headers: ['Hour', 'Energy (kWh)', 'Average (W)', 'Highest (W)', 'Minutes recorded'],
+      rows: hourlyPoints.map((p) => [
+        `${String(p.hour).padStart(2, '0')}:00`,
+        p.observed && p.kwh !== null ? num(p.kwh, 2) : null,
+        num(p.avgW),
+        num(p.maxW),
+        p.minutes,
+      ]),
+    }),
+    [hourlyPoints]
   );
 
   const dailyScene = useCallback(
@@ -243,6 +275,13 @@ export function ReportCharts({
   return (
     <section className="report-charts" aria-label={`Charts for ${label}`}>
       {shows('daily') ? <ChartSlot scope="Energy per day" build={dailyScene} table={dailyTable} /> : null}
+      {shows('hourly') ? (
+        hourEnergy ? (
+          <ChartSlot scope="Hour by hour" build={hourlyScene} table={hourlyTable} summaryLabel="Show the hours" />
+        ) : (
+          placeholder('hourly')
+        )
+      ) : null}
       {shows('useShare') ? (
         loading.useShare ? (
           placeholder('useShare')

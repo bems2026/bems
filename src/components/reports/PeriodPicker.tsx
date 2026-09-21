@@ -4,7 +4,7 @@ import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAnchoredPopover } from '@/components/ui/useAnchoredPopover';
 import { formatPeriod, type ReportPeriod } from '@/lib/supabaseReports';
 import { sameStartLastYear } from '@/lib/reportPeriods';
-import { monthCells, weekCells, yearsOf, type CalendarCell } from '@/lib/periodCalendar';
+import { dayCells, monthCells, monthName, monthsOf, weekCells, yearsOf, type CalendarCell } from '@/lib/periodCalendar';
 
 /**
  * Choosing which week or month to read — a stepper since RM-082b, with a calendar behind its label
@@ -48,7 +48,7 @@ export function PeriodPicker({ period, starts, selected, onSelect }: Props) {
   });
   const reasonId = useId();
 
-  const label = period === 'week' ? 'Report week' : 'Report month';
+  const label = period === 'day' ? 'Report day' : period === 'week' ? 'Report week' : 'Report month';
   const index = selected === null ? -1 : starts.indexOf(selected);
   const newer = index > 0 ? starts[index - 1] : null;
   const older = index >= 0 && index < starts.length - 1 ? starts[index + 1] : null;
@@ -57,15 +57,17 @@ export function PeriodPicker({ period, starts, selected, onSelect }: Props) {
   const lastYearAvailable = lastYear !== null && starts.includes(lastYear);
   const lastYearReason = lastYear !== null && !lastYearAvailable ? `No report for ${formatPeriod(period, lastYear)}` : null;
 
-  // The calendar opens on the year being read, and steps only through years that have a report.
-  const years = yearsOf(starts);
-  const [yearIndex, setYearIndex] = useState(0);
-  const year = years[yearIndex] ?? years[0];
+  // The calendar opens on the page being read, and steps only through pages that have a report:
+  // a year of months or weeks, or — RM-124 — a month of days, since 365 cells do not fit a popover.
+  const pages = period === 'day' ? monthsOf(starts) : yearsOf(starts);
+  const [pageIndex, setPageIndex] = useState(0);
+  const page = pages[pageIndex] ?? pages[0];
+  const pageLabel = page === undefined ? '' : period === 'day' ? monthName(page) : page;
 
   const toggle = () => {
     if (!open) {
-      const i = years.indexOf((selected ?? '').slice(0, 4));
-      setYearIndex(i >= 0 ? i : 0);
+      const i = pages.indexOf((selected ?? '').slice(0, period === 'day' ? 7 : 4));
+      setPageIndex(i >= 0 ? i : 0);
     }
     setOpen((o) => !o);
   };
@@ -142,7 +144,7 @@ export function PeriodPicker({ period, starts, selected, onSelect }: Props) {
       </button>
 
       {open &&
-        year !== undefined &&
+        page !== undefined &&
         createPortal(
           <div
             ref={popRef as React.RefObject<HTMLDivElement>}
@@ -155,33 +157,46 @@ export function PeriodPicker({ period, starts, selected, onSelect }: Props) {
               <button
                 type="button"
                 className="report-stepper__step"
-                aria-label="Previous year"
-                disabled={yearIndex >= years.length - 1}
-                onClick={() => setYearIndex((i) => Math.min(i + 1, years.length - 1))}
+                aria-label={period === 'day' ? 'Previous month' : 'Previous year'}
+                disabled={pageIndex >= pages.length - 1}
+                onClick={() => setPageIndex((i) => Math.min(i + 1, pages.length - 1))}
               >
                 <ChevronLeft size={16} aria-hidden="true" />
               </button>
               <p className="report-calendar__year" aria-hidden="true">
-                {year}
+                {pageLabel}
               </p>
               <button
                 type="button"
                 className="report-stepper__step"
-                aria-label="Next year"
-                disabled={yearIndex <= 0}
-                onClick={() => setYearIndex((i) => Math.max(i - 1, 0))}
+                aria-label={period === 'day' ? 'Next month' : 'Next year'}
+                disabled={pageIndex <= 0}
+                onClick={() => setPageIndex((i) => Math.max(i - 1, 0))}
               >
                 <ChevronRight size={16} aria-hidden="true" />
               </button>
             </div>
 
-            {period === 'month' ? (
-              <div role="group" aria-label={year} className="report-calendar__grid">
-                {monthCells(year, starts).map(cell)}
+            {period === 'day' ? (
+              // A month of days, Monday to Sunday — the weekday row is the only legend it needs.
+              <div role="group" aria-label={pageLabel} className="report-calendar__daygrid">
+                {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((d) => (
+                  <span key={d} className="report-calendar__weekday" aria-hidden="true">
+                    {d}
+                  </span>
+                ))}
+                {Array.from({ length: dayCells(page, starts).leading }, (_, i) => (
+                  <span key={`lead-${i}`} aria-hidden="true" />
+                ))}
+                {dayCells(page, starts).cells.map(cell)}
+              </div>
+            ) : period === 'month' ? (
+              <div role="group" aria-label={page} className="report-calendar__grid">
+                {monthCells(page, starts).map(cell)}
               </div>
             ) : (
-              <div role="group" aria-label={year} className="report-calendar__weeks">
-                {weekCells(year, starts).map((row) => (
+              <div role="group" aria-label={page} className="report-calendar__weeks">
+                {weekCells(page, starts).map((row) => (
                   <div key={row.month} role="group" aria-label={row.month} className="report-calendar__row">
                     <p className="report-calendar__month" aria-hidden="true">
                       {row.month}

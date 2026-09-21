@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { coverageOf, isQuotable, formatMonth, coverageRestatement } from './supabaseReports';
+import { coverageOf, isQuotable, formatMonth, formatPeriod, coverageRestatement } from './supabaseReports';
 
 const FULL_JULY = 31 * 24 * 60; // one sample per minute
 
@@ -101,5 +101,21 @@ describe('coverageRestatement — RM-073', () => {
     expect(coverageRestatement(week({ coverage_restated_at: null }))).toBeNull();
     expect(coverageRestatement({ online_sample_count: 1640, expected_sample_count: 10080 })).toBeNull();
     expect(coverageRestatement(week({ expected_sample_count: 0 }))).toBeNull();
+  });
+});
+
+describe('formatPeriod for a day — RM-124', () => {
+  it('names a day by its weekday and date, in UTC so the reader west of the meridian sees the same day', () => {
+    // The order of the parts is the reader's locale's; the parts themselves are not.
+    const s = formatPeriod('day', '2026-09-19');
+    expect(s).toMatch(/Sat/);
+    expect(s).toMatch(/Sep/);
+    expect(s).toMatch(/\b19\b/);
+    expect(s).toMatch(/2026/);
+    expect(formatPeriod('day', '2026-09-19T00:00:00+00:00')).toBe(s);
+  });
+
+  it('falls back to the raw start for nonsense', () => {
+    expect(formatPeriod('day', 'not-a-date')).toBe('not-a-date');
   });
 });

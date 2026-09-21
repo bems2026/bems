@@ -2,8 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { BUILDING_METER_IDS } from '@shared/registry.mjs';
 import { LOADS } from '@shared/circuits.mjs';
 import { branchOptions } from './circuitBreakdown';
-import { circuitDayPoints, circuitRefs, loadShareSegments, trendChartInput } from './circuitCharts';
+import { circuitDayPoints, circuitHourPoints, circuitRefs, loadShareSegments, trendChartInput } from './circuitCharts';
 import type { DeviceDayRow } from './circuitSeries';
+import type { HourEnergyRow } from './reportSeries';
 import type { PeriodDeviceReport } from './supabaseReports';
 
 /**
@@ -126,5 +127,40 @@ describe('loadShareSegments', () => {
     const hit = loadShareSegments(rows).find((s) => s.excluded);
     expect(hit?.kwh).toBeNull();
     expect(hit?.excluded).toMatch(/could have drawn/);
+  });
+});
+
+describe('circuitHourPoints — RM-124', () => {
+  const refs = circuitRefs({ kind: 'all' });
+  const hourRow = (device_id: string, local_hour: number, o: Partial<HourEnergyRow> = {}): HourEnergyRow => ({
+    device_id,
+    local_day: '2026-09-19',
+    local_hour,
+    energy_kwh: 0.1,
+    clipped: false,
+    avg_power_w: 100,
+    max_power_w: 150,
+    online_minutes: 60,
+    resolution: 'minute',
+    ...o,
+  });
+
+  it('lays out all twenty-four hours with each circuit’s energy in panel order, whatever hours the rows cover', () => {
+    const rows = meters.flatMap((m, i) => [hourRow(m, 9, { energy_kwh: i + 1 }), hourRow(m, 10, { energy_kwh: 10 * (i + 1) })]);
+    const points = circuitHourPoints(rows, refs);
+    expect(points).toHaveLength(24);
+    expect(points.map((p) => p.label).slice(0, 3)).toEqual(['00', '01', '02']);
+    expect(points[9].day).toBe('09:00');
+    expect(points[10].values).toEqual(meters.map((_, i) => 10 * (i + 1)));
+    expect(points[10].observed && points[10].complete).toBe(true);
+    expect(points[3].observed).toBe(false);
+    expect(points[3].values.every((v) => v === null)).toBe(true);
+  });
+
+  it('calls an hour partial when any circuit recorded only part of it, and notes a clipped counter by name', () => {
+    const rows = meters.map((m, i) => hourRow(m, 14, i === 0 ? { online_minutes: 20 } : i === 1 ? { clipped: true } : {}));
+    const [p] = circuitHourPoints(rows, refs).filter((x) => x.day === '14:00');
+    expect(p.complete).toBe(false);
+    expect(p.notes?.some((n) => n.includes(refs[1].label) && /counter/i.test(n))).toBe(true);
   });
 });

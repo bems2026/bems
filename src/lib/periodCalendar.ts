@@ -77,3 +77,38 @@ export function weekCells(year: string, starts: readonly string[]): WeekRow[] {
   }
   return rows;
 }
+
+/** Each month with a stored day, once, newest first — the pages a day calendar turns. RM-124. */
+export function monthsOf(starts: readonly string[]): string[] {
+  return [...new Set(starts.map((s) => s.slice(0, 7)))];
+}
+
+/** `September 2026`, for a day calendar's header. */
+export function monthName(month: string): string {
+  const [y, m] = month.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
+export interface DayGrid {
+  /** Blank cells before the 1st, so the grid's columns are Monday to Sunday. */
+  leading: number;
+  cells: CalendarCell[];
+}
+
+/**
+ * One month of days on a Monday-first grid, with a start only where that day's report exists —
+ * RM-124. A month rather than a year, because 365 cells do not fit a popover and a day is chosen
+ * by turning to its month first.
+ */
+export function dayCells(month: string, starts: readonly string[]): DayGrid {
+  const [y, m] = month.split('-').map(Number);
+  const stored = new Set(starts);
+  const first = new Date(Date.UTC(y, m - 1, 1));
+  const leading = (first.getUTCDay() + 6) % 7;
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const cells = Array.from({ length: days }, (_, i) => {
+    const date = `${month}-${String(i + 1).padStart(2, '0')}`;
+    return { start: stored.has(date) ? date : null, date, label: String(i + 1), name: formatPeriod('day', date) };
+  });
+  return { leading, cells };
+}

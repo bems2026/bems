@@ -5,7 +5,7 @@ import { coverageOf, formatPeriod, type PeriodBuildingReport, type PeriodDeviceR
 import { buildBreakdown, scopeLabel, scopeMeterIds, scopeRows, type ReportScope } from '@/lib/circuitBreakdown';
 import { energyFlagOf, usableEnergy } from '@/lib/boundedEnergy';
 import { energyDisagreement } from '@/lib/energyDisagreement';
-import { circuitDayPoints, circuitRefs, loadLabelOfCircuit, loadShareSegments, trendChartInput } from '@/lib/circuitCharts';
+import { circuitDayPoints, circuitHourPoints, circuitRefs, loadLabelOfCircuit, loadShareSegments, trendChartInput } from '@/lib/circuitCharts';
 import type { CircuitTrend, DeviceDaily } from '@/lib/circuitSeries';
 import { REPORT_CHART_WIDTH, reportChartHeight } from '@/lib/reportChartSizes';
 import { ReportTable, type ReportColumn } from './ReportTable';
@@ -16,6 +16,7 @@ import { ReportSectionNote } from './ReportSectionNote';
 import { SCREEN_PALETTE } from './charts/palette';
 import { circuitBreakdownChart, type CircuitSegment } from './charts/circuitBreakdownChart';
 import { circuitDailyEnergyChart } from './charts/circuitDailyEnergyChart';
+import type { HourEnergyRow } from '@/lib/reportSeries';
 import { circuitPowerTrendChart } from './charts/circuitPowerTrendChart';
 import type { Scene } from './charts/types';
 import type { Section } from './useReportData';
@@ -49,6 +50,8 @@ interface Props {
   nameOf: (id: string) => string;
   building: PeriodBuildingReport | null;
   deviceDaily: Section<DeviceDaily>;
+  /** RM-124: a day's hourly credits per device; idle for a week or a month. */
+  hourEnergy?: Section<HourEnergyRow[]>;
   trend: Section<CircuitTrend>;
 }
 
@@ -70,7 +73,7 @@ function CircuitChart({ scope, build, table, summaryLabel }: { scope: string; bu
   );
 }
 
-export function CircuitDeepDive({ period, start, rows, scope, nameOf, building, deviceDaily, trend }: Props) {
+export function CircuitDeepDive({ period, start, rows, scope, nameOf, building, deviceDaily, hourEnergy, trend }: Props) {
   const label = formatPeriod(period, start);
   const narrowed = scopeLabel(scope);
   const refs = useMemo(() => circuitRefs(scope), [scope]);
@@ -148,6 +151,30 @@ export function CircuitDeepDive({ period, start, rows, scope, nameOf, building, 
       rows: dayPoints.map((p) => [p.day, ...p.values.map((v) => kwh(v))]),
     }),
     [dayPoints, refs]
+  );
+
+  // --- energy per hour, for a day — RM-124 ------------------------------------------------------------
+  // The stacked daily chart, one day wide: `circuitHourPoints` gives it twenty-four columns.
+  const hourRows = hourEnergy?.data ?? null;
+  const hourPoints = useMemo(() => (hourRows ? circuitHourPoints(hourRows, refs) : []), [hourRows, refs]);
+  const buildHourly = useMemo(
+    () => () =>
+      circuitDailyEnergyChart(hourPoints, refs, {
+        width: REPORT_CHART_WIDTH,
+        height: reportChartHeight('circuitDaily', 24),
+        palette: SCREEN_PALETTE,
+        idPrefix: 'cir-hourly',
+        title: `Energy per hour, by circuit — ${label}`,
+        desc: '',
+      }),
+    [hourPoints, refs, label]
+  );
+  const hourlyTable = useMemo(
+    () => (): ChartTable => ({
+      headers: ['Hour', ...refs.map((c) => `${c.label} (kWh)`)],
+      rows: hourPoints.map((p) => [p.day, ...p.values.map((v) => kwh(v))]),
+    }),
+    [hourPoints, refs]
   );
 
   // --- power through the period ------------------------------------------------------------------
@@ -289,16 +316,30 @@ export function CircuitDeepDive({ period, start, rows, scope, nameOf, building, 
       <section className="report-charts" aria-label={`Circuit charts for ${label}`}>
         <CircuitChart scope={narrowed ? 'By circuit' : 'Energy by use'} build={buildShare} table={shareTable} summaryLabel="Show the numbers" />
 
-        <ReportSectionNote section={deviceDaily} what="the daily figures per circuit" />
-        {deviceDaily.status === 'loading' ? (
-          <ChartPlaceholder kind="circuitDaily" dayCount={7} />
-        ) : daily && !daily.available ? (
-          <p className="reports-note" role="note">
-            Energy per day by circuit appears once the database update (phase42) is applied.
-          </p>
-        ) : daily ? (
-          <CircuitChart scope="Energy per day, by circuit" build={buildDaily} table={dailyTable} summaryLabel="Show each day" />
-        ) : null}
+        {period === 'day' && hourEnergy ? (
+          // RM-124: a day is read hour by hour; its "energy per day" would be one bar per circuit.
+          <>
+            <ReportSectionNote section={hourEnergy} what="the hourly figures per circuit" />
+            {hourEnergy.status === 'loading' ? (
+              <ChartPlaceholder kind="circuitDaily" dayCount={24} />
+            ) : hourRows ? (
+              <CircuitChart scope="Energy per hour, by circuit" build={buildHourly} table={hourlyTable} summaryLabel="Show each hour" />
+            ) : null}
+          </>
+        ) : (
+          <>
+            <ReportSectionNote section={deviceDaily} what="the daily figures per circuit" />
+            {deviceDaily.status === 'loading' ? (
+              <ChartPlaceholder kind="circuitDaily" dayCount={7} />
+            ) : daily && !daily.available ? (
+              <p className="reports-note" role="note">
+                Energy per day by circuit appears once the database update (phase42) is applied.
+              </p>
+            ) : daily ? (
+              <CircuitChart scope="Energy per day, by circuit" build={buildDaily} table={dailyTable} summaryLabel="Show each day" />
+            ) : null}
+          </>
+        )}
 
         <ReportSectionNote section={trend} what="the power per circuit" />
         {trend.status === 'loading' ? (

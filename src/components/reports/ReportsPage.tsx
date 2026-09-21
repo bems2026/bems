@@ -16,7 +16,7 @@ import { buildPdfReport } from '@/lib/reportPdf/buildReport';
 import { bootedScript } from '@/lib/buildVersion';
 import { BUILDING_METER_IDS } from '@shared/registry.mjs';
 import { SITE } from '@shared/siteConfig.mjs';
-import { coverageOf, coverageRestatement, formatPeriod, isQuotable, type ReportPeriod } from '@/lib/supabaseReports';
+import { coverageOf, coverageRestatement, formatPeriod, isQuotable, PERIOD_ADJECTIVE, type ReportPeriod } from '@/lib/supabaseReports';
 import { siteDateTime } from '@/lib/siteTime';
 import { ReportControlBar } from './ReportControlBar';
 import { Tabs } from '@/components/ui/Tabs';
@@ -46,7 +46,7 @@ import { ReportKpis } from './ReportKpis';
 import { CoverageTag, ReportFigure } from './ReportFigure';
 import { useReportData } from './useReportData';
 import { carbonOf, costOf, type DayEnergy } from '@/lib/energyCost';
-import { circuitDayPoints, circuitRefs, loadShareSegments, trendChartInput } from '@/lib/circuitCharts';
+import { circuitDayPoints, circuitHourPoints, circuitRefs, loadShareSegments, trendChartInput } from '@/lib/circuitCharts';
 
 /**
  * Energy reports, weekly or monthly — Phase 12, generalised by RM-041.
@@ -125,7 +125,7 @@ export function ReportsPage() {
   const [exportOpen, setExportOpen] = useState(false);
   // RM-094: the circuit series load only while something shows them — the Circuits tab, or an export.
   const report = useReportData(period, undefined, { circuits: tab === 'circuits' || exportOpen });
-  const { periods, selected, select, core, hours, matrix, curve, pricing, ceiling } = report;
+  const { periods, selected, select, core, hours, hourEnergy, matrix, curve, pricing, ceiling } = report;
   const months = periods.data;
   const rows = report.devices.data;
 
@@ -164,6 +164,7 @@ export function ReportsPage() {
         ? {
             daily: core.data.daily,
             hours: hours.data,
+            hourEnergy: hourEnergy.data,
             matrix: matrix.data,
             curve: curve.data,
             segments,
@@ -173,7 +174,7 @@ export function ReportsPage() {
             summary: core.data.summary,
           }
         : null,
-    [core.data, hours.data, matrix.data, curve.data, segments, useSegments, untracked, ceiling.data]
+    [core.data, hours.data, hourEnergy.data, matrix.data, curve.data, segments, useSegments, untracked, ceiling.data]
   );
 
   /**
@@ -223,7 +224,7 @@ export function ReportsPage() {
   const exportUnavailable: Partial<Record<ExportFormat, string>> = {};
   if (!charts || !rows) {
     exportUnavailable.pdf = failedPart ? 'Part of this report could not be loaded. Retry it on the page first.' : 'The report is still loading.';
-  } else if (chartsStillLoading) {
+  } else if (chartsStillLoading || (period === 'day' && hourEnergy.status === 'loading')) {
     exportUnavailable.pdf = 'The charts are still loading.';
   } else if (pricingReason) {
     exportUnavailable.pdf = pricingReason;
@@ -235,6 +236,10 @@ export function ReportsPage() {
   const leftOut = 'Could not be loaded, so it will be left out of the PDF. Retry it on the page to include it.';
   const exportSectionNotes: Partial<Record<ReportSectionId, string>> = {};
   if (hours.status === 'error') exportSectionNotes.hourProfile = leftOut;
+  if (hourEnergy.status === 'error') {
+    exportSectionNotes.hourlyEnergy = leftOut;
+    exportSectionNotes.circuitHourly = leftOut;
+  }
   if (matrix.status === 'error') exportSectionNotes.heatmap = leftOut;
   if (curve.status === 'error') exportSectionNotes.durationCurve = leftOut;
   if (!core.data) {
@@ -360,6 +365,8 @@ export function ReportsPage() {
     const circuitInput = {
       series: refs,
       days: dailyData && dailyData.available ? circuitDayPoints(dailyData.rows, refs) : null,
+      // RM-124: a day's circuits, hour by hour, from the same rows the Circuits tab draws.
+      hours: period === 'day' && hourEnergy.data ? circuitHourPoints(hourEnergy.data, refs) : null,
       trend: report.trend.data ? trendChartInput(report.trend.data, refs, SITE.utc_offset_minutes) : null,
     };
     const pdf = buildPdfReport({
@@ -400,10 +407,10 @@ export function ReportsPage() {
         title="Reports"
         sub={
           <>
-            {period === 'week' ? 'Weekly' : 'Monthly'} energy, where it went, and when{' '}
+            {PERIOD_ADJECTIVE[period]} energy, where it went, and when{' '}
             <InfoHint>
-              Made from stored readings a couple of days after each {period} ends. Every figure says how much of the {period} was
-              recorded — a partly recorded {period} gives a real number that is lower than what was used.
+              Made from stored readings {period === 'day' ? 'an hour' : 'a couple of days'} after each {period} ends. Every figure says how
+              much of the {period} was recorded — a partly recorded {period} gives a real number that is lower than what was used.
             </InfoHint>
           </>
         }
@@ -443,14 +450,14 @@ export function ReportsPage() {
       ) : null}
 
       {periods.status === 'loading' ? (
-        <ReportSkeleton label={period === 'week' ? 'weekly' : 'monthly'} period={period} parts={['kpis', 'charts']} />
+        <ReportSkeleton label={PERIOD_ADJECTIVE[period].toLowerCase()} period={period} parts={['kpis', 'charts']} />
       ) : null}
       <ReportSectionNote section={periods} what="the list of reports" quietWhileLoading />
 
       {months?.length === 0 ? (
         <p className="reports-note">
           <FileText size={16} aria-hidden="true" /> No {period} has completed since reporting was switched on. The first report appears
-          a couple of days after the end of the first full {period}.
+          {period === 'day' ? ' an hour' : ' a couple of days'} after the end of the first full {period}.
         </p>
       ) : null}
 
@@ -459,7 +466,7 @@ export function ReportsPage() {
         <ErrorBoundary scope="The headline figures" variant="inline" resetKey={building}>
           <header className="report-heading">
             <h2 className="report-heading__title">
-              {formatPeriod(period, building.period_start)} · {period === 'week' ? 'Weekly' : 'Monthly'} report
+              {formatPeriod(period, building.period_start)} · {PERIOD_ADJECTIVE[period]} report
             </h2>
             <CoverageTag coverage={buildingCoverage} period={period} />
             {generatedLabel(building.generated_at) ? <p className="report-heading__meta">Made {generatedLabel(building.generated_at)}</p> : null}
@@ -516,13 +523,15 @@ export function ReportsPage() {
         <>
           <ReportSectionNote section={core} what="the daily figures" quietWhileLoading />
           <ReportSectionNote section={report.devices} what="the per-device figures" quietWhileLoading />
+          {period === 'day' ? <ReportSectionNote section={hourEnergy} what="the hour by hour chart" quietWhileLoading /> : null}
           {charts ? (
             <ReportCharts
               period={period}
               start={selected}
               {...charts}
-              only={['daily', 'useShare']}
-              loading={{ useShare: report.devices.status === 'loading' }}
+              // RM-124: a day is read hour by hour; its "energy per day" would be one bar.
+              only={period === 'day' ? ['hourly', 'useShare'] : ['daily', 'useShare']}
+              loading={{ useShare: report.devices.status === 'loading', hourly: hourEnergy.status === 'loading' }}
             />
           ) : chartsLoading ? (
             <ReportSkeleton label={periodLabel} period={period} parts={['charts']} />
@@ -556,6 +565,7 @@ export function ReportsPage() {
                 nameOf={nameOf}
                 building={building}
                 deviceDaily={report.deviceDaily}
+                hourEnergy={hourEnergy}
                 trend={report.trend}
               />
             </ErrorBoundary>
@@ -598,6 +608,7 @@ export function ReportsPage() {
       {exportOpen && selected ? (
         <ExportDrawer
           periodLabel={periodLabel}
+          period={period}
           onClose={() => setExportOpen(false)}
           onExport={runExport}
           unavailable={exportUnavailable}

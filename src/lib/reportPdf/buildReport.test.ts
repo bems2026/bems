@@ -227,3 +227,53 @@ function dailyRow(i: number) {
     resolution: 'minute',
   };
 }
+describe('a day — RM-124', () => {
+  const hourRow = (device_id: string, local_hour: number, energy_kwh: number | null) => ({
+    device_id, local_day: '2026-09-19', local_hour, energy_kwh, clipped: false,
+    avg_power_w: energy_kwh === null ? null : energy_kwh * 1000, max_power_w: null,
+    online_minutes: energy_kwh === null ? 0 : 60, resolution: energy_kwh === null ? null : 'minute',
+  });
+  const day = (o: Partial<PdfReportInput> = {}) =>
+    input({
+      period: 'day',
+      periodLabel: 'Sat, 19 Sep 2026',
+      meterIds: ['m1', 'm2'],
+      charts: { ...input().charts, hourEnergy: [...Array.from({ length: 24 }, (_, h) => hourRow('m1', h, h < 6 ? null : 0.5)), ...Array.from({ length: 24 }, (_, h) => hourRow('m2', h, h < 6 ? null : 0.1))] },
+      ...o,
+    });
+
+  it('draws the day hour by hour, summing the building meters, in place of energy per day', () => {
+    const report = buildPdfReport(day({ sections: ['dailyEnergy', 'hourlyEnergy'] }));
+    expect(report.charts.map((c) => c.title)).toEqual(['Energy per hour']);
+    const table = report.charts[0].table;
+    expect(table.headers[0]).toBe('Hour');
+    expect(table.rows).toHaveLength(24);
+    expect(table.rows[10][1]).toBe('0.60');
+    expect(table.rows[3][1]).toBeNull();
+    // A one-bar "energy per day" is not drawn for a day, and is not reported as left out either.
+    expect(report.omitted).toEqual([]);
+  });
+
+  it('draws each circuit hour by hour when the page hands it the hourly points', () => {
+    const report = buildPdfReport(
+      day({
+        sections: ['circuitEnergy', 'circuitHourly'],
+        scopeLabel: 'Lighting',
+        circuits: {
+          series: [{ id: 'a', label: 'Lights A', colourIndex: 0 }],
+          days: null,
+          hours: Array.from({ length: 24 }, (_, h) => ({ day: `${String(h).padStart(2, '0')}:00`, label: String(h).padStart(2, '0'), values: [0.04], observed: true, complete: true })),
+          trend: null,
+        },
+      })
+    );
+    expect(report.charts.map((c) => c.title)).toEqual(['Energy per hour, by circuit — Lighting']);
+    expect(report.omitted).toEqual([]);
+  });
+
+  it('names the hourly chart as left out when its rows did not arrive', () => {
+    const report = buildPdfReport(day({ sections: ['hourlyEnergy'], charts: { ...input().charts, hourEnergy: null } }));
+    expect(report.charts).toEqual([]);
+    expect(report.omitted).toEqual(['Energy per hour']);
+  });
+});

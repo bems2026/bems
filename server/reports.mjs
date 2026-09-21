@@ -30,6 +30,8 @@
  * rebuilt exactly once.
  */
 
+import { SITE } from '../shared/registry.mjs';
+
 /** Days to wait after a month ends before reporting it. See the header. */
 export const REPORT_GRACE_DAYS = 2;
 
@@ -43,6 +45,16 @@ export const MAX_MONTHS_PER_PASS = 6;
  * passes to catch up. Same self-limiting reasoning either way: nothing is remembered between
  * passes and the next one resumes where this stopped. */
 export const MAX_WEEKS_PER_PASS = 12;
+
+/**
+ * A day settles this long after its LOCAL midnight — RM-124. Not the weeks' two-day grace: the
+ * point of a daily report is yesterday, and the ingest cadence is a minute, so an hour is ample
+ * for the last rows to land and for a restart's second row to be written over.
+ */
+export const DAY_GRACE_HOURS = 1;
+
+/** Days per pass. The backlog since the archive's first day fills over a few six-hourly passes. */
+export const MAX_DAYS_PER_PASS = 14;
 
 /** `YYYY-MM-DD` of the Monday on or before a UTC instant. `getUTCDay()` is 0 for Sunday, so
  * Sunday steps back six days rather than one — the off-by-one that makes a week start on the
@@ -94,6 +106,51 @@ export function weeksNeedingReport({ generatedWeeks, earliestDataTs, nowMs, grac
     cursor = nextWeek;
   }
   return weeks;
+}
+
+/**
+ * Pure. Which LOCAL days still need a report?
+ *
+ * Days are the one period computed at the site's own offset rather than in UTC. Weeks and months
+ * settle days after they end, so the UTC-versus-local slack is absorbed by the grace; a day
+ * settles an hour after its own midnight, and reckoning that in UTC would keep yesterday off the
+ * page until nine in the morning. `offsetMinutes` is `SITE.utc_offset_minutes`.
+ *
+ * @param {{ generatedDays: Array<string|{period_start: string, generated_at?: string}>,
+ *           earliestDataTs: string|null, nowMs: number, offsetMinutes: number, graceHours?: number }} args
+ * @returns {string[]} `YYYY-MM-DD` local days, oldest first, at most MAX_DAYS_PER_PASS of them.
+ */
+export function daysNeedingReport({ generatedDays, earliestDataTs, nowMs, offsetMinutes, graceHours = DAY_GRACE_HOURS }) {
+  if (earliestDataTs === null || earliestDataTs === undefined) return [];
+  const earliestMs = Date.parse(earliestDataTs);
+  if (Number.isNaN(earliestMs)) return [];
+  const offsetMs = offsetMinutes * 60 * 1000;
+
+  const generatedAt = new Map();
+  for (const d of generatedDays ?? []) {
+    const key = String(typeof d === 'string' ? d : (d?.period_start ?? '')).slice(0, 10);
+    if (key) generatedAt.set(key, typeof d === 'string' ? null : (d?.generated_at ?? null));
+  }
+
+  const days = [];
+  // The local day containing the earliest row, as a UTC midnight of that local date.
+  let cursor = Date.parse(`${new Date(earliestMs + offsetMs).toISOString().slice(0, 10)}T00:00:00Z`);
+  while (days.length < MAX_DAYS_PER_PASS) {
+    const nextDay = cursor + DAY_MS;
+    // The local day ends at its next local midnight, which is `nextDay - offset` in UTC.
+    const settledAt = nextDay - offsetMs + graceHours * 60 * 60 * 1000;
+    if (settledAt > nowMs) break;
+
+    const key = new Date(cursor).toISOString().slice(0, 10);
+    if (!generatedAt.has(key)) {
+      days.push(key);
+    } else {
+      const at = Date.parse(generatedAt.get(key) ?? '');
+      if (!Number.isFinite(at) || at < settledAt) days.push(key);
+    }
+    cursor = nextDay;
+  }
+  return days;
 }
 
 /** How often to look for missing reports. The answer changes at most once a month; this is
@@ -180,7 +237,7 @@ async function oldestStamp(client, table, column) {
  * @returns {Promise<{ generated: string[], failed: Array<{month: string, error: string}>,
  *                     reason: string }>} `reason` is set only when nothing was generated.
  */
-export async function runReportGeneration({ client, nowMs = Date.now(), tz }) {
+export async function runReportGeneration({ client, nowMs = Date.now(), tz, offsetMinutes = SITE.utc_offset_minutes }) {
   // The archive is consulted as well as the raw table, and the EARLIER of the two wins.
   // `readings` is pruned at 30 days, so its oldest row is newer than the archive's — trusting
   // it alone would silently skip every month that had already been rolled up.
@@ -209,6 +266,12 @@ export async function runReportGeneration({ client, nowMs = Date.now(), tz }) {
   );
   const missingWeeks = weeksNeedingReport({ generatedWeeks: generatedWeekRows, earliestDataTs, nowMs });
 
+  const generatedDayRows = await client.select(
+    'period_building_reports',
+    'select=period_start,generated_at&period=eq.day&order=period_start.asc&limit=1000'
+  );
+  const missingDays = daysNeedingReport({ generatedDays: generatedDayRows, earliestDataTs, nowMs, offsetMinutes });
+
   // Said precisely, because "nothing to do" covers three different situations and the log
   // line used to claim the most reassuring one. "Every complete month already has one" is
   // vacuously true when no month has finished at all, and reads to whoever is scanning the
@@ -216,20 +279,21 @@ export async function runReportGeneration({ client, nowMs = Date.now(), tz }) {
   let reason = '';
   if (earliestDataTs === null) {
     reason = 'no readings yet';
-  } else if (missing.length === 0 && missingWeeks.length === 0) {
+  } else if (missing.length === 0 && missingWeeks.length === 0 && missingDays.length === 0) {
     // WEEKS COUNT TOWARDS "some exist", not just months. Observed on the live Pi 2026-09-01:
     // two weeks were reported and current while no month had settled, and this line still said
     // "no period has finished settling yet" — the same shape of untrue-but-reassuring log the
     // comment above was written to stop. A deployment younger than a month is exactly when
     // weekly reports are the only ones there are.
-    const anyExist = (generatedMonths ?? []).length > 0 || (generatedWeekRows ?? []).length > 0;
+    const anyExist = (generatedMonths ?? []).length > 0 || (generatedWeekRows ?? []).length > 0 || (generatedDayRows ?? []).length > 0;
     reason = anyExist
-      ? 'every settled month and week already has a current report'
+      ? 'every settled month, week and day already has a current report'
       : 'no period has finished settling yet';
   }
 
   const generated = [];
   const generatedWeeks = [];
+  const generatedDays = [];
   const failed = [];
   for (const month of missing) {
     try {
@@ -254,5 +318,13 @@ export async function runReportGeneration({ client, nowMs = Date.now(), tz }) {
       failed.push({ month: week, error: String(err) });
     }
   }
-  return { generated, generatedWeeks, failed, reason };
+  for (const day of missingDays) {
+    try {
+      await client.rpc('generate_period_report', tz ? { p_period: 'day', p_start: day, p_tz: tz } : { p_period: 'day', p_start: day });
+      generatedDays.push(day);
+    } catch (err) {
+      failed.push({ month: day, error: String(err) });
+    }
+  }
+  return { generated, generatedWeeks, generatedDays, failed, reason };
 }

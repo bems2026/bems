@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { REPORT_SECTIONS, normaliseSections } from './reportSections';
+import { REPORT_SECTIONS, normaliseSections, sectionsFor } from './reportSections';
 
 /**
  * RM-083. A reader chooses which parts of a report to export — except two. Coverage and "what this
@@ -37,5 +37,27 @@ describe('report sections', () => {
 
   it('drops an id it does not know, such as a choice remembered from an older build', () => {
     expect(normaliseSections(['coverage', 'sankey'])).toEqual(['coverage', 'notSaid']);
+  });
+});
+
+describe('the sections of a day — RM-124', () => {
+  it('reads hour by hour: the per-day charts and the typical day give way to the hourly ones', () => {
+    const ids = sectionsFor('detailed', 'day').map((s) => s.id);
+    expect(ids).toContain('hourlyEnergy');
+    expect(ids).toContain('circuitHourly');
+    expect(ids).not.toContain('dailyEnergy');
+    expect(ids).not.toContain('circuitEnergy');
+    expect(ids).not.toContain('hourProfile');
+    expect(ids.indexOf('hourlyEnergy')).toBeLessThan(ids.indexOf('useShare'));
+  });
+
+  it('keeps a week and a month exactly as they were', () => {
+    const ids = sectionsFor('detailed', 'month').map((s) => s.id);
+    expect(ids).toEqual(sectionsFor('detailed').map((s) => s.id));
+    expect(ids).not.toContain('hourlyEnergy');
+  });
+
+  it('puts a day\'s locked sections back and drops the per-day ids a day cannot hold', () => {
+    expect(normaliseSections(['dailyEnergy', 'hourlyEnergy'], 'detailed', 'day')).toEqual(['coverage', 'hourlyEnergy', 'notSaid']);
   });
 });

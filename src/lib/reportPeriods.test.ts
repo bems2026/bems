@@ -25,3 +25,12 @@ describe('sameStartLastYear', () => {
     expect(sameStartLastYear('week', '2026-13-01')).toBeNull();
   });
 });
+
+describe('sameStartLastYear for a day — RM-124', () => {
+  it('is the same calendar date a year earlier', () => {
+    expect(sameStartLastYear('day', '2026-09-19')).toBe('2025-09-19');
+  });
+  it('a leap day a year earlier does not exist, so it is the 28th', () => {
+    expect(sameStartLastYear('day', '2028-02-29')).toBe('2027-02-28');
+  });
+});

@@ -5,6 +5,7 @@ import { coverageOf, type PeriodDeviceReport } from './supabaseReports';
 import { usableEnergy } from './boundedEnergy';
 import { REMOVED_NOTEWORTHY_KWH } from './boundedEnergy';
 import type { CircuitTrend, DeviceDayRow } from './circuitSeries';
+import type { HourEnergyRow } from './reportSeries';
 import type { CircuitDayPoint } from '@/components/reports/charts/circuitDailyEnergyChart';
 import type { TrendDay, TrendSeries } from '@/components/reports/charts/circuitPowerTrendChart';
 import type { CircuitSegment } from '@/components/reports/charts/circuitBreakdownChart';
@@ -59,6 +60,34 @@ export function circuitDayPoints(rows: readonly DeviceDayRow[], refs: readonly C
       observed: values.some((v) => v !== null),
       // A total only when every circuit on the chart was recorded in full; otherwise at least this much.
       complete: dayRows.every((r) => r !== undefined && coverageOf(r.online_minutes, r.expected_minutes)?.band === 'complete'),
+      ...(notes.length > 0 ? { notes } : {}),
+    };
+  });
+}
+
+/**
+ * A day's twenty-four hours with each circuit's credited energy, in panel order — RM-124. The same
+ * shape as `circuitDayPoints`, so the stacked circuit chart draws a day hour by hour with no new
+ * drawing code: `day` carries the clock instead of the date, and every hour is present whether or
+ * not any circuit recorded it, so the axis never renumbers.
+ *
+ * An hour is complete when every circuit recorded (nearly) all of it — the same allowance
+ * `coverageOf` gives a period, applied to sixty minutes. A clipped counter is said on hover, by
+ * circuit, as a counter jump is on the daily chart.
+ */
+export function circuitHourPoints(rows: readonly HourEnergyRow[], refs: readonly CircuitRef[]): CircuitDayPoint[] {
+  const byKey = new Map(rows.map((r) => [`${r.device_id}|${r.local_hour}`, r]));
+  return Array.from({ length: 24 }, (_, hour) => {
+    const hourRows = refs.map((c) => byKey.get(`${c.meterId}|${hour}`));
+    const values = hourRows.map((r) => (r && r.online_minutes > 0 && r.energy_kwh !== null ? Number(r.energy_kwh) : null));
+    const notes = refs.flatMap((c, k) => (hourRows[k]?.clipped ? [`${c.label}: counter jumped, credited from measured power`] : []));
+    const hh = String(hour).padStart(2, '0');
+    return {
+      day: `${hh}:00`,
+      label: hh,
+      values,
+      observed: values.some((v) => v !== null),
+      complete: hourRows.every((r) => r !== undefined && coverageOf(r.online_minutes, 60)?.band === 'complete'),
       ...(notes.length > 0 ? { notes } : {}),
     };
   });

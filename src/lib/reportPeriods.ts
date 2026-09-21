@@ -14,6 +14,12 @@ export function sameStartLastYear(period: ReportPeriod, start: string): string |
   const [y, m, d] = start.slice(0, 10).split('-').map(Number);
   if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d) || m < 1 || m > 12 || d < 1 || d > 31) return null;
   if (period === 'month') return `${y - 1}-${String(m).padStart(2, '0')}-01`;
+  // A DAY is the same calendar date a year earlier — RM-124 — clamped to the month's last day, so
+  // 29 February a year on is the 28th rather than 1 March.
+  if (period === 'day') {
+    const last = new Date(Date.UTC(y - 1, m, 0)).getUTCDate();
+    return `${y - 1}-${String(m).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`;
+  }
   const t = Date.UTC(y, m - 1, d) - 364 * 86_400_000;
   return Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : null;
 }

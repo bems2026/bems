@@ -132,7 +132,10 @@ export async function getDeviceReports(month: string): Promise<MonthlyDeviceRepo
  * generator truncates whatever date it is given. Two callers passing different days of the same
  * week write the same row.
  */
-export type ReportPeriod = 'week' | 'month';
+export type ReportPeriod = 'day' | 'week' | 'month';
+
+/** The page's words for a kind of period: `Daily`, `Weekly`, `Monthly` — RM-124 made it three. */
+export const PERIOD_ADJECTIVE: Record<ReportPeriod, string> = { day: 'Daily', week: 'Weekly', month: 'Monthly' };
 
 export interface PeriodDeviceReport {
   period: ReportPeriod;
@@ -221,6 +224,9 @@ export function formatPeriod(period: ReportPeriod, start: string): string {
   const [y, m, d] = start.slice(0, 10).split('-');
   const date = new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)));
   if (Number.isNaN(date.getTime())) return start;
+  // A day carries its weekday — RM-124. "19 Sep" alone does not say it was a Saturday, and whether
+  // the office was open is the first thing a reader of a day's report wants to know.
+  if (period === 'day') return date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
   // "Week of" rather than a bare date: a list of Mondays with no label reads as a list of days
   // on which something happened.
   return `Week of ${date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}`;
@@ -229,14 +235,15 @@ export function formatPeriod(period: ReportPeriod, start: string): string {
 /** Every period of this kind that has a generated report, newest first. Explicitly bounded —
  * PostgREST caps silently, and this project has been bitten by inferring completeness from a
  * response that had no way to signal truncation. 240 months is 20 years; 240 weeks is under 5,
- * so weeks get their own, larger bound rather than sharing one that means different things. */
+ * so weeks get their own, larger bound rather than sharing one that means different things.
+ * 400 days is thirteen months — a day's report is read for what happened, not for a trend. */
 export async function getReportPeriods(period: ReportPeriod, { signal }: { signal?: AbortSignal } = {}): Promise<PeriodBuildingReport[]> {
   let query = requireSupabase()
     .from('period_building_reports')
     .select('*')
     .eq('period', period)
     .order('period_start', { ascending: false })
-    .limit(period === 'week' ? 520 : 240);
+    .limit(period === 'week' ? 520 : period === 'day' ? 400 : 240);
   // RM-081: a caller that times out cancels the request itself, not just its wait for it.
   if (signal) query = query.abortSignal(signal);
   const { data, error } = await query;

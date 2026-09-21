@@ -51,3 +51,9 @@ describe('reportFilename', () => {
     for (const name of names) expect(name).toMatch(/^[a-z0-9.-]+$/);
   });
 });
+
+describe('reportFilename for a day — RM-124', () => {
+  it('stamps a day with its full date, like a week', () => {
+    expect(reportFilename('day', '2026-09-19', 'report', 'pdf')).toBe('ibems-day-report-2026-09-19.pdf');
+  });
+});

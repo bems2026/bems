@@ -1,3 +1,5 @@
+import type { ReportPeriod } from './supabaseReports';
+
 /**
  * The parts of a report a reader can choose to export — RM-083, in two depths since RM-099.
  *
@@ -23,8 +25,10 @@ export type ReportSectionId =
   | 'keyFigures'
   | 'costCarbon'
   | 'dailyEnergy'
+  | 'hourlyEnergy'
   | 'useShare'
   | 'circuitEnergy'
+  | 'circuitHourly'
   | 'circuitTrend'
   | 'hourProfile'
   | 'breakdown'
@@ -43,6 +47,11 @@ export interface ReportSection {
   locked?: string;
   /** `both` is in the Simple and the Detailed document; `detailed` only in the Detailed one. */
   detail: 'both' | 'detailed';
+  /**
+   * The kinds of period this section belongs to — RM-124. Absent means every kind. A day is read hour
+   * by hour: its energy per day would be one bar, its "typical day" a day compared with itself.
+   */
+  periods?: readonly ReportPeriod[];
 }
 
 export const REPORT_SECTIONS: readonly ReportSection[] = [
@@ -54,11 +63,13 @@ export const REPORT_SECTIONS: readonly ReportSection[] = [
   },
   { id: 'keyFigures', label: 'Key figures', detail: 'both' },
   { id: 'costCarbon', label: 'Cost and emissions, with their sources', detail: 'both' },
-  { id: 'dailyEnergy', label: 'Energy per day', detail: 'both' },
+  { id: 'dailyEnergy', label: 'Energy per day', detail: 'both', periods: ['week', 'month'] },
+  { id: 'hourlyEnergy', label: 'Energy per hour', detail: 'both', periods: ['day'] },
   { id: 'useShare', label: 'Energy by use', detail: 'both' },
-  { id: 'circuitEnergy', label: 'Energy per day, by circuit', detail: 'both' },
+  { id: 'circuitEnergy', label: 'Energy per day, by circuit', detail: 'both', periods: ['week', 'month'] },
+  { id: 'circuitHourly', label: 'Energy per hour, by circuit', detail: 'both', periods: ['day'] },
   { id: 'circuitTrend', label: 'Power through the period, by circuit', detail: 'both' },
-  { id: 'hourProfile', label: 'A typical day, hour by hour', detail: 'detailed' },
+  { id: 'hourProfile', label: 'A typical day, hour by hour', detail: 'detailed', periods: ['week', 'month'] },
   { id: 'breakdown', label: 'Each circuit’s share', detail: 'detailed' },
   { id: 'heatmap', label: 'Busy hours', detail: 'detailed' },
   { id: 'durationCurve', label: 'Time at each demand level', detail: 'detailed' },
@@ -74,18 +85,18 @@ export const REPORT_SECTIONS: readonly ReportSection[] = [
   },
 ];
 
-/** The sections a document of this depth can hold, in document order. */
-export function sectionsFor(detail: ReportDetail): ReportSection[] {
-  return REPORT_SECTIONS.filter((s) => detail === 'detailed' || s.detail === 'both');
+/** The sections a document of this depth, for this kind of period, can hold, in document order. */
+export function sectionsFor(detail: ReportDetail, period: ReportPeriod = 'month'): ReportSection[] {
+  return REPORT_SECTIONS.filter((s) => (detail === 'detailed' || s.detail === 'both') && (s.periods === undefined || s.periods.includes(period)));
 }
 
 /**
  * The sections to export: the reader's choice plus the locked ones, each once, in document order, and only
  * those this depth holds. An id this build does not know — a choice remembered from an older one — is dropped.
  */
-export function normaliseSections(chosen: Iterable<string>, detail: ReportDetail = 'detailed'): ReportSectionId[] {
+export function normaliseSections(chosen: Iterable<string>, detail: ReportDetail = 'detailed', period: ReportPeriod = 'month'): ReportSectionId[] {
   const wanted = new Set(chosen);
-  return sectionsFor(detail)
+  return sectionsFor(detail, period)
     .filter((s) => s.locked !== undefined || wanted.has(s.id))
     .map((s) => s.id);
 }

@@ -6843,6 +6843,21 @@ body::before {
   gap: var(--sp-1);
 }
 
+/* RM-124: a month of days, seven across, Monday first. The weekday row is its only legend. */
+.report-calendar__daygrid {
+  display: grid;
+  grid-template-columns: repeat(7, 40px);
+  gap: var(--sp-1);
+}
+
+.report-calendar__weekday {
+  text-align: center;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--muted);
+  line-height: 20px;
+}
+
 .report-calendar__cell {
   min-width: 40px;
   min-height: 40px;
