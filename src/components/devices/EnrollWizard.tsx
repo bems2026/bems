@@ -5,7 +5,8 @@ import { validateEnrollment, ENROLLABLE_CLASSES, classifyVendorDevice } from '@s
 import { DEVICE_CLASS_CATALOG } from '@/lib/deviceClassCatalog';
 import { enrollDevice, type EnrollResult } from '@/lib/enroll';
 import { rebindDevice, type RebindResult } from '@/lib/rebind';
-import type { CloudDevice } from '@/lib/tuyaFleet';
+import type { CloudDevice, DeviceSources } from '@/lib/tuyaFleet';
+import { ImportKeysPanel } from './ImportKeysPanel';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { OverlayPanel } from '@/components/ui/OverlayPanel';
 import { useConfirm } from '@/components/ui/useConfirm';
@@ -24,7 +25,7 @@ import type { DeviceClass } from '@/lib/types';
  */
 export function EnrollWizard({ onClose }: { onClose: () => void }) {
   const devices = useDeviceStore((s) => s.devices);
-  const { byId, status, claimedKnown, orphanNodes } = useCloudFleet();
+  const { byId, status, claimedKnown, orphanNodes, sources, refresh } = useCloudFleet();
   const { ask, modalProps } = useConfirm();
 
   const [vendorId, setVendorId] = useState<string | null>(null);
@@ -35,16 +36,18 @@ export function EnrollWizard({ onClose }: { onClose: () => void }) {
   const [result, setResult] = useState<EnrollResult | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Every cloud device, with what it is here and what may be done with it — decided by the same
-  // `classifyVendorDevice` the server's rebind checks agree with. `claimed_by` and the orphan list are
-  // decided server-side, because only it can read the flow.
+  // Every detected device — imported, heard on the network, or listed by the cloud — with what it is
+  // here and what may be done with it, decided by the same `classifyVendorDevice` the server's rebind
+  // checks agree with. `claimed_by` and the orphan list are decided server-side: only it reads the flow.
   const detected = useMemo(
     () =>
       Object.values(byId)
         .map((d) => ({ d, c: classifyVendorDevice(d, { registry: devices, claimedBy: d.claimed ? (d.claimed_by ?? 'an existing node') : null, orphanNodes: orphanNodes ?? [] }) }))
-        .sort((a, b) => a.c.label.localeCompare(b.c.label) || String(a.d.name).localeCompare(String(b.d.name))),
+        .sort((a, b) => a.c.label.localeCompare(b.c.label) || (a.d.name ?? a.d.id).localeCompare(b.d.name ?? b.d.id)),
     [byId, devices, orphanNodes],
   );
+  // Open the import panel by itself when a device is waiting on a key, or when nothing is detected yet.
+  const importWanted = detected.some(({ c }) => c.action === 'needs_key') || (status === 'ready' && detected.length === 0);
 
   // Only devices this form can actually enrol: unclaimed, of a class it offers. Until 2026-09-17 this
   // was every unclaimed device, which offered the IR hub's virtual aircon remote as an outlet.
@@ -77,12 +80,13 @@ export function EnrollWizard({ onClose }: { onClose: () => void }) {
     );
 
   if (status === 'unconfigured') {
+    // Only a proxy from before key import answers this way (a 501 when the vendor cloud was absent).
     return (
       <OverlayPanel className="enroll-wizard" title="Add device" onClose={onClose}>
         <p className="enroll-wizard__note">
-          Enrolment needs the vendor cloud, which is not configured on this deployment — the local key
-          has to come from somewhere. Devices can still be added from the Pi with{' '}
-          <code>npm run enroll:pi</code>.
+          This proxy predates key import and needs the vendor cloud, which is not configured. Update the
+          Pi and restart ibems-proxy to add devices from imported keys; until then, devices can be added
+          from the Pi with <code>npm run enroll:pi</code>.
         </p>
       </OverlayPanel>
     );
@@ -90,6 +94,8 @@ export function EnrollWizard({ onClose }: { onClose: () => void }) {
 
   return (
     <OverlayPanel className="enroll-wizard" title="Add device" onClose={onClose}>
+      {sources && <SourcesSummary sources={sources} />}
+      <ImportKeysPanel open={importWanted} onImported={refresh} />
       <DetectedDevices detected={detected} onRebind={(t) => void rebind.run(t, false)} />
       {rebind.state && (
         <RebindPanel state={rebind.state} onApply={() => void rebind.run(rebind.state!.target, true)} onDone={rebind.close} />
@@ -101,7 +107,7 @@ export function EnrollWizard({ onClose }: { onClose: () => void }) {
           <option value="">Choose a device…</option>
           {candidates.map((d) => (
             <option key={d.id} value={d.id}>
-              {d.name ?? d.id} {d.online ? '· online' : '· offline'}
+              {d.name ?? d.id} · {presenceLabel(d)}
             </option>
           ))}
         </select>
@@ -113,8 +119,8 @@ export function EnrollWizard({ onClose }: { onClose: () => void }) {
           {!claimedKnown
             ? `Which devices are already enrolled could not be checked — the flow was unreadable, so this list may include devices that already have a node. Enrolling a duplicate is still refused.`
             : candidates.length === 0
-              ? 'Every device in the cloud project is already enrolled.'
-              : `${candidates.length} device(s) in the cloud project are not yet enrolled. Offline ones can still be added — offline now is not offline forever.`}
+              ? 'Every detected device with a key is already enrolled.'
+              : `${candidates.length} detected device(s) with a key are not yet enrolled. One not heard on the network can still be added — off now is not off forever.`}
         </small>
       </label>
 
@@ -178,25 +184,63 @@ export function EnrollWizard({ onClose }: { onClose: () => void }) {
 
 type Classified = { d: CloudDevice; c: ReturnType<typeof classifyVendorDevice> };
 
-const ACTION_LABEL: Record<string, string> = { enroll: 'Can enrol', rebind: 'Rebind available', linked: 'Linked', none: 'Not enrolled here' };
+const ACTION_LABEL: Record<string, string> = { enroll: 'Can enrol', rebind: 'Rebind available', linked: 'Linked', needs_key: 'Needs its key', none: 'Not enrolled here' };
+
+const KEY_LABEL: Record<string, string> = { imported: 'key imported', cloud: 'key from cloud' };
 
 /**
- * Everything in the cloud project, and what each device is to this site. Open by default when a
- * rebind is waiting, because that is the case where somebody arrived here to fix something.
+ * Whether a device is reachable, from the best evidence there is: the device network's own
+ * announcements first, the vendor cloud's view second. "not heard" says what was observed rather
+ * than claiming "offline" — a device can be silent on the network and perfectly fine.
+ */
+function presenceLabel(d: CloudDevice): string {
+  if (d.on_lan) return d.lan_version ? `on network · v${d.lan_version}` : 'on network';
+  if (d.online === true) return 'online (cloud)';
+  if (d.online === false) return 'offline (cloud)';
+  return 'not heard';
+}
+
+/** Which of the three sources answered, in one line each — the vendor cloud is optional and lapses. */
+function SourcesSummary({ sources }: { sources: DeviceSources }) {
+  const { cloud, imported, lan } = sources;
+  const cloudText =
+    cloud.status === 'ok' ? 'connected' : cloud.status === 'unconfigured' ? 'not configured (optional)' : `unavailable — ${cloud.detail ?? 'no reason given'} (optional)`;
+  const since = lan.listening_since ? new Date(lan.listening_since) : null;
+  return (
+    <ul className="enroll-wizard__sources" aria-label="Device sources">
+      <li>
+        <strong>Imported keys:</strong> {imported.count} device{imported.count === 1 ? '' : 's'}
+        {imported.last_complete_at ? `, complete list from ${new Date(imported.last_complete_at).toLocaleDateString()}` : ''}
+      </li>
+      <li>
+        <strong>Device network:</strong>{' '}
+        {since ? `listening since ${since.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}` : 'not listening'}
+      </li>
+      <li>
+        <strong>Vendor cloud:</strong> {cloudText}
+      </li>
+    </ul>
+  );
+}
+
+/**
+ * Every detected device, and what each is to this site. Open by default when a rebind or a key is
+ * waiting, because that is the case where somebody arrived here to fix something.
  */
 function DetectedDevices({ detected, onRebind }: { detected: Classified[]; onRebind: (t: RebindTarget) => void }) {
   if (detected.length === 0) return null;
-  const needsAction = detected.some(({ c }) => c.action === 'rebind');
+  const needsAction = detected.some(({ c }) => c.action === 'rebind' || c.action === 'needs_key');
   return (
     <details className="enroll-wizard__detected" open={needsAction || undefined}>
-      <summary>Detected in the cloud project ({detected.length})</summary>
+      <summary>Detected devices ({detected.length})</summary>
       <ul className="enroll-wizard__detected-list">
         {detected.map(({ d, c }) => (
           <li key={d.id} className="enroll-wizard__detected-row">
             <div className="enroll-wizard__detected-head">
               <span className="enroll-wizard__detected-name">{d.name ?? d.id}</span>
               <span className="enroll-wizard__detected-kind">{c.label}</span>
-              <span className={`badge${d.online ? ' badge--good' : ''}`}>{d.online ? 'online' : 'offline'}</span>
+              <span className={`badge${d.on_lan || d.online ? ' badge--good' : ''}`}>{presenceLabel(d)}</span>
+              {d.credential_source !== undefined && <span className="badge">{d.credential_source ? KEY_LABEL[d.credential_source] : 'no key'}</span>}
               <span className="badge">{ACTION_LABEL[c.action] ?? c.action}</span>
             </div>
             {c.reason && <small className="enroll-wizard__detected-reason">{c.reason}</small>}

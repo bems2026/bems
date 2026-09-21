@@ -56,7 +56,9 @@ export const VENDOR_KINDS = Object.freeze({
  *
  * @param d        a public fleet row: { id, name, category, sub, claimed }
  * @param context  { registry, claimedBy: flow node name or null, orphanNodes: [{name, class}] }
- * @returns {{ kind, label, suggestedClass, action: 'enroll'|'rebind'|'linked'|'none', enrollable, reason, rebindNode? }}
+ * @returns {{ kind, label, suggestedClass, action: 'enroll'|'rebind'|'linked'|'needs_key'|'none', enrollable, reason, rebindNode? }}
+ *
+ * `needs_key` (2026-09-17): heard on the device network, but no import or cloud listing has its key.
  *
  * `rebind` is offered when a flow node of the same class points at a vendor id this project no longer
  * has — which is what re-pairing in Smart Life does, and what happened to the IR blaster. The node's

@@ -4,8 +4,11 @@ import { EnrollWizard } from './EnrollWizard';
 import { useDeviceStore } from '@/stores/deviceStore';
 import type { Device } from '@/lib/types';
 
-const cloudFleet = vi.hoisted(() => ({ value: { byId: {}, status: 'ready' } as Record<string, unknown> }));
-vi.mock('@/hooks/useCloudFleet', () => ({ useCloudFleet: () => cloudFleet.value }));
+const cloudFleet = vi.hoisted(() => ({ value: { byId: {}, status: 'ready' } as Record<string, unknown>, refresh: vi.fn() }));
+vi.mock('@/hooks/useCloudFleet', () => ({ useCloudFleet: () => ({ refresh: cloudFleet.refresh, ...cloudFleet.value }) }));
+
+const credentials = vi.hoisted(() => ({ fn: vi.fn() }));
+vi.mock('@/lib/credentials', () => ({ importCredentials: credentials.fn }));
 
 const enroll = vi.hoisted(() => ({ fn: vi.fn() }));
 vi.mock('@/lib/enroll', () => ({ enrollDevice: enroll.fn }));
@@ -31,6 +34,8 @@ beforeEach(() => {
   cleanup();
   enroll.fn.mockReset();
   rebind.fn.mockReset();
+  credentials.fn.mockReset();
+  cloudFleet.refresh.mockReset();
   cloudFleet.value = {
     status: 'ready',
     claimedKnown: true,
@@ -75,12 +80,32 @@ describe('EnrollWizard', () => {
     expect(screen.queryByText(/could not be checked/i)).not.toBeInTheDocument();
   });
 
-  it('explains itself rather than half-working when the cloud is not configured', () => {
-    // Without the cloud there is no local key, so enrolment genuinely cannot proceed here.
+  it('keeps working from imported keys when the vendor cloud is unavailable, and says where each source stands', () => {
+    // 2026-09-17: this panel used to give up when the cloud did. The subscription lapses by design now,
+    // and the keys come from an import — so the form stays, and the cloud's state is one line of three.
+    cloudFleet.value = {
+      status: 'ready',
+      claimedKnown: true,
+      orphanNodes: [],
+      byId: { 'vendor-new': { id: 'vendor-new', name: 'New Outlet', online: null, category: 'pc', credential_source: 'imported', on_lan: true, lan_version: '3.4' } },
+      sources: {
+        cloud: { status: 'unavailable', detail: 'code 28841002: IoT Core subscription expired' },
+        imported: { count: 1, last_complete_at: null },
+        lan: { listening_since: '2026-09-22T00:00:00.000Z' },
+      },
+    };
+    render(<EnrollWizard onClose={() => {}} />);
+    expect(screen.getByRole('option', { name: /New Outlet · on network/ })).toBeInTheDocument();
+    const sources = screen.getByRole('list', { name: 'Device sources' });
+    expect(sources).toHaveTextContent(/Vendor cloud.*unavailable.*IoT Core subscription expired/);
+    expect(sources).toHaveTextContent(/Imported keys.*1 device/);
+    expect(sources).toHaveTextContent(/Device network.*listening/);
+  });
+
+  it('still explains itself against a proxy that predates key import', () => {
     cloudFleet.value = { status: 'unconfigured', byId: {} };
     render(<EnrollWizard onClose={() => {}} />);
-    expect(screen.getByText(/needs the vendor cloud/)).toBeInTheDocument();
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.getByText(/restart ibems-proxy/)).toBeInTheDocument();
   });
 
   it('shows the same validation the server will apply, as you type', async () => {
@@ -210,6 +235,34 @@ describe('EnrollWizard — detected devices', () => {
     expect(await screen.findByText('Rebound.')).toBeInTheDocument();
   });
 
+  it('a device heard on the network with no key asks for one, and is not offered for enrolment', () => {
+    cloudFleet.value = {
+      ...cloudFleet.value,
+      byId: { fresh: { id: 'fresh', name: null, online: null, category: null, credential_source: null, on_lan: true, lan_version: '3.5' } },
+    };
+    render(<EnrollWizard onClose={() => {}} />);
+    expect(screen.queryByRole('option', { name: /fresh/ })).not.toBeInTheDocument();
+    const row = screen.getByText('fresh').closest('li') as HTMLElement;
+    expect(row).toHaveTextContent('Needs its key');
+    expect(row).toHaveTextContent('on network · v3.5');
+    expect(row).toHaveTextContent('no key');
+    // The import panel opens by itself: there is a device waiting on it.
+    expect(screen.getByText('Import keys from a key tool').closest('details')).toHaveAttribute('open');
+  });
+
+  it('says where each detected device gets its key', () => {
+    cloudFleet.value = {
+      ...cloudFleet.value,
+      byId: {
+        a: { id: 'a', name: 'Imported Outlet', category: 'pc', credential_source: 'imported', on_lan: true, lan_version: '3.4' },
+        b: { id: 'b', name: 'Cloud Outlet', online: true, category: 'pc', credential_source: 'cloud', on_lan: false },
+      },
+    };
+    render(<EnrollWizard onClose={() => {}} />);
+    expect(screen.getByText('Imported Outlet').closest('li')).toHaveTextContent('key imported');
+    expect(screen.getByText('Cloud Outlet').closest('li')).toHaveTextContent('key from cloud');
+  });
+
   it('shows a refused rebind with the step it failed at', async () => {
     cloudFleet.value = {
       ...cloudFleet.value,
@@ -221,5 +274,74 @@ describe('EnrollWizard — detected devices', () => {
     fireEvent.click(screen.getByRole('button', { name: /Rebind NBRIC IR Blaster/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/credentials step/);
     expect(screen.getByText(/did not announce itself/)).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Import keys — 2026-09-17. Onboarding without an IoT Core subscription: the operator exports the
+// account's devices with a key tool and hands the file to the Pi through this panel.
+// ---------------------------------------------------------------------------
+
+describe('EnrollWizard — import keys', () => {
+  const EXPORT = '[{"id":"bf01","name":"Outlet 9","local_key":"0123456789abcdef","category":"pc"}]';
+
+  const openImport = () => {
+    fireEvent.click(screen.getByText('Import keys from a key tool'));
+    return screen.getByLabelText(/paste it/i) as HTMLTextAreaElement;
+  };
+
+  it('sends the pasted export with the complete flag, reports counts, clears the paste and refreshes the list', async () => {
+    credentials.fn.mockResolvedValue({ ok: true, format: 'json', added: 1, updated: 0, total: 1, complete: true, problems: [] });
+    render(<EnrollWizard onClose={() => {}} />);
+    const paste = openImport();
+    fireEvent.change(paste, { target: { value: EXPORT } });
+    fireEvent.click(screen.getByRole('checkbox', { name: /lists every device/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Import keys' }));
+
+    expect(credentials.fn).toHaveBeenCalledWith(EXPORT, true);
+    expect(await screen.findByText(/Imported: 1 added, 0 updated/)).toBeInTheDocument();
+    expect(paste.value).toBe('');
+    expect(cloudFleet.refresh).toHaveBeenCalled();
+  });
+
+  it('shows a refused import with its reasons, and keeps the paste so it can be fixed', async () => {
+    credentials.fn.mockResolvedValue({ ok: false, format: null, added: 0, updated: 0, total: 0, complete: false, problems: ['not a recognised export'] });
+    render(<EnrollWizard onClose={() => {}} />);
+    const paste = openImport();
+    fireEvent.change(paste, { target: { value: 'hello' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Import keys' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('not a recognised export');
+    expect(paste.value).toBe('hello');
+    expect(cloudFleet.refresh).not.toHaveBeenCalled();
+  });
+
+  it('keeps the panel open after an import that leaves nothing needing a key, so its result stays visible', async () => {
+    // Found in the browser preview: the panel opened itself for a keyless device, the import gave that
+    // device its key, the list refreshed — and the panel closed, hiding the "Imported" confirmation.
+    cloudFleet.value = { ...cloudFleet.value, byId: { fresh: { id: 'fresh', name: null, category: null, credential_source: null, on_lan: true } } };
+    credentials.fn.mockResolvedValue({ ok: true, format: 'json', added: 1, updated: 0, total: 1, complete: false, problems: [] });
+    const { rerender } = render(<EnrollWizard onClose={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/paste it/i), { target: { value: EXPORT } });
+    fireEvent.click(screen.getByRole('button', { name: 'Import keys' }));
+    await screen.findByText(/Imported: 1 added/);
+
+    cloudFleet.value = { ...cloudFleet.value, byId: { fresh: { id: 'fresh', name: 'Outlet 9', category: 'pc', credential_source: 'imported', on_lan: true } } };
+    rerender(<EnrollWizard onClose={() => {}} />);
+    expect(screen.getByText('Import keys from a key tool').closest('details')).toHaveAttribute('open');
+  });
+
+  it('will not send an empty paste', () => {
+    render(<EnrollWizard onClose={() => {}} />);
+    openImport();
+    expect(screen.getByRole('button', { name: 'Import keys' })).toBeDisabled();
+  });
+
+  it('lists skipped rows beside a successful import, so a missing key is not a silent omission', async () => {
+    credentials.fn.mockResolvedValue({ ok: true, format: 'csv', added: 1, updated: 0, total: 1, complete: false, problems: ['BLE lock: no local key (a Bluetooth-only device has none)'] });
+    render(<EnrollWizard onClose={() => {}} />);
+    fireEvent.change(openImport(), { target: { value: EXPORT } });
+    fireEvent.click(screen.getByRole('button', { name: 'Import keys' }));
+    expect(await screen.findByText(/BLE lock: no local key/)).toBeInTheDocument();
   });
 });

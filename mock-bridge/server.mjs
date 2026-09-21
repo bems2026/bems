@@ -34,6 +34,9 @@
  *   --acu-cloud=<route>   what /api/capabilities says about the aircon's vendor-cloud route:
  *                         ready | unconfigured | unresolved | local-only. Default `unconfigured`;
  *                         `ready` previews the aircon panel with mode, fan and swing sendable.
+ *   --onboarding       Add Device mid-onboarding: vendor cloud lapsed, keys imported, and one newly
+ *                      paired device heard on the network with no key yet. Import keys works either
+ *                      way, in memory, through the real parser.
  *   --cmd-drop=<id|all> that command never responds at all (exercises the client's abort)
  *   --faults=<list>    shape the seeded 24h history after faults measured on the live building
  *                      (ROADMAP RM-076/RM-077), comma-separated: `flicker` (one sample of the first
@@ -59,6 +62,7 @@ import { CAPABILITY_PROFILES, channelCodesFor } from '../shared/deviceCapabiliti
 import { COMMAND_ROUTE, ACCEPTED_STATUS, validateCommand, buildAck } from '../shared/commands.mjs';
 import { resolveAcState } from '../shared/acState.mjs';
 import { CONTEXT_ROUTE, CONTEXT_ACCEPTED_STATUS, validateContextWrite, buildContextAck } from '../shared/context.mjs';
+import { parseCredentialExport } from '../server/credentialImport.mjs';
 
 // ---------------------------------------------------------------------------
 // args
@@ -81,6 +85,9 @@ const DISPATCH_CLASSES = val('dispatch', '') ? val('dispatch', '').split(',').fi
 // the true answer for a process with no vendor credentials; `--acu-cloud=ready` previews the panel on a
 // deployment where mode, fan and swing can be sent.
 const ACU_CLOUD_ROUTE = val('acu-cloud', 'unconfigured');
+// Seeds /api/tuya/devices with a fleet mid-onboarding: the vendor subscription lapsed, keys imported,
+// and one newly paired device heard on the network with no key yet. See `deviceSourcesListing`.
+const ONBOARDING = flag('onboarding');
 const FAULTS = val('faults', '') ? val('faults', '').split(',').filter(Boolean) : [];
 const CMD_DROP = val('cmd-drop', '');
 // How often a metered device is treated as having reported, in seconds. 0 (the default) keeps
@@ -545,7 +552,7 @@ const send = (res, code, body) => {
 const MAX_BODY = 8 * 1024;
 
 /** Hand-rolled JSON body reader — this file stays dependency-free (see the header comment). */
-function readJsonBody(req, cb) {
+function readJsonBody(req, cb, maxBody = MAX_BODY) {
   let done = false;
   const finish = (err, val) => {
     if (done) return;
@@ -562,8 +569,8 @@ function readJsonBody(req, cb) {
   const chunks = [];
   req.on('data', (chunk) => {
     size += chunk.length;
-    if (size > MAX_BODY) {
-      finish({ status: 413, code: 'body_too_large', error: `body exceeds ${MAX_BODY} bytes` });
+    if (size > maxBody) {
+      finish({ status: 413, code: 'body_too_large', error: `body exceeds ${maxBody} bytes` });
       req.destroy(); // triggers 'error' below; the `done` guard stops it double-firing
       return;
     }
@@ -643,6 +650,68 @@ function handleCommand(req, res) {
 // ---------------------------------------------------------------------------
 const contextStore = new Map();
 
+// ---------------------------------------------------------------------------
+// Add Device's sources (2026-09-17) — contract parity with server/proxy.mjs's /api/tuya/devices and
+// /api/credentials/import, so the wizard can be worked on without a Pi. Imports go through the REAL
+// parser and are held in memory only; like the proxy, no reply carries a key.
+// ---------------------------------------------------------------------------
+const importedKeys = new Map();
+let importedCompleteAt = null;
+const MOCK_STARTED_AT = new Date().toISOString();
+
+/** `--onboarding`: a fleet mid-onboarding, with the subscription lapsed — the state the wizard is for. */
+const ONBOARDING_FIXTURE = [
+  { id: 'mock-ir-hub', name: 'Smart IR', category: 'wnykq', product_name: 'Wifi IR Pro', sub: false, online: null, credential_source: 'imported', on_lan: true, lan_version: '3.3', claimed: true, claimed_by: 'NBRIC IR Blaster' },
+  { id: 'mock-air', name: 'Air', category: 'infrared_ac', product_name: 'Air', sub: true, online: null, credential_source: 'imported', on_lan: false, lan_version: null, claimed: false, claimed_by: null },
+  { id: 'mock-new-plug', name: null, category: null, product_name: null, sub: false, online: null, credential_source: null, on_lan: true, lan_version: '3.5', claimed: false, claimed_by: null },
+];
+
+function deviceSourcesListing() {
+  const imported = [...importedKeys.values()].map((d) => ({
+    id: d.id, name: d.name, category: d.category, product_name: d.productName, sub: d.sub, online: null,
+    credential_source: 'imported', on_lan: false, lan_version: null, claimed: false, claimed_by: null,
+  }));
+  const byId = new Map((ONBOARDING ? ONBOARDING_FIXTURE : []).map((d) => [d.id, d]));
+  for (const d of imported) {
+    const heard = byId.get(d.id);
+    byId.set(d.id, { ...heard, ...d, on_lan: heard?.on_lan ?? false, lan_version: heard?.lan_version ?? null });
+  }
+  const devices = [...byId.values()];
+  return {
+    devices,
+    // The mock has no flow, so "nothing is claimed" is a true answer — except the fixture's own hub.
+    claimed_known: true,
+    orphan_nodes: [],
+    sources: {
+      cloud: ONBOARDING ? { status: 'unavailable', detail: 'code 28841002: IoT Core subscription expired' } : { status: 'unconfigured' },
+      imported: { count: devices.filter((d) => d.credential_source === 'imported').length, last_complete_at: importedCompleteAt },
+      lan: { listening_since: ONBOARDING ? MOCK_STARTED_AT : null },
+    },
+  };
+}
+
+function handleCredentialImport(req, res) {
+  readJsonBody(req, (err, body) => {
+    if (err) return send(res, err.status, { error: err.error, code: err.code });
+    if (typeof body?.content !== 'string') return send(res, 400, { ok: false, error: 'content must be the export text', problems: ['content must be the export text'] });
+    const parsed = parseCredentialExport(body.content);
+    if (!parsed.format || parsed.devices.length === 0) {
+      const reason = parsed.problems[0] ?? 'no row had both a device id and a usable local key';
+      return send(res, 422, { ok: false, error: reason, format: parsed.format, added: 0, updated: 0, total: importedKeys.size, complete: false, problems: parsed.problems.length ? parsed.problems : [reason] });
+    }
+    let added = 0;
+    let updated = 0;
+    for (const d of parsed.devices) {
+      if (importedKeys.has(d.id)) updated += 1;
+      else added += 1;
+      importedKeys.set(d.id, d);
+    }
+    const complete = body.complete === true;
+    if (complete) importedCompleteAt = new Date().toISOString();
+    send(res, 200, { ok: true, format: parsed.format, added, updated, total: importedKeys.size, complete, problems: parsed.problems });
+  }, 1024 * 1024);
+}
+
 function handleContextWrite(req, res) {
   readJsonBody(req, (err, body) => {
     if (err) return send(res, err.status, { error: err.error, code: err.code });
@@ -676,6 +745,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST') {
     if (url.pathname === COMMAND_ROUTE) return handleCommand(req, res);
     if (url.pathname === CONTEXT_ROUTE) return handleContextWrite(req, res);
+    if (url.pathname === '/api/credentials/import') return handleCredentialImport(req, res);
     res.setHeader('Allow', 'GET');
     return send(res, 405, { error: `no such write route: ${url.pathname}`, code: 'method_not_allowed' });
   }
@@ -711,6 +781,9 @@ const server = http.createServer((req, res) => {
 
     case '/api/readings/latest':
       return send(res, 200, latest());
+
+    case '/api/tuya/devices':
+      return send(res, 200, deviceSourcesListing());
 
     case '/api/readings/history': {
       const id = url.searchParams.get('device_id');

@@ -1,11 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { fetchCloudFleet, EMPTY_FLEET, type CloudFleet } from '@/lib/tuyaFleet';
 
 /** Cloud state moves on the order of minutes; polling faster would be waste. */
 const REFRESH_MS = 3 * 60_000;
 
-export function useCloudFleet(): CloudFleet {
+/**
+ * The detected-device list, polled. `refresh()` fetches now — after a key import, say, whose whole
+ * point is that the devices it named become enrollable, which should not wait three minutes.
+ */
+export function useCloudFleet(): CloudFleet & { refresh: () => void } {
   const [fleet, setFleet] = useState<CloudFleet>(EMPTY_FLEET);
+  const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -23,7 +28,8 @@ export function useCloudFleet(): CloudFleet {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, []);
+  }, [nonce]);
 
-  return fleet;
+  const refresh = useCallback(() => setNonce((n) => n + 1), []);
+  return { ...fleet, refresh };
 }
