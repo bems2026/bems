@@ -15,7 +15,8 @@ the map fills and the addresses can be set; then reserve them on the AP.
 **Earlier the same day — Onboarding without IoT Core, and the aircon's own IR protocol: RM-126 to
 RM-129.** The operator decided on 2026-09-17 that Tuya IoT Core is only for
 extracting ids and local keys, not a dependency, and it had just lapsed — taking Add Device, rebind and
-the aircon's mode/fan/swing with it. Built, tested and pushed; **not deployed** (§0).
+the aircon's mode/fan/swing with it. **Deployed by the operator 2026-09-22 (Aircon tab 06:49, build and
+restart; the Pi then rebooted at 07:44) and read back at 07:55** — see §0. Keys not yet imported.
 - **RM-126:** device facts come from three sources: keys imported from a key tool's export, what the
   device network announces (a passive listener in the proxy), and the vendor cloud only while it
   answers. `/api/tuya/devices` no longer fails with the cloud. Orphans for Rebind now need network
@@ -354,7 +355,23 @@ Everything else for this is installed and running: `systemctl list-timers | grep
 
 ### 2026-09-22 (later) — onboarding without IoT Core and the aircon's protocol; what to deploy, in order
 
-Committed and pushed; every suite, lint and the build green. Nothing below is deployed. In order:
+**Steps 1–3 done by the operator and read back, 2026-09-22 07:55 (read-only):**
+- `aircon:pi` wrote `~ AC Master Logic` only, "Generator check passed", read back current; a later dry
+  run says nothing to do. The backup is `~/.node-red/flows.json.bak-ircodes-` — **no date in the name**:
+  the command ran from Windows PowerShell, which evaluated `$(date +%F)` locally and failed. Give such
+  commands in single quotes.
+- The kiosk serves a bundle with Import keys and the generated-frame text. The proxy holds UDP
+  6666/6667/7000 (the LAN listener) and has served `/api/tuya/devices` from imported and LAN sources
+  while the cloud reports `28841002`. Node-RED logged no `EADDRINUSE` beside it, nor beside RM-131's
+  `ibems-lan-map` listener.
+- **After the 07:44 reboot the fleet is back on the segment:** 18 broadcasters heard (10 × v3.5,
+  7 × v3.4, 1 × v3.3), 19/20 devices online — all but the uninstalled Outside Temp — and no `find()`
+  timeout in the six minutes before the read. The IR hub connected at 07:46; `acu_main` reads 28.4 °C,
+  75 %, `stale_after_ms` 150000. `sens_outside_temp` reads offline with no humidity (RM-114 live).
+- phase45's columns exist (RM-117).
+
+Still to do: step 4 (import keys) and step 6 (the on-site test, no longer blocked by the network).
+The original list, for reference:
 
 1. **Pull and build on the Pi**: `ssh <user>@<host> "cd /home/bems/bems && git pull --ff-only && npm run build"`.
 2. **Dry-run the Aircon tab, then apply it with a backup (RM-128).** Expected: `~ AC Master Logic` only,
@@ -3553,7 +3570,7 @@ Life account. It is not a runtime dependency. Their own observation, recorded wi
 id and local key do not change while it stays paired — a restart or a new IP does not change them; only
 removing it from Smart Life and pairing it again does.
 
-- [x] **RM-126** Device facts without the vendor cloud. **Built; not deployed.**
+- [x] **RM-126** Device facts without the vendor cloud. **Deployed and read back 2026-09-22** (§0).
   - **Three sources, merged** (`server/deviceSources.mjs`):
     - imported keys (`server/credentialImport.mjs` parses a key tool's JSON/CSV or `tinytuya wizard`'s
       `devices.json`; `server/credentialStore.mjs` keeps them in `server/data/device-credentials.json`,
@@ -3579,7 +3596,7 @@ removing it from Smart Life and pairing it again does.
   - `server/deviceSources.test.mjs`, `server/credentialImport.test.mjs`, `server/lanPresence.test.mjs`,
     `server/import-keys.test.mjs`, `server/proxy.test.mjs` (the import and listing routes).
 
-- [x] **RM-127** Add Device: Import keys, and which sources answered. **Built; not built on the Pi.**
+- [x] **RM-127** Add Device: Import keys, and which sources answered. **Built on the Pi and served, 2026-09-22.**
   - One line per source; each detected device shows its network presence and version, and where its key
     comes from (key imported / key from cloud / no key). A device heard with no key is `needs_key`
     ("Needs its key"), and the import panel opens for it.
@@ -3591,8 +3608,8 @@ removing it from Smart Life and pairing it again does.
   - `src/components/devices/ImportKeysPanel.tsx`, `src/components/devices/EnrollWizard.tsx`,
     `src/lib/credentials.ts`, `src/lib/tuyaFleet.ts`, `src/hooks/useCloudFleet.ts`.
 
-- [x] **RM-128** The aircon's IR frames are TCL112AC, and the flow now generates any state. **Built; not
-  applied.**
+- [x] **RM-128** The aircon's IR frames are TCL112AC, and the flow now generates any state. **Applied
+  2026-09-22 06:49 and read back** (§0); no generated frame has been sent to the unit yet (RM-120).
   - **Measured.** All sixteen codes in `AC Master Logic` (live-flow fixture of 2026-09-17) decode as
     TCL112AC: header 23 CB 26 01 00, 112 bits LSB-first, byte 13 the sum of bytes 0–12 — every checksum
     verifies. The fifteen ON codes are **cool, fan auto, swing off** at 16–30 °C; OFF is the one
@@ -3901,10 +3918,9 @@ editor (deployed 14:36 local). The node stayed quiesced (`disableAutoStart: true
     `node-red-bridge/aircon-flow.mjs`, `test/aircon-flow-plan.test.mjs`, `test/aircon-sources.test.mjs`,
     `test/fixtures/aircon-tab-live-2026-09-17.json`.
 
-- [ ] **RM-117** `supabase/phase45_command_ac_state.sql` — `commands.ac_mode`, `ac_fan`, `ac_swing`.
-  **Applied by the operator 2026-09-17, by their report; not yet read back** — a GET of
-  `commands?select=ac_mode` through the Pi's credentials answers 200 once the columns exist. (Tried
-  2026-09-22; SSH to the Pi was waiting on a Tailscale re-authentication.)
+- [x] **RM-117** `supabase/phase45_command_ac_state.sql` — `commands.ac_mode`, `ac_fan`, `ac_swing`.
+  **Applied by the operator 2026-09-17; read back 2026-09-22 07:55** — a GET of
+  `commands?select=id,ac_mode,ac_fan,ac_swing` through the Pi's credentials answers 200.
   - **Constraints.** The `shared/acState.mjs` vocabularies; all three or none; only on an ON command.
     No backfill, no grant.
   - **Rehearsal.** Run on the Pi in a throwaway container (image already cached): every migration, the
@@ -3969,7 +3985,8 @@ editor (deployed 14:36 local). The node stayed quiesced (`disableAutoStart: true
   7. Arm one ACU rule for 15 minutes. Its steps keep the mode.
 
   Until step 5 is done, ON states are cloud-first by design when a cloud is ready.
-  **Blocked on 2026-09-22:** the IR hub is off the segment with the lights and outlets (RM-046, §0).
+  The network no longer blocks it: after the Pi's 07:44 reboot on 2026-09-22 the IR hub is back and
+  connected (§0). It waits only on someone at the unit.
 
 - [ ] **RM-121** **The Tuya IoT Core subscription expired on 2026-09-17.**
   - **Measured.** Every business call answers `code 28841002: IoT Core service subscription has
