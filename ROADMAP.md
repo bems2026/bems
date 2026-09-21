@@ -14,11 +14,15 @@ nothing here could have traded them. RM-019's session collapse removed a possibl
 - **RM-123:** `npm run scrub:meters` corrects the stored rows with the same classifier and re-integrates
   the affected days' energy. **Applied 2026-09-22 04:33:** 5,748 rows rewritten (1,800 traded), verified by
   invariants — every affected row stamped, each day's high-water mark exactly the restated figure, and a
-  re-run finds nothing to do. The bridge's `enacc_*` bases still carry the wrong figures (§0).
+  re-run finds nothing to do. The bridge's `enacc_*` bases were corrected by hand at 05:14 (C.O week
+  9.503 / month 112.055; L.O 0.758 / 13.958) and read back live.
+- **RM-124:** applied by the operator at ~05:05; the daemon generated every settled day (08-16 → 09-21)
+  and the page was read back at 800×480 in both themes.
+- **RM-125:** done — `/etc/systemd/journald.conf.d/50-ibems-persistent.conf`, 200 MB bounded.
 - **RM-124:** a Daily period beside Weekly and Monthly — `phase46`, the daemon, and the page's twenty-four
-  hourly bars, whose sum is the day's headline by construction. Rehearsed. **Not applied.**
-- **RM-125:** the journal is volatile and the Pi was rebooted twice on the 21st; nothing from the 19th
-  survived. Operator decision.
+  hourly bars, whose sum is the day's headline by construction.
+- **RM-125:** the journal was volatile and the Pi was rebooted twice on the 21st; nothing from the 19th
+  survived.
 
 **Before that, 2026-09-17 (evening) — The aircon's IR blaster was re-paired, and the system now knows
 what it is: RM-114 to RM-121.** The operator re-paired it in Smart Life as a Lasco "Smart IR" hub and
@@ -299,27 +303,22 @@ other four and none needed changing.
 
 ### 2026-09-22 — the yellow meter trades its channels; what to deploy, in order
 
-Every suite is green and the rehearsal passed. **Done 2026-09-22, approved by the operator:** the demux is
-in the live flow (04:26, `flows.json` backed up beside it), the bridge tab is redeployed, and the stored
-rows are scrubbed (04:33). What remains, in order, on the Pi:
+**All of it is deployed, 2026-09-22 04:26–05:20, approved by the operator.** The demux is in the live
+flow (`flows.json` backed up beside it), the bridge tab redeployed, the rows scrubbed (04:33), phase46
+applied by the operator (~05:05), the daemons restarted (04:59) and every settled day generated (08-16 →
+09-21), the kiosk on the new bundle (`index-Dx5nAZxI.js`), the bridge's `enacc_*` bases corrected by hand
+(05:14, context backed up beside it), and the journal made persistent (RM-125). The week of 09-14 settles
+on 09-23 with the scrub already in it. `origin` is now SSH with a deploy key.
 
-1. **Correct the bridge's own week and month bases** — the scrub's dry run printed them:
-   `enacc_mtr_co_yellow` weekBase **+2.705** / monthBase **+7.257** kWh; `enacc_mtr_lo_yellow`
-   weekBase **−2.477** / monthBase **−7.103** kWh. Stop Node-RED, edit `~/.node-red/context/<bridge
-   tab>/flow.json`, start Node-RED, as the brief's EX-158 trap describes. Until then the dashboard's
-   "By branch" split for this week and month carries the swap.
-2. **Apply `supabase/phase46_daily_reports.sql`** in the SQL editor (RM-124). Until then the page's Daily
-   button lists no days and, once restarted, the daemon logs the generator refusing `'day'` once per pass.
-3. **Restart the daemons and rebuild the page** — after phase46:
-   ```
-   sudo systemctl restart ibems-ingest ibems-proxy ibems-scheduler
-   npm run build
-   ```
-   `ibems-ingest` is the one that matters: until it restarts, new rows lack `capabilities.channel_map`
-   (the field is on the API already) and no day is generated. Hard-reload the kiosk afterwards.
-4. **Decide RM-125** — a bounded persistent journal.
+**What the read-back found, and it is not this work's doing:** the seven lights, seven outlets and the IR
+hub have been off the segment since 17:54–18:11 on 09-21 — flapping after the 17:02 reboot, then gone. A
+30 s passive listen hears exactly three broadcasters, the three physical meters, as on 2026-09-03
+(RM-046, the access point after a power event). The IR hub's session had survived until the 05:14
+Node-RED restart for the context edit; it is not re-found since, and `set-device-ip:pi` cannot help
+because it needs the cloud, which RM-121's lapsed subscription refuses. Nothing here recovers them:
+renew IoT Core (RM-121) so the tools work again, then RM-046's sequence at the AP.
 
-The week of 09-14 settles on 09-23; the scrub landed before it, so no regeneration is needed.
+Open for the operator: **FI-035** (is the aircon on C.O Yellow or on CARE ACU alone?).
 
 **Read back after 1–2:** `npm run check:meters -- --hours=6` reads the STORED rows, which the demux now
 corrects before they are written — so from the apply onward it should list nothing new. A flip it does
@@ -3554,10 +3553,16 @@ cannot draw more than 150 W, and the outlet branch is never at 0 A.
       `src/components/reports/charts/hourlyEnergyChart.ts`, `src/components/reports/{ReportControlBar,
       PeriodPicker,useReportData,ReportCharts,CircuitDeepDive,ReportsPage,ExportDrawer,ReportSkeleton}.tsx`,
       `src/lib/reportPdf/buildReport.ts`, `src/components/reports/ReportsPage.day.test.tsx` (7).
-- [ ] **RM-125** The journal is volatile: `/var/log/journal` is empty, and the Pi was rebooted at 09:17 and
-      17:02 on 2026-09-21, so nothing Node-RED logged on the 19th survived — the database was the only
-      witness to RM-122. Propose `Storage=persistent` with `SystemMaxUse=200M` in
-      `/etc/systemd/journald.conf`. **Operator decision** (SD-card wear against a diagnosable fleet).
+- [x] **RM-125** The journal is persistent, and bounded. It was volatile: `/var/log/journal` was empty, and
+      the Pi was rebooted at 09:17 and 17:02 on 2026-09-21, so nothing Node-RED logged on the 19th survived
+      — the database was the only witness to RM-122. **Done 2026-09-22 05:16, operator's "proceed":**
+      `/etc/systemd/journald.conf.d/50-ibems-persistent.conf` — `Storage=persistent`, `SystemMaxUse=200M`,
+      `SystemMaxFileSize=32M`, `MaxRetentionSec=90day`. A drop-in, because Raspberry Pi OS itself forces
+      `Storage=volatile` from `raspberrypi-sys-mods`' `40-rpi-volatile-storage.conf` (SD-card wear) and the
+      main `journald.conf` is overridden by it whatever it says; `50-` sorts after `40-`. Flushed: this boot's
+      runtime journal (79 MB, everything since 17:02) is now on disk. **This lives only in `/etc` on the Pi**
+      — the same exposure shape as the broker and `uiHost`: a rebuild loses it silently. `npm run preflight`
+      does not check it yet.
 - [ ] **FI-034** `readings_buckets` over the full 30-day raw window hits the statement timeout; the RM-122
       scan had to be chunked by six days. A `p_until` parameter, or an index note.
 - [ ] **FI-035** The operator described C.O Yellow as "outlets and aircon"; RM-088 records the aircon on
