@@ -88,3 +88,38 @@ test('each branch carries the load category the operator gave it — RM-092', as
     ]
   );
 });
+
+// --- FI-035 / RM-130: what C.O Yellow carries that nobody metered ----------------------------
+
+test('C.O Yellow declares the director\'s office aircon as an apportioned, unmetered share — the operator\'s 2026-09-22 statement', () => {
+  const co = CIRCUITS.find((c) => c.meter_device_id === 'mtr_co_yellow');
+  assert.ok(Array.isArray(co.apportionment), 'C.O Yellow carries an apportionment');
+  assert.equal(co.apportionment.length, 1);
+  const ac = co.apportionment[0];
+  assert.equal(ac.id, 'directors_aircon');
+  assert.match(ac.label, /director/i);
+  assert.equal(ac.load, 'aircon');
+  assert.ok(Math.abs(ac.share - 2 / 3) < 1e-9, 'about two thirds of the branch');
+  assert.match(ac.basis, /operator/i);
+  assert.match(ac.basis, /2026-09-22/);
+  assert.match(co.description, /director/i, 'the branch description names it');
+  assert.match(co.description, /outlet/i, 'and still names the outlets');
+});
+
+test('every apportionment is a share strictly between 0 and 1 of a metered branch, with a load the reports know, and they never exceed the branch', async () => {
+  const { LOADS } = await import('../shared/circuits.mjs');
+  for (const c of CIRCUITS) {
+    if (!c.apportionment) continue;
+    assert.ok(typeof c.meter_device_id === 'string', `${c.id}: only a metered branch can be apportioned`);
+    let total = 0;
+    for (const a of c.apportionment) {
+      assert.ok(typeof a.id === 'string' && a.id.length > 0);
+      assert.ok(typeof a.label === 'string' && a.label.length > 0);
+      assert.ok(LOADS.includes(a.load), `${a.id}: load ${a.load} is not one the reports know`);
+      assert.ok(a.share > 0 && a.share < 1, `${a.id}: share ${a.share} is not a share`);
+      assert.ok(typeof a.basis === 'string' && a.basis.length > 0, `${a.id}: an estimate says where it came from`);
+      total += a.share;
+    }
+    assert.ok(total < 1, `${c.id}: apportionments must leave a remainder for the branch's own load`);
+  }
+});

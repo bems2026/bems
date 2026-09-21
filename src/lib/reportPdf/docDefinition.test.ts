@@ -404,3 +404,40 @@ describe('Simple and Detailed — RM-099', () => {
     expect(at).toBeLessThan(index(def, '90.95'));
   });
 });
+
+const flat = (def: ReturnType<typeof buildDocDefinition>) => allText(def.content).join('\n');
+
+describe('estimated loads — RM-130', () => {
+  it('prints each estimate with ≈, its share in words, its basis, and what it leaves the branch', () => {
+    const doc = buildDocDefinition(
+      report({
+        sections: ['apportioned'],
+        apportioned: [
+          {
+            label: "Director's office aircon",
+            branchLabel: 'C.O Yellow',
+            share: 'about two thirds',
+            basis: "operator's estimate, 2026-09-22 — no meter on it",
+            estimated: '≈ 27.47 kWh',
+            remainder: '≈ 13.73 kWh',
+            branch: '41.20 kWh',
+            note: '“Energy by use” counts all of C.O Yellow as Others; this estimate would move ≈ 27.47 kWh of it to Aircon. It is not moved.',
+          },
+        ],
+      })
+    );
+    const text = flat(doc);
+    expect(text).toMatch(/Estimated, not metered/);
+    expect(text).toMatch(/Director's office aircon/);
+    expect(text).toMatch(/≈ 27\.47 kWh/);
+    expect(text).toMatch(/about two thirds of C\.O Yellow/);
+    expect(text).toMatch(/operator's estimate, 2026-09-22/);
+    expect(text).toMatch(/≈ 13\.73 kWh/);
+    expect(text).toMatch(/would move/);
+  });
+
+  it('leaves the section out when the reader did not choose it, and when there is nothing to estimate', () => {
+    expect(flat(buildDocDefinition(report({ sections: ['keyFigures'], apportioned: [{ label: 'x', branchLabel: 'y', share: 's', basis: 'b', estimated: '≈ 1', remainder: '≈ 2', branch: '3', note: '' }] })))).not.toMatch(/Estimated, not metered/);
+    expect(flat(buildDocDefinition(report({ sections: ['apportioned'], apportioned: [] })))).not.toMatch(/Estimated, not metered/);
+  });
+});

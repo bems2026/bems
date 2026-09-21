@@ -15,6 +15,10 @@
  * both lighting branches are Lighting, CARE ACU is Aircon, and the outlet branch with whatever plugs
  * into it is Others. Reports group by it; `test/site-branch-wiring.test.mjs` holds it.
  *
+ * WHAT A BRANCH CARRIES BEYOND ITS METER — `apportionment`, FI-035 (2026-09-22): C.O Yellow also feeds
+ * the director's office aircon, in another room, at about two thirds of the branch by the operator's
+ * estimate. Declared as a share with its basis; shown as an estimate, never mixed into a measurement.
+ *
  * A second site writes its own version of this file and nothing else changes.
  *
  * Data only, no imports. See `shared/circuits.mjs` for the shape and the derivation.
@@ -76,8 +80,27 @@ export const CIRCUITS = [
     name: 'C.O Yellow',
     phase: 'yellow',
     meter_device_id: 'mtr_co_yellow',
-    description: 'Convenience outlets branch',
+    description: "Convenience outlets in the CARE office, and the director's office aircon on the same branch",
     load: 'other',
+    /**
+     * WHAT THIS BRANCH CARRIES THAT NOBODY METERED — FI-035, the operator's statement of 2026-09-22.
+     * The outlets are in the CARE office; the aircon in the director's office, another room, is on
+     * this same branch and draws about two thirds of it. There is no meter on that aircon, so its
+     * figure is an APPORTIONMENT of the branch's measured energy by a declared share — an estimate,
+     * and every place it appears says so (`src/lib/apportionment.ts`). The measured charts stay
+     * measured: `load: 'other'` above still groups the whole branch as Others, and the report
+     * section that shows the aircon's share says how much of Others it would move to Aircon.
+     * Change the share here, with its basis, never in code.
+     */
+    apportionment: [
+      {
+        id: 'directors_aircon',
+        label: "Director's office aircon",
+        load: 'aircon',
+        share: 2 / 3,
+        basis: "operator's estimate, 2026-09-22 — no meter on it",
+      },
+    ],
   },
   {
     // Two channels of ONE physical meter, the other being `mtr_co_yellow`. They are separate

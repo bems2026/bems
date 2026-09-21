@@ -18,6 +18,8 @@ import { provenanceLines, type Carboned, type Costed } from '@/lib/energyCost';
 import { buildBreakdown } from '@/lib/circuitBreakdown';
 import { energyFlagOf, energyFlagText, usableEnergy } from '@/lib/boundedEnergy';
 import { normaliseSections, type ReportDetail, type ReportSectionId } from '@/lib/reportSections';
+import { apportionedEstimates, shareWords } from '@/lib/apportionment';
+import { LOAD_LABELS } from '@shared/circuits.mjs';
 import { CONTENT_WIDTH, type PdfChart, type PdfDeviceRow, type PdfReport } from './docDefinition';
 
 /**
@@ -316,6 +318,32 @@ export function buildPdfReport(input: PdfReportInput): PdfReport {
     scope: scopeLabel ? ` — ${scopeLabel}` : '',
   };
 
+  // RM-130: loads nobody metered, as the estimates they are — formatted here, in the words the page
+  // uses, so the document and the screen cannot disagree about what an estimate is.
+  // Only for branches in the part of the building the document is narrowed to — the page's rule.
+  const shownMeters = new Set(scopedRows.map((r) => r.device_id));
+  const apportioned = sections.includes('apportioned')
+    ? apportionedEstimates(rows)
+        .filter((e) => shownMeters.has(e.meterId))
+        .map((e) => {
+          const refused = e.flag?.kind === 'impossible';
+          const partial = e.coverage !== null && !isQuotable(e.coverage) ? ' (partial period)' : '';
+          const kwh = (v: number | null) => (v === null ? '—' : `≈ ${v.toFixed(2)} kWh${partial}`);
+          return {
+            label: e.label,
+            branchLabel: e.branchLabel,
+            share: shareWords(e.share),
+            basis: e.basis,
+            estimated: refused ? 'Not possible: the branch figure is refused, so its share is too' : kwh(e.estimatedKwh),
+            remainder: refused ? 'Not possible, as above' : kwh(e.remainderKwh),
+            branch: refused ? 'Not possible' : e.branchKwh === null ? '—' : `${e.branchKwh.toFixed(2)} kWh${partial}`,
+            note: `“Energy by use” counts all of ${e.branchLabel} as ${LOAD_LABELS[e.branchLoad]}; this estimate would move ${
+              refused || e.estimatedKwh === null ? 'its share' : `≈ ${e.estimatedKwh.toFixed(2)} kWh`
+            } of it to ${LOAD_LABELS[e.load]}. It is not moved, because a chart of measurements should not carry an estimate.`,
+          };
+        })
+    : [];
+
   return {
     title: 'Energy report',
     siteName: input.siteName,
@@ -327,6 +355,7 @@ export function buildPdfReport(input: PdfReportInput): PdfReport {
     detail,
     scopeLabel,
     corrections,
+    apportioned,
     summary,
     observedDays,
     completeDays,

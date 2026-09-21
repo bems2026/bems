@@ -277,3 +277,41 @@ describe('a day — RM-124', () => {
     expect(report.omitted).toEqual(['Energy per hour']);
   });
 });
+
+describe('estimated loads — RM-130', () => {
+  const coYellow = { period: 'month' as const, period_start: '2026-08-01', device_id: 'mtr_co_yellow', energy_kwh: 41.2, peak_power_w: 812, avg_power_w: 230, online_sample_count: 31 * 24 * 60, expected_sample_count: 31 * 24 * 60 };
+
+  it('carries the director\'s aircon as an estimate of C.O Yellow, formatted with ≈ and its basis', () => {
+    const report = buildPdfReport(input({ sections: ['apportioned'], rows: [coYellow], scopedRows: [coYellow] }));
+    expect(report.sections).toContain('apportioned');
+    expect(report.apportioned).toHaveLength(1);
+    const [ac] = report.apportioned ?? [];
+    expect(ac.label).toMatch(/director/i);
+    expect(ac.branchLabel).toBe('C.O Yellow');
+    expect(ac.share).toBe('about two thirds');
+    expect(ac.estimated).toBe('≈ 27.47 kWh');
+    expect(ac.remainder).toBe('≈ 13.73 kWh');
+    expect(ac.branch).toBe('41.20 kWh');
+    expect(ac.basis).toMatch(/2026-09-22/);
+    expect(ac.note).toMatch(/would move ≈ 27\.47 kWh/);
+  });
+
+  it('is left out for a document narrowed to circuits that carry no estimate', () => {
+    const lighting = { ...coYellow, device_id: 'mtr_lo_red', energy_kwh: 3.1 };
+    const report = buildPdfReport(input({ sections: ['apportioned'], rows: [coYellow, lighting], scopedRows: [lighting], scopeLabel: 'Lighting' }));
+    expect(report.apportioned).toEqual([]);
+  });
+
+  it('says a refused branch figure refuses its share too, and never prints a number for it', () => {
+    const report = buildPdfReport(input({ sections: ['apportioned'], rows: [{ ...coYellow, energy_kwh: 981.4, peak_power_w: 251.2 }], scopedRows: [{ ...coYellow, energy_kwh: 981.4, peak_power_w: 251.2 }] }));
+    const [ac] = report.apportioned ?? [];
+    expect(ac.estimated).toMatch(/not possible/i);
+    expect(ac.estimated).not.toMatch(/\d\.\d\d kWh/);
+  });
+
+  it('qualifies a partly recorded branch\'s estimate the way the page does', () => {
+    const report = buildPdfReport(input({ sections: ['apportioned'], rows: [{ ...coYellow, online_sample_count: Math.round(31 * 24 * 60 * 0.6) }], scopedRows: [{ ...coYellow, online_sample_count: Math.round(31 * 24 * 60 * 0.6) }] }));
+    const [ac] = report.apportioned ?? [];
+    expect(ac.estimated).toMatch(/≈ 27\.47 kWh \(partial/);
+  });
+});

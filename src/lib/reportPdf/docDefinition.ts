@@ -87,6 +87,17 @@ export interface PdfReport {
   scopeLabel?: string | null;
   /** Figures the document corrected or refused, one sentence each — RM-090. */
   corrections?: readonly string[];
+  /** Loads nobody metered, as the estimates they are — RM-130. Every figure already carries its ≈. */
+  apportioned?: readonly {
+    label: string;
+    branchLabel: string;
+    share: string;
+    basis: string;
+    estimated: string;
+    remainder: string;
+    branch: string;
+    note: string;
+  }[];
 }
 
 /** A4 minus 40pt margins each side. Charts are generated at exactly this width. */
@@ -297,6 +308,36 @@ export function buildDocDefinition(r: PdfReport) {
   // --- per device ------------------------------------------------------------------------------
   if (has('devices') && r.deviceRows.length > 0) {
     content.push({ text: 'By device', style: 'h2' }, ...deviceTableWithNotes(r.deviceRows));
+  }
+
+  // --- estimated loads — RM-130 ----------------------------------------------------------------
+  if (has('apportioned') && r.apportioned && r.apportioned.length > 0) {
+    content.push(
+      { text: 'Estimated, not metered', style: 'h2' },
+      {
+        text: 'These loads share a branch meter with something else. Each figure is the branch’s measured energy split by a share the operator declared — an estimate, not a measurement.',
+        style: 'note',
+      }
+    );
+    for (const a of r.apportioned) {
+      content.push(
+        {
+          table: {
+            headerRows: 1,
+            widths: ['*', 'auto'],
+            body: [
+              [{ text: 'Figure', style: 'th' }, { text: 'Value', style: 'th' }],
+              [`${a.label} — ${a.share} of ${a.branchLabel} (${a.basis})`, a.estimated],
+              [`${a.branchLabel}, the rest`, a.remainder],
+              [`${a.branchLabel}, measured`, a.branch],
+            ],
+          },
+          layout: 'lightHorizontalLines',
+          margin: [0, 4, 0, 4],
+        },
+        { text: a.note, style: 'note' }
+      );
+    }
   }
 
   // --- baseline demand ---------------------------------------------------------------------------

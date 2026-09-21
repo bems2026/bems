@@ -30,6 +30,7 @@ export type ReportSectionId =
   | 'circuitEnergy'
   | 'circuitHourly'
   | 'circuitTrend'
+  | 'apportioned'
   | 'hourProfile'
   | 'breakdown'
   | 'heatmap'
@@ -69,6 +70,7 @@ export const REPORT_SECTIONS: readonly ReportSection[] = [
   { id: 'circuitEnergy', label: 'Energy per day, by circuit', detail: 'both', periods: ['week', 'month'] },
   { id: 'circuitHourly', label: 'Energy per hour, by circuit', detail: 'both', periods: ['day'] },
   { id: 'circuitTrend', label: 'Power through the period, by circuit', detail: 'both' },
+  { id: 'apportioned', label: 'Estimated loads — what shares a meter with something else', detail: 'both' },
   { id: 'hourProfile', label: 'A typical day, hour by hour', detail: 'detailed', periods: ['week', 'month'] },
   { id: 'breakdown', label: 'Each circuit’s share', detail: 'detailed' },
   { id: 'heatmap', label: 'Busy hours', detail: 'detailed' },

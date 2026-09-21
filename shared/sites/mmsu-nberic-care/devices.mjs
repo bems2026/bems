@@ -86,7 +86,7 @@ export const BUILT_IN_DEVICES = [
     channel: 1,
     ctx: 'co_yel',
     branch_circuit: 'C.O Yellow',
-    description: 'Convenience outlets branch',
+    description: "Convenience outlets in the CARE office, and the director's office aircon (unmetered, ~2/3)",
     phase: 'yellow',
     status: 'active',
   },

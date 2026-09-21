@@ -11,6 +11,7 @@ import { REPORT_CHART_WIDTH, reportChartHeight } from '@/lib/reportChartSizes';
 import { ReportTable, type ReportColumn } from './ReportTable';
 import { CoverageTag, ReportFigure } from './ReportFigure';
 import { ChartFigure, type ChartTable } from './ChartFigure';
+import { ApportionedLoads } from './ApportionedLoads';
 import { ChartPlaceholder } from './ReportSkeleton';
 import { ReportSectionNote } from './ReportSectionNote';
 import { SCREEN_PALETTE } from './charts/palette';
@@ -354,6 +355,8 @@ export function CircuitDeepDive({ period, start, rows, scope, nameOf, building, 
           <ReportTable columns={circuitColumns} rows={meterRows} rowKey={(r) => r.device_id} label={`Branch circuits for ${label}`} caption="Branch circuits" />
         </div>
       ) : null}
+      {/* RM-130: what a branch carries that nobody metered, as the estimate it is — only for branches on this page. */}
+      <ApportionedLoads rows={rows} period={period} meterIds={refs.map((c) => c.meterId)} />
       {deviceRows.length > 0 ? (
         <details className="report-table-card report-devices">
           <summary className="report-recorded__summary">

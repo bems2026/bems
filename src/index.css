@@ -6599,6 +6599,23 @@ body::before {
   border-radius: var(--r-card);
 }
 
+/* RM-130: loads nobody metered, shown as estimates beside the branch they share. */
+.report-apportioned__title {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.report-apportioned__item + .report-apportioned__item {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--border);
+}
+
+.report-apportioned .report-glance {
+  margin-bottom: var(--sp-2);
+}
+
 /* RM-107 — a month is thirty-one 40px rows, and on the 800x480 kiosk the column captions were off
    the top of the screen by the fourth day. The table scrolls inside a box no taller than the
    screen can show, and the header stays. `overflow: auto` on both axes, because a sticky element

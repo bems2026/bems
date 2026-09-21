@@ -16,7 +16,7 @@ the aircon's mode/fan/swing with it. Built, tested and pushed; **not deployed** 
 - **RM-129:** Home Assistant assessed and not adopted, with the reasons; the cloud-connection policy.
 
 **Earlier on 2026-09-22 — The shared dual-channel meter trades its own channels, and the
-reports gain a Daily period: RM-122 to RM-125.** The operator reported L.O Yellow, a lighting branch,
+reports gain a Daily period: RM-122 to RM-125, and RM-130.** The operator reported L.O Yellow, a lighting branch,
 logging the outlets' daytime load since Saturday 19 September. Measured read-only against the stored
 rows: the device reports its two CT clamps under each other's dp ranges for hours at a time — its own
 `device_state<n>` goes to `monitor` on the channel reading 0 A, its own registers freeze on that side and
@@ -38,6 +38,9 @@ nothing here could have traded them. RM-019's session collapse removed a possibl
   hourly bars, whose sum is the day's headline by construction.
 - **RM-125:** the journal was volatile and the Pi was rebooted twice on the 21st; nothing from the 19th
   survived.
+- **RM-130 (FI-035 answered):** C.O Yellow also feeds the director's office aircon, in another room, at
+  about two thirds of the branch — unmetered. Declared as an apportionment in the site file and reported
+  as the estimate it is, on the Circuits tab and in the PDF; the measured charts are untouched.
 
 **Before that, 2026-09-17 (evening) — The aircon's IR blaster was re-paired, and the system now knows
 what it is: RM-114 to RM-121.** The operator re-paired it in Smart Life as a Lasco "Smart IR" hub and
@@ -361,7 +364,7 @@ Node-RED restart for the context edit; it is not re-found since, and `set-device
 because it needs the cloud, which RM-121's lapsed subscription refuses. Nothing here recovers them:
 renew IoT Core (RM-121) so the tools work again, then RM-046's sequence at the AP.
 
-Open for the operator: **FI-035** (is the aircon on C.O Yellow or on CARE ACU alone?).
+FI-035 was answered the same morning: both — see RM-130.
 
 **Read back after 1–2:** `npm run check:meters -- --hours=6` reads the STORED rows, which the demux now
 corrects before they are written — so from the apply onward it should list nothing new. A flip it does
@@ -3699,8 +3702,33 @@ cannot draw more than 150 W, and the outlet branch is never at 0 A.
       does not check it yet.
 - [ ] **FI-034** `readings_buckets` over the full 30-day raw window hits the statement timeout; the RM-122
       scan had to be chunked by six days. A `p_until` parameter, or an index note.
-- [ ] **FI-035** The operator described C.O Yellow as "outlets and aircon"; RM-088 records the aircon on
-      CARE ACU alone. Either a second unit is plugged into an outlet or the site file is stale — ask.
+- [x] **FI-035** ~~The operator described C.O Yellow as "outlets and aircon"; RM-088 records the aircon on
+      CARE ACU alone.~~ **Answered 2026-09-22:** both are true. C.O Yellow carries the CARE office's
+      outlets AND, in another room, the director's office aircon, at about two thirds of the branch;
+      CARE ACU is the CARE office's own unit. There is no meter on the director's aircon. RM-130.
+- [x] **RM-130** The director's office aircon, on C.O Yellow with the outlets, reported as the estimate it is.
+      **Built 2026-09-22; deployed with the Daily period.**
+      **What the operator said (2026-09-22, closing FI-035):** the outlets on C.O Yellow are in the CARE
+      office; the aircon in the director's office is on the same branch and draws about two thirds of it.
+      Nothing meters that aircon on its own, so its figure can only be an APPORTIONMENT — the branch's
+      measured energy times a declared share — which is a different kind of number from everything else
+      on the page, and is treated as one: the share and its basis are declared in the site file
+      (`circuits.mjs`, `apportionment` on C.O Yellow, `share: 2 / 3`, `basis: "operator's estimate,
+      2026-09-22"`), never in code; every place the figure appears says "≈", the share in words, the
+      basis, what it leaves for the outlets, and the branch's own caveats (a partly recorded branch gives a
+      partly recorded estimate; a branch figure RM-090 refuses refuses its share too).
+      **The measured charts are not touched.** `load: 'other'` still groups the whole of C.O Yellow as
+      Others in "Energy by use"; the section says how much the estimate would move to Aircon, and that it is
+      not moved, because a chart of measurements should not carry an estimate. A reader who wants the
+      reallocated split has the two figures side by side.
+      **Where it appears:** the Circuits tab, as "Estimated, not metered" below the branch table, for the
+      branches in the reader's scope; the PDF, as the `Estimated loads` section in both Simple and Detailed,
+      for the branches in the document's scope. Not on the Overview, which is the whole building measured.
+      `src/lib/apportionment.ts` (+ test), `src/components/reports/ApportionedLoads.tsx`,
+      `src/components/reports/ReportsPage.apportioned.test.tsx`, `src/lib/reportPdf/{buildReport,docDefinition}.ts`
+      (+ tests), `src/lib/reportSections.ts`, `test/site-branch-wiring.test.mjs` (the declaration's shape:
+      a share strictly between 0 and 1 of a metered branch, a load the reports know, a basis; the
+      apportionments of a branch never reach 1).
 
 ### The re-paired IR blaster — RM-114 to RM-121 (2026-09-17)
 
@@ -4820,6 +4848,9 @@ ever cleared, and put its controls in three rows. This section is that page's ov
       deployed and read back live 2026-09-15 — the read-back is in §0.
       - **What the operator said.** L.O Red carries light switches L1–L4; L.O Yellow carries L5–L7; C.O
         Yellow carries every outlet and whatever plugs into them; CARE ACU carries the aircon only.
+        *Amended 2026-09-22 (FI-035, RM-130):* C.O Yellow's outlets are in the CARE office, and the same
+        branch feeds the director's office aircon in another room, at about two thirds of it, unmetered.
+        CARE ACU is the CARE office's own unit.
       - **What was wrong.** `shared/sites/mmsu-nberic-care/devices.mjs` filed all seven lights under L.O
         Red, and its circuit map — transcribed from a 2019 dashboard comment — described L.O Yellow as
         "the outdoor aircon unit", as did `circuits.mjs`, both meters' descriptions, the 3D pack's
