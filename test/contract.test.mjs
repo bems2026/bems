@@ -298,8 +298,17 @@ test('the mock bridge cannot reach real hardware either — its command path is 
   // "Mock-only write path" is only a safe claim while the mock stays a genuine
   // simulation. It must mutate its own in-memory override map and nothing external.
   const src = readFileSync(join(ROOT, 'mock-bridge', 'server.mjs'), 'utf8');
-  for (const forbidden of ['tuya', 'mqtt', "'node:dgram'", "'node:net'", 'fetch(']) {
+  // No vendor client, no broker, no socket of its own, no outbound request. Named precisely since
+  // 2026-09-22: the mock now serves `/api/tuya/devices` at contract parity, so the bare word "tuya" is
+  // a route path, not a client — what must never appear is the code that could reach a device.
+  for (const forbidden of ['tuyapi', 'tuyaCloud', 'tuya-smart-device', 'lanDiscovery', 'lanPresence', 'mqtt', "'node:dgram'", "'node:net'", 'fetch(']) {
     assert.equal(src.includes(forbidden), false, `mock-bridge references ${forbidden}`);
+  }
+  // Anything it borrows from the server must be pure: a module with no imports of its own cannot
+  // reach hardware on the mock's behalf.
+  for (const [, spec] of src.matchAll(/from '(\.\.\/server\/[^']+)'/g)) {
+    const borrowed = readFileSync(join(ROOT, 'mock-bridge', spec), 'utf8');
+    assert.equal(/^\s*import\s/m.test(borrowed), false, `mock-bridge imports ${spec}, which has imports of its own`);
   }
 });
 
