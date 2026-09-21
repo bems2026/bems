@@ -214,6 +214,24 @@ test('meter capabilities are promoted into columns, each on its own channel', ()
   assert.deepEqual(co.capabilities, { total_energy2: 14568.196, add_ele1: 0.01, device_state1: 'working' });
 });
 
+test('a channel map on a reading is stored in the capabilities long tail, so the row says how it was attributed', () => {
+  // RM-122. The demux's decision arrives as a top-level field on the bridge's reading; there is
+  // no column for it and none is wanted — it rides in the jsonb beside the device's own codes.
+  const channel_map = { assignment: 'swapped', rule: 'ceiling', since: AT, flips: 1 };
+  const { readings } = splitLatestPayload([
+    { device_id: 'mtr_co_yellow', ts: AT, power_w: 754.4, online: true, capabilities: { add_ele1: 0.03 }, channel_map },
+    { device_id: 'mtr_lo_yellow', ts: AT, power_w: 39, online: true, channel_map },
+    { device_id: 'mtr_lo_red', ts: AT, power_w: 12, online: true, capabilities: { add_ele1: 0.01 } },
+  ], AT_MS);
+  const co = readings.find((r) => r.device_id === 'mtr_co_yellow');
+  const lo = readings.find((r) => r.device_id === 'mtr_lo_yellow');
+  const red = readings.find((r) => r.device_id === 'mtr_lo_red');
+  assert.deepEqual(co.capabilities, { add_ele1: 0.03, channel_map });
+  assert.deepEqual(lo.capabilities, { channel_map }, 'a reading with no other capabilities still records it');
+  assert.deepEqual(red.capabilities, { add_ele1: 0.01 }, 'a meter without a demux is untouched');
+  assert.equal('channel_map' in co, false, 'never a column');
+});
+
 test('an outlet promotes its fault and nothing else', () => {
   const { readings, rejections } = splitLatestPayload([
     { device_id: 'co5', ts: AT, power_w: 0, online: true,

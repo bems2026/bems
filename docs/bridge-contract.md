@@ -127,6 +127,7 @@ zero are different facts and the UI renders them differently.
 | `capabilities` | object \| absent | every dp the device reports, decoded — see below |
 | `measurement_frozen` | `true` \| absent | metered devices only: power, voltage and current held identical for `FROZEN_AFTER_MS` while drawing power and online — see below (RM-079) |
 | `frozen_since` | ISO 8601 +08:00 \| absent | with `measurement_frozen`: when those values last changed |
+| `channel_map` | object \| absent | a dual-channel meter behind the channel demux only: `{ assignment, rule, since, flips }` — see below (RM-122) |
 
 ### `capabilities`
 
@@ -268,6 +269,32 @@ is an offline device. Absent means not flagged, or a flow older than RM-079.
 
 **Today only.** The legacy engine keeps a per-meter daily figure and no per-meter week or month,
 so there is nothing to compare a longer period against and none is offered.
+
+#### `channel_map` — which clamp this channel is really reporting — RM-122
+
+The yellow CT meter is one physical device serving `mtr_co_yellow` (channel 1) and `mtr_lo_yellow`
+(channel 2), and it re-assigns which clamp it reports under which dp range, on its own, for hours at a
+time (2026-09-19 06:21–17:20, 2026-09-21 05:08–09:44, four short flips that day). Its own
+`device_state<n>` goes to `monitor` on the channel reading 0 A and its per-channel registers freeze
+and jump at each flip, so this is the device and not the flow. `node-red-bridge/channelDemuxPlan.mjs`
+puts a node between the tuya session and both parsers that decides the assignment from two facts the
+operator confirmed (`SITE.channel_demux`: the lighting branch cannot exceed `ceiling_w`; the outlet
+branch is never at 0 A) and renumbers the dps before any parser reads them.
+
+Both logical meters then carry the same `channel_map`:
+
+- `assignment` — `direct` (the device is reporting the clamps under the declared channels) or
+  `swapped` (it is not, and the dps were renumbered before parsing);
+- `rule` — the evidence that established the current assignment: `ceiling`, `idle`, or `seed`
+  (nothing known yet — treated as direct until the first evidence);
+- `since` — ISO 8601 +08:00, when that assignment was established;
+- `flips` — how many times the assignment has moved since the node last started.
+
+Absent on every other meter, and on a flow without the demux. The ingest daemon stores it in
+`readings.capabilities.channel_map`, so a stored row says how its clamp was attributed. A flip that
+begins and ends while both channels are under `ceiling_w` and neither is idle is not detected until
+the next sample that is; the mis-attribution while it lasts is bounded by the difference between the
+two loads, a few watts.
 
 #### `energy_kwh_*_integrated` — the independent cross-check
 

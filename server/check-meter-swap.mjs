@@ -12,6 +12,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { loadDotEnv } from '../node-red-bridge/nodeRedAdmin.mjs';
 import { findChannelSwaps } from '../shared/channelSwap.mjs';
+import { SITE } from '../shared/registry.mjs';
+import { iso8 } from '../shared/buildLatest.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 loadDotEnv(join(HERE, '..'));
@@ -70,7 +72,7 @@ if (!swaps.length) {
 
 console.log(`${swaps.length} channel interchange event(s):\n`);
 for (const s of swaps) {
-  console.log(`  ${s.ts.slice(0, 19).replace('T', ' ')}`);
+  console.log(`  ${iso8(Date.parse(s.ts), SITE.utc_offset_minutes).slice(0, 19).replace('T', ' ')} (site time)  ${s.kind === 'handoff' ? '(hand-off: one channel to 0, the other took its load)' : '(trade)'}`);
   console.log(`    C.O yellow  ${s.from.a.toFixed(0)} W -> ${s.to.a.toFixed(0)} W`);
   console.log(`    L.O yellow  ${s.from.b.toFixed(0)} W -> ${s.to.b.toFixed(0)} W`);
   console.log(`    combined    ${(s.from.a + s.from.b).toFixed(0)} W -> ${(s.to.a + s.to.b).toFixed(0)} W  (unchanged — totals are safe)`);
@@ -81,5 +83,6 @@ console.log('keys by name. The physical meter remapped its channels.');
 console.log('\nAffected: per-circuit power, and per-meter ENERGY from the swap onward, since the');
 console.log('accumulators keep adding to whichever channel the device now calls which.');
 console.log('Unaffected: building and phase totals, which sum both channels.');
-console.log('\nThis is a device fault. Re-pair or re-flash the meter; correcting it here would');
-console.log('mean guessing which assignment is true, silently, inside measurements.');
+console.log('\nThis is a device fault. Since RM-122 the flow corrects it at the source from two physical');
+console.log('facts the operator confirmed (shared/channelDemux.mjs); an event listed here that also');
+console.log('shows in the STORED rows means the demux is not deployed, or its rules no longer hold.');

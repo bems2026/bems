@@ -209,6 +209,20 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, st
       if (c !== undefined) r.current = c;
       if (p !== undefined) r.power_w = p;
       if (eToday !== undefined) r.energy_kwh_today = eToday;
+      // RM-122: how the source tab's channel demux is attributing this meter's clamp — only a
+      // dual-channel meter behind a demux carries one. `since` is when the current assignment
+      // was established and `rule` the evidence that established it (`shared/channelDemux.mjs`),
+      // so a stored row can say "swapped by the ceiling rule since 06:21" rather than just a
+      // number that happens to be right.
+      const cm = src.cm;
+      if (cm && typeof cm === 'object' && typeof cm.assignment === 'string') {
+        r.channel_map = {
+          assignment: cm.assignment,
+          rule: cm.rule,
+          since: typeof cm.since === 'number' ? iso8(cm.since, offsetMinutes) : cm.since,
+          flips: typeof cm.flips === 'number' ? cm.flips : 0,
+        };
+      }
       // THIS METER'S OWN SECOND OPINION — RM-058. `<ctx>_energy` is the legacy engine's
       // two-second integration of THIS meter's power, reset at local midnight: the same quantity
       // as the reading above, derived the other way. It was already read as the fallback and

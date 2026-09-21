@@ -100,6 +100,34 @@ export const SITE = Object.freeze({
   }),
 
   /**
+   * Meter pairs that are two channels of ONE physical dual-channel device, and the two physical
+   * facts that let the bridge tell which clamp the device is reporting under which channel.
+   *
+   * WHY. Measured 2026-09-19 06:21–17:20 and 2026-09-21 05:08–09:44 (and four short flips that
+   * day): the yellow CT meter reported the outlet clamp under channel 2 and the lighting clamp under
+   * channel 1, on its own — its `device_state<n>` went to `monitor` on the channel reading 0 A, and
+   * its per-channel registers froze on that side and jumped at each flip. One tuya session feeds two
+   * parsers that map dp numbers to context keys, so no software stage could have traded them
+   * (RM-019's session collapse removed a possible cause, not this one). `shared/channelDemux.mjs`
+   * decides the assignment from the facts below and nothing else; the flow node from
+   * `node-red-bridge/channelDemuxPlan.mjs` applies it before the parsers, and
+   * `server/scrub-meter-swap.mjs` applies the same decision to stored rows.
+   *
+   * Both facts were stated by the operator on 2026-09-21. Change them here, not in code:
+   *   `ceiling_w`  — the lighting branch (switches L5–L7) cannot draw this much, so a channel above
+   *                  it is the outlet branch. 150 W: three times the branch's measured 42 W, a
+   *                  fifth of the outlet branch's quietest office hour.
+   *   `never_idle` — the outlet branch is never at 0 A (something is always plugged in), so a
+   *                  channel the device holds at `monitor` / 0 A is the lighting branch.
+   *
+   * `devices` is channel 1 then channel 2, as the registry declares them. Held to the registry by
+   * `test/site-channel-demux.test.mjs`.
+   */
+  channel_demux: Object.freeze([
+    Object.freeze({ devices: Object.freeze(['mtr_co_yellow', 'mtr_lo_yellow']), ceiling_w: 150, never_idle: 'mtr_co_yellow' }),
+  ]),
+
+  /**
    * Which 3D scene pack renders for this site, or null for none. Consumed in RM-032; declared
    * now so the field does not have to be retrofitted into every site directory later.
    */

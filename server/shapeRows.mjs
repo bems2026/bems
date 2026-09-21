@@ -93,13 +93,25 @@ export function splitLatestPayload(latest, nowMs = Date.now(), site = SITE) {
       // Merged before the scrub, which only ever rewrites its own four numeric fields and
       // copies the rest through. Both routes append to the same `rejections`, so a capability
       // the catalogue refuses is counted exactly like a reading out of bounds.
-      ...(device ? promoteCapabilities(device, entry.capabilities, rejections) : {}),
+      ...(device ? promoteCapabilities(device, withChannelMap(entry), rejections) : {}),
     }, rBounds, nowMs);
     rejections.push(...scrubbed.rejections);
     if (scrubbed.row) readings.push(scrubbed.row);
   }
 
   return { readings, totals, rejections };
+}
+
+/**
+ * RM-122: the channel demux's decision arrives as a top-level `channel_map` on a dual-channel
+ * meter's reading. It has no column and wants none — it rides in the `capabilities` jsonb beside
+ * the device's own codes, so a stored row can say how its clamp was attributed. Readings without
+ * one (every other meter, and any bridge older than the demux) are passed through untouched.
+ */
+function withChannelMap(entry) {
+  const cm = entry.channel_map;
+  if (!cm || typeof cm !== 'object') return entry.capabilities;
+  return { ...(entry.capabilities && typeof entry.capabilities === 'object' ? entry.capabilities : {}), channel_map: cm };
 }
 
 /**

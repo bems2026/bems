@@ -10,6 +10,12 @@
  * context keys, and the totals engine reads those keys by name; there is no stage where
  * position could substitute for identity. The device itself remapped its channels.
  *
+ * 2026-09-21 (RM-122): the episode of 2026-09-19 was a HAND-OFF, not a trade — the channel the
+ * device put into `monitor` read exactly 0 while the other took its value — and this detector
+ * reported "no interchange" for the whole day. It now reports both shapes, each tagged `kind`.
+ * The correcting half now exists elsewhere, on two physical facts the operator confirmed:
+ * `shared/channelDemux.mjs`. This file stays what it was: the thing that notices.
+ *
  * WHY THIS DETECTS RATHER THAN CORRECTS — the important decision:
  * Correcting a swap means deciding which assignment is the true one, and nothing in the data
  * can settle that. Both circuits are real loads that can legitimately be large or small, so a
@@ -29,6 +35,11 @@ function near(a, b) {
   return Math.abs(a - b) <= Math.max(1, Math.abs(b) * 0.03);
 }
 
+/** Within 10 % (or 2 W for small values) — the hand-off's tolerance; see its comment below. */
+function nearLoose(a, b) {
+  return Math.abs(a - b) <= Math.max(2, Math.abs(b) * 0.1);
+}
+
 /**
  * @param samples  [{ ts, a, b }] in time order — `a` and `b` are the two channels' power
  * @param minGap   how far apart the two channels must have been for a trade to be meaningful.
@@ -43,7 +54,21 @@ export function findChannelSwaps(samples, { minGap = 20 } = {}) {
     if (![prev.a, prev.b, cur.a, cur.b].every((v) => typeof v === 'number' && Number.isFinite(v))) continue;
     if (Math.abs(prev.a - prev.b) <= minGap) continue;
     if (near(cur.a, prev.b) && near(cur.b, prev.a)) {
-      swaps.push({ ts: cur.ts, from: { a: prev.a, b: prev.b }, to: { a: cur.a, b: cur.b } });
+      swaps.push({ ts: cur.ts, kind: 'trade', from: { a: prev.a, b: prev.b }, to: { a: cur.a, b: cur.b } });
+      continue;
+    }
+    // RM-122 — the hand-off. The 2026-09-19 episode never traded cleanly: the channel the device
+    // put into `monitor` read exactly 0 while the OTHER channel took the value it had been
+    // carrying. A trade check cannot see that, because 0 is near nothing; this looks for one
+    // side at zero and the other side holding what the zeroed side last reported. A channel
+    // that merely switched off fails the second half, so it is not reported.
+    // Matched at 10 %, not the trade's 3 %: a load keeps varying while it changes clamp, and the
+    // measured hand-off carried 40.2 W across as 37.4 W. A trade compares two values taken in
+    // the same instant; a hand-off compares one value with the next sample's.
+    const aHanded = cur.a === 0 && prev.a !== 0 && nearLoose(cur.b, prev.a);
+    const bHanded = cur.b === 0 && prev.b !== 0 && nearLoose(cur.a, prev.b);
+    if (aHanded || bHanded) {
+      swaps.push({ ts: cur.ts, kind: 'handoff', from: { a: prev.a, b: prev.b }, to: { a: cur.a, b: cur.b } });
     }
   }
   return swaps;

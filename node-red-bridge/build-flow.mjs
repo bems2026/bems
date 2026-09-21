@@ -112,7 +112,10 @@ for (const k of keys) {
     // five-minute cycle, so the number moves whenever the meter is reporting — including when
     // the measured values do not, which is the case that matters. It is the ONLY arrival
     // signal this tab exposes: unlike the outlet tab it writes no timestamp anywhere.
-    n: (flow.get(k + '_arr_v') || []).length
+    n: (flow.get(k + '_arr_v') || []).length,
+    // RM-122: how the channel demux (node-red-bridge/channelDemuxPlan.mjs) is currently
+    // attributing a dual-channel meter's clamps. Undefined for every meter that has no demux.
+    cm: flow.get(k + '_channel_map')
   };
 }
 msg.snapshot = msg.snapshot || {};
