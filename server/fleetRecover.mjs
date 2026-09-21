@@ -50,3 +50,23 @@ export function decideRecovery({ now, bootedAt, lastRestartAt, streaks = {}, obs
   }
   return { restart: true, reasons, streaks: next };
 }
+
+/**
+ * Pinned nodes whose device has announced itself lately from a DIFFERENT address — the one case a
+ * static `deviceIp` makes worse than discovery: the node connects nowhere and no longer listens.
+ * Reported, never acted on: re-addressing is a flow write, and flow writes are a person's call
+ * (`npm run set-device-ip:pi -- --from-lan-map`). A DHCP reservation on the access point is what
+ * makes this never happen.
+ */
+export function driftedAddresses(nodes, lanMap, { now = Date.now(), withinMs = 15 * 60 * 1000 } = {}) {
+  const out = [];
+  for (const n of nodes) {
+    if (!n.deviceIp) continue;
+    const e = lanMap[n.deviceId];
+    if (!e || !e.ip || e.ip === n.deviceIp) continue;
+    const seen = Date.parse(e.lastSeen ?? '');
+    if (!Number.isFinite(seen) || now - seen > withinMs) continue;
+    out.push({ name: n.deviceName, pinned: n.deviceIp, announced: e.ip });
+  }
+  return out;
+}

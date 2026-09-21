@@ -23,7 +23,7 @@ import { loadDotEnv, createAdminClient } from '../node-red-bridge/nodeRedAdmin.m
 import { registryIdForNodeName } from './cloudDispatchConfig.mjs';
 import { DEVICE_REGISTRY } from '../shared/registry.mjs';
 import { readLanMap } from './lanMap.mjs';
-import { decideRecovery } from './fleetRecover.mjs';
+import { decideRecovery, driftedAddresses } from './fleetRecover.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 loadDotEnv(join(HERE, '..'));
@@ -96,11 +96,22 @@ for (const node of flows.filter((n) => n?.type === 'tuya-smart-device' && n.disa
     if (node.deviceIp) {
       if (await tcpOpen(node.deviceIp)) evidence = `tcp 6668 open at ${node.deviceIp}`;
     } else {
-      const seen = lanMap[node.deviceId]?.lastSeen ? Date.parse(lanMap[node.deviceId].lastSeen) : NaN;
-      if (Number.isFinite(seen) && now - seen <= ANNOUNCED_WITHIN_MS) evidence = `announced ${Math.round((now - seen) / 60000)} min ago from ${lanMap[node.deviceId].ip}`;
+      // An announcement alone is not reachability: on 2026-09-22 the IR hub announced at 07:47 and
+      // was EHOSTUNREACH by 07:54, with its node retrying — a device fault, not a stuck node. The
+      // announced address must also answer now.
+      const entry = lanMap[node.deviceId];
+      const seen = entry?.lastSeen ? Date.parse(entry.lastSeen) : NaN;
+      if (Number.isFinite(seen) && now - seen <= ANNOUNCED_WITHIN_MS && entry.ip && (await tcpOpen(entry.ip))) {
+        evidence = `announced ${Math.round((now - seen) / 60000)} min ago from ${entry.ip}, which accepts tcp 6668 now`;
+      }
     }
   }
   observations.push({ name: node.deviceName, offline, evidence });
+}
+
+// A pinned node whose device now announces from elsewhere: said loudly, never fixed from here.
+for (const d of driftedAddresses(flows.filter((n) => n?.type === 'tuya-smart-device'), lanMap, { now })) {
+  log(`ADDRESS DRIFT: "${d.name}" is pinned to ${d.pinned} but announced from ${d.announced} — run set-device-ip:pi --from-lan-map, and reserve it on the AP`);
 }
 
 const state = readState();

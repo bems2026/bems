@@ -53,3 +53,29 @@ test('the reasons name every device that earned it, so the journal explains the 
   assert.equal(d.restart, true);
   assert.ok(d.reasons.some((r) => /CO4/.test(r)) && d.reasons.some((r) => /l1/.test(r)));
 });
+
+// --- address drift: a pinned node whose device has moved --------------------------------------
+
+test('a pinned node whose device announced lately from a different address is reported as drifted', async () => {
+  const { driftedAddresses } = await import('./fleetRecover.mjs');
+  const nodes = [
+    { deviceName: 'CO4', deviceId: 'gw-co4', deviceIp: '192.168.2.102' },
+    { deviceName: 'CO5', deviceId: 'gw-co5', deviceIp: '192.168.2.103' },
+    { deviceName: 'L.O red', deviceId: 'gw-red', deviceIp: '' },
+  ];
+  const map = {
+    'gw-co4': { ip: '192.168.2.150', lastSeen: new Date(T0 - 5 * 60_000).toISOString() },
+    'gw-co5': { ip: '192.168.2.103', lastSeen: new Date(T0 - 5 * 60_000).toISOString() },
+    'gw-red': { ip: '192.168.2.228', lastSeen: new Date(T0 - 5 * 60_000).toISOString() },
+  };
+  assert.deepEqual(driftedAddresses(nodes, map, { now: T0, withinMs: 15 * 60_000 }), [
+    { name: 'CO4', pinned: '192.168.2.102', announced: '192.168.2.150' },
+  ]);
+});
+
+test('an old announcement from another address is not drift — the device may simply have moved back since', async () => {
+  const { driftedAddresses } = await import('./fleetRecover.mjs');
+  const nodes = [{ deviceName: 'CO4', deviceId: 'gw-co4', deviceIp: '192.168.2.102' }];
+  const map = { 'gw-co4': { ip: '192.168.2.150', lastSeen: new Date(T0 - 3 * 3600_000).toISOString() } };
+  assert.deepEqual(driftedAddresses(nodes, map, { now: T0, withinMs: 15 * 60_000 }), []);
+});

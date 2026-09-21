@@ -30,10 +30,11 @@ channel; that restarts their announcements, which is why it "worked".
   Devices announce after they boot, so the map fills during the first minutes after any power
   event — the moment it is worth catching.
 - **`ibems-fleet-recover.timer`** — every 5 min: for each node the bridge reports offline, one TCP
-  probe of its static address (or "did it announce in the last 15 min?"). Reachable-but-offline on
+  probe of its static address (or, unpinned: announced in the last 15 min *and* answering now). Reachable-but-offline on
   two consecutive checks, and not within an hour of the last restart nor 10 min of boot, restarts
-  Node-RED. It never restarts for a device nothing can reach. Every decision is in the journal:
-  `journalctl -t ibems-fleet-recover`.
+  Node-RED. It never restarts for a device nothing can reach, and it says `ADDRESS DRIFT` when a
+  pinned node's device has announced from a different address — the case reservations prevent.
+  Every decision is in the journal: `journalctl -t ibems-fleet-recover`.
 
 ## The two things a person does — once each
 

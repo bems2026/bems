@@ -3778,8 +3778,11 @@ cannot draw more than 150 W, and the outlet branch is never at 0 A.
       and `--reservations` prints the DHCP table for the AP. `server/fleetRecover.mjs` +
       `fleet-recover.mjs` + `ibems-fleet-recover.timer` (every 5 min) restart Node-RED only for a
       device that is offline to the bridge yet reachable (one TCP probe of its static address, or an
-      announcement within 15 min), only on two consecutive checks, at most hourly, never within 10 min
-      of boot — the l6 case, automated, with the RM-020 case explicitly excluded. `ibems-wifi-prefer`
+      announcement within 15 min whose address answers now — the IR hub announced at 07:47 on the 22nd
+      and was `EHOSTUNREACH` by 07:54, a device fault a restart cannot touch), only on two consecutive
+      checks, at most hourly, never within 10 min of boot — the l6 case, automated, with the RM-020 case
+      explicitly excluded. A pinned node whose device announces from elsewhere is logged as
+      `ADDRESS DRIFT`, never re-addressed from a timer: flow writes stay a person's call. `ibems-wifi-prefer`
       now fires 90 s after boot and every 5 min. `docs/outage-recovery.md` is the runbook, including
       the AP items RM-046 left open and the UPS that would make the AP's cold boot not happen.
       **What it cannot do:** make a silent device announce. The map is empty of the fourteen until
