@@ -1,8 +1,13 @@
 # Fires server/wifi-prefer.mjs periodically. See ibems-wifi-prefer.service for install steps.
 #
-# Fifteen minutes is a deliberate compromise: the device AP dropping out costs the whole fleet
-# until the Pi returns, so waiting an hour is expensive — but each check rescans the radio, and
-# a tighter loop would spend the Pi's airtime on scanning rather than on talking to devices.
+# Five minutes is a deliberate compromise: the device AP dropping out costs the whole fleet
+# until the Pi returns, so waiting long is expensive — but each check rescans the radio, and a
+# tighter loop would spend the Pi's airtime on scanning rather than on talking to devices. It was
+# fifteen until RM-131: after the 2026-09-21 outage the Pi booted before the access point, landed
+# on the office SSID at 17:02:55 and was only returned at 17:08:19, when this timer first fired.
+#
+# Ninety seconds after boot for the same reason — the Pi boots in thirty seconds, the access point
+# in about two minutes, so the first check should come as soon as the AP can possibly be up.
 #
 # Persistent=true so a check that was missed while the Pi was off runs shortly after boot,
 # which is exactly when the Pi is most likely to have landed on the wrong network.
@@ -11,8 +16,8 @@
 Description=Periodically return the Pi to its preferred Wi-Fi network
 
 [Timer]
-OnBootSec=3min
-OnUnitActiveSec=15min
+OnBootSec=90s
+OnUnitActiveSec=5min
 Persistent=true
 Unit=ibems-wifi-prefer.service
 

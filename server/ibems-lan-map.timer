@@ -1,0 +1,18 @@
+# Fires server/lan-map-learn.mjs. See ibems-lan-map.service for install steps.
+#
+# Ten minutes: a device that announces at all does so every ~5 s, so a 30 s listen every ten
+# minutes misses nothing that is announcing and costs the Pi nothing on the air. Two minutes
+# after boot, because the devices reboot faster than the access point and announce as soon as
+# they associate — which is exactly the moment worth catching after an outage.
+
+[Unit]
+Description=iBEMS: learn device addresses from their announcements, every ten minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+Persistent=true
+Unit=ibems-lan-map.service
+
+[Install]
+WantedBy=timers.target

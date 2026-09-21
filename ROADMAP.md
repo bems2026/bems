@@ -1,7 +1,19 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-22 (later) — **Onboarding without IoT Core, and the aircon's own IR
-protocol: RM-126 to RM-129.** The operator decided on 2026-09-17 that Tuya IoT Core is only for
+**Last audited:** 2026-09-22 (evening) — **What an outage does to the field network, and what now
+recovers it: RM-131; the director's aircon estimate charted: RM-130.** The operator's outage test of
+the 21st was read back from the persistent journal: the Pi booted before the access point and joined
+the office SSID; the devices flapped for an hour while the AP settled; then every switch, outlet and
+the IR hub went silent to `find()` — while still associated, answering ARP and accepting TCP on 6668.
+Discovery is the single point of failure. Deployed: a LAN map learned from the devices' own
+announcements (`ibems-lan-map.timer`), `set-device-ip:pi --from-lan-map` and `--reservations`, a
+recovery watchdog that restarts Node-RED only for reachable-but-offline devices
+(`ibems-fleet-recover.timer`), the Wi-Fi watchdog at 90 s / 5 min, and `docs/outage-recovery.md`.
+**Two operator actions remain:** make the devices announce once (power-cycle, or renew IoT Core) so
+the map fills and the addresses can be set; then reserve them on the AP.
+
+**Earlier the same day — Onboarding without IoT Core, and the aircon's own IR protocol: RM-126 to
+RM-129.** The operator decided on 2026-09-17 that Tuya IoT Core is only for
 extracting ids and local keys, not a dependency, and it had just lapsed — taking Add Device, rebind and
 the aircon's mode/fan/swing with it. Built, tested and pushed; **not deployed** (§0).
 - **RM-126:** device facts come from three sources: keys imported from a key tool's export, what the
@@ -317,6 +329,27 @@ other four and none needed changing.
 ---
 
 ## 0. Triage — what to do next
+
+
+### 2026-09-22 (evening) — the field network after an outage; two actions, in order
+
+Read `docs/outage-recovery.md` first. The fleet has been dark since 18:11 on the 21st — associated,
+ARP-reachable, TCP 6668 open, silent on discovery — and nothing on the Pi can make a device announce.
+
+1. **Make the devices announce, once.** Either power-cycle the field devices (the breaker; the
+   meters keep working, the Pi and AP stay up) and wait two minutes, or renew IoT Core (RM-121) so
+   the tool's cloud mode needs no announcement. Then, on the Pi:
+   ```
+   npm run set-device-ip:pi -- --host=127.0.0.1 --from-lan-map            # dry run: the map should now hold ~19
+   cp ~/.node-red/flows.json ~/.node-red/flows.json.bak-ips-$(date +%F-%H%M%S)
+   npm run set-device-ip:pi -- --host=127.0.0.1 --from-lan-map --apply
+   ```
+   From then on every node connects by address and never waits for a broadcast.
+2. **At the access point:** `npm run set-device-ip:pi -- --host=127.0.0.1 --reservations` prints the
+   MAC → address table; enter it as DHCP reservations (the Pi too), pin the 2.4 GHz channel
+   (RM-046), lease ≥ 1 day, isolation off. Consider the UPS the runbook describes.
+
+Everything else for this is installed and running: `systemctl list-timers | grep ibems`.
 
 
 ### 2026-09-22 (later) — onboarding without IoT Core and the aircon's protocol; what to deploy, in order
@@ -3706,6 +3739,37 @@ cannot draw more than 150 W, and the outlet branch is never at 0 A.
       CARE ACU alone.~~ **Answered 2026-09-22:** both are true. C.O Yellow carries the CARE office's
       outlets AND, in another room, the director's office aircon, at about two thirds of the branch;
       CARE ACU is the CARE office's own unit. There is no meter on the director's aircon. RM-130.
+- [x] **RM-131** What an outage does to the field network, read back; the recovery that needs no cloud.
+      **Built and deployed 2026-09-22 (evening), operator's "proceed".**
+      **The evidence — the operator's outage test of 2026-09-21, from the journal RM-125 kept.**
+      17:02:43 the Pi boots; 17:02:55 it joins the office 5 GHz SSID because `BEMS` is not up yet
+      (the AP boots in ~2 min); 17:08:19 the Wi-Fi watchdog returns it. 17:08–18:11 every switch and
+      outlet connects and drops — `ECONNRESET` from the device, a minute or two of `connection timed
+      out`, reconnect — 12 to 20 times each (CO4: 20), while the four meters, nearest the AP, never
+      drop. From ~18:11 every one of them and the IR hub is silent to `find()`. **Measured the next
+      morning:** six of them answer ARP; three probed accept TCP on 6668 (one meter as control); a 30 s
+      passive listen hears exactly three broadcasters, the meters; the air is quiet (−38 dBm, one tx
+      failure in 14 h, channel 1 shared with one neighbour). So the devices are associated and their
+      Tuya service is alive; they have stopped sending the UDP discovery broadcast, and `find()` is
+      the only thing that needs it. A Node-RED restart cannot help. RM-020/RM-021's "needs a
+      power-cycle" and the 09-03 recovery are this same state — the power cycle restarts the
+      announcements, which is the whole of why it works.
+      **The fix removes the dependence on discovery.** `server/lanMap.mjs` + `lan-map-learn.mjs` +
+      `ibems-lan-map.timer` (every 10 min, 30 s passive listen, `reuseAddr` beside Node-RED's own)
+      remember every announcement with its address and MAC in `server/data/lan-map.json` (live state,
+      gitignored). `set-device-ip:pi --from-lan-map` addresses every node the map knows — no cloud —
+      and `--reservations` prints the DHCP table for the AP. `server/fleetRecover.mjs` +
+      `fleet-recover.mjs` + `ibems-fleet-recover.timer` (every 5 min) restart Node-RED only for a
+      device that is offline to the bridge yet reachable (one TCP probe of its static address, or an
+      announcement within 15 min), only on two consecutive checks, at most hourly, never within 10 min
+      of boot — the l6 case, automated, with the RM-020 case explicitly excluded. `ibems-wifi-prefer`
+      now fires 90 s after boot and every 5 min. `docs/outage-recovery.md` is the runbook, including
+      the AP items RM-046 left open and the UPS that would make the AP's cold boot not happen.
+      **What it cannot do:** make a silent device announce. The map is empty of the fourteen until
+      they are power-cycled once or the cloud maps them (RM-121); §0 says which and how.
+      `server/lanMap.mjs` (+ test, 7), `server/lan-map-learn.mjs`, `server/fleetRecover.mjs` (+ test,
+      6), `server/fleet-recover.mjs`, `server/ibems-{lan-map,fleet-recover}.{service,timer}`,
+      `server/ibems-wifi-prefer.timer`, `node-red-bridge/set-device-ip.mjs`, `docs/outage-recovery.md`.
 - [x] **RM-130** The director's office aircon, on C.O Yellow with the outlets, reported as the estimate it is.
       **Built 2026-09-22; deployed with the Daily period.**
       **What the operator said (2026-09-22, closing FI-035):** the outlets on C.O Yellow are in the CARE
@@ -3724,6 +3788,13 @@ cannot draw more than 150 W, and the outlet branch is never at 0 A.
       **Where it appears:** the Circuits tab, as "Estimated, not metered" below the branch table, for the
       branches in the reader's scope; the PDF, as the `Estimated loads` section in both Simple and Detailed,
       for the branches in the document's scope. Not on the Overview, which is the whole building measured.
+      **Charted (operator's request, the same evening):** the estimate gets its own bar chart in the same
+      shape as the circuits' — per day for a week or month (the branch's bounded daily energy times the
+      share), per hour for a day (its hourly credits times the share) — drawn through the same builders
+      with an `estimate` option: every bar hatched in the series colour and outlined, never solid; every
+      value "≈"; the basis in the caption. In the section on the Circuits tab and inside the PDF's
+      `Estimated loads` section. `charts/{daily,hourly}EnergyChart.ts` (`EnergyChartOptions`),
+      `apportionment.ts` (`estimateDayPoints`, `estimateHourPoints`).
       `src/lib/apportionment.ts` (+ test), `src/components/reports/ApportionedLoads.tsx`,
       `src/components/reports/ReportsPage.apportioned.test.tsx`, `src/lib/reportPdf/{buildReport,docDefinition}.ts`
       (+ tests), `src/lib/reportSections.ts`, `test/site-branch-wiring.test.mjs` (the declaration's shape:

@@ -7,8 +7,18 @@
  *     node node-red-bridge/set-device-ip.mjs --host=<pi> --apply
  *     node node-red-bridge/set-device-ip.mjs --host=<pi> --name=CO5 --apply
  *     node node-red-bridge/set-device-ip.mjs --host=<pi> --undo --apply
+ *     node node-red-bridge/set-device-ip.mjs --host=<pi> --from-lan-map [--max-age-days=30] [--apply]
+ *     node node-red-bridge/set-device-ip.mjs --host=<pi> --reservations      # the table for the AP
  *
  * DRY RUN BY DEFAULT, like every other script that writes to the live flow.
+ *
+ * `--from-lan-map` (RM-131) resolves every node from `server/data/lan-map.json` — what
+ * `ibems-lan-map.timer` has heard the devices announce, with no cloud in the path. After the
+ * 2026-09-21 outage test the fleet sat associated, ARP-reachable and accepting TCP on 6668 while
+ * sending no discovery broadcast, and the cloud that used to map them had lapsed (RM-121). The map
+ * fills whenever a device announces (a power cycle makes every one of them announce), and
+ * `--reservations` prints the MAC/address table to type into the access point so the addresses
+ * stay true across the next outage.
  *
  * WHY: the bridge finds a device only by its UDP discovery broadcast, so one that has stopped
  * broadcasting reports `online: false` — indistinguishable, from the bridge's side, from one
@@ -38,6 +48,7 @@ import { loadDotEnv, createAdminClient } from './nodeRedAdmin.mjs';
 import { planDeviceIp, validateDeviceIpPlan } from './deviceIpPlan.mjs';
 import { createTuyaClient, TUYA_HOSTS } from '../server/tuyaCloud.mjs';
 import { joinMacPresence, readNeighbours, PRESENCE } from '../server/macPresence.mjs';
+import { assignmentsFromMap, readLanMap, reservationRows } from '../server/lanMap.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -54,6 +65,9 @@ const PORT = Number(arg('port', '1880'));
 const APPLY = process.argv.includes('--apply');
 const UNDO = process.argv.includes('--undo');
 const EXPLICIT_IP = arg('ip', null);
+const FROM_LAN_MAP = process.argv.includes('--from-lan-map');
+const RESERVATIONS = process.argv.includes('--reservations');
+const MAX_AGE_DAYS = Number(arg('max-age-days', '30'));
 const NAMES = process.argv.filter((a) => a.startsWith('--name=')).map((a) => a.slice(7));
 
 console.log(`${APPLY ? 'Applying' : 'Dry run (pass --apply to actually write)'} to http://${HOST}:${PORT}`);
@@ -70,6 +84,17 @@ console.log(`Read ${flows.length} existing nodes.\n`);
  * on 2026-08-26, and a list written into a script would be wrong by the time it ran.
  */
 async function resolveTargets() {
+  if (FROM_LAN_MAP) {
+    const map = readLanMap();
+    if (Object.keys(map).length === 0) {
+      console.error('server/data/lan-map.json is empty — nothing has announced itself while the listener ran.');
+      console.error('Start ibems-lan-map.timer (or run node server/lan-map-learn.mjs), power-cycle the devices, and try again.');
+      process.exit(1);
+    }
+    const { assignments, notes } = assignmentsFromMap(flows, map, { maxAgeMs: MAX_AGE_DAYS * 86400000 });
+    const chosen = NAMES.length ? Object.fromEntries(Object.entries(assignments).filter(([n]) => NAMES.includes(n))) : assignments;
+    return { assignments: chosen, notes };
+  }
   if (UNDO) {
     const names = NAMES.length
       ? NAMES
@@ -114,6 +139,17 @@ async function resolveTargets() {
     (n) => `"${n}" is not resolvable from ARP right now — it is not on this segment.`,
   );
   return { assignments: Object.fromEntries(candidates.map((c) => [c.name, c.ip])), notes };
+}
+
+if (RESERVATIONS) {
+  const rows = reservationRows(flows, readLanMap());
+  if (!rows.length) { console.log('No device is in the LAN map yet.'); process.exit(0); }
+  const mac = (m) => (m ? m.replace(/[^0-9a-f]/gi, '').replace(/(..)(?=.)/g, '$1:') : '(MAC not seen — read it off the AP)');
+  console.log('DHCP reservations for the access point — one per device, so an outage never renumbers them:\n');
+  console.log(`  ${'Device'.padEnd(20)} ${'MAC'.padEnd(18)} ${'Address'.padEnd(15)} Last announced`);
+  for (const r of rows) console.log(`  ${r.name.padEnd(20)} ${mac(r.mac).padEnd(18)} ${r.ip.padEnd(15)} ${String(r.lastSeen ?? '').slice(0, 16).replace('T', ' ')}`);
+  console.log(`\nAnd the Pi itself: ${readNeighbours().readable ? 'its wlan0 MAC (ip link show wlan0)' : 'its wlan0 MAC'} at its current address.`);
+  process.exit(0);
 }
 
 const { assignments, notes } = await resolveTargets();

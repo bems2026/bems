@@ -1,0 +1,17 @@
+# Fires server/fleet-recover.mjs. See ibems-fleet-recover.service for install steps.
+#
+# Five minutes between checks, and a restart needs two checks in a row, so the earliest a stuck
+# node is recovered is ten minutes after its device became reachable — slow enough that a device
+# mid-reboot never triggers it, fast enough that nobody drives to the office for it.
+
+[Unit]
+Description=iBEMS: check every five minutes for nodes that gave up on reachable devices
+
+[Timer]
+OnBootSec=12min
+OnUnitActiveSec=5min
+Persistent=true
+Unit=ibems-fleet-recover.service
+
+[Install]
+WantedBy=timers.target
