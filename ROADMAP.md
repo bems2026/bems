@@ -1,6 +1,8 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-22, 15:20 — **RM-135: the page accused L.O Yellow of losing 47% of its energy; it
+**Last audited:** 2026-09-22, 16:00 — **FI-027: a held minute is not a recorded minute.** `phase47`, built and
+rehearsed, waits for the operator to apply it (§0).
+**Earlier, 15:20 — RM-135: the page accused L.O Yellow of losing 47% of its energy; it
 was the morning's held watts in the integrator, and the page's freeze detection could not see the hold.**
 Fixed in `detectFrozenRuns` and verified against the live bridge.
 **Earlier, 15:00 — L.O Yellow was not frozen. The meters were never re-read:
@@ -394,6 +396,10 @@ cleanly by who can do it.
 7. **RM-026's Solarman logger onto the device SSID** — the contractual solar deliverable cannot start
    without it. The live flow's `solarman-device` node logs a socket timeout every few minutes meanwhile.
 
+**At the Supabase SQL editor, today if possible:** apply `supabase/phase47_held_minutes.sql` (FI-027), ideally
+before ~01:00 on 09-23 so that 09-22's daily is generated under the rule (§0 Migrations). It prints one
+`phase47: restated N device row(s)` notice; expect 0.
+
 **Decisions, not work:**
 - **RM-006c** — which loads may shed first (`npm run shed:profile` has the numbers). The path is
   built and audited; nothing sheds until a tier is assigned.
@@ -410,7 +416,7 @@ cleanly by who can do it.
 or add `p_until`), RM-083c (PDF render 3.6–5.2 s on the Pi), RM-026 (Deye, contractual, needs the
 logger on the SSID first), RM-070 daylight/blinds, RM-033's twelve `〔FILL IN〕` gaps in the
 physical-install guide. **Added 2026-09-22 (RM-134 follow-ups):**
-- FI-027's second half: reports should not count flagged minutes as recorded.
+- ~~FI-027's second half~~ — built and rehearsed as phase47; applying it is above.
 - FI-032: store the IR hub's room temperature, which the RM-069 loop acts on.
 - An ntfy notice when the demux flips or a meter flag stands.
 - Pruning the legacy `GSheet: Append to …` nodes, which fail auth in the journal; Sheets was rejected in
@@ -1290,8 +1296,12 @@ Everything else is small, and the build order below is honest about size.
   two weeks (RM-020), so their averages mean nothing and their tiers should be set on what they
   feed rather than on what they have measured.
 
-### Migrations — all applied
+### Migrations — all applied but one
 
+**`supabase/phase47_held_minutes.sql` (FI-027) is built and rehearsed, and NOT applied — the operator's.**
+Paste it into the Supabase SQL editor, ideally before ~01:00 on 2026-09-23, so that 09-22's daily report is
+generated under the rule the first time. Applying it later works too: its restatement corrects any stored
+day it affects, with a note. `phase45` and `phase46` were applied on 2026-09-22 (RM-117, RM-124).
 **`supabase/phase44_recorded_minutes.sql` (RM-073, RM-111) was applied by the operator on 2026-09-17 and
 read back the same day** — see RM-073.
 **`supabase/phase43_readings_policy_speed.sql` (RM-091a) and `supabase/phase42_bounded_device_energy.sql`
@@ -9752,11 +9762,41 @@ may not.
   health flag dropping for one sample rather than an outage. RM-076 bridges them on the charts. The
   cause is on the four hand-built source tabs, which nothing in this repository generates, and was not
   investigated.
-- **FI-027** (M) **Persist sample quality.** `readings` stores `online` but not `frozen`, so a stored
+- [x] **FI-027** (M) **Persist sample quality.** `readings` stores `online` but not `frozen`, so a stored
   range cannot show a freeze and a report cannot leave one out. Follows RM-079, which is where the flag
   would first exist. **Storage half done 2026-09-22 (RM-133):** the row's `capabilities` carries
-  `measurement_frozen` and `frozen_since` from the deploy on. Reports still count a frozen window's
-  minutes as recorded; that is the half that remains.
+  `measurement_frozen` and `frozen_since` from the deploy on.
+  **Report half built 2026-09-22 — `supabase/phase47_held_minutes.sql`, rehearsed; not applied (§0,
+  Migrations).** The operator decided the same day that a HELD minute is not a recorded minute, its watts
+  are in no power figure, and its energy is untouched. A held minute is one flagged `measurement_frozen`,
+  or restated by RM-134's scrub (`scrub.rule = 'held_reading'`). Energy comes from the meter's own register,
+  which was right. Stored reports are restated with a note, in phase44's pattern.
+  - One rule, `reading_measured(online, capabilities)`, immutable so it inlines. It is used by the six
+    report functions that read per-device `readings`, wherever they read `online`, except on the energy
+    register: `report_hour_profile`, `report_device_daily_energy`, `report_recorded_minutes_devices`,
+    `generate_monthly_report`, `report_hour_energy`, `generate_period_report`.
+  - The rollup leaves held rows out of its power figures and its `online_sample_count`, and counts them in
+    a new `readings_hourly.held_sample_count`. The rule survives the 30-day prune, and no reader of a rolled
+    hour needed a change.
+  - The migration is generated from each function's previous text. `test/phase47-held-minutes-schema.test.mjs`
+    (19) puts `r.online` back where the rule stands and gets each earlier definition byte for byte, and
+    checks that every remaining online-only filter is an energy register.
+  - `supabase/rehearse.sh` applies it three times over a day in 2026-09-22's shape: measured, held and
+    flagged, held and restated, measured at zero, then offline. **It passed:**
+    - 180 recorded minutes, not 300;
+    - average power 26.667 W and peak 40 W, not the held 55;
+    - energy 0.079333, the register's;
+    - an RM-123 swap-corrected row still counts;
+    - a stored row reading 300 is restated to 180 with its first figure kept, and a second paste changes
+      nothing;
+    - after the rollup prunes the day, it regenerates to the same figures.
+  - **On the live project:** no row is flagged, and 389 online L.O Yellow rows on 09-22 are restated held
+    readings. That day's daily, not yet generated, will record 535 minutes rather than 924.
+
+  **Deliberately not changed:** the building rows (`building_totals` has no per-branch flag; the held
+  branch is named on the page), and the Analytics history functions `readings_buckets` / `readings_archive`.
+  Their raw hours still average held watts; their rolled hours follow the rule. The 30-day buckets sit near
+  the statement timeout (FI-034), and adding a jsonb read to every row there should wait for that fix.
 - ~~**FI-021** (M) Meter arrival tracking.~~ **Done 2026-09-01 — EX-141.** The entry that stood
   here was **wrong about the mechanism**, and the correction is the more useful record: it
   claimed the tracker keyed on value change and had no arrival signal, when the energy

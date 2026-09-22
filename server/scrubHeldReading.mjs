@@ -19,7 +19,9 @@
  * same instant (one voltage measurement serves both clamps of the dual meter), or null where there is
  * none; the channel's capability codes follow; `device_state<n>` becomes what the device reported on
  * re-read; the freeze flag goes (a corrected row is not a frozen one); and `capabilities.scrub` says
- * what was done and on what evidence. `energy_kwh_today` is NOT written: it came from the register,
+ * what was done and on what evidence. The stamp is not decoration: FI-027's `reading_measured`
+ * (phase47) reads `scrub.rule = 'held_reading'`, so the reports never count a restated minute as
+ * recorded nor average its power — the zero is a good inference, not a measurement. `energy_kwh_today` is NOT written: it came from the register,
  * which was right all along. `online` is carried unchanged because PostgREST's upsert checks the
  * INSERT tuple's NOT NULL constraints before the conflict path (23502, RM-123).
  */

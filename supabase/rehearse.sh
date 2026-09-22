@@ -1904,6 +1904,143 @@ delete from building_totals where ts >= timestamptz '2026-09-17 16:00:00+00' and
 delete from devices where id = 'mtr_day';
 SQL
 
+# ---- phase47: a held minute is not a recorded minute (FI-027) ---------------------------------------
+#
+# Applied once at the top. Twice more here, then held to the operator's rule of 2026-09-22: a minute the
+# bridge flagged frozen, or that RM-134's scrub restated as a held reading, is not recorded and its watts
+# are in no power figure; its ENERGY is the register's and is untouched. The fixture is 2026-09-22's
+# shape: measured, then held (flagged), then held (restated), then measured at zero, then offline.
+echo "== phase47: re-applying twice, then a day with held minutes =="
+psql < "$HERE/phase47_held_minutes.sql" >/dev/null
+psql < "$HERE/phase47_held_minutes.sql" >/dev/null
+psql <<'SQL'
+insert into devices (id, display_name, class) values ('mtr_held', 'Rehearsal Held Meter', 'meter')
+  on conflict (id) do nothing;
+
+-- Local 2026-09-22 (Asia/Manila) opens at 2026-09-21 16:00Z. One row a minute:
+--   06:00-07:59  measured, 40 W; the register climbs 40 W worth (0.04/60 kWh a minute)
+--   08:00-08:59  held 55 W, flagged `measurement_frozen` — the register stands still
+--   09:00-09:59  held, restated by the scrub to 0 W with `scrub.rule = held_reading`
+--   10:00-10:59  measured, 0 W
+--   11:00        offline
+insert into readings (device_id, ts, voltage, current, power_w, energy_kwh_today, online, capabilities)
+select 'mtr_held',
+       timestamptz '2026-09-21 22:00:00+00' + (n || ' minutes')::interval,
+       230,
+       case when n < 120 then 0.2 when n < 180 then 0.25 else 0 end,
+       case when n < 120 then 40 when n < 180 then 55 else 0 end,
+       round((least(n, 119) * 0.04 / 60)::numeric, 6),
+       n < 300,
+       case when n between 120 and 179 then '{"measurement_frozen": true, "frozen_since": "2026-09-22T08:00:00+08:00"}'::jsonb
+            when n between 180 and 239 then '{"scrub": {"rule": "held_reading", "ticket": "RM-134"}}'::jsonb
+            when n < 120 then '{"scrub": {"swapped": true, "rule": "ceiling", "energy": "reintegrated"}}'::jsonb
+            else '{}'::jsonb end
+  from generate_series(0, 300) n;
+
+do $$
+declare
+  n int;
+  r record;
+  h record;
+begin
+  -- The rule itself.
+  assert reading_measured(true, null) and reading_measured(true, '{}'::jsonb), 'phase47: an online row with no flags is a measurement';
+  assert not reading_measured(false, null) and not reading_measured(null, null), 'phase47: an offline or unknown row is not';
+  assert not reading_measured(true, '{"measurement_frozen": true}'::jsonb), 'phase47: a flagged row is not';
+  assert reading_measured(true, '{"measurement_frozen": false}'::jsonb), 'phase47: an explicit false flag is a measurement';
+  assert not reading_measured(true, '{"scrub": {"rule": "held_reading"}}'::jsonb), 'phase47: a restated held row is not';
+  assert reading_measured(true, '{"scrub": {"swapped": true, "rule": "ceiling"}}'::jsonb),
+    'phase47: an RM-123 swap-corrected row is a real measurement re-attributed, and counts';
+
+  -- Recorded minutes: 120 measured + 60 measured at zero; the 120 held and the offline one are out.
+  select m.minutes into n from report_recorded_minutes_devices(timestamptz '2026-09-21 16:00:00+00', timestamptz '2026-09-22 16:00:00+00') m
+   where m.device_id = 'mtr_held';
+  assert n = 180, format('phase47: mtr_held holds 180 recorded minutes, counted %s', n);
+
+  -- The hourly series: a held hour is a row with no minutes and no power, never a held figure.
+  select * into h from report_hour_energy('day', date '2026-09-22', 'Asia/Manila', array['mtr_held']) where local_hour = 8;
+  assert h.online_minutes = 0 and h.avg_power_w is null and h.max_power_w is null,
+    format('phase47: the flagged hour has no minutes and no power; got %s / %s / %s', h.online_minutes, h.avg_power_w, h.max_power_w);
+  select * into h from report_hour_energy('day', date '2026-09-22', 'Asia/Manila', array['mtr_held']) where local_hour = 9;
+  assert h.online_minutes = 0 and h.avg_power_w is null, 'phase47: the restated hour has no minutes and no power';
+  select * into h from report_hour_energy('day', date '2026-09-22', 'Asia/Manila', array['mtr_held']) where local_hour = 6;
+  assert h.online_minutes = 60 and h.avg_power_w = 40, format('phase47: a measured hour keeps its minutes and power; got %s / %s', h.online_minutes, h.avg_power_w);
+
+  -- The typical day leaves the held hours out.
+  select count(*) into n from report_hour_profile('day', date '2026-09-22', 'Asia/Manila', 'mtr_held') p where p.local_hour in (8, 9) and p.n > 0;
+  assert n = 0, 'phase47: the typical day carries no held sample';
+
+  -- The generator: 180 minutes; power from measured rows only; energy is the register's, 119 x 0.04/60.
+  perform generate_period_report('day', date '2026-09-22', 'Asia/Manila');
+  select * into r from period_reports where period = 'day' and period_start = date '2026-09-22' and device_id = 'mtr_held';
+  assert r.online_sample_count = 180, format('phase47: the day row stores 180 recorded minutes, stored %s', r.online_sample_count);
+  assert abs(r.avg_power_w - (120 * 40 + 60 * 0) / 180.0) < 0.001, format('phase47: average power from measured rows only, 26.667, stored %s', r.avg_power_w);
+  assert r.peak_power_w = 40, format('phase47: peak from measured rows only, 40 not the held 55, stored %s', r.peak_power_w);
+  assert abs(r.energy_kwh - round(119 * 0.04 / 60, 6)) < 0.000001, format('phase47: energy is the register''s, 0.079333, stored %s', r.energy_kwh);
+
+  -- The restatement: make the stored row say what a pre-phase47 generator would have, then re-apply.
+  update period_reports set online_sample_count = 300, avg_power_w = 38, peak_power_w = 55,
+         online_sample_count_before = null, coverage_restated_at = null
+   where period = 'day' and period_start = date '2026-09-22' and device_id = 'mtr_held';
+end $$;
+SQL
+psql < "$HERE/phase47_held_minutes.sql" >/dev/null
+psql <<'SQL'
+do $$
+declare
+  r record;
+begin
+  select * into r from period_reports where period = 'day' and period_start = date '2026-09-22' and device_id = 'mtr_held';
+  assert r.online_sample_count = 180 and r.online_sample_count_before = 300 and r.coverage_restated_at is not null,
+    format('phase47: the stored row must read 180, was 300, restated; got %s / %s / %s', r.online_sample_count, r.online_sample_count_before, r.coverage_restated_at);
+  assert abs(r.avg_power_w - 26.667) < 0.001 and r.peak_power_w = 40,
+    format('phase47: the restated row''s power is from measured rows; got %s / %s', r.avg_power_w, r.peak_power_w);
+  assert abs(r.energy_kwh - round(119 * 0.04 / 60, 6)) < 0.000001, format('phase47: the restatement did not move energy, %s', r.energy_kwh);
+end $$;
+SQL
+psql < "$HERE/phase47_held_minutes.sql" >/dev/null
+psql <<'SQL'
+do $$
+declare
+  r record;
+  n int;
+begin
+  select * into r from period_reports where period = 'day' and period_start = date '2026-09-22' and device_id = 'mtr_held';
+  assert r.online_sample_count = 180 and r.online_sample_count_before = 300,
+    'phase47: a second paste changes nothing, and keeps what the row first said';
+
+  -- The rollup keeps the distinction once the raw rows are gone.
+  perform roll_up_and_prune_readings(timestamptz '2026-09-22 16:00:00+00');
+  select count(*) into n from readings where device_id = 'mtr_held';
+  assert n = 0, format('phase47: the rollup pruned the fixture, %s rows left', n);
+  select * into r from readings_hourly where device_id = 'mtr_held' and hour = timestamptz '2026-09-22 00:00:00+00';
+  assert r.online_sample_count = 0 and r.held_sample_count = 60 and r.power_w_avg is null and r.power_w_max is null,
+    format('phase47: the flagged hour rolls up as 0 measured, 60 held, no power; got %s / %s / %s', r.online_sample_count, r.held_sample_count, r.power_w_avg);
+  assert r.energy_kwh_today_max is not null, 'phase47: the rolled held hour keeps its register';
+  select * into r from readings_hourly where device_id = 'mtr_held' and hour = timestamptz '2026-09-21 22:00:00+00';
+  assert r.online_sample_count = 60 and r.held_sample_count = 0 and r.power_w_avg = 40,
+    format('phase47: a measured hour rolls up whole; got %s / %s / %s', r.online_sample_count, r.held_sample_count, r.power_w_avg);
+
+  -- And a report generated from the rolled hours says what one from the raw rows said.
+  select m.minutes into n from report_recorded_minutes_devices(timestamptz '2026-09-21 16:00:00+00', timestamptz '2026-09-22 16:00:00+00') m
+   where m.device_id = 'mtr_held';
+  assert n = 180, format('phase47: after the rollup mtr_held still holds 180 recorded minutes, counted %s', n);
+  perform generate_period_report('day', date '2026-09-22', 'Asia/Manila');
+  select * into r from period_reports where period = 'day' and period_start = date '2026-09-22' and device_id = 'mtr_held';
+  assert r.online_sample_count = 180 and abs(r.avg_power_w - 26.667) < 0.001 and r.peak_power_w = 40
+     and abs(r.energy_kwh - round(119 * 0.04 / 60, 6)) < 0.000001,
+    format('phase47: the rolled day regenerates to the same figures; got %s / %s / %s / %s', r.online_sample_count, r.avg_power_w, r.peak_power_w, r.energy_kwh);
+
+  raise notice 'phase47: held minutes — assertions passed';
+end $$;
+
+delete from period_reports where device_id = 'mtr_held';
+delete from period_building_reports where period = 'day' and period_start = date '2026-09-22';
+delete from readings_hourly where device_id = 'mtr_held';
+delete from readings where device_id = 'mtr_held';
+delete from devices where id = 'mtr_held';
+SQL
+
 echo
 echo "== REHEARSAL PASSED =="
 echo "Every migration applied in order against PostgreSQL 16, and every function behaved as"
