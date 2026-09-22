@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { BUILDING_METER_IDS } from '@shared/registry.mjs';
-import { branchEnergySplit, describeFrozen, siteDayStartMs } from './branchEnergy';
+import { branchEnergySplit, describeFrozen, frozenHeadline, siteDayStartMs } from './branchEnergy';
 import type { Device, HistoryPoint, Reading } from './types';
 
 /*
@@ -244,30 +244,50 @@ describe('branchEnergySplit — 2026-09-22, a held reading the page could not se
   });
 });
 
-describe('describeFrozen', () => {
-  it('says what froze and that the energy in that window was not measured, and accuses nobody', () => {
-    const text = describeFrozen({
-      id: 'mtr_lo_red',
-      name: 'L.O Red',
-      fromMs: local('2026-09-12T06:00:05'),
-      toMs: local('2026-09-12T20:59:05'),
-      ongoing: false,
-      heldW: 19.1,
-      heldV: 228.2,
-      phantomKwh: 0.286,
-    });
-    expect(text).toContain('L.O Red');
+/*
+ * The wording, revised by the operator on 2026-09-22 (RM-136). The old text said the METER "stopped updating
+ * … so it was not measuring … energy used in that window was not measured", and on 2026-09-22 all three
+ * were false: the meter measured 0 W throughout and its register counted what the circuit used; the bridge
+ * had simply not re-read it (RM-134). What the page can know is narrower — the READING repeated, so the
+ * figure was not a live measurement, and the energy shown is the register's, not the held power — and it
+ * says only that. It names the branch once: the headline carries the name, the detail does not repeat it.
+ */
+describe('frozenHeadline and describeFrozen', () => {
+  const ended = {
+    id: 'mtr_lo_red',
+    name: 'L.O Red',
+    fromMs: local('2026-09-12T06:00:05'),
+    toMs: local('2026-09-12T20:59:05'),
+    ongoing: false,
+    heldW: 19.1,
+    heldV: 228.2,
+    phantomKwh: 0.286,
+  };
+
+  it('says the reading was held, not that the meter stopped measuring', () => {
+    expect(frozenHeadline(ended)).toBe("L.O Red's reading was held.");
+    const text = describeFrozen(ended);
     expect(text).toContain('06:00');
     expect(text).toContain('20:59');
-    expect(text).toContain('19.1 W');
+    expect(text).toContain('19.1 W at 228.2 V');
     expect(text).toContain('14 h 59 min');
-    expect(text).toMatch(/not measured/);
+    expect(text).toMatch(/not a live measurement/);
+    expect(text).toMatch(/register/);
+    expect(text).not.toMatch(/not measuring|stopped updating|was not measured/);
     expect(text).not.toMatch(/missing between the meter and this page/);
   });
 
-  it('describes an ongoing freeze in the present tense', () => {
-    const text = describeFrozen({ id: 'a', name: 'L.O Red', fromMs: local('2026-09-13T00:00:05'), toMs: local('2026-09-13T08:53:05'), ongoing: true, heldW: 13.3, phantomKwh: 0.118 });
+  it('names the branch once — the headline carries it, the detail does not repeat it', () => {
+    expect(describeFrozen(ended)).not.toContain('L.O Red');
+  });
+
+  it('describes an ongoing hold in the present tense, and says what a meter that has itself stopped would mean', () => {
+    const f = { id: 'a', name: 'L.O Red', fromMs: local('2026-09-13T00:00:05'), toMs: local('2026-09-13T08:53:05'), ongoing: true, heldW: 13.3, phantomKwh: 0.118 };
+    expect(frozenHeadline(f)).toBe("L.O Red's reading is held.");
+    const text = describeFrozen(f);
     expect(text).toMatch(/since 00:00/);
     expect(text).toContain('8 h 53 min');
+    expect(text).toMatch(/is not a live measurement/);
+    expect(text).toMatch(/if the meter itself has stopped/);
   });
 });

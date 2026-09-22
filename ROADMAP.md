@@ -1,6 +1,9 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-22, 16:00 — **FI-027: a held minute is not a recorded minute.** `phase47`, built and
+**Last audited:** 2026-09-22, 16:40 — **RM-136: a false "frozen" flag at every lights-on, the morning's hold
+still in Node-RED's own copies, and a notice worded against the meter.** Built; one operator command left.
+phase47 read back as not applied.
+**Earlier, 16:00 — FI-027: a held minute is not a recorded minute.** `phase47`, built and
 rehearsed, waits for the operator to apply it (§0).
 **Earlier, 15:20 — RM-135: the page accused L.O Yellow of losing 47% of its energy; it
 was the morning's held watts in the integrator, and the page's freeze detection could not see the hold.**
@@ -396,9 +399,18 @@ cleanly by who can do it.
 7. **RM-026's Solarman logger onto the device SSID** — the contractual solar deliverable cannot start
    without it. The live flow's `solarman-device` node logs a socket timeout every few minutes meanwhile.
 
+**Read back 2026-09-22 ~16:30: phase47 is NOT on the project** (reported applied; `readings_hourly.held_sample_count`
+answers 42703, `reading_measured` is unknown, and L.O Yellow's minutes are still counted the old way). Most
+likely pasted into another project, or rolled back on an error. Re-apply, and check the project first.
 **At the Supabase SQL editor, today if possible:** apply `supabase/phase47_held_minutes.sql` (FI-027), ideally
 before ~01:00 on 09-23 so that 09-22's daily is generated under the rule (§0 Migrations). It prints one
 `phase47: restated N device row(s)` notice; expect 0.
+
+**One command on the Pi (RM-136):** back up the flow, redeploy the bridge tab for the register-clock fix, then
+with Node-RED stopped repair the morning's hold in its context, and start Node-RED whatever the repair says:
+```
+ssh <user>@<host> 'cd /home/bems/bems && cp ~/.node-red/flows.json ~/.node-red/flows.json.bak-rm136-$(date +%F-%H%M%S) && npm run -s deploy:pi -- --host=127.0.0.1 --force --apply && sudo systemctl stop nodered && { npm run -s repair:held-context:pi -- --device=mtr_lo_yellow --from=2026-09-22T07:43:30+08:00 --to=2026-09-22T14:21:30+08:00 --apply; sudo systemctl start nodered; }'
+```
 
 **Decisions, not work:**
 - **RM-006c** — which loads may shed first (`npm run shed:profile` has the numbers). The path is
@@ -3966,6 +3978,45 @@ cannot draw more than 150 W, and the outlet branch is never at 0 A.
       office hours, and RM-020's caution applies. Until then L.O Yellow's stored power is a held
       figure; its energy is not being counted (the register is still, so the reports credit nothing —
       which is nearly right, the lights being off).
+- [ ] **RM-136** Two notices the operator reported on the Overview's Energy Breakdown and Analytics' By
+      branch after RM-135, and the wording of both. **Built 2026-09-22 afternoon; the bridge half and the
+      context repair wait for one operator command (§0).**
+      **1. "L.O Yellow's meter repeated exactly 41.9 W from 15:38 to 15:39 (1 min) … so it was not
+      measuring" — a false flag, and a bug in RM-133's rule.** The lights came on at 15:38. In the ring,
+      the very first loaded sample carried the bridge's `frozen` flag, which cleared at 15:40 when the
+      register ticked. The register clock (`valueFreezeTracker.mjs`) measured "since the register last
+      moved". A circuit at 0 W rightly moves nothing, so after hours idle the first 41.9 W sample "owed" hours
+      of energy and was flagged at once. It would have happened at every lights-on after an idle stretch.
+      - **Fixed at the source:** the clock restarts while the channel draws nothing, so owed energy counts
+        only from when the load begins. `test/value-freeze-tracker.test.mjs` (+1, failed first).
+      - **And on the page:** a flagged run shorter than the bridge's own shortest rule (half an hour of a
+        still register, `REGISTER_STALL.afterMs`) is not trusted, since a true flag cannot sit on one.
+        This clears the two flagged samples already in today's ring. `src/lib/timeseries.test.ts` (+1,
+        failed first). RM-135's "a flagged run counts whatever its length" was the amplifier.
+      **2. "L.O Yellow's meter repeated exactly 39.8 W from 07:43 to 14:21 … so it was not measuring" — a
+      true hold, already fixed in the stored rows (RM-134's scrub), so the operator asked for it to go.**
+      Two of Node-RED's own copies still carry it:
+      - the 24 h ring the page reads;
+      - the legacy integrators (`lo_yel2_energy` and the building's `bems_energy_today/week/month`), which
+        counted the held watts.
+
+      Cleaning the ring alone would bring back "47% missing"; so both are corrected together by
+      `npm run repair:held-context:pi` (`node-red-bridge/heldContextRepair.mjs` +
+      `repair-held-context.mjs`, `test/held-context-repair.test.mjs` 6; the phantom rule was neutered and
+      its test failed). It is dry run by default, refuses `--apply` while Node-RED runs, backs both files
+      up, and reads them back. **Dry run against the live files:** 398 ring samples go to 0 W; the phantom
+      is 0.2597 kWh (held power over the time the integrator ran); `lo_yel2_energy` 0.5512 → 0.2915
+      against the register's 0.2947; the building's three integrators each drop by 0.2597.
+      **3. The wording, revised by the operator.** "The meter stopped updating … was not measuring … energy
+      used in that window was not measured" was false on 09-22 on all three counts. It now reads, for
+      example: "**L.O Red's reading was held.** It repeated exactly 19.1 W at 228.2 V from 06:00 to 20:59
+      (14 h 59 min) while reporting online, so that figure was not a live measurement. The energy shown is
+      the meter's own register, not the held power." An ongoing hold adds "if the meter itself has
+      stopped, energy used since then is not counted yet". The headline (`frozenHeadline`) and the detail
+      live in `src/lib/branchEnergy.ts` for both cards, and the name appears once.
+      `node-red-bridge/valueFreezeTracker.mjs`, `node-red-bridge/bridge-flow.json` (regenerated),
+      `src/lib/{timeseries,branchEnergy}.ts`, `src/components/{analytics/EnergySection,overview/EnergyBreakdownCard}.tsx`,
+      `src/components/analytics/branchEnergyCards.test.tsx`, `src/lib/branchEnergy.test.ts`, `package.json`.
 - [x] **RM-135** "L.O Yellow is reporting less than it measured — 0.29 kWh against 0.55 kWh … 47%
       missing … energy going missing between the meter and this page." A false accusation, shown after
       RM-134 had fixed the reading. **Built 2026-09-22 afternoon; verified in a browser against the live

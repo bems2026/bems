@@ -41,6 +41,7 @@
     "check:meters": "node server/check-meter-swap.mjs",
     "scrub:meters": "node server/scrub-meter-swap.mjs",
     "scrub:held": "node server/scrub-held-reading.mjs",
+    "repair:held-context:pi": "node node-red-bridge/repair-held-context.mjs",
     "collapse-sessions:pi": "node node-red-bridge/collapse-sessions.mjs",
     "poll-outlets:pi": "node node-red-bridge/poll-outlets.mjs",
     "demux:pi": "node node-red-bridge/demux-channels.mjs",

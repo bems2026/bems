@@ -4,7 +4,7 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { InfoHint } from '@/components/ui/InfoHint';
 import type { Totals } from '@/lib/types';
 import { formatKwh, formatNumber } from '@/lib/format';
-import { describeFrozen, describeShortfalls, type EnergyPeriod } from '@/lib/branchEnergy';
+import { describeFrozen, frozenHeadline, describeShortfalls, type EnergyPeriod } from '@/lib/branchEnergy';
 import { useBranchEnergy } from '@/lib/useBranchEnergy';
 
 const PERIODS: { id: EnergyPeriod; label: string; tile: string; totalsKey: keyof Totals }[] = [
@@ -99,7 +99,7 @@ export function EnergySection() {
             <p className="energy-disagreement" role="status" key={`${f.id}-${f.fromMs}`}>
               <AlertTriangle size={15} aria-hidden="true" />
               <span>
-                <strong>{f.ongoing ? `${f.name}'s meter is not updating.` : `${f.name}'s meter stopped updating.`}</strong> {describeFrozen(f)}
+                <strong>{frozenHeadline(f)}</strong> {describeFrozen(f)}
               </span>
             </p>
           ))}

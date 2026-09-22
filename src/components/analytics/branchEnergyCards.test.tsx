@@ -93,11 +93,12 @@ describe('Energy Breakdown and By branch — one derivation', () => {
   it.each([
     ['Overview', () => <EnergyBreakdownCard />],
     ['Analytics', () => <EnergySection />],
-  ])('%s names the freeze, and does not say energy went missing', (_page, ui) => {
+  ])('%s names the held reading once, and does not say energy went missing', (_page, ui) => {
     frozenEvening();
     mount(ui());
     const text = document.body.textContent ?? '';
-    expect(text).toContain("L.O Red's meter repeated exactly 19.1 W at 228.2 V from 06:00 to 20:59 (14 h 59 min)");
-    expect(text).not.toMatch(/reporting less than it measured/);
+    // RM-136's wording: the READING was held; the meter is not accused of not measuring.
+    expect(text).toContain("L.O Red's reading was held. It repeated exactly 19.1 W at 228.2 V from 06:00 to 20:59 (14 h 59 min)");
+    expect(text).not.toMatch(/reporting less than it measured|not measuring|stopped updating/);
   });
 });

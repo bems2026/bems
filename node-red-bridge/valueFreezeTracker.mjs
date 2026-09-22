@@ -60,7 +60,11 @@ for (const meters of groups) {
     const codes = Object.keys(dp).filter(function (c) { return /^(today_acc_energy|total_energy)\\d*$/.test(c); }).sort();
     if (codes.length) {
       const reg = codes.map(function (c) { return c + '=' + dp[c]; }).join('|');
-      if (entry.reg !== reg) { entry.reg = reg; entry.regSince = now; }
+      // RM-136: a channel drawing nothing owes its register nothing, so the clock restarts while idle and
+      // starts counting when the load does. Otherwise the first loaded sample after hours at 0 W "owed"
+      // hours of energy and was flagged frozen at once (L.O Yellow, 15:38 on 2026-09-22).
+      const drawing = Number(m.p) > 0;
+      if (entry.reg !== reg || !drawing) { entry.reg = reg; entry.regSince = now; }
     }
     seen[k] = entry;
   }

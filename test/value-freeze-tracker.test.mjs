@@ -73,6 +73,23 @@ test('stamps when a meter\'s own energy registers last moved, separately from it
   assert.equal(moved.registerSince.lo_yel2, 121_000);
 });
 
+/**
+ * RM-136, 2026-09-22 15:38. L.O Yellow sat at 0 W from 14:21 with its register rightly still; the lights
+ * came on at 15:38 at 41.9 W and the FIRST loaded sample was flagged frozen, because the register clock had
+ * been running since the register last moved hours earlier, and "41.9 W for two hours owes 0.08 kWh".
+ * A channel drawing nothing owes its register nothing, so the clock starts when the load does.
+ */
+test('the register clock does not run while the channel draws nothing — it starts when the load does', () => {
+  const store = {};
+  runValueFreezeTrackerFull(store, snapshot({ lo_yel2: reading('0', { c: '0', dp: dp2(25523.558) }) }), 1_000);
+  const idle = runValueFreezeTrackerFull(store, snapshot({ lo_yel2: reading('0', { c: '0', v: '214.2', dp: dp2(25523.558) }) }), 4_600_000);
+  assert.equal(idle.registerSince.lo_yel2, 4_600_000, 'at 0 W the register is not expected to move, so the clock keeps restarting');
+  const on = runValueFreezeTrackerFull(store, snapshot({ lo_yel2: reading('41.9', { c: '0.427', v: '228.7', dp: dp2(25523.558) }) }), 4_660_000);
+  assert.equal(on.registerSince.lo_yel2, 4_600_000, 'the lights came on after the last idle sample; they owe nothing yet');
+  const held = runValueFreezeTrackerFull(store, snapshot({ lo_yel2: reading('41.9', { c: '0.427', v: '228.7', dp: dp2(25523.558) }) }), 6_460_000);
+  assert.equal(held.registerSince.lo_yel2, 4_600_000, 'and while loaded the clock stands until the register moves');
+});
+
 test('the shared all_energy register does not count — it moves with the other channel', () => {
   const store = {};
   runValueFreezeTrackerFull(store, snapshot({ lo_yel2: reading('39.8', { dp: dp2(25523.556) }) }), 1_000);

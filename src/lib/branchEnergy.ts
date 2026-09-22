@@ -208,14 +208,29 @@ function formatDuration(ms: number): string {
   return h > 0 ? `${h} h ${m} min` : `${m} min`;
 }
 
-/** One sentence for a frozen meter, identical wherever it is shown. */
+/*
+ * THE WORDING, revised by the operator on 2026-09-22 (RM-136). It used to say the METER "stopped updating …
+ * so it was not measuring … energy used in that window was not measured". On 2026-09-22 all three were false:
+ * L.O Yellow's meter measured 0 W throughout and its register counted what the circuit used; the bridge had
+ * not re-read it (RM-134). What the page can know is narrower — the READING repeated, so the figure was not
+ * a live measurement, and the energy shown is the register's, not the held power — and it says only that.
+ * For a hold still going on it adds the one case where energy is at stake: a meter that has itself stopped.
+ * The headline names the branch; the detail does not repeat it.
+ */
+
+/** The headline for a held reading, identical wherever it is shown. */
+export function frozenHeadline(f: FrozenBranch): string {
+  return f.ongoing ? `${f.name}'s reading is held.` : `${f.name}'s reading was held.`;
+}
+
+/** The detail for a held reading, identical wherever it is shown. Follows `frozenHeadline`. */
 export function describeFrozen(f: FrozenBranch): string {
   const held = f.heldV !== undefined ? `${f.heldW} W at ${f.heldV} V` : `${f.heldW} W`;
   const duration = formatDuration(f.toMs - f.fromMs);
   if (f.ongoing) {
-    return `${f.name}'s meter has repeated exactly ${held} since ${siteClock(f.fromMs)} (${duration} so far) while reporting online, so it is not measuring. The figure shown is its own energy register; energy used since then is not measured.`;
+    return `It has repeated exactly ${held} since ${siteClock(f.fromMs)} (${duration} so far) while reporting online, so that figure is not a live measurement. The energy shown is the meter's own register, not the held power; if the meter itself has stopped, energy used since then is not counted yet.`;
   }
-  return `${f.name}'s meter repeated exactly ${held} from ${siteClock(f.fromMs)} to ${siteClock(f.toMs)} (${duration}) while reporting online, so it was not measuring. The figure shown is its own energy register; energy used in that window was not measured.`;
+  return `It repeated exactly ${held} from ${siteClock(f.fromMs)} to ${siteClock(f.toMs)} (${duration}) while reporting online, so that figure was not a live measurement. The energy shown is the meter's own register, not the held power.`;
 }
 
 /** The shortfall notice, identical wherever it is shown. */

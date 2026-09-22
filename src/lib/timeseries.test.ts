@@ -221,7 +221,15 @@ describe('detectFrozenRuns', () => {
     expect(found[0]).toMatchObject({ power_w: 39.8, current: 0.446, samples: 240 });
   });
 
-  it('honours the bridge\'s own flag: a run that holds any flagged sample is frozen, however short', () => {
+  it('does not trust a flag on a run shorter than the bridge\'s shortest rule — the 15:38 lights-on (RM-136)', () => {
+    // The bridge flagged the first two loaded samples after hours at 0 W (its register clock had been
+    // running while the circuit drew nothing). A true flag needs the register still for half an hour first,
+    // so it can never sit on a two-minute run of identical readings.
+    const blip = [...run(4, 0, 214.2, 0), ...run(2, 41.9, 228.7, 0.427, 4).map((p) => ({ ...p, frozen: true })), ...run(2, 41.2, 228, 0.421, 6)];
+    expect(detectFrozenRuns(blip, { sharedVoltage: true })).toEqual([]);
+  });
+
+  it('honours the bridge\'s own flag: a run of half an hour or more that holds a flagged sample is frozen', () => {
     // The bridge flags from its own rules (three hours of v/c/p, or a register still for 30 minutes
     // while owed energy). A run it has already called frozen is not the page's to un-call.
     const flagged = run(40, 39.8, 214.2, 0.446).map((p, i) => (i >= 30 ? { ...p, frozen: true } : p));

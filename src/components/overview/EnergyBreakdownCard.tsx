@@ -2,7 +2,7 @@ import { AlertTriangle, ChartPie } from 'lucide-react';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { CardLink } from '@/components/ui/CardLink';
 import { formatKwh, formatNumber } from '@/lib/format';
-import { describeFrozen, describeShortfalls } from '@/lib/branchEnergy';
+import { describeFrozen, frozenHeadline, describeShortfalls } from '@/lib/branchEnergy';
 import { useBranchEnergy } from '@/lib/useBranchEnergy';
 
 /**
@@ -71,7 +71,7 @@ export function EnergyBreakdownCard() {
             <p className="energy-disagreement" role="status" key={`${f.id}-${f.fromMs}`}>
               <AlertTriangle size={15} aria-hidden="true" />
               <span>
-                <strong>{f.ongoing ? `${f.name}'s meter is not updating.` : `${f.name}'s meter stopped updating.`}</strong> {describeFrozen(f)}
+                <strong>{frozenHeadline(f)}</strong> {describeFrozen(f)}
               </span>
             </p>
           ))}

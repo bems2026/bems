@@ -1,3 +1,4 @@
+import { REGISTER_STALL } from '@shared/measurementFreeze.mjs';
 import type { HistoryPoint } from './types';
 
 /**
@@ -169,9 +170,12 @@ export interface FrozenRunOptions {
  *     precisely a value nobody re-read. They are still never part of a run on their own: an offline
  *     stretch is already a different, louder fact.
  *   - THE SHARED VOLTAGE, per `sharedVoltage` above.
- *   - THE BRIDGE'S OWN FLAG (`frozen: true`, RM-079/RM-133) switching on mid-run. A run holding any
- *     flagged sample is frozen whatever its length: the bridge's register rule decides from facts the
- *     ring does not carry, and it is not the page's to un-call.
+ *   - THE BRIDGE'S OWN FLAG (`frozen: true`, RM-079/RM-133) switching on mid-run. A run holding a
+ *     flagged sample is frozen below the length thresholds: the bridge's register rule decides from facts
+ *     the ring does not carry. But not below the bridge's own shortest rule (`REGISTER_STALL.afterMs`,
+ *     half an hour of a still register): a true flag cannot sit on a shorter run of identical readings,
+ *     and on 2026-09-22 15:38 a clock that ran while the circuit drew nothing flagged a two-minute
+ *     lights-on (RM-136).
  */
 export function detectFrozenRuns(points: HistoryPoint[], opts: FrozenRunOptions = {}): FrozenRun[] {
   const shared = opts.sharedVoltage === true;
@@ -192,7 +196,8 @@ export function detectFrozenRuns(points: HistoryPoint[], opts: FrozenRunOptions 
     const samples = i - start;
     const fromMs = list[start].ms;
     const toMs = list[i - 1].ms;
-    if (startKey !== null && (flagged || (samples >= FROZEN_MIN_SAMPLES && toMs - fromMs >= FROZEN_MIN_DURATION_MS))) {
+    const flaggedLongEnough = flagged && toMs - fromMs >= REGISTER_STALL.afterMs;
+    if (startKey !== null && (flaggedLongEnough || (samples >= FROZEN_MIN_SAMPLES && toMs - fromMs >= FROZEN_MIN_DURATION_MS))) {
       const p = list[start].point;
       runs.push({ fromMs, toMs, samples, power_w: p.power_w, ...(shared ? {} : { voltage: p.voltage }), current: p.current });
     }
