@@ -1,10 +1,13 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-22, 16:40 — **RM-136: a false "frozen" flag at every lights-on, the morning's hold
+**Last audited:** 2026-09-22, 17:10 — **the end-of-day list, by owner, is §0's first entry.** RM-136 was run
+at 16:31 and read back: both notices are gone and checked in a browser. **Earlier, 17:00 — phase47 (FI-027)
+applied at 16:19 and read back** — L.O Yellow's 22 Sept
+records 527 minutes, not 895; the restatement also touched 8 August rows by rollup drift (energy and peak
+unchanged). **Earlier, 16:40 — RM-136: a false "frozen" flag at every lights-on, the morning's hold
 still in Node-RED's own copies, and a notice worded against the meter.** Built; one operator command left.
-phase47 read back as not applied.
 **Earlier, 16:00 — FI-027: a held minute is not a recorded minute.** `phase47`, built and
-rehearsed, waits for the operator to apply it (§0).
+rehearsed (applied 16:19).
 **Earlier, 15:20 — RM-135: the page accused L.O Yellow of losing 47% of its energy; it
 was the morning's held watts in the integrator, and the page's freeze detection could not see the hold.**
 Fixed in `detectFrozenRuns` and verified against the live bridge.
@@ -361,6 +364,75 @@ other four and none needed changing.
 ## 0. Triage — what to do next
 
 
+### 2026-09-22, 17:00 — end of day: the list, by who can do it (supersedes the 10:55 walkthrough)
+
+**Today, done and read back.**
+- The yellow meter was never frozen. RM-134: the meters are polled, the demux's idle rule is grounded in
+  0 A, and the preflight checks every node is polled. The 396 held rows were scrubbed.
+- RM-135 and RM-136: the page no longer accuses L.O Yellow. The morning's hold is gone from Node-RED's ring
+  and integrators, the lights-on false flag is fixed at the bridge and on the page, and the notice now says
+  the *reading* was held.
+- FI-027 is applied as phase47.
+
+At 16:36, after the 16:31 restart, 19/20 were online, nothing was frozen, and L.O Yellow read 0 W with its
+register at 0.2947 against the integrator's 0.2915. The Overview and Analytics show no notice, checked in a
+browser against the live bridge. `npm run preflight` reads `Ready` with every node polled.
+
+**Operator, at the office or the AP — in order of value:**
+1. **RM-026: put the Solarman logger on the device SSID.** Solar integration is Milestone 3, contractual,
+   and due January 2027, and nothing can start without the logger on the network. The live
+   `solarman-device` node still points at the logger's own hotspot address and times out every few minutes.
+2. **A UPS on the AP and the Pi** (RM-131). This is what stops an outage from knocking the fleet off the
+   network.
+3. **The dual meter:** check Smart Life for a firmware update (free), then decide on two single-channel CT
+   meters. The demux corrects the trade; only hardware ends it (RM-122).
+4. **RM-120**, the aircon's on-site acceptance with the TCL112 generator.
+5. **RM-016**, the outside temperature sensor: install it, or remove it from the registry.
+6. **RM-033**, the twelve `〔FILL IN〕` gaps in `docs/physical-install.md`: a camera visit, plus the AP's
+   make and model.
+
+**Decisions:**
+- **RM-006c**: which loads may shed.
+- **RM-121**: renew IoT Core or not (optional).
+- **RM-006d**: the scratch-project half of the restore check.
+- **§5 Q11**: are occupancy sensors being bought? The funded plan promises motion-sensor lighting.
+- **Milestone 5**: plan the usability study.
+- **§5 Q12**: reconcile it with FI-018's `npm run baseline:report`, and produce Milestone 1's citable
+  baseline summary.
+
+**Waiting on time (read back tomorrow):**
+- The 09-22 daily report, generated after ~01:00 under phase47, should record 527 minutes for L.O Yellow.
+- `npm run check:meters -- --hours=24` should list nothing after 07:43.
+- A day of polled `device_state` should show `monitor` only at 0 A, confirming RM-134's idle rule is safe
+  on real data.
+- The next lights-on after an idle stretch should raise no flag (RM-136).
+- The next outage is RM-131's real test.
+
+**Engineering, in order:**
+1. **FI-034:** `readings_buckets` over 30 days takes 7.8 s. Add `p_until` or chunk it, then extend
+   FI-027's rule to `readings_buckets` / `readings_archive` so the Analytics 7d/30d charts leave held watts
+   out too.
+2. **An ntfy notice** when the demux flips, a meter flag stands, or a poll stops being answered. The data
+   is already corrected at source; this makes it seen the same hour.
+3. **Per-channel freshness:** the parser stamps `<ctx>_last_time` on every message, whichever channel it
+   carried. A stamp per channel's own dps would make a channel the device stops answering visible even with
+   the poll (defence in depth for RM-134).
+4. **FI-032:** store the IR hub's room temperature and humidity. The RM-069 loop acts on them.
+5. **Restatements** should restate only for their own reason. phase47 also touched 8 August rows by rollup
+   drift, harmlessly (FI-027). The restatement note's reason is phase44's wording; store a reason with it.
+6. **`building_totals` for 07:43–14:21** on 09-22 still carries the held 39.8 W in `total_power_w`: extend
+   `scrub:held` to the building rows.
+7. **RM-083c:** PDF render (3.6–5.2 s on the Pi) into a worker. **FI-020:** switch freshness. **FI-026:**
+   one-sample health flickers. **RM-042:** retire the legacy monthly tables.
+8. **Prune the legacy `GSheet: Append to …` nodes**, which fail auth (Sheets was rejected in FI-011). This is
+   a flow write, dry run first.
+9. **Refactor:** fold `outletPollPlan` / `switchPollPlan` / `meterPollPlan` onto one helper, keeping the
+   generated funcs byte-identical.
+10. **A mock fault mode for a missed push**, so the page's held-reading handling can be exercised without
+    the building.
+11. Later: RM-085 arbitrary report windows, RM-070 daylight/blinds (needs hardware), FI-012 partitioning
+    (when volume demands it), and Track B's replication gaps (Milestone 6, June 2027).
+
 ### 2026-09-22, 10:55 — the walkthrough: what is left, by who can do it
 
 The system as it stands: nineteen tuya nodes reconnect by address, the demux keeps the yellow
@@ -399,15 +471,10 @@ cleanly by who can do it.
 7. **RM-026's Solarman logger onto the device SSID** — the contractual solar deliverable cannot start
    without it. The live flow's `solarman-device` node logs a socket timeout every few minutes meanwhile.
 
-**Read back 2026-09-22 ~16:30: phase47 is NOT on the project** (reported applied; `readings_hourly.held_sample_count`
-answers 42703, `reading_measured` is unknown, and L.O Yellow's minutes are still counted the old way). Most
-likely pasted into another project, or rolled back on an error. Re-apply, and check the project first.
-**At the Supabase SQL editor, today if possible:** apply `supabase/phase47_held_minutes.sql` (FI-027), ideally
-before ~01:00 on 09-23 so that 09-22's daily is generated under the rule (§0 Migrations). It prints one
-`phase47: restated N device row(s)` notice; expect 0.
+~~Apply phase47 (FI-027)~~ — **applied by the operator 2026-09-22 16:19 and read back** (FI-027).
 
-**One command on the Pi (RM-136):** back up the flow, redeploy the bridge tab for the register-clock fix, then
-with Node-RED stopped repair the morning's hold in its context, and start Node-RED whatever the repair says:
+~~One command on the Pi (RM-136)~~ — **run by the operator 16:31 and read back** (RM-136). The command, for the
+next held reading:
 ```
 ssh <user>@<host> 'cd /home/bems/bems && cp ~/.node-red/flows.json ~/.node-red/flows.json.bak-rm136-$(date +%F-%H%M%S) && npm run -s deploy:pi -- --host=127.0.0.1 --force --apply && sudo systemctl stop nodered && { npm run -s repair:held-context:pi -- --device=mtr_lo_yellow --from=2026-09-22T07:43:30+08:00 --to=2026-09-22T14:21:30+08:00 --apply; sudo systemctl start nodered; }'
 ```
@@ -1308,12 +1375,10 @@ Everything else is small, and the build order below is honest about size.
   two weeks (RM-020), so their averages mean nothing and their tiers should be set on what they
   feed rather than on what they have measured.
 
-### Migrations — all applied but one
+### Migrations — all applied
 
-**`supabase/phase47_held_minutes.sql` (FI-027) is built and rehearsed, and NOT applied — the operator's.**
-Paste it into the Supabase SQL editor, ideally before ~01:00 on 2026-09-23, so that 09-22's daily report is
-generated under the rule the first time. Applying it later works too: its restatement corrects any stored
-day it affects, with a note. `phase45` and `phase46` were applied on 2026-09-22 (RM-117, RM-124).
+**`supabase/phase47_held_minutes.sql` (FI-027) was applied by the operator on 2026-09-22 at 16:19 and read
+back the same afternoon** — see FI-027. `phase45` and `phase46` were applied on 2026-09-22 (RM-117, RM-124).
 **`supabase/phase44_recorded_minutes.sql` (RM-073, RM-111) was applied by the operator on 2026-09-17 and
 read back the same day** — see RM-073.
 **`supabase/phase43_readings_policy_speed.sql` (RM-091a) and `supabase/phase42_bounded_device_energy.sql`
@@ -3978,9 +4043,19 @@ cannot draw more than 150 W, and the outlet branch is never at 0 A.
       office hours, and RM-020's caution applies. Until then L.O Yellow's stored power is a held
       figure; its energy is not being counted (the register is still, so the reports credit nothing —
       which is nearly right, the lights being off).
-- [ ] **RM-136** Two notices the operator reported on the Overview's Energy Breakdown and Analytics' By
-      branch after RM-135, and the wording of both. **Built 2026-09-22 afternoon; the bridge half and the
-      context repair wait for one operator command (§0).**
+- [x] **RM-136** Two notices the operator reported on the Overview's Energy Breakdown and Analytics' By
+      branch after RM-135, and the wording of both. **Built 2026-09-22 afternoon; run by the operator at
+      16:31 and read back.**
+      **Read back 16:36, read-only.**
+      - The deploy passed 5/5, and the tracker carries the idle-restart clock; the meter poll and the
+        demux survived the redeploy.
+      - The repair wrote and read back 398 ring samples and four integrators, and the values survived the
+        restart (`lo_yel2_energy` 0.2915).
+      - The history endpoint holds no 39.8 W sample in 07:43–14:21. Its only flags are the two at 15:38,
+        which the page's half-hour guard ignores.
+      - 19/20 online, nothing frozen, and no new journal error beyond RM-026's logger.
+      - In a browser against the live bridge, the Overview's Energy Breakdown and Analytics' By branch show
+        no held notice and no shortfall.
       **1. "L.O Yellow's meter repeated exactly 41.9 W from 15:38 to 15:39 (1 min) … so it was not
       measuring" — a false flag, and a bug in RM-133's rule.** The lights came on at 15:38. In the ring,
       the very first loaded sample carried the bridge's `frozen` flag, which cleared at 15:40 when the
@@ -9841,8 +9916,20 @@ may not.
     - a stored row reading 300 is restated to 180 with its first figure kept, and a second paste changes
       nothing;
     - after the rollup prunes the day, it regenerates to the same figures.
-  - **On the live project:** no row is flagged, and 389 online L.O Yellow rows on 09-22 are restated held
-    readings. That day's daily, not yet generated, will record 535 minutes rather than 924.
+  - **Applied by the operator 2026-09-22 16:19 and read back:**
+    - `readings_hourly.held_sample_count` exists, NULL on hours rolled before it.
+    - `reading_measured` answers false for a held row and true for a plain one.
+    - L.O Yellow's 09-22 recorded minutes are 527 where the old rule gave 895, and its hours 08–13 read
+      0 minutes with no power.
+    - **The restatement touched 8 older rows, which the header had said it would not:** August and the
+      week of 08-17 for co1, co2, acu_main and sens_outside_temp, at 16:19. That was not held minutes but
+      rollup drift: since phase44, retention has rolled August's raw rows into hourly buckets, and a rolled
+      hour counts samples (capped at 60) where the raw path counts distinct minutes. Checked against the
+      2026-09-15 export: counts moved 0–3 minutes; energy, peak and `generated_at` are identical; average
+      power moved only for co2 (0.3013 → 0.3006 W for the month, 0.1435 → 0.1362 W for the week, as rolled
+      hours are time-weighted). No note shows: the page prints one only when the whole-percent share changes.
+      A restatement that recounts whenever a count differs will keep catching this drift. A future phase
+      should restate only rows whose count changes for its own reason.
 
   **Deliberately not changed:** the building rows (`building_totals` has no per-branch flag; the held
   branch is named on the page), and the Analytics history functions `readings_buckets` / `readings_archive`.
