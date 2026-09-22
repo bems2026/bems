@@ -1,7 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-23, 00:40 — **RM-141: pop-ups that fit, measured signed in at 360, 768 and 800×480 — every surface 0 px over.** **Earlier, 23:40 — RM-140: the PDF waits for the circuit charts; the controls stay put; changes crossfade.** **Earlier, 23:00 — RM-139: no circuit told apart by colour alone; the status hues stay, measured.** **Earlier, 22:10 — RM-138: a report not made yet is said, not silent; the week of
-14 Sept was not late** (settles 08:00 Wed 23 Sept). **Earlier, 21:20 — RM-137: a statement timeout is asked
+**Last audited:** 2026-09-22, 22:45 — **RM-137 to RM-141 committed, not yet deployed (§0).** **22:21 — RM-141: pop-ups that fit, measured signed in at 360, 768 and 800×480 — every surface 0 px over.** **21:47 — RM-140: the PDF waits for the circuit charts; the controls stay put; changes crossfade.** **21:40 — RM-139: no circuit told apart by colour alone; the status hues stay, measured.** **21:25 — RM-138: a report not made yet is said, not silent; the week of
+14 Sept was not late** (settles 08:00 Wed 23 Sept). **21:13 — RM-137: a statement timeout is asked
 again by itself** (the operator's Reports brief; §2's first section). **Earlier, 17:10 — the end-of-day list, by owner, is §0's first entry.** RM-136 was run
 at 16:31 and read back: both notices are gone and checked in a browser. **Earlier, 17:00 — phase47 (FI-027)
 applied at 16:19 and read back** — L.O Yellow's 22 Sept
@@ -409,8 +409,8 @@ browser against the live bridge. `npm run preflight` reads `Ready` with every no
   on real data.
 - The next lights-on after an idle stretch should raise no flag (RM-136).
 - The next outage is RM-131's real test.
-- **The week of 14 Sept report** after ~11:30 Wed 23 Sept (settled 08:00; RM-138): the journal's `generated
-  weeks 2026-09-14` and the row. The Reports work (RM-137–RM-141) is committed, not pushed or deployed: it
+- **The week of 14 Sept report** at the first report pass after 08:00 Wed 23 Sept (RM-138; passes run six-hourly
+  from the last `ibems-ingest` restart): the journal's `generated weeks 2026-09-14` and the row. The Reports work (RM-137–RM-141) is committed, not pushed or deployed: it
   needs a push, `npm run build` on the Pi, and an `ibems-ingest` restart for `shared/reportSchedule.mjs`.
 
 **Engineering, in order:**
@@ -3765,7 +3765,7 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **RM-138** A report not made yet is said, not silent. The operator (22 Sept, 20:30) could not tell the
       missing week of 14 Sept from a broken pipeline. **It was not late:** week key Monday 00:00Z, ends
       21 Sept 00:00Z, settles +2 days = **08:00 Manila, Wed 23 Sept**, made at the daemon's next 6-hourly pass
-      (≈11:30 — ingest started 11:27:29; the week of 7 Sept was made 39 min after it settled). Generator
+      (passes run six-hourly from the last `ibems-ingest` restart; the week of 7 Sept was made 39 min after it settled). Generator
       logic unchanged. `shared/reportSchedule.mjs` now holds `REPORT_GRACE_DAYS`, `DAY_GRACE_HOURS`,
       `REPORT_CHECK_MS` (re-exported by `server/reports.mjs`) and `periodSettlesAt`; a minute-by-minute
       sweep in `server/reports.test.mjs` fails if it and the daemon's loops disagree (a +1 h neuter fails 2).
