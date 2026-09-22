@@ -360,10 +360,15 @@ cleanly by who can do it.
    Power-cycle the yellow meter at the panel, outside office hours; then confirm `mtr_lo_yellow`
    reads 0 W / `monitor` with L5–L7 off and the flag clears. Since 11:57 the reading says what it is —
    `measurement_frozen`, `frozen_since 11:27` — live, on the Overview's source card, and in the stored rows.
-1. **The access point** (RM-131, RM-046): `npm run set-device-ip:pi -- --host=127.0.0.1 --reservations`
-   prints the MAC → address table; enter it as DHCP reservations (plus the Pi), pin the 2.4 GHz
-   channel, lease ≥ 1 day, isolation off. Until then an AP power cycle can renumber a device; the
-   watchdog will say `ADDRESS DRIFT` and `--from-lan-map` re-pins it.
+1. ~~The access point~~ — **done 2026-09-22 12:42–13:05 by the operator, read back 13:25** (RM-131,
+   RM-046). The AP is an aclink 4G/LTE router; its "Static DHCP Leases" now hold all 19 — the 18 tuya
+   devices and the Pi — each at the address it already had, so nothing moved. Allocation Duration
+   2 H → **24 H** (the Pi's next lease, 13:15:26, carried `dhcp_lease_time = 86400`). 2.4 GHz channel
+   **fixed at 1**, bandwidth **HT20**, **Isolate Clients off**; SSID and security unchanged. Each Save
+   dropped the fleet for about two minutes (12:42–12:45, 13:03–13:05); since 13:06 there have been no
+   disconnects and no `find()` timeout, 19/20 online, every node's address agrees with its device's
+   last announcement, no `ADDRESS DRIFT`, and the Pi never lost its association. The AP's make and
+   model belong in `docs/physical-install.md`'s gap (RM-033).
 2. **A UPS on the AP and the Pi** — the change that makes the outage failure not happen.
 3. ~~Import the local keys~~ — **done 08:51** (RM-127 step 4, recorded at origin `e97aa5c`): 17 devices
    through Add Device → Import keys; the store is 0600 and every key matches its flow node by hash.
@@ -397,7 +402,8 @@ already moved, `.228` → `.229`); the 18 addresses were written to the flow at 
 backed up beside it) and every node reconnected by address within a minute — **19/20 online**, the
 only dark one the never-installed outside sensor. No node waits for a broadcast any more.
 
-What remains is the access point, and only a person at its admin page can do it:
+**The access point is done too (2026-09-22 13:05, read back 13:25)** — see the walkthrough above. As
+written that morning, for reference:
 **`npm run set-device-ip:pi -- --host=127.0.0.1 --reservations`** prints the MAC → address table
 (18 devices; add the Pi at its current address); enter it as DHCP reservations, pin the 2.4 GHz
 channel (RM-046 — it is on 1 and quiet today), lease ≥ 1 day, isolation off. Until the reservations
