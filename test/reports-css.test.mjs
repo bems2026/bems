@@ -200,3 +200,47 @@ test('the report control bar stays put while the page crossfades under it', () =
   const bar = declarationsOf(css, '.report-controls');
   assert.equal(bar['view-transition-name'], 'report-controls');
 });
+
+// RM-141. The day calendar's seven 40 px columns and six 4 px gaps are 304 px, in a popover whose content
+// box was 302 px (320 less 8 px padding and a 1 px border each side) — and on a touch screen each cell is
+// 44 px inside a 40 px column. Both gave the popover a horizontal scrollbar at every screen size. This
+// reads the width the picker asks for and the grid the stylesheet draws, and requires the one to hold the
+// other: at a mouse, and at a finger on a 360 px phone, where the popover is capped at 360 − 16.
+test('the day calendar fits the popover the picker asks for, at a mouse and at a finger', () => {
+  const picker = readFileSync(join(HERE, '..', 'src', 'components', 'reports', 'PeriodPicker.tsx'), 'utf8');
+  const asked = /preferredWidth:\s*period === 'day' \? (\d+) : \d+/.exec(picker);
+  assert.ok(asked, 'PeriodPicker no longer states the width it asks for a day');
+  const inside = (popover) => popover - 2 * 8 - 2 * 1;
+  const px = (v) => (v === 'var(--sp-1)' ? 4 : v === '0' || v === undefined ? 0 : Number.parseFloat(v));
+  const grid = (decls) => {
+    const m = /repeat\(\s*(\d+),\s*(\d+)px\s*\)/.exec(decls['grid-template-columns'] ?? '');
+    assert.ok(m, `no fixed-column day grid: ${decls['grid-template-columns']}`);
+    return Number(m[1]) * Number(m[2]) + (Number(m[1]) - 1) * px(decls.gap);
+  };
+  const coarseAt = css.indexOf('@media (pointer: coarse)');
+  const fine = declarationsOf(css.slice(0, coarseAt), '.report-calendar__daygrid');
+  const coarse = { ...fine, ...declarationsOf(css.slice(coarseAt), '.report-calendar__daygrid') };
+  const width = Number(asked[1]);
+  assert.ok(grid(fine) <= inside(width), `mouse: ${grid(fine)} px of grid in ${inside(width)} px`);
+  assert.ok(Number.parseFloat(coarse['grid-template-columns'].match(/(\d+)px/)[1]) >= 44, 'a finger’s column is narrower than its 44 px cell');
+  assert.ok(grid(coarse) <= inside(Math.min(width, 360 - 16)), `finger on a phone: ${grid(coarse)} px of grid in ${inside(Math.min(width, 344))} px`);
+});
+
+// RM-141. The export drawer is the shared floating panel, capped at `100vh`: on a phone whose browser bar
+// comes and goes, 100vh is taller than what is visible, and a centred panel loses its heading and Close
+// above the top. The dynamic unit is the visible height, with `vh` first for a browser without it. And on the
+// 800×480 kiosk the body scrolls — Generate, the one control the drawer exists for, scrolled away with it.
+test('the floating panel caps at the visible height, with a fallback', () => {
+  const rule = /\n\.overlay-panel \{([^}]*)\}/.exec(css);
+  assert.ok(rule, 'no .overlay-panel rule');
+  const caps = [...rule[1].matchAll(/max-height:\s*([^;]+);/g)].map((m) => m[1].trim());
+  assert.deepEqual(caps, ['calc(100vh - var(--sp-4) * 2)', 'calc(100dvh - var(--sp-4) * 2)']);
+});
+
+test('the export drawer keeps Generate in reach while its options scroll', () => {
+  const actions = declarationsOf(css, '.report-export__actions');
+  assert.equal(actions.position, 'sticky');
+  // Down into the body's own 20 px padding, which the browser otherwise keeps clear under a sticky row.
+  assert.equal(actions.bottom, 'calc(var(--sp-5) * -1)');
+  assert.equal(actions.background, 'var(--pop-bg)');
+});

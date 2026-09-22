@@ -7191,13 +7191,23 @@ body::before {
   cursor: progress;
 }
 
+/* RM-141: on the 800x480 kiosk the drawer's body scrolls, and Generate — the one control it exists for —
+   scrolled away with it. The row stays at the bottom of the body while the options scroll beneath it, on
+   the panel's own near-opaque surface; the status lines under it still follow it in the flow. The body
+   keeps its 20 px padding clear of a sticky child, and options showed through that strip under the row
+   (measured at 800x480), so the row sits down into it. */
 .report-export__actions {
+  position: sticky;
+  bottom: calc(var(--sp-5) * -1);
+  z-index: 1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-2) var(--sp-4);
   padding-top: var(--sp-4);
+  padding-bottom: var(--sp-4);
+  background: var(--pop-bg);
   border-top: 1px solid var(--border);
 }
 
@@ -7308,31 +7318,22 @@ body::before {
 }
 
 /* The Analytics tooltip's surface, stacked: value, then what it belongs to, then any qualifier.
-   Beside the value rather than over it, and never more than half the figure wide, so it cannot
-   cover the thing it describes or run off a phone. Two classes, to outrank `.chart-tooltip`'s own
-   widths, which come later in this file. */
+   Placed by `placeBeside` (RM-141): beside the value, never over it, inside the part of the figure on
+   screen, capped to the room there is and scrolling inside itself when taller. The half-figure cap it
+   had did not keep it on a phone — a wide share-bar segment put it about 111 px off the left. Above a
+   later figure (z-index), beneath the sticky bar and nav. Two classes, to outrank `.chart-tooltip`'s
+   own widths, which come later in this file. */
 .chart-tooltip.report-chart__tip {
   position: absolute;
+  z-index: 5;
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
   min-width: 0;
   width: max-content;
-  max-width: min(240px, calc(50% - 8px));
+  max-width: 240px;
+  overflow-y: auto;
   pointer-events: none;
-  transform: translateX(8px);
-}
-
-.chart-tooltip.report-chart__tip--before {
-  transform: translateX(calc(-100% - 8px));
-}
-
-.chart-tooltip.report-chart__tip--above {
-  transform: translate(8px, -100%);
-}
-
-.chart-tooltip.report-chart__tip--before.report-chart__tip--above {
-  transform: translate(calc(-100% - 8px), -100%);
 }
 
 .report-chart__tip .chart-tooltip__value {
@@ -9583,6 +9584,10 @@ button.space-plan__pin {
   /* Matches `.device-card`'s own cap, so EX-149's two-column geometry survives the move into
      this layer rather than stretching back out to the full page width it was capped against. */
   max-height: calc(100vh - var(--sp-4) * 2);
+  /* RM-141: the VISIBLE height. On a phone whose browser bar comes and goes, 100vh is taller than what
+     shows, and a centred panel loses its heading and Close above the top. `vh` above, for a browser
+     without the dynamic unit. */
+  max-height: calc(100dvh - var(--sp-4) * 2);
   display: flex;
   flex-direction: column;
   background: var(--pop-bg);
@@ -9698,6 +9703,14 @@ button.space-plan__pin {
  * predecessor of `.nav-tab`) measured 2px short of 44px for exactly this reason.
  * ------------------------------------------------------------------------ */
 @media (pointer: coarse) {
+  /* RM-141: a finger's day cell is 44 px, so its column is too, and the gap goes: 7 × 44 = 308 px fits a
+     360 px phone's popover (326 px inside it). With 40 px columns the cells overlapped, and with 4 px
+     gaps the grid was 332 px — a horizontal scrollbar in the popover. */
+  .report-calendar__daygrid {
+    grid-template-columns: repeat(7, 44px);
+    gap: 0;
+  }
+
   .nav-icon-btn,
   .scene3d-inspector-close,
   .scene3d-autorotate-btn,

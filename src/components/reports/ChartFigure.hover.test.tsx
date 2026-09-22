@@ -108,3 +108,19 @@ describe('ChartFigure — hover and focus', () => {
     expect(screen.queryByRole('group', { name: /explore the values/i })).toBeNull();
   });
 });
+
+describe('ChartFigure — where the tooltip lands, RM-141', () => {
+  // The geometry is `placeBeside`'s, asserted edge by edge in `popoverPlacement.test.ts`. This asserts the
+  // wiring: the tooltip is placed by it, inside the figure, beside the value — not by arithmetic of its own.
+  it('sits beside the value read, a gap after it, capped to the room in the figure', () => {
+    render(<ChartFigure scene={scene} table={table} />);
+    const hit = scene.hits![0];
+    fireEvent.pointerMove(explore(), centre(0));
+    const tip = screen.getByRole('tooltip');
+    expect(tip.style.maxWidth).toBe(`${Math.min(240, WIDTH - 16)}px`);
+    expect(Number.parseFloat(tip.style.left)).toBe(hit.x + hit.w + 6);
+    expect(Number.parseFloat(tip.style.top)).toBeGreaterThanOrEqual(8);
+    // No side classes and no transforms left to fight the placement.
+    expect(tip.className).toBe('chart-tooltip report-chart__tip');
+  });
+});

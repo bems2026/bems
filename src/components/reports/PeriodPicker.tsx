@@ -58,7 +58,9 @@ export function PeriodPicker({ period, starts, selected, onSelect, pending = NO_
   const { anchorRef, popRef, style, placement } = useAnchoredPopover({
     open,
     onDismiss: dismiss,
-    preferredWidth: 320,
+    // RM-141: a month of days is seven 40 px columns and six gaps, 304 px — two more than 320 holds inside
+    // its padding and border, which gave the day view a horizontal scrollbar. `reports-css.test.mjs` checks it.
+    preferredWidth: period === 'day' ? 352 : 320,
     fallbackHeight: 320,
     preferredMaxHeight: 420,
   });

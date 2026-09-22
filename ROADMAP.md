@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-22, 23:40 — **RM-140: the PDF waits for the circuit charts; the controls stay put; changes crossfade.** **Earlier, 23:00 — RM-139: no circuit told apart by colour alone; the status hues stay, measured.** **Earlier, 22:10 — RM-138: a report not made yet is said, not silent; the week of
+**Last audited:** 2026-09-23, 00:40 — **RM-141: pop-ups that fit, measured signed in at 360, 768 and 800×480 — every surface 0 px over.** **Earlier, 23:40 — RM-140: the PDF waits for the circuit charts; the controls stay put; changes crossfade.** **Earlier, 23:00 — RM-139: no circuit told apart by colour alone; the status hues stay, measured.** **Earlier, 22:10 — RM-138: a report not made yet is said, not silent; the week of
 14 Sept was not late** (settles 08:00 Wed 23 Sept). **Earlier, 21:20 — RM-137: a statement timeout is asked
 again by itself** (the operator's Reports brief; §2's first section). **Earlier, 17:10 — the end-of-day list, by owner, is §0's first entry.** RM-136 was run
 at 16:31 and read back: both notices are gone and checked in a browser. **Earlier, 17:00 — phase47 (FI-027)
@@ -409,6 +409,9 @@ browser against the live bridge. `npm run preflight` reads `Ready` with every no
   on real data.
 - The next lights-on after an idle stretch should raise no flag (RM-136).
 - The next outage is RM-131's real test.
+- **The week of 14 Sept report** after ~11:30 Wed 23 Sept (settled 08:00; RM-138): the journal's `generated
+  weeks 2026-09-14` and the row. The Reports work (RM-137–RM-141) is committed, not pushed or deployed: it
+  needs a push, `npm run build` on the Pi, and an `ibems-ingest` restart for `shared/reportSchedule.mjs`.
 
 **Engineering, in order:**
 1. **FI-034:** `readings_buckets` over 30 days takes 7.8 s. Add `p_until` or chunk it, then extend
@@ -3808,6 +3811,31 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       the skeleton's status line already names the period being fetched. Tests: `viewTransition.test.ts`
       (4), `reports-css.test.mjs` (+2), `ReportSkeleton.test.tsx` (+1), `PeriodPicker.test.tsx` (+1),
       `ReportsPage.reliability.test.tsx` (+1), `ReportsPage.apportioned.test.tsx` (+2).
+- [x] **RM-141** Pop-ups that fit, **measured on live data signed in** (2026-09-22, the local preview; a
+      harness swept the pointer over every chart at both scroll ends, stepped Home/End by keyboard, and opened
+      each calendar, the scope, the hint and the drawer). Worst overflow past the viewport, before → after:
+
+      | | 360×640 (touch) | 768×1024 | 800×480 |
+      |---|---|---|---|
+      | chart tooltip | **94 px left** (Energy by use), **66–127 px right** (keyboard End, 8 charts) → 0 | 0 → 0 | 0 → 0 |
+      | day calendar | cells 5 px past the grid → 0 | 1 px → 0 | **3 px sideways scroll**, cells 11 px past → 0 |
+      | export drawer | Generate **510 px** below view → in view | in view | Generate **475 px** below → in view |
+      | scope, hint, week/month calendars | 0 | 0 | 0 |
+
+      The tooltip was the one surface off the primitives: side chosen from the value's centre, anchored at its
+      edge, no clamp, and keyboard stepping never scrolled a phone's plot. `placeBeside` (beside
+      `placePopover`, same margin) keeps "beside the value, never over it", falls back to the reading point
+      for a value too wide to sit beside, and clamps into the figure's visible span; `ChartFigure` measures
+      before paint and scrolls the stepped-to value into view. The day grid: `preferredWidth` 352 for a day,
+      and on a finger 44 px columns with no gap (7 × 44 fits a phone). The drawer: `OverlayPanel` caps at
+      `100dvh` (vh fallback); Generate is a sticky row sunk into the body's padding. The explorer's computed
+      35–105 px at 800×480 did not occur on real geometry. Tests: `popoverPlacement.test.ts` (+7, incl. a
+      sweep at all three sizes), `ChartFigure.hover.test.tsx` (+1), `reports-css.test.mjs` (+3).
+- [ ] **FI-039** `sceneToJsx` passes hyphenated SVG attributes (`stroke-width`, `font-size`, `text-anchor`…)
+      to React, which logs "Invalid DOM property" for each in development. It renders; since RM-072.
+- [ ] **FI-040** Reports cannot be deep-linked to a tab or period; `useHashSubRoute` already exists.
+- [ ] **FI-041** `Tabs` sets `aria-controls` to panels the Reports page never renders.
+- [ ] **FI-042** `Skeleton.tsx` calls itself static; `.skeleton` shimmers (stopped only by reduced motion).
 
 ### Onboarding without IoT Core, and the aircon's own IR protocol — RM-126 to RM-129 (2026-09-22)
 

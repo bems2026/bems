@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { placePopover, POPOVER_MARGIN, POPOVER_GAP, type AnchorRect } from './popoverPlacement';
+import { besideMaxWidth, placeBeside, placePopover, POPOVER_MARGIN, POPOVER_GAP, type AnchorRect, type Bounds } from './popoverPlacement';
 
 /**
  * The one property that must hold for every input: the popover is inside the viewport.
@@ -146,5 +146,82 @@ describe('placePopover with end alignment', () => {
   it('still narrows to fit a viewport too small for the preferred width', () => {
     const p = placePopover({ anchor: anchorAt(200, 40, 44), viewport: { width: 300, height: 812 }, preferredWidth: 320, height: 200, align: 'end' });
     expect(p.maxWidth).toBe(300 - POPOVER_MARGIN * 2);
+  });
+});
+
+/**
+ * RM-141 — a chart value's tooltip, which placed itself with its own arithmetic and ran off small screens.
+ * It chose its side from the value's CENTRE but anchored at the value's EDGE, with no clamp: a share-bar
+ * segment spanning most of the bar put it about 111 px off the left of a 360 px phone and 35–105 px past
+ * the right of the 800×480 kiosk. `placeBeside` keeps ChartFigure's own rule — beside the value, never over
+ * it — and the one property this file asserts for every popover: the whole box stays inside.
+ */
+describe('placeBeside keeps a chart value’s tooltip beside the value and on screen — RM-141', () => {
+  const M = POPOVER_MARGIN;
+  const within = (p: ReturnType<typeof placeBeside>, b: Bounds, w: number, h: number) => ({
+    left: p.left >= b.left + M,
+    right: p.left + Math.min(w, p.maxWidth) <= b.right - M,
+    top: p.top >= b.top + M,
+    bottom: p.top + Math.min(h, p.maxHeight) <= b.bottom - M,
+  });
+  const ALL_IN = { left: true, right: true, top: true, bottom: true };
+  const rect = (left: number, top: number, width: number, height: number): AnchorRect => ({ left, top, right: left + width, bottom: top + height });
+
+  // A figure's visible span on each screen the brief names: 28 px of page padding each side.
+  const PHONE: Bounds = { left: 28, top: 0, right: 332, bottom: 640 };
+  const TABLET: Bounds = { left: 28, top: 0, right: 740, bottom: 1024 };
+  const KIOSK: Bounds = { left: 28, top: 0, right: 772, bottom: 480 };
+
+  it('sits after a narrow value, a gap away, when there is room', () => {
+    const p = placeBeside({ anchor: rect(200, 100, 20, 150), bounds: TABLET, width: 180, height: 60 });
+    expect(p.side).toBe('after');
+    expect(p.left).toBe(220 + POPOVER_GAP);
+    expect(within(p, TABLET, 180, 60)).toEqual(ALL_IN);
+  });
+
+  it('sits before a value near the right edge, its right edge a gap from the value', () => {
+    const p = placeBeside({ anchor: rect(680, 100, 20, 150), bounds: TABLET, width: 180, height: 60 });
+    expect(p.side).toBe('before');
+    expect(p.left + 180).toBe(680 - POPOVER_GAP);
+    expect(within(p, TABLET, 180, 60)).toEqual(ALL_IN);
+  });
+
+  it('stays beside the reading point of a value too wide to sit beside — the share bar on the kiosk', () => {
+    // A segment covering 5–86% of the bar, read at x = 400: no room either side of the segment itself.
+    const anchor = rect(80, 200, 575, 22);
+    const p = placeBeside({ anchor, bounds: KIOSK, width: 180, height: 70, point: 400 });
+    expect(within(p, KIOSK, 180, 70)).toEqual(ALL_IN);
+    expect(p.side === 'after' ? p.left - 400 : 400 - (p.left + 180)).toBe(POPOVER_GAP);
+  });
+
+  it('never lands off the left of a 360 px phone — the case computed at 111 px off', () => {
+    // The plot keeps its 460 px drawing and scrolls: the segment runs off the right of the figure.
+    const p = placeBeside({ anchor: rect(40, 300, 360, 22), bounds: PHONE, width: 180, height: 60, point: 226 });
+    expect(within(p, PHONE, 180, 60)).toEqual(ALL_IN);
+  });
+
+  it('caps a tall tooltip to the height there is, and keeps its top on screen — 800×480', () => {
+    const p = placeBeside({ anchor: rect(300, 40, 20, 400), bounds: KIOSK, width: 200, height: 900 });
+    expect(p.maxHeight).toBe(480 - 2 * M);
+    expect(within(p, KIOSK, 200, 900)).toEqual(ALL_IN);
+  });
+
+  it('narrows to the room there is, never below it', () => {
+    expect(besideMaxWidth(PHONE)).toBe(Math.min(240, 332 - 28 - 2 * M));
+    expect(besideMaxWidth({ left: 0, top: 0, right: 0, bottom: 0 })).toBe(0);
+  });
+
+  it('keeps the whole box inside at every size, wherever the value is', () => {
+    for (const bounds of [PHONE, TABLET, KIOSK]) {
+      const w = Math.min(220, besideMaxWidth(bounds));
+      for (let x = bounds.left - 60; x <= bounds.right + 60; x += 23) {
+        for (let y = bounds.top; y <= bounds.bottom; y += 37) {
+          for (const width of [4, 60, 400]) {
+            const p = placeBeside({ anchor: rect(x, y, width, 30), bounds, width: w, height: 90, point: x + width / 2 });
+            expect(within(p, bounds, w, 90), `${JSON.stringify(bounds)} at ${x},${y} width ${width}`).toEqual(ALL_IN);
+          }
+        }
+      }
+    }
   });
 });

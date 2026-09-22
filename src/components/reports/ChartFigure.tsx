@@ -1,4 +1,5 @@
-import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { besideMaxWidth, placeBeside } from '@/components/ui/popoverPlacement';
 import { SceneSvg } from './charts/sceneToJsx';
 import { ReportTable } from './ReportTable';
 import { SCREEN_PALETTE } from './charts/palette';
@@ -27,6 +28,13 @@ import type { Hit, Scene } from './charts/types';
  *
  * It enhances and never gates: every value is still in the table. The hits come from the scene,
  * so the page and the PDF cannot draw different charts; the PDF simply has nothing to point with.
+ *
+ * THE TOOLTIP IS PLACED LIKE EVERY OTHER POPOVER — RM-141. It had arithmetic of its own that chose a side
+ * from the value's centre and anchored at its edge, with no clamp: a share-bar segment spanning most of the
+ * bar put it about 111 px off the left of a 360 px phone and 35–105 px past the right of the kiosk. It is
+ * measured before paint and placed by `placeBeside`, which keeps this file's rule — beside the value, never
+ * over it — inside the part of the figure that is on screen. Stepping by keyboard scrolls a phone's plot
+ * so the value reached is on screen too.
  */
 
 export interface ChartTable {
@@ -48,19 +56,8 @@ interface Reading {
   scene: Scene;
   index: number;
   via: 'pointer' | 'key';
-  /** Where the tooltip anchors, in px from the figure's padding box. */
-  left: number;
-  top: number;
-  /** Anchored on the left of the value rather than the right, or above rather than below. */
-  before: boolean;
-  above: boolean;
-}
-
-interface Measured {
-  svg: DOMRect;
-  originX: number;
-  originY: number;
-  halfWidth: number;
+  /** Where along the value the pointer is, in viewport px — the place to sit beside a wide one. */
+  pointerX?: number;
 }
 
 const NO_HITS: readonly Hit[] = [];
@@ -85,49 +82,58 @@ export function ChartFigure({ scene, table, caption, summaryLabel = 'Show the nu
   const hit = current ? hits[current.index] : null;
 
   /** The drawn plot's box, which scales with the column — so scene units are converted, not assumed. */
-  const measure = (): Measured | null => {
-    const svg = plotRef.current?.querySelector('svg');
-    const figure = figureRef.current;
-    if (!svg || !figure) return null;
-    const s = svg.getBoundingClientRect();
-    const f = figure.getBoundingClientRect();
-    if (s.width <= 0 || s.height <= 0) return null;
-    return { svg: s, originX: s.left - f.left - figure.clientLeft, originY: s.top - f.top - figure.clientTop, halfWidth: figure.clientWidth / 2 };
+  const drawn = (): DOMRect | null => {
+    const s = plotRef.current?.querySelector('svg')?.getBoundingClientRect();
+    return s && s.width > 0 && s.height > 0 ? s : null;
   };
 
-  const read = (index: number | null, via: Reading['via'], m: Measured | null) => {
-    if (index === null) {
-      setReading(null);
-      return;
-    }
-    const h = hits[index];
-    if (!m) {
-      // Nothing laid out to anchor to. The live region still speaks; the tooltip sits at the corner.
-      setReading({ scene, index, via, left: 0, top: 0, before: false, above: false });
-      return;
-    }
-    const kx = m.svg.width / scene.width;
-    const ky = m.svg.height / scene.height;
-    // Beside the value, on whichever side has more room, so the tooltip never covers what it describes.
-    const before = m.originX + (h.x + h.w / 2) * kx > m.halfWidth;
-    const above = (h.y + h.h / 2) / scene.height > 0.5;
-    setReading({
-      scene,
-      index,
-      via,
-      left: m.originX + (before ? h.x : h.x + h.w) * kx,
-      top: m.originY + (above ? h.y + h.h : h.y) * ky,
-      before,
-      above,
-    });
+  const read = (index: number | null, via: Reading['via'], pointerX?: number) => {
+    setReading(index === null ? null : { scene, index, via, pointerX });
+  };
+
+  /**
+   * Beside the value and inside the part of the figure on screen — measured before paint, so the reader
+   * never sees it land somewhere first. Nothing laid out (a test's layout, a hidden tab) leaves it where
+   * the stylesheet puts it; the live region still speaks.
+   */
+  const tipRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const tip = tipRef.current;
+    const figure = figureRef.current;
+    const s = drawn();
+    if (!tip || !figure || !s || !current) return;
+    const h = hits[current.index];
+    const kx = s.width / scene.width;
+    const ky = s.height / scene.height;
+    const anchor = { left: s.left + h.x * kx, right: s.left + (h.x + h.w) * kx, top: s.top + h.y * ky, bottom: s.top + (h.y + h.h) * ky };
+    const f = figure.getBoundingClientRect();
+    const viewWidth = document.documentElement.clientWidth || window.innerWidth;
+    const viewHeight = document.documentElement.clientHeight || window.innerHeight;
+    const bounds = { left: Math.max(0, f.left), right: Math.min(viewWidth, f.right), top: 0, bottom: viewHeight };
+    // Capped first, so the height measured is the height at the width it will have.
+    tip.style.maxWidth = `${besideMaxWidth(bounds)}px`;
+    const p = placeBeside({ anchor, bounds, width: tip.offsetWidth, height: tip.offsetHeight, point: current.pointerX ?? (anchor.left + anchor.right) / 2 });
+    tip.style.maxHeight = `${p.maxHeight}px`;
+    tip.style.left = `${p.left - f.left - figure.clientLeft}px`;
+    tip.style.top = `${p.top - f.top - figure.clientTop}px`;
+  });
+
+  /** On a phone the plot scrolls; a value reached by keyboard is scrolled into view before it is read. */
+  const reveal = (index: number | null) => {
+    const plot = plotRef.current;
+    const s = drawn();
+    if (index === null || !plot || !s) return;
+    const kx = s.width / scene.width;
+    const [from, to] = [hits[index].x * kx, (hits[index].x + hits[index].w) * kx];
+    if (from < plot.scrollLeft || to > plot.scrollLeft + plot.clientWidth) plot.scrollLeft = Math.max(0, (from + to) / 2 - plot.clientWidth / 2);
   };
 
   const onPointer = (e: PointerEvent<HTMLDivElement>) => {
-    const m = measure();
-    if (!m) return;
-    const index = hitAt(hits, ((e.clientX - m.svg.left) / m.svg.width) * scene.width, ((e.clientY - m.svg.top) / m.svg.height) * scene.height);
+    const s = drawn();
+    if (!s) return;
+    const index = hitAt(hits, ((e.clientX - s.left) / s.width) * scene.width, ((e.clientY - s.top) / s.height) * scene.height);
     if (current && current.via === 'pointer' && current.index === index) return;
-    read(index, 'pointer', m);
+    read(index, 'pointer', e.clientX);
   };
 
   // A finger lifting is not the reader leaving: on the kiosk a tapped value stays until the next tap.
@@ -145,7 +151,9 @@ export function ChartFigure({ scene, table, caption, summaryLabel = 'Show the nu
     }
     if (!isHitKey(e.key)) return;
     e.preventDefault();
-    read(stepHit(hits, current?.index ?? null, e.key), 'key', measure());
+    const next = stepHit(hits, current?.index ?? null, e.key);
+    reveal(next);
+    read(next, 'key');
   };
 
   const svg = <SceneSvg scene={scene} palette={SCREEN_PALETTE} />;
@@ -197,11 +205,7 @@ export function ChartFigure({ scene, table, caption, summaryLabel = 'Show the nu
         />
       </details>
       {hit && current ? (
-        <div
-          role="tooltip"
-          className={`chart-tooltip report-chart__tip${current.before ? ' report-chart__tip--before' : ''}${current.above ? ' report-chart__tip--above' : ''}`}
-          style={{ left: current.left, top: current.top }}
-        >
+        <div ref={tipRef} role="tooltip" className="chart-tooltip report-chart__tip">
           {/* Text children only: a label can be an operator-edited circuit name. */}
           <span className="chart-tooltip__value">{hit.value}</span>
           <span className="chart-tooltip__time">{hit.label}</span>

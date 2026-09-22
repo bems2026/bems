@@ -117,3 +117,92 @@ export function placePopover({
 
   return { left, top, maxWidth, maxHeight, resolvedHeight, side };
 }
+
+/** A region a box may be drawn in, in viewport px — for `placeBeside`, the part of a figure on screen. */
+export interface Bounds {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/** A chart value's tooltip is at most this wide, and narrower where the figure is. */
+export const BESIDE_WIDTH = 240;
+
+/** The widest a beside-tooltip may be inside `bounds`: its preferred width, less the margins. */
+export function besideMaxWidth(bounds: Bounds, preferred = BESIDE_WIDTH, margin = POPOVER_MARGIN): number {
+  return Math.max(0, Math.min(preferred, bounds.right - bounds.left - margin * 2));
+}
+
+export interface BesideOptions {
+  /** The value being read, in viewport px. */
+  anchor: AnchorRect;
+  bounds: Bounds;
+  /** The tooltip's measured size. */
+  width: number;
+  height: number;
+  /** Where along the value it is being read — used when the value is too wide to sit beside. */
+  point?: number;
+  preferredWidth?: number;
+  margin?: number;
+  gap?: number;
+}
+
+export interface BesidePlacement {
+  left: number;
+  top: number;
+  maxWidth: number;
+  maxHeight: number;
+  side: 'before' | 'after';
+}
+
+/**
+ * BESIDE THE VALUE, NEVER OVER IT — RM-141. `placePopover` puts a box below or above its anchor, which is
+ * right for a hint hanging off a button and wrong for a chart's tooltip: below a bar is the axis, and over
+ * a line is the line. `ChartFigure` placed its tooltip beside the value with arithmetic of its own, choosing
+ * a side from the value's CENTRE and anchoring at its EDGE, with no clamp — so a share-bar segment covering
+ * most of the bar put it about 111 px off the left of a 360 px phone and 35–105 px past the right of the
+ * 800×480 kiosk (computed from the stylesheet, 2026-09-22). This keeps that rule and this file's one
+ * property: the whole box inside `bounds`.
+ *
+ * Horizontal: after the value if there is room, else before it, else whichever side has more. A value wider
+ * than the room on both sides — a long segment — is sat beside at `point`, where it is being read. Clamped
+ * like `placePopover`, the left edge winning when there is room for neither.
+ *
+ * Vertical: level with the value, from its top in the upper half of the bounds and up from its bottom in the
+ * lower half, clamped; a box taller than the bounds is capped and scrolls inside itself.
+ */
+export function placeBeside({
+  anchor,
+  bounds,
+  width,
+  height,
+  point,
+  preferredWidth = BESIDE_WIDTH,
+  margin = POPOVER_MARGIN,
+  gap = POPOVER_GAP,
+}: BesideOptions): BesidePlacement {
+  const maxWidth = besideMaxWidth(bounds, preferredWidth, margin);
+  const w = Math.min(width, maxWidth);
+  const minLeft = bounds.left + margin;
+  const maxRight = bounds.right - margin;
+
+  const roomAround = (from: { left: number; right: number }) => ({ after: maxRight - (from.right + gap), before: from.left - gap - minLeft });
+  let from = { left: anchor.left, right: anchor.right };
+  let room = roomAround(from);
+  if (room.after < w && room.before < w && point !== undefined) {
+    from = { left: point, right: point };
+    room = roomAround(from);
+  }
+  const side: 'before' | 'after' = room.after >= w || room.after >= room.before ? 'after' : 'before';
+  const desiredLeft = side === 'after' ? from.right + gap : from.left - gap - w;
+  const left = Math.max(minLeft, Math.min(desiredLeft, maxRight - w));
+
+  const maxHeight = Math.max(0, bounds.bottom - bounds.top - margin * 2);
+  const h = Math.min(height, maxHeight);
+  const upperHalf = (anchor.top + anchor.bottom) / 2 <= (bounds.top + bounds.bottom) / 2;
+  const desiredTop = upperHalf ? anchor.top : anchor.bottom - h;
+  const top = Math.max(bounds.top + margin, Math.min(desiredTop, bounds.bottom - margin - h));
+
+  return { left, top, maxWidth, maxHeight, side };
+}
