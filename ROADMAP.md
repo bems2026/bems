@@ -1,7 +1,8 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-22, 14:30 — **L.O Yellow was not frozen. The meters were never re-read:
-RM-134.** The lights went off while the Pi was rebooting, the meter's push of "0 W" reached nobody, and
+**Last audited:** 2026-09-22, 14:45 — **L.O Yellow was not frozen. The meters were never re-read:
+RM-134 — applied ~14:20, read back 14:21: 0 W / 0 A / `monitor`, nothing flagged frozen; the held rows'
+scrub is dry-run and the operator's to apply.** The lights went off while the Pi was rebooting, the meter's push of "0 W" reached nobody, and
 unlike every outlet, switch and the IR hub, the three meters had no GET poll. The tuya node reads nothing
 on connect, so a Node-RED restart could not help. RM-134 adds a registry-driven meter poll (dry-run clean
 against the live flow, 301 → 303 nodes). It grounds the demux's idle rule in 0 A rather than the device's
@@ -365,10 +366,12 @@ cleanly by who can do it.
 0. ~~L.O Yellow's clamp is frozen — power-cycle the meter~~ **Do NOT power-cycle the yellow meter
    (RM-134, 2026-09-22 afternoon).** The clamp is very likely fine: channel 2 has been at 0 W since the
    lights went off during the Pi's 07:44 reboot, the meter's push of that change reached nobody, and
-   nothing ever polled the meters, so the bridge kept 39.8 W. The remedy is one flow write, the meter
-   poll (`poll-meters:pi`), after the demux upgrade (`demux:pi`). Within about 70 s of the apply,
-   `mtr_lo_yellow` should read ~0 W with its register still 25523.556 and the flag cleared. **Only if it
-   re-reports 39.8 W is the panel power cycle earned.**
+   nothing ever polled the meters, so the bridge kept 39.8 W. **Resolved ~14:20:** the operator applied
+   the demux upgrade and the meter poll, and at 14:21 `mtr_lo_yellow` read 0 W / 0 A / `monitor` with
+   the flag cleared. No power cycle is needed. **What remains is the operator's:** apply the scrub of
+   the 396 held rows —
+   `npm run scrub:held -- --device=mtr_lo_yellow --from=2026-09-21T23:43:49+00:00 --to=2026-09-22T06:21:47+00:00 --apply`
+   (the dry run is in RM-134).
 1. ~~The access point~~ — **done 2026-09-22 12:42–13:05 by the operator, read back 13:25** (RM-131,
    RM-046). The AP is an aclink 4G/LTE router; its "Static DHCP Leases" now hold all 19 — the 18 tuya
    devices and the Pi — each at the address it already had, so nothing moved. Allocation Duration
@@ -3952,8 +3955,38 @@ cannot draw more than 150 W, and the outlet branch is never at 0 A.
       office hours, and RM-020's caution applies. Until then L.O Yellow's stored power is a held
       figure; its energy is not being counted (the register is still, so the reports credit nothing —
       which is nearly right, the lights being off).
-- [ ] **RM-134** The meters were never re-read. L.O Yellow's "frozen clamp" was a value nobody asked
-      for again. **Built and dry-run against the live flow 2026-09-22; not applied — the operator's.**
+- [x] **RM-134** The meters were never re-read. L.O Yellow's "frozen clamp" was a value nobody asked
+      for again. **Applied by the operator 2026-09-22 ~14:20 (`flows.json` backed up beside it; demux
+      upgraded, then the meter poll added, 301 → 303 nodes). Read back 14:21–14:24, read-only, and the
+      diagnosis held.**
+      - The demux's raw record gained dp 103 `working`, 110, 111, **113 `monitor`**, 120 and 121 for the
+        first time; dp 115/116 read **0 / 0**.
+      - `mtr_lo_yellow` reads 0 W / 0 A / `monitor`; its register is 25523.558, +0.002 kWh since
+        07:43:49. **No device is flagged frozen.**
+      - L.O Red's label went from a stale `monitor` at 26.6 W to `working` at 27.5 W. So the `monitor`
+        label at load was a stale push, and grounding the idle rule in current stays the conservative
+        choice.
+      - There is no meter-node error in the journal since the apply. CI is green on `c225c52`.
+
+      **The timeline, confirmed:**
+      - No command was issued 07:30–08:30.
+      - `l7`'s `relay_status` is `off` (off at power-on), so its "on" at 07:47 was a cached value.
+      - The previous boot's last journal entry is 07:44:02: the power cut took the lights and the Pi
+        together.
+      - At 07:47 the reconnected meter pushed only channel 2's voltage. Its power and current had nothing
+        left to change.
+
+      **The held rows:** `npm run scrub:held` (`server/scrubHeldReading.mjs` + `scrub-held-reading.mjs`,
+      8 tests, both refusals neuter-checked). Dry run against the live rows: 396 rows between 07:43:49 and
+      14:21:47, the register +0.002 kWh across 6.6 h, so **at most 0.302 W on average** where the held
+      39.8 W would have added 0.264 kWh. 389 rows take C.O Yellow's same-instant voltage and 7 have none
+      (null, stamped). `energy_kwh_today` is untouched: it came from the register and was right.
+      **Apply: the operator's.**
+      **Left as it is, deliberately.** The legacy integrator (`energy_kwh_today_integrated`, 0.549
+      against the register's 0.293) and the 24 h history ring still carry today's held 39.8 W. Both are
+      flow context, so they can only be edited with Node-RED stopped. The integrator resets at midnight
+      and the ring rolls off within a day. The stored rows and the reports, which read the register, are
+      unaffected.
       **What was measured, read-only.**
       - Every outlet, every light switch and the IR hub is fed `{ operation: 'GET' }` on a timer. The
         three meter sessions (C.O yellow, L.O red, AREC ACU) were fed nothing.
@@ -3998,7 +4031,8 @@ cannot draw more than 150 W, and the outlet branch is never at 0 A.
       `node-red-bridge/meterPollPlan.mjs`, `node-red-bridge/poll-meters.mjs`, `test/meter-poll.test.mjs`
       (16), `shared/channelDemux.mjs`, `test/channel-demux.test.mjs` (+1), `scripts/preflight.mjs`,
       `test/preflight.test.mjs` (+4), `CLAUDE.md`, `docs/pi-session-brief.md`, `shared/measurementFreeze.mjs`,
-      `node-red-bridge/valueFreezeTracker.mjs` (comments), `package.json`.
+      `node-red-bridge/valueFreezeTracker.mjs` (comments), `server/scrubHeldReading.mjs` (+ test, 8),
+      `server/scrub-held-reading.mjs`, `package.json`.
 - [x] **RM-130** The director's office aircon, on C.O Yellow with the outlets, reported as the estimate it is.
       **Built 2026-09-22; deployed with the Daily period.**
       **What the operator said (2026-09-22, closing FI-035):** the outlets on C.O Yellow are in the CARE
