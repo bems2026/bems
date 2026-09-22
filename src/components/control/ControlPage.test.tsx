@@ -486,12 +486,15 @@ describe('ACU full state', () => {
   it('shows the hub\'s room temperature and humidity, and what was last sent', () => {
     useDeviceStore.setState({
       devices: [acu()],
-      latestReadings: acuReading({ room_temp_c: 28.6, humidity_pct: 59, setpoint_c: 24, ac_mode: 'cool', ac_fan: 'auto', ac_swing: false, command_via: 'local', commanded_at: new Date().toISOString() }),
+      // A commanded time at minute :59, on purpose — the collision that made this test flaky, pinned.
+      latestReadings: acuReading({ room_temp_c: 28.6, humidity_pct: 59, setpoint_c: 24, ac_mode: 'cool', ac_fan: 'auto', ac_swing: false, command_via: 'local', commanded_at: '2026-09-21T23:59:08Z' }),
     });
     render(<ControlPage />);
     const card = screen.getByText('IR AIRCON').closest('.control-ir-card') as HTMLElement;
-    expect(within(card).getByText(/28\.6/)).toBeInTheDocument();
-    expect(within(card).getByText(/59/)).toBeInTheDocument();
+    // Whole readouts, not substrings: the card also shows when the state was sent, and at minute :59 a
+    // bare /59/ matched that as well (CI, 2026-09-21 23:59 UTC, with `commanded_at` set to now).
+    expect(within(card).getByText('28.6°C')).toBeInTheDocument();
+    expect(within(card).getByText('59%')).toBeInTheDocument();
     expect(within(card).getByText(/Cool · 24 °C · fan auto · swing off/)).toBeInTheDocument();
   });
 
