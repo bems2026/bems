@@ -1,6 +1,16 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-22 (evening) — **What an outage does to the field network, and what now
+**Last audited:** 2026-09-22, 10:55 — **The walkthrough: what is left, by who can do it (§0); the
+preflight checks what lives only on the host and no longer fails on the optional cloud: RM-132; a
+restore has been performed: RM-006d closed; the kiosk survived a cold boot signed in: RM-007 closed.**
+`npm run preflight` now says `Ready` on this deployment with two warnings (the lapsed vendor trial,
+19 of 20 devices), and three new checks cover what a rebuild loses with no diff — the persistent
+journal, the three recovery timers, a static address on every tuya node. `npm run restore:rehearse`
+took the day's export (19 tables, 12,960 rows) into a throwaway PostgreSQL 16, every count matched
+the manifest and every row read back equal to what was exported; it found that the migrations seed
+two rows and that `space_nodes` needs parents-first, both now in `docs/backup-policy.md`.
+
+**Earlier the same morning — What an outage does to the field network, and what now
 recovers it: RM-131; the director's aircon estimate charted: RM-130.** The operator's outage test of
 the 21st was read back from the persistent journal: the Pi booted before the access point and joined
 the office SSID; the devices flapped for an hour while the AP settled; then every switch, outlet and
@@ -333,7 +343,45 @@ other four and none needed changing.
 ## 0. Triage — what to do next
 
 
-### 2026-09-22 (evening) — the field network after an outage; two actions, in order
+### 2026-09-22, 10:55 — the walkthrough: what is left, by who can do it
+
+The system as it stands: nineteen tuya nodes reconnect by address, the demux keeps the yellow
+meter's channels where the registry says they are (two flips caught this morning, both corrected
+before the rows were stored), reports run daily/weekly/monthly with the director's aircon shown as
+the estimate it is, the journal survives a reboot, three timers recover the network without the
+cloud, `npm run preflight` reads `Ready`, and a backup has now been restored. What remains splits
+cleanly by who can do it.
+
+**Only a person at the office or the AP can do these, in order of value:**
+1. **The access point** (RM-131, RM-046): `npm run set-device-ip:pi -- --host=127.0.0.1 --reservations`
+   prints the MAC → address table; enter it as DHCP reservations (plus the Pi), pin the 2.4 GHz
+   channel, lease ≥ 1 day, isolation off. Until then an AP power cycle can renumber a device; the
+   watchdog will say `ADDRESS DRIFT` and `--from-lan-map` re-pins it.
+2. **A UPS on the AP and the Pi** — the change that makes the outage failure not happen.
+3. ~~Import the local keys~~ — **done 08:51** (RM-127 step 4, recorded at origin `e97aa5c`): 17 devices
+   through Add Device → Import keys; the store is 0600 and every key matches its flow node by hash.
+   Not in it: the CARE ACU meter (the workbook has no key for it) and the never-installed Outside Temp.
+4. **RM-120** — the aircon's on-site acceptance with the TCL112 generator (RM-128).
+5. **RM-016** — the outside temperature sensor was never installed; the one dark device of 20.
+
+**Decisions, not work:**
+- **RM-006c** — which loads may shed first (`npm run shed:profile` has the numbers). The path is
+  built and audited; nothing sheds until a tier is assigned.
+- **RM-121** — renew IoT Core or not. Optional since RM-129; the preflight now says so (RM-132).
+  What it would bring back: the relay fallback, `tuya:devices`, `tuya:spec`, the cloud's MAC join.
+- **RM-006d, the rest** — a scratch Supabase project with a frontend pointed at it (steps 2, 6, 7 of
+  `docs/backup-policy.md`). The restore itself is proven; this would prove the rendering.
+
+**Waiting on time, watched by the timers:** the next outage is RM-131's real test
+(`journalctl -t ibems-fleet-recover`); the next yellow-meter flip is the demux's
+(`npm run check:meters`, and `capabilities.channel_map` on the stored rows).
+
+**Engineering that is open and not urgent:** FI-034 (`readings_buckets` over 30 days: 7.8 s, chunk
+or add `p_until`), RM-083c (PDF render 3.6–5.2 s on the Pi), RM-026 (Deye, contractual, needs the
+logger on the SSID first), RM-070 daylight/blinds, RM-033's twelve `〔FILL IN〕` gaps in the
+physical-install guide.
+
+### 2026-09-22 (early morning) — the field network after an outage; two actions, in order
 
 Read `docs/outage-recovery.md` first. **Done 2026-09-22 morning:** the operator power-cycled the office
 at 07:42; the Wi-Fi watchdog returned the Pi to `BEMS` 4 s after its first check (07:46:34, against
@@ -3800,6 +3848,24 @@ cannot draw more than 150 W, and the outlet branch is never at 0 A.
       `server/lanMap.mjs` (+ test, 7), `server/lan-map-learn.mjs`, `server/fleetRecover.mjs` (+ test,
       6), `server/fleet-recover.mjs`, `server/ibems-{lan-map,fleet-recover}.{service,timer}`,
       `server/ibems-wifi-prefer.timer`, `node-red-bridge/set-device-ip.mjs`, `docs/outage-recovery.md`.
+- [x] **RM-132** The preflight checks what lives only on the host, and the optional cloud is a warning.
+      **Built and read back 2026-09-22, 08:20.** RM-125 and RM-131 added three settings with the
+      `uiHost` shape — correct today, kept nowhere in the repository, lost by a rebuild or a package
+      upgrade with no diff and no alarm — and each was a real loss before it was a check. `npm run
+      preflight` now reports **`host_journal`** (the merged `journald` config's last `Storage=` via
+      `systemd-analyze cat-config`, AND `system.journal` seen under `/var/log/journal/<machine-id>` —
+      configured but not yet written is not persistent), **`host_timers`** (every `server/ibems-*.timer`
+      is `active`; the list is read from the directory, so a new timer is checked without being
+      listed), and **`host_addresses`** (every enabled `tuya-smart-device` node has a `deviceIp`, with
+      the LAN map's size and freshness beside it; needs the admin login, and an unreadable flow is
+      `unchecked`, never "none pinned"). Each fix names the drop-in, the `enable --now` line, or
+      `set-device-ip:pi --from-lan-map`, and the runbook.
+      **The vendor cloud is a warning now, not an error.** Until today a refused console made the
+      verdict `Not ready` every day the trial stayed lapsed, contradicting the operator's decision of
+      2026-09-17 (RM-129). `env_tuya` missing and `vendor_auth` refused are `warn`, and the fix
+      lists what stays cloud-only. On this deployment the verdict is **`Ready` with two warnings**
+      (the trial, 19 of 20 devices); the three host checks all pass. `scripts/preflight.mjs`,
+      `test/preflight.test.mjs` (24), `CLAUDE.md`, `docs/replication.md`.
 - [x] **RM-130** The director's office aircon, on C.O Yellow with the outlets, reported as the estimate it is.
       **Built 2026-09-22; deployed with the Daily period.**
       **What the operator said (2026-09-22, closing FI-035):** the outlets on C.O Yellow are in the CARE
@@ -4012,7 +4078,8 @@ editor (deployed 14:36 local). The node stayed quiesced (`disableAutoStart: true
     extend.
   - **Superseded in part, 2026-09-22 (RM-126 – RM-129).** The operator's policy is that IoT Core is for
     extracting keys only. Add Device, rebind and the aircon's mode/fan/swing no longer need it; what
-    still does is listed under RM-129. Renewal is now optional, not the first action.
+    still does is listed under RM-129. Renewal is now optional, not the first action. Since RM-132
+    the preflight reports the lapsed trial as a warning rather than `Not ready`.
   - **Related, optional.** Subscribing "IR Control Hub Open Service" would add Tuya's own AC status
     endpoint. Nothing here needs it.
 
@@ -8475,10 +8542,21 @@ fall back to it).
       buckets, pruned by `server/retention.mjs` on a 6-hourly check. Steady state ~830k rows
       in `readings`, ~175k rows/year in `readings_hourly`, both bounded. Was measured at
       130,367 rows after 4.7 days and growing ~27,700/day with nothing ever deleting a row.
-- [ ] **RM-006d** A backup policy for the Supabase project — the other half of the original
+- [x] **RM-006d** A backup policy for the Supabase project — the other half of the original
       RM-006, unaffected by the retention work above.
       *Acceptance:* a documented, verified backup, and a restore that has actually been tried.
-      **Half done.** The policy is written (`docs/backup-policy.md`) and the export tool is
+      **A restore was performed 2026-09-22, 08:35 — `npm run restore:rehearse`
+      (`supabase/restore-rehearse.sh`).** The day's export (19 tables, 12,960 rows) went into a
+      throwaway PostgreSQL 16 with every migration applied first; every table's count matched
+      `manifest.json`, and **every row, re-read from the restored table as JSON, equalled the JSON
+      exported** — the type round trip on all 12,960 rows, not three spot checks. What doing it
+      found, now in `docs/backup-policy.md`: the migrations seed `sites` and `dsm_thresholds`, so the
+      backed-up tables are emptied before loading; `space_nodes` in id order needed five parents-first
+      rounds for four rows; one account id had to exist first (recreated as a placeholder, which in a
+      real restore is the operator account to recreate). `server/backup.test.mjs` holds the script to
+      this module's table order. **Not exercised:** a scratch Supabase project and a frontend
+      rendering the restored history (steps 2, 6, 7 of the doc's checklist) — a decision, in §0.
+      **Earlier, half done.** The policy is written (`docs/backup-policy.md`) and the export tool is
       built and tested (`npm run backup`, `server/backup.mjs`). **No restore has been
       performed**, so this stays open: a backup nobody has restored is a belief, not a backup.
       The doc's final section is the checklist that closes it. Note also that `auth.users` is
@@ -8516,8 +8594,13 @@ fall back to it).
       cannot fire even if the flag were set directly in the database. Saving from the UI stamps
       the real user and is the only path that arms it. That is a property to rely on, not a bug.
 
-- [ ] **RM-007** Sign in once on the office kiosk so it leaves the login screen.
+- [x] **RM-007** Sign in once on the office kiosk so it leaves the login screen.
       *Acceptance:* the kiosk shows the dashboard and stays signed in across a reboot.
+      **Closed 2026-09-22: the reboot test happened.** The operator cut the office's power at
+      07:42; the Pi cold-booted at 07:44:48; `ibems-kiosk` (user scope) is `active`; the proxy's
+      first request from the kiosk origin came at 07:45:33 and was `OK`, and since boot it has
+      logged **206 OK and 0 × 401** from that origin (the other 204 lines are CORS preflights). The
+      session survived the boot through lightdm autologin without anyone touching the screen.
       **Mostly closed 2026-08-24, on site.** The kiosk is installed, `enabled`, `active`, and
       **signed in**: Chromium is up in `--kiosk` on the Wayland session against
       `http://127.0.0.1:5183/`, and the proxy logged **254 OK against 1 × 401** from the kiosk

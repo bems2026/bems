@@ -75,14 +75,38 @@ the Pi — the Pi is the single most likely thing in this system to fail.
 
 ## Restoring
 
-A restore is two steps, in this order:
+A restore is three steps, in this order — the middle one was learned by doing it (below):
 
 1. **Schema.** Apply `supabase/schema.sql`, then every `phase*.sql` in filename order, against
    a fresh project. This recreates tables, RLS policies and functions.
-2. **Data.** Load each `*.ndjson` back through PostgREST with the service-role key, in the
-   order `BACKUP_TABLES` lists them. That order is a restore order and a test holds it there:
-   every table comes after every table it references, so `sites` loads first and `devices`
-   second.
+2. **Empty what the migrations seeded.** Applying the migrations to an empty database leaves a
+   `sites` row and a `dsm_thresholds` row, and loading the backup on top of them fails on the
+   primary key. A restore means "make the database equal to the backup", so truncate every
+   backed-up table (cascade — the unexported tables that reference them are empty in a fresh
+   project anyway) before loading.
+3. **Data.** Load each `*.ndjson` in the order `BACKUP_TABLES` lists them. That order is a
+   restore order and a test holds it there: every table comes after every table it references,
+   so `sites` loads first and `devices` second. The rehearsed way to load a file is the one
+   `supabase/restore-rehearse.sh` uses — `COPY` each line into a `jsonb` column and
+   `jsonb_populate_record` it against the table's own type — which works through `psql` against
+   the project's connection string as well as against a container. Loading through PostgREST
+   with the service-role key also works in principle and has not been rehearsed.
+
+### Rehearsing a restore — `npm run restore:rehearse`
+
+```
+npm run restore:rehearse                     # exports a fresh backup, then restores it
+npm run restore:rehearse -- /path/to/backup  # restores an existing export
+```
+
+Needs docker. Starts the same throwaway `postgres:16-alpine` that `supabase/rehearse.sh` uses,
+applies every migration in order, empties the seeded rows, loads the nineteen files in restore
+order, and then proves three things per table: the file loaded through the real constraints, the
+row count equals `manifest.json`, and **every row re-read from the table as JSON equals the JSON
+that was exported** — the type round trip (numeric, timestamptz, jsonb, arrays) on every row rather
+than a spot-checked three. It recreates the account ids the files name as placeholder
+`auth.users` rows first (and counts them), and loads `space_nodes` parents-first in rounds. It
+never reads the live project except through `npm run backup`, and it changes nothing there.
 
 ### What a restore will NOT give you
 
@@ -122,4 +146,11 @@ Do this once, then record the date here:
    render real history.
 7. Delete the scratch project.
 
-**Restore last verified: never.** Update this line, in this file, when step 7 is done.
+**Restore last verified: 2026-09-22, in a container.** `npm run restore:rehearse` took the day's
+export (19 tables, 12,960 rows, from `sites` to `period_building_reports`) through steps 1, 3, 4
+and 5 above against PostgreSQL 16: every count matched the manifest and every row read back equal
+to what was exported. Two things it found are now written into "Restoring": the migrations seed
+`sites` and `dsm_thresholds`, and `space_nodes` in id order needed five parents-first rounds for
+four rows. One account id had to exist first. **Not yet done: steps 2, 6 and 7** — a scratch
+Supabase project, and a frontend pointed at it rendering the restored history. Update this line
+when they are.

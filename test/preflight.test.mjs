@@ -19,6 +19,11 @@ const healthy = () => ({
   network: { distinctDevices: 6 },
   bridge: { reachable: true, deviceCount: 6, expectedCount: 6, lanExposed: false, exposedOn: null },
   services: { nodered: 'active', 'ibems-ingest': 'active' },
+  host: {
+    journal: { storage: 'persistent', onDisk: true },
+    timers: { 'ibems-wifi-prefer.timer': 'active', 'ibems-lan-map.timer': 'active', 'ibems-fleet-recover.timer': 'active' },
+    addresses: { pinned: 6, total: 6, lanMapDevices: 6, lanMapFreshestMs: 4 * 60_000 },
+  },
 });
 
 const find = (result, id) => result.checks.find((c) => c.id === id);
@@ -71,9 +76,34 @@ test('a dependent check is skipped rather than reported as a second failure', ()
   obs.env.TUYA_ACCESS_SECRET = 'absent';
   obs.vendor = { authenticated: null, error: null };
   const r = assessDeployment(obs);
-  assert.equal(find(r, 'env_tuya').level, LEVELS.ERROR);
+  assert.equal(find(r, 'env_tuya').level, LEVELS.WARN);
   assert.equal(find(r, 'vendor_auth').level, LEVELS.SKIPPED);
-  assert.equal(r.errors.length, 1, 'one cause, one error');
+  assert.equal(r.warnings.length, 1, 'one cause, one warning');
+});
+
+/**
+ * The vendor cloud is optional — the operator's decision of 2026-09-17, recorded in CLAUDE.md and
+ * RM-129. Keys come from a key tool's export, presence from the LAN, the aircon's states from the
+ * TCL112 generator. Until 2026-09-22 this tool still called a refused console an ERROR and the
+ * deployment "not ready", which contradicted the policy every day the trial stayed lapsed.
+ */
+test('a refused or absent vendor cloud is a warning that lists what stays cloud-only, not a failure', () => {
+  const obs = healthy();
+  obs.vendor = { authenticated: false, error: '7 data centre(s) tried, none accepted the credentials' };
+  const r = assessDeployment(obs);
+  const check = find(r, 'vendor_auth');
+  assert.equal(check.level, LEVELS.WARN);
+  assert.equal(r.ready, true, 'the deployment runs without the cloud');
+  assert.match(check.fix, /keys:import/);
+  assert.match(check.fix, /set-device-ip/);
+
+  const none = healthy();
+  none.env.TUYA_ACCESS_ID = 'absent';
+  none.env.TUYA_ACCESS_SECRET = 'absent';
+  none.vendor = { authenticated: null, error: null };
+  const r2 = assessDeployment(none);
+  assert.equal(find(r2, 'env_tuya').level, LEVELS.WARN);
+  assert.equal(r2.ready, true);
 });
 
 test('seeing no device broadcasts is an error that names the 2.4 GHz trap', () => {
@@ -138,7 +168,7 @@ test('every check carries a next step, not only a verdict', () => {
 test('the check list is stable and complete whatever the observations say', () => {
   // A check that vanishes when its input is missing is a check nobody notices is gone.
   const full = assessDeployment(healthy()).checks.map((c) => c.id);
-  const empty = assessDeployment({ siteId: 'x', env: {}, database: {}, vendor: {}, network: {}, bridge: {}, services: {} }).checks.map((c) => c.id);
+  const empty = assessDeployment({ siteId: 'x', env: {}, database: {}, vendor: {}, network: {}, bridge: {}, services: {}, host: {} }).checks.map((c) => c.id);
   assert.deepEqual(empty, full);
   assert.ok(full.length >= 8, `expected the full check list, got ${full.length}`);
 });
@@ -196,4 +226,70 @@ test('the remedy names the SSH tunnel, so nobody closes it by widening it back',
   const check = find(assessDeployment(obs), 'bridge_not_exposed');
   assert.match(check.fix, /uiHost/);
   assert.match(check.fix, /ssh -L/);
+});
+
+/**
+ * RM-125 / RM-131 — three more things that live only on the host, and that the host loses with no
+ * diff and no alarm: whether the journal survives a reboot, whether the recovery timers are armed,
+ * and whether every tuya node has a static address. Each was a real loss before it was a check:
+ * the 2026-09-19 meter flip had no witness but the database because the journal was volatile, and
+ * after the 2026-09-21 outage every switch and outlet waited for a broadcast that never came.
+ */
+test('a volatile journal is a warning that says what is lost, with the drop-in named', () => {
+  const obs = healthy();
+  obs.host.journal = { storage: 'volatile', onDisk: false };
+  const check = find(assessDeployment(obs), 'host_journal');
+  assert.equal(check.level, LEVELS.WARN);
+  assert.match(check.detail, /volatile/);
+  assert.match(check.fix, /50-ibems-persistent\.conf/);
+  assert.match(check.fix, /Storage=persistent/);
+});
+
+test('a persistent journal passes only when the journal is actually on disk', () => {
+  const obs = healthy();
+  obs.host.journal = { storage: 'persistent', onDisk: false };
+  assert.equal(find(assessDeployment(obs), 'host_journal').level, LEVELS.WARN, 'configured but not yet written is not persistent');
+  obs.host.journal = { storage: 'auto', onDisk: true };
+  assert.equal(find(assessDeployment(obs), 'host_journal').level, LEVELS.OK, 'Storage=auto with the directory present is persistent');
+  obs.host.journal = { storage: null, onDisk: null };
+  assert.equal(find(assessDeployment(obs), 'host_journal').level, LEVELS.UNCHECKED);
+});
+
+test('a recovery timer that is not running is a warning that names it and the runbook', () => {
+  const obs = healthy();
+  obs.host.timers['ibems-fleet-recover.timer'] = 'inactive';
+  const check = find(assessDeployment(obs), 'host_timers');
+  assert.equal(check.level, LEVELS.WARN);
+  assert.match(check.detail, /ibems-fleet-recover\.timer is inactive/);
+  assert.match(check.fix, /outage-recovery\.md/);
+  assert.match(check.fix, /enable --now/);
+  obs.host.timers = {};
+  assert.equal(find(assessDeployment(obs), 'host_timers').level, LEVELS.UNCHECKED);
+});
+
+test('a node without a static address is a warning that counts them and points at the LAN map', () => {
+  const obs = healthy();
+  obs.host.addresses = { pinned: 4, total: 6, lanMapDevices: 6, lanMapFreshestMs: 3 * 60_000 };
+  const check = find(assessDeployment(obs), 'host_addresses');
+  assert.equal(check.level, LEVELS.WARN);
+  assert.match(check.detail, /4 of 6/);
+  assert.match(check.detail, /6 device\(s\) in the LAN map, freshest 3 min ago/);
+  assert.match(check.fix, /--from-lan-map/);
+});
+
+test('every node pinned passes, and says so without claiming the LAN map is fresh', () => {
+  const obs = healthy();
+  obs.host.addresses = { pinned: 6, total: 6, lanMapDevices: 0, lanMapFreshestMs: null };
+  const check = find(assessDeployment(obs), 'host_addresses');
+  assert.equal(check.level, LEVELS.OK);
+  assert.match(check.detail, /all 6 node\(s\) have a static address/);
+  assert.match(check.detail, /nothing in the LAN map yet/);
+});
+
+test('an unreadable flow leaves the address check unchecked, never passed', () => {
+  const obs = healthy();
+  obs.host.addresses = { pinned: null, total: null, lanMapDevices: 6, lanMapFreshestMs: 60_000 };
+  const check = find(assessDeployment(obs), 'host_addresses');
+  assert.equal(check.level, LEVELS.UNCHECKED);
+  assert.match(check.fix, /NODE_RED_ADMIN/);
 });

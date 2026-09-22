@@ -31,6 +31,7 @@
     "ingest": "node server/ingest.mjs",
     "scheduler": "node server/scheduler.mjs",
     "backup": "node server/backup.mjs",
+    "restore:rehearse": "bash supabase/restore-rehearse.sh",
     "tuya:devices": "node server/tuya-devices.mjs",
     "tuya:macs": "node server/tuya-devices.mjs --macs",
     "tuya:spec": "node --env-file=server/.env server/tuya-spec.mjs",

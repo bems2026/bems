@@ -109,3 +109,23 @@ test('every backup target names the column it is ordered by, so re-exports are d
   }
   assert.equal(PAGE_SIZE, 1000);
 });
+
+/**
+ * The restore rehearsal (`npm run restore:rehearse`, supabase/restore-rehearse.sh) is what turned
+ * RM-006d's export from a belief into a backup on 2026-09-22. It needs docker, so it is not run
+ * here; what can be held from here is that it restores in THIS module's order rather than a copy
+ * of it — a table added to BACKUP_TABLES is then rehearsed without anyone remembering to add it
+ * twice — and that every table it loads is checked against the manifest and read back whole.
+ */
+test('the restore rehearsal takes its table order from BACKUP_TABLES and checks every table it loads', async () => {
+  const { readFileSync } = await import('node:fs');
+  const script = readFileSync(new URL('../supabase/restore-rehearse.sh', import.meta.url), 'utf8');
+  assert.match(script, /BACKUP_TABLES\.map\(\(t\) => t\.table\)/, 'the order comes from the module');
+  for (const t of BACKUP_TABLES) {
+    assert.doesNotMatch(script, new RegExp(`^\\s*(for|TABLES=).*\\b${t.table}\\b`, 'm'), `${t.table} must not be listed by hand`);
+  }
+  assert.match(script, /manifest\.json/, 'counts are checked against the manifest');
+  assert.match(script, /to_jsonb\(t\) = i\.doc/, 'every row is read back and compared to what was exported');
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.equal(pkg.scripts['restore:rehearse'], 'bash supabase/restore-rehearse.sh');
+});

@@ -57,6 +57,7 @@ export function assessDeployment(obs) {
   const network = obs?.network ?? {};
   const bridge = obs?.bridge ?? {};
   const services = obs?.services ?? {};
+  const host = obs?.host ?? {};
   const siteId = obs?.siteId ?? '(unknown)';
 
   const checks = [];
@@ -82,13 +83,18 @@ export function assessDeployment(obs) {
     'Copy server/.env.example to server/.env and fill in the two values from Project Settings → API. The SERVICE ROLE key, not the anon key — ingestion has to bypass RLS to write.',
   );
 
+  // WARN, not ERROR, since 2026-09-22: the vendor cloud is optional by the operator's decision of
+  // 2026-09-17 (CLAUDE.md, RM-129). Keys come from a key tool's export (`npm run keys:import`),
+  // presence from the LAN, the aircon's states from the TCL112 generator. What still needs the
+  // cloud is named in the fix, so a reader knows what they are doing without rather than
+  // reading "not ready" every day a lapsed trial stays lapsed.
   const tuyaMissing = missing(REQUIRED_TUYA);
   const tuyaLevel = add(
     'env_tuya',
     'Vendor (Tuya) credentials',
-    tuyaMissing.length ? LEVELS.ERROR : LEVELS.OK,
-    tuyaMissing.length ? describe(tuyaMissing) : 'access id and secret are set',
-    'From the Tuya IoT console: Cloud → Project → Overview. TUYA_ACCESS_SECRET is the most sensitive value in this system — it reaches hardware directly and nothing scopes it. It belongs in server/.env only.',
+    tuyaMissing.length ? LEVELS.WARN : LEVELS.OK,
+    tuyaMissing.length ? `${describe(tuyaMissing)} — optional: the cloud is for extracting keys, not a dependency` : 'access id and secret are set',
+    'Optional. From the Tuya IoT console: Cloud → Project → Overview. TUYA_ACCESS_SECRET is the most sensitive value in this system — it reaches hardware directly and nothing scopes it. It belongs in server/.env only. Without it: keys come from npm run keys:import, addresses from set-device-ip:pi --from-lan-map; the relay fallback, tuya:devices and tuya:spec stay unavailable.',
   );
 
   add(
@@ -153,21 +159,21 @@ export function assessDeployment(obs) {
   add(
     'vendor_auth',
     'Vendor account authenticates',
-    tuyaLevel === LEVELS.ERROR
+    tuyaLevel !== LEVELS.OK
       ? LEVELS.SKIPPED
       : vendor.authenticated === true
         ? LEVELS.OK
         : vendor.authenticated === false
-          ? LEVELS.ERROR
+          ? LEVELS.WARN
           : LEVELS.UNCHECKED,
-    tuyaLevel === LEVELS.ERROR
+    tuyaLevel !== LEVELS.OK
       ? 'not attempted — the credentials above are missing'
       : vendor.authenticated === true
         ? 'a token was issued'
         : vendor.authenticated === false
-          ? `the console refused the credentials${vendor.error ? ` (${vendor.error})` : ''}`
+          ? `the console refused the credentials${vendor.error ? ` (${vendor.error})` : ''} — optional; local control, ingest and reports do not need it`
           : 'not checked',
-    'A refusal is usually the region rather than the secret. Note that an unenabled data centre still issues a token and then refuses business calls, so a token alone is not proof of a working project.',
+    'Optional since the operator’s decision of 2026-09-17 (RM-129). A refusal is usually the region rather than the secret, or a lapsed IoT Core trial — an unenabled data centre still issues a token and then refuses business calls. Without the cloud: keys come from npm run keys:import, addresses from set-device-ip:pi --from-lan-map; what stays cloud-only is the relay fallback, /api/tuya/presence’s MAC join, tuya:devices and tuya:spec.',
   );
 
   // --- the local radio segment ---------------------------------------------
@@ -262,6 +268,79 @@ export function assessDeployment(obs) {
         ? `${Object.keys(services).length} unit(s) active`
         : down.map(([name, state]) => `${name} is ${state ?? 'unknown'}`).join('; '),
     'systemctl status the named unit and read its journal. The dashboard and the bridge run without the daemons; what stops is history, scheduling and alerting.',
+  );
+
+  // --- what lives only on the host --------------------------------------------
+  // Three more settings with the `uiHost` shape: correct today, kept nowhere in this repository,
+  // and lost by a rebuild, a restore or a package upgrade with no diff and no alarm. Each was a
+  // real loss before it was a check.
+
+  /**
+   * The journal survives a reboot — RM-125. Raspberry Pi OS ships `Storage=volatile` in a drop-in
+   * (`40-rpi-volatile-storage.conf`, for SD-card wear), so nothing from before the last reboot
+   * survives: the 2026-09-19 meter flip had no witness but the database, and the Pi was rebooted
+   * twice that day. `Storage=auto` counts as persistent only when the directory exists, which is
+   * why the check wants the journal seen ON DISK and not merely configured.
+   */
+  const journal = host.journal ?? {};
+  const journalKnown = journal.onDisk === true || journal.onDisk === false;
+  add(
+    'host_journal',
+    'The journal survives a reboot',
+    !journalKnown ? LEVELS.UNCHECKED : journal.onDisk && ['persistent', 'auto'].includes(journal.storage) ? LEVELS.OK : LEVELS.WARN,
+    !journalKnown
+      ? 'not checked'
+      : journal.onDisk && ['persistent', 'auto'].includes(journal.storage)
+        ? `Storage=${journal.storage}, and the system journal is on disk`
+        : journal.onDisk
+          ? `the journal is on disk but Storage=${journal.storage ?? 'unset'} — the next boot will not write there`
+          : `Storage=${journal.storage ?? 'unset'} and nothing on disk — nothing from before the last reboot survives`,
+    'Add /etc/systemd/journald.conf.d/50-ibems-persistent.conf with [Journal], Storage=persistent and SystemMaxUse=200M — a drop-in numbered above the OS’s own 40-rpi-volatile-storage.conf, which sets Storage=volatile and overrides the main file. Then mkdir -p /var/log/journal/$(cat /etc/machine-id), systemctl restart systemd-journald, journalctl --flush. Without it the journal cannot explain anything that happened before the last power cut, which is exactly when it is needed.',
+  );
+
+  /**
+   * The recovery timers are armed — RM-131. `ibems-wifi-prefer` returns the Pi to the device SSID
+   * after a boot that beat the access point; `ibems-lan-map` remembers who announced from where;
+   * `ibems-fleet-recover` restarts Node-RED when a device is reachable but its node has given up.
+   * A timer waiting for its next tick reports `active`; anything else is not armed.
+   */
+  const timers = host.timers ?? {};
+  const timersDown = Object.entries(timers).filter(([, state]) => state !== 'active');
+  add(
+    'host_timers',
+    'Recovery timers armed',
+    Object.keys(timers).length === 0 ? LEVELS.UNCHECKED : timersDown.length === 0 ? LEVELS.OK : LEVELS.WARN,
+    Object.keys(timers).length === 0
+      ? 'not checked'
+      : timersDown.length === 0
+        ? `${Object.keys(timers).length} timer(s) active`
+        : timersDown.map(([name, state]) => `${name} is ${state ?? 'unknown'}`).join('; '),
+    'sudo cp server/ibems-*.timer server/ibems-*.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now ibems-wifi-prefer.timer ibems-lan-map.timer ibems-fleet-recover.timer. What each one recovers, and what an outage does without them, is docs/outage-recovery.md.',
+  );
+
+  /**
+   * Every tuya node has a static address — RM-131. A node without `deviceIp` waits for the
+   * device's UDP broadcast, and after the 2026-09-21 outage every switch and outlet stopped
+   * broadcasting while still answering TCP — `find() timed out` for a day, with nothing to find.
+   * With an address the broadcast never matters. Disabled nodes are not counted: a node that is
+   * not started cannot wait for anything.
+   */
+  const addr = host.addresses ?? {};
+  const addrKnown = Number.isFinite(addr.pinned) && Number.isFinite(addr.total);
+  const mapWords =
+    Number.isFinite(addr.lanMapDevices) && addr.lanMapDevices > 0 && Number.isFinite(addr.lanMapFreshestMs)
+      ? `${addr.lanMapDevices} device(s) in the LAN map, freshest ${Math.round(addr.lanMapFreshestMs / 60_000)} min ago`
+      : 'nothing in the LAN map yet';
+  add(
+    'host_addresses',
+    'Field devices reached by address',
+    !addrKnown ? LEVELS.UNCHECKED : addr.total > 0 && addr.pinned === addr.total ? LEVELS.OK : LEVELS.WARN,
+    !addrKnown
+      ? 'not checked'
+      : addr.total > 0 && addr.pinned === addr.total
+        ? `all ${addr.total} node(s) have a static address; ${mapWords}`
+        : `${addr.pinned} of ${addr.total} node(s) have a static address — the rest wait for a broadcast; ${mapWords}`,
+    'Reading the flow needs NODE_RED_ADMIN_USER and NODE_RED_ADMIN_PASS in server/.env. Then: npm run set-device-ip:pi -- --host=127.0.0.1 --from-lan-map (a dry run; back up ~/.node-red/flows.json, then --apply). The map holds only devices that have announced while ibems-lan-map listened — after a power event that is all of them. Then reserve the addresses on the access point (--reservations prints the table), or the next outage renumbers them.',
   );
 
   const errors = checks.filter((c) => c.level === LEVELS.ERROR);
@@ -466,7 +545,68 @@ if (process.argv[1] && process.argv[1].endsWith('preflight.mjs')) {
     }
   }
 
-  const result = assessDeployment({ siteId: SITE.id, env, database, vendor, network, bridge, services });
+  // --- what lives only on the host --------------------------------------------
+  const host = { journal: { storage: null, onDisk: null }, timers: {}, addresses: { pinned: null, total: null, lanMapDevices: null, lanMapFreshestMs: null } };
+  if (process.platform === 'linux') {
+    // `cat-config` prints the main file and every drop-in in the order systemd applies them, so
+    // the last Storage= line is the one in force — the same rule journald itself uses. Parsing
+    // the files by hand would have to reproduce that precedence, and get it wrong quietly.
+    try {
+      const merged = execFileSync('systemd-analyze', ['cat-config', 'systemd/journald.conf'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      const lines = merged.split(/\r?\n/).map((l) => l.match(/^\s*Storage\s*=\s*(\S+)/)).filter(Boolean);
+      host.journal.storage = lines.length ? lines[lines.length - 1][1] : 'auto';
+      const { existsSync } = await import('node:fs');
+      const machineId = readFileSync('/etc/machine-id', 'utf8').trim();
+      host.journal.onDisk = existsSync(`/var/log/journal/${machineId}/system.journal`);
+    } catch {
+      host.journal = { storage: null, onDisk: null };
+    }
+
+    // The timers are whatever `server/` ships, so a new one is checked without being listed here.
+    const { readdirSync } = await import('node:fs');
+    let timerUnits;
+    try {
+      timerUnits = readdirSync(join(ROOT, 'server')).filter((f) => /^ibems-.*\.timer$/.test(f));
+    } catch {
+      timerUnits = [];
+    }
+    for (const unit of timerUnits) {
+      try {
+        host.timers[unit] = execFileSync('systemctl', ['is-active', unit], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+      } catch (e) {
+        host.timers[unit] = String(e.stdout ?? '').trim() || 'unknown';
+      }
+    }
+  }
+
+  // The LAN map is read whatever the platform; the flow only with the admin login, and only
+  // read. A failure to log in is "not checked", never "none pinned".
+  try {
+    const { readLanMap } = await import('../server/lanMap.mjs');
+    const map = readLanMap();
+    const seen = Object.values(map).map((e) => Date.parse(e?.lastSeen ?? '')).filter(Number.isFinite);
+    host.addresses.lanMapDevices = Object.keys(map).length;
+    host.addresses.lanMapFreshestMs = seen.length ? Date.now() - Math.max(...seen) : null;
+  } catch {
+    host.addresses.lanMapDevices = null;
+  }
+  if (env.NODE_RED_ADMIN_USER === 'set' && env.NODE_RED_ADMIN_PASS === 'set' && bridge.reachable === true) {
+    try {
+      const { createAdminClient } = await import('../node-red-bridge/nodeRedAdmin.mjs');
+      process.env.NODE_RED_ADMIN_USER ||= valueOf('NODE_RED_ADMIN_USER');
+      process.env.NODE_RED_ADMIN_PASS ||= valueOf('NODE_RED_ADMIN_PASS');
+      const admin = createAdminClient({ host: '127.0.0.1', port: 1880, timeoutMs: 10_000 });
+      const { flows } = await admin.getFlows(await admin.login());
+      const nodes = flows.filter((n) => n?.type === 'tuya-smart-device' && n.disableAutoStart !== true);
+      host.addresses.total = nodes.length;
+      host.addresses.pinned = nodes.filter((n) => typeof n.deviceIp === 'string' && n.deviceIp.trim() !== '').length;
+    } catch {
+      host.addresses.pinned = null;
+      host.addresses.total = null;
+    }
+  }
+
+  const result = assessDeployment({ siteId: SITE.id, env, database, vendor, network, bridge, services, host });
 
   const MARK = {
     [LEVELS.OK]: '\x1b[32m  ok  \x1b[0m',
