@@ -17,9 +17,9 @@
  *
  *   1. The lighting branch (L5–L7) cannot draw more than `ceiling_w`. So a channel above it IS the
  *      outlet branch — the `ceiling` rule. Certain whenever the office is working.
- *   2. The outlet branch is never at 0 A: something is always plugged in. So a channel the device
- *      holds at `monitor` / 0 A IS the lighting branch — the `idle` rule. Certain whenever the lights
- *      are off.
+ *   2. The outlet branch is never at 0 A: something is always plugged in. So a channel at exactly
+ *      0 W / 0 A IS the lighting branch — the `idle` rule. Certain whenever the lights are off. The
+ *      device's `monitor` label is not evidence on its own (RM-134, see `isIdle`).
  *
  * When neither rule can speak — both channels working at about 40 W, which is every evening — the
  * last certain assignment is CARRIED. A flip that begins and ends inside such a window is missed, and
@@ -40,10 +40,18 @@
 /** Consecutive agreeing samples before the assignment moves. */
 export const FLIP_AFTER = 2;
 
-/** Is this channel one the device is holding at nothing — `monitor`, or exactly 0 W and 0 A? */
+/**
+ * Is this channel carrying nothing — exactly 0 W and 0 A?
+ *
+ * The premise is the operator's physical fact, "the outlet branch is never at 0 A", so the test is
+ * the current, never the device's `device_state<n>` label. Until RM-134 the meters were not polled
+ * and that label arrived only when it changed, so every `monitor` seen here came with 0 W / 0 A and
+ * a label-only shortcut looked safe. A poll delivers it every minute, its meaning is the vendor's
+ * rather than measured (live L.O Red carried `monitor` at 26.6 W), and two polls agreeing on a word
+ * would have traded a day's attribution.
+ */
 function isIdle(c) {
   if (!c) return false;
-  if (c.state === 'monitor') return true;
   return c.p === 0 && c.c === 0;
 }
 

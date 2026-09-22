@@ -44,6 +44,7 @@
     "poll-outlets:pi": "node node-red-bridge/poll-outlets.mjs",
     "demux:pi": "node node-red-bridge/demux-channels.mjs",
     "poll-switches:pi": "node node-red-bridge/poll-switches.mjs",
+    "poll-meters:pi": "node node-red-bridge/poll-meters.mjs",
     "local-probe:pi": "node node-red-bridge/local-probe.mjs",
     "fix-health:pi": "node node-red-bridge/fix-health-wiring.mjs",
     "fix-dp-parsers:pi": "node node-red-bridge/fix-dp-parsers.mjs",

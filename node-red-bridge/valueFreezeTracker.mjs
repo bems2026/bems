@@ -14,10 +14,11 @@
  *   - Not `h`: going offline is a louder fact with its own handling; `buildLatest` does not call an
  *     offline device frozen.
  *
- * AND A SECOND CLOCK FOR THE REGISTERS (RM-133). On 2026-09-22 the yellow meter's channel 2 froze
- * with the lights off — 39.8 W held from 07:47 — and from 10:58 its voltage dp began following
- * channel 1's, because the voltage is one measurement shared by both clamps. That restarted the
- * v/c/p clock every minute. So the device's OWN energy registers (`today_acc_energy<n>`,
+ * AND A SECOND CLOCK FOR THE REGISTERS (RM-133). On 2026-09-22 the yellow meter's channel 2 held
+ * 39.8 W from 07:43 with the lights off, and from 10:58 its voltage dp followed channel 1's, because
+ * the voltage is one measurement shared by both clamps. That restarted the v/c/p clock every minute.
+ * (RM-134 found the held value was the bridge's, not the clamp's. The meters were never polled, and
+ * the change to 0 W was pushed while the Pi was rebooting. The register clock is what caught it.) So the device's OWN energy registers (`today_acc_energy<n>`,
  * `total_energy<n>` in `dp`, never the shared `all_energy`) get a clock of their own: a clamp that
  * is measuring moves its counter; a shared voltage proves nothing. `buildLatest` applies
  * `shared/measurementFreeze.mjs`'s stall rule to it. A device whose `dp` carries no register (the

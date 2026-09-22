@@ -23,11 +23,18 @@ export const FROZEN_AFTER_MS = 3 * 60 * 60 * 1000;
 
 /**
  * RM-133 — the second, faster rule: a channel's OWN energy register that does not move while the
- * channel draws power. Found on 2026-09-22: the yellow meter's channel 2 froze at 07:47:44 — 39.8 W /
- * 0.446 A and `today_acc_energy2` held for hours while the lights on that circuit had been off since
- * 07:48 — and from 10:58 its voltage dp began following channel 1's. The voltage is ONE measurement
- * shared by both clamps, so it restarted the three-hour v/c/p clock every minute, and the flag above
- * could never stand. A shared voltage is not evidence that a clamp is measuring. The register is.
+ * reading says the channel draws power. Found on 2026-09-22: the yellow meter's channel 2 held
+ * 39.8 W / 0.446 A from 07:43:49 with `today_acc_energy2` still for hours, and from 10:58 its voltage
+ * dp followed channel 1's. The voltage is ONE measurement shared by both clamps, so it restarted the
+ * three-hour v/c/p clock every minute and the flag above could never stand. A shared voltage is not
+ * evidence that a clamp is measuring. The register is.
+ *
+ * WHAT THE FLAG MEANS, corrected by RM-134: the held reading and the device's own register disagree.
+ * That day it was not the clamp. The lights went off while the Pi was rebooting, the meter's one push
+ * of "0 W" reached nobody, and nothing polled the meters, so the bridge kept the last pushed value
+ * while the register correctly stood still. With the meters polled every minute, a stale value clears
+ * within a minute and never reaches this rule's half hour. A flag that stands is a value the device
+ * itself keeps re-reporting.
  *
  * WHY HALF AN HOUR AND FIVE THOUSANDTHS. The registers count in 0.001 kWh and the meters report
  * them on change, about once a minute under load (C.O Yellow's rose every minute at 850 W; L.O

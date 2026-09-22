@@ -54,6 +54,15 @@ test('a channel at 0 W / 0 A without the monitor enum still counts as idle', () 
   assert.deepEqual(classifySample({ ch1: STANDBY, ch2: ch(0, 0, 'working') }, RULES), { assignment: 'direct', rule: 'idle' });
 });
 
+test('the monitor enum with current flowing is NOT idle — the premise is 0 A, not a label (RM-134)', () => {
+  // Until the meters were polled, `device_state<n>` arrived only when it changed, so every `monitor`
+  // this classifier had seen came with exactly 0 W / 0 A. A poll delivers the label every minute,
+  // and its meaning is the vendor's, not measured: live L.O Red carried `monitor` at 26.6 W. The
+  // outlet branch at night standby must not read as the lighting branch because of a word.
+  assert.equal(classifySample({ ch1: ch(40.3, 0.232, 'monitor'), ch2: LIGHTS }, RULES), null);
+  assert.equal(classifySample({ ch1: STANDBY, ch2: ch(26.6, 0.3, 'monitor') }, RULES), null);
+});
+
 test('both channels idle decides nothing', () => {
   assert.equal(classifySample({ ch1: IDLE, ch2: IDLE }, RULES), null);
 });

@@ -109,6 +109,18 @@ mock, because it once stopped the live bridge.
   up, and its symptoms are identical to a device that is unplugged or out of range — so this
   costs a walk to the breaker, or a day of believing a hardware fault that is not there.
   Restart first; only if the device is still dark is the hardware suspicion earned.
+- **The tuya node never reads a device's state on connect. Only a poll does.** `issueGetOnConnect:
+  false` and `issueRefreshOnConnect: false` are hard-coded in `node-red-contrib-tuya-smart-device`
+  5.4.0, and the devices report a dp only when it changes. So a device nothing polls shows its last
+  *pushed* value indefinitely — across reconnects, Node-RED restarts and reboots, because flow context
+  is persisted — and a change it pushed while the bridge was down is never seen. On 2026-09-22 the
+  office power came back with the L5–L7 relays off while the Pi was rebooting; L.O Yellow then held
+  39.8 W for hours while its own energy register stood still (a circuit at 0 W does exactly that), and
+  it was diagnosed as a frozen clamp needing a panel power cycle. The three meters were the only
+  unpolled nodes. Every enabled tuya node now has a GET poll (`poll-outlets:pi`, `poll-switches:pi`,
+  `poll-meters:pi`, the Aircon tab's gate), and `npm run preflight` fails when one is missing
+  (`flow_polls`). **A Node-RED restart is not a re-read:** it cures a node that has given up, not a
+  value that is merely old. A held figure that survives a poll is the device's own.
 - **A ping that gets no reply is not evidence of client isolation.** This was concluded twice
   on 2026-08-24/25 from the Pi being unable to ping a Windows laptop on the same /24, and both
   times it was wrong: Windows Firewall defaults to `BlockInbound` and drops ICMP echo, so the

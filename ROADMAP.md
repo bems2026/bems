@@ -1,9 +1,15 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-22, 12:00 — **L.O Yellow's clamp froze at 07:47 and the flag could not say so:
-RM-133 — a register clock the shared voltage cannot reset, deployed 11:27 and read back flagging the
-channel at 11:57 on schedule, the flag now stored with the row (FI-027's storage half); the meter itself
-needs a power cycle at the panel (§0). Earlier: the walkthrough: what is left, by who can do it (§0); the
+**Last audited:** 2026-09-22, 14:30 — **L.O Yellow was not frozen. The meters were never re-read:
+RM-134.** The lights went off while the Pi was rebooting, the meter's push of "0 W" reached nobody, and
+unlike every outlet, switch and the IR hub, the three meters had no GET poll. The tuya node reads nothing
+on connect, so a Node-RED restart could not help. RM-134 adds a registry-driven meter poll (dry-run clean
+against the live flow, 301 → 303 nodes). It grounds the demux's idle rule in 0 A rather than the device's
+`monitor` label, which the poll would start delivering every minute, and makes `npm run preflight` fail
+when any tuya node is unpolled (`flow_polls`). **The panel power cycle in §0 is withdrawn** pending the
+poll's result. RM-133's "full dp read" is corrected, and RM-077's L.O Red freezes are re-read.
+**Earlier, 12:00 — RM-133:** a register clock the shared voltage cannot reset, deployed 11:27, flagging
+the channel at 11:57, the flag stored with the row (FI-027's storage half). Earlier: the walkthrough: what is left, by who can do it (§0); the
 preflight checks what lives only on the host and no longer fails on the optional cloud: RM-132; a
 restore has been performed: RM-006d closed; the kiosk survived a cold boot signed in: RM-007 closed.**
 `npm run preflight` now says `Ready` on this deployment with two warnings (the lapsed vendor trial,
@@ -356,10 +362,13 @@ cloud, `npm run preflight` reads `Ready`, and a backup has now been restored. Wh
 cleanly by who can do it.
 
 **Only a person at the office or the AP can do these, in order of value:**
-0. **L.O Yellow's clamp is frozen (RM-133, since 07:47 today):** a Node-RED restart did not thaw it.
-   Power-cycle the yellow meter at the panel, outside office hours; then confirm `mtr_lo_yellow`
-   reads 0 W / `monitor` with L5–L7 off and the flag clears. Since 11:57 the reading says what it is —
-   `measurement_frozen`, `frozen_since 11:27` — live, on the Overview's source card, and in the stored rows.
+0. ~~L.O Yellow's clamp is frozen — power-cycle the meter~~ **Do NOT power-cycle the yellow meter
+   (RM-134, 2026-09-22 afternoon).** The clamp is very likely fine: channel 2 has been at 0 W since the
+   lights went off during the Pi's 07:44 reboot, the meter's push of that change reached nobody, and
+   nothing ever polled the meters, so the bridge kept 39.8 W. The remedy is one flow write, the meter
+   poll (`poll-meters:pi`), after the demux upgrade (`demux:pi`). Within about 70 s of the apply,
+   `mtr_lo_yellow` should read ~0 W with its register still 25523.556 and the flag cleared. **Only if it
+   re-reports 39.8 W is the panel power cycle earned.**
 1. ~~The access point~~ — **done 2026-09-22 12:42–13:05 by the operator, read back 13:25** (RM-131,
    RM-046). The AP is an aclink 4G/LTE router; its "Static DHCP Leases" now hold all 19 — the 18 tuya
    devices and the Pi — each at the address it already had, so nothing moved. Allocation Duration
@@ -375,6 +384,11 @@ cleanly by who can do it.
    Not in it: the CARE ACU meter (the workbook has no key for it) and the never-installed Outside Temp.
 4. **RM-120** — the aircon's on-site acceptance with the TCL112 generator (RM-128).
 5. **RM-016** — the outside temperature sensor was never installed; the one dark device of 20.
+6. **The dual-channel meter (RM-122/RM-134):** check Smart Life for a firmware update for it (free),
+   and decide whether to replace it with two single-channel CT meters (the `cz_ct_single` product on
+   L.O Red / CARE ACU), which cannot trade channels. The demux corrects the trade; only hardware ends it.
+7. **RM-026's Solarman logger onto the device SSID** — the contractual solar deliverable cannot start
+   without it. The live flow's `solarman-device` node logs a socket timeout every few minutes meanwhile.
 
 **Decisions, not work:**
 - **RM-006c** — which loads may shed first (`npm run shed:profile` has the numbers). The path is
@@ -391,7 +405,13 @@ cleanly by who can do it.
 **Engineering that is open and not urgent:** FI-034 (`readings_buckets` over 30 days: 7.8 s, chunk
 or add `p_until`), RM-083c (PDF render 3.6–5.2 s on the Pi), RM-026 (Deye, contractual, needs the
 logger on the SSID first), RM-070 daylight/blinds, RM-033's twelve `〔FILL IN〕` gaps in the
-physical-install guide.
+physical-install guide. **Added 2026-09-22 (RM-134 follow-ups):**
+- FI-027's second half: reports should not count flagged minutes as recorded.
+- FI-032: store the IR hub's room temperature, which the RM-069 loop acts on.
+- An ntfy notice when the demux flips or a meter flag stands.
+- Pruning the legacy `GSheet: Append to …` nodes, which fail auth in the journal; Sheets was rejected in
+  FI-011.
+- Folding the three poll plans onto one helper.
 
 ### 2026-09-22 (early morning) — the field network after an outage; two actions, in order
 
@@ -3896,6 +3916,13 @@ cannot draw more than 150 W, and the outlet branch is never at 0 A.
       **What was tried.** `sudo systemctl restart nodered` at 11:08 (the project's first remedy): 19
       devices back inside a minute; channel 2 still 39.8 W / 0.446 A / 25523.556 after the reconnect's
       full dp read. A session does not thaw a clamp.
+      **Corrected by RM-134 (same afternoon): there was no "full dp read".** The tuya node hard-codes
+      `issueGetOnConnect: false`, so a reconnect reads nothing, and the 39.8 W survived the restart in
+      persisted flow context. Nor did the hold begin at 07:47:44: the stored rows hold 39.8 W / 0.446 A /
+      25523.556 from **07:43:49**, and `l5`–`l7` were offline 06:30–07:47. `l7`'s "on" before 07:47 was a
+      cached value, and its "off" at 07:48 was its first report after the power cycle. The lights went
+      off while the Pi was rebooting (07:44–07:47); the meter's push reached nobody; nothing polled the
+      meters. The rule below was right to flag the disagreement; the "frozen clamp" reading of it was not.
       **Why the flag never stood.** RM-079's rule needs v/c/p held three hours — due 10:47:44 — and
       from 10:58 the shared voltage restarted that clock every minute (`value_freeze.lo_yel2.since`
       read 11:03:52 at 11:05). The ingest also never stored the flag (FI-027), so the rows could not
@@ -3925,6 +3952,53 @@ cannot draw more than 150 W, and the outlet branch is never at 0 A.
       office hours, and RM-020's caution applies. Until then L.O Yellow's stored power is a held
       figure; its energy is not being counted (the register is still, so the reports credit nothing —
       which is nearly right, the lights being off).
+- [ ] **RM-134** The meters were never re-read. L.O Yellow's "frozen clamp" was a value nobody asked
+      for again. **Built and dry-run against the live flow 2026-09-22; not applied — the operator's.**
+      **What was measured, read-only.**
+      - Every outlet, every light switch and the IR hub is fed `{ operation: 'GET' }` on a timer. The
+        three meter sessions (C.O yellow, L.O red, AREC ACU) were fed nothing.
+      - The live `node-red-contrib-tuya-smart-device` 5.4.0 hard-codes `issueGetOnConnect: false` and
+        `issueRefreshOnConnect: false`. The devices report a dp only when it changes.
+      - The demux's raw record (`co_yel_raw_dp`, persisted since 04:26) had **never** received dp 103/113
+        (`device_state1/2`) or 110/111/120/121.
+      - Channel 2 measured normally 06:54–07:43:49 (lights on, ~40 W, register rising 25523.522 → .556).
+        The office power came back with the L5–L7 relays off while the Pi was rebooting (07:44–07:47). The
+        meter's push of "0 W" reached nobody, and a channel at 0 W had nothing new to push. The register
+        has stood at 25523.556 since, which is ≤ 0.001 kWh in six hours, i.e. under 0.2 W.
+
+      So the bridge showed the last pushed value indefinitely, and RM-133's register rule flagged the
+      disagreement. The same signature is on L.O Red's freezes (RM-077, re-read there).
+      **Built.**
+      - **The meter poll.** `node-red-bridge/meterPollPlan.mjs` + `poll-meters.mjs` (`npm run
+        poll-meters:pi`). It adds an inject every 60 s (first fire 10 s after the deploy) and a function
+        with one output per session, sending GET and skipping a session whose parser says it is down.
+        Targets come from the registry: each `class: 'meter'` device's parser, found by its health key, then
+        the tuya node that feeds it directly or through the channel demux. So the dual meter gets one GET,
+        and the Aircon tab's legacy "AREC ACU Daily Parser", which also writes `arec_health` but is fed by a
+        timer, is not mistaken for a parser. The install is add-only and validated; the deployment type is
+        `nodes`, so no session restarts. **Live dry run: 3 sessions, 301 → 303 nodes, no invariant problem.**
+      - **The demux's idle rule is grounded in current** (`shared/channelDemux.mjs` `isIdle`). A channel is
+        idle only at exactly 0 W / 0 A, and the `monitor` label is no longer sufficient. The poll makes the
+        label arrive every minute for the first time; live L.O Red shows `monitor` at 26.6 W, and two polls
+        agreeing on a word would have traded a day's attribution. Every observed flip (all at 0 W / 0 A) is
+        classified exactly as before. The regression test failed before the change.
+      - **`npm run preflight` `flow_polls`** is an error when an enabled tuya node is fed no GET
+        (`pollCoverage`). A restored `flows.json` would drop a poller with no diff.
+      - `CLAUDE.md` gets the site fact "the tuya node never reads state on connect"; the Pi brief gets the
+        trap "a Node-RED restart is not a re-read".
+      **Decisive test on apply** (read-only): `co_yel_raw_dp` gains dp 103/113, and `mtr_lo_yellow` reads
+      ~0 W with `today_acc_energy2` still 25523.556 and no `measurement_frozen`. If it re-reports 39.8 W
+      instead, the clamp really is stuck and RM-133's panel power cycle stands.
+      **Then (operator's choice): scrub the held rows** 07:45 → the first polled row, with the register as
+      evidence (power/current 0, a `capabilities.scrub` stamp, dry run first).
+      **Channel interchange:** the demux now judges a complete snapshot of both channels each minute
+      rather than one fresh channel beside one possibly hours old. Prevention outright is hardware: check
+      for a firmware OTA on the dual meter; the definitive fix is two `cz_ct_single` meters, which cannot
+      trade channels.
+      `node-red-bridge/meterPollPlan.mjs`, `node-red-bridge/poll-meters.mjs`, `test/meter-poll.test.mjs`
+      (16), `shared/channelDemux.mjs`, `test/channel-demux.test.mjs` (+1), `scripts/preflight.mjs`,
+      `test/preflight.test.mjs` (+4), `CLAUDE.md`, `docs/pi-session-brief.md`, `shared/measurementFreeze.mjs`,
+      `node-red-bridge/valueFreezeTracker.mjs` (comments), `package.json`.
 - [x] **RM-130** The director's office aircon, on C.O Yellow with the outlets, reported as the estimate it is.
       **Built 2026-09-22; deployed with the Daily period.**
       **What the operator said (2026-09-22, closing FI-035):** the outlets on C.O Yellow are in the CARE
@@ -4687,6 +4761,11 @@ quality, and nothing is coerced to 0.
   that branch's second opinion and out of the building's, then runs `branchShortfalls` unchanged — its
   thresholds were sized on healthy data. Nothing is estimated. Fixtures: 09-12 and 09-13 from
   `readings`; RM-056's 2026-09-08 figures still produce the true shortfall.
+  **Re-read 2026-09-22 (RM-134):** L.O Red's freezes have the signature RM-134 found on L.O Yellow: a
+  nonzero reading held while the device's own registers stood still, which is what a circuit at 0 W
+  looks like to a bridge that never re-reads the meter. The meters were never polled, so a missed
+  "→ 0 W" push was never corrected. That is the likelier cause than a stuck clamp. It is not proven for
+  those days; the evidence is gone with the volatile journal.
 - [x] **RM-078 — one branch-energy derivation.** `lib/branchEnergy.branchEnergySplit`, through
   `lib/useBranchEnergy.ts`, used by `EnergySection.tsx` and `overview/EnergyBreakdownCard.tsx`:
   membership `BUILDING_METER_IDS`, the total rounded exactly as `buildLatest`'s `branchSum`, rows to two

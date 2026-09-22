@@ -63,7 +63,7 @@ export function demuxNodeSrc({ pair, devices, profile }) {
 // classifier is shared/channelDemux.mjs, inlined below. Re-run \`npm run demux:pi\` to regenerate.
 //
 // Device: ${d1.id} (channel 1) / ${d2.id} (channel 2) · profile ${profile.id}
-// Rules: any channel above ${pair.ceiling_w} W is ${pair.never_idle === d1.id ? d1.id : d2.id}; a channel at monitor / 0 A is the other.
+// Rules: any channel above ${pair.ceiling_w} W is ${pair.never_idle === d1.id ? d1.id : d2.id}; a channel at 0 W / 0 A is the other.
 
 ${CLASSIFIER_SRC.trim()}
 

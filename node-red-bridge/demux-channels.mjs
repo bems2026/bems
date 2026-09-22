@@ -54,7 +54,7 @@ if (plan.unchanged) {
 
 console.log('=== PLAN ===');
 for (const pair of SITE.channel_demux) {
-  console.log(`  ${pair.devices.join(' / ')}: any channel above ${pair.ceiling_w} W is ${pair.never_idle}; a channel at monitor / 0 A is the other.`);
+  console.log(`  ${pair.devices.join(' / ')}: any channel above ${pair.ceiling_w} W is ${pair.never_idle}; a channel at 0 W / 0 A is the other.`);
 }
 if (plan.added.length) console.log(`  add ${plan.added.length} node(s): ${plan.added.join(', ')}; move the data wire of ${plan.rewired.length} tuya node(s) through it`);
 if (plan.upgraded.length) console.log(`  replace the code of ${plan.upgraded.length} existing demux node(s): ${plan.upgraded.join(', ')}`);

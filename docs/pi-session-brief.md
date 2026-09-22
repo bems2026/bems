@@ -57,7 +57,7 @@ Decided by the operator, 2026-08-25.
 **Ask first — every time:**
 
 - **Writing the live flow**: `deploy:pi --apply`, `quiesce:pi --apply`, `aircon:pi --apply`, `rebind:pi --apply`, `enroll:pi --apply`,
-  `remove:pi --apply`, `fix-dp-parsers:pi --apply`, or any `POST /flows`. Back up
+  `remove:pi --apply`, `fix-dp-parsers:pi --apply`, `demux:pi --apply`, `poll-meters:pi --apply`, or any `POST /flows`. Back up
   `~/.node-red/flows.json` first, always.
 - **Dispatching to hardware** — anything that moves a relay, including a "harmless" no-op.
 - **`keys:import --apply`** — it writes live device credentials. Delete the export file afterwards.
@@ -190,6 +190,17 @@ protocol version, ARP `FAILED`, "needs eyes on the fixture". Nobody went, and a 
 in two seconds. A tuya node that has given up stays given up, and looks exactly like a device
 that is unplugged. The same restart recovered five devices. Only if a device is still dark
 afterwards is the hardware suspicion earned.
+
+**A Node-RED restart is not a re-read.** "Restart before you suspect hardware" is right for a node
+that has *given up*; it proves nothing about a value that is merely *old*. The tuya node sends no GET
+on connect (`issueGetOnConnect: false` is hard-coded in the node), the devices report a dp only when it
+changes, and flow context survives the restart — so a reading held since before a reboot is still held
+after it. On 2026-09-22 L.O Yellow held 39.8 W from 07:43 while its own register stood still; a restart
+at 11:08 "did not thaw it" and the diagnosis became a frozen clamp needing a panel power cycle. The
+lights had gone off during the Pi's reboot, and the meters were the only nodes nothing polled (RM-134).
+To tell a held value from a frozen device: read the device's own energy register (RM-133's rule) and
+check that a poll reaches the node (`npm run preflight`, `flow_polls`). Past a poll, a figure that
+still holds is the device's.
 
 **`deploy:pi` needs `--force` when `bridge-flow.json` was regenerated.** Without it, it used to
 print *"already deployed. Nothing to do."* and exit 0 — indistinguishable from success. It now
@@ -324,6 +335,9 @@ npm run deploy:pi  -- --host=127.0.0.1 [--force] [--apply]
 
 # Silence a permanently unreachable node (reversible with --undo; pass --name= to touch one node only)
 npm run quiesce:pi -- --host=127.0.0.1 [--name="<node>"] [--undo] [--apply]
+
+# A GET every minute to each CT meter session (RM-134) — without it a meter is push-only
+npm run poll-meters:pi -- --host=127.0.0.1 [--apply]
 
 # The Aircon tab for the IR hub (RM-116) — dry run prints the plan; back up flows.json before --apply
 npm run aircon:pi -- --host=127.0.0.1 [--keep-quiesced] [--apply]

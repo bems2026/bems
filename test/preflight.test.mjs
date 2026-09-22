@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { assessDeployment, LEVELS } from '../scripts/preflight.mjs';
+import { assessDeployment, LEVELS, pollCoverage } from '../scripts/preflight.mjs';
 
 /** A deployment where everything was checked and everything was fine. */
 const healthy = () => ({
@@ -23,6 +23,7 @@ const healthy = () => ({
     journal: { storage: 'persistent', onDisk: true },
     timers: { 'ibems-wifi-prefer.timer': 'active', 'ibems-lan-map.timer': 'active', 'ibems-fleet-recover.timer': 'active' },
     addresses: { pinned: 6, total: 6, lanMapDevices: 6, lanMapFreshestMs: 4 * 60_000 },
+    polls: { total: 6, unpolled: [] },
   },
 });
 
@@ -292,4 +293,50 @@ test('an unreadable flow leaves the address check unchecked, never passed', () =
   const check = find(assessDeployment(obs), 'host_addresses');
   assert.equal(check.level, LEVELS.UNCHECKED);
   assert.match(check.fix, /NODE_RED_ADMIN/);
+});
+
+// --- flow_polls (RM-134) -------------------------------------------------------------------------
+
+test('every enabled tuya node fed a GET poll passes', () => {
+  const check = find(assessDeployment(healthy()), 'flow_polls');
+  assert.equal(check.level, LEVELS.OK);
+  assert.match(check.detail, /all 6 node\(s\) are fed a GET poll/);
+});
+
+test('a node no poll reaches is an error that names it and the command that fixes it', () => {
+  // The tuya node never reads state on connect, so an unpolled device shows its last PUSHED value
+  // forever — L.O Yellow held 39.8 W for hours on 2026-09-22. A restored flows.json drops a poller
+  // with no diff, which is why this is checked rather than remembered.
+  const obs = healthy();
+  obs.host.polls = { total: 6, unpolled: ['C.O yellow', 'L.O red'] };
+  const r = assessDeployment(obs);
+  const check = find(r, 'flow_polls');
+  assert.equal(check.level, LEVELS.ERROR);
+  assert.match(check.detail, /2 of 6/);
+  assert.match(check.detail, /C\.O yellow, L\.O red/);
+  assert.match(check.fix, /poll-meters:pi/);
+  assert.equal(r.ready, false);
+});
+
+test('an unreadable flow leaves the poll check unchecked, never passed', () => {
+  const obs = healthy();
+  obs.host.polls = null;
+  assert.equal(find(assessDeployment(obs), 'flow_polls').level, LEVELS.UNCHECKED);
+});
+
+test('pollCoverage counts enabled tuya nodes and names the ones no GET reaches', () => {
+  const tuya = (id, name, extra = {}) => ({ id, type: 'tuya-smart-device', deviceName: name, wires: [[]], ...extra });
+  const fn = (id, func, targets) => ({ id, type: 'function', func, wires: targets.map((t) => [t]) });
+  const flows = [
+    tuya('m', 'C.O yellow'),
+    tuya('o', 'CO1'),
+    tuya('s', 'Light Switch 1'),
+    tuya('h', 'NBRIC IR Blaster'),
+    tuya('q', 'Outside Temp', { disableAutoStart: true }),
+    fn('op', "const poll = { operation: 'GET' };", ['o']),
+    fn('sp', "const poll = { operation: 'GET' };", ['s']),
+    fn('gate', 'return { payload: { operation: "GET" } };', ['h']),
+    fn('cmd', "msg.payload = { dps: 1, set: true }; return msg;", ['m']),
+  ];
+  assert.deepEqual(pollCoverage(flows), { total: 4, unpolled: ['C.O yellow'] }, 'a command formatter is not a poll; a quiesced node is not counted');
 });

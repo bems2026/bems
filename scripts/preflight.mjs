@@ -343,6 +343,30 @@ export function assessDeployment(obs) {
     'Reading the flow needs NODE_RED_ADMIN_USER and NODE_RED_ADMIN_PASS in server/.env. Then: npm run set-device-ip:pi -- --host=127.0.0.1 --from-lan-map (a dry run; back up ~/.node-red/flows.json, then --apply). The map holds only devices that have announced while ibems-lan-map listened — after a power event that is all of them. Then reserve the addresses on the access point (--reservations prints the table), or the next outage renumbers them.',
   );
 
+  /**
+   * Every enabled tuya node is fed a GET poll — RM-134. The tuya node never reads a device's state
+   * on connect (`issueGetOnConnect: false` is hard-coded in node-red-contrib-tuya-smart-device), so
+   * a device nothing polls shows its last PUSHED value forever: a change it pushed while the bridge
+   * was down is never seen, and a channel then at 0 W has nothing new to push. On 2026-09-22 the
+   * three meters were the only unpolled nodes, and L.O Yellow held 39.8 W for hours after the lights
+   * went off during a reboot. An error rather than a warning: the readings are wrong, not merely less
+   * resilient. And the flow lives only on the host, so a restored `flows.json` loses a poller with
+   * no diff — which is why this is checked rather than remembered.
+   */
+  const polls = host.polls ?? null;
+  const pollsKnown = polls !== null && Number.isFinite(polls.total) && Array.isArray(polls.unpolled);
+  add(
+    'flow_polls',
+    'Every field device re-read on a timer',
+    !pollsKnown ? LEVELS.UNCHECKED : polls.unpolled.length === 0 ? LEVELS.OK : LEVELS.ERROR,
+    !pollsKnown
+      ? 'not checked'
+      : polls.unpolled.length === 0
+        ? `all ${polls.total} node(s) are fed a GET poll`
+        : `${polls.unpolled.length} of ${polls.total} node(s) are never re-read — ${polls.unpolled.join(', ')} — and show their last pushed value until it changes`,
+    'Reading the flow needs NODE_RED_ADMIN_USER and NODE_RED_ADMIN_PASS in server/.env. Each poller is a dry run first; back up ~/.node-red/flows.json, then --apply: npm run poll-meters:pi -- --host=127.0.0.1 (CT meters), poll-outlets:pi (outlets), poll-switches:pi (light switches), aircon:pi (the IR hub\'s poll gate).',
+  );
+
   const errors = checks.filter((c) => c.level === LEVELS.ERROR);
   const warnings = checks.filter((c) => c.level === LEVELS.WARN);
   const unchecked = checks.filter((c) => c.level === LEVELS.UNCHECKED);
@@ -356,6 +380,25 @@ export function assessDeployment(obs) {
     warnings,
     unchecked,
   };
+}
+
+/** A function node whose source sends the tuya node's GET (or REFRESH) operation. */
+const POLL_OPERATION = /operation\s*:\s*['"](GET|REFRESH)['"]/;
+
+/**
+ * Which enabled tuya nodes no poll reaches — RM-134. Pure over the flow array, so the CLI reads the
+ * flow and this decides. A node counts as polled when a function node that sends the GET operation
+ * wires to it: the outlet, switch and meter pollers and the IR hub's poll gate all do. A command
+ * formatter wired to the same node is not a poll. A quiesced node (`disableAutoStart`) is not counted.
+ */
+export function pollCoverage(flows) {
+  const nodes = (flows ?? []).filter((n) => n?.type === 'tuya-smart-device' && n.disableAutoStart !== true);
+  const polled = new Set();
+  for (const n of flows ?? []) {
+    if (n?.type !== 'function' || !POLL_OPERATION.test(String(n.func ?? ''))) continue;
+    for (const t of (n.wires ?? []).flat()) polled.add(t);
+  }
+  return { total: nodes.length, unpolled: nodes.filter((n) => !polled.has(n.id)).map((n) => n.deviceName ?? n.name ?? n.id) };
 }
 
 // --- CLI ---------------------------------------------------------------------
@@ -546,7 +589,7 @@ if (process.argv[1] && process.argv[1].endsWith('preflight.mjs')) {
   }
 
   // --- what lives only on the host --------------------------------------------
-  const host = { journal: { storage: null, onDisk: null }, timers: {}, addresses: { pinned: null, total: null, lanMapDevices: null, lanMapFreshestMs: null } };
+  const host = { journal: { storage: null, onDisk: null }, timers: {}, addresses: { pinned: null, total: null, lanMapDevices: null, lanMapFreshestMs: null }, polls: null };
   if (process.platform === 'linux') {
     // `cat-config` prints the main file and every drop-in in the order systemd applies them, so
     // the last Storage= line is the one in force — the same rule journald itself uses. Parsing
@@ -600,9 +643,11 @@ if (process.argv[1] && process.argv[1].endsWith('preflight.mjs')) {
       const nodes = flows.filter((n) => n?.type === 'tuya-smart-device' && n.disableAutoStart !== true);
       host.addresses.total = nodes.length;
       host.addresses.pinned = nodes.filter((n) => typeof n.deviceIp === 'string' && n.deviceIp.trim() !== '').length;
+      host.polls = pollCoverage(flows);
     } catch {
       host.addresses.pinned = null;
       host.addresses.total = null;
+      host.polls = null;
     }
   }
 
