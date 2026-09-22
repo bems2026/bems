@@ -334,23 +334,20 @@ other four and none needed changing.
 
 ### 2026-09-22 (evening) — the field network after an outage; two actions, in order
 
-Read `docs/outage-recovery.md` first. The fleet has been dark since 18:11 on the 21st — associated,
-ARP-reachable, TCP 6668 open, silent on discovery — and nothing on the Pi can make a device announce.
+Read `docs/outage-recovery.md` first. **Done 2026-09-22 morning:** the operator power-cycled the office
+at 07:42; the Wi-Fi watchdog returned the Pi to `BEMS` 4 s after its first check (07:46:34, against
+5½ minutes the day before); the learner heard all 18 devices announce at 07:47:32 (and one meter had
+already moved, `.228` → `.229`); the 18 addresses were written to the flow at 08:02 (`flows.json`
+backed up beside it) and every node reconnected by address within a minute — **19/20 online**, the
+only dark one the never-installed outside sensor. No node waits for a broadcast any more.
 
-1. **Make the devices announce, once.** Either power-cycle the field devices (the breaker; the
-   meters keep working, the Pi and AP stay up) and wait two minutes, or renew IoT Core (RM-121) so
-   the tool's cloud mode needs no announcement. Then, on the Pi:
-   ```
-   npm run set-device-ip:pi -- --host=127.0.0.1 --from-lan-map            # dry run: the map should now hold ~19
-   cp ~/.node-red/flows.json ~/.node-red/flows.json.bak-ips-$(date +%F-%H%M%S)
-   npm run set-device-ip:pi -- --host=127.0.0.1 --from-lan-map --apply
-   ```
-   From then on every node connects by address and never waits for a broadcast.
-2. **At the access point:** `npm run set-device-ip:pi -- --host=127.0.0.1 --reservations` prints the
-   MAC → address table; enter it as DHCP reservations (the Pi too), pin the 2.4 GHz channel
-   (RM-046), lease ≥ 1 day, isolation off. Consider the UPS the runbook describes.
-
-Everything else for this is installed and running: `systemctl list-timers | grep ibems`.
+What remains is the access point, and only a person at its admin page can do it:
+**`npm run set-device-ip:pi -- --host=127.0.0.1 --reservations`** prints the MAC → address table
+(18 devices; add the Pi at its current address); enter it as DHCP reservations, pin the 2.4 GHz
+channel (RM-046 — it is on 1 and quiet today), lease ≥ 1 day, isolation off. Until the reservations
+are in, an AP power cycle can renumber a device; the watchdog will say `ADDRESS DRIFT` in the
+journal and `set-device-ip:pi --from-lan-map` re-pins it in one command. And the UPS the runbook
+describes is the change that makes the whole failure not happen.
 
 
 ### 2026-09-22 (later) — onboarding without IoT Core and the aircon's protocol; what to deploy, in order
@@ -3785,8 +3782,10 @@ cannot draw more than 150 W, and the outlet branch is never at 0 A.
       `ADDRESS DRIFT`, never re-addressed from a timer: flow writes stay a person's call. `ibems-wifi-prefer`
       now fires 90 s after boot and every 5 min. `docs/outage-recovery.md` is the runbook, including
       the AP items RM-046 left open and the UPS that would make the AP's cold boot not happen.
-      **What it cannot do:** make a silent device announce. The map is empty of the fourteen until
-      they are power-cycled once or the cloud maps them (RM-121); §0 says which and how.
+      **What it cannot do:** make a silent device announce. **Read back the same morning:** the operator
+      power-cycled the office at 07:42; the map filled at 07:47 (18 announced in one 30 s listen); the
+      addresses were applied at 08:02 and every node reconnected by address inside a minute, 19/20
+      online. The AP reservations remain (§0).
       `server/lanMap.mjs` (+ test, 7), `server/lan-map-learn.mjs`, `server/fleetRecover.mjs` (+ test,
       6), `server/fleet-recover.mjs`, `server/ibems-{lan-map,fleet-recover}.{service,timer}`,
       `server/ibems-wifi-prefer.timer`, `node-red-bridge/set-device-ip.mjs`, `docs/outage-recovery.md`.
