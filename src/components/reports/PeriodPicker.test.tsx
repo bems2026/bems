@@ -188,3 +188,16 @@ describe('a report not made yet — RM-138', () => {
     expect(next).toHaveAccessibleDescription(pending[0].label);
   });
 });
+
+describe('while the list of reports loads — RM-140', () => {
+  // Changing Day/Week/Month reloads the list, and the picker used to vanish from the bar until it came —
+  // the controls moved under the reader's finger. It stays, says it is loading, and cannot be used yet.
+  it('keeps its place in the bar, says it is loading, and offers nothing to press', () => {
+    render(<PeriodPicker period="week" starts={[]} selected={null} onSelect={() => {}} loading />);
+    const group = screen.getByRole('group', { name: 'Report week' });
+    expect(group).toHaveAttribute('aria-busy', 'true');
+    expect(within(group).getByRole('button', { name: /Loading reports/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Previous week' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Next week' })).toBeDisabled();
+  });
+});

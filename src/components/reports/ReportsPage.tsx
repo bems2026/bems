@@ -18,9 +18,11 @@ import { BUILDING_METER_IDS } from '@shared/registry.mjs';
 import { SITE } from '@shared/siteConfig.mjs';
 import { coverageOf, coverageRestatement, formatPeriod, isQuotable, PERIOD_ADJECTIVE, type ReportPeriod } from '@/lib/supabaseReports';
 import { siteDateTime } from '@/lib/siteTime';
+import { withViewTransition } from '@/lib/viewTransition';
 import { ReportControlBar } from './ReportControlBar';
 import { Tabs } from '@/components/ui/Tabs';
 import { ReportSkeleton } from './ReportSkeleton';
+import type { ReportChartKind } from '@/lib/reportChartSizes';
 import { ReportCharts, type ChartsData } from './ReportCharts';
 import {
   ALL_SCOPE,
@@ -78,6 +80,10 @@ import { apportionedEstimates, estimateDayPoints, estimateHourPoints } from '@/l
  * headline carries its own "(partial …)" on the same line, and the badge sits in the heading
  * directly above them.
  */
+
+/** RM-140: the charts each tab draws, so its skeleton holds exactly their places and nothing jumps. */
+const USAGE_CHARTS: readonly ReportChartKind[] = ['hours', 'heat', 'curve'];
+const CIRCUIT_CHARTS: readonly ReportChartKind[] = ['circuitDaily', 'circuitTrend'];
 
 /**
  * Four readings of the same period, not four pages.
@@ -221,7 +227,13 @@ export function ReportsPage() {
         ? 'Still loading the rates.'
         : null;
   const failedPart = core.status === 'error' || report.devices.status === 'error';
-  const chartsStillLoading = hours.status === 'loading' || matrix.status === 'loading' || curve.status === 'loading';
+  /**
+   * RM-140: the Circuits series load when the drawer opens (RM-094's `want`), and this gate did not wait for
+   * them — a PDF made at once printed the circuit charts as "could not be loaded" when they were only still
+   * loading. They are waited for like the other charts, and named beside their sections when they fail.
+   */
+  const circuitsStillLoading = report.deviceDaily.status === 'loading' || report.trend.status === 'loading';
+  const chartsStillLoading = hours.status === 'loading' || matrix.status === 'loading' || curve.status === 'loading' || circuitsStillLoading;
   const exportUnavailable: Partial<Record<ExportFormat, string>> = {};
   if (!charts || !rows) {
     exportUnavailable.pdf = failedPart ? 'Part of this report could not be loaded. Retry it on the page first.' : 'The report is still loading.';
@@ -243,6 +255,11 @@ export function ReportsPage() {
   }
   if (matrix.status === 'error') exportSectionNotes.heatmap = leftOut;
   if (curve.status === 'error') exportSectionNotes.durationCurve = leftOut;
+  if (report.deviceDaily.status === 'error') {
+    exportSectionNotes.circuitEnergy = leftOut;
+    exportSectionNotes.apportioned = leftOut;
+  }
+  if (report.trend.status === 'error') exportSectionNotes.circuitTrend = leftOut;
   if (!core.data) {
     exportUnavailable['daily-csv'] =
       core.status === 'error' ? 'The daily figures could not be loaded. Retry them on the page first.' : 'The daily figures are still loading.';
@@ -286,6 +303,9 @@ export function ReportsPage() {
   /** Placeholders only while nothing has failed: a failure shows its Retry note instead, and a
    *  skeleton beside an error would say the part is still coming when it is not. */
   const chartsLoading = charts === null && core.status === 'loading';
+  // RM-124: a day is read hour by hour; its "energy per day" would be one bar.
+  const overviewCharts: readonly ReportChartKind[] = period === 'day' ? ['hourly', 'useShare'] : ['daily', 'useShare'];
+  const tabCharts = tab === 'patterns' ? USAGE_CHARTS : tab === 'circuits' ? CIRCUIT_CHARTS : tab === 'compare' ? [] : overviewCharts;
   /**
    * Performs one export and says, in words, what was saved. Throws with the reason when it cannot —
    * `ExportDrawer` shows that beside its button. Names come from `reportFilename`, never from the
@@ -428,14 +448,16 @@ export function ReportsPage() {
           building, which reading of it, and what to take away. */}
       <ReportControlBar
         period={period}
-        onPeriodChange={setPeriod}
+        // RM-140: a change the reader asked for crossfades where the browser can; the bar holds still.
+        onPeriodChange={(p) => withViewTransition(() => setPeriod(p))}
         starts={months ? months.map((m) => m.period_start.slice(0, 10)) : []}
         selected={selected}
-        onSelect={select}
+        onSelect={(start) => withViewTransition(() => select(start))}
         pending={report.pending}
+        periodsLoading={periods.status === 'loading'}
         scopes={SCOPES}
         scope={encodeScope(scope)}
-        onScopeChange={(value) => setScope(decodeScope(value))}
+        onScopeChange={(value) => withViewTransition(() => setScope(decodeScope(value)))}
         actions={
           <button type="button" className="report-primary-btn" onClick={() => setExportOpen(true)} disabled={!selected} aria-haspopup="dialog">
             <Download size={16} aria-hidden="true" /> Export
@@ -445,21 +467,21 @@ export function ReportsPage() {
 
       {/* RM-101: the tabs decide the reading of the report, not the report — a strip of their own, so
           the bar above stays one line on the kiosk. */}
-      <Tabs tabs={REPORT_TABS} activeId={tab} onChange={setTab} label="Report type" className="report-tabs-strip" />
+      <Tabs tabs={REPORT_TABS} activeId={tab} onChange={(id) => withViewTransition(() => setTab(id))} label="Report type" className="report-tabs-strip" />
 
       {narrowed && tab !== 'circuits' && tab !== 'compare' ? (
         // RM-096: the Overview and Usage patterns are the whole building's series; the chosen part of it
         // lives on Circuits. Said in one line with the way there, instead of a paragraph.
         <p className="reports-note report-scope-note" role="note">
           This tab shows the whole building. <strong>{narrowed}</strong> is on the Circuits tab.{' '}
-          <button type="button" className="report-retry-btn" onClick={() => setTab('circuits')}>
+          <button type="button" className="report-retry-btn" onClick={() => withViewTransition(() => setTab('circuits'))}>
             Open Circuits
           </button>
         </p>
       ) : null}
 
       {periods.status === 'loading' ? (
-        <ReportSkeleton label={PERIOD_ADJECTIVE[period].toLowerCase()} period={period} parts={['kpis', 'charts']} />
+        <ReportSkeleton label={PERIOD_ADJECTIVE[period].toLowerCase()} period={period} parts={['kpis', 'charts']} kinds={tabCharts} />
       ) : null}
       <ReportSectionNote section={periods} what="the list of reports" quietWhileLoading />
 
@@ -468,7 +490,7 @@ export function ReportsPage() {
       {report.arrived ? (
         <p className="reports-note" role="note">
           <FileText size={16} aria-hidden="true" /> The {formatPeriod(period, report.arrived)} report is ready.{' '}
-          <button type="button" className="report-retry-btn" onClick={() => report.arrived && select(report.arrived)}>
+          <button type="button" className="report-retry-btn" onClick={() => report.arrived && withViewTransition(() => select(report.arrived as string))}>
             Open it
           </button>
         </p>
@@ -553,12 +575,11 @@ export function ReportsPage() {
               period={period}
               start={selected}
               {...charts}
-              // RM-124: a day is read hour by hour; its "energy per day" would be one bar.
-              only={period === 'day' ? ['hourly', 'useShare'] : ['daily', 'useShare']}
+              only={overviewCharts}
               loading={{ useShare: report.devices.status === 'loading', hourly: hourEnergy.status === 'loading' }}
             />
           ) : chartsLoading ? (
-            <ReportSkeleton label={periodLabel} period={period} parts={['charts']} />
+            <ReportSkeleton label={periodLabel} period={period} parts={['charts']} kinds={overviewCharts} />
           ) : null}
           {core.data ? (
             <ErrorBoundary scope="How much was recorded" variant="inline" resetKey={core.data}>
@@ -617,7 +638,7 @@ export function ReportsPage() {
               />
             </ErrorBoundary>
           ) : chartsLoading ? (
-            <ReportSkeleton label={periodLabel} period={period} parts={['kpis', 'charts']} />
+            <ReportSkeleton label={periodLabel} period={period} parts={['kpis', 'charts']} kinds={USAGE_CHARTS} />
           ) : null}
         </>
       ) : null}

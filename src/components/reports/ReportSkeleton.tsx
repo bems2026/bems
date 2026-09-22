@@ -41,6 +41,11 @@ interface Props {
   label: string;
   period: ReportPeriod;
   parts: readonly Part[];
+  /**
+   * The charts the tab will draw — RM-140. It drew all five everywhere, where the Overview shows two and
+   * Usage patterns three, so the page jumped when the real charts landed.
+   */
+  kinds?: readonly ReportChartKind[];
   announce?: boolean;
 }
 
@@ -48,7 +53,7 @@ const TILES = 5;
 const TABLE_ROWS = 6;
 const TABLE_FIGURES = 3;
 
-export function ReportSkeleton({ label, period, parts, announce = true }: Props) {
+export function ReportSkeleton({ label, period, parts, kinds = REPORT_CHART_ORDER, announce = true }: Props) {
   // The heatmap's height follows its day count; a placeholder uses the period's usual length.
   const days = period === 'day' ? 1 : period === 'week' ? 7 : 31;
 
@@ -77,7 +82,7 @@ export function ReportSkeleton({ label, period, parts, announce = true }: Props)
 
       {parts.includes('charts') ? (
         <div className="report-charts">
-          {REPORT_CHART_ORDER.map((kind) => (
+          {kinds.map((kind) => (
             <ChartPlaceholder key={kind} kind={kind} dayCount={days} />
           ))}
         </div>

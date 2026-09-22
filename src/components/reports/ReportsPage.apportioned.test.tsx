@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { ReportsPage } from './ReportsPage';
 import * as reports from '@/lib/supabaseReports';
+import * as circuits from '@/lib/circuitSeries';
 
 /**
  * The four readings of one period, and the one that refuses to give an answer.
@@ -161,5 +162,25 @@ describe('the estimated loads section', () => {
     fireEvent.click(within(section).getByText(/show each day/i));
     expect(await within(section).findByText('≈ 2.00')).toBeInTheDocument();
     expect(within(section).getByText('≈ 4.00')).toBeInTheDocument();
+  });
+});
+
+describe('the PDF waits for the Circuits charts it prints — RM-140', () => {
+  // The Circuits series load when the export drawer opens (RM-094's `want`). The PDF's gate waited for the
+  // hour profile, the heatmap and the curve but not for these, so a document made at once printed the
+  // circuit charts under "could not be loaded when this document was made" — they were only still loading.
+  it('says the charts are still loading while the circuit series load, rather than printing them as failed', async () => {
+    vi.mocked(circuits.getCircuitTrend).mockReturnValue(new Promise(() => {}));
+    render(<ReportsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Export' }));
+    expect(await screen.findByText('The charts are still loading.')).toBeInTheDocument();
+  });
+
+  it('names a circuit chart whose series failed beside its section, as it names the others', async () => {
+    vi.mocked(circuits.getCircuitTrend).mockRejectedValue(new Error('readings_archive failed for mtr_lo_red: permission denied'));
+    render(<ReportsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Export' }));
+    const section = await screen.findByRole('checkbox', { name: /Power through the period, by circuit/ });
+    expect(section).toHaveAccessibleDescription(/left out of the PDF/);
   });
 });

@@ -1334,6 +1334,12 @@ body::before {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
+  /* RM-140: `*` does not match the view-transition pseudo-elements, so a crossfade escaped the rule. */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
 }
 @media (prefers-contrast: high) {
   :root {
@@ -6712,7 +6718,15 @@ body::before {
 
 /* RM-082b — one control bar. Under the nav, measured rather than assumed; z-index below the nav's 50
    so a popover from the nav still covers it. Sticky only where there is room for it (RM-082d, below). */
+/* RM-140: a change of period or reading crossfades (`withViewTransition`). The bar is its own
+   transition group, so it holds still while the report changes under it. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 180ms;
+}
+
 .report-controls {
+  view-transition-name: report-controls;
   position: static;
   top: calc(var(--nav-h-live, var(--nav-h)) + var(--sp-2));
   z-index: 10;

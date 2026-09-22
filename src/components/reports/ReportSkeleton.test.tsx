@@ -41,3 +41,13 @@ describe('ReportSkeleton', () => {
     expect(container.querySelector('.report-skeleton__kpis')).toBeNull();
   });
 });
+
+describe('a skeleton shaped like what arrives — RM-140', () => {
+  // It always drew all five charts, where the Overview shows two and Usage patterns three: the page
+  // jumped when the real charts landed, three placeholders' height at once.
+  it('holds a place for exactly the charts the tab will draw, when it is told which', () => {
+    const { container } = render(<ReportSkeleton label="September 2026" period="month" parts={['charts']} kinds={['daily', 'useShare']} />);
+    const charts = [...container.querySelectorAll<HTMLElement>('[data-chart]')].map((el) => el.dataset.chart);
+    expect(charts).toEqual(['daily', 'useShare']);
+  });
+});

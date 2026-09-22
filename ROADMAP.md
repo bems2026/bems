@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-22, 23:00 — **RM-139: no circuit told apart by colour alone; the status hues stay, measured.** **Earlier, 22:10 — RM-138: a report not made yet is said, not silent; the week of
+**Last audited:** 2026-09-22, 23:40 — **RM-140: the PDF waits for the circuit charts; the controls stay put; changes crossfade.** **Earlier, 23:00 — RM-139: no circuit told apart by colour alone; the status hues stay, measured.** **Earlier, 22:10 — RM-138: a report not made yet is said, not silent; the week of
 14 Sept was not late** (settles 08:00 Wed 23 Sept). **Earlier, 21:20 — RM-137: a statement timeout is asked
 again by itself** (the operator's Reports brief; §2's first section). **Earlier, 17:10 — the end-of-day list, by owner, is §0's first entry.** RM-136 was run
 at 16:31 and read back: both notices are gone and checked in a browser. **Earlier, 17:00 — phase47 (FI-027)
@@ -3793,6 +3793,21 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       helper narrowed to the legend row), `palette.test.ts` (+3), `circuitBreakdownChart.test.ts` (+1).
 - [ ] **FI-038** Analytics' series cycle continues past the report's four with `--red-bright` (the fault
       colour, decoratively) then sky and a literal pink; audit it against RM-139's reasoning.
+- [x] **RM-140** Loading and transitions: what was missing, not a redo. **A PDF bug first:** the export gate
+      waited for the hour profile, heatmap and curve but not the Circuits series, which only start loading
+      when the drawer opens — a document made at once printed the circuit charts as "could not be loaded"
+      while they were still loading. They are waited for, and named beside their sections when they fail.
+      **Continuity, keeping "derived by key"** (the operator's choice — no old figures under a new heading):
+      the period picker stays in the bar, `aria-busy`, "Loading reports…", instead of vanishing while a new
+      kind's list loads; the skeleton draws the tab's own charts (Overview 2, Usage patterns 3, Circuits 2)
+      instead of five, so nothing jumps. **View Transitions** (`src/lib/viewTransition.ts`, native,
+      feature-detected, `flushSync`): period kind, period, scope, tab and "Open …" crossfade in 180 ms while
+      the bar (`view-transition-name`) holds still; skipped under reduced motion, and the global
+      reduced-motion block now names `::view-transition-*`, which `*` never matched. **Checked, unchanged:**
+      only the Circuits sections are deferred and everything else feeds the PDF, so nothing more is lazy;
+      the skeleton's status line already names the period being fetched. Tests: `viewTransition.test.ts`
+      (4), `reports-css.test.mjs` (+2), `ReportSkeleton.test.tsx` (+1), `PeriodPicker.test.tsx` (+1),
+      `ReportsPage.reliability.test.tsx` (+1), `ReportsPage.apportioned.test.tsx` (+2).
 
 ### Onboarding without IoT Core, and the aircon's own IR protocol — RM-126 to RM-129 (2026-09-22)
 

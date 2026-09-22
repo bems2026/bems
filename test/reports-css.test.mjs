@@ -182,3 +182,21 @@ test('RM-107: a report table keeps its column headers while its rows scroll', ()
 test('a report chart fits a phone: its column shrinks, and the drawing scrolls inside the plot', () => {
   assert.deepEqual(chartColumnFindings(css), []);
 });
+
+// RM-140. The Reports page crossfades a period change with the native View Transitions API. The global
+// reduced-motion block zeroes animations on `*`, and `*` does not match the `::view-transition-*`
+// pseudo-elements — so without naming them, a reader who asked for less motion would still get the fade
+// wherever the script's own check was missed.
+test('the global reduced-motion block reaches the view-transition pseudo-elements', () => {
+  const blocks = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/g)].map((m) => m[1]);
+  const global = blocks.find((b) => /(^|\n)\s*\*[\s,{]/.test(b));
+  assert.ok(global, 'no reduced-motion block names `*`');
+  for (const pseudo of ['::view-transition-group(*)', '::view-transition-old(*)', '::view-transition-new(*)']) {
+    assert.ok(global.includes(pseudo), `the global reduced-motion block does not name ${pseudo}`);
+  }
+});
+
+test('the report control bar stays put while the page crossfades under it', () => {
+  const bar = declarationsOf(css, '.report-controls');
+  assert.equal(bar['view-transition-name'], 'report-controls');
+});

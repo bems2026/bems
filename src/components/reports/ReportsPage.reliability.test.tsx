@@ -240,3 +240,19 @@ describe('the next report, said on the page — RM-138', () => {
     await waitFor(() => expect(screen.queryByText(/^Next weekly report:/)).not.toBeInTheDocument());
   });
 });
+
+describe('the controls stay put while a new kind of period loads — RM-140', () => {
+  it('keeps the period picker in the bar while the weeks are read', async () => {
+    let answer!: (rows: reports.PeriodBuildingReport[]) => void;
+    vi.mocked(reports.getReportPeriods).mockImplementation((period) =>
+      period === 'week' ? new Promise((resolve) => (answer = resolve)) : Promise.resolve([buildingRow()])
+    );
+    render(<ReportsPage />);
+    await screen.findByRole('group', { name: 'Report month' });
+    fireEvent.click(screen.getByRole('button', { name: 'Weekly' }));
+    const picker = await screen.findByRole('group', { name: 'Report week' });
+    expect(picker).toHaveAttribute('aria-busy', 'true');
+    answer([buildingRow({ period: 'week', period_start: '2026-07-06' })]);
+    await waitFor(() => expect(screen.getByRole('group', { name: 'Report week' })).not.toHaveAttribute('aria-busy', 'true'));
+  });
+});

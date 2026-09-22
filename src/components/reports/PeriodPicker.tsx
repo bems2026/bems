@@ -43,11 +43,16 @@ interface Props {
   onSelect: (start: string) => void;
   /** RM-138: the period just ended and the one running, when either has no report yet. */
   pending?: readonly PendingPeriod[];
+  /**
+   * RM-140: the list of reports is being read. The picker keeps its place in the bar and says so — it
+   * used to vanish while a new kind of period loaded, and the controls moved under the reader's finger.
+   */
+  loading?: boolean;
 }
 
 const NO_PENDING: readonly PendingPeriod[] = [];
 
-export function PeriodPicker({ period, starts, selected, onSelect, pending = NO_PENDING }: Props) {
+export function PeriodPicker({ period, starts, selected, onSelect, pending = NO_PENDING, loading = false }: Props) {
   const [open, setOpen] = useState(false);
   const dismiss = useCallback(() => setOpen(false), []);
   const { anchorRef, popRef, style, placement } = useAnchoredPopover({
@@ -129,7 +134,7 @@ export function PeriodPicker({ period, starts, selected, onSelect, pending = NO_
   };
 
   return (
-    <div className="report-stepper" role="group" aria-label={label}>
+    <div className="report-stepper" role="group" aria-label={label} aria-busy={loading || undefined}>
       <button
         type="button"
         className="report-stepper__step"
@@ -148,7 +153,7 @@ export function PeriodPicker({ period, starts, selected, onSelect, pending = NO_
         disabled={selected === null}
         onClick={toggle}
       >
-        {selected === null ? '—' : formatPeriod(period, selected)}
+        {selected === null ? (loading ? 'Loading reports…' : '—') : formatPeriod(period, selected)}
         <ChevronDown size={14} aria-hidden="true" />
       </button>
       <button
