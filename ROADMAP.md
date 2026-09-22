@@ -16,7 +16,8 @@ the map fills and the addresses can be set; then reserve them on the AP.
 RM-129.** The operator decided on 2026-09-17 that Tuya IoT Core is only for
 extracting ids and local keys, not a dependency, and it had just lapsed — taking Add Device, rebind and
 the aircon's mode/fan/swing with it. **Deployed by the operator 2026-09-22 (Aircon tab 06:49, build and
-restart; the Pi then rebooted at 07:44) and read back at 07:55** — see §0. Keys not yet imported.
+restart; the Pi then rebooted at 07:44) and read back at 07:55** — see §0. **Keys imported 08:51**: 17
+devices, every key identical to its flow node's.
 - **RM-126:** device facts come from three sources: keys imported from a key tool's export, what the
   device network announces (a passive listener in the proxy), and the vendor cloud only while it
   answers. `/api/tuya/devices` no longer fails with the cloud. Orphans for Rebind now need network
@@ -367,7 +368,17 @@ describes is the change that makes the whole failure not happen.
   75 %, `stale_after_ms` 150000. `sens_outside_temp` reads offline with no humidity (RM-114 live).
 - phase45's columns exist (RM-117).
 
-Still to do: step 4 (import keys) and step 6 (the on-site test, no longer blocked by the network).
+**Step 4 done 2026-09-22 08:51 by the operator, and read back:** a CSV built from their device workbook
+(17 devices: seven switches, seven outlets, the IR hub, the two physical meters with channels) went
+through Add Device → Import keys, "lists every device" unticked because it is the site, not the whole
+account. The proxy logged `added 17, updated 0, complete=false, 0 problem(s)`; the store is
+`server/data/device-credentials.json`, 0600, 17 keys of 16 characters, each identical to its flow
+node's (compared by hash). The CSV was deleted from the workstation and is not in the Recycle Bin.
+Not in the store: the CARE ACU meter (`AREC ACU` — the workbook has no key for it; the flow does) and
+the never-installed Outside Temp. No complete-list marker is set, so Rebind's orphan rule relies on
+the cloud listing or a later whole-account export.
+
+Still to do: step 6 (the on-site test, no longer blocked by the network).
 The original list, for reference:
 
 1. **Pull and build on the Pi**: `ssh <user>@<host> "cd /home/bems/bems && git pull --ff-only && npm run build"`.
