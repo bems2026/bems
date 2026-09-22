@@ -56,7 +56,7 @@ import crypto from 'node:crypto';
 import { DEVICE_REGISTRY, PHASE_MAP, STALE_AFTER_MS_BY_CLASS, TIMING, publicDevices, SITE, DAILY_ENERGY_CODE_BY_DEVICE, BUILDING_METER_IDS } from '../shared/registry.mjs';
 import { fixturePlan, branchEnergyTotal } from './fixturePlan.mjs';
 import { buildLatest, iso8 } from '../shared/buildLatest.mjs';
-import { FROZEN_AFTER_MS } from '../shared/measurementFreeze.mjs';
+import { FROZEN_AFTER_MS, REGISTER_STALL } from '../shared/measurementFreeze.mjs';
 import { runValueFreezeTracker } from '../node-red-bridge/valueFreezeTracker.mjs';
 import { CAPABILITY_PROFILES, channelCodesFor } from '../shared/deviceCapabilities.mjs';
 import { COMMAND_ROUTE, ACCEPTED_STATUS, validateCommand, buildAck } from '../shared/commands.mjs';
@@ -448,7 +448,7 @@ const freezeStore = {};
 const latest = () => {
   const snap = snapshot();
   runValueFreezeTracker(freezeStore, snap);
-  return buildLatest(snap, DEVICE_REGISTRY, PHASE_MAP, Date.now(), SITE.utc_offset_minutes, STALE_AFTER_MS_BY_CLASS, SITE.max_branch_kwh_per_day, DAILY_ENERGY_CODE_BY_DEVICE, BUILDING_METER_IDS, FROZEN_AFTER_MS);
+  return buildLatest(snap, DEVICE_REGISTRY, PHASE_MAP, Date.now(), SITE.utc_offset_minutes, STALE_AFTER_MS_BY_CLASS, SITE.max_branch_kwh_per_day, DAILY_ENERGY_CODE_BY_DEVICE, BUILDING_METER_IDS, FROZEN_AFTER_MS, REGISTER_STALL);
 };
 
 // ---------------------------------------------------------------------------

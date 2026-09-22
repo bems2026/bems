@@ -1,6 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-22, 10:55 — **The walkthrough: what is left, by who can do it (§0); the
+**Last audited:** 2026-09-22, 11:40 — **L.O Yellow's clamp froze at 07:47 and the flag could not say so:
+RM-133 (built, awaiting the flow deploy; the meter is the operator's). Earlier: the walkthrough: what is left, by who can do it (§0); the
 preflight checks what lives only on the host and no longer fails on the optional cloud: RM-132; a
 restore has been performed: RM-006d closed; the kiosk survived a cold boot signed in: RM-007 closed.**
 `npm run preflight` now says `Ready` on this deployment with two warnings (the lapsed vendor trial,
@@ -353,6 +354,10 @@ cloud, `npm run preflight` reads `Ready`, and a backup has now been restored. Wh
 cleanly by who can do it.
 
 **Only a person at the office or the AP can do these, in order of value:**
+0. **L.O Yellow's clamp is frozen (RM-133, since 07:47 today):** a Node-RED restart did not thaw it.
+   Power-cycle the yellow meter at the panel, outside office hours; then confirm `mtr_lo_yellow`
+   reads 0 W / `monitor` with L5–L7 off. Until the flow deploy below is approved the reading shows
+   39.8 W, online, and nothing says otherwise.
 1. **The access point** (RM-131, RM-046): `npm run set-device-ip:pi -- --host=127.0.0.1 --reservations`
    prints the MAC → address table; enter it as DHCP reservations (plus the Pi), pin the 2.4 GHz
    channel, lease ≥ 1 day, isolation off. Until then an AP power cycle can renumber a device; the
@@ -3866,6 +3871,44 @@ cannot draw more than 150 W, and the outlet branch is never at 0 A.
       lists what stays cloud-only. On this deployment the verdict is **`Ready` with two warnings**
       (the trial, 19 of 20 devices); the three host checks all pass. `scripts/preflight.mjs`,
       `test/preflight.test.mjs` (24), `CLAUDE.md`, `docs/replication.md`.
+- [ ] **RM-133** L.O Yellow's clamp stopped measuring at 07:47:44, and the freeze flag could not say so.
+      **Verified 2026-09-22 11:00–11:11; the software half built, awaiting the flow deploy; the meter
+      itself is the operator's.**
+      **What the rows show.** From 07:47:44 `mtr_lo_yellow` repeated exactly 39.8 W / 0.446 A / 226.7 V
+      with `today_acc_energy2` held at 25523.556 and `add_ele2` at 0.01 — 188 identical minute rows to
+      10:57 — while `mtr_co_yellow` on the same session moved every minute and its register rose 3.18
+      kWh. The 39.8 W is the moment's true reading: `l7` was on at 07:47 and was switched off at 07:48
+      (`l5`, `l6` off all day), so the circuit has drawn about nothing since, and the channel never
+      said so. At 10:58:59 the channel's voltage dp began following channel 1's exactly (214.5 / 214.5,
+      213.3 / 213.3 …) while power, current and register stayed held; the voltage is one measurement
+      shared by both clamps. The demux is not involved: `channel_map` read `direct` / `ceiling`
+      throughout, and channel 1 carried the 850 W load it should. `device_state2` read `working`, not
+      `monitor`, all along. The freeze began five minutes after the operator's power cycle of the
+      office (07:42); it is the meter, in the state it booted into.
+      **What was tried.** `sudo systemctl restart nodered` at 11:08 (the project's first remedy): 19
+      devices back inside a minute; channel 2 still 39.8 W / 0.446 A / 25523.556 after the reconnect's
+      full dp read. A session does not thaw a clamp.
+      **Why the flag never stood.** RM-079's rule needs v/c/p held three hours — due 10:47:44 — and
+      from 10:58 the shared voltage restarted that clock every minute (`value_freeze.lo_yel2.since`
+      read 11:03:52 at 11:05). The ingest also never stored the flag (FI-027), so the rows could not
+      have said it either way.
+      **Built.** A second clock in `node-red-bridge/valueFreezeTracker.mjs`: the last change of the
+      channel's OWN registers (`today_acc_energy<n>`, `total_energy<n>`; never the shared
+      `all_energy`), carried across value changes. `shared/measurementFreeze.mjs` `REGISTER_STALL`
+      (30 min, owing ≥ 0.005 kWh — five ticks, so 10 W needs the half hour and 3 W two) and
+      `registerStalled`; `shared/buildLatest.mjs` flags on either rule, `frozen_since` the earlier
+      clock, threaded through `build-flow.mjs` and the mock as `FROZEN_AFTER_MS` is. `server/shapeRows.mjs`
+      stores `measurement_frozen` and `frozen_since` in the row's `capabilities` (FI-027's storage
+      half). `docs/bridge-contract.md`. Tests: `test/value-freeze-tracker.test.mjs` (+3),
+      `test/measurement-frozen.test.mjs` (+5), `server/ingest.test.mjs` (+1).
+      **To deploy:** `deploy:pi --force --apply` (two node bodies change: "Track value freezes" and
+      "Build latest readings"), then `sudo systemctl restart ibems-ingest ibems-proxy ibems-scheduler`.
+      The register clock starts at the deploy, so the flag is due thirty minutes after it.
+      **The meter:** by this project's own rule (RM-077's "three freezes in four days"), a channel
+      that a Node-RED restart does not thaw needs a power cycle at the panel — the operator's, outside
+      office hours, and RM-020's caution applies. Until then L.O Yellow's stored power is a held
+      figure; its energy is not being counted (the register is still, so the reports credit nothing —
+      which is nearly right, the lights being off).
 - [x] **RM-130** The director's office aircon, on C.O Yellow with the outlets, reported as the estimate it is.
       **Built 2026-09-22; deployed with the Daily period.**
       **What the operator said (2026-09-22, closing FI-035):** the outlets on C.O Yellow are in the CARE
@@ -9528,7 +9571,9 @@ may not.
   investigated.
 - **FI-027** (M) **Persist sample quality.** `readings` stores `online` but not `frozen`, so a stored
   range cannot show a freeze and a report cannot leave one out. Follows RM-079, which is where the flag
-  would first exist.
+  would first exist. **Storage half done 2026-09-22 (RM-133):** the row's `capabilities` carries
+  `measurement_frozen` and `frozen_since` from the deploy on. Reports still count a frozen window's
+  minutes as recorded; that is the half that remains.
 - ~~**FI-021** (M) Meter arrival tracking.~~ **Done 2026-09-01 — EX-141.** The entry that stood
   here was **wrong about the mechanism**, and the correction is the more useful record: it
   claimed the tracker keyed on value change and had no arrival signal, when the energy

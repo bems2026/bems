@@ -232,6 +232,21 @@ test('a channel map on a reading is stored in the capabilities long tail, so the
   assert.equal('channel_map' in co, false, 'never a column');
 });
 
+test('a freeze flag on a reading is stored in the capabilities long tail, so a stored range can show it — FI-027', () => {
+  // RM-133. `measurement_frozen` and `frozen_since` arrive as top-level fields (RM-079); `readings`
+  // has no column for them. Stored beside the device's own codes, the 07:47–now stretch of
+  // 2026-09-22 on L.O Yellow would have said what it was rather than 39.8 W, online, for hours.
+  const { readings } = splitLatestPayload([
+    { device_id: 'mtr_lo_yellow', ts: AT, power_w: 39.8, online: true, capabilities: { add_ele2: 0.01 }, measurement_frozen: true, frozen_since: '2026-09-22T07:47:44+08:00' },
+    { device_id: 'mtr_lo_red', ts: AT, power_w: 12, online: true, capabilities: { add_ele1: 0.01 } },
+  ], AT_MS);
+  const lo = readings.find((r) => r.device_id === 'mtr_lo_yellow');
+  const red = readings.find((r) => r.device_id === 'mtr_lo_red');
+  assert.deepEqual(lo.capabilities, { add_ele2: 0.01, measurement_frozen: true, frozen_since: '2026-09-22T07:47:44+08:00' });
+  assert.equal('measurement_frozen' in lo, false, 'never a column');
+  assert.deepEqual(red.capabilities, { add_ele1: 0.01 }, 'absent means not flagged, and nothing is written');
+});
+
 test('an outlet promotes its fault and nothing else', () => {
   const { readings, rejections } = splitLatestPayload([
     { device_id: 'co5', ts: AT, power_w: 0, online: true,

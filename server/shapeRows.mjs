@@ -93,7 +93,7 @@ export function splitLatestPayload(latest, nowMs = Date.now(), site = SITE) {
       // Merged before the scrub, which only ever rewrites its own four numeric fields and
       // copies the rest through. Both routes append to the same `rejections`, so a capability
       // the catalogue refuses is counted exactly like a reading out of bounds.
-      ...(device ? promoteCapabilities(device, withChannelMap(entry), rejections) : {}),
+      ...(device ? promoteCapabilities(device, withFreeze(entry, withChannelMap(entry)), rejections) : {}),
     }, rBounds, nowMs);
     rejections.push(...scrubbed.rejections);
     if (scrubbed.row) readings.push(scrubbed.row);
@@ -112,6 +112,18 @@ function withChannelMap(entry) {
   const cm = entry.channel_map;
   if (!cm || typeof cm !== 'object') return entry.capabilities;
   return { ...(entry.capabilities && typeof entry.capabilities === 'object' ? entry.capabilities : {}), channel_map: cm };
+}
+
+/**
+ * RM-133 / FI-027: a reading the bridge flagged `measurement_frozen` (RM-079) keeps the flag and its
+ * `frozen_since` in the stored row's `capabilities`, the same way the channel map rides there. Until
+ * 2026-09-22 the stored rows could not say that L.O Yellow's 39.8 W, online, for hours was a clamp
+ * that had stopped measuring. Absent on the reading means nothing is written.
+ */
+function withFreeze(entry, capabilities) {
+  if (entry.measurement_frozen !== true) return capabilities;
+  const base = capabilities && typeof capabilities === 'object' ? capabilities : {};
+  return { ...base, measurement_frozen: true, ...(typeof entry.frozen_since === 'string' ? { frozen_since: entry.frozen_since } : {}) };
 }
 
 /**

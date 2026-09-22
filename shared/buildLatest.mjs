@@ -81,6 +81,8 @@ export const STALE_READING_MS = 600000;
  *        Node-RED function node and may not import anything. `{}` reproduces the pre-2026-09-07
  *        behaviour, where the code was a literal assembled here.
  * @param {Array} [buildingMeterIds] the meters whose sum is the building total — see RM-057 below.
+ * @param {{afterMs:number,minKwh:number}} [registerStall] the register-stall rule — `shared/measurementFreeze.mjs`'s
+ *        `REGISTER_STALL`, threaded in like `frozenAfterMs`. Undefined (an older flow) applies none.
  * @param {number} [frozenAfterMs] how long a metered device's power/voltage/current may hold
  *        byte-identical, drawing power and online, before the reading is flagged
  *        `measurement_frozen` — `shared/measurementFreeze.mjs`'s `FROZEN_AFTER_MS`, threaded in for
@@ -88,7 +90,7 @@ export const STALE_READING_MS = 600000;
  *        the pre-RM-079 behaviour for an older deployed flow.
  * @returns {Array} one entry per device, plus a trailing `_totals` entry
  */
-export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, staleAfterMsByClass = {}, maxDailyKwh = undefined, dailyEnergyCodeByDevice = {}, buildingMeterIds = [], frozenAfterMs = undefined) {
+export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, staleAfterMsByClass = {}, maxDailyKwh = undefined, dailyEnergyCodeByDevice = {}, buildingMeterIds = [], frozenAfterMs = undefined, registerStall = undefined) {
   const energy = snap.energy || { meters: {}, totals: {} };
   const outlet = snap.outlet || { meters: {}, state: {} };
   const lights = (snap.switch || {}).state || {};
@@ -301,10 +303,24 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, st
       // integrator's figure, and during a freeze it is counting a number that is not being measured,
       // so any comparison against it would accuse the register of losing energy it never saw — which
       // is exactly what the page did. The register stays: it is the meter's own count.
+      //
+      // AND THE REGISTER RULE (RM-133). `snap.registerSince` is when this channel's OWN energy
+      // registers last moved. On 2026-09-22 the yellow meter's channel 2 held 39.8 W with its lights
+      // off while its voltage dp — one measurement shared by both clamps — kept moving and restarted
+      // the clock above every minute. A clamp that is measuring moves its counter; held for
+      // `registerStall.afterMs` while owing the counter `registerStall.minKwh`, the reading is frozen
+      // whatever the voltage does. `shared/measurementFreeze.mjs` holds the rule; it is inlined here
+      // (this file may not import) and mirrors `registerStalled` there.
       const heldSince = num((snap.valueSince || {})[d.ctx]);
-      if (frozenAfterMs !== undefined && heldSince !== undefined && r.online !== false && p !== undefined && p > 0 && nowMs - heldSince >= frozenAfterMs) {
+      const regSince = num((snap.registerSince || {})[d.ctx]);
+      const live = r.online !== false && p !== undefined && p > 0;
+      const valuesFrozen = frozenAfterMs !== undefined && heldSince !== undefined && live && nowMs - heldSince >= frozenAfterMs;
+      const registerFrozen = registerStall !== undefined && regSince !== undefined && live
+        && nowMs - regSince >= registerStall.afterMs && (p * (nowMs - regSince)) / 3.6e9 >= registerStall.minKwh;
+      if (valuesFrozen || registerFrozen) {
         r.measurement_frozen = true;
-        r.frozen_since = iso8(heldSince, offsetMinutes);
+        const since = Math.min(...[valuesFrozen ? heldSince : Infinity, registerFrozen ? regSince : Infinity]);
+        r.frozen_since = iso8(since, offsetMinutes);
         delete r.energy_kwh_today_integrated;
       }
     } else if (d.class === 'switch') {

@@ -125,8 +125,8 @@ zero are different facts and the UI renders them differently.
 | `commanded_at`, `command_via` | ISO 8601 +08:00 / `local \| cloud` \| absent | `acu_ir` only: when the last aircon command was sent and which path carried it |
 | `temp_c` | number \| absent | `sensor_temp_humidity` only, from its own `state_field` — never the IR hub's humidity |
 | `capabilities` | object \| absent | every dp the device reports, decoded — see below |
-| `measurement_frozen` | `true` \| absent | metered devices only: power, voltage and current held identical for `FROZEN_AFTER_MS` while drawing power and online — see below (RM-079) |
-| `frozen_since` | ISO 8601 +08:00 \| absent | with `measurement_frozen`: when those values last changed |
+| `measurement_frozen` | `true` \| absent | metered devices only: power, voltage and current held identical for `FROZEN_AFTER_MS` while drawing power and online, OR the channel's own energy register still for `REGISTER_STALL` while owing ticks — see below (RM-079, RM-133) |
+| `frozen_since` | ISO 8601 +08:00 \| absent | with `measurement_frozen`: when the values, or the register, last changed — whichever is earlier |
 | `channel_map` | object \| absent | a dual-channel meter behind the channel demux only: `{ assignment, rule, since, flips }` — see below (RM-122) |
 
 ### `capabilities`
@@ -265,6 +265,17 @@ A metered device is flagged `measurement_frozen: true`, with `frozen_since`, whe
 `node-red-bridge/valueFreezeTracker.mjs`, which stamps the last CHANGE of those three values. It does
 not use the sample-buffer depth, which moves on every message a frozen meter keeps sending, or
 `<ctx>_energy`, which the integrator moves on a timer.
+
+**And by the register (RM-133).** The same tracker keeps a second clock per channel: the last change
+of the channel's OWN energy registers (`today_acc_energy<n>`, `total_energy<n>` — never the
+dual-channel meter's `all_energy`, which is both clamps' sum). A reading is also flagged when that
+clock has stood for `REGISTER_STALL.afterMs` (thirty minutes) while the power drawn over it owed the
+counter at least `REGISTER_STALL.minKwh` (0.005 kWh — five ticks; so 10 W needs the full half hour,
+3 W needs two). Why a second rule: on 2026-09-22 the yellow meter's channel 2 froze at 07:47 with the
+lights on that circuit off, and from 10:58 its voltage dp followed channel 1's — the voltage is one
+measurement shared by both clamps — which restarted the three-hour clock every minute. A shared
+voltage is not evidence that a clamp is measuring; a moving register is. `frozen_since` is the
+earlier of the two clocks. A device whose dps carry no register (the outlets) has no register clock.
 
 **While the flag stands, `energy_kwh_today_integrated` is omitted.** The integrator is counting a
 held figure: on 2026-09-12 that is how L.O Red was shown as "100 % missing" when its meter had

@@ -40,7 +40,7 @@ import { energyDayBaseSrc } from './energyDayBase.mjs';
 import { energyAccumulatorSrc } from './energyAccumulator.mjs';
 import { VALUE_FREEZE_SRC } from './valueFreezeTracker.mjs';
 import { appendHistorySrc } from './historyRing.mjs';
-import { FROZEN_AFTER_MS } from '../shared/measurementFreeze.mjs';
+import { FROZEN_AFTER_MS, REGISTER_STALL } from '../shared/measurementFreeze.mjs';
 
 /** Devices that report an energy counter — the only ones the accumulator has anything to
  * accumulate for. Derived from the registry, never hand-listed. */
@@ -187,8 +187,11 @@ const BUILDING_METERS = ${JSON.stringify(BUILDING_METER_IDS)};
 // How long a metered reading may hold identical, drawing power and online, before it is flagged
 // measurement_frozen. From shared/measurementFreeze.mjs, which the frontend reads too.
 const FROZEN_AFTER_MS = ${JSON.stringify(FROZEN_AFTER_MS)};
+// And how long a channel's own energy register may stand still, owing how much, while it draws
+// power — the rule a shared voltage cannot reset (RM-133). Same module.
+const REGISTER_STALL = ${JSON.stringify(REGISTER_STALL)};
 
-msg.payload = buildLatest(msg.snapshot || {}, REG, PHASE_MAP, Date.now(), ${SITE.utc_offset_minutes}, STALE_AFTER_MS_BY_CLASS, MAX_BRANCH_KWH_PER_DAY, DAILY_ENERGY_CODE, BUILDING_METERS, FROZEN_AFTER_MS);
+msg.payload = buildLatest(msg.snapshot || {}, REG, PHASE_MAP, Date.now(), ${SITE.utc_offset_minutes}, STALE_AFTER_MS_BY_CLASS, MAX_BRANCH_KWH_PER_DAY, DAILY_ENERGY_CODE, BUILDING_METERS, FROZEN_AFTER_MS, REGISTER_STALL);
 msg.headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
 return msg;`;
 

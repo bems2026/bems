@@ -14,6 +14,15 @@
  *   - Not `h`: going offline is a louder fact with its own handling; `buildLatest` does not call an
  *     offline device frozen.
  *
+ * AND A SECOND CLOCK FOR THE REGISTERS (RM-133). On 2026-09-22 the yellow meter's channel 2 froze
+ * with the lights off — 39.8 W held from 07:47 — and from 10:58 its voltage dp began following
+ * channel 1's, because the voltage is one measurement shared by both clamps. That restarted the
+ * v/c/p clock every minute. So the device's OWN energy registers (`today_acc_energy<n>`,
+ * `total_energy<n>` in `dp`, never the shared `all_energy`) get a clock of their own: a clamp that
+ * is measuring moves its counter; a shared voltage proves nothing. `buildLatest` applies
+ * `shared/measurementFreeze.mjs`'s stall rule to it. A device whose `dp` carries no register (the
+ * outlets) gets no register clock, so nothing can call it stalled.
+ *
  * STAMPED ON CHANGE, NOT ON READ. This node sits on the read path, which runs on the 2 s WebSocket
  * push and on every HTTP GET — a cadence set by how many people are looking. RM-056 was a rate check
  * that timestamped every RUN and so tightened as more clients connected; this timestamps only a
@@ -42,15 +51,29 @@ for (const meters of groups) {
     // v, c and p only. Not n, which grows on every message; not e, which the integrator moves on a
     // timer from the last power. See valueFreezeTracker.mjs.
     const sig = [m.v, m.c, m.p].join('|');
-    const prev = seen[k];
-    if (!prev || prev.sig !== sig) seen[k] = { sig: sig, since: now };
+    const prev = seen[k] || {};
+    // A value change restarts the value clock and carries the register clock over untouched.
+    const entry = prev.sig === sig ? prev : { sig: sig, since: now, reg: prev.reg, regSince: prev.regSince };
+    // The channel's own registers, by code. all_energy is both clamps' sum and is left out.
+    const dp = m.dp && typeof m.dp === 'object' ? m.dp : {};
+    const codes = Object.keys(dp).filter(function (c) { return /^(today_acc_energy|total_energy)\\d*$/.test(c); }).sort();
+    if (codes.length) {
+      const reg = codes.map(function (c) { return c + '=' + dp[c]; }).join('|');
+      if (entry.reg !== reg) { entry.reg = reg; entry.regSince = now; }
+    }
+    seen[k] = entry;
   }
 }
 flow.set('value_freeze', seen);
 const since = {};
-for (const k of Object.keys(seen)) since[k] = seen[k].since;
+const regSince = {};
+for (const k of Object.keys(seen)) {
+  since[k] = seen[k].since;
+  if (seen[k].regSince !== undefined) regSince[k] = seen[k].regSince;
+}
 msg.snapshot = snap;
 msg.snapshot.valueSince = since;
+msg.snapshot.registerSince = regSince;
 return msg;`;
 
 /**
@@ -58,12 +81,18 @@ return msg;`;
  * so the code under test is byte-identical to the code that ships.
  */
 export function runValueFreezeTracker(store, snapshot, nowMs) {
+  return runValueFreezeTrackerFull(store, snapshot, nowMs).valueSince;
+}
+
+/** As above, returning both clocks: `{ valueSince, registerSince }`. */
+export function runValueFreezeTrackerFull(store, snapshot, nowMs) {
   const fn = new Function('flow', 'msg', VALUE_FREEZE_SRC);
   const flow = { get: (k) => store[k], set: (k, v) => { store[k] = v; } };
   const realNow = Date.now;
   if (typeof nowMs === 'number') Date.now = () => nowMs;
   try {
-    return fn(flow, { snapshot }).snapshot.valueSince;
+    const out = fn(flow, { snapshot }).snapshot;
+    return { valueSince: out.valueSince, registerSince: out.registerSince };
   } finally {
     Date.now = realNow;
   }
