@@ -1,7 +1,6 @@
 import { linearScale, niceScale, pathFromRuns, plotBox, runsOf } from './chartFrame';
 import type { ChartSpec, Hit, Mark, Scene } from './types';
 import { SERIES_DASH } from './palette';
-import { directLabelMarks, directLabelWidth, type DirectLabel } from './directLabels';
 
 /**
  * Power through the week or month, one line per circuit — RM-095.
@@ -22,7 +21,8 @@ import { directLabelMarks, directLabelWidth, type DirectLabel } from './directLa
  *
  * EACH LINE IS ITS CIRCUIT BEFORE IT IS ITS COLOUR — RM-139. Four lines that cross, told apart by hue
  * alone, left a reader who cannot see two of the hues guessing. Each wears its circuit's pattern
- * (`SERIES_DASH`), and each is named where it ends, beside the plot (`directLabels`).
+ * (`SERIES_DASH`), and the legend shows the same pattern beside the name. RM-139 also named each line at its
+ * end; RM-142 took that out — a second legend, stacked at the edge wherever the lines ended together.
  */
 
 export interface TrendSeries {
@@ -51,9 +51,7 @@ const watts = (w: number) => `${Math.round(w).toLocaleString(undefined)} W`;
 
 export function circuitPowerTrendChart(series: readonly TrendSeries[], days: readonly TrendDay[], spec: ChartSpec): Scene {
   const { width, height, palette, idPrefix, title } = spec;
-  // Room at the right for each line's name, when there is more than one line to tell apart.
-  const named = series.length > 1;
-  const box = plotBox(width, height, { ...MARGINS, right: MARGINS.right + (named ? directLabelWidth(series.map((s) => s.label)) : 0) });
+  const box = plotBox(width, height, MARGINS);
   const marks: Mark[] = [];
   const colour = (s: TrendSeries) => palette.series[s.colourIndex % palette.series.length];
   const dash = (s: TrendSeries) => SERIES_DASH[s.colourIndex % SERIES_DASH.length];
@@ -107,15 +105,6 @@ export function circuitPowerTrendChart(series: readonly TrendSeries[], days: rea
     });
   }
 
-  // --- each line named where it ends ---
-  if (named) {
-    const ends: DirectLabel[] = [];
-    for (const s of series) {
-      const last = [...s.points].reverse().find((w): w is number => w !== null && Number.isFinite(w));
-      if (last !== undefined) ends.push({ text: s.label, y: y(last), colour: colour(s), dash: dash(s), swatch: 'line' });
-    }
-    marks.push(...directLabelMarks(ends, box.right, box.y, box.bottom, palette));
-  }
 
   marks.push({ kind: 'line', x1: box.x, y1: box.bottom, x2: box.right, y2: box.bottom, stroke: palette.ink, width: 1 });
 

@@ -6626,21 +6626,86 @@ body::before {
   border-radius: var(--r-card);
 }
 
-/* RM-130: loads nobody metered, shown as estimates beside the branch they share. */
+/* RM-130: loads nobody metered, shown as estimates beside the branch they share.
+   RM-142: a card of its own. It borrowed the table card, whose padding is vertical only because a table's
+   cells carry their own — so its heading and figures sat flush against the card's edge, its notes were
+   indented by their own padding, and its chart was a second card inside it (the operator's screenshot).
+   Now: the card's own padding (the same 16 px every chart card has, so the chart below is drawn at the
+   page's scale), a header, the figures as a grid of tiles, and the chart without a border of its own. */
+.report-apportioned {
+  padding: var(--sp-4);
+}
+
+.report-apportioned__head {
+  margin: 0 0 var(--sp-4);
+}
+
 .report-apportioned__title {
   margin: 0 0 var(--sp-2);
+  color: var(--txt);
+  font-size: var(--fs-md);
+  font-weight: 700;
+}
+
+.report-apportioned__lede,
+.report-apportioned__note {
+  max-width: 80ch;
+  margin: 0;
+  color: var(--muted);
   font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.report-apportioned__figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-4);
+}
+
+.report-apportioned__figure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  padding: var(--sp-4);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+
+.report-apportioned__figure dt {
+  color: var(--muted);
+  font-size: var(--fs-xs);
   font-weight: 600;
+}
+
+.report-apportioned__value {
+  margin: 0;
+  color: var(--txt);
+  font-size: var(--fs-md);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-apportioned__basis {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+}
+
+.report-apportioned .report-chart {
+  margin-top: var(--sp-4);
+  padding: 0;
+  background: none;
+  border: 0;
 }
 
 .report-apportioned__item + .report-apportioned__item {
   margin-top: var(--sp-4);
   padding-top: var(--sp-4);
   border-top: 1px solid var(--border);
-}
-
-.report-apportioned .report-glance {
-  margin-bottom: var(--sp-2);
 }
 
 /* RM-107 — a month is thirty-one 40px rows, and on the 800x480 kiosk the column captions were off
@@ -6735,7 +6800,8 @@ body::before {
 .report-controls {
   view-transition-name: report-controls;
   position: static;
-  top: calc(var(--nav-h-live, var(--nav-h)) + var(--sp-2));
+  /* RM-142: flush under the nav once stuck — an 8 px gap let the report scroll through between the two. */
+  top: var(--nav-h-live, var(--nav-h));
   z-index: 10;
   display: flex;
   flex-wrap: wrap;
@@ -6784,6 +6850,9 @@ body::before {
 @media (min-width: 641px) and (min-height: 720px) {
   .report-controls {
     position: sticky;
+    /* RM-142: stuck, the report scrolls beneath it; on 75% glass its legends and figures read through the
+       controls. The popover's near-opaque surface, as the export drawer has. */
+    background: var(--pop-bg);
   }
 }
 

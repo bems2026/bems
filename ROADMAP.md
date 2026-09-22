@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-22, 23:10 — **FI-039 and FI-041 done; a transition never waits on a frame.** **22:45 — RM-137 to RM-141 pushed, CI green, deployed: the dashboard built on the Pi and `ibems-ingest` restarted 22:53 (read back).** **22:21 — RM-141: pop-ups that fit, measured signed in at 360, 768 and 800×480 — every surface 0 px over.** **21:47 — RM-140: the PDF waits for the circuit charts; the controls stay put; changes crossfade.** **21:40 — RM-139: no circuit told apart by colour alone; the status hues stay, measured.** **21:25 — RM-138: a report not made yet is said, not silent; the week of
+**Last audited:** 2026-09-23, 06:20 — **RM-142: the Reports page polished — charts drawn at the page's width, one legend, the estimate as a card.** **2026-09-22, 23:10 — FI-039 and FI-041 done; a transition never waits on a frame.** **22:45 — RM-137 to RM-141 pushed, CI green, deployed: the dashboard built on the Pi and `ibems-ingest` restarted 22:53 (read back).** **22:21 — RM-141: pop-ups that fit, measured signed in at 360, 768 and 800×480 — every surface 0 px over.** **21:47 — RM-140: the PDF waits for the circuit charts; the controls stay put; changes crossfade.** **21:40 — RM-139: no circuit told apart by colour alone; the status hues stay, measured.** **21:25 — RM-138: a report not made yet is said, not silent; the week of
 14 Sept was not late** (settles 08:00 Wed 23 Sept). **21:13 — RM-137: a statement timeout is asked
 again by itself** (the operator's Reports brief; §2's first section). **Earlier, 17:10 — the end-of-day list, by owner, is §0's first entry.** RM-136 was run
 at 16:31 and read back: both notices are gone and checked in a browser. **Earlier, 17:00 — phase47 (FI-027)
@@ -3842,6 +3842,27 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       `ReportsPage.tabs.test.tsx` (+4), `reports-css.test.mjs` (+1). **And RM-140's transitions no longer wait on a
       frame:** shown but not painting, the app's browser pane held a tab click for seconds; past 300 ms the
       change is made directly, once (`viewTransition.test.ts` +2).
+- [x] **RM-142** The Reports page, polished from the operator's screenshots (2026-09-23): charts drawn at the
+      page's width, one legend, the estimate as a card, a control bar that hides what scrolls beneath it.
+      - **Charts drawn at the column's width.** Every chart was a 640-unit drawing stretched to its column:
+        2.36× at 1920 px, where its 9-unit labels stood 21 px tall beside 11 px captions and a circuit chart
+        was ~590 px high. `chartWidth.ts` measures the tab panel and draws on-screen charts at
+        `(panel − 34) / (11/9)` units (floor 460, ceiling 1440, 20-unit steps): measured signed in, labels
+        11.1 px at 1920 and 11.2 px at 800×480, circuit charts 310 px high, the phone's 460 px scrolling plot
+        unchanged. Placeholders take the same width. The PDF still draws at 640.
+      - **One legend.** RM-139's names beside the plot repeated the legend and stacked into a second one
+        wherever the lines ended together; removed (`directLabels.ts` deleted). Each circuit is named once,
+        in the legend, with its line pattern, and the plot has its width back.
+      - **"Estimated, not metered" as a card.** It borrowed the table card, whose padding is vertical only —
+        heading flush to the edge, three figures on one run-on line, the chart a card inside a card. Now its
+        own 16 px padding, a header, the figures as a grid of tiles (name, value, basis), and the chart
+        without its own border.
+      - **The stuck control bar** meets the nav (the 8 px gap showed the report scrolling through) and sits
+        on `--pop-bg` rather than 75% glass, through which legends and table figures read.
+      - Not changed: the app-wide nav's own glass, through which content also reads — a decision for every
+        page, not this one. Tests: `chartWidth.test.ts` (5), `circuitCharts.test.ts` (direct-label tests
+        replaced by one-legend tests), `ReportsPage.apportioned.test.tsx` (+1), `ReportSkeleton.test.tsx`
+        (+1), `ReportsPage.reliability.test.tsx` (+1), `reports-css.test.mjs` (+1).
 - [ ] **FI-042** `Skeleton.tsx` calls itself static; `.skeleton` shimmers (stopped only by reduced motion).
 
 ### Onboarding without IoT Core, and the aircon's own IR protocol — RM-126 to RM-129 (2026-09-22)

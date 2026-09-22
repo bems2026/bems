@@ -24,7 +24,8 @@ import {
   type DemandSummary,
 } from '@/lib/reportSeries';
 import { formatPeriod, type ReportPeriod } from '@/lib/supabaseReports';
-import { REPORT_CHART_WIDTH, reportChartHeight, type ReportChartKind } from '@/lib/reportChartSizes';
+import { reportChartHeight, type ReportChartKind } from '@/lib/reportChartSizes';
+import { useChartWidth } from './chartWidth';
 import { buildingMeters } from '@/lib/circuitBreakdown';
 
 /**
@@ -127,10 +128,13 @@ export function ReportCharts({
   useSegments = NONE,
   untracked,
   ceilingW,
-  width = REPORT_CHART_WIDTH,
+  width: widthProp,
   loading = {},
   only = ['daily', 'hours', 'breakdown', 'heat', 'curve'],
 }: Props) {
+  // RM-142: drawn at the width the page has, unless a caller asks for one.
+  const measured = useChartWidth();
+  const width = widthProp ?? measured;
   const shows = (kind: ReportChartKind) => only.includes(kind);
   const label = formatPeriod(period, start);
   const hourRows = hours ?? NONE;

@@ -6,7 +6,8 @@ import { LOAD_LABELS } from '@shared/circuits.mjs';
 import { formatPeriod, type PeriodDeviceReport, type ReportPeriod } from '@/lib/supabaseReports';
 import type { DeviceDaily } from '@/lib/circuitSeries';
 import type { HourEnergyRow } from '@/lib/reportSeries';
-import { REPORT_CHART_WIDTH, reportChartHeight } from '@/lib/reportChartSizes';
+import { reportChartHeight } from '@/lib/reportChartSizes';
+import { useChartWidth } from './chartWidth';
 import { ChartFigure, type ChartTable } from './ChartFigure';
 import { ChartPlaceholder } from './ReportSkeleton';
 import { ReportFigure } from './ReportFigure';
@@ -52,9 +53,11 @@ const num = (v: number | null) => (v === null || !Number.isFinite(v) ? null : `�
 function EstimateChart({ e, period, start, deviceDaily, hourEnergy }: { e: ApportionedEstimate; period: ReportPeriod; start: string; deviceDaily?: Section<DeviceDaily>; hourEnergy?: Section<HourEnergyRow[]> }) {
   const label = formatPeriod(period, start);
   const basis = `${shareWords(e.share)} of ${e.branchLabel} — ${e.basis}`;
+  // RM-142: drawn at the width the page has.
+  const chartWidth = useChartWidth();
   const spec = useMemo(
-    () => (idPrefix: string, height: number, title: string) => ({ width: REPORT_CHART_WIDTH, height, palette: SCREEN_PALETTE, idPrefix, title, desc: '' }),
-    []
+    () => (idPrefix: string, height: number, title: string) => ({ width: chartWidth, height, palette: SCREEN_PALETTE, idPrefix, title, desc: '' }),
+    [chartWidth]
   );
   const dayRows = period !== 'day' && deviceDaily?.data?.available ? deviceDaily.data.rows : null;
   const hourRows = period === 'day' ? (hourEnergy?.data ?? null) : null;
@@ -103,47 +106,50 @@ function Estimate({ e, period, start, deviceDaily, hourEnergy }: { e: Apportione
   const refused = e.flag?.kind === 'impossible';
   return (
     <div className="report-apportioned__item">
-      <dl className="report-glance">
-        <div>
+      {/* RM-142: a tile per figure — its name, the number, then where the number comes from. They ran together
+          on one line, the basis text wedged between one figure and the next. */}
+      <dl className="report-apportioned__figures">
+        <div className="report-apportioned__figure">
           <dt>{e.label}</dt>
-          <dd>
+          <dd className="report-apportioned__value">
             {refused ? (
               <span className="reports-figure__caveat">{energyFlagText(e.flag!)}</span>
             ) : (
               <>
                 ≈ <ReportFigure value={e.estimatedKwh} unit="kWh" digits={2} coverage={e.coverage} period={period} />
               </>
-            )}{' '}
-            <span className="reports-figure__caveat">
-              {shareWords(e.share)} of {e.branchLabel} — {e.basis}
-            </span>
+            )}
+          </dd>
+          <dd className="report-apportioned__basis">
+            {shareWords(e.share)} of {e.branchLabel} — {e.basis}
           </dd>
         </div>
-        <div>
+        <div className="report-apportioned__figure">
           <dt>{e.branchLabel}, the rest</dt>
-          <dd>
+          <dd className="report-apportioned__value">
             {refused ? (
               <span className="reports-figure__caveat">Not possible, as above</span>
             ) : (
               <>
                 ≈ <ReportFigure value={e.remainderKwh} unit="kWh" digits={2} coverage={e.coverage} period={period} />
               </>
-            )}{' '}
-            <span className="reports-figure__caveat">{shareWords(1 - e.share)}, the outlets</span>
+            )}
           </dd>
+          <dd className="report-apportioned__basis">{shareWords(1 - e.share)}, the outlets</dd>
         </div>
-        <div>
+        <div className="report-apportioned__figure">
           <dt>{e.branchLabel}, measured</dt>
-          <dd>
+          <dd className="report-apportioned__value">
             {refused ? (
               <span className="reports-figure__caveat">Not possible</span>
             ) : (
               <ReportFigure value={e.branchKwh} unit="kWh" digits={2} coverage={e.coverage} period={period} />
             )}
           </dd>
+          <dd className="report-apportioned__basis">the branch meter’s own figure</dd>
         </div>
       </dl>
-      <p className="reports-note">
+      <p className="report-apportioned__note">
         “Energy by use” counts all of {e.branchLabel} as {LOAD_LABELS[e.branchLoad]}; this estimate would move{' '}
         {refused || e.estimatedKwh === null ? 'its share' : `≈ ${e.estimatedKwh.toFixed(2)} kWh`} of it to {LOAD_LABELS[e.load]}. It is not
         moved, because a chart of measurements should not carry an estimate.
@@ -160,13 +166,15 @@ export function ApportionedLoads({ rows, period, start, meterIds, deviceDaily, h
   if (estimates.length === 0) return null;
   return (
     <section className="report-table-card report-apportioned" aria-labelledby={headingId}>
-      <h3 id={headingId} className="report-apportioned__title">
-        Estimated, not metered
-      </h3>
-      <p className="reports-note">
-        These loads share a branch meter with something else. Each figure below is the branch’s measured energy split by a share
-        the operator declared — an estimate, not a measurement.
-      </p>
+      <header className="report-apportioned__head">
+        <h3 id={headingId} className="report-apportioned__title">
+          Estimated, not metered
+        </h3>
+        <p className="report-apportioned__lede">
+          These loads share a branch meter with something else. Each figure below is the branch’s measured energy split by a share
+          the operator declared — an estimate, not a measurement.
+        </p>
+      </header>
       {estimates.map((e) => (
         <Estimate key={e.id} e={e} period={period} start={start} deviceDaily={deviceDaily} hourEnergy={hourEnergy} />
       ))}

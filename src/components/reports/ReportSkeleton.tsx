@@ -1,6 +1,7 @@
 import { Skeleton } from '@/components/ui/Skeleton';
 import type { ReportPeriod } from '@/lib/supabaseReports';
-import { REPORT_CHART_ORDER, REPORT_CHART_WIDTH, reportChartHeight, type ReportChartKind } from '@/lib/reportChartSizes';
+import { REPORT_CHART_ORDER, reportChartHeight, type ReportChartKind } from '@/lib/reportChartSizes';
+import { useChartWidth } from './chartWidth';
 
 /**
  * The shape of a report that has not arrived yet — RM-082b.
@@ -27,9 +28,11 @@ type Part = 'kpis' | 'charts' | 'table';
  * its own, one chart can still be on its way while the others have drawn; this holds its place.
  */
 export function ChartPlaceholder({ kind, dayCount }: { kind: ReportChartKind; dayCount: number }) {
+  // RM-142: the width the page draws its charts at, so the placeholder is the chart's own shape.
+  const width = useChartWidth();
   return (
     <div className="report-chart report-skeleton__chart" data-chart={kind}>
-      <div className="report-skeleton__plot" style={{ aspectRatio: `${REPORT_CHART_WIDTH} / ${reportChartHeight(kind, dayCount)}` }}>
+      <div className="report-skeleton__plot" style={{ aspectRatio: `${width} / ${reportChartHeight(kind, dayCount)}` }}>
         <Skeleton height="100%" />
       </div>
     </div>

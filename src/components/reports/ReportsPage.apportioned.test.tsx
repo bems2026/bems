@@ -184,3 +184,23 @@ describe('the PDF waits for the Circuits charts it prints — RM-140', () => {
     expect(section).toHaveAccessibleDescription(/left out of the PDF/);
   });
 });
+
+describe('the estimate reads as a card — RM-142', () => {
+  // The operator's screenshot: the heading flush against the card's edge, and the three figures run together
+  // on one line with their basis text between them. Each figure is a tile now — its name, the number, and
+  // where the number comes from, in that order.
+  it('lays the three figures out as tiles: name, figure, then its basis', async () => {
+    render(<ReportsPage />);
+    await openCircuits();
+    const section = await screen.findByRole('region', { name: /estimated, not metered/i });
+    const tiles = [...section.querySelectorAll('.report-apportioned__figure')];
+    expect(tiles.map((t) => t.querySelector('dt')?.textContent)).toEqual([
+      expect.stringMatching(/director.s office aircon/i),
+      'C.O Yellow, the rest',
+      'C.O Yellow, measured',
+    ]);
+    tiles.forEach((t) => expect(t.querySelector('.report-apportioned__value')).not.toBeNull());
+    expect(tiles[0].querySelector('.report-apportioned__basis')).toHaveTextContent(/about two thirds of C\.O Yellow/i);
+    expect(tiles[1].querySelector('.report-apportioned__basis')).toHaveTextContent(/the outlets/i);
+  });
+});

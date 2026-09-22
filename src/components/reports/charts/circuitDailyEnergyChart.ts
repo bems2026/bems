@@ -1,6 +1,5 @@
 import { bandScale, linearScale, niceScale, plotBox } from './chartFrame';
 import type { ChartSpec, Def, Hit, Mark, Scene } from './types';
-import { directLabelMarks, directLabelWidth, LABEL_GAP, type DirectLabel } from './directLabels';
 
 /**
  * Energy per day, circuit by circuit — RM-095.
@@ -19,9 +18,8 @@ import { directLabelMarks, directLabelWidth, LABEL_GAP, type DirectLabel } from 
  *   - a circuit keeps ITS colour (`colourIndex`, from the site's own order) however the figures rank,
  *     so filtering or a different week never repaints one circuit as another.
  *
- * NAMED BESIDE THE LAST COLUMN — RM-139. Colour and a legend under the plot were all that told the
- * circuits apart. Each is now named level with its segment of the last recorded day, top of the stack
- * first, as the stack is read; a segment too thin to carry a name is left to the legend.
+ * ONE LEGEND, IN STACK ORDER. RM-139 also named each circuit beside the last column; RM-142 took that out as a
+ * second legend. The legend reads left to right in the order the stack is built from the axis up.
  */
 
 export interface CircuitSeriesDef {
@@ -54,8 +52,7 @@ const kwh = (v: number) => `${v.toFixed(2)} kWh`;
 
 export function circuitDailyEnergyChart(points: readonly CircuitDayPoint[], series: readonly CircuitSeriesDef[], spec: ChartSpec): Scene {
   const { width, height, palette, idPrefix, title } = spec;
-  const named = series.length > 1;
-  const box = plotBox(width, height, { ...MARGINS, right: MARGINS.right + (named ? directLabelWidth(series.map((s) => s.label)) : 0) });
+  const box = plotBox(width, height, MARGINS);
   const marks: Mark[] = [];
   const defs: Def[] = [];
   const gapId = `${idPrefix}-gap`;
@@ -127,21 +124,6 @@ export function circuitDailyEnergyChart(points: readonly CircuitDayPoint[], seri
       marks.push({ kind: 'text', x: cx, y: box.bottom + 13, text: p.label, fill: palette.textMuted, size: 9, anchor: 'middle' });
     }
   });
-
-  // --- each circuit named level with its segment of the last recorded day ---
-  const lastSeen = points.map((p) => p.observed).lastIndexOf(true);
-  if (named && lastSeen >= 0) {
-    const names: DirectLabel[] = [];
-    let acc = 0;
-    series.forEach((s, k) => {
-      const v = points[lastSeen].values[k];
-      if (v === null || v === undefined || !(v > 0)) return;
-      const [bottom, top] = [y(acc), y(acc + v)];
-      if (bottom - top >= LABEL_GAP) names.push({ text: s.label, y: (bottom + top) / 2, colour: colour(s), swatch: 'block' });
-      acc += v;
-    });
-    marks.push(...directLabelMarks(names, box.right, box.y, box.bottom, palette));
-  }
 
   marks.push({ kind: 'line', x1: box.x, y1: box.bottom, x2: box.right, y2: box.bottom, stroke: palette.ink, width: 1 });
 

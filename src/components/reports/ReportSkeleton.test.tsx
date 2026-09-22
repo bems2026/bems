@@ -1,6 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { ReportSkeleton } from './ReportSkeleton';
+import { ChartWidthContext } from './chartWidth';
+import { reportChartHeight } from '@/lib/reportChartSizes';
 
 /**
  * RM-082b. While a report loads, the page said "Loading the hourly charts…" in a line of text and
@@ -49,5 +51,17 @@ describe('a skeleton shaped like what arrives — RM-140', () => {
     const { container } = render(<ReportSkeleton label="September 2026" period="month" parts={['charts']} kinds={['daily', 'useShare']} />);
     const charts = [...container.querySelectorAll<HTMLElement>('[data-chart]')].map((el) => el.dataset.chart);
     expect(charts).toEqual(['daily', 'useShare']);
+  });
+});
+
+describe('a placeholder drawn to the charts’ width — RM-142', () => {
+  it('holds the same shape as the chart it stands for, at the width the page draws at', () => {
+    const { container } = render(
+      <ChartWidthContext value={960}>
+        <ReportSkeleton label="September 2026" period="month" parts={['charts']} kinds={['daily']} />
+      </ChartWidthContext>
+    );
+    const plot = container.querySelector<HTMLElement>('.report-skeleton__plot');
+    expect(plot?.style.aspectRatio.replace(/\s/g, '')).toBe(`960/${reportChartHeight('daily', 31)}`);
   });
 });

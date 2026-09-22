@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { ReportsPage } from './ReportsPage';
+import { sceneWidthFor } from './chartWidth';
 import * as reports from '@/lib/supabaseReports';
 import * as series from '@/lib/reportSeries';
 import * as tariffs from '@/lib/supabaseTariffs';
@@ -254,5 +255,32 @@ describe('the controls stay put while a new kind of period loads — RM-140', ()
     expect(picker).toHaveAttribute('aria-busy', 'true');
     answer([buildingRow({ period: 'week', period_start: '2026-07-06' })]);
     await waitFor(() => expect(screen.getByRole('group', { name: 'Report week' })).not.toHaveAttribute('aria-busy', 'true'));
+  });
+});
+
+describe('charts drawn at the width the page has — RM-142', () => {
+  // At 1920 px every chart was a 640-unit drawing stretched 2.36×: 21 px labels beside 11 px captions.
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('draws each chart at the measured panel’s width, so its text is one size on any screen', async () => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        private readonly report: ResizeObserverCallback;
+        constructor(report: ResizeObserverCallback) {
+          this.report = report;
+        }
+        observe() {
+          this.report([{ contentRect: { width: 1200 } } as ResizeObserverEntry], this as unknown as ResizeObserver);
+        }
+        disconnect() {}
+        unobserve() {}
+      }
+    );
+    render(<ReportsPage />);
+    const chart = await screen.findByRole('img', { name: /Energy per day/ });
+    expect(chart.getAttribute('viewBox')?.split(' ')[2]).toBe(String(sceneWidthFor(1200)));
   });
 });

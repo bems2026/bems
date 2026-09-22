@@ -254,3 +254,16 @@ test('a tab panel reached by keyboard shows where focus is, and a click leaves n
   assert.match(ring.outline ?? '', /var\(--focus-ring\)/);
   assert.ok(css.indexOf('.tabs__panel:focus-visible') > css.indexOf('.tabs__panel:focus {'), 'the keyboard ring must come after the rule that clears it');
 });
+
+// RM-142. Stuck under the nav, the control bar sat 8 px below it on 75% glass: the report scrolled through
+// that gap and showed through the bar itself (the operator's screenshots — a chart legend and table figures
+// legible between and behind the controls). Stuck, it now meets the nav, on the popover's near-opaque surface.
+test('the stuck control bar meets the nav and hides what scrolls beneath it', () => {
+  const bar = declarationsOf(css, '.report-controls');
+  assert.equal(bar.top, 'var(--nav-h-live, var(--nav-h))');
+  const sticky = /@media \(min-width: 641px\) and \(min-height: 720px\) \{([\s\S]*?)\n\}/.exec(css);
+  assert.ok(sticky, 'no sticky block for the control bar');
+  const inBlock = declarationsOf(sticky[1], '.report-controls');
+  assert.equal(inBlock.position, 'sticky');
+  assert.equal(inBlock.background, 'var(--pop-bg)');
+});

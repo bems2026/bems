@@ -7,7 +7,8 @@ import { energyFlagOf, usableEnergy } from '@/lib/boundedEnergy';
 import { energyDisagreement } from '@/lib/energyDisagreement';
 import { circuitDayPoints, circuitHourPoints, circuitRefs, loadLabelOfCircuit, loadShareSegments, trendChartInput } from '@/lib/circuitCharts';
 import type { CircuitTrend, DeviceDaily } from '@/lib/circuitSeries';
-import { REPORT_CHART_WIDTH, reportChartHeight } from '@/lib/reportChartSizes';
+import { reportChartHeight } from '@/lib/reportChartSizes';
+import { useChartWidth } from './chartWidth';
 import { ReportTable, type ReportColumn } from './ReportTable';
 import { CoverageTag, ReportFigure } from './ReportFigure';
 import { ChartFigure, type ChartTable } from './ChartFigure';
@@ -77,6 +78,8 @@ function CircuitChart({ scope, build, table, summaryLabel }: { scope: string; bu
 export function CircuitDeepDive({ period, start, rows, scope, nameOf, building, deviceDaily, hourEnergy, trend }: Props) {
   const label = formatPeriod(period, start);
   const narrowed = scopeLabel(scope);
+  // RM-142: drawn at the width the page has.
+  const chartWidth = useChartWidth();
   const refs = useMemo(() => circuitRefs(scope), [scope]);
   const scopeMeters = useMemo(() => new Set(scopeMeterIds(scope)), [scope]);
   const allMeters = useMemo(() => scopeMeterIds({ kind: 'all' }), []);
@@ -111,14 +114,14 @@ export function CircuitDeepDive({ period, start, rows, scope, nameOf, building, 
   const buildShare = useMemo(
     () => () =>
       circuitBreakdownChart(shareSegments, {
-        width: REPORT_CHART_WIDTH,
+        width: chartWidth,
         height: reportChartHeight('useShare', 7),
         palette: SCREEN_PALETTE,
         idPrefix: 'cir-share',
         title: shareTitle,
         desc: '',
       }, { of: narrowed ? 'circuits' : 'uses' }),
-    [shareSegments, shareTitle, narrowed]
+    [shareSegments, shareTitle, narrowed, chartWidth]
   );
   const shareTable = useMemo(
     () => (): ChartTable => {
@@ -137,14 +140,14 @@ export function CircuitDeepDive({ period, start, rows, scope, nameOf, building, 
   const buildDaily = useMemo(
     () => () =>
       circuitDailyEnergyChart(dayPoints, refs, {
-        width: REPORT_CHART_WIDTH,
+        width: chartWidth,
         height: reportChartHeight('circuitDaily', dayPoints.length),
         palette: SCREEN_PALETTE,
         idPrefix: 'cir-daily',
         title: `Energy per day, by circuit — ${label}`,
         desc: '',
       }),
-    [dayPoints, refs, label]
+    [dayPoints, refs, label, chartWidth]
   );
   const dailyTable = useMemo(
     () => (): ChartTable => ({
@@ -161,14 +164,14 @@ export function CircuitDeepDive({ period, start, rows, scope, nameOf, building, 
   const buildHourly = useMemo(
     () => () =>
       circuitDailyEnergyChart(hourPoints, refs, {
-        width: REPORT_CHART_WIDTH,
+        width: chartWidth,
         height: reportChartHeight('circuitDaily', 24),
         palette: SCREEN_PALETTE,
         idPrefix: 'cir-hourly',
         title: `Energy per hour, by circuit — ${label}`,
         desc: '',
       }),
-    [hourPoints, refs, label]
+    [hourPoints, refs, label, chartWidth]
   );
   const hourlyTable = useMemo(
     () => (): ChartTable => ({
@@ -183,14 +186,14 @@ export function CircuitDeepDive({ period, start, rows, scope, nameOf, building, 
   const buildTrend = useMemo(
     () => () =>
       circuitPowerTrendChart(trendInput?.series ?? [], trendInput?.days ?? [], {
-        width: REPORT_CHART_WIDTH,
+        width: chartWidth,
         height: reportChartHeight('circuitTrend', trendInput?.days.length ?? 0),
         palette: SCREEN_PALETTE,
         idPrefix: 'cir-trend',
         title: `Power through the ${period} — ${label}`,
         desc: '',
       }),
-    [trendInput, period, label]
+    [trendInput, period, label, chartWidth]
   );
   const trendTable = useMemo(
     () => (): ChartTable => {

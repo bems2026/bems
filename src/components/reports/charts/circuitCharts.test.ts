@@ -167,32 +167,27 @@ describe('circuits told apart by more than colour — RM-139', () => {
     expect(sceneToSvg(scene, PRINT_PALETTE)).toContain(`stroke-dasharray="${SERIES_DASH[3]}"`);
   });
 
-  it('names each line where it ends, beside the plot, and never lets two names overlap', () => {
-    // Both circuits end on the same value: their names would sit on top of each other.
-    const series: TrendSeries[] = [
-      { id: 'red', label: 'L.O Red', colourIndex: 0, points: Array.from({ length: 48 }, () => 30) },
-      { id: 'yellow', label: 'L.O Yellow', colourIndex: 3, points: Array.from({ length: 48 }, () => 30) },
-    ];
-    const days: TrendDay[] = [{ index: 0, label: '7', key: '2026-09-07' }, { index: 24, label: '8', key: '2026-09-08' }];
-    const scene = circuitPowerTrendChart(series, days, spec('ct'));
-    const names = directLabels(scene.marks, 240);
-    expect(names.map((m) => m.text).sort()).toEqual(['L.O Red', 'L.O Yellow']);
-    expect(Math.abs(names[0].y - names[1].y)).toBeGreaterThanOrEqual(10);
-    const plotRight = Math.max(...paths(scene.marks).flatMap((p) => [...p.d.matchAll(/[ML]\s*([\d.]+)/g)].map((m) => Number(m[1]))));
-    names.forEach((m) => expect(m.x).toBeGreaterThan(plotRight));
+  // RM-142. RM-139 also named each circuit beside the plot; the operator found it redundant — the legend under
+  // the plot already names every circuit with its colour and pattern, and where the lines end together the
+  // names became a second legend stacked at the edge. One legend, and the plot keeps the width they took.
+  const week: TrendDay[] = [{ index: 0, label: '7', key: '2026-09-07' }, { index: 24, label: '8', key: '2026-09-08' }];
+  const flat = (colourIndex: number, label: string, w: number): TrendSeries => ({ id: label, label, colourIndex, points: Array.from({ length: 48 }, () => w) });
+
+  it('names each line once, in the legend, and not again beside the plot', () => {
+    const scene = circuitPowerTrendChart([flat(0, 'L.O Red', 30), flat(3, 'L.O Yellow', 30)], week, spec('ct'));
+    expect(textMarks(scene.marks).filter((m) => m.text.startsWith('L.O')).map((m) => m.text).sort()).toEqual(['L.O Red', 'L.O Yellow']);
+    expect(directLabels(scene.marks, 240)).toEqual([]);
   });
 
-  it('names each circuit beside the last recorded column, in stack order, where its segment can carry a name', () => {
-    const week = [day(7, [0.19, 1.24]), day(8, [0.6, 0.9]), day(9, [null, null])];
-    const scene = circuitDailyEnergyChart(week, SERIES, spec('cd'));
-    // Top of the stack first, as they are read down the side of it.
-    expect(directLabels(scene.marks, 240).map((m) => m.text)).toEqual(['L.O Yellow', 'L.O Red']);
+  it('gives the power lines the full width again, now nothing sits beside them', () => {
+    const scene = circuitPowerTrendChart([flat(0, 'L.O Red', 30), flat(3, 'L.O Yellow', 20)], week, spec('ct'));
+    const ends = paths(scene.marks).flatMap((p) => [...p.d.matchAll(/[ML]\s*([\d.]+)/g)].map((m) => Number(m[1])));
+    expect(Math.max(...ends)).toBeGreaterThan(640 - 10 - 10);
   });
 
-  it('leaves a sliver of a segment to the legend rather than crowding a name onto it', () => {
-    const week = [day(7, [0.19, 1.24]), day(8, [0.004, 1.4])];
-    const scene = circuitDailyEnergyChart(week, SERIES, spec('cd'));
-    expect(directLabels(scene.marks, 240).map((m) => m.text)).toEqual(['L.O Yellow']);
-    expect(legendTexts(scene.marks, 240)).toEqual(expect.arrayContaining(['L.O Red', 'L.O Yellow']));
+  it('names each circuit of the stacked days once, in the legend', () => {
+    const scene = circuitDailyEnergyChart([day(7, [0.19, 1.24]), day(8, [0.6, 0.9])], SERIES, spec('cd'));
+    expect(textMarks(scene.marks).filter((m) => m.text.startsWith('L.O')).map((m) => m.text)).toEqual(['L.O Red', 'L.O Yellow']);
+    expect(directLabels(scene.marks, 240)).toEqual([]);
   });
 });

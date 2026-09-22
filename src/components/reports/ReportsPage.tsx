@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Download, FileText } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { InfoHint } from '@/components/ui/InfoHint';
@@ -19,6 +19,7 @@ import { SITE } from '@shared/siteConfig.mjs';
 import { coverageOf, coverageRestatement, formatPeriod, isQuotable, PERIOD_ADJECTIVE, type ReportPeriod } from '@/lib/supabaseReports';
 import { siteDateTime } from '@/lib/siteTime';
 import { withViewTransition } from '@/lib/viewTransition';
+import { ChartWidthContext, useMeasuredChartWidth } from './chartWidth';
 import { ReportControlBar } from './ReportControlBar';
 import { TabPanel, Tabs } from '@/components/ui/Tabs';
 import { ReportSkeleton } from './ReportSkeleton';
@@ -130,6 +131,8 @@ export function ReportsPage() {
    */
   const [period, setPeriod] = useState<ReportPeriod>('month');
   const [exportOpen, setExportOpen] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const chartWidth = useMeasuredChartWidth(panelRef);
   // RM-094: the circuit series load only while something shows them — the Circuits tab, or an export.
   const report = useReportData(period, undefined, { circuits: tab === 'circuits' || exportOpen });
   const { periods, selected, select, core, hours, hourEnergy, matrix, curve, pricing, ceiling } = report;
@@ -430,7 +433,8 @@ export function ReportsPage() {
   };
 
   return (
-    <>
+    // RM-142: every chart below is drawn at the width of the tab panel, measured once it is on the page.
+    <ChartWidthContext value={chartWidth}>
       <PageHeader
         title="Reports"
         sub={
@@ -509,7 +513,7 @@ export function ReportsPage() {
 
       {/* FI-041: the panel the tab strip's aria-controls names. The page renders only the selected tab's body,
           as TabPanel does on Automation, so that body is the panel, labelled by its tab. */}
-      <TabPanel tabId={tab} activeId={tab}>
+      <TabPanel ref={panelRef} tabId={tab} activeId={tab}>
         {/* ---- Overview ---------------------------------------------------------------------- */}
         {tab === 'overview' && building ? (
           <ErrorBoundary scope="The headline figures" variant="inline" resetKey={building}>
@@ -665,6 +669,6 @@ export function ReportsPage() {
           scopeLabel={narrowed}
         />
       ) : null}
-    </>
+    </ChartWidthContext>
   );
 }

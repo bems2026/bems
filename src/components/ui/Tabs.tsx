@@ -1,4 +1,4 @@
-import { useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { useRef, type KeyboardEvent, type ReactNode, type Ref } from 'react';
 import type { LucideIcon } from 'lucide-react';
 
 /**
@@ -122,10 +122,11 @@ export function Tabs({ tabs, activeId, onChange, label, className }: TabsProps) 
  * still be reachable by keyboard — otherwise Tab from the selected tab skips the thing the tab
  * just revealed.
  */
-export function TabPanel({ tabId, activeId, children }: { tabId: string; activeId: string; children: ReactNode }) {
+// `ref` (RM-142): a page that sizes its content to the panel, as Reports sizes its charts, measures it here.
+export function TabPanel({ tabId, activeId, children, ref }: { tabId: string; activeId: string; children: ReactNode; ref?: Ref<HTMLDivElement> }) {
   if (tabId !== activeId) return null;
   return (
-    <div id={tabPanelId(tabId)} role="tabpanel" aria-labelledby={tabButtonId(tabId)} tabIndex={0} className="tabs__panel">
+    <div ref={ref} id={tabPanelId(tabId)} role="tabpanel" aria-labelledby={tabButtonId(tabId)} tabIndex={0} className="tabs__panel">
       {children}
     </div>
   );
