@@ -26,6 +26,21 @@ const series = (from: number, count: number, power: (minute: number) => number, 
 const opts = (minutesAfterT0: number) => ({ range: '24h' as const, nowMs: T0 + minutesAfterT0 * MIN + 30_000 });
 const rowAt = <R extends { t?: number }>(rows: R[], minute: number) => rows.find((r) => r.t === T0 + minute * MIN);
 
+describe('buildChartRows — a channel whose voltage is shared (RM-134)', () => {
+  // L.O Yellow is channel 2 of the dual-channel meter: its voltage dp is the other clamp's mains reading
+  // and moved throughout a four-hour hold of 39.8 W / 0.446 A. The chart must mark the hold as frozen,
+  // exactly as the branch-energy notice does. CARE ACU, a single-channel meter, keeps the voltage in the key.
+  const held = Array.from({ length: 240 }, (_, i) => pt(i, 39.8, { current: 0.446, voltage: 213 + (i % 7) * 0.4 }));
+
+  it('marks the hold frozen on the shared-voltage channel', () => {
+    expect(buildChartRows(['mtr_lo_yellow'], { mtr_lo_yellow: held }, 1440, 'power', opts(240)).frozen.mtr_lo_yellow).toHaveLength(1);
+  });
+
+  it('does not on a single-channel meter, whose own moving voltage says it is measuring', () => {
+    expect(buildChartRows(['mtr_arec_acu'], { mtr_arec_acu: held }, 1440, 'power', opts(240)).frozen.mtr_arec_acu).toEqual([]);
+  });
+});
+
 describe('buildChartRows', () => {
   it('returns no rows when no device has any history', () => {
     expect(buildChartRows(['a', 'b'], {}, 140, 'power', opts(10)).rows).toEqual([]);

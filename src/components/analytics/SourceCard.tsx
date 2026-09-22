@@ -5,6 +5,7 @@ import { useNowTick } from '@/lib/useNowTick';
 import type { SyncStatus } from '@/lib/dataQuality';
 import { HistoryAreaChart } from './HistoryAreaChart';
 import { liveSampleOf, prepareSeries } from './analyticsMath';
+import { voltageIsShared } from '@/lib/measurementScope';
 import type { ChartParam } from './chartParams';
 import type { AnalyticsRange } from './useAnalyticsHistory';
 import type { Device } from '@/lib/types';
@@ -55,9 +56,10 @@ export function SourceCard({
   const kwhToday = measured(reading?.energy_kwh_today, reading);
 
   const live = useMemo(() => (range === '24h' ? liveSampleOf(reading, param, minute) : undefined), [range, reading, param, minute]);
+  const sharedVoltage = voltageIsShared(device);
   const series = useMemo(
-    () => prepareSeries(history, param, { range, nowMs: minute, maxPoints: CARD_POINTS, windowMs: range === '24h' ? CARD_WINDOW_24H_MS : undefined, live }),
-    [history, param, range, minute, live],
+    () => prepareSeries(history, param, { range, nowMs: minute, maxPoints: CARD_POINTS, windowMs: range === '24h' ? CARD_WINDOW_24H_MS : undefined, live, sharedVoltage }),
+    [history, param, range, minute, live, sharedVoltage],
   );
 
   return (

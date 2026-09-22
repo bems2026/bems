@@ -1,3 +1,4 @@
+import { voltageIsSharedById } from '@/lib/measurementScope';
 import { SITE } from '@shared/siteConfig.mjs';
 import {
   GRID_STEP_MS,
@@ -111,10 +112,10 @@ function gridFor(range: ChartRange, nowMs: number, windowMs?: number): Grid {
   return { stepMs, endMs, startMs: endMs - (windowMs ?? RANGE_WINDOW_MS[range]) };
 }
 
-function baseSeries(points: HistoryPoint[], param: ChartParam, range: ChartRange, grid: Grid, live?: LiveSample) {
+function baseSeries(points: HistoryPoint[], param: ChartParam, range: ChartRange, grid: Grid, live?: LiveSample, sharedVoltage = false) {
   // Freeze detection only on the bridge's own samples: a stored bucket is an average, and an
   // average repeating is not the same evidence as a raw reading repeating.
-  return buildSeries(points, { ...grid, param, bounds: BOUNDS, detectFrozen: range === '24h', live });
+  return buildSeries(points, { ...grid, param, bounds: BOUNDS, detectFrozen: range === '24h', sharedVoltage, live });
 }
 
 /** The first slot that carries anything — no chart draws a day of nothing before its data began. */
@@ -176,7 +177,7 @@ export function buildChartRows(deviceIds: string[], historyByDevice: Record<stri
   const base: Record<string, Slot[]> = {};
   const frozen: Record<string, FrozenRun[]> = {};
   for (const id of deviceIds) {
-    const built = baseSeries(historyByDevice[id] ?? [], param, opts.range, grid, opts.live?.[id]);
+    const built = baseSeries(historyByDevice[id] ?? [], param, opts.range, grid, opts.live?.[id], voltageIsSharedById(id));
     base[id] = built.slots;
     frozen[id] = built.frozen;
   }
@@ -204,6 +205,8 @@ export interface SeriesOptions {
   maxPoints: number;
   windowMs?: number;
   live?: LiveSample;
+  /** The device's voltage is shared with another clamp (`measurementScope.voltageIsShared`). */
+  sharedVoltage?: boolean;
 }
 
 export interface PreparedSeries {
@@ -228,7 +231,7 @@ function prepare(base: Slot[], frozen: FrozenRun[], grid: Grid, maxPoints: numbe
 /** One device's series, drawn under the key `SINGLE`. */
 export function prepareSeries(points: HistoryPoint[], param: ChartParam, opts: SeriesOptions): PreparedSeries {
   const grid = gridFor(opts.range, opts.nowMs, opts.windowMs);
-  const { slots, frozen } = baseSeries(points, param, opts.range, grid, opts.live);
+  const { slots, frozen } = baseSeries(points, param, opts.range, grid, opts.live, opts.sharedVoltage);
   return prepare(slots, frozen, grid, opts.maxPoints);
 }
 

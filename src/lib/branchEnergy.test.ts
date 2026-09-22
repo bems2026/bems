@@ -195,6 +195,55 @@ describe('branchEnergySplit — one derivation for Overview and Analytics', () =
   });
 });
 
+describe('branchEnergySplit — 2026-09-22, a held reading the page could not see (RM-134)', () => {
+  /*
+   * L.O Yellow, channel 2 of the dual-channel meter. The lights went off in the 07:44 power cut while
+   * the Pi was down; nothing re-read the meter, so the bridge held 39.8 W / 0.446 A until the meter poll
+   * read 0 W at 14:21. The register moved 0.002 kWh; the legacy integrator counted the held watts, so
+   * the page said "0.29 kWh against 0.55 kWh … 47% missing … energy going missing between the meter and
+   * this page". The ring had every sample — split by the offline blips of the morning's reconnects, by
+   * the shared voltage (channel 1's mains reading, then 214.2), and by the bridge's own flag.
+   */
+  const dual = (id: string, name: string, channel: 1 | 2): Device => ({ ...device(id, name), capability_profile: 'cz_ct_double', channel });
+  const devices: Device[] = [dual('mtr_co_yellow', 'C.O Yellow', 1), device('mtr_lo_red', 'L.O Red'), device('mtr_arec_acu', 'CARE ACU'), dual('mtr_lo_yellow', 'L.O Yellow', 2)];
+  const HELD = { power_w: 39.8, current: 0.446 };
+  const offlineAt = new Set([2, 16, 30, 31, 302]); // 07:45, 07:59, 08:13–08:14, 12:45
+  const sept22 = () => {
+    const now = local('2026-09-22T15:00:00');
+    const history: Record<string, HistoryPoint[]> = {
+      mtr_lo_yellow: [
+        ...samples('2026-09-22T06:54:00', 50, (i) => live(i, 40.5)),
+        ...samples('2026-09-22T07:44:00', 397, (i) => ({
+          ...HELD,
+          // 226.7 V held; then following channel 1's mains 10:59–11:22; then 214.2 V held.
+          voltage: i < 195 ? 226.7 : i < 219 ? 212 + (i % 5) * 0.6 : 214.2,
+          online: !offlineAt.has(i),
+          ...(i >= 184 && i < 195) || i >= 254 ? { frozen: true } : {},
+        })),
+        ...samples('2026-09-22T14:21:00', 39, () => ({ power_w: 0, current: 0, voltage: 214.2 })),
+      ],
+    };
+    const readings = { mtr_lo_yellow: reading('mtr_lo_yellow', 0.2927, { energy_kwh_today_integrated: 0.549, power_w: 0 }, new Date(now - 20_000).toISOString()) };
+    return branchEnergySplit({ devices, readings, totals: null, historyByDevice: history, period: 'today', nowMs: now });
+  };
+
+  it('does not accuse the register: the held watts are taken out of the second opinion', () => {
+    expect(sept22().shortfalls).toEqual([]);
+  });
+
+  it('names the hold as one stretch, 07:44 to 14:20, and counts what the integrator made of it', () => {
+    const { frozen } = sept22();
+    expect(frozen).toHaveLength(1);
+    expect(frozen[0]).toMatchObject({ id: 'mtr_lo_yellow', ongoing: false, heldW: 39.8 });
+    expect(frozen[0].fromMs).toBe(local('2026-09-22T07:44:05'));
+    expect(frozen[0].toMs).toBe(local('2026-09-22T14:20:05'));
+    expect(frozen[0].phantomKwh).toBeCloseTo(39.8 * 6.6 / 1000, 2);
+    // The voltage was not held — it is the other clamp's mains reading — so the notice must not say it was.
+    expect(frozen[0].heldV).toBeUndefined();
+    expect(describeFrozen(frozen[0])).not.toMatch(/ V\b/);
+  });
+});
+
 describe('describeFrozen', () => {
   it('says what froze and that the energy in that window was not measured, and accuses nobody', () => {
     const text = describeFrozen({

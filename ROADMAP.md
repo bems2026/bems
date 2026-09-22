@@ -1,6 +1,9 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-22, 15:00 — **L.O Yellow was not frozen. The meters were never re-read:
+**Last audited:** 2026-09-22, 15:20 — **RM-135: the page accused L.O Yellow of losing 47% of its energy; it
+was the morning's held watts in the integrator, and the page's freeze detection could not see the hold.**
+Fixed in `detectFrozenRuns` and verified against the live bridge.
+**Earlier, 15:00 — L.O Yellow was not frozen. The meters were never re-read:
 RM-134.** Applied ~14:20 and read back at 14:21: 0 W / 0 A / `monitor`, nothing flagged frozen. The 396
 held rows were scrubbed at ~14:50 and read back, and preflight reads `Ready` with every node polled. The lights went off while the Pi was rebooting, the meter's push of "0 W" reached nobody, and
 unlike every outlet, switch and the IR hub, the three meters had no GET poll. The tuya node reads nothing
@@ -3953,6 +3956,49 @@ cannot draw more than 150 W, and the outlet branch is never at 0 A.
       office hours, and RM-020's caution applies. Until then L.O Yellow's stored power is a held
       figure; its energy is not being counted (the register is still, so the reports credit nothing —
       which is nearly right, the lights being off).
+- [x] **RM-135** "L.O Yellow is reporting less than it measured — 0.29 kWh against 0.55 kWh … 47%
+      missing … energy going missing between the meter and this page." A false accusation, shown after
+      RM-134 had fixed the reading. **Built 2026-09-22 afternoon; verified in a browser against the live
+      bridge; deploys with `npm run build` on the Pi.**
+      **Why it showed.** The 0.55 is the legacy integrator, which multiplied the held 39.8 W by 6.6 hours.
+      The bridge withholds that second opinion only while its freeze flag stands; the flag cleared at
+      14:21, so it came back carrying the morning. The page subtracts what a freeze made the integrator
+      count, but only for a freeze it finds in the 24 h ring (RM-077), and it found **none**. Run against
+      the real ring, `detectFrozenRuns`' longest identical run was 164 samples (it needs 180). Three
+      things cut the hold, and none of them was the meter measuring:
+      - offline samples at the morning's reconnects (07:45, 07:59, 08:13);
+      - channel 2's voltage dp, which is channel 1's mains reading;
+      - the bridge's own flag switching on.
+      **The fix.** `src/lib/timeseries.ts` `detectFrozenRuns`:
+      - It skips offline samples instead of breaking on them: a value that survives a reconnect is a
+        value nobody re-read.
+      - On a channel whose voltage is shared (`src/lib/measurementScope.ts` `voltageIsShared`: the
+        product has more than one channel), it keys on power and current alone. That is RM-133's
+        principle, applied on the page.
+      - A run holding any sample the bridge flagged `frozen` counts whatever its length.
+
+      Single-channel devices keep the voltage in the key, and the thresholds are unchanged. Measured
+      over seven days of stored rows for all eleven metered devices: without the voltage, the outlets'
+      longest healthy run would double (60 → 119 min against the 175-minute bar), while the meters'
+      stays at 13 min. So the voltage is dropped only where it is not the device's own reading.
+      Carrying runs across offline gaps produced nothing longer than two samples. The notice now names
+      the whole hold without claiming a held voltage. The charts (`buildChartRows`, `prepareSeries` from
+      Analytics and `SourceCard`) use the same rule, so the 24 h chart marks the same span.
+      **Measured:**
+      - On the real ring, one run, 07:43–14:21, 392 samples. 0.263 kWh comes out of the integrator,
+        leaving 0.286 against the register's 0.293: nothing missing.
+      - In a browser against the live bridge (a dev server tunnelled to it, GETs only), the Energy
+        Breakdown shows "L.O Yellow's meter stopped updating … 39.8 W from 07:43 to 14:21 (6 h 38 min)"
+        and no shortfall.
+      - Tests: `src/lib/timeseries.test.ts` (+3), `src/lib/branchEnergy.test.ts` (+2, the day's shape),
+        `src/components/analytics/analyticsMath.test.ts` (+2). Each of the three rules was neutered and
+        its test failed.
+      **Not changed:** the notice's wording, "so it was not measuring … energy used in that window was
+      not measured" (RM-077, the operator's decision of 2026-09-14). It is right for a clamp that
+      freezes. On 09-22 the meter was measuring and its register counted the 2 Wh correctly; the bridge
+      was not listening. Rewording it is the operator's call.
+      `src/lib/timeseries.ts`, `src/lib/measurementScope.ts`, `src/lib/branchEnergy.ts`,
+      `src/components/analytics/{analyticsMath.ts,AnalyticsPage.tsx,SourceCard.tsx}`.
 - [x] **RM-134** The meters were never re-read. L.O Yellow's "frozen clamp" was a value nobody asked
       for again. **Applied by the operator 2026-09-22 ~14:20 (`flows.json` backed up beside it; demux
       upgraded, then the meter poll added, 301 → 303 nodes). Read back 14:21–14:24, read-only, and the

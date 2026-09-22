@@ -1,6 +1,7 @@
 import { BUILDING_METER_IDS } from '@shared/registry.mjs';
 import { SITE } from '@shared/siteConfig.mjs';
 import { detectFrozenRuns } from './timeseries';
+import { voltageIsShared } from './measurementScope';
 import { branchShortfalls, energyDisagreement, type BranchShortfall, type EnergyDisagreement } from './energyDisagreement';
 import { isReadingExpired } from './staleness';
 import { formatKwh, shareOfTotal } from './format';
@@ -111,7 +112,7 @@ export function siteDayStartMs(nowMs: number, offsetMinutes: number = Number(SIT
   return Math.floor((nowMs + offset) / DAY_MS) * DAY_MS - offset;
 }
 
-function frozenToday(id: string, name: string, points: HistoryPoint[], nowMs: number): FrozenBranch[] {
+function frozenToday(id: string, name: string, points: HistoryPoint[], nowMs: number, sharedVoltage: boolean): FrozenBranch[] {
   if (points.length === 0) return [];
   const dayStart = siteDayStartMs(nowMs);
   let lastMs = -Infinity;
@@ -120,7 +121,7 @@ function frozenToday(id: string, name: string, points: HistoryPoint[], nowMs: nu
     if (ms > lastMs) lastMs = ms;
   }
   const found: FrozenBranch[] = [];
-  for (const run of detectFrozenRuns(points)) {
+  for (const run of detectFrozenRuns(points, { sharedVoltage })) {
     const ongoing = run.toMs === lastMs && nowMs - run.toMs <= ONGOING_WITHIN_MS;
     const toMs = ongoing ? nowMs : run.toMs;
     const countedFrom = Math.max(run.fromMs, dayStart);
@@ -135,13 +136,15 @@ function frozenToday(id: string, name: string, points: HistoryPoint[], nowMs: nu
  * find it in. The bridge flags only from the three-hour mark, so `frozen_since` is when the values
  * last moved and the whole span since then is counted.
  */
-function frozenFromReading(id: string, name: string, reading: Reading | undefined, nowMs: number): FrozenBranch | null {
+function frozenFromReading(id: string, name: string, reading: Reading | undefined, nowMs: number, sharedVoltage: boolean): FrozenBranch | null {
   if (!reading?.measurement_frozen || typeof reading.power_w !== 'number') return null;
   const since = Date.parse(reading.frozen_since ?? '');
   if (!Number.isFinite(since)) return null;
   const countedFrom = Math.max(since, siteDayStartMs(nowMs));
   if (nowMs <= countedFrom) return null;
-  return { id, name, fromMs: since, toMs: nowMs, ongoing: true, heldW: reading.power_w, heldV: reading.voltage, phantomKwh: (reading.power_w * (nowMs - countedFrom)) / W_MS_PER_KWH };
+  // A shared voltage is the other clamp's mains reading and was not held, so it is not named as held.
+  const heldV = sharedVoltage ? undefined : reading.voltage;
+  return { id, name, fromMs: since, toMs: nowMs, ongoing: true, heldW: reading.power_w, heldV, phantomKwh: (reading.power_w * (nowMs - countedFrom)) / W_MS_PER_KWH };
 }
 
 export function branchEnergySplit(input: BranchEnergyInput): BranchEnergySplit {
@@ -154,10 +157,11 @@ export function branchEnergySplit(input: BranchEnergyInput): BranchEnergySplit {
   for (const id of meterIds) {
     const device = byId.get(id);
     if (!device) continue;
-    const found = frozenToday(id, device.display_name, historyByDevice[id] ?? [], nowMs);
+    const shared = voltageIsShared(device);
+    const found = frozenToday(id, device.display_name, historyByDevice[id] ?? [], nowMs, shared);
     // The history already shows an ongoing freeze when it is loaded; the bridge's flag names the same
     // freeze, so it is only used when the history does not.
-    const flagged = frozenFromReading(id, device.display_name, readings[id], nowMs);
+    const flagged = frozenFromReading(id, device.display_name, readings[id], nowMs, shared);
     if (flagged && !found.some((f) => f.ongoing)) found.push(flagged);
     frozen.push(...found);
     phantomById.set(id, found.reduce((sum, f) => sum + f.phantomKwh, 0));

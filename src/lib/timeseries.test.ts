@@ -198,6 +198,38 @@ describe('detectFrozenRuns', () => {
     const drifting = run(240, 19.1, 228.2, 0.576).map((p, i) => ({ ...p, voltage: 228.2 + (i % 2) * 0.1 }));
     expect(detectFrozenRuns(drifting)).toEqual([]);
   });
+
+  /*
+   * RM-134, 2026-09-22. L.O Yellow held 39.8 W / 0.446 A from 07:43 to 14:20 — the lights had gone off
+   * during a reboot and nothing re-read the meter — and the page found nothing: the longest identical
+   * run in the ring was 164 samples. Three things split it, and none of them was the meter measuring.
+   */
+  it('carries a held reading through an offline blip — a value that survives a reconnect is still held', () => {
+    const held = [...run(100, 39.8, 226.7, 0.446), { ...run(1, 39.8, 226.7, 0.446, 100)[0], online: false }, ...run(100, 39.8, 226.7, 0.446, 101)];
+    const found = detectFrozenRuns(held);
+    expect(found).toHaveLength(1);
+    expect(found[0].samples).toBe(200);
+  });
+
+  it('keys a channel whose voltage is shared on its own power and current, so the other clamp\'s mains reading cannot split it', () => {
+    // The dual-channel meter measures ONE voltage for both clamps; channel 2's voltage dp followed
+    // channel 1's for part of the hold (RM-133). On a single-channel device the default still needs it held.
+    const shared = run(240, 39.8, 226.7, 0.446).map((p, i) => ({ ...p, voltage: 213 + (i % 7) * 0.4 }));
+    expect(detectFrozenRuns(shared)).toEqual([]);
+    const found = detectFrozenRuns(shared, { sharedVoltage: true });
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ power_w: 39.8, current: 0.446, samples: 240 });
+  });
+
+  it('honours the bridge\'s own flag: a run that holds any flagged sample is frozen, however short', () => {
+    // The bridge flags from its own rules (three hours of v/c/p, or a register still for 30 minutes
+    // while owed energy). A run it has already called frozen is not the page's to un-call.
+    const flagged = run(40, 39.8, 214.2, 0.446).map((p, i) => (i >= 30 ? { ...p, frozen: true } : p));
+    const found = detectFrozenRuns(flagged);
+    expect(found).toHaveLength(1);
+    expect(found[0].samples).toBe(40);
+    expect(detectFrozenRuns(run(40, 39.8, 214.2, 0.446))).toEqual([]);
+  });
 });
 
 describe('imputeShortGaps', () => {

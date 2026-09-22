@@ -1,3 +1,4 @@
+import { voltageIsSharedById } from '@/lib/measurementScope';
 import { useMemo, useState } from 'react';
 import { siteDate, siteTimeShort } from '@/lib/siteTime';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -140,7 +141,7 @@ export function AnalyticsPage() {
   const selectedSeries = useMemo(
     () =>
       selectedId
-        ? prepareSeries(historyFor(historyMap, selectedId, range), param, { range, nowMs: minute, maxPoints: SELECTED_POINTS, live: liveById?.[selectedId] })
+        ? prepareSeries(historyFor(historyMap, selectedId, range), param, { range, nowMs: minute, maxPoints: SELECTED_POINTS, live: liveById?.[selectedId], sharedVoltage: voltageIsSharedById(selectedId) })
         : undefined,
     [selectedId, historyMap, range, param, minute, liveById],
   );

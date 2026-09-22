@@ -147,29 +147,57 @@ function ordered(points: HistoryPoint[]): { ms: number; point: HistoryPoint }[] 
   return out;
 }
 
+export interface FrozenRunOptions {
+  /**
+   * This channel's voltage is one measurement shared with another clamp — the dual-channel meter
+   * (`voltageIsShared`). Its run is then keyed on its OWN measurements, power and current: RM-133
+   * found channel 2's voltage dp following channel 1's through a hold, and a shared voltage moving is
+   * no evidence that this clamp is measuring. A single-channel device keeps the voltage in the key —
+   * there it is the device's own reading, and over seven days to 2026-09-22 dropping it would have
+   * doubled the outlets' longest healthy run (60 → 119 min) against the three-hour threshold.
+   */
+  sharedVoltage?: boolean;
+}
+
 /**
- * Runs of byte-identical power, voltage and current, with power above zero and the device
- * reporting online, long enough that no healthy meter here has ever produced one.
+ * Runs of byte-identical readings with power above zero, long enough that no healthy meter here has
+ * ever produced one — or containing a sample the bridge itself flagged frozen.
+ *
+ * RM-134 (2026-09-22) found three things splitting a real hold, none of them the meter measuring:
+ *   - OFFLINE SAMPLES are skipped, not treated as a break. The reconnect blips at 07:45, 07:59 and
+ *     08:13 each cut L.O Yellow's six-hour hold, and a value that survives a reconnect identical is
+ *     precisely a value nobody re-read. They are still never part of a run on their own: an offline
+ *     stretch is already a different, louder fact.
+ *   - THE SHARED VOLTAGE, per `sharedVoltage` above.
+ *   - THE BRIDGE'S OWN FLAG (`frozen: true`, RM-079/RM-133) switching on mid-run. A run holding any
+ *     flagged sample is frozen whatever its length: the bridge's register rule decides from facts the
+ *     ring does not carry, and it is not the page's to un-call.
  */
-export function detectFrozenRuns(points: HistoryPoint[]): FrozenRun[] {
-  const list = ordered(points);
+export function detectFrozenRuns(points: HistoryPoint[], opts: FrozenRunOptions = {}): FrozenRun[] {
+  const shared = opts.sharedVoltage === true;
+  const list = ordered(points).filter((e) => e.point.online !== false);
   const key = (p: HistoryPoint) =>
-    p.online !== false && typeof p.power_w === 'number' && Number.isFinite(p.power_w) && p.power_w > 0 && typeof p.voltage === 'number'
-      ? `${p.power_w}|${p.voltage}|${p.current}`
+    typeof p.power_w === 'number' && Number.isFinite(p.power_w) && p.power_w > 0 && (shared || typeof p.voltage === 'number')
+      ? shared ? `${p.power_w}|${p.current}` : `${p.power_w}|${p.voltage}|${p.current}`
       : null;
   const runs: FrozenRun[] = [];
   let start = 0;
+  let flagged = list.length > 0 && list[0].point.frozen === true;
   for (let i = 1; i <= list.length; i++) {
     const startKey = key(list[start].point);
-    if (i < list.length && startKey !== null && key(list[i].point) === startKey) continue;
+    if (i < list.length && startKey !== null && key(list[i].point) === startKey) {
+      if (list[i].point.frozen === true) flagged = true;
+      continue;
+    }
     const samples = i - start;
     const fromMs = list[start].ms;
     const toMs = list[i - 1].ms;
-    if (startKey !== null && samples >= FROZEN_MIN_SAMPLES && toMs - fromMs >= FROZEN_MIN_DURATION_MS) {
+    if (startKey !== null && (flagged || (samples >= FROZEN_MIN_SAMPLES && toMs - fromMs >= FROZEN_MIN_DURATION_MS))) {
       const p = list[start].point;
-      runs.push({ fromMs, toMs, samples, power_w: p.power_w, voltage: p.voltage, current: p.current });
+      runs.push({ fromMs, toMs, samples, power_w: p.power_w, ...(shared ? {} : { voltage: p.voltage }), current: p.current });
     }
     start = i;
+    flagged = i < list.length && list[i].point.frozen === true;
   }
   return runs;
 }
@@ -395,6 +423,8 @@ export interface BuildSeriesOptions extends Omit<AlignOptions, 'frozenRuns'> {
   /** Only meaningful on the bridge's own samples. A stored bucket is an average, and an average
    * repeating exactly is not the same evidence as a raw reading doing so. */
   detectFrozen?: boolean;
+  /** The device's voltage is shared with another clamp — see `FrozenRunOptions`. */
+  sharedVoltage?: boolean;
   maxImputeMs?: number;
   /** The newest live reading, already checked for freshness by the caller. */
   live?: LiveSample;
@@ -402,8 +432,8 @@ export interface BuildSeriesOptions extends Omit<AlignOptions, 'frozenRuns'> {
 
 /** The whole pipeline: find freezes, align, add the live tail, then bridge what is short enough. */
 export function buildSeries(points: HistoryPoint[], opts: BuildSeriesOptions): { slots: Slot[]; frozen: FrozenRun[] } {
-  const { detectFrozen = false, maxImputeMs = MAX_IMPUTE_MS, live, ...align } = opts;
-  const frozen = detectFrozen ? detectFrozenRuns(points) : [];
+  const { detectFrozen = false, sharedVoltage = false, maxImputeMs = MAX_IMPUTE_MS, live, ...align } = opts;
+  const frozen = detectFrozen ? detectFrozenRuns(points, { sharedVoltage }) : [];
   let aligned = alignToGrid(points, { ...align, frozenRuns: frozen });
   if (live) aligned = appendLiveTail(aligned, live, align.stepMs);
   const slots = imputeShortGaps(aligned, align.stepMs, maxImputeMs);
