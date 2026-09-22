@@ -35,6 +35,42 @@ describe('withViewTransition', () => {
     expect(update).toHaveBeenCalledTimes(1);
   });
 
+  // Measured 2026-09-22 in the app's own browser pane: shown but not painting, the browser held a tab click
+  // until the next frame — seconds — and the page did not change under the reader's click. A change the
+  // reader asked for must never wait on a frame that may not come.
+  it('makes the change anyway when the browser does not get round to it', () => {
+    vi.useFakeTimers();
+    try {
+      const update = vi.fn();
+      const never = new Promise(() => {});
+      const start = vi.fn(() => ({ ready: never, finished: never, updateCallbackDone: never }));
+      withViewTransition(update, { startViewTransition: start }, still(false));
+      expect(update).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(300);
+      expect(update).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('makes the change once when the browser calls back after the fallback has', () => {
+    vi.useFakeTimers();
+    try {
+      const update = vi.fn();
+      let late: (() => void) | null = null;
+      const start = vi.fn((cb: () => void) => {
+        late = cb;
+        return {};
+      });
+      withViewTransition(update, { startViewTransition: start }, still(false));
+      vi.advanceTimersByTime(300);
+      late!();
+      expect(update).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not leave a skipped transition rejecting where nobody listens', async () => {
     // A hidden tab skips the transition and rejects `ready`: unheard, that is an error in the console of
     // a kiosk nobody is watching.

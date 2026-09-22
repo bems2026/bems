@@ -244,3 +244,13 @@ test('the export drawer keeps Generate in reach while its options scroll', () =>
   assert.equal(actions.bottom, 'calc(var(--sp-5) * -1)');
   assert.equal(actions.background, 'var(--pop-bg)');
 });
+
+// FI-041. The Reports tab bodies are a tab panel now, and a tab panel is a keyboard stop. Its `:focus` rule
+// draws no outline — right for a click, which would otherwise leave a permanent ring round the report —
+// but a keyboard reader who tabs into it must still see where they are (WCAG 2.4.7).
+test('a tab panel reached by keyboard shows where focus is, and a click leaves no ring', () => {
+  assert.equal(declarationsOf(css, '.tabs__panel:focus').outline, 'none');
+  const ring = declarationsOf(css, '.tabs__panel:focus-visible');
+  assert.match(ring.outline ?? '', /var\(--focus-ring\)/);
+  assert.ok(css.indexOf('.tabs__panel:focus-visible') > css.indexOf('.tabs__panel:focus {'), 'the keyboard ring must come after the rule that clears it');
+});

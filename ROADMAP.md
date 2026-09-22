@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-22, 22:45 — **RM-137 to RM-141 committed, not yet deployed (§0).** **22:21 — RM-141: pop-ups that fit, measured signed in at 360, 768 and 800×480 — every surface 0 px over.** **21:47 — RM-140: the PDF waits for the circuit charts; the controls stay put; changes crossfade.** **21:40 — RM-139: no circuit told apart by colour alone; the status hues stay, measured.** **21:25 — RM-138: a report not made yet is said, not silent; the week of
+**Last audited:** 2026-09-22, 23:10 — **FI-039 and FI-041 done; a transition never waits on a frame.** **22:45 — RM-137 to RM-141 pushed, CI green, deployed: the dashboard built on the Pi and `ibems-ingest` restarted 22:53 (read back).** **22:21 — RM-141: pop-ups that fit, measured signed in at 360, 768 and 800×480 — every surface 0 px over.** **21:47 — RM-140: the PDF waits for the circuit charts; the controls stay put; changes crossfade.** **21:40 — RM-139: no circuit told apart by colour alone; the status hues stay, measured.** **21:25 — RM-138: a report not made yet is said, not silent; the week of
 14 Sept was not late** (settles 08:00 Wed 23 Sept). **21:13 — RM-137: a statement timeout is asked
 again by itself** (the operator's Reports brief; §2's first section). **Earlier, 17:10 — the end-of-day list, by owner, is §0's first entry.** RM-136 was run
 at 16:31 and read back: both notices are gone and checked in a browser. **Earlier, 17:00 — phase47 (FI-027)
@@ -410,8 +410,8 @@ browser against the live bridge. `npm run preflight` reads `Ready` with every no
 - The next lights-on after an idle stretch should raise no flag (RM-136).
 - The next outage is RM-131's real test.
 - **The week of 14 Sept report** at the first report pass after 08:00 Wed 23 Sept (RM-138; passes run six-hourly
-  from the last `ibems-ingest` restart): the journal's `generated weeks 2026-09-14` and the row. The Reports work (RM-137–RM-141) is committed, not pushed or deployed: it
-  needs a push, `npm run build` on the Pi, and an `ibems-ingest` restart for `shared/reportSchedule.mjs`.
+  from the last `ibems-ingest` restart): the journal's `generated weeks 2026-09-14` and the row. The Reports work (RM-137–RM-141) is deployed and read back 22:53–22:56:
+  the Pi at the pushed commit, the kiosk bundle rebuilt, `ibems-ingest` restarted after the pull (next passes 04:53, 10:53).
 
 **Engineering, in order:**
 1. **FI-034:** `readings_buckets` over 30 days takes 7.8 s. Add `p_until` or chunk it, then extend
@@ -3831,10 +3831,17 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       `100dvh` (vh fallback); Generate is a sticky row sunk into the body's padding. The explorer's computed
       35–105 px at 800×480 did not occur on real geometry. Tests: `popoverPlacement.test.ts` (+7, incl. a
       sweep at all three sizes), `ChartFigure.hover.test.tsx` (+1), `reports-css.test.mjs` (+3).
-- [ ] **FI-039** `sceneToJsx` passes hyphenated SVG attributes (`stroke-width`, `font-size`, `text-anchor`…)
-      to React, which logs "Invalid DOM property" for each in development. It renders; since RM-072.
+- [x] **FI-039** `sceneToJsx` passed hyphenated SVG attributes to React, which logged "Invalid DOM property" for
+      each in development — 51 on one visit. It now hands React the camelCase names (same DOM attributes; the
+      page-versus-PDF parity test holds); zero warnings across all four tabs, checked in a browser 2026-09-22.
+      `charts/sceneToJsx.test.tsx` (2, in a file of its own because React warns once per name).
 - [ ] **FI-040** Reports cannot be deep-linked to a tab or period; `useHashSubRoute` already exists.
-- [ ] **FI-041** `Tabs` sets `aria-controls` to panels the Reports page never renders.
+- [x] **FI-041** `Tabs` set `aria-controls` to panels the Reports page never rendered. The selected tab's body is
+      now its `TabPanel` (as on Automation), labelled by its tab — checked on all four in a browser — and a
+      `:focus-visible` ring shows a keyboard reader the panel they tabbed into (a click still leaves none).
+      `ReportsPage.tabs.test.tsx` (+4), `reports-css.test.mjs` (+1). **And RM-140's transitions no longer wait on a
+      frame:** shown but not painting, the app's browser pane held a tab click for seconds; past 300 ms the
+      change is made directly, once (`viewTransition.test.ts` +2).
 - [ ] **FI-042** `Skeleton.tsx` calls itself static; `.skeleton` shimmers (stopped only by reduced motion).
 
 ### Onboarding without IoT Core, and the aircon's own IR protocol — RM-126 to RM-129 (2026-09-22)

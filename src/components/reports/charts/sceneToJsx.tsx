@@ -17,11 +17,22 @@ import type { ChartPalette, Scene } from './types';
  * would be a second vocabulary for the equivalence test to reconcile.
  */
 
+/**
+ * SVG's own attribute names, as React wants them — FI-039. The nodes carry `stroke-width` and `text-anchor`
+ * because the PDF's serializer writes them verbatim; handed to React as they are, each logged "Invalid DOM
+ * property" (51 errors on one visit to the Reports page). React writes the same attribute from the
+ * camelCase prop, so the page and the PDF still agree node for node (`serializers.test.tsx`). `aria-*` and
+ * `data-*` are React's own hyphenated names and pass through.
+ */
+const reactName = (name: string) =>
+  name.startsWith('aria-') || name.startsWith('data-') ? name : name.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+
 function toElement(node: SvgNode, key: number): ReactElement {
   const children = node.text !== undefined
     ? node.text
     : (node.children ?? []).map(toElement);
-  return createElement(node.tag, { ...node.attrs, key }, children);
+  const props = Object.fromEntries(Object.entries(node.attrs).map(([name, value]) => [reactName(name), value]));
+  return createElement(node.tag, { ...props, key }, children);
 }
 
 export function SceneSvg({ scene, palette }: { scene: Scene; palette: ChartPalette }): ReactElement {

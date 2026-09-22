@@ -212,3 +212,18 @@ describe('usage patterns gate themselves', () => {
     expect(screen.getByText(/Not a forecast\./)).toBeInTheDocument();
   });
 });
+
+describe('each tab names a panel that exists — FI-041', () => {
+  // The strip set `aria-controls` on every tab, and the page never rendered the panel it named: a screen
+  // reader asked to go to the tab's content found nothing there. The page renders the selected tab's body,
+  // so that body is the panel, labelled by its tab.
+  it.each([/overview/i, /circuits/i, /usage patterns/i, /compare/i])('%s', async (name) => {
+    render(<ReportsPage />);
+    const tab = await openTab(name);
+    await waitFor(() => expect(tab).toHaveAttribute('aria-selected', 'true'));
+    const panel = document.getElementById(tab.getAttribute('aria-controls') ?? '');
+    expect(panel).not.toBeNull();
+    expect(panel).toHaveAttribute('role', 'tabpanel');
+    expect(panel).toHaveAttribute('aria-labelledby', tab.id);
+  });
+});

@@ -4978,6 +4978,13 @@ body::before {
 .tabs__panel:focus {
   outline: none;
 }
+/* FI-041: but a keyboard reader who tabs into it must see where they are (WCAG 2.4.7) — the Reports
+   tab bodies became a panel, so this is now most of that page. Keyboard only: a click shows nothing. */
+.tabs__panel:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 4px;
+  border-radius: var(--r-card);
+}
 
 /* ============================================================================
  * AUTOMATION — OVERVIEW TAB
