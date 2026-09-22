@@ -3,6 +3,7 @@ import {
   createReportCache,
   isTransient,
   retryTransient,
+  ReportQueryError,
   ReportTimeoutError,
   withTimeout,
 } from './reportLoader';
@@ -70,6 +71,50 @@ describe('isTransient', () => {
   ])('does not retry %s', (_name, err) => {
     expect(isTransient(err)).toBe(false);
   });
+
+  // 2026-09-22: "readings_archive failed for mtr_arec_acu: canceling statement due to statement
+  // timeout" surfaced on the first attempt and Retry drew the chart. The database's own timeout is a
+  // successful HTTP answer carrying SQLSTATE 57014, and it was classified by its English text.
+  const query = (code: string, status = 500, message = 'x') =>
+    new ReportQueryError('readings_archive failed for mtr_arec_acu', { code, message, details: null, hint: null }, status);
+
+  it.each([
+    ['a statement timeout (57014)', query('57014', 500, 'canceling statement due to statement timeout')],
+    ['too many connections (53300)', query('53300')],
+    ['a lock not available (55P03)', query('55P03')],
+    ['a dropped connection (08006)', query('08006')],
+    ['PostgREST unable to reach the database (PGRST000)', query('PGRST000', 503)],
+    ['a gateway timeout with no code', query('', 504, 'upstream request timeout')],
+    ['a network failure the client reported as an error object', query('', 0, 'TypeError: Failed to fetch')],
+  ])('retries %s', (_name, err) => {
+    expect(isTransient(err)).toBe(true);
+  });
+
+  it.each([
+    ['a permission refusal (42501)', query('42501', 403, 'permission denied for function readings_archive')],
+    ['a missing function (PGRST202)', query('PGRST202', 404)],
+    ['a missing function (42883)', query('42883', 404)],
+    ['an argument the function refuses (22023)', query('22023', 400, 'at most 900 buckets')],
+    // The code decides, never the words: the message is localisable and changes between versions.
+    ['a plain Error that only SAYS statement timeout', new Error('readings_archive failed: canceling statement due to statement timeout')],
+  ])('does not retry %s', (_name, err) => {
+    expect(isTransient(err)).toBe(false);
+  });
+});
+
+describe('ReportQueryError', () => {
+  it('keeps what the database said, where wrapping it in a bare Error kept only the words', () => {
+    const err = new ReportQueryError(
+      'report_device_daily_energy failed',
+      { code: '57014', message: 'canceling statement due to statement timeout', details: 'd', hint: 'h' },
+      500
+    );
+    expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe('ReportQueryError');
+    // Byte-identical to the message the page has always shown, so its wording does not move.
+    expect(err.message).toBe('report_device_daily_energy failed: canceling statement due to statement timeout');
+    expect([err.code, err.details, err.hint, err.status]).toEqual(['57014', 'd', 'h', 500]);
+  });
 });
 
 describe('retryTransient', () => {
@@ -84,6 +129,20 @@ describe('retryTransient', () => {
   it('never retries a failure that asking again cannot fix', async () => {
     const run = vi.fn().mockRejectedValue(new Error('permission denied for function report_daily_series'));
     await expect(retryTransient(run, { retries: 2, baseMs: 600, sleep: noSleep })).rejects.toThrow(/permission denied/);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks again after the database cancels a statement for time, which is what Retry used to do by hand', async () => {
+    const timeout = new ReportQueryError('readings_archive failed for mtr_arec_acu', { code: '57014', message: 'canceling statement due to statement timeout' }, 500);
+    const run = vi.fn().mockRejectedValueOnce(timeout).mockResolvedValueOnce('rows');
+    await expect(retryTransient(run, { retries: 2, baseMs: 600, sleep: noSleep })).resolves.toBe('rows');
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not ask again after a refusal carrying its code', async () => {
+    const refusal = new ReportQueryError('readings_archive failed for mtr_arec_acu', { code: '42501', message: 'permission denied' }, 403);
+    const run = vi.fn().mockRejectedValue(refusal);
+    await expect(retryTransient(run, { retries: 2, baseMs: 600, sleep: noSleep })).rejects.toBe(refusal);
     expect(run).toHaveBeenCalledTimes(1);
   });
 

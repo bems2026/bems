@@ -14,6 +14,7 @@
 
 import { supabase } from '@/config/supabase';
 import { SITE } from '@shared/siteConfig.mjs';
+import { ReportQueryError } from './reportLoader';
 
 export interface MonthlyDeviceReport {
   month: string;
@@ -103,25 +104,25 @@ function requireSupabase() {
  * caps silently, and this project has been bitten by inferring completeness from a response
  * that had no way to signal truncation. */
 export async function getReportMonths(): Promise<MonthlyBuildingReport[]> {
-  const { data, error } = await requireSupabase()
+  const { data, error, status } = await requireSupabase()
     .from('monthly_building_reports')
     .select('*')
     .order('month', { ascending: false })
     .limit(240);
-  if (error) throw new Error(`Could not list reports: ${error.message}`);
+  if (error) throw new ReportQueryError('Could not list reports', error, status);
   return (data ?? []) as MonthlyBuildingReport[];
 }
 
 /** The per-device rows for one month. At most one row per device, so the device count is the
  * natural bound. */
 export async function getDeviceReports(month: string): Promise<MonthlyDeviceReport[]> {
-  const { data, error } = await requireSupabase()
+  const { data, error, status } = await requireSupabase()
     .from('monthly_reports')
     .select('*')
     .eq('month', month)
     .order('energy_kwh', { ascending: false, nullsFirst: false })
     .limit(500);
-  if (error) throw new Error(`Could not load the report for ${month}: ${error.message}`);
+  if (error) throw new ReportQueryError(`Could not load the report for ${month}`, error, status);
   return (data ?? []) as MonthlyDeviceReport[];
 }
 
@@ -246,8 +247,8 @@ export async function getReportPeriods(period: ReportPeriod, { signal }: { signa
     .limit(period === 'week' ? 520 : period === 'day' ? 400 : 240);
   // RM-081: a caller that times out cancels the request itself, not just its wait for it.
   if (signal) query = query.abortSignal(signal);
-  const { data, error } = await query;
-  if (error) throw new Error(`Could not list reports: ${error.message}`);
+  const { data, error, status } = await query;
+  if (error) throw new ReportQueryError('Could not list reports', error, status);
   return (data ?? []) as PeriodBuildingReport[];
 }
 
@@ -266,7 +267,7 @@ export async function getDevicePeriodReports(
     .order('energy_kwh', { ascending: false, nullsFirst: false })
     .limit(500);
   if (signal) query = query.abortSignal(signal);
-  const { data, error } = await query;
-  if (error) throw new Error(`Could not load the ${period} report starting ${start}: ${error.message}`);
+  const { data, error, status } = await query;
+  if (error) throw new ReportQueryError(`Could not load the ${period} report starting ${start}`, error, status);
   return (data ?? []) as PeriodDeviceReport[];
 }

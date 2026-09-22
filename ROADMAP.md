@@ -1,6 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-22, 17:10 — **the end-of-day list, by owner, is §0's first entry.** RM-136 was run
+**Last audited:** 2026-09-22, 21:20 — **RM-137: a statement timeout is asked again by itself** (the
+operator's Reports brief; §2's first section). **Earlier, 17:10 — the end-of-day list, by owner, is §0's first entry.** RM-136 was run
 at 16:31 and read back: both notices are gone and checked in a browser. **Earlier, 17:00 — phase47 (FI-027)
 applied at 16:19 and read back** — L.O Yellow's 22 Sept
 records 527 minutes, not 895; the restatement also touched 8 August rows by rollup drift (energy and peak
@@ -3741,6 +3742,22 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 ## 2. Current roadmap (active execution)
 
 
+
+### The Reports page, from the operator's brief — RM-137 onward (2026-09-22)
+
+- [x] **RM-137** A statement timeout is asked again by itself. "readings_archive failed for mtr_arec_acu:
+      canceling statement due to statement timeout" surfaced on the first attempt and Retry drew the chart:
+      every Reports loader rethrew `new Error(\`${fn} failed: ${message}\`)`, dropping the SQLSTATE, and
+      `isTransient` classified by English. `ReportQueryError` keeps `code/details/hint/status` (message
+      byte-identical) at all nine wraps — `circuitSeries`, `reportSeries`, `supabaseReports`; `isTransient`
+      retries 57014, 53300, 55P03, 08000/08003/08006, PGRST000–002 and HTTP 502–504, by code only.
+      **Measured from the Pi (service role), not assumed:** a week's first `readings_archive` read took
+      0.9–5.4 s a meter, the second 0.42–0.56 s, at any concurrency; two-at-a-time was the slowest first
+      read (5.4 s) and a warm week took 0.52 s at once vs 0.95 s two at a time — a cold cache, not
+      contention, so `getCircuitTrend` keeps `Promise.all`. **Open:** the operator's signed-in
+      `EXPLAIN (ANALYZE, BUFFERS)` of the slow call, to confirm `shared read` on the first attempt; no SQL
+      change without it. Tests: `reportLoader.test.ts` (+15), `reportQueryErrors.test.ts` (9, new),
+      `useReportData.test.ts` (+1, one updated); a neuter dropping 57014 fails 12.
 
 ### Onboarding without IoT Core, and the aircon's own IR protocol — RM-126 to RM-129 (2026-09-22)
 

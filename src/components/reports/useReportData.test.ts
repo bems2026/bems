@@ -6,6 +6,7 @@ import * as series from '@/lib/reportSeries';
 import * as tariffs from '@/lib/supabaseTariffs';
 import * as config from '@/lib/supabaseConfig';
 import * as circuits from '@/lib/circuitSeries';
+import { ReportQueryError } from '@/lib/reportLoader';
 import { BUILDING_METER_IDS } from '@shared/registry.mjs';
 
 /**
@@ -134,14 +135,31 @@ describe('useReportData', () => {
 
   it('confines a slow duration curve to the curve, and keeps the hour profile and heatmap that loaded', async () => {
     // Live, 2026-09-15, signed in: `report_demand_curve` was cancelled by the statement timeout on
-    // every attempt, and it took two charts that had loaded down with it.
-    vi.mocked(series.getDemandCurve).mockRejectedValue(new Error('report_demand_curve failed: canceling statement due to statement timeout'));
+    // every attempt, and it took two charts that had loaded down with it. Since 2026-09-22 a timeout
+    // is asked again by itself — so one on EVERY attempt still ends as an error, after three asks.
+    const timeout = new ReportQueryError('report_demand_curve failed', { code: '57014', message: 'canceling statement due to statement timeout' }, 500);
+    vi.mocked(series.getDemandCurve).mockRejectedValue(timeout);
     const { result } = renderHook(() => useReportData('month', FAST));
 
     await waitFor(() => expect(result.current.curve.status).toBe('error'));
+    expect(result.current.curve.error).toBe('report_demand_curve failed: canceling statement due to statement timeout');
+    expect(series.getDemandCurve).toHaveBeenCalledTimes(3);
     await waitFor(() => expect(result.current.hours.status).toBe('ready'));
     expect(result.current.matrix.status).toBe('ready');
     expect(result.current.core.status).toBe('ready');
+  });
+
+  it('asks again by itself when the database cancels a statement for time, which is what Retry used to do', async () => {
+    // 2026-09-22: "The power per circuit could not be loaded. readings_archive failed for mtr_arec_acu:
+    // canceling statement due to statement timeout", and pressing Retry drew the chart. Measured the same
+    // day, the first read of a period finds the database's pages cold and the second finds them warm.
+    const timeout = new ReportQueryError('readings_archive failed for mtr_arec_acu', { code: '57014', message: 'canceling statement due to statement timeout' }, 500);
+    vi.mocked(circuits.getCircuitTrend).mockRejectedValueOnce(timeout);
+    const { result } = renderHook(() => useReportData('month', FAST, { circuits: true }));
+
+    await waitFor(() => expect(result.current.trend.status).toBe('ready'));
+    expect(result.current.trend.error).toBeNull();
+    expect(circuits.getCircuitTrend).toHaveBeenCalledTimes(2);
   });
 
   it('confines a heatmap failure to the heatmap, and keeps the headline figures', async () => {

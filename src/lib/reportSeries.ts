@@ -2,6 +2,7 @@ import { supabase } from '@/config/supabase';
 import { SITE } from '@shared/siteConfig.mjs';
 import { assertNotTruncated } from './supabaseHistory';
 import { coverageOf, type ReportPeriod } from './supabaseReports';
+import { ReportQueryError } from './reportLoader';
 import type { DailyEnergyPoint } from '@/components/reports/charts/dailyEnergyChart';
 import type { HourProfilePoint } from '@/components/reports/charts/loadProfileChart';
 import type { HeatCell } from '@/components/reports/charts/demandHeatmapChart';
@@ -201,8 +202,8 @@ export interface SeriesRequest {
 async function call<T>(fn: string, args: Record<string, unknown>, cap: number, signal?: AbortSignal): Promise<T[]> {
   let request = client().rpc(fn, args);
   if (signal) request = request.abortSignal(signal);
-  const { data, error } = await request;
-  if (error) throw new Error(`${fn} failed: ${error.message}`);
+  const { data, error, status } = await request;
+  if (error) throw new ReportQueryError(`${fn} failed`, error, status);
   const rows = (data ?? []) as T[];
   // Every one of these returns a bounded count by construction, so hitting the cap means the
   // answer was cut rather than that the period was large — and a cut series draws a

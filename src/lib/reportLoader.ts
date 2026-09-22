@@ -25,6 +25,41 @@ export class ReportTimeoutError extends Error {
   }
 }
 
+/** What PostgREST hands back beside the rows when a query fails — the shape of `PostgrestError`. */
+export interface QueryFailure {
+  code?: string;
+  message: string;
+  details?: string | null;
+  hint?: string | null;
+}
+
+/**
+ * A query the database answered with an error, KEEPING what it said.
+ *
+ * Every loader used to rethrow `new Error(\`${fn} failed: ${error.message}\`)`, which kept the words
+ * and dropped the SQLSTATE. On 2026-09-22 the Circuits tab said "readings_archive failed for
+ * mtr_arec_acu: canceling statement due to statement timeout" on the first attempt, and Retry drew
+ * the chart: the database's own timeout is a successful HTTP answer carrying 57014, `isTransient`
+ * had nothing to classify but English, and so it never asked again. The message is unchanged — the
+ * page has always shown `context: what the database said` — and the code now travels with it.
+ */
+export class ReportQueryError extends Error {
+  readonly code: string | null;
+  readonly details: string | null;
+  readonly hint: string | null;
+  /** The HTTP status of the answer, when the caller had one: a gateway timeout carries no code. */
+  readonly status: number | null;
+
+  constructor(context: string, failure: QueryFailure, status: number | null = null) {
+    super(`${context}: ${failure.message}`);
+    this.name = 'ReportQueryError';
+    this.code = failure.code || null;
+    this.details = failure.details ?? null;
+    this.hint = failure.hint ?? null;
+    this.status = status;
+  }
+}
+
 /**
  * Runs `run` with a deadline. On expiry the signal handed to `run` is ABORTED as well as the wait
  * being abandoned: a timeout that only stops waiting leaves the query running against the database
@@ -54,16 +89,38 @@ export function withTimeout<T>(run: (signal: AbortSignal) => Promise<T>, ms: num
 const NETWORK_FAILURE = /Failed to fetch|NetworkError|Load failed/i;
 
 /**
+ * SQLSTATEs, and PostgREST's own codes, that say "not now" rather than "no".
+ *
+ * 57014 is the one this exists for: a statement cancelled by the database's timeout. Measured from
+ * the Pi on 2026-09-22, the FIRST read of a week's `readings_archive` took 0.9–5.4 s a meter and the
+ * second read of the same week 0.42–0.56 s, whether the four meters went at once, two at a time or
+ * one by one — a cold cache, not contention. So the first attempt is the one that crosses the
+ * signed-in statement timeout, and the second finds the pages warm. 53300 (too many connections),
+ * 55P03 (lock not available) and the 08xxx connection failures clear the same way; PGRST000–002 are
+ * PostgREST failing to reach the database at all.
+ */
+const TRANSIENT_CODES = new Set(['57014', '53300', '55P03', '08000', '08003', '08006', 'PGRST000', 'PGRST001', 'PGRST002']);
+
+/** A gateway that gave up upstream answers with a status and often no code at all. */
+const TRANSIENT_STATUS = new Set([502, 503, 504]);
+
+/**
  * Whether asking again could produce a different answer.
  *
- * Only a timeout or a network failure qualifies. A permission refusal, a truncated result or a
- * missing function will say exactly the same thing on the second try, and retrying them only
- * delays the page saying so. A caller that cancelled is not a failure at all.
+ * Only a timeout, a network failure or a database answer whose CODE says "not now" qualifies. A
+ * permission refusal, a truncated result or a missing function will say exactly the same thing on
+ * the second try, and retrying them only delays the page saying so. A caller that cancelled is not a
+ * failure at all. A database error is classified by its code and never by its words, which are
+ * localisable and change between versions.
  */
 export function isTransient(err: unknown): boolean {
   if (err instanceof ReportTimeoutError) return true;
   if (!(err instanceof Error)) return false;
   if (err.name === 'AbortError') return false;
+  if (err instanceof ReportQueryError) {
+    if (err.code !== null && TRANSIENT_CODES.has(err.code)) return true;
+    if (err.status !== null && TRANSIENT_STATUS.has(err.status)) return true;
+  }
   return NETWORK_FAILURE.test(err.message);
 }
 
