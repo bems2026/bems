@@ -26,7 +26,27 @@ import type { ChartPalette } from './types';
  * lines in the `-bright` tier because they sit on a tinted card. On white, `--accent` measures
  * **2.15:1** — `index.css` says so itself, and ships `--accent-text` because of it. So print
  * takes the AA-strength tier throughout. `palette.test.ts` asserts this rather than trusting it.
+ *
+ * WHY TWO SERIES WEAR THE STATUS HUES, AND WHY THAT STAYS — RM-139. Series 0 is the amber of `warn`
+ * and series 2 the green of `good` (identical hex in print), so Lighting reads amber and Others green
+ * beside amber and green status badges. Re-mapping them was tried, 2026-09-22, against every guard
+ * `palette.test.ts` holds — 3:1 on paper, CIE76 ΔE ≥ 25 between print series, every pair apart for
+ * full colour vision and under protanopia and deuteranopia, each theme's lightness band — plus the
+ * new wish to stay OKLab ΔE×100 ≥ 15 from good, warn and bad. With blue and purple kept, no pair of
+ * replacements passes all three renderings; with all four free, every palette that does needs a
+ * rose-red at OKLCH hue ≈ 20°, the fault family. The arc outside green, amber and red holds about
+ * three hues a colour-blind reader can tell apart, and this building has four branch circuits.
+ * So colour is the second channel: every series also carries a pattern (`SERIES_DASH`) and its name
+ * beside the plot, and status is never said by colour alone — the badges carry words.
  */
+
+/**
+ * A line pattern per series index, so a line is its circuit's before its colour is — RM-139. Solid,
+ * long dash, dotted, dash-dot: four shapes that stay four at a 2 px stroke and in the PDF, which draws
+ * `stroke-dasharray` like any other attribute. Indexed like `series`, by the circuit's fixed
+ * `colourIndex`, so a circuit keeps its pattern as it keeps its colour.
+ */
+export const SERIES_DASH: readonly (string | undefined)[] = [undefined, '8 3', '2 3', '9 3 2 3'];
 
 /** Which CSS custom property each print value claims to be. The drift guard reads this. */
 export const PRINT_MIRROR = {
@@ -59,6 +79,8 @@ export const PRINT_PALETTE: ChartPalette = {
   surface: '#ffffff',
   /** Four, matching the four branch meters this building actually has. */
   series: ['#ae4d03', '#1e5ce4', '#037756', '#6200be'],
+  /** White on every AA-tier series: 5.4–9.3:1. The screen's bright tier needs dark ink on three (RM-139). */
+  seriesText: ['#ffffff', '#ffffff', '#ffffff', '#ffffff'],
   good: '#037756',
   warn: '#ae4d03',
   bad: '#b91c1c',
@@ -83,6 +105,7 @@ export const SCREEN_PALETTE: ChartPalette = {
   grid: 'var(--border)',
   surface: 'var(--bg-surface)',
   series: ['var(--accent)', 'var(--blue-bright)', 'var(--green-bright)', 'var(--purple-bright)'],
+  seriesText: ['var(--on-series-0)', 'var(--on-series-1)', 'var(--on-series-2)', 'var(--on-series-3)'],
   good: 'var(--good)',
   warn: 'var(--warn)',
   bad: 'var(--bad)',

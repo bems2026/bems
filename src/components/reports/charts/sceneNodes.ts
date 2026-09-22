@@ -106,6 +106,7 @@ function markNode(mark: Mark, palette: ChartPalette): SvgNode {
           fill: mark.fill ?? 'none',
           stroke: mark.stroke,
           'stroke-width': mark.width,
+          'stroke-dasharray': mark.dash,
           opacity: mark.opacity,
         }),
       };

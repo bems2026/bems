@@ -138,6 +138,14 @@
    * its own step of it (FI-028). No text role and no -text shade: it is only ever a chart line. */
   --sky-bright: #0ea5e9;
 
+  /* RM-139: text drawn ON a report series — a name inside a segment of "Energy by use". It was the
+   * surface colour, white, at 2.15:1 on --accent. Each series names its own ink; `palette.test.ts`
+   * holds every pair to 4.5:1. --txt on --blue-bright is 3.98:1, so that one takes a deeper ink. */
+  --on-series-0: #1e293b; /* 6.8:1 on --accent */
+  --on-series-1: #0f172a; /* 4.7:1 on --blue-bright */
+  --on-series-2: #1e293b; /* 5.8:1 on --green-bright */
+  --on-series-3: #ffffff; /* 6.9:1 on --purple-bright */
+
   /**
    * Sequential ramp — the ONLY ordered scale in this palette, for the reports' day-by-hour
    * demand heatmap. Every other colour here is categorical: it says which thing, not how much.
@@ -377,6 +385,12 @@
    * --bg-surface-2 — enough for a line, and it carries no text. */
   --purple-bright: #924ed5;
   --sky-bright: #059ddf; /* 6.2:1 — FI-028: #0ea5e9 sat at L 0.685; same hue at 0.66 */
+  /* RM-139: text on a report series. The dark series are mid-tone, so the surface's own near-black
+   * reads on three of them and white only on purple. */
+  --on-series-0: #1e1e1e; /* 4.8:1 on --accent */
+  --on-series-1: #1e1e1e; /* 5.3:1 on --blue-bright */
+  --on-series-2: #1e1e1e; /* 5.7:1 on --green-bright */
+  --on-series-3: #ffffff; /* 4.9:1 on --purple-bright */
 
   /* The heat ramp INVERTS, it does not merely darken. "More" must read as more ink on paper
      and as more light on a dark screen; carrying the light theme's ramp across would make an

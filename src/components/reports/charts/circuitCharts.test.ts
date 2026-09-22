@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { circuitDailyEnergyChart, type CircuitDayPoint } from './circuitDailyEnergyChart';
 import { circuitPowerTrendChart, type TrendDay, type TrendSeries } from './circuitPowerTrendChart';
-import { PRINT_PALETTE } from './palette';
+import { PRINT_PALETTE, SERIES_DASH } from './palette';
 import { sceneToSvg } from './sceneToSvg';
 import type { ChartSpec, Mark } from './types';
 
@@ -18,6 +18,12 @@ const spec = (idPrefix: string, height = 240): ChartSpec => ({ width: 640, heigh
 const rects = (marks: Mark[]) => marks.filter((m): m is Extract<Mark, { kind: 'rect' }> => m.kind === 'rect');
 const paths = (marks: Mark[]) => marks.filter((m): m is Extract<Mark, { kind: 'path' }> => m.kind === 'path');
 const texts = (marks: Mark[]) => marks.filter((m): m is Extract<Mark, { kind: 'text' }> => m.kind === 'text').map((m) => m.text);
+type TextMark = Extract<Mark, { kind: 'text' }>;
+const textMarks = (marks: Mark[]) => marks.filter((m): m is TextMark => m.kind === 'text');
+/** The legend sits on one row, 8 px above the chart's bottom edge. */
+const legendTexts = (marks: Mark[], height: number) => textMarks(marks).filter((m) => m.y === height - 8).map((m) => m.text);
+/** Circuit names drawn anywhere but the legend row: the direct labels. */
+const directLabels = (marks: Mark[], height: number) => textMarks(marks).filter((m) => m.text.startsWith('L.O') && m.y !== height - 8);
 
 const SERIES = [
   { id: 'red', label: 'L.O Red', colourIndex: 0 },
@@ -47,7 +53,8 @@ describe('circuitDailyEnergyChart', () => {
     const swapped = week.map((p) => ({ ...p, values: [...p.values].reverse() }));
     const a = circuitDailyEnergyChart(week, SERIES, spec('cd'));
     const b = circuitDailyEnergyChart(swapped, SERIES, spec('cd'));
-    const legend = (s: ReturnType<typeof circuitDailyEnergyChart>) => texts(s.marks).filter((t) => t.startsWith('L.O'));
+    // The legend row only (RM-139 names each circuit beside the last column too, in stack order).
+    const legend = (s: ReturnType<typeof circuitDailyEnergyChart>) => legendTexts(s.marks, 240).filter((t) => t.startsWith('L.O'));
     expect(legend(a)).toEqual(['L.O Red', 'L.O Yellow']);
     expect(legend(b)).toEqual(legend(a));
   });
@@ -130,5 +137,62 @@ describe('circuitPowerTrendChart', () => {
     const scene = circuitPowerTrendChart(dark, days, spec('ct'));
     expect(texts(scene.marks)).toContain('Nothing was recorded in this period');
     expect(paths(scene.marks)).toEqual([]);
+  });
+});
+
+/**
+ * RM-139 — no circuit told apart by colour alone. The trend's lines were one width and one style, the
+ * stacked bars one shape; the palette's colour-blind checks were the only thing between two circuits and
+ * the same grey. And the palette cannot leave the status hues (see `palette.ts`), so shape and name carry
+ * the identity, and colour is the second channel.
+ */
+describe('circuits told apart by more than colour — RM-139', () => {
+  const lineMarks = (marks: Mark[]) => marks.filter((m): m is Extract<Mark, { kind: 'line' }> => m.kind === 'line');
+
+  it('draws each circuit’s power line in its own pattern, and its legend swatch in the same one', () => {
+    const series: TrendSeries[] = [
+      { id: 'red', label: 'L.O Red', colourIndex: 0, points: Array.from({ length: 48 }, () => 40) },
+      { id: 'yellow', label: 'L.O Yellow', colourIndex: 3, points: Array.from({ length: 48 }, () => 20) },
+    ];
+    const days: TrendDay[] = [{ index: 0, label: '7', key: '2026-09-07' }, { index: 24, label: '8', key: '2026-09-08' }];
+    const scene = circuitPowerTrendChart(series, days, spec('ct'));
+    const [red, yellow] = paths(scene.marks);
+    expect(red.dash).toBe(SERIES_DASH[0]);
+    expect(yellow.dash).toBe(SERIES_DASH[3]);
+    expect(red.dash).not.toBe(yellow.dash);
+    const swatches = lineMarks(scene.marks).filter((l) => l.stroke === PRINT_PALETTE.series[3]);
+    expect(swatches.length).toBeGreaterThanOrEqual(1);
+    swatches.forEach((l) => expect(l.dash).toBe(SERIES_DASH[3]));
+    // And the PDF gets the same pattern: one scene, two renderings.
+    expect(sceneToSvg(scene, PRINT_PALETTE)).toContain(`stroke-dasharray="${SERIES_DASH[3]}"`);
+  });
+
+  it('names each line where it ends, beside the plot, and never lets two names overlap', () => {
+    // Both circuits end on the same value: their names would sit on top of each other.
+    const series: TrendSeries[] = [
+      { id: 'red', label: 'L.O Red', colourIndex: 0, points: Array.from({ length: 48 }, () => 30) },
+      { id: 'yellow', label: 'L.O Yellow', colourIndex: 3, points: Array.from({ length: 48 }, () => 30) },
+    ];
+    const days: TrendDay[] = [{ index: 0, label: '7', key: '2026-09-07' }, { index: 24, label: '8', key: '2026-09-08' }];
+    const scene = circuitPowerTrendChart(series, days, spec('ct'));
+    const names = directLabels(scene.marks, 240);
+    expect(names.map((m) => m.text).sort()).toEqual(['L.O Red', 'L.O Yellow']);
+    expect(Math.abs(names[0].y - names[1].y)).toBeGreaterThanOrEqual(10);
+    const plotRight = Math.max(...paths(scene.marks).flatMap((p) => [...p.d.matchAll(/[ML]\s*([\d.]+)/g)].map((m) => Number(m[1]))));
+    names.forEach((m) => expect(m.x).toBeGreaterThan(plotRight));
+  });
+
+  it('names each circuit beside the last recorded column, in stack order, where its segment can carry a name', () => {
+    const week = [day(7, [0.19, 1.24]), day(8, [0.6, 0.9]), day(9, [null, null])];
+    const scene = circuitDailyEnergyChart(week, SERIES, spec('cd'));
+    // Top of the stack first, as they are read down the side of it.
+    expect(directLabels(scene.marks, 240).map((m) => m.text)).toEqual(['L.O Yellow', 'L.O Red']);
+  });
+
+  it('leaves a sliver of a segment to the legend rather than crowding a name onto it', () => {
+    const week = [day(7, [0.19, 1.24]), day(8, [0.004, 1.4])];
+    const scene = circuitDailyEnergyChart(week, SERIES, spec('cd'));
+    expect(directLabels(scene.marks, 240).map((m) => m.text)).toEqual(['L.O Yellow']);
+    expect(legendTexts(scene.marks, 240)).toEqual(expect.arrayContaining(['L.O Red', 'L.O Yellow']));
   });
 });

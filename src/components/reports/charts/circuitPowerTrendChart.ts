@@ -1,5 +1,7 @@
 import { linearScale, niceScale, pathFromRuns, plotBox, runsOf } from './chartFrame';
 import type { ChartSpec, Hit, Mark, Scene } from './types';
+import { SERIES_DASH } from './palette';
+import { directLabelMarks, directLabelWidth, type DirectLabel } from './directLabels';
 
 /**
  * Power through the week or month, one line per circuit — RM-095.
@@ -17,6 +19,10 @@ import type { ChartSpec, Hit, Mark, Scene } from './types';
  *
  * Read a day at a time: an hour of a month is a column less than a pixel wide, and a target that small
  * is one nobody lands on.
+ *
+ * EACH LINE IS ITS CIRCUIT BEFORE IT IS ITS COLOUR — RM-139. Four lines that cross, told apart by hue
+ * alone, left a reader who cannot see two of the hues guessing. Each wears its circuit's pattern
+ * (`SERIES_DASH`), and each is named where it ends, beside the plot (`directLabels`).
  */
 
 export interface TrendSeries {
@@ -45,9 +51,12 @@ const watts = (w: number) => `${Math.round(w).toLocaleString(undefined)} W`;
 
 export function circuitPowerTrendChart(series: readonly TrendSeries[], days: readonly TrendDay[], spec: ChartSpec): Scene {
   const { width, height, palette, idPrefix, title } = spec;
-  const box = plotBox(width, height, MARGINS);
+  // Room at the right for each line's name, when there is more than one line to tell apart.
+  const named = series.length > 1;
+  const box = plotBox(width, height, { ...MARGINS, right: MARGINS.right + (named ? directLabelWidth(series.map((s) => s.label)) : 0) });
   const marks: Mark[] = [];
   const colour = (s: TrendSeries) => palette.series[s.colourIndex % palette.series.length];
+  const dash = (s: TrendSeries) => SERIES_DASH[s.colourIndex % SERIES_DASH.length];
   const n = Math.max(0, ...series.map((s) => s.points.length));
 
   const scale = niceScale(series.flatMap((s) => s.points), { zeroBased: true });
@@ -94,7 +103,18 @@ export function circuitPowerTrendChart(series: readonly TrendSeries[], days: rea
       fill: 'none',
       stroke: colour(s),
       width: 2,
+      dash: dash(s),
     });
+  }
+
+  // --- each line named where it ends ---
+  if (named) {
+    const ends: DirectLabel[] = [];
+    for (const s of series) {
+      const last = [...s.points].reverse().find((w): w is number => w !== null && Number.isFinite(w));
+      if (last !== undefined) ends.push({ text: s.label, y: y(last), colour: colour(s), dash: dash(s), swatch: 'line' });
+    }
+    marks.push(...directLabelMarks(ends, box.right, box.y, box.bottom, palette));
   }
 
   marks.push({ kind: 'line', x1: box.x, y1: box.bottom, x2: box.right, y2: box.bottom, stroke: palette.ink, width: 1 });
@@ -103,7 +123,7 @@ export function circuitPowerTrendChart(series: readonly TrendSeries[], days: rea
   const ly = height - 8;
   let lx = box.x;
   for (const s of series) {
-    marks.push({ kind: 'line', x1: lx, y1: ly, x2: lx + 17, y2: ly, stroke: colour(s), width: 2 });
+    marks.push({ kind: 'line', x1: lx, y1: ly, x2: lx + 17, y2: ly, stroke: colour(s), width: 2, dash: dash(s) });
     marks.push({ kind: 'text', x: lx + 22, y: ly, dy: 3, text: s.label, fill: palette.textMuted, size: 9, anchor: 'start' });
     lx += 22 + s.label.length * CHAR_W + 14;
   }

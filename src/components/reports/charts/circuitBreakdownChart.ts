@@ -98,6 +98,8 @@ export function circuitBreakdownChart(
   metered.forEach((s, i) => {
     const w = (s.kwh / total) * barW;
     const colour = palette.series[(s.colourIndex ?? i) % palette.series.length];
+    // RM-139: the ink measured for this series, not the surface (white on amber was 2.15:1).
+    const ink = palette.seriesText[(s.colourIndex ?? i) % palette.seriesText.length];
     const pct = (s.kwh / total) * 100;
     marks.push({ kind: 'rect', x, y: barY, w, h: BAR_H, fill: colour });
     hits.push({ x, y: barY, w, h: BAR_H, label: s.label, value: `${fmt(s.kwh)} kWh`, note: `${pct.toFixed(1)}% of the metered total` });
@@ -112,7 +114,7 @@ export function circuitBreakdownChart(
         y: barY + BAR_H / 2,
         dy: 3.5,
         text: inline,
-        fill: palette.surface,
+        fill: ink,
         size: 9,
         weight: 500,
         anchor: 'middle',

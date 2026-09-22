@@ -33,7 +33,7 @@
 export type Mark =
   | { kind: 'rect'; x: number; y: number; w: number; h: number; fill: string; opacity?: number; rx?: number; stroke?: string; strokeWidth?: number }
   | { kind: 'line'; x1: number; y1: number; x2: number; y2: number; stroke: string; width?: number; dash?: string; opacity?: number }
-  | { kind: 'path'; d: string; fill?: string; stroke?: string; width?: number; opacity?: number }
+  | { kind: 'path'; d: string; fill?: string; stroke?: string; width?: number; dash?: string; opacity?: number }
   | {
       kind: 'text';
       x: number;
@@ -108,6 +108,8 @@ export interface ChartPalette {
   surface: string;
   /** Categorical, in order. Four is not an accident: this building has four branch meters. */
   series: readonly string[];
+  /** Text drawn ON each series, in the same order: measured per series and theme, never the surface — RM-139. */
+  seriesText: readonly string[];
   good: string;
   warn: string;
   bad: string;

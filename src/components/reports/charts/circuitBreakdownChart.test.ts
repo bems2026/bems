@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { circuitBreakdownChart, type CircuitSegment } from './circuitBreakdownChart';
-import { PRINT_PALETTE } from './palette';
+import { PRINT_PALETTE, SCREEN_PALETTE } from './palette';
 import type { ChartSpec, Mark } from './types';
 
 /**
@@ -157,5 +157,20 @@ describe('circuitBreakdownChart colours — RM-095', () => {
     const words = [...texts(scene.marks).map((t) => t.text), scene.desc].join(' | ');
     expect(words).toContain('across 1 circuit');
     expect(words).not.toMatch(/1 (metered )?circuits/);
+  });
+});
+
+describe('a name drawn inside a segment — RM-139', () => {
+  it('is written in the ink measured for that series, not the page surface', () => {
+    // White on the light theme's amber was 2.15:1. Each series now names its own ink (`seriesText`),
+    // which `palette.test.ts` holds to 4.5:1 in both themes and in print.
+    const scene = circuitBreakdownChart(SEGMENTS, { ...SPEC, palette: SCREEN_PALETTE });
+    const inside = texts(scene.marks).filter((t) => /%$/.test(t.text) && t.anchor === 'middle' && SEGMENTS.some((s) => t.text.startsWith(s.label)));
+    expect(inside.length).toBeGreaterThan(0);
+    for (const t of inside) {
+      const i = SEGMENTS.findIndex((s) => t.text.startsWith(s.label));
+      expect(t.fill).toBe(SCREEN_PALETTE.seriesText[i % SCREEN_PALETTE.seriesText.length]);
+      expect(t.fill).not.toBe(SCREEN_PALETTE.surface);
+    }
   });
 });

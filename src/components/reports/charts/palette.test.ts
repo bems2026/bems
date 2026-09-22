@@ -438,4 +438,22 @@ describe('the screen series colours pass the data-viz checks in both themes — 
   it('print: the four series stay apart in every pair on paper too, where there is no hover to tell them apart — FI-029', () => {
     everyPairApart([...PRINT_PALETTE.series]);
   });
+
+  // RM-139. A name drawn INSIDE a segment of "Energy by use" is text on a series colour, and it was drawn in
+  // the surface colour: white on the light theme's amber at 2.15:1, on its green at 2.54:1. Nothing in this
+  // file measured text on a series, because nothing else draws any. It is 9 px, so it owes 4.5:1.
+  it.each(['light', 'dark'] as const)('%s: a name drawn on a series colour clears 4.5:1 against it — RM-139', (theme) => {
+    expect(SCREEN_PALETTE.seriesText).toHaveLength(SCREEN_PALETTE.series.length);
+    SCREEN_PALETTE.series.forEach((series, i) => {
+      const [fg, bg] = [resolve(theme, SCREEN_PALETTE.seriesText[i]), resolve(theme, series)];
+      expect(contrast(fg, bg), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
+    });
+  });
+
+  it('print: a name drawn on a series colour clears 4.5:1 against it — RM-139', () => {
+    expect(PRINT_PALETTE.seriesText).toHaveLength(PRINT_PALETTE.series.length);
+    PRINT_PALETTE.series.forEach((series, i) => {
+      expect(contrast(PRINT_PALETTE.seriesText[i], series), `${PRINT_PALETTE.seriesText[i]} on ${series}`).toBeGreaterThanOrEqual(4.5);
+    });
+  });
 });

@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-22, 22:10 — **RM-138: a report not made yet is said, not silent; the week of
+**Last audited:** 2026-09-22, 23:00 — **RM-139: no circuit told apart by colour alone; the status hues stay, measured.** **Earlier, 22:10 — RM-138: a report not made yet is said, not silent; the week of
 14 Sept was not late** (settles 08:00 Wed 23 Sept). **Earlier, 21:20 — RM-137: a statement timeout is asked
 again by itself** (the operator's Reports brief; §2's first section). **Earlier, 17:10 — the end-of-day list, by owner, is §0's first entry.** RM-136 was run
 at 16:31 and read back: both notices are gone and checked in a browser. **Earlier, 17:00 — phase47 (FI-027)
@@ -3776,6 +3776,23 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       and the page. Needs `npm run build` and an `ibems-ingest` restart (restart map updated). Tests:
       `pendingPeriods.test.ts` (9), `useReportData.test.ts` (+4), `PeriodPicker.test.tsx` (+3),
       `ReportsPage.reliability.test.tsx` (+1), `server/reports.test.mjs` (+3).
+- [x] **RM-139** No circuit told apart by colour alone. Audited against the brief: chart forms fit (bars
+      for daily totals, lines for trends, a 100% bar for shares, no donut); every chart already has one
+      tab stop, arrow keys, a live region and a "Show the numbers" table; icons are lucide only, no emoji.
+      **Missing:** "Power through the week" (up to four crossing lines) and "Energy per day by circuit"
+      (stacks) differed by hue alone. Each line now wears its circuit's pattern (`SERIES_DASH`: solid, long
+      dash, dotted, dash-dot; legend swatches match; the PDF draws them) and is named where it ends; each
+      stack is named beside its last recorded column, top first, where a segment can carry a name
+      (`charts/directLabels.ts`, names never overlap). **In-bar names failed contrast unguarded:** white on
+      the light theme's amber was 2.15:1 — `--on-series-0..3` per theme, ≥4.5:1 asserted in both themes
+      and print. **The status hues stay, measured:** re-mapping series 0 (= `warn`) and 2 (= `good`) was
+      searched against every `palette.test.ts` guard; with blue and purple kept no pair passes print, light
+      and dark together, and with all four free every passing palette needs a rose-red (the fault family) —
+      recorded in `palette.ts`; the operator chose cues over a weaker guard. The same four tokens start
+      Analytics' cycle, whose red, sky and pink tail is **FI-038**. Tests: `circuitCharts.test.ts` (+4, one
+      helper narrowed to the legend row), `palette.test.ts` (+3), `circuitBreakdownChart.test.ts` (+1).
+- [ ] **FI-038** Analytics' series cycle continues past the report's four with `--red-bright` (the fault
+      colour, decoratively) then sky and a literal pink; audit it against RM-139's reasoning.
 
 ### Onboarding without IoT Core, and the aircon's own IR protocol — RM-126 to RM-129 (2026-09-22)
 
