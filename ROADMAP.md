@@ -1,7 +1,9 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-22, 11:40 — **L.O Yellow's clamp froze at 07:47 and the flag could not say so:
-RM-133 (built, awaiting the flow deploy; the meter is the operator's). Earlier: the walkthrough: what is left, by who can do it (§0); the
+**Last audited:** 2026-09-22, 12:00 — **L.O Yellow's clamp froze at 07:47 and the flag could not say so:
+RM-133 — a register clock the shared voltage cannot reset, deployed 11:27 and read back flagging the
+channel at 11:57 on schedule, the flag now stored with the row (FI-027's storage half); the meter itself
+needs a power cycle at the panel (§0). Earlier: the walkthrough: what is left, by who can do it (§0); the
 preflight checks what lives only on the host and no longer fails on the optional cloud: RM-132; a
 restore has been performed: RM-006d closed; the kiosk survived a cold boot signed in: RM-007 closed.**
 `npm run preflight` now says `Ready` on this deployment with two warnings (the lapsed vendor trial,
@@ -356,8 +358,8 @@ cleanly by who can do it.
 **Only a person at the office or the AP can do these, in order of value:**
 0. **L.O Yellow's clamp is frozen (RM-133, since 07:47 today):** a Node-RED restart did not thaw it.
    Power-cycle the yellow meter at the panel, outside office hours; then confirm `mtr_lo_yellow`
-   reads 0 W / `monitor` with L5–L7 off. Until the flow deploy below is approved the reading shows
-   39.8 W, online, and nothing says otherwise.
+   reads 0 W / `monitor` with L5–L7 off and the flag clears. Since 11:57 the reading says what it is —
+   `measurement_frozen`, `frozen_since 11:27` — live, on the Overview's source card, and in the stored rows.
 1. **The access point** (RM-131, RM-046): `npm run set-device-ip:pi -- --host=127.0.0.1 --reservations`
    prints the MAC → address table; enter it as DHCP reservations (plus the Pi), pin the 2.4 GHz
    channel, lease ≥ 1 day, isolation off. Until then an AP power cycle can renumber a device; the
@@ -3871,9 +3873,9 @@ cannot draw more than 150 W, and the outlet branch is never at 0 A.
       lists what stays cloud-only. On this deployment the verdict is **`Ready` with two warnings**
       (the trial, 19 of 20 devices); the three host checks all pass. `scripts/preflight.mjs`,
       `test/preflight.test.mjs` (24), `CLAUDE.md`, `docs/replication.md`.
-- [ ] **RM-133** L.O Yellow's clamp stopped measuring at 07:47:44, and the freeze flag could not say so.
-      **Verified 2026-09-22 11:00–11:11; the software half built, awaiting the flow deploy; the meter
-      itself is the operator's.**
+- [x] **RM-133** L.O Yellow's clamp stopped measuring at 07:47:44, and the freeze flag could not say so.
+      **Verified 2026-09-22 11:00–11:11; deployed 11:27 on the operator's "deploy now"; read back
+      11:57 — the flag stood on schedule. The meter itself is the operator's.**
       **What the rows show.** From 07:47:44 `mtr_lo_yellow` repeated exactly 39.8 W / 0.446 A / 226.7 V
       with `today_acc_energy2` held at 25523.556 and `add_ele2` at 0.01 — 188 identical minute rows to
       10:57 — while `mtr_co_yellow` on the same session moved every minute and its register rose 3.18
@@ -3901,9 +3903,17 @@ cannot draw more than 150 W, and the outlet branch is never at 0 A.
       stores `measurement_frozen` and `frozen_since` in the row's `capabilities` (FI-027's storage
       half). `docs/bridge-contract.md`. Tests: `test/value-freeze-tracker.test.mjs` (+3),
       `test/measurement-frozen.test.mjs` (+5), `server/ingest.test.mjs` (+1).
-      **To deploy:** `deploy:pi --force --apply` (two node bodies change: "Track value freezes" and
-      "Build latest readings"), then `sudo systemctl restart ibems-ingest ibems-proxy ibems-scheduler`.
-      The register clock starts at the deploy, so the flag is due thirty minutes after it.
+      **Deployed 11:27:16** after a byte-identical `flows.json` backup: `deploy:pi --force --apply` (two
+      node bodies changed, "Track value freezes" and "Build latest readings"; source tabs matched, 301 →
+      301 nodes, verification 5/5), then `ibems-ingest`, `ibems-proxy`, `ibems-scheduler` restarted.
+      All four meters' register clocks read back live at 11:27:31 (`value_freeze.<ctx>.regSince`);
+      C.O Yellow's moved with every report, L.O Yellow's stood.
+      **Read back 11:57, on the rule's schedule.** At 11:56:42, thirty minutes after the clock started,
+      `mtr_lo_yellow` carried `measurement_frozen: true`, `frozen_since: 11:27:16`, and no
+      `energy_kwh_today_integrated`, while the three other meters carried neither; the stored row at
+      11:57:42 is the first with `capabilities.measurement_frozen` and `frozen_since` (the one before
+      it, ingested at 11:56:42, has none — the tick came first). The clamp is still held at 39.8 W /
+      0.446 A / 25523.556. Commit `9b941a4`, CI green.
       **The meter:** by this project's own rule (RM-077's "three freezes in four days"), a channel
       that a Node-RED restart does not thaw needs a power cycle at the panel — the operator's, outside
       office hours, and RM-020's caution applies. Until then L.O Yellow's stored power is a held
