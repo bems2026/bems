@@ -1,8 +1,8 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-22, 14:45 — **L.O Yellow was not frozen. The meters were never re-read:
-RM-134 — applied ~14:20, read back 14:21: 0 W / 0 A / `monitor`, nothing flagged frozen; the held rows'
-scrub is dry-run and the operator's to apply.** The lights went off while the Pi was rebooting, the meter's push of "0 W" reached nobody, and
+**Last audited:** 2026-09-22, 15:00 — **L.O Yellow was not frozen. The meters were never re-read:
+RM-134.** Applied ~14:20 and read back at 14:21: 0 W / 0 A / `monitor`, nothing flagged frozen. The 396
+held rows were scrubbed at ~14:50 and read back, and preflight reads `Ready` with every node polled. The lights went off while the Pi was rebooting, the meter's push of "0 W" reached nobody, and
 unlike every outlet, switch and the IR hub, the three meters had no GET poll. The tuya node reads nothing
 on connect, so a Node-RED restart could not help. RM-134 adds a registry-driven meter poll (dry-run clean
 against the live flow, 301 → 303 nodes). It grounds the demux's idle rule in 0 A rather than the device's
@@ -368,10 +368,8 @@ cleanly by who can do it.
    lights went off during the Pi's 07:44 reboot, the meter's push of that change reached nobody, and
    nothing ever polled the meters, so the bridge kept 39.8 W. **Resolved ~14:20:** the operator applied
    the demux upgrade and the meter poll, and at 14:21 `mtr_lo_yellow` read 0 W / 0 A / `monitor` with
-   the flag cleared. No power cycle is needed. **What remains is the operator's:** apply the scrub of
-   the 396 held rows —
-   `npm run scrub:held -- --device=mtr_lo_yellow --from=2026-09-21T23:43:49+00:00 --to=2026-09-22T06:21:47+00:00 --apply`
-   (the dry run is in RM-134).
+   the flag cleared. No power cycle is needed. The 396 stored rows that held the figure were scrubbed
+   by the operator at ~14:50 and read back (RM-134). **Nothing remains for this item.**
 1. ~~The access point~~ — **done 2026-09-22 12:42–13:05 by the operator, read back 13:25** (RM-131,
    RM-046). The AP is an aclink 4G/LTE router; its "Static DHCP Leases" now hold all 19 — the 18 tuya
    devices and the Pi — each at the address it already had, so nothing moved. Allocation Duration
@@ -3981,7 +3979,17 @@ cannot draw more than 150 W, and the outlet branch is never at 0 A.
       14:21:47, the register +0.002 kWh across 6.6 h, so **at most 0.302 W on average** where the held
       39.8 W would have added 0.264 kWh. 389 rows take C.O Yellow's same-instant voltage and 7 have none
       (null, stamped). `energy_kwh_today` is untouched: it came from the register and was right.
-      **Apply: the operator's.**
+      **Applied by the operator 2026-09-22 ~14:50:** "OK: all 396 rows read back as planned". Checked
+      again independently, read-only:
+      - Of the 396 rows in the window, 396 are 0 W / 0 A and stamped `held_reading`. None still holds
+        39.8 W, none is flagged frozen, and 7 have a null voltage.
+      - The genuine edge rows (07:43:49, and 14:21:47 on) are untouched.
+      - `npm run check:meters -- --hours=24` lists four events, all before this work: three one-minute
+        trades at 17:28–17:37 on 09-21 (before the demux, and under its two-sample debounce) and the
+        demux's own 06:53 transition minute. None falls after 07:43, so zeroing the held rows made no
+        false hand-off.
+      - `npm run preflight -- --listen=6` reads **`Ready`** (the two known warnings), with `flow_polls`:
+        "all 18 node(s) are fed a GET poll".
       **Left as it is, deliberately.** The legacy integrator (`energy_kwh_today_integrated`, 0.549
       against the register's 0.293) and the 24 h history ring still carry today's held 39.8 W. Both are
       flow context, so they can only be edited with Node-RED stopped. The integrator resets at midnight
