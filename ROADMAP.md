@@ -1,7 +1,8 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-22, 21:20 — **RM-137: a statement timeout is asked again by itself** (the
-operator's Reports brief; §2's first section). **Earlier, 17:10 — the end-of-day list, by owner, is §0's first entry.** RM-136 was run
+**Last audited:** 2026-09-22, 22:10 — **RM-138: a report not made yet is said, not silent; the week of
+14 Sept was not late** (settles 08:00 Wed 23 Sept). **Earlier, 21:20 — RM-137: a statement timeout is asked
+again by itself** (the operator's Reports brief; §2's first section). **Earlier, 17:10 — the end-of-day list, by owner, is §0's first entry.** RM-136 was run
 at 16:31 and read back: both notices are gone and checked in a browser. **Earlier, 17:00 — phase47 (FI-027)
 applied at 16:19 and read back** — L.O Yellow's 22 Sept
 records 527 minutes, not 895; the restatement also touched 8 August rows by rollup drift (energy and peak
@@ -3758,6 +3759,23 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       `EXPLAIN (ANALYZE, BUFFERS)` of the slow call, to confirm `shared read` on the first attempt; no SQL
       change without it. Tests: `reportLoader.test.ts` (+15), `reportQueryErrors.test.ts` (9, new),
       `useReportData.test.ts` (+1, one updated); a neuter dropping 57014 fails 12.
+- [x] **RM-138** A report not made yet is said, not silent. The operator (22 Sept, 20:30) could not tell the
+      missing week of 14 Sept from a broken pipeline. **It was not late:** week key Monday 00:00Z, ends
+      21 Sept 00:00Z, settles +2 days = **08:00 Manila, Wed 23 Sept**, made at the daemon's next 6-hourly pass
+      (≈11:30 — ingest started 11:27:29; the week of 7 Sept was made 39 min after it settled). Generator
+      logic unchanged. `shared/reportSchedule.mjs` now holds `REPORT_GRACE_DAYS`, `DAY_GRACE_HOURS`,
+      `REPORT_CHECK_MS` (re-exported by `server/reports.mjs`) and `periodSettlesAt`; a minute-by-minute
+      sweep in `server/reports.test.mjs` fails if it and the daemon's loops disagree (a +1 h neuter fails 2).
+      `src/lib/pendingPeriods.ts` names the period just ended and the one running with their due moment;
+      the calendar cell is dashed and says when, the popover and the page say it in words, a disabled Next
+      says what it waits for. **The list was never re-read** (a kiosk on Weekly kept a settled week missing
+      until reload, whatever the TTL comment said): `useReportData` now re-reads it quietly at each due
+      moment — never blanking it, never moving the reader (a newer report is offered: "Open it") — and says
+      "overdue" only when a read after due + 6 h + 15 min still lacks it. Months settle 08:00 on the **3rd**.
+      **Read back pending:** Wed 23 Sept after 11:30 — the journal's `generated weeks 2026-09-14`, the row,
+      and the page. Needs `npm run build` and an `ibems-ingest` restart (restart map updated). Tests:
+      `pendingPeriods.test.ts` (9), `useReportData.test.ts` (+4), `PeriodPicker.test.tsx` (+3),
+      `ReportsPage.reliability.test.tsx` (+1), `server/reports.test.mjs` (+3).
 
 ### Onboarding without IoT Core, and the aircon's own IR protocol — RM-126 to RM-129 (2026-09-22)
 

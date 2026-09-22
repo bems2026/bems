@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { PERIOD_ADJECTIVE, type ReportPeriod } from '@/lib/supabaseReports';
 import type { ScopeOption } from '@/lib/circuitBreakdown';
+import type { PendingPeriod } from '@/lib/pendingPeriods';
 import { PeriodPicker } from './PeriodPicker';
 import { ScopePicker } from './ScopePicker';
 
@@ -34,6 +35,8 @@ interface Props {
   starts: readonly string[];
   selected: string | null;
   onSelect: (start: string) => void;
+  /** RM-138: the reports not made yet, for the picker to name. */
+  pending?: readonly PendingPeriod[];
   /**
    * What the report can be narrowed to — RM-082c for one branch, RM-093 for a category of load — the
    * encoded value chosen (`all` for the whole building), and how to change it. Offered only when there
@@ -51,6 +54,7 @@ export function ReportControlBar({
   starts,
   selected,
   onSelect,
+  pending,
   scopes = [],
   scope = 'all',
   onScopeChange,
@@ -74,7 +78,7 @@ export function ReportControlBar({
         ))}
       </div>
 
-      {starts.length > 0 ? <PeriodPicker period={period} starts={starts} selected={selected} onSelect={onSelect} /> : null}
+      {starts.length > 0 ? <PeriodPicker period={period} starts={starts} selected={selected} onSelect={onSelect} pending={pending} /> : null}
 
       {/* RM-102: one button, and behind it the uses as pills and the branches as a list. Offered only
           when there are two or more branches: a building on one branch has nothing to narrow. */}

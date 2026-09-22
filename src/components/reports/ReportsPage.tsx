@@ -432,6 +432,7 @@ export function ReportsPage() {
         starts={months ? months.map((m) => m.period_start.slice(0, 10)) : []}
         selected={selected}
         onSelect={select}
+        pending={report.pending}
         scopes={SCOPES}
         scope={encodeScope(scope)}
         onScopeChange={(value) => setScope(decodeScope(value))}
@@ -461,6 +462,21 @@ export function ReportsPage() {
         <ReportSkeleton label={PERIOD_ADJECTIVE[period].toLowerCase()} period={period} parts={['kpis', 'charts']} />
       ) : null}
       <ReportSectionNote section={periods} what="the list of reports" quietWhileLoading />
+
+      {/* RM-138: what comes next, in words — the calendar's dashed cell carries it too, but its title never
+          shows on the kiosk. A report the quiet re-read found is offered; the page does not move under the reader. */}
+      {report.arrived ? (
+        <p className="reports-note" role="note">
+          <FileText size={16} aria-hidden="true" /> The {formatPeriod(period, report.arrived)} report is ready.{' '}
+          <button type="button" className="report-retry-btn" onClick={() => report.arrived && select(report.arrived)}>
+            Open it
+          </button>
+        </p>
+      ) : selected !== null && months?.[0]?.period_start.slice(0, 10) === selected && report.pending[0] ? (
+        <p className="reports-note" role="note">
+          Next {PERIOD_ADJECTIVE[period].toLowerCase()} report: {report.pending[0].label}.
+        </p>
+      ) : null}
 
       {months?.length === 0 ? (
         <p className="reports-note">

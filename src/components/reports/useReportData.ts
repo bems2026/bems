@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/config/supabase';
 import {
   getDevicePeriodReports,
@@ -26,6 +26,7 @@ import { fetchScheduleContext } from '@/lib/supabaseConfig';
 import { getCircuitTrend, getDeviceDailyEnergy, type CircuitTrend, type DeviceDaily } from '@/lib/circuitSeries';
 import { buildingMeters, measuredDeviceIds } from '@/lib/circuitBreakdown';
 import { createReportCache, retryTransient, withTimeout, type ReportCache, type RetryOptions } from '@/lib/reportLoader';
+import { nextChangeAt, pendingPeriods, type PendingPeriod } from '@/lib/pendingPeriods';
 
 /**
  * Everything the Reports page reads, as independent sections — RM-081, split further by RM-081b.
@@ -104,6 +105,10 @@ export interface ReportData {
   ceiling: Section<number | null>;
   deviceDaily: Section<DeviceDaily>;
   trend: Section<CircuitTrend>;
+  /** RM-138: the period just ended and the one running, when either has no report yet — and when it will. */
+  pending: PendingPeriod[];
+  /** RM-138: a report the list's quiet re-read found that is newer than the one being read, offered rather than opened. */
+  arrived: string | null;
 }
 
 /** Which of the on-demand sections a caller is showing — RM-094. */
@@ -228,25 +233,102 @@ export function useReportData(period: ReportPeriod, options?: ReportDataOptions,
   const [cache] = useState(() => createReportCache<unknown>({ max: 60 }));
   const enabled = supabase !== null;
 
-  const loadPeriods = useCallback((signal: AbortSignal) => getReportPeriods(period, { signal }), [period]);
+  /** When this kind's list was last read — the evidence "overdue" needs (RM-138). */
+  const [listRead, setListRead] = useState<{ period: ReportPeriod; at: number } | null>(null);
+  const loadPeriods = useCallback(
+    async (signal: AbortSignal) => {
+      const rows = await getReportPeriods(period, { signal });
+      setListRead({ period, at: Date.now() });
+      return rows;
+    },
+    [period]
+  );
   const periods = useSection('periods', enabled ? `periods:${period}` : null, loadPeriods, cache, opts);
+
+  /**
+   * THE LIST, READ AGAIN QUIETLY WHEN A REPORT COMES DUE — RM-138. Nothing re-read it: the cache's ten
+   * minutes only matter to a request, and a kiosk left on Weekly never made one, so a week that settled
+   * overnight stayed missing until somebody reloaded. A section's Retry would blank the page to ask; this
+   * asks beside it, keeps the list on screen until the answer lands, and a failure changes nothing (the
+   * next due moment asks again). Tagged with its kind like every outcome here, so a week's list can never
+   * stand in for a month's.
+   */
+  const [reread, setReread] = useState<{ period: ReportPeriod; rows: PeriodBuildingReport[] } | null>(null);
+  const [rereadAsk, setRereadAsk] = useState<{ period: ReportPeriod; n: number } | null>(null);
+  useEffect(() => {
+    if (rereadAsk === null || rereadAsk.period !== period || !enabled) return;
+    let cancelled = false;
+    const kind = rereadAsk.period;
+    withTimeout((signal) => getReportPeriods(kind, { signal }), opts.timeouts.periods, LABELS.periods).then(
+      (rows) => {
+        if (cancelled) return;
+        setReread({ period: kind, rows });
+        setListRead({ period: kind, at: Date.now() });
+      },
+      () => {}
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [rereadAsk, period, enabled, opts]);
+  const fresh = reread !== null && reread.period === period && periods.status === 'ready' ? reread.rows : null;
+  const shownPeriods = fresh ? { ...periods, data: fresh } : periods;
 
   /**
    * The reader's choice, tagged with the period kind it was made under. Changing kind therefore
    * lands on that kind's newest report rather than asking for a month's date as a week — which
    * would match nothing and render an empty report that looks like a week with no consumption.
+   *
+   * With no choice, the newest report AS FIRST READ: a re-read that finds a newer one offers it
+   * (`arrived`) rather than swapping the page under somebody reading it.
    */
   const [choice, setChoice] = useState<{ period: ReportPeriod; start: string } | null>(null);
-  const list = periods.data;
+  const list = shownPeriods.data;
+  const firstNewest = periods.data?.[0] ? startOf(periods.data[0]) : null;
   const selected =
     list === null
       ? null
       : choice !== null && choice.period === period && list.some((row) => startOf(row) === choice.start)
         ? choice.start
-        : list[0]
-          ? startOf(list[0])
-          : null;
+        : firstNewest !== null && list.some((row) => startOf(row) === firstNewest)
+          ? firstNewest
+          : list[0]
+            ? startOf(list[0])
+            : null;
   const select = useCallback((start: string) => setChoice({ period, start }), [period]);
+  const newest = fresh?.[0] ? startOf(fresh[0]) : null;
+  const arrived = newest !== null && newest !== firstNewest && newest !== selected ? newest : null;
+
+  /**
+   * What is not made yet, said at the moments it changes — the period's end, its due moment, and a pass
+   * after — rather than on a one-second tick, which would re-render every chart on the page. A kind change
+   * reads the clock afresh; a moment passing reads it and asks for the list again.
+   */
+  const [now, setNow] = useState(() => Date.now());
+  const readAt = listRead !== null && listRead.period === period ? listRead.at : null;
+  const pending = useMemo(
+    () => (list === null ? [] : pendingPeriods(period, list.map(startOf), now, { listReadAt: readAt })),
+    [list, period, now, readAt]
+  );
+  const next = nextChangeAt(pending, now);
+  useEffect(() => {
+    const tick = setTimeout(() => setNow(Date.now()), 0);
+    return () => clearTimeout(tick);
+  }, [period]);
+  useEffect(() => {
+    if (next === null) return;
+    // A timer holds at most 2^31 - 1 ms, about 24.8 days, and a month's due moment can be further off:
+    // waking early just looks again.
+    const timer = setTimeout(
+      () => {
+        const t = Date.now();
+        setNow(t);
+        if (t >= next) setRereadAsk((a) => ({ period, n: (a?.n ?? 0) + 1 }));
+      },
+      Math.min(Math.max(0, next - Date.now()) + 1000, 2 ** 31 - 1)
+    );
+    return () => clearTimeout(timer);
+  }, [next, period]);
 
   const at = (section: string) => (selected === null ? null : `${section}:${period}:${selected}`);
 
@@ -297,9 +379,11 @@ export function useReportData(period: ReportPeriod, options?: ReportDataOptions,
   const onDemand = (section: string) => (want.circuits ? at(section) : null);
 
   return {
-    periods,
+    periods: shownPeriods,
     selected,
     select,
+    pending,
+    arrived,
     devices: useSection('devices', at('devices'), loadDevices, cache, opts),
     core: useSection('core', at('core'), loadCore, cache, opts),
     hours: useSection('hours', at('hours'), loadHours, cache, opts),

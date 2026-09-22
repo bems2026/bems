@@ -6908,6 +6908,20 @@ body::before {
   font-weight: 700;
 }
 
+/* RM-138: a period that has ended and whose report is not made yet. Still not a choice, but a dashed
+   outline says "coming" where a blank cell says "never", and its name says when. */
+.report-calendar__cell--pending:disabled {
+  border: 1px dashed var(--border-strong);
+  color: var(--muted);
+}
+
+/* RM-138: the next report and when, in words — a cell's title never appears on a touch screen. */
+.report-calendar__next {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
 .report-calendar__jumps {
   display: flex;
   flex-wrap: wrap;

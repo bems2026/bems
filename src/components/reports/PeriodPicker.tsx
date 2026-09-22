@@ -5,6 +5,7 @@ import { useAnchoredPopover } from '@/components/ui/useAnchoredPopover';
 import { formatPeriod, type ReportPeriod } from '@/lib/supabaseReports';
 import { sameStartLastYear } from '@/lib/reportPeriods';
 import { dayCells, monthCells, monthName, monthsOf, weekCells, yearsOf, type CalendarCell } from '@/lib/periodCalendar';
+import type { PendingPeriod } from '@/lib/pendingPeriods';
 
 /**
  * Choosing which week or month to read — a stepper since RM-082b, with a calendar behind its label
@@ -26,6 +27,12 @@ import { dayCells, monthCells, monthName, monthsOf, weekCells, yearsOf, type Cal
  *
  * AN UNAVAILABLE JUMP SAYS WHY, in words a screen reader reads — "No report for August 2025" — rather
  * than being a disabled button nobody can ask about.
+ *
+ * A REPORT NOT MADE YET IS NOT A GAP — RM-138. The week of 14 Sept, on the evening of the 22nd, was a
+ * blank cell like any week that will never have a report, and the operator took it for a broken
+ * pipeline. It settles at 08:00 on the 23rd. Its cell now says so, dashed rather than blank; the
+ * calendar says it in words under the grid, because a `title` never appears on a touch screen; and a
+ * Next that cannot step says what it is waiting for.
  */
 
 interface Props {
@@ -34,9 +41,13 @@ interface Props {
   starts: readonly string[];
   selected: string | null;
   onSelect: (start: string) => void;
+  /** RM-138: the period just ended and the one running, when either has no report yet. */
+  pending?: readonly PendingPeriod[];
 }
 
-export function PeriodPicker({ period, starts, selected, onSelect }: Props) {
+const NO_PENDING: readonly PendingPeriod[] = [];
+
+export function PeriodPicker({ period, starts, selected, onSelect, pending = NO_PENDING }: Props) {
   const [open, setOpen] = useState(false);
   const dismiss = useCallback(() => setOpen(false), []);
   const { anchorRef, popRef, style, placement } = useAnchoredPopover({
@@ -56,6 +67,10 @@ export function PeriodPicker({ period, starts, selected, onSelect }: Props) {
   const lastYear = selected === null ? null : sameStartLastYear(period, selected);
   const lastYearAvailable = lastYear !== null && starts.includes(lastYear);
   const lastYearReason = lastYear !== null && !lastYearAvailable ? `No report for ${formatPeriod(period, lastYear)}` : null;
+  const nextReasonId = useId();
+  const upcoming = new Map(pending.map((p) => [p.start, p]));
+  // What Next is waiting for, when it cannot step: the next report to be made, not merely "disabled".
+  const nextReason = newer === null && index === 0 ? (pending[0]?.label ?? null) : null;
 
   // The calendar opens on the page being read, and steps only through pages that have a report:
   // a year of months or weeks, or — RM-124 — a month of days, since 365 cells do not fit a popover.
@@ -95,20 +110,23 @@ export function PeriodPicker({ period, starts, selected, onSelect }: Props) {
     setChosen((n) => n + 1);
   };
 
-  const cell = (c: CalendarCell) => (
-    <button
-      key={c.date}
-      type="button"
-      className={`report-calendar__cell${c.start === selected ? ' report-calendar__cell--current' : ''}`}
-      aria-label={c.name}
-      aria-current={c.start !== null && c.start === selected ? 'true' : undefined}
-      disabled={c.start === null}
-      title={c.start === null ? `No report for ${c.name}` : undefined}
-      onClick={() => c.start !== null && choose(c.start)}
-    >
-      {c.label}
-    </button>
-  );
+  const cell = (c: CalendarCell) => {
+    const coming = c.start === null ? upcoming.get(c.date) : undefined;
+    return (
+      <button
+        key={c.date}
+        type="button"
+        className={`report-calendar__cell${c.start === selected ? ' report-calendar__cell--current' : ''}${coming ? ' report-calendar__cell--pending' : ''}`}
+        aria-label={coming ? `${c.name} — ${coming.status}` : c.name}
+        aria-current={c.start !== null && c.start === selected ? 'true' : undefined}
+        disabled={c.start === null}
+        title={coming ? coming.label : c.start === null ? `No report for ${c.name}` : undefined}
+        onClick={() => c.start !== null && choose(c.start)}
+      >
+        {c.label}
+      </button>
+    );
+  };
 
   return (
     <div className="report-stepper" role="group" aria-label={label}>
@@ -138,10 +156,17 @@ export function PeriodPicker({ period, starts, selected, onSelect }: Props) {
         className="report-stepper__step"
         aria-label={`Next ${period}`}
         disabled={newer === null}
+        aria-describedby={nextReason ? nextReasonId : undefined}
+        title={nextReason ?? undefined}
         onClick={() => newer !== null && onSelect(newer)}
       >
         <ChevronRight size={16} aria-hidden="true" />
       </button>
+      {nextReason ? (
+        <span id={nextReasonId} className="sr-only">
+          {nextReason}
+        </span>
+      ) : null}
 
       {open &&
         page !== undefined &&
@@ -206,6 +231,8 @@ export function PeriodPicker({ period, starts, selected, onSelect }: Props) {
                 ))}
               </div>
             )}
+
+            {pending[0] ? <p className="report-calendar__next">{pending[0].label}</p> : null}
 
             <div className="report-calendar__jumps">
               <button

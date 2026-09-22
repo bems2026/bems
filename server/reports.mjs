@@ -31,9 +31,14 @@
  */
 
 import { SITE } from '../shared/registry.mjs';
+import { DAY_GRACE_HOURS, REPORT_CHECK_MS, REPORT_GRACE_DAYS } from '../shared/reportSchedule.mjs';
 
-/** Days to wait after a month ends before reporting it. See the header. */
-export const REPORT_GRACE_DAYS = 2;
+/**
+ * The grace periods and the pass interval live in `shared/reportSchedule.mjs` since RM-138, so the
+ * Reports page can say when a report is due by the numbers this daemon waits by. Re-exported here
+ * so nothing that imported them from this module has to change.
+ */
+export { DAY_GRACE_HOURS, REPORT_CHECK_MS, REPORT_GRACE_DAYS };
 
 /** Most months one pass will generate. A first run against years of history should not hold
  * the daemon in one long loop — and it does not need to, because nothing is remembered
@@ -45,13 +50,6 @@ export const MAX_MONTHS_PER_PASS = 6;
  * passes to catch up. Same self-limiting reasoning either way: nothing is remembered between
  * passes and the next one resumes where this stopped. */
 export const MAX_WEEKS_PER_PASS = 12;
-
-/**
- * A day settles this long after its LOCAL midnight — RM-124. Not the weeks' two-day grace: the
- * point of a daily report is yesterday, and the ingest cadence is a minute, so an hour is ample
- * for the last rows to land and for a restart's second row to be written over.
- */
-export const DAY_GRACE_HOURS = 1;
 
 /** Days per pass. The backlog since the archive's first day fills over a few six-hourly passes. */
 export const MAX_DAYS_PER_PASS = 14;
@@ -152,10 +150,6 @@ export function daysNeedingReport({ generatedDays, earliestDataTs, nowMs, offset
   }
   return days;
 }
-
-/** How often to look for missing reports. The answer changes at most once a month; this is
- * frequent enough to pick one up the same day and cheap enough to be irrelevant. */
-export const REPORT_CHECK_MS = 6 * 60 * 60 * 1000; // 6h
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

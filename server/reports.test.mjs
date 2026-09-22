@@ -17,7 +17,10 @@ import {
   MAX_MONTHS_PER_PASS,
   weeksNeedingReport,
   MAX_WEEKS_PER_PASS,
+  REPORT_CHECK_MS,
+  DAY_GRACE_HOURS,
 } from './reports.mjs';
+import * as SHARED from '../shared/reportSchedule.mjs';
 
 /** A report the daemon itself would have written: generated after its month settled. This is the
  * shape the PURE function takes. */
@@ -489,4 +492,38 @@ test('generates each missing day through the RPC as period day, and reports them
   assert.deepEqual(dayCalls.map((c) => c.args.p_start), ['2026-08-19', '2026-08-20']);
   assert.deepEqual(r.generatedDays, ['2026-08-19', '2026-08-20']);
   assert.equal(client.calls.rpc.filter((c) => c.fn === 'generate_monthly_report').length, 0, 'no legacy call for a day');
+});
+
+// RM-138. The page says when a report is due from `shared/reportSchedule.mjs`; the daemon decides
+// from its own loops. Two statements of one rule must be made to agree, or the page will promise a
+// week at 08:00 that the daemon holds until 16:00. This sweeps the clock across each period's
+// settle point, minute by minute, and fails at the first minute the two disagree.
+test('the page and the daemon agree, to the minute, on when each period settles', () => {
+  const OFFSET = 480;
+  const cases = [
+    ['week', '2026-09-14', (p, nowMs) => weeksNeedingReport({ generatedWeeks: [], earliestDataTs: `${p}T00:00:00Z`, nowMs })],
+    ['week', '2026-12-28', (p, nowMs) => weeksNeedingReport({ generatedWeeks: [], earliestDataTs: `${p}T00:00:00Z`, nowMs })],
+    ['month', '2026-09-01', (p, nowMs) => monthsNeedingReport({ generatedMonths: [], earliestDataTs: `${p}T00:00:00Z`, nowMs })],
+    ['month', '2027-02-01', (p, nowMs) => monthsNeedingReport({ generatedMonths: [], earliestDataTs: `${p}T00:00:00Z`, nowMs })],
+    ['day', '2026-09-22', (p, nowMs) => daysNeedingReport({ generatedDays: [], earliestDataTs: `${p}T00:00:00+08:00`, nowMs, offsetMinutes: OFFSET })],
+    ['day', '2026-12-31', (p, nowMs) => daysNeedingReport({ generatedDays: [], earliestDataTs: `${p}T00:00:00+08:00`, nowMs, offsetMinutes: OFFSET })],
+  ];
+  for (const [period, start, needing] of cases) {
+    const settles = SHARED.periodSettlesAt(period, start, OFFSET);
+    for (let nowMs = settles - 3 * 3_600_000; nowMs <= settles + 3 * 3_600_000; nowMs += 60_000) {
+      assert.equal(needing(start, nowMs).includes(start), nowMs >= settles, `${period} ${start} at ${new Date(nowMs).toISOString()}`);
+    }
+  }
+});
+
+test('the week the operator asked about settles at 08:00 Manila on Wednesday 23 September', () => {
+  assert.equal(new Date(SHARED.periodSettlesAt('week', '2026-09-14', 480)).toISOString(), '2026-09-23T00:00:00.000Z');
+  assert.equal(new Date(SHARED.periodSettlesAt('day', '2026-09-22', 480)).toISOString(), '2026-09-22T17:00:00.000Z');
+  assert.equal(new Date(SHARED.periodSettlesAt('month', '2026-09-01', 480)).toISOString(), '2026-10-03T00:00:00.000Z');
+});
+
+test('the daemon waits by the same numbers the page reads', () => {
+  assert.equal(REPORT_GRACE_DAYS, SHARED.REPORT_GRACE_DAYS);
+  assert.equal(REPORT_CHECK_MS, SHARED.REPORT_CHECK_MS);
+  assert.equal(DAY_GRACE_HOURS, SHARED.DAY_GRACE_HOURS);
 });

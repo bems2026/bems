@@ -211,3 +211,32 @@ describe('ReportsPage — saying what a figure is', () => {
     expect(await screen.findByText(/No week has completed/)).toBeInTheDocument();
   });
 });
+
+describe('the next report, said on the page — RM-138', () => {
+  // The operator read the newest weekly report on the evening of 22 Sept and could not tell whether the
+  // week of 14 Sept was late or broken. The calendar's cell says it; a `title` never shows on the kiosk,
+  // so the page says it too — only while the newest report is the one being read.
+  const weekRow = (start: string) =>
+    buildingRow({ period: 'week', period_start: start, online_sample_count: 7 * 24 * 60, expected_sample_count: 7 * 24 * 60 });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('names the next weekly report and when, while the newest is being read — and not on an older one', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-22T12:30:00Z'));
+    vi.mocked(reports.getReportPeriods).mockImplementation(async (period) =>
+      period === 'week' ? [weekRow('2026-09-07'), weekRow('2026-08-31')] : [buildingRow()]
+    );
+    render(<ReportsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Weekly' }));
+
+    const note = await screen.findByText(/^Next weekly report:/);
+    expect(note).toHaveTextContent(reports.formatPeriod('week', '2026-09-14'));
+    expect(note).toHaveTextContent(/ready after 08:00/);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous week' }));
+    await waitFor(() => expect(screen.queryByText(/^Next weekly report:/)).not.toBeInTheDocument());
+  });
+});

@@ -313,3 +313,94 @@ describe('the Circuits tab’s sections — RM-094', () => {
     expect(result.current.core.status).toBe('ready');
   });
 });
+
+describe('reports not made yet — RM-138', () => {
+  // The operator, 2026-09-22 at 20:30 Manila: the week of 14 Sept "isn't available even though the week
+  // of Sept 21 has started". It settles at 08:00 on the 23rd; the page now says so, and — because a kiosk
+  // is left on this page for days — reads the list again when a report comes due.
+  const week = (start: string): reports.PeriodBuildingReport => ({ ...month(start), period: 'week' });
+  const EVENING = new Date('2026-09-22T12:30:00Z');
+  const SETTLES = Date.parse('2026-09-23T00:00:00Z');
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Moves the clock and runs every timer it passes, inside `act` so the renders they cause are flushed. */
+  async function advanceTo(ms: number) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(Math.max(0, ms - Date.now()));
+    });
+  }
+
+  it('names the week that has ended and is not made yet, and the one still running', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(EVENING);
+    vi.mocked(reports.getReportPeriods).mockResolvedValue([week('2026-09-07'), week('2026-08-31')]);
+    const { result } = renderHook(() => useReportData('week', FAST));
+    await advanceTo(Date.now());
+
+    expect(result.current.selected).toBe('2026-09-07');
+    expect(result.current.pending.map((p) => [p.start, p.state])).toEqual([
+      ['2026-09-14', 'settling'],
+      ['2026-09-21', 'in-progress'],
+    ]);
+  });
+
+  it('reads the list again when the week comes due — without blanking it, and without moving the reader', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(EVENING);
+    vi.mocked(reports.getReportPeriods)
+      .mockResolvedValueOnce([week('2026-09-07'), week('2026-08-31')])
+      .mockResolvedValue([week('2026-09-14'), week('2026-09-07'), week('2026-08-31')]);
+    const { result } = renderHook(() => useReportData('week', FAST));
+    await advanceTo(Date.now());
+    const statuses: string[] = [];
+    // Every render between now and the re-read, not just the last one.
+    const seen = () => statuses.push(result.current.periods.status);
+
+    await advanceTo(SETTLES - 60_000);
+    seen();
+    await advanceTo(SETTLES + 5_000);
+    seen();
+
+    expect(reports.getReportPeriods).toHaveBeenCalledTimes(2);
+    expect(statuses.every((s) => s === 'ready')).toBe(true);
+    expect(result.current.periods.data!.map((r) => r.period_start)).toContain('2026-09-14');
+    // The reader was on the week of 7 Sept; the new one is offered, not imposed.
+    expect(result.current.selected).toBe('2026-09-07');
+    expect(result.current.arrived).toBe('2026-09-14');
+    expect(result.current.pending.map((p) => p.start)).toEqual(['2026-09-21']);
+
+    act(() => result.current.select('2026-09-14'));
+    expect(result.current.arrived).toBeNull();
+  });
+
+  it('says overdue only after a re-read past the expected time still finds nothing', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(EVENING);
+    vi.mocked(reports.getReportPeriods).mockResolvedValue([week('2026-09-07')]);
+    const { result } = renderHook(() => useReportData('week', FAST));
+    await advanceTo(Date.now());
+
+    await advanceTo(SETTLES + 5_000);
+    expect(result.current.pending[0].state).toBe('due');
+    // Six hours of passes, and the quarter-hour of slack — then the list is read again, and still lacks it.
+    await advanceTo(SETTLES + 6 * 3_600_000 + 15 * 60_000 + 5_000);
+    expect(reports.getReportPeriods).toHaveBeenCalledTimes(3);
+    expect(result.current.pending[0].state).toBe('overdue');
+  });
+
+  it('never lets a re-read of one kind answer for another', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(EVENING);
+    vi.mocked(reports.getReportPeriods).mockImplementation(async (kind) =>
+      kind === 'week' ? [week('2026-09-14'), week('2026-09-07')] : [month('2026-08-01')]
+    );
+    const { result, rerender } = renderHook(({ kind }) => useReportData(kind, FAST), { initialProps: { kind: 'month' as reports.ReportPeriod } });
+    await advanceTo(Date.now());
+    rerender({ kind: 'week' });
+    await advanceTo(Date.now() + 1);
+    expect(result.current.periods.data!.every((r) => r.period === 'week')).toBe(true);
+  });
+});

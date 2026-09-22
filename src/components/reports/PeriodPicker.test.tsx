@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { PeriodPicker } from './PeriodPicker';
+import { pendingPeriods } from '@/lib/pendingPeriods';
+import { formatPeriod } from '@/lib/supabaseReports';
 
 /**
  * RM-082b. Choosing which report to read was a row of pill buttons up to fourteen and a select past
@@ -149,5 +151,40 @@ describe('PeriodPicker', () => {
     expect(cells[3]).toHaveAccessibleName(/^Week of .*24.*2026/); // the reader's locale orders the date
     fireEvent.click(cells[3]);
     expect(onSelect).toHaveBeenCalledWith('2026-08-24');
+  });
+});
+
+describe('a report not made yet — RM-138', () => {
+  // The operator, 2026-09-22 at 20:30 Manila: the week of 14 Sept was missing from the picker. It was not
+  // late — it settles at 08:00 on the 23rd — but a blank, unchoosable cell said "never", not "coming".
+  const STARTS = ['2026-09-07', '2026-08-31'];
+  const pending = pendingPeriods('week', STARTS, Date.parse('2026-09-22T12:30:00Z'), { offsetMinutes: 480 });
+  const picker = () =>
+    render(<PeriodPicker period="week" starts={STARTS} selected="2026-09-07" onSelect={() => {}} pending={pending} />);
+
+  it('names the ended week in the calendar with when it is due, instead of "No report for"', () => {
+    picker();
+    openCalendar(formatPeriod('week', '2026-09-07'));
+    const ended = pending[0];
+    const cell = screen.getByRole('button', { name: `${ended.name} — ${ended.status}` });
+    expect(cell).toBeDisabled();
+    expect(cell).toHaveAttribute('title', ended.label);
+    expect(cell.className).toMatch(/report-calendar__cell--pending/);
+    // In words under the grid too: a title never appears on the kiosk's touch screen.
+    expect(within(screen.getByRole('dialog')).getByText(ended.label)).toBeInTheDocument();
+  });
+
+  it('still says "No report for" a gap in the data, which is not coming', () => {
+    picker();
+    openCalendar(formatPeriod('week', '2026-09-07'));
+    const gap = formatPeriod('week', '2026-08-24');
+    expect(screen.getByRole('button', { name: gap })).toHaveAttribute('title', `No report for ${gap}`);
+  });
+
+  it('gives a disabled Next its reason when the newest report is the one being read', () => {
+    picker();
+    const next = screen.getByRole('button', { name: 'Next week' });
+    expect(next).toBeDisabled();
+    expect(next).toHaveAccessibleDescription(pending[0].label);
   });
 });
