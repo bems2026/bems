@@ -1,6 +1,8 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-23, 14:10 — **RM-143: the week of 14 Sept was not made — the 10:54 pass failed on a Supabase outage, and a failed pass waited six hours; now minutes.** **06:20 — RM-142: the Reports page polished — charts drawn at the page's width, one legend, the estimate as a card.** **2026-09-22, 23:10 — FI-039 and FI-041 done; a transition never waits on a frame.** **22:45 — RM-137 to RM-141 pushed, CI green, deployed: the dashboard built on the Pi and `ibems-ingest` restarted 22:53 (read back).** **22:21 — RM-141: pop-ups that fit, measured signed in at 360, 768 and 800×480 — every surface 0 px over.** **21:47 — RM-140: the PDF waits for the circuit charts; the controls stay put; changes crossfade.** **21:40 — RM-139: no circuit told apart by colour alone; the status hues stay, measured.** **21:25 — RM-138: a report not made yet is said, not silent; the week of
+**Last audited:** 2026-09-23, 20:50 — **RM-120 passed: local IR is verified on the unit, and ON states now
+go over the LAN first. RM-144: an IR send no longer drops the hub's session.** Built and tested; one
+operator apply left (§0). **Earlier, 14:10 — RM-143: the week of 14 Sept was not made — the 10:54 pass failed on a Supabase outage, and a failed pass waited six hours; now minutes.** **06:20 — RM-142: the Reports page polished — charts drawn at the page's width, one legend, the estimate as a card.** **2026-09-22, 23:10 — FI-039 and FI-041 done; a transition never waits on a frame.** **22:45 — RM-137 to RM-141 pushed, CI green, deployed: the dashboard built on the Pi and `ibems-ingest` restarted 22:53 (read back).** **22:21 — RM-141: pop-ups that fit, measured signed in at 360, 768 and 800×480 — every surface 0 px over.** **21:47 — RM-140: the PDF waits for the circuit charts; the controls stay put; changes crossfade.** **21:40 — RM-139: no circuit told apart by colour alone; the status hues stay, measured.** **21:25 — RM-138: a report not made yet is said, not silent; the week of
 14 Sept was not late** (settles 08:00 Wed 23 Sept). **21:13 — RM-137: a statement timeout is asked
 again by itself** (the operator's Reports brief; §2's first section). **Earlier, 17:10 — the end-of-day list, by owner, is §0's first entry.** RM-136 was run
 at 16:31 and read back: both notices are gone and checked in a browser. **Earlier, 17:00 — phase47 (FI-027)
@@ -388,7 +390,9 @@ browser against the live bridge. `npm run preflight` reads `Ready` with every no
    network.
 3. **The dual meter:** check Smart Life for a firmware update (free), then decide on two single-channel CT
    meters. The demux corrects the trade; only hardware ends it (RM-122).
-4. **RM-120**, the aircon's on-site acceptance with the TCL112 generator.
+4. ~~RM-120, the aircon's on-site acceptance~~ — **passed** (2026-09-22 15:08 → 09-23 08:24, the operator's
+   notes read against the audit log and the aircon circuit's meter). What is left is one apply for RM-144
+   (below), and a decision on the test rule, which is still armed Mon–Thu 08:00–17:00 at a 24 °C target.
 5. **RM-016**, the outside temperature sensor: install it, or remove it from the registry.
 6. **RM-033**, the twelve `〔FILL IN〕` gaps in `docs/physical-install.md`: a camera visit, plus the AP's
    make and model.
@@ -3922,7 +3926,7 @@ removing it from Smart Life and pairing it again does.
     `src/lib/credentials.ts`, `src/lib/tuyaFleet.ts`, `src/hooks/useCloudFleet.ts`.
 
 - [x] **RM-128** The aircon's IR frames are TCL112AC, and the flow now generates any state. **Applied
-  2026-09-22 06:49 and read back** (§0); no generated frame has been sent to the unit yet (RM-120).
+  2026-09-22 06:49 and read back** (§0); generated frames verified on the unit by RM-120, 2026-09-22.
   - **Measured.** All sixteen codes in `AC Master Logic` (live-flow fixture of 2026-09-17) decode as
     TCL112AC: header 23 CB 26 01 00, 112 bits LSB-first, byte 13 the sum of bytes 0–12 — every checksum
     verifies. The fifteen ON codes are **cool, fan auto, swing off** at 16–30 °C; OFF is the one
@@ -4539,8 +4543,26 @@ editor (deployed 14:36 local). The node stayed quiesced (`disableAutoStart: true
     `src/components/ui/PillGroup.tsx`.
   - **Not yet built on the Pi.**
 
-- [ ] **RM-120** The on-site acceptance test. **Operator, with someone watching the unit.** Each step
-  moves the real aircon, so each is the operator's to run.
+- [x] **RM-120** The on-site acceptance test. **PASSED — run by the operator 2026-09-22 15:08 to
+  2026-09-23 08:24, with someone watching the unit; `SITE.aircon.local_ir_verified` is now `true`.**
+  - **What the unit did, from the operator's notes:** it beeped and its display followed every step — OFF;
+    cool 24 °C fan auto (a captured frame); cool 25 and 27 °C fan high swing on, dry 26 °C, fan mode fan
+    low, heat 26 °C fan low (all generated); and a generated cool 16 °C fan high swing on that powered it
+    on from off, sent from the app with no handheld remote involved. The closed loop's steps showed
+    19, 18, 17 and 16 °C on the display, each keeping cool, fan high and swing.
+  - **What the system recorded:** every command `dispatched via=local`, steps 3–7 with the detail "sent
+    over the LAN as a frame generated from the remote's IR protocol". Step 9 (hub unplugged at 08:24:26):
+    the OFF at 08:24:39 was refused — "the bridge reports the IR hub offline" — rather than claimed; the
+    hub reconnected at 08:26:03 on its reserved address. The loop rule stepped every 5 min, 20 → 16 °C,
+    then raised its floor alert with the room still at 27.8 °C against the 24 °C target.
+  - **The aircon circuit's meter (`mtr_arec_acu`) agrees with every power change it can see:** OFF at
+    15:08:39 took it from 508 W to 6 W; the 15:12:42 generated power-on to 328 W within a minute and
+    660 W by 15:15; the 16:59 OFF to 17 W. During steps 2–7 it stayed at 5–6 W while the unit beeped and
+    changed its display — step 2 went 3 s after the OFF, so most likely the compressor's restart delay
+    after being switched off (inferred, not measured). Setpoint steps cannot be read from power: at a 27.8 °C
+    room the compressor runs flat out at 20 °C and at 16 °C alike.
+  - **Found by it:** RM-144.
+  - **The plan it ran, for reference.** Each step moves the real aircon, so each is the operator's to run.
   1. Send OFF. Expect `via=local`.
   2. Send ON 24 °C in the library's state, and **record what the unit's display shows for mode, fan and
      swing**. The codes decode as cool / auto / off (RM-128); a unit showing anything else means it
@@ -4553,9 +4575,21 @@ editor (deployed 14:36 local). The node stayed quiesced (`disableAutoStart: true
   6. Take the hub off the network. A local send answers 409 (and goes via the cloud if one answers).
   7. Arm one ACU rule for 15 minutes. Its steps keep the mode.
 
-  Until step 5 is done, ON states are cloud-first by design when a cloud is ready.
-  The network no longer blocks it: after the Pi's 07:44 reboot on 2026-09-22 the IR hub is back and
-  connected (§0). It waits only on someone at the unit.
+  Until step 5 was done, ON states were cloud-first by design when a cloud was ready; now they go over
+  the LAN first, with the cloud as the fallback when one answers.
+
+- [x] **RM-144** An IR send no longer drops the IR hub's session. **Built 2026-09-23; one apply left (§0).**
+  - **Measured during RM-120.** Every send — the ones that worked included — logged `Timeout waiting for
+    status response` about 5 s later, then `Retrying connection...`: the tuya node dropped and re-opened
+    the hub's session after every command. The hub never echoes dp 201 (`ir_send`), and tuyapi's `set()`
+    waits for an echo by default. While a set waits, a second one queues behind it (step 2 went 3 s after
+    step 1), and every command from the loop, the schedule or a person cost the hub a reconnect.
+  - **Fix.** AC Master Logic's IR set carries `shouldWaitForResponse: false`. The node passes the payload
+    to tuyapi's `set()` unchanged (node-red-contrib-tuya-smart-device 5.4.0, `tuya-smart-device.js`), and
+    tuyapi 7.7.1 then resolves once the frame is written, with nothing left to time out. Nothing else in
+    the node changes; the hub's sensor polls still ask for, and get, their answers.
+  - `node-red-bridge/airconSources.mjs`, `test/aircon-sources.test.mjs`. Applied with `npm run aircon:pi`,
+    which regenerates AC Master Logic around the live library, as before.
 
 - [ ] **RM-121** **The Tuya IoT Core subscription expired on 2026-09-17.**
   - **Measured.** Every business call answers `code 28841002: IoT Core service subscription has

@@ -162,6 +162,20 @@ test('a state the library holds is sent over the LAN with the live code, recorde
   assert.equal(reply.payload.sent, 'local');
 });
 
+test('every IR send tells the hub node not to wait for a reply the hub never sends', () => {
+  // Measured 2026-09-22/23: every send logged "Timeout waiting for status response" 5 s later and the
+  // node dropped and re-opened the hub's session — on the sends that worked too. The hub does not echo
+  // dp 201; tuyapi's set() waits for an echo by default. Without the wait there is nothing to time out.
+  const flow = healthy();
+  for (const payload of [{ power: 'off' }, { power: 'on', setpoint_c: 24, ...LOCAL_LIBRARY_STATE }, '25']) {
+    const [ir] = run(master, httpMsg(payload), { flow });
+    assert.equal(ir.payload.shouldWaitForResponse, false, JSON.stringify(payload));
+  }
+  const generator = acMasterLogicSource({ ...LIB, protocol: 'tcl112' });
+  const [generated] = run(generator, httpMsg({ power: 'on', mode: 'dry', setpoint_c: 26, fan: 'high', swing: true }), { flow });
+  assert.equal(generated.payload.shouldWaitForResponse, false);
+});
+
 test('OFF uses the OFF code', () => {
   const [ir] = run(master, httpMsg({ power: 'off' }), { flow: healthy() });
   assert.equal(JSON.parse(ir.payload.set).key1, LIB.library.OFF);

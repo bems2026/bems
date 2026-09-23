@@ -222,7 +222,9 @@ if (code === undefined && s.power === "on" && tcl112Code) {
 if (code === undefined) return [null, null, reply(422, { ok: false, error: "no_local_code" })];
 if (flow.get("acu_hub_health") !== true) return [null, null, reply(409, { ok: false, error: "device_offline" })];
 
-const ir = { payload: { dps: 201, set: JSON.stringify({ control: "send_ir", head: head, key1: code, type: 0, delay: 300 }) } };
+// shouldWaitForResponse: false — the hub never echoes dp 201, so tuyapi's default wait for an echo timed
+// out on every send and the node dropped and re-opened the hub's session (measured 2026-09-22/23).
+const ir = { payload: { dps: 201, set: JSON.stringify({ control: "send_ir", head: head, key1: code, type: 0, delay: 300 }), shouldWaitForResponse: false } };
 return [ir, record("local"), reply(200, { ok: true, sent: "local", key: key, source: source })];
 `;
 }

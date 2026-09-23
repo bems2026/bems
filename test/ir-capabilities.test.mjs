@@ -110,9 +110,12 @@ test("the blaster's protocol version is measured now, not inherited", () => {
   assert.equal(TUYA_VERSION_UNVERIFIED.has('NBRIC IR Blaster'), false);
 });
 
-test('the local IR library starts unverified', () => {
-  // Flipped only by the on-site acceptance test. Until then ON states go cloud-first.
-  assert.equal(SITE.aircon?.local_ir_verified, false);
+test('local IR is verified on the unit, by the on-site acceptance test', () => {
+  // RM-120, 2026-09-22/23: the unit beeped and its display followed every step — the captured OFF and
+  // cool frames, generated cool/dry/fan/heat frames with fan and swing, and the loop's 19..16 °C steps.
+  // So ON states go local-first like every other device; the cloud is the fallback, not the first try.
+  assert.equal(SITE.aircon?.local_ir_verified, true);
+  assert.equal(SITE.aircon?.ir_protocol, 'tcl112', 'verified with generated frames, so the protocol is part of what was verified');
 });
 
 test('npm run tuya:spec pairs each IR profile with its own product, not the other', () => {

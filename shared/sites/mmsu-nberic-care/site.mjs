@@ -229,6 +229,12 @@ export const SITE = Object.freeze({
    *
    * Flip it only after the on-site acceptance test in ROADMAP.md, with its evidence.
    *
+   * VERIFIED 2026-09-22/23 (RM-120). With someone at the unit, it beeped and its display followed every
+   * step: the captured OFF and cool 24 °C frames; generated cool / dry / fan / heat frames with fan high
+   * and low and swing on and off; a generated power-on from off; and the closed loop's steps 19 → 16 °C,
+   * each keeping cool, fan high and swing. The aircon circuit's meter agrees on every power change it
+   * can see. So ON states now go local-first, like every other device here.
+   *
    * `ir_protocol` — 2026-09-22. The captured library was decoded: every code is a TCL112AC frame
    * (checksums verified), and the ON codes are cool / fan auto / swing off. So the flow builds any
    * other state from one captured frame (`shared/irTcl112.mjs`) instead of needing the vendor cloud's
@@ -238,7 +244,7 @@ export const SITE = Object.freeze({
    * one of each.
    */
   aircon: Object.freeze({
-    local_ir_verified: false,
+    local_ir_verified: true,
     ir_protocol: 'tcl112',
   }),
 });

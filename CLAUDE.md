@@ -158,7 +158,10 @@ mock, because it once stopped the live bridge.
   cool / fan auto / swing off at 16..30 °C. `SITE.aircon.ir_protocol: 'tcl112'` lets AC Master Logic
   build any other mode, fan or swing from one captured frame (`shared/irTcl112.mjs`) — so mode/fan/swing
   no longer need the vendor cloud. `aircon:pi` refuses to install the generator unless it rebuilds every
-  captured code exactly. Captured frames (and OFF) are always sent as captured.
+  captured code exactly. Captured frames (and OFF) are always sent as captured. **Verified on the unit
+  2026-09-22/23 (RM-120)**, so `local_ir_verified: true` and ON states go over the LAN first. The hub
+  never echoes an IR send, so the set carries `shouldWaitForResponse: false` (RM-144); without it tuyapi
+  times out after 5 s and the node drops and re-opens the hub's session on every command.
 - **Tuya IoT Core is for extracting ids and keys, not a dependency — the operator's decision,
   2026-09-17.** It is a time-limited trial; on 2026-09-17 it expired (the token still issued, every
   business call answered `28841002`), which looks like a bug. Onboarding now works without it: keys come

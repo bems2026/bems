@@ -44,10 +44,10 @@ export const AC_DEFAULTS = Object.freeze({ mode: 'cool', setpoint_c: 25, fan: 'a
  * as the TCL112AC frames they are (`shared/irTcl112.mjs`, every checksum verified), every ON code says
  * cool, fan auto, swing off — so this is now read out of the codes, not assumed.
  *
- * What is still unverified is the UNIT: nobody has yet watched it obey these frames since the hub was
- * re-paired. Until the on-site acceptance test in the ROADMAP, the site keeps
- * `aircon.local_ir_verified: false`, and dispatch sends ON states through the cloud first when it can —
- * because a wrong local code does not fail, it succeeds at doing the wrong thing.
+ * The UNIT was verified on 2026-09-22/23 (RM-120): with someone watching, it obeyed the captured frames
+ * and the generated ones. A site that has not run that test keeps `aircon.local_ir_verified: false`, and
+ * dispatch then sends ON states through the cloud first when it can — because a wrong local code does
+ * not fail, it succeeds at doing the wrong thing.
  */
 export const LOCAL_LIBRARY_STATE = Object.freeze({ mode: 'cool', fan: 'auto', swing: false });
 
