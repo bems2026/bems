@@ -28,3 +28,10 @@ server/.env.*
 # the commit, and gone on the next clone with no error at any point. Measured 2026-09-01 with a
 # probe file and `git check-ignore`.
 /reports/
+
+# Raw captures from the documentation audit: flow exports, edge command output, config probes.
+# A flow export carries device local keys and `settings.js` can carry the credential secret, so
+# none of it may reach this PUBLIC repository. Anchored for the same reason as /reports/ above.
+# The audit's findings live beside it in docs/audit/*.md, which ARE committed, and cite these
+# files by name only.
+/docs/audit/raw/
