@@ -1,8 +1,8 @@
 # iBEMS — Feature State & Roadmap
 
 **Last audited:** 2026-09-23, 20:50 — **RM-120 passed: local IR is verified on the unit, and ON states now
-go over the LAN first. RM-144: an IR send no longer drops the hub's session.** Built and tested; one
-operator apply left (§0). **Earlier, 14:10 — RM-143: the week of 14 Sept was not made — the 10:54 pass failed on a Supabase outage, and a failed pass waited six hours; now minutes.** **06:20 — RM-142: the Reports page polished — charts drawn at the page's width, one legend, the estimate as a card.** **2026-09-22, 23:10 — FI-039 and FI-041 done; a transition never waits on a frame.** **22:45 — RM-137 to RM-141 pushed, CI green, deployed: the dashboard built on the Pi and `ibems-ingest` restarted 22:53 (read back).** **22:21 — RM-141: pop-ups that fit, measured signed in at 360, 768 and 800×480 — every surface 0 px over.** **21:47 — RM-140: the PDF waits for the circuit charts; the controls stay put; changes crossfade.** **21:40 — RM-139: no circuit told apart by colour alone; the status hues stay, measured.** **21:25 — RM-138: a report not made yet is said, not silent; the week of
+go over the LAN first. RM-144: an IR send no longer drops the hub's session.** Applied by the operator
+at 21:06 and the daemons restarted at 21:07; read back at 21:10 (§2, RM-144). **Earlier, 14:10 — RM-143: the week of 14 Sept was not made — the 10:54 pass failed on a Supabase outage, and a failed pass waited six hours; now minutes.** **06:20 — RM-142: the Reports page polished — charts drawn at the page's width, one legend, the estimate as a card.** **2026-09-22, 23:10 — FI-039 and FI-041 done; a transition never waits on a frame.** **22:45 — RM-137 to RM-141 pushed, CI green, deployed: the dashboard built on the Pi and `ibems-ingest` restarted 22:53 (read back).** **22:21 — RM-141: pop-ups that fit, measured signed in at 360, 768 and 800×480 — every surface 0 px over.** **21:47 — RM-140: the PDF waits for the circuit charts; the controls stay put; changes crossfade.** **21:40 — RM-139: no circuit told apart by colour alone; the status hues stay, measured.** **21:25 — RM-138: a report not made yet is said, not silent; the week of
 14 Sept was not late** (settles 08:00 Wed 23 Sept). **21:13 — RM-137: a statement timeout is asked
 again by itself** (the operator's Reports brief; §2's first section). **Earlier, 17:10 — the end-of-day list, by owner, is §0's first entry.** RM-136 was run
 at 16:31 and read back: both notices are gone and checked in a browser. **Earlier, 17:00 — phase47 (FI-027)
@@ -391,8 +391,10 @@ browser against the live bridge. `npm run preflight` reads `Ready` with every no
 3. **The dual meter:** check Smart Life for a firmware update (free), then decide on two single-channel CT
    meters. The demux corrects the trade; only hardware ends it (RM-122).
 4. ~~RM-120, the aircon's on-site acceptance~~ — **passed** (2026-09-22 15:08 → 09-23 08:24, the operator's
-   notes read against the audit log and the aircon circuit's meter). What is left is one apply for RM-144
-   (below), and a decision on the test rule, which is still armed Mon–Thu 08:00–17:00 at a 24 °C target.
+   notes read against the audit log and the aircon circuit's meter). RM-144 applied 21:06 and read back.
+   **The aircon's operating settings are the operator's, and intended (2026-09-23):** the schedule turns
+   it on at 07:40 and off at 17:00 Mon–Thu, and the closed-loop rule (24 °C target, 08:00–17:00 Mon–Thu,
+   5-min steps) stays armed. Leave both as set; changing either is the operator's call.
 5. **RM-016**, the outside temperature sensor: install it, or remove it from the registry.
 6. **RM-033**, the twelve `〔FILL IN〕` gaps in `docs/physical-install.md`: a camera visit, plus the AP's
    make and model.
@@ -4578,7 +4580,14 @@ editor (deployed 14:36 local). The node stayed quiesced (`disableAutoStart: true
   Until step 5 was done, ON states were cloud-first by design when a cloud was ready; now they go over
   the LAN first, with the cloud as the fallback when one answers.
 
-- [x] **RM-144** An IR send no longer drops the IR hub's session. **Built 2026-09-23; one apply left (§0).**
+- [x] **RM-144** An IR send no longer drops the IR hub's session. **Applied 2026-09-23 21:06 and read back.**
+  - **Read back 21:10.** `aircon:pi --apply` changed AC Master Logic only (generator check passed; backup
+    `flows.json.bak-rm144-2026-09-23`), and the live node carries `shouldWaitForResponse: false`. The
+    proxy, scheduler and ingest restarted at 21:07 with `local_ir_verified: true` loaded. The operator's
+    OFF at 21:07:32 went `via=local`, and the hub logged nothing after it — no timeout, no reconnect. The
+    last `Timeout waiting for status response` is the schedule's OFF at 17:00:19, before the fix. The
+    first ON under the new order is the 07:40 schedule on Thursday 24 Sept: its audit note should say
+    nothing about the cloud.
   - **Measured during RM-120.** Every send — the ones that worked included — logged `Timeout waiting for
     status response` about 5 s later, then `Retrying connection...`: the tuya node dropped and re-opened
     the hub's session after every command. The hub never echoes dp 201 (`ir_send`), and tuyapi's `set()`
