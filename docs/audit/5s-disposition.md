@@ -40,13 +40,13 @@ Standing decisions (2026-09-23 and 2026-09-24):
 | `iBEMS-Full-Stack-Anatomy.html` | **Mine** → archive | `03-edge.md`, `04-data.md`, `05-interface.md`, `X1-security.md`, `X2-control-logic.md` | "The stack, end to end" → 00/03. "Sign-in and session security" (incl. "The 401 story") → X1. "Frontend module layering", "The live data pipeline" and "State" → 05 architecture. "The command path, end to end" → X2 and diagram 3. "The server tier" → 03. "The honesty model" → 04 and 05 design rules. "Configuration, addressing and secrets" → 02 and X1. "Accessibility and the kiosk" and "Build, bundle and tests" → 05. | "The six routes" and "the ten stores" are stale (E-060). **"The data layer and RLS"** describes "thirteen tables through phase18"; there are now 23 through phase47 (E-064), so 04 is rebuilt from the schema and only the RLS reasoning is kept. "What the app still needs" is a ROADMAP restatement. Test counts are stale. |
 | `iBEMS-Dashboard-Anatomy.html` | **Mine** → archive | `05-interface.md` | Only what Full-Stack-Anatomy lacks: the longer "Design system" section (tokens, themes, contrast) and "Accessibility and the kiosk" (the wall-display half). | Every other section duplicates Full-Stack-Anatomy, which is mined instead. The same stale counts apply. |
 | `iBEMS-Field-Device-Playbook.html` | **Mine** → archive | `01-field-devices.md`, `X2-control-logic.md`, `91-troubleshooting-index.md`, `99-worked-example.md` | "Diagnosing a device that has gone dark" (the diagnostic ladder) → 01 fault matrix and 91. "Commissioning and acceptance tests" (pass is something a person can witness) → 01 acceptance and X3. "Standing rules" (never cut the aircon's power; shed, never restore) → X2, re-verified. "When a device changes state" → 01 and 05, with thresholds re-read from the code. "Which paradigm drives which device" → X2. "Device-by-device management" → 99, because its cards are per-site devices. | "The six control paradigms" and "the two loops" overlap Ch.2's triggers, and Ch.2 is authoritative. |
-| `ibems-tracker.html` | **Archive** | `archive/2026-09-legacy/` | — | Milestone data (disclosure). It prefers `localStorage` over its own file (E-105). `ROADMAP.md` is the tracker. **Confirm at GATE S** that it is not used for university reporting. If it is, it is **Left** in place instead. |
-| `ibems-architecture-upgrade_2.md` | **Mine** → archive | `00-overview.md`, `90-replication.md`, `adr/`, `03-edge.md` | §2 "Design principles" → 00. §3.2 "Decisions that are settled" → the ADRs. §5 "Target architecture" (two trees, site as a first-class object, per-site policy, the staged spatial layer, what is not built) → 90, re-verified against RM-027 to RM-032. §1 "What the original hand-built flow got wrong" → the 03 field-issue log. | §4 and §6 are funded-plan framing (disclosure). §7 "Migration path" is ROADMAP IDs, so they are cited. **Confirm at GATE S**: memory lists this as a living architecture document, and once mined the manual supersedes it. |
+| `ibems-tracker.html` | **Archive** | `archive/2026-09-legacy/` | — | Milestone data (disclosure). It prefers `localStorage` over its own file (E-105). `ROADMAP.md` is the tracker. **Settled at GATE S (2026-09-24):** it is used now and then for reporting, but has not been updated in weeks. It is archived rather than left in place, so a stale status is not reported by accident. The archive's README says to take status from `ROADMAP.md` and the workbook, and explains the `localStorage` trap. |
+| `ibems-architecture-upgrade_2.md` | **Mine** → archive | `00-overview.md`, `90-replication.md`, `adr/`, `03-edge.md` | §2 "Design principles" → 00. §3.2 "Decisions that are settled" → the ADRs. §5 "Target architecture" (two trees, site as a first-class object, per-site policy, the staged spatial layer, what is not built) → 90, re-verified against RM-027 to RM-032. §1 "What the original hand-built flow got wrong" → the 03 field-issue log. | §4 and §6 are funded-plan framing (disclosure). §7 "Migration path" is ROADMAP IDs, so they are cited. **Settled at GATE S (2026-09-24):** it is archived once 00, 90 and the ADRs have absorbed it, and until then it stays in place. |
 | `ibems-fullstack-roadmap.md` | **Archive** | `archive/2026-09-legacy/` | Its §5 "Deliberately not doing" is cited as supporting evidence for the ADRs, by line, not copied. | It says itself that it defers to `ROADMAP.md`. |
 | `ibems-reports-prompt.md` | **Archive** | `archive/2026-09-legacy/` | — | A completed work instruction. Its outcome is RM-137 to RM-143. |
 | `ibems-reports-prompt-review.md` | **Archive** | `archive/2026-09-legacy/` | — | As above. **Holds one mesh address** (E-102). The archive is outside git, and the file is never copied anywhere public. |
 | `iBEMS-Documentation-Prompt.md` | **Archive** | `archive/2026-09-legacy/` | — | v1, superseded by v3 (which lives outside the workspace). |
-| `Readme project front.txt` | **Archive** | `archive/2026-09-legacy/` | — | A README draft, carried into the repo's `README.md`. Before moving, the two are diffed for anything unique; nothing unique is expected. |
+| `Readme project front.txt` | **Mine** → archive *(changed at S2, 2026-09-24)* | `99-worked-example.md` | **"The fleet"** is the one section the repo's `README.md` lacks: a table of 7 outlets, 7 lighting circuits, 4 branch meters, 1 aircon and 1 outdoor sensor. It goes to 99, re-verified against `shared/sites/…/devices.mjs` and E-051. | Everything else was carried into `README.md`. Its credits line names the institution, which the repo's README deliberately does not (disclosure decision). |
 | `iBEMS-General-Project-Plan.xlsx`, `iBEMSGeneralProjectPlan.xlsx`, `iBEMS-Functionality-Test-Log.xlsx` | **Leave** | — | The test log may be **read**, never edited, when porting Ch.2's test manual. | Reported to the university. This work never moves or edits them. |
 | `~$iBEMSGeneralProjectPlan.xlsx` | **Leave** | — | — | Excel's lock file for an open workbook. It is not a document. |
 | `archive/README.md` and its 6 files | **Keep** | — | — | Already archived. S2 adds one line to `archive/README.md` pointing at the new `2026-09-legacy/README.md`. |
@@ -114,15 +114,16 @@ ibems-dashboard/                         (the repository — public)
     README.md                            + one line pointing at 2026-09-legacy/
     2026-09-legacy/
       README.md                          one line per file: what it was, where its content lives now
+      ibems-tracker.html  ibems-fullstack-roadmap.md  ibems-reports-prompt.md
+      ibems-reports-prompt-review.md  iBEMS-Documentation-Prompt.md     moved in S2, 2026-09-24
+      iBEMS-Handbook-01-Field-Devices.html  iBEMS-Handbook-02-Control-Strategy.html
+                                         after their port (S2)
       iBEMS-Conceptual-Framework.html  iBEMS-System-Dossier.html  iBEMS-Full-Stack-Anatomy.html
       iBEMS-Dashboard-Anatomy.html  iBEMS-Field-Device-Playbook.html
-      iBEMS-Handbook-01-Field-Devices.html  iBEMS-Handbook-02-Control-Strategy.html
-      ibems-tracker.html*  ibems-architecture-upgrade_2.md*  ibems-fullstack-roadmap.md
-      ibems-reports-prompt.md  ibems-reports-prompt-review.md  iBEMS-Documentation-Prompt.md
-      Readme project front.txt
+      ibems-architecture-upgrade_2.md  Readme project front.txt
+                                         after the chapters that mine them (B, C)
   *.xlsx, Assets/                        untouched
 ```
-`*` marks a move that waits on confirmation at GATE S.
 
 The two handbooks are archived **after** they are ported, and the mined documents **after** their chapters are written.
 Until then they stay where they are, so every source is still readable while it is being used. So S2 moves only the
