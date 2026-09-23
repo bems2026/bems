@@ -1,6 +1,9 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-23, 20:50 — **RM-120 passed: local IR is verified on the unit, and ON states now
+**Last audited:** 2026-09-23, 23:40 — **RM-145: the manual's Phase A audit (read-only) found the MQTT broker
+listening on every interface with anonymous access since 2026-09-17. EX-131 no longer holds on the host (§4 #6,
+`docs/audit/findings.md` F-001), and the edge's own credentials have no off-device backup (F-002).** GATE A is with the operator.
+**Earlier, 20:50 — RM-120 passed: local IR is verified on the unit, and ON states now
 go over the LAN first. RM-144: an IR send no longer drops the hub's session.** Applied by the operator
 at 21:06 and the daemons restarted at 21:07; read back at 21:10 (§2, RM-144). **Earlier, 14:10 — RM-143: the week of 14 Sept was not made — the 10:54 pass failed on a Supabase outage, and a failed pass waited six hours; now minutes.** **06:20 — RM-142: the Reports page polished — charts drawn at the page's width, one legend, the estimate as a card.** **2026-09-22, 23:10 — FI-039 and FI-041 done; a transition never waits on a frame.** **22:45 — RM-137 to RM-141 pushed, CI green, deployed: the dashboard built on the Pi and `ibems-ingest` restarted 22:53 (read back).** **22:21 — RM-141: pop-ups that fit, measured signed in at 360, 768 and 800×480 — every surface 0 px over.** **21:47 — RM-140: the PDF waits for the circuit charts; the controls stay put; changes crossfade.** **21:40 — RM-139: no circuit told apart by colour alone; the status hues stay, measured.** **21:25 — RM-138: a report not made yet is said, not silent; the week of
 14 Sept was not late** (settles 08:00 Wed 23 Sept). **21:13 — RM-137: a statement timeout is asked
@@ -3213,6 +3216,9 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       This is the same shape as EX-091: the mistake is invisible to types, survives a green
       suite, and the only reliable guard reads the source — `server/envHygiene.test.mjs`
 - [x] **EX-131** The MQTT broker no longer accepts anonymous connections from the device network.
+      **⚠ No longer true on the host, measured 2026-09-23. Since 2026-09-17 it has listened on `0.0.0.0:1883`,
+      anonymous. See §4 #6 and RM-145 (`docs/audit/findings.md` F-001). What follows describes the 2026-08-26 fix,
+      which is the state to restore.**
       It listened on **every interface** with `allow_anonymous true`, on 1883 and on a
       websockets listener at 9001, sharing the 2.4 GHz segment with the field devices. Anything
       associated to that SSID could read every topic and publish to any of them. That was
@@ -3754,6 +3760,26 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 ## 2. Current roadmap (active execution)
 
 
+
+### The adoption and replication manual — RM-145 (2026-09-23)
+
+The written half of the replication framework (Track B, RM-033). It is a book-grade manual, built in `docs/` beside
+the existing contract documents, and every statement traces to an evidence ID in `docs/audit/evidence-ledger.md`.
+The work runs in gated phases, and each gate stops for the operator's approval. The existing `docs/*.md` files stay
+at their paths, because code and tests reference them (E-072). The manual links to them and does not restate them,
+and it cites this file's IDs for feature state rather than copying it.
+
+- [x] **RM-145a** Phase 0: raw audit captures are gitignored (`/docs/audit/raw/`, checked with `git check-ignore`),
+      and the edge was reached read-only over the mesh (`docs/audit/access-check.md`).
+- [x] **RM-145b** Phase A: the environment audit, read-only on the edge (G5). It produced 80+ evidence rows, verdicts on
+      the 13 carried-over claims (seven wrong in whole or part: `docs/audit/claims-check.md`), 23 findings
+      (`docs/audit/findings.md`), 14 open questions and a system map. **Two findings are Critical.** F-001: the broker
+      listens anonymously on every interface (§4 #6). F-002: the edge's own credentials have no off-device backup.
+      **GATE A: waiting on the operator.**
+- [ ] **RM-145c** Phase S: the 5S disposition table and target tree (GATE S). Legacy files outside the repo are mined
+      and archived outside git, and no `project/TRACKER.md` is created (decided 2026-09-23).
+- [ ] **RM-145d** Phases B and C: the layer and plane chapters and `90-replication.md` (GATE B1 after `00-overview` and `03-edge`).
+- [ ] **RM-145e** Phases D and E: the site and PDF build, docs CI, conventions, and the three-reader verification (FINAL GATE).
 
 ### The Reports page, from the operator's brief — RM-137 onward (2026-09-22)
 
@@ -10359,6 +10385,7 @@ may not.
 | ~~3~~ | ~~Architecture planning proposed MQTT + Home Assistant as the device layer~~ | — | **Resolved 2026-08-26 at the source.** The code was always right; the fix was to stop the planning doc from saying otherwise. `ibems-architecture-upgrade_2.md` (one level up, outside this repo) was rewritten: Home Assistant is now recorded as *not adopted*, MQTT as *not the device bus*, and both sit in a settled-decisions table so they are not re-proposed. It had been steering readers into planning around a component nobody was going to install. |
 | 4 | Mosquitto is described as dropped, but the broker is installed and running on the Pi | planning docs vs. the live host | **Both, partially — and now measurably idle.** The bridge genuinely does not use MQTT; the broker is still installed, running, and subscribed to by one flow node. As of 2026-08-26 it carries **no traffic at all**: five minutes on every topic, zero messages (§5 Q2). So it is not a second device layer, it is a dependency nothing currently feeds — which is the thing to weigh before RM-026 chooses to route the inverter through it. **RM-026 has since chosen it**, so the broker acquires its first real consumer — and a liveness check on that topic is part of that work, not an extra, precisely because nothing noticed the last publisher going silent. |
 | ~~5~~ | ~~`README.md` points at a Stage 1 plan path outside the repo~~ | — | **Resolved.** `README.md` now points at `ROADMAP.md` and the two in-repo docs. |
+| 6 | **The broker is described as loopback-only, but since 2026-09-17 it has listened on every interface with anonymous access.** | EX-131, `CLAUDE.md` §Site facts, `SECURITY.md`, `docs/pi-session-brief.md` (Broker row) vs. the live host | **The host.** Measured read-only on 2026-09-23 (RM-145). In `mosquitto.conf` both loopback listeners are commented out. `conf.d/bems.conf` (mtime 2026-09-17 15:47) declares `listener 1883 0.0.0.0` with `allow_anonymous true`, and `ss -tln` shows `0.0.0.0:1883`. No enabled flow node uses the broker. The journal was volatile that day, so nothing records who or why. **Open until the operator restores loopback or adds a password-protected LAN listener**, after which EX-131 and the four documents are re-verified. `npm run preflight` does not check the broker, which is why nothing noticed. `docs/audit/findings.md` F-001 and F-005, evidence E-028. |
 
 ---
 
