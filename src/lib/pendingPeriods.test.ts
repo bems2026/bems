@@ -49,7 +49,8 @@ describe('a week', () => {
     expect(entry(pendingPeriods('week', stored, late + 60_000, { offsetMinutes: OFFSET, listReadAt: due - 3_600_000 }), '2026-09-14')!.state).toBe('due');
     const overdue = entry(pendingPeriods('week', stored, late + 60_000, { offsetMinutes: OFFSET, listReadAt: late }), '2026-09-14')!;
     expect(overdue.state).toBe('overdue');
-    expect(overdue.label).toMatch(/report service may not be running/);
+    // RM-143: on 2026-09-23 the service was running and could not reach the database — say both.
+    expect(overdue.label).toMatch(/the report service may be stopped, or unable to reach the database/);
   });
 
   it('drops the entry once the report exists', () => {

@@ -151,6 +151,47 @@ export function daysNeedingReport({ generatedDays, earliestDataTs, nowMs, offset
   return days;
 }
 
+/**
+ * How soon to ask again after a report pass fails — RM-143. 2026-09-23: the Pi could not reach Supabase on and
+ * off between 01:30 and 13:24, and the 10:54 pass, the first after the week of 14 Sept settled, failed with an
+ * AbortError. "Will retry on the next check" meant six hours: the report the operator was waiting for slipped
+ * from about 11:00 to about 17:00 over a blip. A pass is stateless and safe to repeat (this file's header), so
+ * a failed one is asked again after 10 minutes, then 30, then every hour until the database answers.
+ */
+export const REPORT_RETRY_MS = Object.freeze([10 * 60 * 1000, 30 * 60 * 1000, 60 * 60 * 1000]);
+
+/**
+ * Wraps a pass that resolves `true` when it succeeded. A failure schedules one retry on `REPORT_RETRY_MS`'s
+ * ladder, holding at its last step; a success starts the ladder over. Never more than one retry is waiting,
+ * so the six-hourly tick landing mid-outage adds nothing. `schedule` and `log` are injected for the tests.
+ *
+ * @param {() => Promise<boolean>} run
+ * @param {{ delays?: readonly number[], schedule?: (fn: () => void, ms: number) => unknown, log?: (line: string) => void }} [options]
+ * @returns {() => Promise<boolean>}
+ */
+export function retryingPass(run, { delays = REPORT_RETRY_MS, schedule = setTimeout, log = console.log } = {}) {
+  let step = 0;
+  let waiting = false;
+  const pass = async () => {
+    const ok = await run();
+    if (ok) {
+      step = 0;
+      return true;
+    }
+    if (waiting) return false;
+    const wait = delays[Math.min(step, delays.length - 1)];
+    step += 1;
+    waiting = true;
+    log(`[ibems-ingest] reports: asking again in ${Math.round(wait / 60000)} min`);
+    schedule(() => {
+      waiting = false;
+      pass();
+    }, wait);
+    return false;
+  };
+  return pass;
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** `YYYY-MM-01` for the month containing a UTC instant. */

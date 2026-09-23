@@ -1,6 +1,6 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-23, 06:20 — **RM-142: the Reports page polished — charts drawn at the page's width, one legend, the estimate as a card.** **2026-09-22, 23:10 — FI-039 and FI-041 done; a transition never waits on a frame.** **22:45 — RM-137 to RM-141 pushed, CI green, deployed: the dashboard built on the Pi and `ibems-ingest` restarted 22:53 (read back).** **22:21 — RM-141: pop-ups that fit, measured signed in at 360, 768 and 800×480 — every surface 0 px over.** **21:47 — RM-140: the PDF waits for the circuit charts; the controls stay put; changes crossfade.** **21:40 — RM-139: no circuit told apart by colour alone; the status hues stay, measured.** **21:25 — RM-138: a report not made yet is said, not silent; the week of
+**Last audited:** 2026-09-23, 14:10 — **RM-143: the week of 14 Sept was not made — the 10:54 pass failed on a Supabase outage, and a failed pass waited six hours; now minutes.** **06:20 — RM-142: the Reports page polished — charts drawn at the page's width, one legend, the estimate as a card.** **2026-09-22, 23:10 — FI-039 and FI-041 done; a transition never waits on a frame.** **22:45 — RM-137 to RM-141 pushed, CI green, deployed: the dashboard built on the Pi and `ibems-ingest` restarted 22:53 (read back).** **22:21 — RM-141: pop-ups that fit, measured signed in at 360, 768 and 800×480 — every surface 0 px over.** **21:47 — RM-140: the PDF waits for the circuit charts; the controls stay put; changes crossfade.** **21:40 — RM-139: no circuit told apart by colour alone; the status hues stay, measured.** **21:25 — RM-138: a report not made yet is said, not silent; the week of
 14 Sept was not late** (settles 08:00 Wed 23 Sept). **21:13 — RM-137: a statement timeout is asked
 again by itself** (the operator's Reports brief; §2's first section). **Earlier, 17:10 — the end-of-day list, by owner, is §0's first entry.** RM-136 was run
 at 16:31 and read back: both notices are gone and checked in a browser. **Earlier, 17:00 — phase47 (FI-027)
@@ -409,9 +409,11 @@ browser against the live bridge. `npm run preflight` reads `Ready` with every no
   on real data.
 - The next lights-on after an idle stretch should raise no flag (RM-136).
 - The next outage is RM-131's real test.
-- **The week of 14 Sept report** at the first report pass after 08:00 Wed 23 Sept (RM-138; passes run six-hourly
-  from the last `ibems-ingest` restart): the journal's `generated weeks 2026-09-14` and the row. The Reports work (RM-137–RM-141) is deployed and read back 22:53–22:56:
-  the Pi at the pushed commit, the kiosk bundle rebuilt, `ibems-ingest` restarted after the pull (next passes 04:53, 10:53).
+- **The week of 14 Sept report — NOT made at 10:54 (read 2026-09-23 14:02, RM-143).** The pass ran and failed with
+  an AbortError: the Pi could not reach Supabase on and off from 01:30 to 13:24 (109 buffered writes, all drained by
+  13:25). The old code waited six hours to ask again. RM-143 retries within minutes; the `ibems-ingest` restart that
+  loads it runs a pass at once, which should make the week. Read back: `generated weeks 2026-09-14` and the row.
+  **Also worth a look: what dropped the uplink for twelve hours overnight** (RM-131's 4G router, most likely).
 
 **Engineering, in order:**
 1. **FI-034:** `readings_buckets` over 30 days takes 7.8 s. Add `p_until` or chunk it, then extend
@@ -3863,6 +3865,14 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
         page, not this one. Tests: `chartWidth.test.ts` (5), `circuitCharts.test.ts` (direct-label tests
         replaced by one-legend tests), `ReportsPage.apportioned.test.tsx` (+1), `ReportSkeleton.test.tsx`
         (+1), `ReportsPage.reliability.test.tsx` (+1), `reports-css.test.mjs` (+1).
+- [x] **RM-143** A failed report pass is asked again within minutes. **Read 2026-09-23 14:02:** the week of 14 Sept
+      settled at 08:00 and was not made. The 10:54 pass ran and failed (`report pass failed … AbortError`) — the Pi
+      could not reach Supabase on and off from 01:30 to 13:24 — and "will retry on the next check" meant 16:53, six
+      hours on. `retryingPass` (`server/reports.mjs`) asks again after 10 min, 30 min, then hourly until the database
+      answers; one retry waits at a time; success resets the ladder. `reportPass` now resolves whether it succeeded,
+      and a week that fails inside an otherwise good pass counts as a failure. The page's "overdue" now says the
+      service "may be stopped, or unable to reach the database" — it was running. Needs an `ibems-ingest` restart,
+      which also runs a pass at once. Tests: `server/reports.test.mjs` (+3), `pendingPeriods.test.ts` (1 updated).
 - [ ] **FI-042** `Skeleton.tsx` calls itself static; `.skeleton` shimmers (stopped only by reduced motion).
 
 ### Onboarding without IoT Core, and the aircon's own IR protocol — RM-126 to RM-129 (2026-09-22)

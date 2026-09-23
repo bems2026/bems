@@ -19,6 +19,8 @@ import {
   MAX_WEEKS_PER_PASS,
   REPORT_CHECK_MS,
   DAY_GRACE_HOURS,
+  REPORT_RETRY_MS,
+  retryingPass,
 } from './reports.mjs';
 import * as SHARED from '../shared/reportSchedule.mjs';
 
@@ -526,4 +528,54 @@ test('the daemon waits by the same numbers the page reads', () => {
   assert.equal(REPORT_GRACE_DAYS, SHARED.REPORT_GRACE_DAYS);
   assert.equal(REPORT_CHECK_MS, SHARED.REPORT_CHECK_MS);
   assert.equal(DAY_GRACE_HOURS, SHARED.DAY_GRACE_HOURS);
+});
+
+// RM-143. 2026-09-23: the Pi could not reach Supabase between 01:30 and 13:24 on and off, and the 10:54 pass
+// — the first after the week of 14 Sept settled — failed with an AbortError. "Will retry on the next check"
+// meant six hours: the report the operator was waiting for slipped from ~11:00 to ~17:00 over a blip.
+test('a failed report pass is asked again within minutes, not at the next six-hourly check', async () => {
+  const timers = [];
+  const logs = [];
+  let answers = [false, false, true];
+  let runs = 0;
+  const pass = retryingPass(async () => { runs += 1; return answers.shift() ?? true; }, {
+    schedule: (fn, ms) => timers.push({ fn, ms }),
+    log: (line) => logs.push(line),
+  });
+
+  assert.equal(await pass(), false);
+  assert.deepEqual(timers.map((t) => t.ms), [REPORT_RETRY_MS[0]]);
+  await timers.shift().fn();
+  assert.deepEqual(timers.map((t) => t.ms), [REPORT_RETRY_MS[1]]);
+  await timers.shift().fn();
+  assert.equal(runs, 3);
+  assert.equal(timers.length, 0, 'a pass that succeeds asks for nothing more');
+  assert.equal(logs.length, 2);
+  assert.match(logs[0], /asking again in 10 min/);
+});
+
+test('retries never pile up, and keep asking hourly until the database answers', async () => {
+  const timers = [];
+  const pass = retryingPass(async () => false, { schedule: (fn, ms) => timers.push({ fn, ms }), log: () => {} });
+  await pass();
+  await pass(); // the six-hourly tick lands while a retry is already waiting: no second timer
+  assert.equal(timers.length, 1);
+  const waits = [];
+  for (let i = 0; i < 5; i += 1) {
+    const t = timers.shift();
+    waits.push(t.ms);
+    await t.fn();
+  }
+  const last = REPORT_RETRY_MS[REPORT_RETRY_MS.length - 1];
+  assert.deepEqual(waits, [...REPORT_RETRY_MS, last, last]);
+});
+
+test('success starts the retry schedule over', async () => {
+  const timers = [];
+  let answers = [false, true, false];
+  const pass = retryingPass(async () => answers.shift() ?? false, { schedule: (fn, ms) => timers.push({ fn, ms }), log: () => {} });
+  await pass();
+  await timers.shift().fn(); // succeeds
+  await pass(); // fails again, later
+  assert.deepEqual(timers.map((t) => t.ms), [REPORT_RETRY_MS[0]]);
 });

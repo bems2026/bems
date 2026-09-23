@@ -91,7 +91,8 @@ function statusOf(state: PendingState, dueAt: number, byAt: number, nowMs: numbe
     case 'due':
       return `being made — reports are made every ${HOURS} hours, so by ${moment(byAt, nowMs)}`;
     case 'overdue':
-      return `overdue — expected by ${moment(byAt, nowMs, true)} and not made yet; the report service may not be running`;
+      // RM-143: on 2026-09-23 the service was running and could not reach the database — so say both.
+      return `overdue — expected by ${moment(byAt, nowMs, true)} and not made yet; the report service may be stopped, or unable to reach the database`;
   }
 }
 

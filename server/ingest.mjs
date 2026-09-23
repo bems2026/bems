@@ -36,7 +36,7 @@ import {
   DEFAULT_RETENTION_DAYS,
   RETENTION_CHECK_MS,
 } from './retention.mjs';
-import { runReportGeneration, REPORT_CHECK_MS } from './reports.mjs';
+import { runReportGeneration, REPORT_CHECK_MS, retryingPass } from './reports.mjs';
 import { monthlyReportNotices } from './reportNotice.mjs';
 import { createFleetAlarm, loadKnownOnline, KNOWN_ONLINE_DAYS } from './fleetAlarm.mjs';
 import { createNotifier, fleetMessage } from './notify.mjs';
@@ -362,7 +362,8 @@ async function retentionPass() {
 
 /** One report-generation pass, guarded like the retention pass and for the same reason:
  * ingesting is this process's job, and a monthly summary failing is not a reason to stop
- * recording the building's electricity. */
+ * recording the building's electricity. Resolves whether it succeeded, so a failure can be asked
+ * again within minutes (RM-143, `retryingPass`) rather than at the next six-hourly check. */
 async function reportPass() {
   try {
     const { generated, generatedWeeks = [], generatedDays = [], failed, reason } = await runReportGeneration({ client: supabase });
@@ -385,7 +386,7 @@ async function reportPass() {
       console.log(`[ibems-ingest] reports: generated weeks ${generatedWeeks.join(', ')}`);
     }
     for (const f of failed) {
-      console.error(`[ibems-ingest] reports: ${f.month} failed (will retry on the next check): ${f.error}`);
+      console.error(`[ibems-ingest] reports: ${f.month} failed: ${f.error}`);
     }
     if (generatedDays.length > 0) {
       console.log(`[ibems-ingest] reports: generated days ${generatedDays.join(', ')}`);
@@ -396,10 +397,15 @@ async function reportPass() {
       // scanning this journal as though reports exist.
       console.log(`[ibems-ingest] reports: nothing to do (${reason})`);
     }
+    return failed.length === 0;
   } catch (err) {
-    console.error('[ibems-ingest] report pass failed (will retry on the next check):', String(err));
+    console.error('[ibems-ingest] report pass failed:', String(err));
+    return false;
   }
 }
+
+/** RM-143: a failed pass is asked again after 10 min, 30 min, then hourly — see `REPORT_RETRY_MS`. */
+const reportPassWithRetry = retryingPass(reportPass);
 
 /**
  * Which devices have a history of working, so the fleet alarm can tell "broken" from "never set
@@ -454,8 +460,8 @@ async function main() {
 
   // Same stateless shape as retention: ask which complete months lack a report and generate
   // those. See server/reports.mjs for why it waits out a grace period after a month ends.
-  reportPass();
-  setInterval(reportPass, REPORT_CHECK_MS);
+  reportPassWithRetry();
+  setInterval(reportPassWithRetry, REPORT_CHECK_MS);
 
   const loop = async () => {
     if (stopping) return;
