@@ -18,8 +18,8 @@ file or row on the edge was changed** (G5). The dispatch flag was read and left 
 |---|---|
 | [`evidence-ledger.md`](evidence-ledger.md) | 80+ observations. Every one names the command or file that produced it. |
 | [`claims-check.md`](claims-check.md) | Verdicts on the 13 carried-over claims. **Seven are wrong in whole or in part.** |
-| [`findings.md`](findings.md) | 23 findings: **2 Critical, 3 High, 11 Medium, 7 Low** |
-| [`open-questions.md`](open-questions.md) | 14 questions, 2 closed during the audit, each with an owner and a next action |
+| [`findings.md`](findings.md) | 23 findings: **1 Critical, 3 High, 12 Medium, 7 Low**. F-002 dropped from Critical on 2026-09-24. |
+| [`open-questions.md`](open-questions.md) | 14 questions, 3 now closed, each with an owner and a next action |
 | [`system-map.md`](system-map.md) | The inventory: repository, processes, ports, live flow, command path and data |
 | [`legacy-docs.md`](legacy-docs.md) | Every doc-like file, in and outside the repo, and what may be carried forward |
 | [`access-check.md`](access-check.md) | What was reached, and how |
@@ -33,10 +33,12 @@ file or row on the edge was changed** (G5). The dispatch flag was read and left 
 2. **Two premises of the prompt are wrong in ways that change the manual.**
    - **Hardware dispatch is on** (E-041). Commands have reached relays since 2026-08-24, and most of the 1,727 audit rows are `dispatched` (E-084).
    - **Automation is not in Node-RED.** It runs in `server/scheduler.mjs` against the database (E-071).
-3. **Two things on the edge need the operator before anything is published about them.**
+3. **One thing on the edge needs the operator before anything is published about it.**
    - **F-001:** the MQTT broker has accepted anonymous connections on every interface, device Wi-Fi included, since
-     2026-09-17. That reverses a hardening that four current documents still describe.
-   - **F-002:** the credentials that make the site work exist only on one SD card, dated 2018.
+     2026-09-17. That reverses a hardening that four current documents still describe. The operator chose on
+     2026-09-24 to restore loopback-only.
+   - **F-002** is now Medium. The operator states that a full copy of the credentials exists off the card (E-079), so
+     what remains is writing the practice down and testing one restore.
 
 ## Delta: the model (prompt §5) against the live system (§5.3)
 
@@ -47,17 +49,19 @@ file or row on the edge was changed** (G5). The dispatch flag was read and left 
 | L3 Edge: one board runs everything, with no internet needed for control | As modelled: Raspberry Pi 4, Debian 13, Node 22, Node-RED 4.1.8 and systemd (E-010–E-021). Control and the audit survive a WAN outage (E-078). | Thermal throttling (F-003). No `catch` nodes (F-011). Some host configuration exists only on the edge (F-010). | **System** for F-003. **Document** the rest, and state the F-011 decision |
 | L4 Data: relational store, ingestion, retention, optional spreadsheet | As modelled: hosted Postgres, 30-day per-minute retention then hourly rollups (E-070), and the Sheets mirror live (E-058) | The plan tier and size are unknown (F-004). The honesty rule is enforced by queries, not the schema (F-013). | **Measure** (Q-01), then document |
 | L5 Interface: web app, auth, kiosk and remote modes | As modelled: seven pages, Supabase Auth, break-glass, a kiosk user unit and mesh Serve (E-023, E-060, E-066) | — | — |
-| X1 Security: one complete credential picture | Present, but incomplete in practice | Anonymous broker (F-001), no credential backup (F-002), SSH posture unverified (F-008), real LAN addresses committed (F-009), desktop used for browsing (F-022) | **System** (F-001, F-002, F-007, F-009); **document** the rest |
+| X1 Security: one complete credential picture | Present, but incomplete in practice | Anonymous broker (F-001), credential backup undocumented and its restore untested (F-002), SSH posture unverified (F-008), real LAN addresses committed (F-009), desktop used for browsing (F-022) | **System** (F-001, F-002, F-007, F-009); **document** the rest |
 | X2 Control logic: decided at the edge, configured from the UI | As modelled. Record-first dispatch, an interlock, and a scheduler for schedules, auto-shed and the aircon loop (E-065, E-071). | 19 auto-shed rows stuck at `dispatching` (F-006) | **Investigate** (Q-08), then document |
-| X3 Operations: commissioning, backup, updates, spares | The database backup is documented and a restore rehearsed (`backup-policy.md`) | The edge's own backup is missing (F-002). The update policy is unwritten (F-020). | **Document**, after F-002 has an answer |
+| X3 Operations: commissioning, backup, updates, spares | The database backup is documented and a restore rehearsed (`backup-policy.md`) | The edge's credential copy exists but is unwritten and its restore untested (F-002). The update policy is unwritten (F-020). | **Document**, after F-002 has an answer |
 | "Logical layers are not machines" | Confirmed. The edge hosts L3, L4 ingestion, L5 serving and the proxy. The database is the only off-site component (E-021, E-089). | — | — |
 
-## What GATE A asks of the operator
+## GATE A — passed 2026-09-24
 
-- **Approve or amend** these findings and verdicts. The manual is written from them.
-- **Decide F-001.** Either loopback only, or a password-protected LAN listener. The four documents are then
-  re-verified. Nothing about the broker goes into the manual until this is settled.
-- **Answer Q-01, Q-02, Q-03 and Q-10** when convenient. None of them blocks Phase S.
+- The operator approved the findings and verdicts ("verify and proceed"). Before the push, the key live facts were
+  re-read (E-006) and the full suite passed: lint, build, 2,174 vitest, 1,369 bridge and 821 server tests.
+- **F-001:** the operator chose **loopback-only**, meaning the 2026-08-26 state. The operator runs the change on the
+  edge, and the audit re-reads it afterwards. EX-131 and the four documents need no edit once it holds.
+- **F-002:** a complete off-card copy exists (E-079), so the finding is now Medium.
+- Q-01, Q-02 and Q-10 remain open. None of them blocks Phase S.
 
 ## What the next phase changes (Phase S, up to GATE S)
 

@@ -1,8 +1,9 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-23, 23:40 — **RM-145: the manual's Phase A audit (read-only) found the MQTT broker
-listening on every interface with anonymous access since 2026-09-17. EX-131 no longer holds on the host (§4 #6,
-`docs/audit/findings.md` F-001), and the edge's own credentials have no off-device backup (F-002).** GATE A is with the operator.
+**Last audited:** 2026-09-24, 06:10 — **RM-145: GATE A passed. The broker is still open at 05:56 today, and the
+operator chose to restore loopback-only (§4 #6, F-001). F-002 is Medium: a complete off-card credential copy exists.**
+**Earlier, 2026-09-23, 23:40 — RM-145: the manual's Phase A audit (read-only) found the MQTT broker listening on every
+interface with anonymous access since 2026-09-17, so EX-131 no longer holds on the host (§4 #6, `docs/audit/findings.md` F-001).**
 **Earlier, 20:50 — RM-120 passed: local IR is verified on the unit, and ON states now
 go over the LAN first. RM-144: an IR send no longer drops the hub's session.** Applied by the operator
 at 21:06 and the daemons restarted at 21:07; read back at 21:10 (§2, RM-144). **Earlier, 14:10 — RM-143: the week of 14 Sept was not made — the 10:54 pass failed on a Supabase outage, and a failed pass waited six hours; now minutes.** **06:20 — RM-142: the Reports page polished — charts drawn at the page's width, one legend, the estimate as a card.** **2026-09-22, 23:10 — FI-039 and FI-041 done; a transition never waits on a frame.** **22:45 — RM-137 to RM-141 pushed, CI green, deployed: the dashboard built on the Pi and `ibems-ingest` restarted 22:53 (read back).** **22:21 — RM-141: pop-ups that fit, measured signed in at 360, 768 and 800×480 — every surface 0 px over.** **21:47 — RM-140: the PDF waits for the circuit charts; the controls stay put; changes crossfade.** **21:40 — RM-139: no circuit told apart by colour alone; the status hues stay, measured.** **21:25 — RM-138: a report not made yet is said, not silent; the week of
@@ -3773,9 +3774,11 @@ and it cites this file's IDs for feature state rather than copying it.
       and the edge was reached read-only over the mesh (`docs/audit/access-check.md`).
 - [x] **RM-145b** Phase A: the environment audit, read-only on the edge (G5). It produced 80+ evidence rows, verdicts on
       the 13 carried-over claims (seven wrong in whole or part: `docs/audit/claims-check.md`), 23 findings
-      (`docs/audit/findings.md`), 14 open questions and a system map. **Two findings are Critical.** F-001: the broker
-      listens anonymously on every interface (§4 #6). F-002: the edge's own credentials have no off-device backup.
-      **GATE A: waiting on the operator.**
+      (`docs/audit/findings.md`), 14 open questions and a system map. **GATE A passed 2026-09-24.** Before the push the
+      live facts were re-read and the full suite passed. **One finding is Critical**: F-001, the broker listening
+      anonymously on every interface (§4 #6). The operator chose loopback-only, and the change is the operator's to run
+      on the edge. F-002 (the edge's credentials) dropped to Medium: a complete off-card copy exists, stated by the
+      operator, and its restore is untested.
 - [ ] **RM-145c** Phase S: the 5S disposition table and target tree (GATE S). Legacy files outside the repo are mined
       and archived outside git, and no `project/TRACKER.md` is created (decided 2026-09-23).
 - [ ] **RM-145d** Phases B and C: the layer and plane chapters and `90-replication.md` (GATE B1 after `00-overview` and `03-edge`).

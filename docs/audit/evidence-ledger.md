@@ -22,7 +22,8 @@ It does not edit the old row.
 - **Raw output.** Each command's output was saved under `docs/audit/raw/`, which is gitignored and never committed.
   The file named in brackets is the capture that holds it. Host, user, addresses and keys are written as placeholders here.
 - **Status.** `Confirmed` means it was observed. `Hypothesis` means it was reasoned from what was observed but not seen directly.
-  `Unverified` means it could not be checked this session. `Hypothesis` is always stated as such, never as fact.
+  `Unverified` means it could not be checked this session. `Stated` means the operator said so and nothing was inspected;
+  it is cited as the operator's statement, never as an observation. `Hypothesis` is always stated as such, never as fact.
 - **Times.** All times are in the facility's local zone (UTC+08:00) unless marked UTC.
 
 ## Access and baseline
@@ -33,6 +34,7 @@ It does not edit the old row.
 | E-002 | The edge server answers on the mesh network. The path is relayed, not direct (3/3 pongs, 165–1038 ms). | Edge | `tailscale ping -c 3 $EDGE_HOST` | 2026-09-23 | Confirmed |
 | E-003 | The edge checkout is at `fcb1ff6`, one commit behind `origin/master`. That commit, `15aa65e`, changes only `ROADMAP.md`. The tree is clean and there are no local-only commits. | Edge | `git rev-parse HEAD; git status -sb; git log --oneline -5` [edge-capture §repo-head] | 2026-09-23 | Confirmed |
 | E-004 | The kiosk serves bundle `assets/index-DGcKHoNp.js`, built 2026-09-23 20:57. | Edge | `curl -s http://127.0.0.1:5183/ \| grep -o 'assets/index-[^"]*'` [edge-capture §kiosk-bundle] | 2026-09-23 | Confirmed |
+| E-006 | Re-checked at 05:56 on 2026-09-24, before office hours. The broker is still on `0.0.0.0:1883`, both config files keep their 2026-09-17 mtimes, and the SoC reads **77.9 °C** with `get_throttled=0xe0000`. The scheduler still reports `dispatch=OPEN`, all seven iBEMS-related units are active, and the edge checkout is still `fcb1ff6`. | Edge | `ss -tln`; `ls -la --time-style=long-iso /etc/mosquitto/…`; `vcgencmd measure_temp; vcgencmd get_throttled`; `systemctl is-active …; systemctl --user is-active ibems-kiosk` | 2026-09-24 | Confirmed |
 | E-005 | A long-running Claude Code session is present on the edge: two `claude` processes, one of them listening on loopback. | Edge | `pgrep -a claude; ss -tulnp` [edge-capture §claude-processes] | 2026-09-23 | Confirmed |
 
 ## Edge platform (L3)
@@ -113,6 +115,7 @@ It does not edit the old row.
 | E-073 | `npm run preflight` checks whether the **bridge** is exposed (`bridge_not_exposed`). It has no equivalent check for the broker. | Repo | `scripts/preflight.mjs` (the `bridge_not_exposed` block; no `1883` check) | 2026-09-23 | Confirmed |
 | E-074 | The ingest daemon reads the bridge directly at `BRIDGE_HTTP_URL`, which defaults to Node-RED on loopback (`http://127.0.0.1:1880/api`). The browser never does: it goes through the proxy (E-061, E-047). | Repo | `server/ingest.mjs` (the `BRIDGE_URL` constant) | 2026-09-23 | Confirmed |
 | E-075 | Prisma, Render, Modbus, BACnet, TimescaleDB, Home Assistant and "predictive" appear in **no** tracked file other than `ROADMAP.md`. `n8n` appears only in the flow-cleanup plan and its test, which record it as "trialled and set aside; it is not installed". | Repo | `git grep -ilE '<term>' -- ':!ROADMAP.md'` per term; `node-red-bridge/cleanupPlan.mjs` | 2026-09-23 | Confirmed |
+| E-079 | The operator states that a complete copy of `flows_cred.json`, the Node-RED `credentialSecret`, `server/data/device-credentials.json` and `server/.env` exists off the edge's SD card. Its location is deliberately not recorded here, and no restore from it has been performed. | Operator | GATE A answer, 2026-09-24 | 2026-09-24 | Stated |
 | E-078 | When the database cannot be reached, the audit row is written durably to a local buffer (`server/auditQueue.mjs`; paths `COMMAND_AUDIT_BUFFER_PATH` and `SCHEDULER_AUDIT_BUFFER_PATH`) and dispatch proceeds. "Recorded" means durably written locally or in the database, and hardware still never moves without a record. `/api/capabilities` reports the backlog as `audit_buffer_pending`. The dispatch policy defaults to `local-first`, with the vendor cloud as an optional fallback. | Repo | `server/auditQueue.mjs` header; `server/proxy.mjs` (`DISPATCH_POLICY`, `audit_buffer_pending`) | 2026-09-23 | Confirmed |
 | E-077 | The edge's desktop session is also used for general browsing. The non-kiosk Chromium profile in `~/.config/chromium` holds site data for general-purpose web sites and for the loopback port n8n used to serve (5678). | Edge | the `grep -rls chromium ~/.config` listing (paths only) [edge-capture-4] | 2026-09-23 | Confirmed |
 | E-076 | Anomaly detection is rolling-window statistics with no ML or training data. A z-score check and Tukey IQR fences must **agree** before a row is written (`method: both` in the sample row). | Repo + DB | `server/anomalyStats.mjs` header; `anomalies` sample [data-audit] | 2026-09-23 | Confirmed |
