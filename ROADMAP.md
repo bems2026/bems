@@ -3780,7 +3780,9 @@ and it cites this file's IDs for feature state rather than copying it.
       on the edge. F-002 (the edge's credentials) dropped to Medium: a complete off-card copy exists, stated by the
       operator, and its restore is untested.
 - [ ] **RM-145c** Phase S: the 5S disposition table and target tree (GATE S). Legacy files outside the repo are mined
-      and archived outside git, and no `project/TRACKER.md` is created (decided 2026-09-23).
+      and archived outside git, and no `project/TRACKER.md` is created (decided 2026-09-23). **S1 is drafted in
+      `docs/audit/5s-disposition.md`** (2026-09-24): 2 files to port, 6 to mine, 6 to archive, and every tracked file
+      kept in place. **GATE S: waiting on the operator.**
 - [ ] **RM-145d** Phases B and C: the layer and plane chapters and `90-replication.md` (GATE B1 after `00-overview` and `03-edge`).
 - [ ] **RM-145e** Phases D and E: the site and PDF build, docs CI, conventions, and the three-reader verification (FINAL GATE).
 

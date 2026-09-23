@@ -29,7 +29,7 @@ because this is the audit of the pilot. The manual's chapters generalise them.
 | `.github/` | 4 | CI (`ci.yml`), the PR template and two issue forms |
 
 **Frontend (E-060, E-061).** React 19.2, Vite 8, TypeScript 5.9, Tailwind 4 and zustand 5. There is no router library:
-`App.tsx` renders one page from nav state, and the pages are Overview, Analytics, Control, Devices, Automation, Reports
+the URL hash is the route (`src/lib/useHashRoute.ts`), `App.tsx` renders one page at a time, and the pages are Overview, Analytics, Control, Devices, Automation, Reports
 and Settings, behind a login page. Live data arrives over a WebSocket; history and configuration come from the database
 through its client library under row-level security. Every bridge address is resolved in `src/config/bridge.ts`.
 

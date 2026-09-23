@@ -23,6 +23,7 @@ file or row on the edge was changed** (G5). The dispatch flag was read and left 
 | [`system-map.md`](system-map.md) | The inventory: repository, processes, ports, live flow, command path and data |
 | [`legacy-docs.md`](legacy-docs.md) | Every doc-like file, in and outside the repo, and what may be carried forward |
 | [`access-check.md`](access-check.md) | What was reached, and how |
+| [`5s-disposition.md`](5s-disposition.md) | Phase S1: one row per doc-like file, its disposition, and the target tree (GATE S) |
 | `raw/` | The command output itself. **Gitignored and never committed.** |
 
 ## The short version
