@@ -3779,10 +3779,19 @@ and it cites this file's IDs for feature state rather than copying it.
       anonymously on every interface (§4 #6). The operator chose loopback-only, and the change is the operator's to run
       on the edge. F-002 (the edge's credentials) dropped to Medium: a complete off-card copy exists, stated by the
       operator, and its restore is untested.
-- [ ] **RM-145c** Phase S: the 5S disposition table and target tree (GATE S). Legacy files outside the repo are mined
-      and archived outside git, and no `project/TRACKER.md` is created (decided 2026-09-23). **S1 is drafted in
-      `docs/audit/5s-disposition.md`** (2026-09-24): 2 files to port, 6 to mine, 6 to archive, and every tracked file
-      kept in place. **GATE S: waiting on the operator.**
+- [x] **RM-145c** Phase S: the 5S cleanup. **GATE S passed 2026-09-24.** Recorded in `docs/audit/5s-disposition.md`:
+      - **S2:** 5 legacy files archived outside git. 15 chapter scaffolds, the ADR index and the diagram register created.
+        Both handbooks ported: `docs/01a-device-roles.md` and `docs/X2a-control-strategy.md`, with 29 changes, each
+        with its evidence, in `docs/audit/ported-changes.md`.
+      - **S3:** `backup-policy.md`'s stale "no restore performed" banner corrected. `pi-session-brief.md`'s stale state
+        moved verbatim to History (F-016). All 134 relative links resolve.
+      - **S4:** six templates in `docs/_templates/`.
+
+      The port found three places where the handbook disagreed with the as-built system:
+      - The "late" threshold: 2.5 × cadence, not 30 s on a 60 s poll.
+      - The aircon's hard range: 16–30 °C, not a 26 °C ceiling.
+      - A one-off setpoint below policy is sent with a recorded warning, not refused. The refusal lives at the rule, so a
+        test was added: 34 tests, not 33.
 - [ ] **RM-145d** Phases B and C: the layer and plane chapters and `90-replication.md` (GATE B1 after `00-overview` and `03-edge`).
 - [ ] **RM-145e** Phases D and E: the site and PDF build, docs CI, conventions, and the three-reader verification (FINAL GATE).
 

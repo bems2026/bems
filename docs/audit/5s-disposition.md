@@ -10,7 +10,8 @@ evidence: [E-023, E-028, E-052, E-060, E-064, E-070, E-072, E-076, E-100, E-101,
 
 # 5S disposition — Sort
 
-**Planning only. Nothing listed here has been moved or edited.** Moves happen in S2, after GATE S approves this table.
+This table was planned in S1 and approved at GATE S on 2026-09-24. What S2–S4 actually did is recorded at the end, in
+"S2–S4 record". The Port and Mine originals stay in place until the chapters that use them are written.
 
 ## Dispositions
 
@@ -139,3 +140,16 @@ rule that nothing is lost in between.
 | Planning and spec `.md` → `project/plans/` | Mined, then archived outside git | They carry funded-plan content, and the repo stays site-generic. |
 | ADRs in `adr/ADR-NNNN-*.md` | New ones there. `adr-001` and `adr-002` stay put and are indexed. | `adr-002` is referenced by 9 code files. Changing code is out of scope. |
 | Handbook "Worked example" stays in Ch.1 | Moves to `99-worked-example.md` | The prompt's own rule: site specifics live in one chapter only. |
+
+## S2–S4 record (2026-09-24)
+
+What was actually done after GATE S. Every statement here was checked when it was written.
+
+| Step | Done | Evidence or check |
+|---|---|---|
+| S2 Set in order: archive | 5 files moved with `mv` to the workspace's `archive/2026-09-legacy/`, with a README index. The workspace `archive/README.md` now points at it. | `ls archive/2026-09-legacy/` shows the 5 files and the README. Nothing was deleted. |
+| S2 Set in order: scaffold | 15 chapter scaffolds (front matter and headings, with each chapter's brief as a hidden checklist), `adr/README.md` and `diagrams/README.md` | The link check passes |
+| S2 Set in order: port | Handbook Ch.1 → `01a-device-roles.md`; Ch.2 → `X2a-control-strategy.md`. 29 changes logged in `ported-changes.md`, each with its kind and evidence. | E-110 to E-125 |
+| S3 Shine | `backup-policy.md`: the stale "no restore has been performed" banner corrected (E-124). `pi-session-brief.md`: the stale 2026-09-03 state moved verbatim to a History section, replaced by a pointer to where current state lives, with the standing-facts rows dated and the Broker row flagged as untrue pending F-001 (F-016, F-005). `docs/README.md` rewritten as the manual's front page. The Reference table is kept, and its stale restore line corrected. | `npm run test:bridge`: 1,369 pass, 0 fail, after the brief edit (a test parses it). The moved section was diffed against the original: verbatim. |
+| S3 Shine: links | Every relative link and anchor in `docs/` and the root docs resolves: 134 links in 52 files, 0 broken. One heading was renamed so its anchor is the same on GitHub and in the site build. | The checker failed correctly on a deliberately broken file (positive control) before the clean run was believed. |
+| S4 Standardise | `_templates/`: `chapter-spine.md`, `procedure.md`, `fault-entry.md`, `device-role-card.md`, `adr.md`, `field-issue.md`. File names follow §7. Every manual page carries front matter. | — |

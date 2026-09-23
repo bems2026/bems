@@ -3,11 +3,17 @@
 Answers ROADMAP **RM-006d**, the half of RM-006 the Phase 9 retention work did not cover, and
 ROADMAP §5 question 4 ("Is there a backup of the Supabase project?").
 
-> **Status: documented, not yet verified.** The acceptance criterion is *"a documented,
-> verified backup, and a restore that has actually been tried."* The procedure below is
-> written and the export tool is tested, but **no restore has been performed**. Until one has,
-> RM-006d stays open. A backup nobody has restored is a belief, not a backup — recording that
-> honestly is the point of this paragraph.
+> **Status: a restore has been performed; one half of the check was deliberately not exercised.**
+> The acceptance criterion is *"a documented, verified backup, and a restore that has actually been
+> tried."* On 2026-09-22 `npm run restore:rehearse` took that day's export (19 tables, 12,960 rows)
+> into a throwaway PostgreSQL 16 with every migration applied. Every table's count matched the
+> manifest, and every row read back equal to what was exported. **Not exercised:** a scratch
+> Supabase project with a frontend rendering the restored history (steps 2, 6 and 7 below), which is
+> recorded as a decision in `ROADMAP.md` §0. This database backup does **not** cover the edge
+> server's own credentials; see "Secrets are not exported" below.
+>
+> *Corrected 2026-09-24. This banner still said "no restore has been performed" after the rehearsal
+> ran (ROADMAP RM-006d).*
 
 ---
 

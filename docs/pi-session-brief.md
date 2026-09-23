@@ -79,50 +79,27 @@ Decided by the operator, 2026-08-25.
 
 ---
 
-## State as of 2026-09-03 — the fleet is down, and it is the access point
+## Current state
 
-**4 of 20 devices online: the four logical meters, and nothing else.** All seven outlets, all
-seven light switches, both quiesced IR/sensor devices are offline. A 30 s passive listen on the
-Tuya discovery ports hears **3 broadcasters** — the three physical meters — so `find()` has
-nothing to find for the other fourteen.
-
-This followed the RM-020 power cycle. **Do not repeat the reflex fixes; both have been tried and
-measured:**
-
-- **A Node-RED restart does not help.** Tried 11:14 and again 12:24 on 2026-09-03; zero device
-  connections followed. This is the RM-021 case — `find()` can only locate a device that
-  broadcasts — not the `l6` case where a restart fixes it in two seconds.
-- **It is not the bridge.** The vendor cloud, which reaches these devices over the internet
-  rather than our subnet, saw **five of them change state between two `tuya:devices` runs minutes
-  apart**. Nothing in this repository can make a device flap to Tuya. Earlier the same boot all
-  fourteen connected and dropped repeatedly — CO4 fifty times, 187 disconnects, 12,386 log lines
-  in 3.6 h.
-- **The AP renumbered its LAN onto a different private /24 across the power cycle**, with the Pi
-  keeping its host number. Its firmware dates from 2020-09-27. That is the lead — see **RM-046**,
-  which carries the full sequence for the site visit.
-
-The Pi itself is healthy: NetworkManager logged zero disconnects, signal 86 on the correct
-2.4 GHz SSID, no competing AP visible. `npm run local-probe:pi` confirms `findTimeout: 10000` and
-every `tuyaVersion` still correct on all 19 nodes.
-
-**Consequence for anyone verifying control:** every commandable device is a `switch`, an
-`outlet_dual` or the `acu_ir`, and all of them are locally unreachable. Meters are in
-`NOT_COMMANDABLE_CLASSES`. **So the local-dispatch proof cannot be re-run until the fleet is
-back** — a command issued now would take the `local-first` cloud fallback and would prove nothing
-about the LAN path. Do not record a cloud dispatch as evidence that local control works.
+**Not kept in this file.** A state paragraph written here goes stale within days: the one that
+opened this brief from 2026-09-03 to 2026-09-24 described a fleet that had long since recovered.
+For the current state, read `ROADMAP.md` §0, and on the Pi run `npm run preflight` and the
+first-moves checks below. Superseded states are kept under [History](#history-superseded-states)
+at the end.
 
 ---
 
-## State as of 2026-08-26, with the evidence
+## Standing facts, with the evidence
 
-Do not trust this section past its date — re-run the first-moves checks. It is here so you know
+Rows were last touched on different dates, and the date is in the row wherever it matters.
+**Do not trust any row past its date — re-run the first-moves checks.** It is here so you know
 what *was* true and what has already been ruled out.
 
 | | |
 |---|---|
-| Fleet | **15/21 online.** `co1`–`co3`, `co7`, all seven lights, all four meters. |
-| `co4`–`co6` | **All three need power cycling.** `co4` and `co6` are absent from the segment (no ARP entry). `co5` *is* on the segment and answers ARP — the static-`deviceIp` remedy was actually tried on it 2026-08-26 and it refused every TCP connection, so **ARP is not reachability** and it needs power too. **Re-run `npm run tuya:macs` immediately before the trip:** the split moved twice inside one hour on 2026-08-26. |
-| Broker | **Mosquitto is loopback-only since 2026-08-26** (`127.0.0.1` and `::1`), anonymous, and the websockets listener is retired. It previously listened on every interface with `allow_anonymous true` on the device segment. **This config lives only in `/etc/mosquitto/` — nothing in the repo declares it**, same exposure shape as `findTimeout`: a rebuild or package upgrade restores the permissive default silently. Timestamped `.bak` files sit beside both config files. Node-RED (the only client, on `localhost`) is unaffected; **anything off-host now gets `Connection refused`**, which is what RM-005's ESP32 would hit and what forces RM-026's bridge to use host networking. |
+| Fleet | *As of 2026-08-26:* **15/21 online.** `co1`–`co3`, `co7`, all seven lights, all four meters. |
+| `co4`–`co6` | *As of 2026-08-26:* **All three need power cycling.** `co4` and `co6` are absent from the segment (no ARP entry). `co5` *is* on the segment and answers ARP — the static-`deviceIp` remedy was actually tried on it 2026-08-26 and it refused every TCP connection, so **ARP is not reachability** and it needs power too. **Re-run `npm run tuya:macs` immediately before the trip:** the split moved twice inside one hour on 2026-08-26. |
+| Broker | **⚠ 2026-09-24: not true on the host.** Since 2026-09-17 the loopback listeners have been commented out and `conf.d/bems.conf` listens on `0.0.0.0` anonymously. The operator chose to restore loopback-only, and the command is with them (ROADMAP §4 #6, `docs/audit/findings.md` F-001). Run the broker check under "The commands that matter" before relying on this row. The intended state follows: **Mosquitto is loopback-only since 2026-08-26** (`127.0.0.1` and `::1`), anonymous, and the websockets listener is retired. It previously listened on every interface with `allow_anonymous true` on the device segment. **This config lives only in `/etc/mosquitto/` — nothing in the repo declares it**, same exposure shape as `findTimeout`: a rebuild or package upgrade restores the permissive default silently. Timestamped `.bak` files sit beside both config files. Node-RED (the only client, on `localhost`) is unaffected; **anything off-host now gets `Connection refused`**, which is what RM-005's ESP32 would hit and what forces RM-026's bridge to use host networking. |
 | `l6` | Recovered. Was written up as an RF/hardware fault; a Node-RED restart reconnected it in two seconds and the operator then toggled the real fixture. Only its one-hour stability window is unproven (RM-012). |
 | IR Blaster | **Re-paired 2026-09-17** as a Lasco "Smart IR" hub (v3.3), live since RM-116, on a reserved address. Its captured codes are TCL112AC and the flow generates every other state (RM-128); **verified on the unit 2026-09-22/23 (RM-120)**, so ON states go over the LAN first. An IR send never gets an echo: the set carries `shouldWaitForResponse: false` (RM-144) — a `Timeout waiting for status response` after every send means that fix is not on the live flow. The virtual cloud remote "Air" is only a fallback now. See ROADMAP RM-114 – RM-121, RM-128, RM-144. |
 | Outside Temp | Never installed. **Quiesced** and left as-is; `aircon:pi` asserts its node and parser stay byte-identical. Reports `online: false`, and since RM-114 cannot borrow the IR hub's readings. **Never `quiesce:pi --undo` without `--name`** — the default names both nodes. |
@@ -392,3 +369,42 @@ waiting-on-a-decision, and the build order. Every item expands under its own id 
 
 `docs/adr-002-device-recovery-path.md` explains why cloud dispatch exists and, importantly, what
 it cannot fix — which is exactly the state `co1`–`co6` are in.
+
+---
+
+## History: superseded states
+
+Kept so the reasoning trail survives. **Nothing here describes the system now.** Moved from the top
+of this brief on 2026-09-24 (RM-145, `docs/audit/findings.md` F-016).
+
+### State as of 2026-09-03 — the fleet is down, and it is the access point
+
+**4 of 20 devices online: the four logical meters, and nothing else.** All seven outlets, all
+seven light switches, both quiesced IR/sensor devices are offline. A 30 s passive listen on the
+Tuya discovery ports hears **3 broadcasters** — the three physical meters — so `find()` has
+nothing to find for the other fourteen.
+
+This followed the RM-020 power cycle. **Do not repeat the reflex fixes; both have been tried and
+measured:**
+
+- **A Node-RED restart does not help.** Tried 11:14 and again 12:24 on 2026-09-03; zero device
+  connections followed. This is the RM-021 case — `find()` can only locate a device that
+  broadcasts — not the `l6` case where a restart fixes it in two seconds.
+- **It is not the bridge.** The vendor cloud, which reaches these devices over the internet
+  rather than our subnet, saw **five of them change state between two `tuya:devices` runs minutes
+  apart**. Nothing in this repository can make a device flap to Tuya. Earlier the same boot all
+  fourteen connected and dropped repeatedly — CO4 fifty times, 187 disconnects, 12,386 log lines
+  in 3.6 h.
+- **The AP renumbered its LAN onto a different private /24 across the power cycle**, with the Pi
+  keeping its host number. Its firmware dates from 2020-09-27. That is the lead — see **RM-046**,
+  which carries the full sequence for the site visit.
+
+The Pi itself is healthy: NetworkManager logged zero disconnects, signal 86 on the correct
+2.4 GHz SSID, no competing AP visible. `npm run local-probe:pi` confirms `findTimeout: 10000` and
+every `tuyaVersion` still correct on all 19 nodes.
+
+**Consequence for anyone verifying control:** every commandable device is a `switch`, an
+`outlet_dual` or the `acu_ir`, and all of them are locally unreachable. Meters are in
+`NOT_COMMANDABLE_CLASSES`. **So the local-dispatch proof cannot be re-run until the fleet is
+back** — a command issued now would take the `local-first` cloud fallback and would prove nothing
+about the LAN path. Do not record a cloud dispatch as evidence that local control works.
