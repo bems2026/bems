@@ -1,0 +1,32 @@
+flowchart BT
+  subgraph L1 ["L1 · Field devices"]
+    dev["Meters · Switches · Metered switches<br/>Commander (IR) · Sensors"]
+  end
+  subgraph L2 ["L2 · Network — a dedicated 2.4 GHz segment, an uplink, a mesh network"]
+    net[/"device Wi-Fi · LAN · mesh VPN"/]
+  end
+  subgraph L3 ["L3 · Edge computing — one single-board computer on site"]
+    nr["Node-RED<br/>generated bridge + device tabs"]
+    proxy["Proxy<br/>the only authenticated door"]
+    ingest["Ingest daemon"]
+    sched["Scheduler daemon"]
+  end
+  subgraph L4 ["L4 · Data aggregation and storage — hosted, off site"]
+    db[("Postgres + Auth<br/>23 tables, RLS")]
+    sheets[("Spreadsheet mirror<br/>optional")]
+  end
+  subgraph L5 ["L5 · User interface"]
+    browser["Web app (React, Vite)<br/>in a browser, or the kiosk"]
+  end
+
+  dev ~~~ net ~~~ nr
+  dev <-->|"Tuya LAN protocol v3.3–3.5: local key, TCP 6668; discovery broadcasts on UDP 6667"| nr
+  nr -->|"HTTP on loopback: GET /api/readings/latest every 60 s"| ingest
+  ingest -->|"HTTPS REST, service-role key: readings, totals, health"| db
+  nr -->|"append rows every 180 s"| sheets
+  nr <-->|"HTTP on loopback, after the proxy verifies the session"| proxy
+  proxy <-->|"HTTPS/WS with a session token: /api, /ws/live"| browser
+  db <-->|"HTTPS with the public key under RLS: history, schedules, settings"| browser
+  sched -->|"reads schedules, limits, rules"| db
+  sched -->|"audited commands"| nr
+  proxy -->|"audit row before dispatch"| db

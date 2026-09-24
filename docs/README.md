@@ -41,11 +41,11 @@ The status column means:
 
 | Chapter | Covers | Status |
 |---|---|---|
-| [00 Overview](00-overview.md) | What iBEMS is, its principles, the architecture, feature status | Scaffold |
+| [00 Overview](00-overview.md) | What iBEMS is, its principles, the architecture, feature status | Draft |
 | [01 Field devices](01-field-devices.md) | L1: selection, panel work, pairing, calibration, faults | Scaffold |
 | [01a Device roles and catalogue](01a-device-roles.md) | The six roles, twelve device types, installing, states, troubleshooting (ported Handbook Ch.1) | Draft |
 | [02 Network](02-network.md) | L2: the device network, uplink, remote access | Scaffold |
-| [03 Edge](03-edge.md) | L3: the edge server, from blank card to running | Scaffold |
+| [03 Edge](03-edge.md) | L3: the edge server, from blank card to running | Draft |
 | [04 Data](04-data.md) | L4: schema, ingestion, retention, sizing, queries | Scaffold |
 | [05 Interface](05-interface.md) | L5: the web app and kiosk; user and administration guides | Scaffold |
 | [X1 Security](X1-security.md) | Credentials, boundaries, accounts, threats | Scaffold |

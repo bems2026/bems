@@ -19,9 +19,12 @@ chapters and are not repeated here.
 
 | # | Figure | Source | Used in | Status |
 |---|---|---|---|---|
-| 1 | Whole system: five layers, with the three planes as vertical bands | `layers.mmd` | `00-overview.md` | Drawn with 00 |
-| 2 | Data path, device to screen: one reading's journey, with the transform and units at each hop | `data-path.mmd` | `00-overview.md`, `04-data.md` | Drawn with 00 |
-| 3 | Command path, screen to device: audit write before dispatch, the interlock, where acknowledgement does and does not exist | `command-path.mmd` | `00-overview.md`, `X2-control-logic.md` | Drawn with 00 |
-| 4 | Failure-mode overlay: what breaks at each hop, and what the user sees | `failure-modes.mmd` | `03-edge.md`, `91-troubleshooting-index.md` | Drawn with 03 |
+| 1 | Whole system: five layers, with the real messages between them. The three planes are the table beneath it in 00. | `layers.mmd` | `00-overview.md` (Figure 1) | Drawn 2026-09-24 |
+| 2 | Data path, device to screen: one reading's journey, with the transform and units at each hop | `data-path.mmd` | `00-overview.md` (Figure 3); later `04-data.md` | Drawn 2026-09-24 |
+| 3 | Command path, screen to device: audit write before dispatch, the interlock, where acknowledgement does and does not exist | `command-path.mmd` | `00-overview.md` (Figure 4); later `X2-control-logic.md` | Drawn 2026-09-24 |
+| 4 | Failure-mode overlay: what breaks at each hop, and what the user sees | `failure-modes.mmd` | `03-edge.md` § How it fails; later `91-troubleshooting-index.md` | Drawn 2026-09-24 |
 | 5 | Network topology, generalised with no real addresses | `network.mmd` | `02-network.md` | Not yet drawn |
-| 6 | Deployment: what runs where, and which process supervises which | `deployment.mmd` | `00-overview.md`, `03-edge.md` | Drawn with 00 |
+| 6 | Deployment: what runs where, and which process supervises which | `deployment.mmd` | `00-overview.md` (Figure 2) | Drawn 2026-09-24 |
+
+**Each chapter embeds the figure inline** so that it renders on GitHub as well as in the site build. The `.mmd` file is
+the source. Phase D adds a check that each inline copy is identical to its source.

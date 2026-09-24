@@ -1,0 +1,42 @@
+flowchart LR
+  subgraph site ["On site"]
+    subgraph edge ["Edge server — one single-board computer (L3 + L4 ingestion + L5 serving)"]
+      subgraph sysd ["systemd (system)"]
+        nr["nodered.service<br/>Node-RED · loopback:1880"]
+        proxy["ibems-proxy.service<br/>:8080"]
+        ingest["ibems-ingest.service<br/>+ retention, reports"]
+        sched["ibems-scheduler.service"]
+        dash["ibems-dashboard.service<br/>static files · :5183"]
+        mq["mosquitto.service<br/>(optional; no device client)"]
+        tmr["timers: lan-map 10 min ·<br/>fleet-recover 5 min · wifi-prefer 5 min"]
+      end
+      subgraph usr ["systemd --user (graphical session)"]
+        kiosk["ibems-kiosk.service<br/>Chromium --kiosk"]
+      end
+      files[("server/.env · server/data/<br/>~/.node-red (flows, creds, context)")]
+    end
+    devs["Field devices<br/>dedicated 2.4 GHz segment"]
+    screen["Wall display"]
+  end
+  subgraph off ["Off site"]
+    db[("Hosted Postgres + Auth")]
+    cloud["Vendor cloud<br/>(optional fallback)"]
+    push["Push notifications"]
+  end
+  remote["Remote user<br/>via mesh network (tailnet-only HTTPS)"]
+
+  tmr -. "restarts Node-RED when devices are reachable but not connected" .-> nr
+  proxy --> nr
+  ingest --> nr
+  sched --> nr
+  kiosk --> dash
+  kiosk --> proxy
+  kiosk --- screen
+  nr <--> devs
+  ingest --> db
+  sched --> db
+  proxy --> db
+  proxy -. fallback .-> cloud
+  ingest -. "fleet alarm, edge-triggered" .-> push
+  remote --> dash
+  remote --> proxy

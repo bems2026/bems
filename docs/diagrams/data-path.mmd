@@ -1,0 +1,25 @@
+sequenceDiagram
+  autonumber
+  participant D as Device<br/>(CT meter)
+  participant T as Node-RED<br/>device tab
+  participant B as Node-RED<br/>bridge tab
+  participant I as Ingest daemon
+  participant P as Postgres
+  participant X as Proxy
+  participant W as Browser
+  Note over D,T: Raw datapoints are integers, e.g. cur_power 8159, cur_voltage 2270, cur_current 7692
+  D->>T: dp report on change, or the reply to a 60 s GET poll (Tuya LAN, TCP 6668)
+  Note over T: Parser: value ÷ 10^scale from the capability catalogue → 815.9 W · 227.0 V · 7.692 A.<br/>Stored in the tab's flow context with its arrival time.
+  B->>T: collector link-call (flow context is per tab)
+  T-->>B: parsed state + arrival time
+  Note over B: buildLatest: one reading per device {power_w, voltage, current, online, ts, stale_after_ms}.<br/>online=false after 600 s with no new arrival.
+  I->>B: GET /api/readings/latest (loopback, every 60 s)
+  B-->>I: JSON readings + building totals
+  Note over I: shapeRows + scrub: a non-finite or out-of-bounds value is stored as NULL and counted.<br/>Only a row with an unusable timestamp is dropped.
+  I->>P: INSERT readings, building_totals (HTTPS REST, service-role key, ts in UTC)
+  Note over I,P: If Postgres is unreachable: rows go to a local buffer and flush on reconnect
+  B-->>X: WS /ws/live push every 2 s (loopback)
+  X-->>W: live frame (session-verified)
+  W->>P: history via database functions (public key, RLS)
+  P-->>W: per-minute rows ≤ 30 days old, hourly buckets beyond
+  Note over W: Shown in the SITE's time zone. A late reading is dimmed after its stale budget,<br/>a dash after 300 s, and a silent device is excluded from totals, never zeroed.

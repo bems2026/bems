@@ -1,0 +1,24 @@
+flowchart LR
+  dev["Field device"] --> wifi["Device Wi-Fi"] --> nr["Node-RED"] --> ing["Ingest"] --> db[("Postgres")]
+  nr --> px["Proxy"] --> ui["Browser / kiosk"]
+  db --> ui
+
+  f1["Device off, or off the network<br/>→ reading dimmed after its budget, a dash at 300 s,<br/>offline and out of totals at 600 s. Commands fail or use the cloud fallback."]
+  f2["Device node gave up (reachable, not connected)<br/>→ looks identical to f1. The recovery timer restarts Node-RED<br/>after two checks, at most once an hour, never within 10 min of boot."]
+  f3["Nothing polls the device<br/>→ its last pushed value is shown indefinitely.<br/>Every node is polled every 60 s; preflight fails flow_polls if not."]
+  f4["Edge on the wrong Wi-Fi (e.g. a 5 GHz office SSID)<br/>→ internet and remote access work, every device reads offline.<br/>The Wi-Fi preference timer moves it back within 5 min."]
+  f5["Node-RED down<br/>→ the proxy's upstream calls fail; ingest writes nothing,<br/>so the record shows a gap (absent rows), never zeros."]
+  f6["Ingest down<br/>→ live view still works through the proxy;<br/>history stops, and ingestion_health stops advancing."]
+  f7["Database unreachable<br/>→ ingest buffers rows and flushes on reconnect; commands are recorded<br/>in the local audit buffer and still dispatch; a 4xx still refuses."]
+  f8["Edge loses power<br/>→ risk of an unclean shutdown; no RTC, so the clock waits for network time;<br/>rows stamped >5 min ahead or >7 days behind are rejected at ingest."]
+  f9["Edge overheats<br/>→ throttling slows polls and ingest; vcgencmd get_throttled shows it."]
+
+  f1 -.- dev
+  f2 -.- nr
+  f3 -.- nr
+  f4 -.- wifi
+  f5 -.- nr
+  f6 -.- ing
+  f7 -.- db
+  f8 -.- nr
+  f9 -.- nr

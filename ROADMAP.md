@@ -3792,7 +3792,15 @@ and it cites this file's IDs for feature state rather than copying it.
       - The aircon's hard range: 16–30 °C, not a 26 °C ceiling.
       - A one-off setpoint below policy is sent with a recorded warning, not refused. The refusal lives at the rule, so a
         test was added: 34 tests, not 33.
-- [ ] **RM-145d** Phases B and C: the layer and plane chapters and `90-replication.md` (GATE B1 after `00-overview` and `03-edge`).
+- [ ] **RM-145d** Phases B and C: the layer and plane chapters and `90-replication.md`.
+      **B1 is drafted, 2026-09-24:** `docs/00-overview.md` and `docs/03-edge.md`, with five of the six figures in
+      `docs/diagrams/*.mmd`, embedded verbatim, and all 23 Mermaid blocks in the manual parsed and rendered under
+      Mermaid 11. The ledger reaches E-144. Writing them found:
+      - the persistent-journal drop-in exists on the edge but not in the repo (F-010);
+      - `preflight` does not check `adminAuth` or `credentialSecret`;
+      - the installer has never run end to end on a real machine (its own header says so).
+
+      **GATE B1: waiting on the operator.**
 - [ ] **RM-145e** Phases D and E: the site and PDF build, docs CI, conventions, and the three-reader verification (FINAL GATE).
 
 ### The Reports page, from the operator's brief — RM-137 onward (2026-09-22)

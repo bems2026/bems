@@ -1,0 +1,31 @@
+sequenceDiagram
+  autonumber
+  actor O as Operator
+  participant W as Browser
+  participant X as Proxy
+  participant A as auditedDispatch
+  participant P as Postgres<br/>(or local buffer)
+  participant N as Node-RED<br/>http-in
+  participant D as Device
+  O->>W: press a control (absolute state: on / off / setpoint, never "toggle")
+  W->>X: POST /api/command + session token
+  Note over X: Verify the session: against Auth, or the cached signing key when offline.<br/>Break-glass sessions are view-only and refused here.
+  Note over X: Validate: class is controllable · value inside the hardware range (else REFUSE) ·<br/>below site policy → accept, with a warning written into the note
+  X->>A: device, command, attribution
+  A->>P: INSERT commands row: status dry_run (gate closed) or dispatching (gate open)
+  alt the row cannot be written, and Postgres answered 4xx
+    P-->>A: refusal (an answer)
+    A-->>X: refused, nothing moves
+  else transport failure
+    A->>P: row written to the local audit buffer instead (uploaded later)
+  end
+  Note over A: INTERLOCK: HARDWARE_DISPATCH_ENABLED and the device class in DISPATCH_CLASSES
+  A->>N: POST /light/:id · /outlet/:target · /acu · /capability/:id (LIGHT_API_TOKEN)
+  N->>D: set dp (Tuya LAN). For IR: send the frame, with no echo expected
+  N-->>A: HTTP 2xx: the flow accepted it. This is NOT the device confirming.
+  opt local dispatch failed and a vendor fallback is configured
+    A->>D: vendor cloud dispatch
+  end
+  A->>P: UPDATE status dispatched / failed, via = local · cloud · none
+  X-->>W: 202 Accepted, confirmed: false
+  Note over W,D: Verification: the browser reconciles the pending command against the next readings.<br/>No new state → "The device did not report the new state." IR units never report, so the room sensor is the proof.
