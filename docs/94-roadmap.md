@@ -18,6 +18,7 @@ row below gives its ID there. Where an item has no ID, it says so: it is mention
 committed to it.
 
 **Status labels:**
+
 - **Planned**: tracked in ROADMAP and wanted, with nothing blocking but the work.
 - **Blocked**: waiting on something named.
 - **Untracked**: mentioned by the manual; no ROADMAP item exists.

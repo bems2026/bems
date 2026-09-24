@@ -3886,6 +3886,20 @@ and it cites this file's IDs for feature state rather than copying it.
       across the manual. RM-006c looks done: auto-shed was armed on 2026-09-23 (E-087). It is left open for the
       operator to reconcile.
 - [ ] **RM-145e** Phases D and E: the site and PDF build, docs CI, conventions, and the three-reader verification (FINAL GATE).
+      **Phase D is built, 2026-09-24:**
+      - `mkdocs.yml` builds the manual with `mkdocs build --strict` (Material, Mermaid, pinned in `docs/requirements.txt`).
+        A hook, `scripts/mkdocs_links.py`, sends links that leave the site to the repository. The PDF is the print page,
+        printed headless: 271 pages, all 26 figures drawn.
+      - `scripts/docs-scan.mjs` finds identifiers and secrets without printing them, and warns on pages unverified for
+        90 days. `scripts/docs-check.mjs` checks figures, evidence IDs, links and anchors (on GitHub and in the site
+        alike) and the generated troubleshooting index. `scripts/docs-troubleshooting.mjs` generates that index.
+        Tests were written first: `test/docs-scan.test.mjs` (12) and `test/docs-check.test.mjs` (9); a neutered check
+        fails them.
+      - `.github/workflows/docs.yml` runs the scan, the check, markdown lint and the strict build. A deliberately broken
+        link and anchor failed both the check and the build locally.
+      - The PR template gains a docs checkbox, and `CLAUDE.md` a "Documentation conventions" section.
+      - Linting found **58 lists the site rendered as run-on paragraphs** (no blank line before them; GitHub renders
+        them, Python-Markdown does not). All are fixed, and 246 front-matter evidence lists were completed.
 
 ### The Reports page, from the operator's brief — RM-137 onward (2026-09-22)
 

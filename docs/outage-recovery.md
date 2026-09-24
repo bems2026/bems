@@ -42,7 +42,7 @@ channel; that restarts their announcements, which is why it "worked".
 A node with a static address connects directly; the broadcast stops mattering. The map supplies
 the addresses without the vendor cloud:
 
-```
+```bash
 npm run set-device-ip:pi -- --host=127.0.0.1 --from-lan-map           # dry run — what it would set
 cp ~/.node-red/flows.json ~/.node-red/flows.json.bak-ips-$(date +%F-%H%M%S)
 npm run set-device-ip:pi -- --host=127.0.0.1 --from-lan-map --apply
@@ -57,7 +57,7 @@ run and needs no announcement at all.
 
 **2. Reserve those addresses on the access point**, so the next outage does not renumber them:
 
-```
+```bash
 npm run set-device-ip:pi -- --host=127.0.0.1 --reservations
 ```
 

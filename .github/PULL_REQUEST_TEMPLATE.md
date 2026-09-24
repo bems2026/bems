@@ -17,6 +17,7 @@
 
 ## Checklist
 
+- [ ] **Docs updated**, or not needed because … *(say why)*. The manual in `docs/` describes the system as built. A change it no longer matches needs its page changed, with `last_verified` updated and any new claim given an evidence ID. See `CLAUDE.md`, "Documentation conventions".
 - [ ] **`ROADMAP.md` updated in this change** — ticked items moved to §1 with their evidence path, new items added, entries for deleted code removed. Non-negotiable for a feature, a significant fix, an architecture change, or a deletion.
 - [ ] No token, key, password, hostname, IP address, or project identifier anywhere in the diff or the commit messages. **This repository is public.**
 - [ ] `bridge-flow.json` was not hand-edited. If `shared/` changed, `npm run build:flow` was re-run.

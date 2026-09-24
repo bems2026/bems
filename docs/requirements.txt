@@ -1,0 +1,8 @@
+# The manual's site and PDF build. Pinned so the published manual does not change under a
+# dependency upgrade. Install into a virtual environment at the repository root:
+#   python -m venv .venv && .venv/bin/pip install -r docs/requirements.txt
+mkdocs==1.6.1
+mkdocs-material==9.7.7
+mkdocs-print-site-plugin==2.9
+pymdown-extensions==12.1
+Markdown==3.10.3

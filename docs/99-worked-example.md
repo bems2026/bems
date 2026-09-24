@@ -96,6 +96,7 @@ Faults and chores specific to this site, tracked in [`ROADMAP.md`](../ROADMAP.md
 | RM-121 | The vendor cloud's subscription, which expired on 2026-09-17. The cloud is optional since then. |
 
 And from the audit, for this site's operator:
+
 - **Restore the broker to loopback** (F-001).
 - **Review the account list** (Q-17), now that sign-up is off (F-026).
 - Narrow the mesh network's SSH policy (F-025), and turn VNC off or bind it to loopback (F-007).

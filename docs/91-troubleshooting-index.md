@@ -14,6 +14,7 @@ Start here when something is wrong and you do not know which part of the system 
 symptom from one chapter's fault table. The chapter holds the rest.
 
 Three rules save the most time, in this order:
+
 1. **Restart the controller software before suspecting hardware.** A device connection that has given up looks
    exactly like dead hardware ([01a § 7](01a-device-roles.md#7-troubleshooting)).
 2. **Check the network by the neighbour table (ARP), not by ping.** A host that ignores ping can still be on the
@@ -25,7 +26,7 @@ For a power cut, go straight to [`outage-recovery.md`](outage-recovery.md).
 
 ## By symptom
 
-<!-- GENERATED from each chapter's fault table. Edit the chapter, then regenerate; never edit rows here. -->
+<!-- GENERATED from each chapter's fault table by scripts/docs-troubleshooting.mjs. Edit the chapter, then regenerate; never edit rows here. -->
 
 74 symptoms from 10 chapters. Find what you see, then follow the link: the chapter's row holds
 the likely cause, the check that tells the causes apart, the fix, and how to confirm it held.

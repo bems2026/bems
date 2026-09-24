@@ -69,6 +69,7 @@ loop acts on its own, and the order emerges from what each one does:
 | 7 · Default state | Whatever the relay last held. On power loss, the device's own power-on setting decides ([01](01-field-devices.md)). | Device-defined |
 
 Until F-031 is decided, operators should know the two conflicts:
+
 - **Fighting auto-shed from the Control page does not work** while the building is over its limit. Lower the load
   elsewhere, or raise the limit.
 - **A schedule can restore a shed load at its `on` minute**, after which auto-shed may shed it again within 15 s.
@@ -87,6 +88,7 @@ A `schedules` row [E-195]:
 | `created_at`, `updated_at` | Order and audit |
 
 Rules that shape firing:
+
 - Several rows may stack on one relay; exact duplicates are refused.
 - In one minute, **off wins** over on, within a row and across rows.
 - A `days` value that is missing or malformed matches no day, so an unfinished rule never fires.
@@ -116,7 +118,7 @@ it at start, and both refuse to start with it on but no `LIGHT_API_TOKEN` [E-199
 **On the pilot it is on** [E-041]. This manual records the setting and never changes or recommends changing it (G7).
 Changing it is the site's decision, and the form below records that decision.
 
-**Dispatch interlock record**
+#### The dispatch interlock record
 
 | Field | Entry |
 |---|---|

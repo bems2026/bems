@@ -32,6 +32,7 @@ files, and moving it would change code, which this documentation work does not d
 ## How these were dated and checked
 
 Each record was written after the audit and checked against its evidence rows. Two rules follow from that:
+
 - **The date is the decision's, not the writing's.** Where the system was built that way from its first commit, the
   record says so and gives the commit's date [E-203]. Where the decision was only written down later, the record
   gives both dates. The legacy architecture document dates the rejection of the MQTT and Home Assistant design to

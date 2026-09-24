@@ -25,7 +25,7 @@ one, and one Pi per building is the tested arrangement.
 
 Everything that varies between buildings lives in **one directory**:
 
-```
+```text
 shared/sites/<slug>/
   site.mjs      identity, timezone, policy, which 3D pack (if any)
   devices.mjs   the hardware on this building's walls
@@ -78,8 +78,9 @@ site has needed it yet.
 Two ways, and they are not equivalent:
 
 - **The Devices page's "Add device" wizard** is the normal path. It writes
-  `shared/registry.enrolled.mjs` and needs the Tuya cloud credentials for the account the devices
-  are paired to.
+  `shared/registry.enrolled.mjs`. Since 2026-09-17 it needs no vendor-cloud credentials: the keys
+  can come from a key tool's export (*Add device → Import keys*), and the proxy hears new devices
+  on the LAN.
 - **By hand in `devices.mjs`**, for hardware that must exist before the app can usefully run.
 
 Each device carries what every other layer reads off it — an outlet its socket keys, a switch its
@@ -152,7 +153,7 @@ default pointing at another building. Do not skip either file: skipping `phase20
 
 ## 9. Build the space tree *(not executed for a new site)*
 
-In the app: **Devices → Spaces**. Add the building, its floors and its rooms, then place each
+In the app: **Settings → Spaces** (it was on the Devices page when this was written). Add the building, its floors and its rooms, then place each
 device into one. Nothing below is available until this exists, and all of it arrives at once:
 
 - per-space energy totals (Analytics → *By space*);

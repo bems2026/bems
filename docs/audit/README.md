@@ -5,7 +5,7 @@ audience: [administrator, integrator]
 status: Draft
 last_verified: 2026-09-23
 applies_to: repo 2f4c570 · edge checkout fcb1ff6
-evidence: [E-003, E-023, E-028, E-041, E-045, E-052, E-060, E-064, E-065, E-071, E-084, E-089]
+evidence: [E-003, E-006, E-010, E-021, E-023, E-026, E-028, E-041, E-045, E-052, E-058, E-060, E-064, E-065, E-066, E-070, E-071, E-078, E-079, E-084, E-089, E-125]
 ---
 
 # Environment audit — summary

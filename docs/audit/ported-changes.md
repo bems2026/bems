@@ -5,7 +5,7 @@ audience: [integrator]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo afa5aaf
-evidence: [E-022, E-040, E-051, E-056, E-065, E-076, E-110, E-111, E-112, E-113, E-114, E-115, E-116, E-117, E-118, E-119, E-120, E-121, E-122, E-123]
+evidence: [E-022, E-040, E-051, E-056, E-065, E-076, E-110, E-111, E-112, E-113, E-114, E-115, E-116, E-117, E-118, E-119, E-120, E-121, E-122, E-123, E-125]
 ---
 
 # Ported changes
@@ -14,6 +14,7 @@ The two handbook chapters are **authoritative on content**. The rule for porting
 their structure and content, and change content only where the audit proves it wrong. Each row below is one change.
 
 **Kinds of change:**
+
 - **Audit:** the audit proved the original wrong, or incomplete about iBEMS as built.
 - **Format:** a manual-wide requirement (R2, R3, R8, R9), or the move from HTML to Markdown.
 - **Scope:** a disposition decision.

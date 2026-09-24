@@ -1,0 +1,54 @@
+# The manual (docs/): identifiers, drift, Markdown and the site build.
+#
+# Separate from ci.yml so a documentation change reads as one, and so a docs failure does not
+# hide behind a test failure or the other way round. Every step here runs locally with the same
+# command: see CLAUDE.md, "Documentation conventions".
+name: Docs
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    name: manual
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # No real address, key, token, mesh name or database host in any page (G1, G2). It names
+      # the file and line, never the value, and warns on pages unverified for 90 days.
+      - name: identifier scan
+        run: node scripts/docs-scan.mjs
+
+      # Figures embedded verbatim, evidence IDs defined and listed, links and anchors that
+      # resolve on GitHub and in the site build alike, and the troubleshooting index current.
+      - name: drift check
+        run: node scripts/docs-check.mjs
+
+      # Through npx, so package.json and its lock file stay the application's alone.
+      - name: markdown lint
+        run: npx --yes markdownlint-cli2@0.23.3
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: install the site build
+        run: pip install -r docs/requirements.txt
+
+      # --strict: a broken link, a missing nav target or a bad anchor fails the build.
+      - name: site build
+        run: mkdocs build --strict

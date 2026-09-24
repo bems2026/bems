@@ -15,6 +15,7 @@ Every technical statement in the manual carries one of these IDs or `[UNVERIFIED
 keeps its text and gains only a status pointer: "Superseded by E-NNN".
 
 **Conventions.**
+
 - **Source.** `Repo` is the working tree at `applies_to`. `Edge` is a read-only command run on the edge server over the mesh
   network, from the checkout at `<repo-dir>`. `Flow` is the live Node-RED flow, read from disk on the
   edge and redacted there with `node-red-bridge/redactFlow.mjs`. `DB` is a read-only REST `GET` using the

@@ -100,7 +100,7 @@ A restore is three steps, in this order — the middle one was learned by doing 
 
 ### Rehearsing a restore — `npm run restore:rehearse`
 
-```
+```bash
 npm run restore:rehearse                     # exports a fresh backup, then restores it
 npm run restore:rehearse -- /path/to/backup  # restores an existing export
 ```

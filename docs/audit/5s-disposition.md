@@ -5,7 +5,7 @@ audience: [integrator, administrator]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo 8575a26 · workspace folder as of 2026-09-24
-evidence: [E-023, E-028, E-052, E-060, E-064, E-070, E-072, E-076, E-100, E-101, E-102, E-103, E-104, E-105, E-106]
+evidence: [E-023, E-028, E-051, E-052, E-060, E-064, E-065, E-070, E-072, E-076, E-078, E-079, E-083, E-100, E-101, E-102, E-103, E-104, E-105, E-106, E-110, E-112, E-113, E-120, E-121, E-124, E-125, E-153, E-179]
 ---
 
 # 5S disposition — Sort
@@ -24,6 +24,7 @@ This table was planned in S1 and approved at GATE S on 2026-09-24. What S2–S4 
 | **Leave** | Not documentation, or not this work's to touch. |
 
 Standing decisions (2026-09-23 and 2026-09-24):
+
 - Files **outside the repository stay outside git**. Their archive is the workspace's own `archive/2026-09-legacy/`,
   reached with `mv`, not `git mv`.
 - No `project/TRACKER.md`: `ROADMAP.md` is the only tracker.
@@ -84,7 +85,7 @@ files share one row) plus the 2 images, and 23 in it. Checked with `find`, exclu
 
 ## Target tree
 
-```
+```text
 ibems-dashboard/                         (the repository — public)
   README.md  CLAUDE.md  CONTRIBUTING.md  SECURITY.md  ROADMAP.md     kept; edits as above
   mkdocs.yml                             Phase D
@@ -155,3 +156,4 @@ What was actually done after GATE S. Every statement here was checked when it wa
 | S4 Standardise | `_templates/`: `chapter-spine.md`, `procedure.md`, `fault-entry.md`, `device-role-card.md`, `adr.md`, `field-issue.md`. File names follow §7. Every manual page carries front matter. | — |
 | S3 Shine (later, 2026-09-24) | `physical-install.md`: the protocol range corrected to v3.3–v3.5 (the IR hub is v3.3, E-051), and the setpoint-floor paragraph corrected to what RM-068 made true (E-112, E-113, E-120, E-121). `outage-recovery.md` and `ROADMAP.md`: real Wi-Fi network names replaced by their roles (F-024, E-153). `X2a-control-strategy.md`: two headings renamed so their anchors resolve the same on GitHub and in the site build. | `npm run test:bridge` passed after the `physical-install.md` edit (a test reads it). The Wi-Fi-name scan finds none left. |
 | S3 Shine (Phase B, 2026-09-24) | `replication.md`: the one sentence naming a funding milestone and the funded plan replaced by the framework it belongs to, with a link to 90 (the manual carries no funding detail: decided 2026-09-23). `bridge-contract.md`: one heading reworded, an em dash to parentheses, so its anchor is the same on GitHub and in the site build. `floor-plan-design.md`: a dated as-built note for the move of the page-card toggles to Settings (E-179). | `grep` for milestone and funding terms in `docs/` finds none outside the audit. All 66 heading anchors resolve. |
+| S3 Shine (Phase D, 2026-09-24) | Blank lines added before 58 lists and around fences and headings across `docs/`, so the site renders them as lists (Python-Markdown needs the blank line; GitHub does not). Six unlabelled code fences given a language. `replication.md`: Spaces is on Settings, and *Add device* needs no vendor-cloud credentials since 2026-09-17. `docs/README.md`: a link to a directory pointed at its README. Front-matter evidence lists completed in nine pages. | `markdownlint-cli2` 0 issues; `docs-check` 0 problems; `mkdocs build --strict` clean; `npm run test:bridge` green (it reads `physical-install.md`). |

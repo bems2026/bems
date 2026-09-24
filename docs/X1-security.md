@@ -15,6 +15,7 @@ chapter lists every boundary, credential and account the system has, who can cro
 something leaks or someone leaves.
 
 It does not repeat two documents:
+
 - [`SECURITY.md`](../SECURITY.md): how to report a vulnerability, and the rule that nothing identifying is ever
   committed.
 - [`CONTRIBUTING.md`](../CONTRIBUTING.md): the same rule for contributors.
@@ -140,6 +141,7 @@ leaves no `commands` row.
 **The repository is public.** Never commit a token, a key, a password, a hostname, an address, a Wi-Fi name or the
 database's project reference, in code, docs, screenshots or commit messages ([`SECURITY.md`](../SECURITY.md)). Three
 habits keep it that way:
+
 - **Stage files by name.** Never `git add -A` or `git add .`. Three dated copies of the env file, each holding the
   vendor secret and the service-role key, once sat untracked in the edge's checkout, one such command away from
   publication [E-190].
@@ -150,6 +152,7 @@ habits keep it that way:
   and two Wi-Fi names in a runbook (F-024).
 
 **The day a secret is committed anyway:**
+
 1. **Rotate it first**, at its source, as the inventory above says. The repository is public, so assume the value was
    copied the moment it was pushed. Deleting the commit does not un-publish it.
 2. Put the new value in `server/.env` on the edge and restart what reads it.
@@ -255,6 +258,7 @@ Step 7 is stated but not drilled (E-079).
 the rest. Confirm the off-card credential copy is current.
 
 **When someone leaves**, in this order:
+
 1. Ban or delete their database account. The database refuses to delete an account that has acted [E-184].
 2. Remove their devices from the tailnet.
 3. Rotate every shared secret they knew: the break-glass password, the service account's password, the Wi-Fi password

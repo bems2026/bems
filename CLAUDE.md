@@ -234,6 +234,50 @@ mock, because it once stopped the live bridge.
 - TDD: failing test, confirm it fails, minimal implementation, green, commit.
 - Prefer existing design tokens in `src/index.css` over new colour values, and check contrast in **both** themes — several tokens pass on a card but fail on the page background.
 
+## Documentation conventions
+
+The manual lives in `docs/`, starting at `docs/README.md`. It describes the system **as built**;
+`ROADMAP.md` remains the single source of truth for feature state.
+
+- **Tree.** `00` overview; `01`–`05` the layers; `X1`–`X3` the planes (`X2a` is the control
+  strategy); `90` replication; `91`–`99` appendices; `adr/` decisions; `diagrams/*.mmd` figure
+  sources; `audit/` the evidence; `_templates/` page templates. The older reference docs
+  (`bridge-contract.md`, `replication.md`, …) keep their names, because code and tests cite them.
+- **Front matter** on every page: `title`, `purpose`, `audience`, `status`, `last_verified`,
+  `applies_to`, `evidence`. **Update `last_verified` whenever you verify a page**; the docs scan
+  warns after 90 days.
+- **Every claim is evidenced.** Cite an `E-NNN` row from `docs/audit/evidence-ledger.md`, add a row
+  if none fits, and list the ID in the page's `evidence:`. What cannot be verified is marked
+  `[UNVERIFIED]`, never softened. A problem found goes in `docs/audit/findings.md`; a gap in
+  `open-questions.md`, with an owner.
+- **Status labels.** Pages: `Scaffold`, `Draft`. ADRs: `Proposed`, `Accepted`. Features:
+  `Field-validated`, `Implemented`, `Implemented, not validated`. Planned features appear **only**
+  in `94-roadmap.md`.
+- **Chapters follow the spine** in `_templates/chapter-spine.md`: What it is, What you need, How to
+  install, How to configure, How to verify, How to operate, How it fails (five columns, every one
+  filled), Field issue log, What to keep on the shelf.
+- **Figures** are Mermaid. The `.mmd` file is the source, and each page embeds it verbatim. No `;`
+  inside a sequence-diagram line: it breaks the parse.
+- **Headings that are linked to** must slug the same on GitHub and in the site build: no em dash in
+  them (GitHub keeps a double hyphen, the site collapses it).
+- **Redaction (G1, G2).** No address, host name, Wi-Fi name, key, token, password, mesh name or
+  database project reference. Name the variable and how to obtain its value. Site specifics live
+  only in `99-worked-example.md`. The public manual carries no funding, milestone or deadline.
+- **`91-troubleshooting-index.md` is generated.** After changing any chapter's fault table, run
+  `node scripts/docs-troubleshooting.mjs`.
+- **Before committing a docs change**, run what `.github/workflows/docs.yml` runs:
+
+  ```bash
+  node scripts/docs-scan.mjs
+  node scripts/docs-check.mjs
+  npx --yes markdownlint-cli2@0.23.3
+  .venv/Scripts/mkdocs build --strict    # .venv/bin/ on Linux; see docs/requirements.txt
+  ```
+
+  The PDF is the site's print page, printed headless:
+  `chrome --headless=new --no-pdf-header-footer --virtual-time-budget=30000 --print-to-pdf=manual.pdf <site>/print_page/`
+  against `mkdocs serve`.
+
 ## ROADMAP.md maintenance (non-negotiable)
 
 `ROADMAP.md` is the single source of truth for this project's feature state. Before you end

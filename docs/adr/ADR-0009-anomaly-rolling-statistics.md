@@ -18,6 +18,7 @@ an operator, and quiet enough to be believed.
 
 The ingest daemon keeps a rolling window of 20 samples per device (about 20 minutes), with a 10-sample warm-up. It
 records an anomaly only when **both** of these flag the new reading [E-204]:
+
 - a z-score of at least 3.5;
 - Tukey's far-out fence, 3.0 × the interquartile range.
 

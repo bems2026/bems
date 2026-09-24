@@ -5,7 +5,7 @@ audience: [operator, administrator, installer, integrator]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo afa5aaf
-evidence: []
+evidence: [E-051]
 ---
 
 # iBEMS — adoption and replication manual
@@ -34,6 +34,7 @@ It describes a system, not an installation. Everything specific to the pilot sit
 ## The manual
 
 The status column means:
+
 - **Scaffold:** headings only.
 - **Draft:** written, not yet reviewed.
 - **Reviewed:** read by someone other than its author.
@@ -107,4 +108,4 @@ chapters link to them rather than restating them.
 - [`audit/`](audit/README.md): the evidence the manual is written from.
 - [`../ROADMAP.md`](../ROADMAP.md): feature state, in far more detail than anything here. Start at §0.
 - [`../CONTRIBUTING.md`](../CONTRIBUTING.md): the working rules.
-- [`assets/`](assets/): the README's illustrations, and the scripts that regenerate them.
+- [`assets/`](assets/README.md): the README's illustrations, and the scripts that regenerate them.

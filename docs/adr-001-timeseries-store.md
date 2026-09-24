@@ -1,4 +1,4 @@
-# ADR-001 — The time-series store stays Postgres (Supabase). No InfluxDB.
+# ADR-001 — The time-series store stays Postgres (Supabase). No InfluxDB
 
 **Status:** Accepted, 2026-08-21. Amended 2026-08-22 to answer the split proposal and
 Google Sheets, both raised after the original decision.

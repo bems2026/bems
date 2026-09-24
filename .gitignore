@@ -35,3 +35,9 @@ server/.env.*
 # The audit's findings live beside it in docs/audit/*.md, which ARE committed, and cite these
 # files by name only.
 /docs/audit/raw/
+# The manual's site build: its virtual environment and its output (see docs/requirements.txt
+# and mkdocs.yml). Both are rebuilt from the repository, and neither belongs in it.
+/.venv/
+/site/
+# Python's bytecode cache, from the site build's hook (scripts/mkdocs_links.py).
+__pycache__/

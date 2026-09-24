@@ -14,6 +14,7 @@ This is the whole path, from a building with nothing installed to a system hande
 in order. Each step needs only what an earlier step produced.
 
 Two documents hold the detail for their parts, and this one does not restate them:
+
 - [`replication.md`](replication.md): the software half, walked end to end on throwaway sites, with each step marked
   as executed or not.
 - [`physical-install.md`](physical-install.md): the hardware half. It is a template with 12 gaps marked `〔FILL IN〕`,
@@ -71,6 +72,7 @@ per-device is generated from that directory (ADR-0007).
 **Precondition.** The building owner has agreed to a survey.
 
 **Procedure.**
+
 1. **Panel access:** obtain the single-line diagram of each distribution panel. Confirm a qualified electrician can
    isolate and work on it ([`physical-install.md`](physical-install.md) §0).
 2. **Circuit count:** list every branch circuit with what it feeds (lighting, outlets, air-conditioning, other), and
@@ -137,6 +139,7 @@ model, or plan the work of a new device class ([01](01-field-devices.md)).
 **Precondition.** The edge server, one metered switch and one switch, on a bench. Nothing is in a panel.
 
 **Procedure.**
+
 1. Run the software with no hardware at all: `npm run mock`, then `npm run dev` ([`replication.md`](replication.md)
    step 7).
 2. Build the edge ([03](03-edge.md#how-to-install)), with `HARDWARE_DISPATCH_ENABLED` left **unset**, so every command
@@ -182,6 +185,7 @@ isolation first ([02](02-network.md#how-it-fails), [01](01-field-devices.md#how-
 **Precondition.** Step 5 done, with the interlock off and no rule armed, so nothing is automated yet.
 
 **Procedure.**
+
 1. Leave every schedule, limit and comfort rule disarmed. The interlock stays off, so a stray click moves nothing.
 2. Record **at least four weeks** with no automation armed. Longer is better: a baseline must span the building's
    normal cycle.
@@ -201,6 +205,7 @@ later report, and compare against the same weeks of the next year instead.
 and read how the code realises it ([X2](X2-control-logic.md#the-priority-order-as-built)).
 
 **Procedure.**
+
 1. Run X2a §8's test manual with the interlock off. Record each result ([X2a § 8](X2a-control-strategy.md#8-test-manual)).
 2. Decide on the interlock, and record the decision on its form ([X2](X2-control-logic.md#the-dispatch-interlock)).
    Restart the proxy and the scheduler, and read the state back from the scheduler's start line.
@@ -219,6 +224,7 @@ signed off as a pass.
 **Precondition.** Step 7 signed.
 
 **Procedure.**
+
 1. Train the operator against the competency list ([X3](X3-operations.md#training-and-handover)).
 2. Hand over the documentation set: this manual, the commissioning pack, the baseline, the network and access
    record.
@@ -257,6 +263,7 @@ signed off as a pass.
 **Precondition.** Three months of data after the baseline.
 
 **Procedure.**
+
 1. From Reports, find where energy goes out of hours, and which circuits grew month on month (the query cookbook in
    [04](04-data.md#query-cookbook), queries 2 and 4).
 2. For each candidate, ask which role would address it ([01a § 4](01a-device-roles.md#4-choosing-what-you-need)).

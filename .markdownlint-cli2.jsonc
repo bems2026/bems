@@ -1,0 +1,24 @@
+// Markdown lint for the manual (docs/), run by .github/workflows/docs.yml:
+//   npx --yes markdownlint-cli2@0.23.3
+// Rules that stay on are the ones that change how a page renders. MD032 is the one that
+// mattered: a list with no blank line before it renders on GitHub, but the site build prints it
+// as one paragraph with literal dashes.
+{
+  "config": {
+    "default": true,
+    // Pages wrap prose at 120, but tables and URLs cannot wrap.
+    "MD013": false,
+    // Compact tables are the house style.
+    "MD060": false,
+    // Admonition bodies are indented, which this rule reads as indented code.
+    "MD046": false,
+    // The ledger and the findings put line breaks inside table cells.
+    "MD033": false,
+    // Front matter carries a title as well as the page's single H1.
+    "MD025": { "front_matter_title": "" },
+    // "What it is" and "How it fails" repeat by design, once per chapter section.
+    "MD024": { "siblings_only": true }
+  },
+  "globs": ["docs/**/*.md"],
+  "ignores": ["docs/audit/raw/**", "docs/_templates/**", "node_modules/**", "site/**"]
+}

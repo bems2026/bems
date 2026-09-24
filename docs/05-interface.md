@@ -36,6 +36,7 @@ runs is in [00 § What runs where](00-overview.md#what-runs-where).
 
 **Where the browser sends requests.** `src/config/bridge.ts` is the only place a bridge address appears. It derives the
 address from how the page itself was reached, not from a value baked in at build time:
+
 - over `https:` (the mesh path), same-origin `/api` and `/ws`;
 - over `http:`, the proxy on port 8080 of the same host;
 - with no database configured, Node-RED on 1880, which is loopback-only on the edge.
@@ -215,6 +216,7 @@ off, and its note names the tier and the limit that was breached (`auto-shed <ti
 switch the load back on from Control once the demand is understood.
 
 **Interpret an alert.** The bell in the header gathers four kinds [E-185]:
+
 - a device whose reading went stale;
 - unusual power, flagged by the ingest daemon only when two statistical tests agree [E-076];
 - a fleet-level row when many devices stopped together. It carries the remedy: restart Node-RED before suspecting
@@ -253,6 +255,7 @@ scheduler picks up a changed demand limit at its next refresh, within 60 s [E-07
 
 **Take a device out of service.** In this order, because the app's *Functions* boxes only hide a device and **stop
 nothing** [E-182]:
+
 1. Disarm or delete its schedules (*Automation → Time-Driven*), and any aircon rule that commands it.
 2. Set its shed tier to *Not classified* (*Automation → State-Driven*).
 3. Switch it to the state it should stay in, from Control.

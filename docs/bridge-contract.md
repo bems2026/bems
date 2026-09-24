@@ -65,6 +65,7 @@ Returns the registry. Static for the lifetime of the process.
 `class` is one of `outlet_dual | switch | meter | acu_ir | sensor_temp_humidity`.
 
 > **Spec deltas to fold back into `ibems-onboarding-wizard-spec.md` §4:**
+>
 > - `class` needs a **`meter`** member. The spec's enum is
 >   `switch | outlet_dual | acu_ir | sensor_temp_humidity`; the four CT meters fit none of them.
 > - `room` is nullable and is `null` for every device. Nothing in the live flow records room

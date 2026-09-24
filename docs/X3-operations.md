@@ -12,6 +12,7 @@ evidence: [E-017, E-018, E-027, E-038, E-039, E-065, E-076, E-110, E-111, E-124,
 
 This chapter follows the system from handover to retirement, the way a building-automation contractor hands over a
 plant. The detailed procedures it relies on already exist, and it links to them rather than repeat them:
+
 - [`backup-policy.md`](backup-policy.md): taking and restoring the database backup.
 - [`outage-recovery.md`](outage-recovery.md): what an outage does, and the two things a person does afterwards.
 - [`replication.md`](replication.md) and [`physical-install.md`](physical-install.md): standing up a new site.
@@ -34,7 +35,7 @@ rather than retyped.
 | **As-built record** | What is installed, with dates | See [The as-built record](#the-as-built-record) |
 | **Commissioning certificate** | The signed statement below | This page |
 
-**Commissioning certificate**
+#### The commissioning certificate
 
 | Field | Entry |
 |---|---|
@@ -128,6 +129,7 @@ The routine checks below are the verification: each says what good looks like.
 ### Monitoring the monitor
 
 How you learn that recording stopped before a month of data is lost:
+
 - **From the edge, with `NTFY_TOPIC` set:** a notice when the fleet drops or recovers, and one when each monthly
   report is made. The monthly notice doubles as a heartbeat: **a month with no notice means something stopped** [E-200].
 - **From anywhere:** `ingestion_health.last_success_at` in the database. It should be under a minute old

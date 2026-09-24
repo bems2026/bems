@@ -11,6 +11,7 @@ evidence: [E-002, E-014, E-019, E-022, E-025, E-026, E-027, E-028, E-033, E-042,
 # Network and communication
 
 Three networks meet at the edge server:
+
 - the **device network**, where readings and commands travel
 - the **uplink**, which carries the record to the hosted database
 - the **mesh network**, which is how anyone reaches the building from outside
@@ -58,6 +59,7 @@ cross a router or a VLAN boundary [E-159]. So the edge server **must sit on the 
 and that segment must not isolate its clients from one another.
 
 A separate network buys three things:
+
 - **Nothing on the office network can reach a device**, or anything the edge exposes to the device segment.
 - **The office's own changes cannot break discovery:** client isolation, band steering, VLAN moves.
 - **The devices' radio conditions are yours to manage:** the channel, the client count, the lease times.
@@ -91,6 +93,7 @@ It costs one access point and one SSID.
 Give **every device node a static address** and **reserve the same address on the access point**. A node with an address
 connects directly, so discovery stops mattering. Without the reservation, the next power cycle renumbers the fleet
 ([outage recovery](outage-recovery.md)). You don't have to copy addresses by hand:
+
 - `ibems-lan-map` learns each device's address and MAC from its own broadcasts every 10 min [E-022].
 - `npm run set-device-ip:pi -- --host=127.0.0.1 --from-lan-map` sets the node addresses. It is a dry run until `--apply`.
 - `--reservations` prints the table to enter on the access point.
@@ -153,6 +156,7 @@ day-long measurement has not been made [UNVERIFIED]. A modest broadband link is 
 ### Remote access
 
 Remote access is a **mesh VPN** (Tailscale) [E-026, E-027]:
+
 - **Tailnet-only HTTPS.** The edge serves the dashboard and the proxy to members of the mesh network over HTTPS.
   **Funnel is off**, so nothing is published to the public internet [E-026].
 - **Tailscale SSH in check mode.** A browser re-approval is required from time to time. A session that hangs silently

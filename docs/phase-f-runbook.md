@@ -7,6 +7,7 @@ is a handful of commands instead of a re-derivation of the whole plan.
 
 **Two things in this runbook need the Pi's filesystem or console, not just network
 reachability, and neither can be scripted from here:**
+
 1. Editing `settings.js` (`contextStorage`, `httpNodeCors`)
 2. Restarting Node-RED to pick that up
 
@@ -34,9 +35,11 @@ exits 0.
 ## Steps
 
 ### 1. Confirm reachability
+
 ```bash
 npm run verify:pi -- --host=<pi-ip>
 ```
+
 Expect every check to **FAIL** right now — nothing is deployed yet. What you're actually
 checking here is just: does `reachable` say PASS? If yes, the Pi is on the network and
 Node-RED is listening on :1880.
@@ -47,9 +50,11 @@ confirm nothing's blocking port 1880 between here and there (VPN/Tailscale routi
 firewall rule).
 
 ### 2. Dry-run the deploy
+
 ```bash
 npm run deploy:pi -- --host=<pi-ip>
 ```
+
 This is the step that catches the one real unknown in this whole plan: **the tab ids in
 `node-red-bridge/build-flow.mjs`'s `SOURCE_TABS` were read from a dev copy of `flows.json`
 on the machine that built this repo, not from the actual Pi.** If the real Pi's tabs have
@@ -84,9 +89,11 @@ httpNodeCors: { origin: "*", methods: "GET" },
 Restart Node-RED after saving. Do not skip the restart — these are load-time settings.
 
 ### 4. Deploy
+
 ```bash
 npm run deploy:pi -- --host=<pi-ip> --apply
 ```
+
 Same safety checks as step 2, then a `POST /flows` with `Node-RED-Deployment-Type: nodes`
 (only the new/changed nodes restart — nothing on the four existing tabs gets touched or
 restarted) and the `rev` read moments earlier, so a concurrent edit in the Node-RED editor
@@ -94,11 +101,14 @@ produces a clean 409 instead of silently clobbering it. Runs `verify.mjs` automa
 afterward.
 
 ### 5. Full verification
+
 ```bash
 npm run verify:pi -- --host=<pi-ip>
 ```
+
 Everything should **PASS** now. Two things this script cannot check remotely (see its own
 output — it prints this reminder every run):
+
 - **`contextStorage` actually surviving a restart.** Restart Node-RED on the Pi, then
   re-run `verify:pi` and confirm `energy_kwh_today` in the `_totals` row didn't reset to
   near-zero. This is the literal DoD from the Stage 1 plan §6 ("Restart Node-RED → energy
@@ -108,14 +118,17 @@ output — it prints this reminder every run):
   instead of 0.
 
 ### 6. Point the dashboard at it
+
 ```bash
 # .env (copy from .env.example)
 VITE_BRIDGE_HTTP_URL=http://<pi-ip>:1880/api
 VITE_BRIDGE_WS_URL=ws://<pi-ip>:1880/ws/live
 ```
+
 ```bash
 npm run dev
 ```
+
 Then work through the rest of the Stage 1 plan §6 DoD by hand: `SystemGauges`/`EnergyTotals`
 cross-checked against the existing `node-red-dashboard` at the same moment, `StaleDataBadge`
 confirmed by actually stopping one device's Tuya polling, reachable from a second device on

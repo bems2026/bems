@@ -1,0 +1,115 @@
+# The iBEMS adoption and replication manual, as a site and a PDF.
+#   python -m venv .venv && .venv/bin/pip install -r docs/requirements.txt
+#   .venv/bin/mkdocs build --strict        # the site, into site/
+# The PDF is the print page (site/print_page/index.html) printed by a headless browser.
+site_name: iBEMS adoption and replication manual
+site_description: How iBEMS is built, and how to replicate it in another building
+repo_url: https://github.com/bems2026/bems
+edit_uri: edit/master/docs/
+docs_dir: docs
+site_dir: site
+strict: true
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle: { icon: material/weather-night, name: Dark theme }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle: { icon: material/weather-sunny, name: Light theme }
+
+# Not published: the audit record, the page templates, the diagram sources' demo site and the
+# asset sources. Links to them are rewritten to the repository by the hook below.
+exclude_docs: |
+  audit/
+  _templates/
+  assets/demo-site/
+  assets/src/
+  assets/*.mjs
+  requirements.txt
+
+hooks:
+  - scripts/mkdocs_links.py
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+plugins:
+  - search
+  - print-site:
+      add_to_navigation: true
+      print_page_title: The whole manual, on one page
+      add_cover_page: true
+      add_table_of_contents: true
+      enumerate_headings: false
+
+nav:
+  - Home: README.md
+  - Overview: 00-overview.md
+  - Layers:
+      - L1 Field devices: 01-field-devices.md
+      - L1 Device roles and catalogue: 01a-device-roles.md
+      - L2 Network: 02-network.md
+      - L3 Edge: 03-edge.md
+      - L4 Data: 04-data.md
+      - L5 Interface: 05-interface.md
+  - Planes:
+      - X1 Security: X1-security.md
+      - X2 Control logic: X2-control-logic.md
+      - X2a Control strategy: X2a-control-strategy.md
+      - X3 Operations: X3-operations.md
+  - Replication:
+      - Step 1 to done: 90-replication.md
+      - The software half: replication.md
+      - Physical installation: physical-install.md
+  - Decisions:
+      - Index: adr/README.md
+      - ADR-001 Time-series store: adr-001-timeseries-store.md
+      - ADR-002 Device recovery path: adr-002-device-recovery-path.md
+      - ADR-0003 MQTT: adr/ADR-0003-mqtt-not-device-transport.md
+      - ADR-0004 Home Assistant: adr/ADR-0004-no-home-assistant.md
+      - ADR-0005 TimescaleDB: adr/ADR-0005-no-timescaledb.md
+      - ADR-0006 n8n: adr/ADR-0006-n8n-removed.md
+      - ADR-0007 Registry: adr/ADR-0007-config-driven-registry.md
+      - ADR-0008 Web app: adr/ADR-0008-standalone-web-app.md
+      - ADR-0009 Anomalies: adr/ADR-0009-anomaly-rolling-statistics.md
+      - ADR-0010 Predictive: adr/ADR-0010-defer-predictive.md
+  - Reference:
+      - Bridge contract: bridge-contract.md
+      - Storage contract: storage-contract.md
+      - Backup policy: backup-policy.md
+      - Outage recovery: outage-recovery.md
+      - Deploying the flow: phase-f-runbook.md
+      - Working on the edge: pi-session-brief.md
+      - Floor-plan design: floor-plan-design.md
+      - Figures: diagrams/README.md
+      - Assets: assets/README.md
+  - Appendices:
+      - 91 Troubleshooting index: 91-troubleshooting-index.md
+      - 92 Glossary: 92-glossary.md
+      - 93 Governance and compliance: 93-governance-compliance.md
+      - 94 Roadmap: 94-roadmap.md
+      - 99 Worked example: 99-worked-example.md

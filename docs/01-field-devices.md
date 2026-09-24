@@ -11,6 +11,7 @@ evidence: [E-022, E-043, E-051, E-056, E-083, E-110, E-111, E-112, E-115, E-117,
 # Field devices
 
 This chapter covers what [Device roles and catalogue](01a-device-roles.md) assumes:
+
 - choosing and sizing a device for a load
 - getting it wired, paired, keyed and mapped
 - proving it reads true
@@ -35,6 +36,7 @@ part number.
 ### Local credentials: what they are and where they live
 
 Three facts identify a device to the edge server:
+
 - its **device id**
 - its **local key**, the credential that lets anything on the LAN drive it
 - its **protocol version**
@@ -67,6 +69,7 @@ the vendor's device id, and the channel assignment is decided from physical fact
 ### What a Commander cannot know
 
 An infrared commander is **open loop**. It sends a code, and the air-conditioner never answers [E-151]:
+
 - The system cannot know whether the unit received the code.
 - It cannot know which mode the unit is really in.
 - It cannot know whether someone changed it by hand with the original remote.
@@ -129,6 +132,7 @@ own list is in [99](99-worked-example.md). **Label the physical device with that
 Follow [physical-install §2–§4](physical-install.md). It is the checklist to take on the visit, and its gaps are
 filled on site, never by inference. The rules that govern every fitting are in
 [01a §5](01a-device-roles.md#5-installing):
+
 - clamp arrow towards the load
 - one clamp, one named circuit, written down at once
 - never switch a compressor load

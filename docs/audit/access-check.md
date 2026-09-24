@@ -5,7 +5,7 @@ audience: [integrator]
 status: Draft
 last_verified: 2026-09-23
 applies_to: repo 2f4c570 · edge checkout fcb1ff6
-evidence: [E-001, E-002, E-003, E-004, E-005, E-041]
+evidence: [E-001, E-002, E-003, E-004, E-005, E-034, E-041, E-050, E-080, E-090]
 ---
 
 # Access check — Phase 0

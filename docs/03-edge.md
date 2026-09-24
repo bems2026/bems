@@ -54,6 +54,7 @@ Evidence: E-020, E-021, E-022, E-023. All four long-running daemons had `NRestar
 ### Node-RED: a generated bridge beside hand-built device tabs
 
 The live flow has five working tabs [E-050]:
+
 - **Four device tabs** (energy meters, outlets, switches, air-conditioner). They hold the device nodes, the parsers and
   the per-device state.
 - **One generated bridge tab.** It serves `/api/devices`, `/api/readings/latest`, `/api/readings/history` and the
@@ -100,6 +101,7 @@ it with `npm run fix-dp-parsers:pi`, which is a dry run until `--apply`.
 | Current (outlet) | mA | 0 | → ÷ 1000 to amps |
 
 **Values that fail validation** are caught at ingest:
+
 - A non-finite or out-of-bounds value is stored as NULL and counted, never stored as-is.
 - A row with an unusable timestamp is dropped.
 - A timestamp more than 5 min ahead or 7 days behind is rejected.
@@ -125,6 +127,7 @@ after every cold boot.
 ### Storage matters more than the processor
 
 A consumer SD card fails from writes long before the processor is the limit. This edge writes continuously:
+
 - a persistent journal, capped at 200 MB [E-035]
 - Node-RED's context files, 22 MB, with the bridge's 3.7 MB file rewritten continuously [E-046]
 - logs, rotated [E-036]
@@ -166,6 +169,7 @@ Everything below is on the edge and **not declared in the repository**, so a reb
 
 Not used. The installer is the replication path. It stays current with the repository, can be read line by line, and
 works on hardware nobody imaged [E-129]. Anyone who does produce an image must remove from it:
+
 - `server/.env`
 - `~/.node-red/flows_cred.json` and the `credentialSecret`
 - `server/data/device-credentials.json`
@@ -312,6 +316,7 @@ Tuning names (poll and refresh intervals, buffer paths, retention days) have wor
 ### After changing code
 
 Deploying is **two separate acts**, and a commit implies neither [E-131]:
+
 - A change under `server/` or `shared/` needs `sudo systemctl restart ibems-ingest ibems-proxy ibems-scheduler`.
   `ibems-ingest` is the one that gets forgotten.
 - A change under `src/` needs `npm run build`.
@@ -354,6 +359,7 @@ can explain.
 | Code | Git | The public repository | Every clone |
 
 **Restore drill.** Until someone does this, the edge backup is a Hypothesis (R4):
+
 1. On a spare card, prepare the OS and run the installer.
 2. Copy back the items in the second and third rows.
 3. Start the services.

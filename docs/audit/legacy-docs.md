@@ -5,7 +5,7 @@ audience: [integrator]
 status: Draft
 last_verified: 2026-09-23
 applies_to: repo 2f4c570 · parent folder as of 2026-09-23
-evidence: [E-060, E-072, E-100, E-101, E-102, E-103, E-104, E-105, E-106]
+evidence: [E-028, E-052, E-060, E-063, E-065, E-066, E-070, E-072, E-076, E-082, E-083, E-087, E-100, E-101, E-102, E-103, E-104, E-105, E-106]
 ---
 
 # Legacy documentation audit
@@ -15,6 +15,7 @@ Feeds Phase S's disposition table (`5s-disposition.md`, next gate). **Nothing is
 to the workspace's own `archive/2026-09-legacy/`.
 
 The **identifier scan** (E-100, E-102) matched patterns and printed no values. It checked:
+
 - IPv4 addresses other than loopback and the RFC 5737 ranges
 - mesh-network addresses and names
 - `ts.net` host names

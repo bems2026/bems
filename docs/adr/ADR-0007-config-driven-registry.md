@@ -20,6 +20,7 @@ different ways [E-205, the legacy document's §1 table].
 
 Every device is declared once, in the site's files under `shared/sites/<site>/` (`site`, `devices`, `circuits`). They
 are read through `shared/registry.mjs` [E-063]. Everything per-device is **generated** from that:
+
 - the bridge tab of the Node-RED flow, by `node-red-bridge/build-flow.mjs`;
 - the mock bridge;
 - the one transform from raw reading to engineering units [E-062].

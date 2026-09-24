@@ -84,7 +84,7 @@ visible.〕
 CARE office's first version was a comment transcribed from a 2019 dashboard, and it was wrong about
 one of its four branches for years; this is the map as the operator confirmed it on 2026-09-15:
 
-```
+```text
 L.O red     -> lighting: switches L1-L4
 L.O yellow  -> lighting: switches L5-L7   (the 2019 comment called it the outdoor aircon unit)
 C.O yellow  -> every convenience outlet, and whatever else plugs into them

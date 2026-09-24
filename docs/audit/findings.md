@@ -15,6 +15,7 @@ database contents is out of scope (prompt §1, G5). Each finding names who can f
 "Code change" means a change to the repository. Changes on the edge are the operator's to make.
 
 **Severity** (prompt §8):
+
 - **Critical:** safety, security or data-loss risk.
 - **High:** the docs contradict the as-built system on a core path, or data could be lost.
 - **Medium:** a stale reference, a missing procedure or an unverifiable claim.

@@ -18,6 +18,7 @@ discovery, a device registry, energy accounting and a user interface [E-205].
 ## Decision
 
 Home Assistant is not part of iBEMS. What it would have provided is built in the repository instead:
+
 - a device registry, `shared/registry.mjs`, fed per site (ADR-0007) [E-063];
 - discovery by listening to the devices' own broadcasts ([01](../01-field-devices.md));
 - energy accounting in one shared transform ([03](../03-edge.md));

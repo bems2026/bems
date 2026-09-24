@@ -23,6 +23,7 @@ Anything that could not be read at all is marked `[UNVERIFIED]`.
 ### What the law asks
 
 **RA 11285**, the Energy Efficiency and Conservation Act of 2019 [E-207]:
+
 - **Every government agency** must "ensure the efficient use of energy in their respective offices, facilities…"
   (§6).
 - **Designated establishments** are those above a yearly consumption threshold: Type 1 from 500,000 to 4,000,000 kWh
@@ -37,6 +38,7 @@ monitoring the energy consumption in their respective offices, and adhere to the
 [E-208]. The DOE's reporting guidelines, targets and portal could not be read: `[UNVERIFIED]`.
 
 Two questions only the institution can answer (Q-20):
+
 - **Is the institution a designated establishment?** That depends on its whole yearly consumption, not one building's.
 - **Does AO 15 cover it as a state university?** The copy read does not name state universities `[UNVERIFIED]`.
 
@@ -55,6 +57,7 @@ iBEMS does not file anything with the DOE. The institution's energy officer does
 ## Electrical safety
 
 **RA 7920**, the New Electrical Engineering Law [E-209]:
+
 - No electrical installation may be done unless it follows **the Philippine Electrical Code** and is under the
   responsible charge of a professional electrical engineer, a registered electrical engineer, or a registered master
   electrician (§34).
@@ -63,6 +66,7 @@ iBEMS does not file anything with the DOE. The institution's energy officer does
 - Electrical plans must be signed and sealed by a professional electrical engineer (§34).
 
 For iBEMS this means:
+
 - **Every step inside a distribution panel, the CT meters and any hard-wired switch, is licensed work**
   ([`physical-install.md`](physical-install.md) §0). The installer's licence and the permit to work are part of the
   commissioning pack ([X3](X3-operations.md#the-commissioning-pack)).
@@ -90,6 +94,7 @@ identity of an individual is apparent or can be reasonably and directly ascertai
 ### How it is protected
 
 §20 asks for "reasonable and appropriate organizational, physical and technical measures" [E-210]:
+
 - **Technical:** sign-in for every read, row-level security, no anonymous access, the service-role key kept off
   browsers ([X1](X1-security.md)).
 - **Organisational:** accounts by invitation, one per person, reviewed quarterly, and removed when someone leaves
@@ -97,6 +102,7 @@ identity of an individual is apparent or can be reasonably and directly ascertai
 - **Physical:** the edge in a locked place. Its card holds the credentials unencrypted [E-188].
 
 Under §11, processing follows **transparency, legitimate purpose and proportionality**. So:
+
 - tell the building's occupants what is measured and why;
 - use readings for energy management, not to watch people;
 - report by circuit or room, not by person.

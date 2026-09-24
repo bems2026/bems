@@ -260,6 +260,7 @@ flowchart LR
 | On and off by schedule | `time` |
 
 **Decide before installing:**
+
 - The comfort target people actually want in the room. This is what policy sets.
 - The floor and ceiling the unit may be driven between. 16 °C and 26 °C are sensible starting values.
 - How long to wait between steps. The room must have time to react before you step again.

@@ -15,6 +15,7 @@ edge server writes it; the browser reads it. Nothing else is authoritative. The 
 not a record.
 
 Two contracts define it in detail, and this chapter does not repeat them:
+
 - [`storage-contract.md`](storage-contract.md): what writes each table, the mapping from bridge payload to table, and
   retention.
 - [`bridge-contract.md`](bridge-contract.md): the field names upstream.
@@ -108,6 +109,7 @@ trail are counted. Measure it before relying on Free (F-004).
 
 Node-RED also appends meter and outlet figures to Google Sheets: 11 append nodes, each every 180 s [E-058]. It is a
 **report mirror, not a system of record**:
+
 - It is written from the flow, not from the database, so it can disagree with the record.
 - Google limits writes to 60 requests per minute per user per project, and a spreadsheet to 20 million cells [E-167].
   At 11 appends of 4 cells every 180 s, one spreadsheet would fill in about 2.6 years. That is a Hypothesis: whether
