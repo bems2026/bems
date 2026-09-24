@@ -3850,6 +3850,15 @@ and it cites this file's IDs for feature state rather than copying it.
       offboarding procedure. Writing it measured that every secret on the edge is unencrypted on its SD card (E-188),
       that the proxy never holds the service-role key (E-189), and that the relay token is read from Node-RED's
       environment, so rotating it changes no flow (E-192). Q-19 asks which kind of database key the edge holds.
+
+      **Then `docs/X2-control-logic.md`:** where each strategy of X2a lives in code, how each setting reaches the edge,
+      the priority order as built, the schedule record, how demand limits are judged, the dispatch interlock with a
+      record form (recorded, never changed: G7), and every refusal and hold by name. Writing it found:
+      - **F-031 (Medium):** there is no arbiter. Auto-shed re-sheds a load a person restored, a schedule's `on` edge
+        restores a shed one, and no minimum off-time exists (E-194).
+      - **F-033 (Medium):** the aircon loop re-checks the room floor against the build value, not the floor set on
+        Settings (E-198).
+      - **F-032 (Low):** one hold message still says the IR hub was never paired.
 - [ ] **RM-145e** Phases D and E: the site and PDF build, docs CI, conventions, and the three-reader verification (FINAL GATE).
 
 ### The Reports page, from the operator's brief — RM-137 onward (2026-09-22)

@@ -5,7 +5,7 @@ audience: [administrator, integrator]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo 04b213f
-evidence: [E-019, E-025, E-026, E-027, E-028, E-033, E-041, E-042, E-043, E-065, E-066, E-079, E-100, E-101, E-122, E-131, E-154, E-160, E-161, E-163, E-164, E-169, E-170, E-171, E-172, E-176, E-177, E-184, E-186, E-187, E-188, E-189, E-190, E-191, E-192]
+evidence: [E-019, E-025, E-026, E-027, E-028, E-033, E-041, E-042, E-043, E-065, E-066, E-079, E-100, E-101, E-122, E-131, E-154, E-160, E-161, E-163, E-164, E-169, E-170, E-171, E-172, E-176, E-177, E-184, E-186, E-187, E-188, E-189, E-190, E-191, E-192, E-193]
 ---
 
 # Security and access
@@ -177,7 +177,7 @@ habits keep it that way:
 | Data | Where | Who can read it | Kept |
 |---|---|---|---|
 | Account email, sign-in times | The sign-in service | Administrators, in the provider's dashboard | Until the account is deleted, which the audit trail can prevent [E-184] |
-| Who did what, and when | `commands.requested_by`; `updated_by` or `set_by` on rules, thresholds and configuration; an email snapshot beside tariffs and emission factors | Every signed-in account | **Never pruned** [E-122] |
+| Who did what, and when | `commands.requested_by`; `updated_by` or `set_by` on rules, thresholds and configuration; an email snapshot beside tariffs and emission factors | Every signed-in account | **Never pruned** [E-193] |
 | Request origins and a 12-character token prefix | The proxy's journal on the edge [E-191] | Anyone with a shell on the edge | As long as the journal keeps it |
 
 The legal basis and the institution's obligations are in [93](93-governance-compliance.md).
