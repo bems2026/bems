@@ -59,8 +59,9 @@ kinds above, plus CT ratings and the aircon's IR protocol/brand. This is genuine
 the repository: device *classes* are recorded, part numbers are not.〕
 
 **One thing the software does know and you should match:** the field devices speak **Tuya
-protocol v3.4 / v3.5** and are **2.4 GHz only**. Verified by decrypting their own discovery
-broadcasts (2026-08-24), not from a datasheet. Substituting a device that speaks a different
+protocol v3.3–v3.5** and are **2.4 GHz only**. The meters, outlets and switches announce v3.4 or v3.5,
+which was verified by decrypting their own discovery broadcasts (2026-08-24), not from a datasheet. The IR
+hub re-paired on 2026-09-17 speaks v3.3 (corrected 2026-09-24; `docs/audit/evidence-ledger.md` E-051). Substituting a device that speaks a different
 protocol means new bridge work, not just a different part number.
 
 ---
@@ -139,9 +140,12 @@ Sits in line of sight of the aircon's receiver.
 〔FILL IN: mounting position and distance, with a photograph. The CARE unit needed re-pairing
 once (`ROADMAP.md` RM-016); note what worked.〕
 
-The setpoint floor is **policy, not hardware**: the site's `acu_min_setpoint_c` is what the
-building allows, and it is enforced server-side. The IR library's own lower bound is a separate,
-lower number. Do not conflate them when testing.
+The setpoint floor is **policy, not hardware**, and since RM-068 it governs **room targets**. A
+comfort rule aimed below the site's `acu_min_room_target_c` is refused unless a written reason is
+recorded. A one-off setpoint below `acu_min_setpoint_c` is *sent*, with a warning written into its
+command record. The IR library's own range (16–30 °C) is the only hard refusal, and it is a separate,
+lower number. Do not conflate them when testing (see `docs/X2a-control-strategy.md` T1.3 and T4.11).
+*Corrected 2026-09-24; evidence E-112, E-113, E-120, E-121.*
 
 ---
 

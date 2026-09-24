@@ -522,7 +522,7 @@ physical-install guide. **Added 2026-09-22 (RM-134 follow-ups):**
 ### 2026-09-22 (early morning) — the field network after an outage; two actions, in order
 
 Read `docs/outage-recovery.md` first. **Done 2026-09-22 morning:** the operator power-cycled the office
-at 07:42; the Wi-Fi watchdog returned the Pi to `BEMS` 4 s after its first check (07:46:34, against
+at 07:42; the Wi-Fi watchdog returned the Pi to the device SSID 4 s after its first check (07:46:34, against
 5½ minutes the day before); the learner heard all 18 devices announce at 07:47:32 (and one meter had
 already moved, `.228` → `.229`); the 18 addresses were written to the flow at 08:02 (`flows.json`
 backed up beside it) and every node reconnected by address within a minute — **19/20 online**, the
@@ -3800,7 +3800,17 @@ and it cites this file's IDs for feature state rather than copying it.
       - `preflight` does not check `adminAuth` or `credentialSecret`;
       - the installer has never run end to end on a real machine (its own header says so).
 
-      **GATE B1: waiting on the operator.**
+      **GATE B1 passed 2026-09-24** (pushed `8e398f8`, CI green).
+      **Then `docs/01-field-devices.md` and `docs/02-network.md`**, with the sixth figure (the network). All 24 Mermaid
+      blocks render. Writing them measured:
+      - the uplink: about 15 kB/s up in a 60 s sample (E-156);
+      - the packet yield: a median of 99.9 % of expected minutes on normal days, which sets the ≥ 99 % acceptance
+        threshold (E-157).
+
+      Writing them also found two new Medium findings:
+      - **F-024:** two real Wi-Fi names were committed in `outage-recovery.md` and here. They are now removed.
+      - **F-025:** every device signed into the mesh account can open a shell on the edge, whose service account has
+        passwordless sudo. That is the operator's to restrict.
 - [ ] **RM-145e** Phases D and E: the site and PDF build, docs CI, conventions, and the three-reader verification (FINAL GATE).
 
 ### The Reports page, from the operator's brief — RM-137 onward (2026-09-22)
@@ -4126,7 +4136,7 @@ cannot draw more than 150 W, and the outlet branch is never at 0 A.
 - [x] **RM-131** What an outage does to the field network, read back; the recovery that needs no cloud.
       **Built and deployed 2026-09-22 (evening), operator's "proceed".**
       **The evidence — the operator's outage test of 2026-09-21, from the journal RM-125 kept.**
-      17:02:43 the Pi boots; 17:02:55 it joins the office 5 GHz SSID because `BEMS` is not up yet
+      17:02:43 the Pi boots; 17:02:55 it joins the office 5 GHz SSID because the device SSID is not up yet
       (the AP boots in ~2 min); 17:08:19 the Wi-Fi watchdog returns it. 17:08–18:11 every switch and
       outlet connects and drops — `ECONNRESET` from the device, a minute or two of `connection timed
       out`, reconnect — 12 to 20 times each (CO4: 20), while the four meters, nearest the AP, never

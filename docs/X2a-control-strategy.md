@@ -95,7 +95,7 @@ clearly different one.
     holds temperature tighter but cycles the equipment more often. A wider band is kinder to the equipment and cheaper to
     run. **Start wide, and narrow it only if people complain.**
 
-### 3.3 Setpoint reset — when the target and the dial are different numbers
+### 3.3 Setpoint reset: when the target and the dial are different numbers
 
 An air-conditioner's thermostat measures the air *at the unit*, not where people sit. Set the remote to 24 °C and the
 room often settles two, three or four degrees warmer. The offset depends on the room, the unit and the day. Somebody

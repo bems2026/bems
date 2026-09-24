@@ -1,0 +1,26 @@
+flowchart LR
+  subgraph internet ["Internet"]
+    db[("Hosted database + sign-in")]
+    mesh["Mesh network<br/>coordination + relays"]
+    extra["Optional: vendor cloud · push notifications ·<br/>network time · weather API (from the browser)"]
+  end
+  subgraph site ["The building"]
+    subgraph devnet ["Device network — dedicated 2.4 GHz SSID, one layer-2 segment, NO client isolation"]
+      ap["Access point / router<br/>channel pinned · DHCP reservations"]
+      devs["Field devices<br/>2.4 GHz only"]
+      edge["Edge server (Wi-Fi)<br/>proxy :8080 · dashboard :5183<br/>Node-RED loopback only"]
+    end
+    office["Office network<br/>(separate SSID or VLAN)"]
+    kiosk["Wall display<br/>on the edge server itself"]
+  end
+  remote["Remote user<br/>on the mesh network"]
+
+  devs <-->|"UDP 6666/6667 discovery broadcasts (layer-2 only) · TCP 6668 control, local key"| edge
+  devs --- ap
+  edge --- ap
+  ap -->|"uplink (NAT)"| internet
+  edge -->|"HTTPS: readings, audit rows"| db
+  edge <-->|"WireGuard UDP, or relayed"| mesh
+  remote <-->|"tailnet-only HTTPS: / → dashboard, /api /ws → proxy"| mesh
+  kiosk --- edge
+  office -. "no route to the device segment is needed" .- ap

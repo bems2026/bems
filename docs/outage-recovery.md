@@ -11,8 +11,8 @@ The persistent journal (RM-125) recorded the whole sequence:
 | Time | What happened | Why it matters |
 |---|---|---|
 | 17:02:43 | Pi boots (~30 s after power). | The access point takes ~2 minutes. |
-| 17:02:55 | Pi joins the office 5 GHz SSID (`NBERIC`), because `BEMS` is not up yet. | On that network every field device reads `online: false` and looks like a code fault. |
-| 17:08:19 | The Wi-Fi watchdog moves the Pi back to `BEMS`. | Now 90 s after boot and every 5 min, not 3 min / 15 min. |
+| 17:02:55 | Pi joins the office 5 GHz SSID, because the device SSID is not up yet. | On that network every field device reads `online: false` and looks like a code fault. |
+| 17:08:19 | The Wi-Fi watchdog moves the Pi back to the device SSID. | Now 90 s after boot and every 5 min, not 3 min / 15 min. |
 | 17:08–18:11 | Every switch and outlet connects, then drops with `ECONNRESET`, refuses TCP for a minute or two, reconnects — 12 to 20 times each. | The devices' Wi-Fi is unstable while the AP settles after a cold boot (RM-046). |
 | ~18:11 → | All fourteen, and the IR hub, go silent to `find()`. | **They are not gone.** Each still answers ARP and accepts TCP on 6668; they simply stop sending the UDP discovery broadcast Node-RED's `find()` waits for. |
 
@@ -24,7 +24,7 @@ channel; that restarts their announcements, which is why it "worked".
 ## What now happens on its own
 
 - **`ibems-wifi-prefer.timer`** — first check 90 s after boot, then every 5 min: the Pi is back on
-  `BEMS` within a minute or two of the AP appearing.
+  the device SSID within a minute or two of the AP appearing.
 - **`ibems-lan-map.timer`** — every 10 min, a 30 s passive listen on the discovery ports. Every
   device that announces is remembered in `server/data/lan-map.json` with its address and MAC.
   Devices announce after they boot, so the map fills during the first minutes after any power
