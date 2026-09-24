@@ -5,7 +5,7 @@ audience: [administrator, operator]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo 2f4c570 · edge checkout fcb1ff6
-evidence: [E-012, E-023, E-027, E-029, E-034, E-038, E-045, E-058, E-079, E-084, E-090]
+evidence: [E-012, E-023, E-027, E-029, E-034, E-038, E-045, E-058, E-079, E-084, E-090, E-176, E-184]
 ---
 
 # Open questions
@@ -36,7 +36,7 @@ Until a question is closed, any manual statement that depends on it is marked `[
 | Q-14 | Was the architecture revision that dropped Home Assistant and TimescaleDB made on 2026-08-18, as C1 says? No 2026-08-15..22 commit subject names it. The nearest is `0024389` (2026-08-21), which prunes "the MQTT twin" from the flow. | Dating the ADRs. | Next session | Read the ROADMAP entries and ADR-001's context for the decision date. | ADRs |
 | Q-15 | Do the ten query-cookbook queries in `04-data.md` run and return what they claim? In particular: does a meter share its `branch_circuit` value with its outlets (query 5)? | The manual shows no command it has not run (DoD). The queries could not be executed from the documentation session. | Operator | Run each in the SQL editor (all read-only) and note any error or surprising result | `04-data.md` cookbook |
 | Q-16 | What does the tailnet's SSH policy actually allow, and which devices should keep access? | F-025. Record the policy by rule in X1. | Operator | Read it in the tailnet admin console, then narrow it to named admin devices and the service user | `X1-security.md` |
-| Q-17 | Does the database's account list hold only people you know? Sign-up has been open (F-026), so an account you did not create is possible. | F-026. Any signed-in account can arm schedules that switch real loads. | Operator | After turning sign-ups off, open *Authentication → Users*. Delete any account you do not recognise. Then report the count only, with no email addresses. The documentation session's read of this list was blocked. | `X1-security.md`; F-026 |
+| Q-17 | Does the database's account list hold only people you know? Sign-up has been open (F-026), so an account you did not create is possible. | F-026. Any signed-in account can arm schedules that switch real loads. | Operator | Sign-up is now off (E-176). Open *Authentication → Users* and delete any account you do not recognise. If the database refuses to delete one, that account has sent a command or saved a setting (E-184). Ban it instead, then look at what it did in `commands` and `schedules`. Report the count only, with no email addresses. The documentation session's read of this list was blocked. | `X1-security.md`; F-026 |
 | Q-18 | Is break-glass configured on the edge, and has anyone used it? | F-027. Break-glass is the account-outage fallback, and X1 must say who holds it. | Operator | `ssh <edge-user>@<edge-host> 'grep -c "^BREAK_GLASS_PASSWORD_HASH=." ~/bems/server/.env; journalctl -u ibems-proxy \| grep -c "POST /api/local-login"'` and paste the two numbers. | `X1-security.md`; `05-interface.md` break-glass |
 
 ## Q-01 queries (read-only)

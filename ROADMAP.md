@@ -380,8 +380,8 @@ Found by the manual's audit, read-only. Both are in `docs/audit/findings.md`, an
 1. **F-026 (Critical): new-user sign-ups.** **Turned off by the operator; read back at 13:03 as
    `disable_signup: true`** (E-176). It had been open, and nothing is narrower than "signed in" (E-163), so a
    self-made account could arm a schedule that the scheduler fires on real loads. Add new accounts by invitation.
-   **Still to do:** review *Authentication → Users*, delete any account you do not recognise, and answer Q-17 with the
-   count only.
+   **Still to do:** review *Authentication → Users* and delete any account you do not recognise. The database refuses to
+   delete one that has acted (E-184): ban that one, and look at what it did. Answer Q-17 with the count only.
 2. **F-001 (Critical): restore the broker to loopback.** The corrected one-line command from RM-145's GATE A has not
    been run yet. Read it back with `ss -tln | grep 1883`.
 
@@ -3832,6 +3832,17 @@ and it cites this file's IDs for feature state rather than copying it.
       - an evidence row's wording was wrong (E-126). phase4 did create anonymous read policies, and phase5 dropped them,
         so the final state is unchanged (E-161);
       - the role model is flat: every signed-in account may do everything the policies allow (E-163).
+
+      **Then `docs/05-interface.md`:** the app's architecture, data sources and refresh, the seven pages, the design
+      rules that carry meaning, the access modes, and user and administration guides. Pages were read on the mock with no
+      database, as sign-in cannot be automated. Writing it found:
+      - **F-026 (Critical):** public sign-up was open. The operator turned it off, read back at 13:03 (E-176). Reviewing
+        the existing accounts is still open (Q-17).
+      - **F-028 (High):** the device panel says a shed group does nothing, but auto-shed sheds by that very field.
+      - **F-027, F-029, F-030:** break-glass has no rate limit or outcome log; `.env.example` hides that the build's
+        database variables switch sign-in on; one hint names a page that moved.
+      - A device's Functions only hide it: schedules and shedding still act (E-182). An account that has acted cannot be
+        deleted, only banned (E-184).
 - [ ] **RM-145e** Phases D and E: the site and PDF build, docs CI, conventions, and the three-reader verification (FINAL GATE).
 
 ### The Reports page, from the operator's brief — RM-137 onward (2026-09-22)

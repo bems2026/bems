@@ -108,6 +108,11 @@ The toggles live on **Devices**, beside the space tree and load-shed panels, bec
 already where this deployment is configured — and because a control that hides a card cannot live
 on the card it hides.
 
+> **As built, 2026-09-24:** the toggles, the space tree and the floor-plan editor have since moved to **Settings**
+> (reached from the account menu), and the load-shed tiers to *Automation → State-Driven*. The reasoning above still
+> holds: the toggles sit with the rest of the configuration, which now has its own page. See
+> [`05-interface.md`](05-interface.md) and `docs/audit/evidence-ledger.md` E-179.
+
 ### The property that must hold
 
 **Hiding a card never hides a control.** The Control page's `SwitchesListCard` and

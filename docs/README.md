@@ -47,7 +47,7 @@ The status column means:
 | [02 Network](02-network.md) | L2: the device network, uplink, remote access | Draft |
 | [03 Edge](03-edge.md) | L3: the edge server, from blank card to running | Draft |
 | [04 Data](04-data.md) | L4: schema, ingestion, retention, sizing, queries | Draft |
-| [05 Interface](05-interface.md) | L5: the web app and kiosk; user and administration guides | Scaffold |
+| [05 Interface](05-interface.md) | L5: the web app and kiosk; user and administration guides | Draft |
 | [X1 Security](X1-security.md) | Credentials, boundaries, accounts, threats | Scaffold |
 | [X2 Control logic](X2-control-logic.md) | Where each strategy is implemented, the interlock, every refusal | Scaffold |
 | [X2a Control strategy](X2a-control-strategy.md) | Triggers, strategies, priority, control flow, the 34-test manual (ported Handbook Ch.2) | Draft |

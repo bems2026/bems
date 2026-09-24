@@ -5,7 +5,7 @@ audience: [installer, integrator]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo 8e398f8 · edge checkout fcb1ff6
-evidence: [E-022, E-043, E-051, E-056, E-083, E-110, E-111, E-112, E-115, E-117, E-118, E-119, E-125, E-132, E-135, E-138, E-145, E-146, E-147, E-148, E-149, E-150, E-151, E-152]
+evidence: [E-022, E-043, E-051, E-056, E-083, E-110, E-111, E-112, E-115, E-117, E-118, E-119, E-125, E-132, E-135, E-138, E-145, E-146, E-147, E-148, E-149, E-150, E-151, E-152, E-179]
 ---
 
 # Field devices
@@ -159,7 +159,7 @@ filled on site, never by inference. The rules that govern every fitting are in
 |---|---|---|
 | Device id, class, branch circuit | `shared/sites/<slug>/devices.mjs` | Ids never change, and `site:check` must pass [E-148] |
 | The circuit map | `shared/sites/<slug>/circuits.mjs` | The single most important thing to get right. A wrong branch makes every total confidently wrong. |
-| Shed group per switched socket | The app: the Devices page's load-shed panel. The demand limit itself is on the Automation page. | Unassigned means never shed |
+| Shed group per switched socket | The app: *Automation → State-Driven*, the load-shed tiers panel, beside the demand limit it serves [E-179]. A device's Metadata tab edits the same field, and its hint wrongly says nothing sheds from it (F-028). | Unassigned means never shed |
 | Protocol version, discovery timeout | The device's node in the live flow | Set from what the device announces. Back up the flow first [E-132]. |
 
 ## How to verify
