@@ -3872,7 +3872,12 @@ and it cites this file's IDs for feature state rather than copying it.
       registry; the standalone web app; rolling-statistics anomalies; predictive work deferred (Proposed). Each is dated
       from its evidence, not from today. Where the options weighed at the time left no record, the table is marked as
       reconstructed. Q-14 is closed: no 2026-08-18 revision exists; the design dates from the first commit (E-203).
-      A broken anchor in `bridge-contract.md` was fixed; all 66 heading anchors in the manual now resolve.
+      A broken anchor in `bridge-contract.md` was fixed by rewording its heading, so GitHub and the site build agree.
+
+      **Then `docs/90-replication.md`:** ten steps from readiness to the improvement loop, each with its precondition,
+      procedure, expected result, definition of done and failure path; the invariants and adaptables; and five common
+      variations. It links to `replication.md` and `physical-install.md` without restating them. The baseline comes
+      after the build and before any automation, so no step depends on a later one.
 - [ ] **RM-145e** Phases D and E: the site and PDF build, docs CI, conventions, and the three-reader verification (FINAL GATE).
 
 ### The Reports page, from the operator's brief — RM-137 onward (2026-09-22)

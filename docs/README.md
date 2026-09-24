@@ -52,7 +52,7 @@ The status column means:
 | [X2 Control logic](X2-control-logic.md) | Where each strategy is implemented, the interlock, every refusal | Draft |
 | [X2a Control strategy](X2a-control-strategy.md) | Triggers, strategies, priority, control flow, the 34-test manual (ported Handbook Ch.2) | Draft |
 | [X3 Operations](X3-operations.md) | Commissioning, go-live, routine operations, backup, change, handover | Draft |
-| [90 Replication](90-replication.md) | Step 1 to done, for a new building | Scaffold |
+| [90 Replication](90-replication.md) | Step 1 to done, for a new building | Draft |
 | [91 Troubleshooting index](91-troubleshooting-index.md) | Every fault, by symptom | Scaffold |
 | [92 Glossary](92-glossary.md) | Every term, defined once | Scaffold |
 | [93 Governance and compliance](93-governance-compliance.md) | Regulation, electrical safety, privacy, licensing | Scaffold |

@@ -10,9 +10,9 @@ nobody has walked is worth less than one somebody has — so it says which is wh
 and packaging half is **not** covered at all: see
 [What this does not cover](#what-this-does-not-cover).
 
-This is Milestone 6's software track (`ROADMAP.md` RM-033). The funded plan's third component is
-*"a practical step-by-step framework that enables other SUCs to replicate and implement the
-iBEMS"*, and this is the part of that framework which is real today.
+This is the software track of the replication framework (`ROADMAP.md` RM-033), and the part of
+that framework which is real today. The whole framework, from an empty building to handover, is
+[`90-replication.md`](90-replication.md).
 
 ---
 

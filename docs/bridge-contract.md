@@ -2,7 +2,7 @@
 
 **Status:** the four `GET`/`WS` endpoints below are read-only, always have been, and stay
 that way on the Pi. **Phase L (Stage 2) added one write endpoint,
-[`POST /api/command`](#post-apicommand--mock-bridge-only), to `mock-bridge/server.mjs`
+[`POST /api/command`](#post-apicommand-mock-bridge-only), to `mock-bridge/server.mjs`
 only** — the Node-RED bridge that actually talks to the Pi's relays is untouched and has
 no write path. See that section for the full contract and why it's scoped this way.
 
@@ -379,7 +379,7 @@ upgrades back to WS on reconnect.
 
 ---
 
-## `POST /api/command` — mock bridge only
+## `POST /api/command` (mock bridge only)
 
 **This endpoint exists only in `mock-bridge/server.mjs`. The Node-RED bridge that talks to
 the real relays has no write path, and `node-red-bridge/build-flow.mjs` never imports
