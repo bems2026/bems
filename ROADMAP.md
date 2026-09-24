@@ -1,6 +1,8 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-24, 06:10 — **RM-145: GATE A passed. The broker is still open at 05:56 today, and the
+**Last audited:** 2026-09-24, 12:00 — **RM-145: public sign-up is open, and any signed-in account can arm a schedule
+that switches real loads (F-026, Critical). The fix is one setting in the auth provider's dashboard (§0, first entry).**
+**Earlier, 06:10 — RM-145: GATE A passed. The broker is still open at 05:56 today, and the
 operator chose to restore loopback-only (§4 #6, F-001). F-002 is Medium: a complete off-card credential copy exists.**
 **Earlier, 2026-09-23, 23:40 — RM-145: the manual's Phase A audit (read-only) found the MQTT broker listening on every
 interface with anonymous access since 2026-09-17, so EX-131 no longer holds on the host (§4 #6, `docs/audit/findings.md` F-001).**
@@ -370,6 +372,17 @@ other four and none needed changing.
 ---
 
 ## 0. Triage — what to do next
+
+### 2026-09-24, 12:00 — two security changes for the operator (RM-145 audit)
+
+Found by the manual's audit, read-only. Both are in `docs/audit/findings.md`, and neither needs a code change to close.
+1. **F-026 (Critical): turn off new-user sign-ups** in the auth provider's dashboard
+   (*Authentication → Sign In / Providers → Allow new users to sign up*). Sign-up is open (`disable_signup: false`).
+   Nothing is narrower than "signed in" (E-163), so a self-made account can arm a schedule that the scheduler fires on
+   real loads. Existing accounts keep working; add new ones by invitation. Then review *Authentication → Users*, delete
+   any account you do not recognise, and answer Q-17 with the count only.
+2. **F-001 (Critical): restore the broker to loopback.** The corrected one-line command from RM-145's GATE A has not
+   been run yet. Read it back with `ss -tln | grep 1883`.
 
 
 ### 2026-09-22, 17:00 — end of day: the list, by who can do it (supersedes the 10:55 walkthrough)
