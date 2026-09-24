@@ -1,6 +1,6 @@
 ---
 title: Diagram sources
-purpose: The six system figures the manual requires, their source files, and where each is used
+purpose: The system figures the manual requires, their source files, and where each is used
 audience: [integrator]
 status: Draft
 last_verified: 2026-09-24
@@ -25,6 +25,7 @@ chapters and are not repeated here.
 | 4 | Failure-mode overlay: what breaks at each hop, and what the user sees | `failure-modes.mmd` | `03-edge.md` § How it fails; later `91-troubleshooting-index.md` | Drawn 2026-09-24 |
 | 5 | Network topology, generalised with no real addresses | `network.mmd` | `02-network.md` § What it is | Drawn 2026-09-24 |
 | 6 | Deployment: what runs where, and which process supervises which | `deployment.mmd` | `00-overview.md` (Figure 2) | Drawn 2026-09-24 |
+| 7 | Trust boundaries: who can reach each listener, and with which credential | `trust-boundaries.mmd` | `X1-security.md` (Figure 7) | Drawn 2026-09-24 |
 
 **Each chapter embeds the figure inline** so that it renders on GitHub as well as in the site build. The `.mmd` file is
 the source. Phase D adds a check that each inline copy is identical to its source.

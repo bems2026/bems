@@ -5,7 +5,7 @@ audience: [administrator, operator]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo 2f4c570 · edge checkout fcb1ff6
-evidence: [E-012, E-023, E-027, E-029, E-034, E-038, E-045, E-058, E-079, E-084, E-090, E-176, E-184]
+evidence: [E-012, E-023, E-027, E-029, E-034, E-038, E-045, E-058, E-079, E-084, E-090, E-176, E-184, E-187]
 ---
 
 # Open questions
@@ -38,6 +38,7 @@ Until a question is closed, any manual statement that depends on it is marked `[
 | Q-16 | What does the tailnet's SSH policy actually allow, and which devices should keep access? | F-025. Record the policy by rule in X1. | Operator | Read it in the tailnet admin console, then narrow it to named admin devices and the service user | `X1-security.md` |
 | Q-17 | Does the database's account list hold only people you know? Sign-up has been open (F-026), so an account you did not create is possible. | F-026. Any signed-in account can arm schedules that switch real loads. | Operator | Sign-up is now off (E-176). Open *Authentication → Users* and delete any account you do not recognise. If the database refuses to delete one, that account has sent a command or saved a setting (E-184). Ban it instead, then look at what it did in `commands` and `schedules`. Report the count only, with no email addresses. The documentation session's read of this list was blocked. | `X1-security.md`; F-026 |
 | Q-18 | Is break-glass configured on the edge, and has anyone used it? | F-027. Break-glass is the account-outage fallback, and X1 must say who holds it. | Operator | `ssh <edge-user>@<edge-host> 'grep -c "^BREAK_GLASS_PASSWORD_HASH=." ~/bems/server/.env; journalctl -u ibems-proxy \| grep -c "POST /api/local-login"'` and paste the two numbers. | `X1-security.md`; `05-interface.md` break-glass |
+| Q-19 | Is the edge's service-role key a legacy key (a long token beginning `eyJ`) or a newer secret key (`sb_secret_…`)? | The two rotate differently: a newer key can be deleted by itself; a legacy one only by retiring the legacy keys (E-187). | Operator | Look at the first characters in the provider's API-key settings, not on the edge. Answer "legacy" or "secret key" only. | `X1-security.md` rotation |
 
 ## Q-01 queries (read-only)
 

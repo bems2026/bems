@@ -3843,6 +3843,13 @@ and it cites this file's IDs for feature state rather than copying it.
         database variables switch sign-in on; one hint names a page that moved.
       - A device's Functions only hide it: schedules and shedding still act (E-182). An account that has acted cannot be
         deleted, only banned (E-184).
+
+      **Then `docs/X1-security.md`:** trust boundaries (a seventh figure, `trust-boundaries.mmd`; all 25 Mermaid blocks
+      render), the credential inventory with how to replace each, the five external accounts, authentication end to end,
+      repository hygiene and the day a secret is committed, physical security, personal data, a threat table, and an
+      offboarding procedure. Writing it measured that every secret on the edge is unencrypted on its SD card (E-188),
+      that the proxy never holds the service-role key (E-189), and that the relay token is read from Node-RED's
+      environment, so rotating it changes no flow (E-192). Q-19 asks which kind of database key the edge holds.
 - [ ] **RM-145e** Phases D and E: the site and PDF build, docs CI, conventions, and the three-reader verification (FINAL GATE).
 
 ### The Reports page, from the operator's brief — RM-137 onward (2026-09-22)

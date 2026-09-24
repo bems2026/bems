@@ -1,0 +1,37 @@
+flowchart LR
+  subgraph pub ["Public internet: anyone"]
+    db[("Hosted database + sign-in<br/>row-level security · accounts by invitation")]
+    vendor["Vendor cloud (optional)"]
+    notif["Push notices"]
+  end
+  subgraph tail ["Mesh network: enrolled devices only"]
+    remote["Remote browser"]
+    admin["Administrator's device"]
+  end
+  subgraph lan ["Device segment: anyone with the Wi-Fi password"]
+    devs["Field devices"]
+    lanb["Site-network browser"]
+  end
+  subgraph host ["Edge host: the service account"]
+    proxy["Proxy :8080<br/>checks the session · audit row before dispatch"]
+    dash["Dashboard :5183<br/>static files, public key inside"]
+    nr["Node-RED :1880, loopback only<br/>editor behind adminAuth"]
+    daemons["Ingest · scheduler"]
+    broker["Broker :1883"]
+    shell["SSH :22 · VNC :5900"]
+  end
+
+  remote -->|"HTTPS via Serve · session token"| proxy
+  lanb -->|"HTTP, no TLS · session token"| proxy
+  lanb -->|"HTTP"| dash
+  remote -->|"public key + session token"| db
+  proxy -->|"LIGHT_API_TOKEN"| nr
+  daemons -->|"commands · LIGHT_API_TOKEN"| nr
+  nr -->|"TCP 6668 · per-device local key"| devs
+  daemons -->|"service-role key"| db
+  proxy -->|"vendor secret, only if set"| vendor
+  daemons -->|"vendor secret, aircon only, if set"| vendor
+  daemons -->|"topic name"| notif
+  admin -->|"mesh SSH, check mode · then passwordless sudo"| shell
+  lanb -. "anonymous · F-001" .-> broker
+  lanb -. "account password via PAM · F-007" .-> shell
