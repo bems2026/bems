@@ -3806,7 +3806,7 @@ and it cites this file's IDs for feature state rather than copying it.
       - The aircon's hard range: 16–30 °C, not a 26 °C ceiling.
       - A one-off setpoint below policy is sent with a recorded warning, not refused. The refusal lives at the rule, so a
         test was added: 34 tests, not 33.
-- [ ] **RM-145d** Phases B and C: the layer and plane chapters and `90-replication.md`.
+- [x] **RM-145d** Phases B and C: the layer and plane chapters and `90-replication.md`. **Every chapter drafted, 2026-09-24**; the verification pass is RM-145e.
       **B1 is drafted, 2026-09-24:** `docs/00-overview.md` and `docs/03-edge.md`, with five of the six figures in
       `docs/diagrams/*.mmd`, embedded verbatim, and all 23 Mermaid blocks in the manual parsed and rendered under
       Mermaid 11. The ledger reaches E-144. Writing them found:
@@ -3878,6 +3878,13 @@ and it cites this file's IDs for feature state rather than copying it.
       procedure, expected result, definition of done and failure path; the invariants and adaptables; and five common
       variations. It links to `replication.md` and `physical-install.md` without restating them. The baseline comes
       after the build and before any automation, so no step depends on a later one.
+
+      **Then 91 to 99:** the troubleshooting index, generated from every chapter's fault table (74 symptoms, each
+      checked to have all five columns); the glossary; governance and compliance (RA 11285, AO 15 s. 2024, RA 7920 and
+      RA 10173, read from LawPhil's copies because the official sites were unreachable, and marked so); the roadmap
+      index; and the worked example. Q-20 asks the institution four facts only it can give. Figures are numbered 1 to 7
+      across the manual. RM-006c looks done: auto-shed was armed on 2026-09-23 (E-087). It is left open for the
+      operator to reconcile.
 - [ ] **RM-145e** Phases D and E: the site and PDF build, docs CI, conventions, and the three-reader verification (FINAL GATE).
 
 ### The Reports page, from the operator's brief — RM-137 onward (2026-09-22)

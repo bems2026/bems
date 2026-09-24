@@ -25,7 +25,7 @@ Values never appear here. Each credential is named with where it lives and how t
 
 ### Trust boundaries
 
-**Figure 7. Who can reach what, and with which credential.** Solid arrows are the paths the system uses. Dashed arrows
+**Figure 7 — who can reach what, and with which credential.** Solid arrows are the paths the system uses. Dashed arrows
 are exposures open today, each with its finding.
 
 ```mermaid

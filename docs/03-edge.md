@@ -363,7 +363,7 @@ Record the date in `backup-policy.md`.
 
 ## How it fails
 
-**Figure — what breaks at each hop, and what a person sees.** Source:
+**Figure 6 — what breaks at each hop, and what a person sees.** Source:
 [`diagrams/failure-modes.mmd`](diagrams/failure-modes.mmd). Evidence: E-022, E-110, E-111, E-119, E-078, E-082, E-085,
 E-134, E-142, E-143, E-015. What the page shows while Node-RED is down has not been observed.
 

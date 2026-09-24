@@ -53,11 +53,11 @@ The status column means:
 | [X2a Control strategy](X2a-control-strategy.md) | Triggers, strategies, priority, control flow, the 34-test manual (ported Handbook Ch.2) | Draft |
 | [X3 Operations](X3-operations.md) | Commissioning, go-live, routine operations, backup, change, handover | Draft |
 | [90 Replication](90-replication.md) | Step 1 to done, for a new building | Draft |
-| [91 Troubleshooting index](91-troubleshooting-index.md) | Every fault, by symptom | Scaffold |
-| [92 Glossary](92-glossary.md) | Every term, defined once | Scaffold |
-| [93 Governance and compliance](93-governance-compliance.md) | Regulation, electrical safety, privacy, licensing | Scaffold |
-| [94 Roadmap](94-roadmap.md) | Planned items only | Scaffold |
-| [99 Worked example](99-worked-example.md) | The pilot site | Scaffold |
+| [91 Troubleshooting index](91-troubleshooting-index.md) | Every fault, by symptom | Draft |
+| [92 Glossary](92-glossary.md) | Every term, defined once | Draft |
+| [93 Governance and compliance](93-governance-compliance.md) | Regulation, electrical safety, privacy, licensing | Draft |
+| [94 Roadmap](94-roadmap.md) | Planned items only | Draft |
+| [99 Worked example](99-worked-example.md) | The pilot site | Draft |
 | [Architecture decisions](adr/README.md) | Why the system is built the way it is | Index |
 
 ## How to read the evidence tags

@@ -19,7 +19,7 @@ This chapter builds all three and says what each costs when it fails.
 
 ## What it is
 
-**Figure — the networks, generalised: no real names or addresses.** Source: [`diagrams/network.mmd`](diagrams/network.mmd).
+**Figure 5 — the networks, generalised: no real names or addresses.** Source: [`diagrams/network.mmd`](diagrams/network.mmd).
 What is drawn is the recommended arrangement. Where the pilot differs, the text says so.
 
 ```mermaid
