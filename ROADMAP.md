@@ -3866,6 +3866,13 @@ and it cites this file's IDs for feature state rather than copying it.
       - the database must come before local control, not after: no command path exists without it (E-201);
       - **F-034 (High):** every out-of-dashboard notice is sent by the edge itself, so nothing notices when the edge
         stops recording (E-200).
+
+      **Then the ADRs, `docs/adr/ADR-0003` to `ADR-0010`:** MQTT is not the device transport (the prompt's "dropped"
+      premise refuted: the broker runs, F-001); no Home Assistant; no TimescaleDB; n8n removed; the configuration-driven
+      registry; the standalone web app; rolling-statistics anomalies; predictive work deferred (Proposed). Each is dated
+      from its evidence, not from today. Where the options weighed at the time left no record, the table is marked as
+      reconstructed. Q-14 is closed: no 2026-08-18 revision exists; the design dates from the first commit (E-203).
+      A broken anchor in `bridge-contract.md` was fixed; all 66 heading anchors in the manual now resolve.
 - [ ] **RM-145e** Phases D and E: the site and PDF build, docs CI, conventions, and the three-reader verification (FINAL GATE).
 
 ### The Reports page, from the operator's brief — RM-137 onward (2026-09-22)
