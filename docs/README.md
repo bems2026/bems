@@ -46,7 +46,7 @@ The status column means:
 | [01a Device roles and catalogue](01a-device-roles.md) | The six roles, twelve device types, installing, states, troubleshooting (ported Handbook Ch.1) | Draft |
 | [02 Network](02-network.md) | L2: the device network, uplink, remote access | Draft |
 | [03 Edge](03-edge.md) | L3: the edge server, from blank card to running | Draft |
-| [04 Data](04-data.md) | L4: schema, ingestion, retention, sizing, queries | Scaffold |
+| [04 Data](04-data.md) | L4: schema, ingestion, retention, sizing, queries | Draft |
 | [05 Interface](05-interface.md) | L5: the web app and kiosk; user and administration guides | Scaffold |
 | [X1 Security](X1-security.md) | Credentials, boundaries, accounts, threats | Scaffold |
 | [X2 Control logic](X2-control-logic.md) | Where each strategy is implemented, the interlock, every refusal | Scaffold |

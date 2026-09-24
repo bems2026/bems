@@ -35,6 +35,9 @@ Until a question is closed, any manual statement that depends on it is marked `[
 | Q-13 | The 12 `〔FILL IN〕` gaps in `docs/physical-install.md`. | L1 electrical installation, and panel and part facts. Never filled by inference. | Site visit | Use `docs/physical-install.md` as the checklist on the visit. | `01-field-devices.md`, `99-worked-example.md` |
 | Q-14 | Was the architecture revision that dropped Home Assistant and TimescaleDB made on 2026-08-18, as C1 says? No 2026-08-15..22 commit subject names it. The nearest is `0024389` (2026-08-21), which prunes "the MQTT twin" from the flow. | Dating the ADRs. | Next session | Read the ROADMAP entries and ADR-001's context for the decision date. | ADRs |
 
+| Q-15 | Do the ten query-cookbook queries in `04-data.md` run and return what they claim? In particular: does a meter share its `branch_circuit` value with its outlets (query 5)? | The manual shows no command it has not run (DoD). The queries could not be executed from the documentation session. | Operator | Run each in the SQL editor (all read-only) and note any error or surprising result | `04-data.md` cookbook |
+| Q-16 | What does the tailnet's SSH policy actually allow, and which devices should keep access? | F-025. Record the policy by rule in X1. | Operator | Read it in the tailnet admin console, then narrow it to named admin devices and the service user | `X1-security.md` |
+
 ## Q-01 queries (read-only)
 
 ```sql

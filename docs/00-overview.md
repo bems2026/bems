@@ -5,7 +5,7 @@ audience: [administrator, integrator, operator, installer]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo b8af936 · edge checkout fcb1ff6
-evidence: [E-010, E-011, E-017, E-018, E-021, E-023, E-026, E-041, E-051, E-113, E-115, E-120, E-125, E-056, E-058, E-060, E-062, E-063, E-064, E-065, E-066, E-070, E-076, E-078, E-080, E-082, E-083, E-084, E-086, E-087, E-110, E-111, E-122, E-123, E-126, E-127, E-128, E-129, E-134, E-135, E-137, E-138]
+evidence: [E-010, E-011, E-017, E-018, E-021, E-023, E-026, E-041, E-051, E-113, E-115, E-120, E-125, E-056, E-058, E-060, E-062, E-063, E-064, E-065, E-066, E-070, E-076, E-078, E-080, E-082, E-083, E-084, E-086, E-087, E-110, E-111, E-122, E-123, E-126, E-127, E-128, E-129, E-134, E-135, E-137, E-138, E-161]
 ---
 
 # Overview
@@ -112,7 +112,7 @@ flowchart BT
 | **L1 Field devices** | The six roles: Meter, Switch, Metered switch, Sensor, Commander, Source ([01a](01a-device-roles.md)) | Tuya-ecosystem Wi-Fi devices speaking the Tuya LAN protocol v3.3–3.5: CT branch meters (one box can carry two channels), dual-socket metered outlets, relay light switches and an infrared hub that also senses the room [E-051, E-125] |
 | **L2 Network** | The dedicated device segment, addressing, the local control path, uplink and remote access ([02](02-network.md)) | A 2.4 GHz Wi-Fi segment; a mesh VPN (Tailscale) with tailnet-only HTTPS [E-026] |
 | **L3 Edge computing** | Parsing, deciding, dispatching and supervising; everything that must survive an outage ([03](03-edge.md)) | Raspberry Pi 4 (8 GB), Debian 13, Node.js 22, Node-RED 4.1.8, systemd [E-010, E-011, E-017, E-018, E-021] |
-| **L4 Data** | The system of record, ingestion and retention ([04](04-data.md)) | Supabase (hosted Postgres + Auth): 23 tables, row-level security, no anonymous policies [E-064, E-126]. A Google Sheets mirror is optional and secondary [E-058]. |
+| **L4 Data** | The system of record, ingestion and retention ([04](04-data.md)) | Supabase (hosted Postgres + Auth): 23 tables, row-level security, no anonymous policies [E-064, E-161]. A Google Sheets mirror is optional and secondary [E-058]. |
 | **L5 Interface** | Seeing and acting, on the wall display or remotely ([05](05-interface.md)) | React 19, Vite 8, TypeScript, zustand; seven pages [E-060] |
 
 | Plane | Cuts across | Why it is a plane, not a layer |
@@ -213,7 +213,7 @@ sequenceDiagram
 
 Evidence for the hops: the scaling [E-135]; the poll cadences [E-056]; the online, late and expired thresholds
 [E-110, E-111]; the scrub [E-138]; outage buffering [E-134]; retention [E-070]; access to history through database
-functions [E-126]; site-time display [E-137].
+functions [E-126, E-161]; site-time display [E-137].
 
 **Figure 4 — one command, screen to device.** It shows the audit write before dispatch, the interlock, and where
 acknowledgement does and does not exist. Source: [`diagrams/command-path.mmd`](diagrams/command-path.mmd).
