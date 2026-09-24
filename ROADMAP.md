@@ -3859,6 +3859,13 @@ and it cites this file's IDs for feature state rather than copying it.
       - **F-033 (Medium):** the aircon loop re-checks the room floor against the build value, not the floor set on
         Settings (E-198).
       - **F-032 (Low):** one hold message still says the IR hub was never paired.
+
+      **Then `docs/X3-operations.md`:** the commissioning pack with a certificate, the staged go-live, the as-built
+      record, routine checks from daily to annual, monitoring the monitor, change control, the update policy, incident
+      severities, a competency checklist, and decommissioning. Writing it found:
+      - the database must come before local control, not after: no command path exists without it (E-201);
+      - **F-034 (High):** every out-of-dashboard notice is sent by the edge itself, so nothing notices when the edge
+        stops recording (E-200).
 - [ ] **RM-145e** Phases D and E: the site and PDF build, docs CI, conventions, and the three-reader verification (FINAL GATE).
 
 ### The Reports page, from the operator's brief — RM-137 onward (2026-09-22)

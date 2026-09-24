@@ -51,7 +51,7 @@ The status column means:
 | [X1 Security](X1-security.md) | Credentials, boundaries, accounts, threats | Draft |
 | [X2 Control logic](X2-control-logic.md) | Where each strategy is implemented, the interlock, every refusal | Draft |
 | [X2a Control strategy](X2a-control-strategy.md) | Triggers, strategies, priority, control flow, the 34-test manual (ported Handbook Ch.2) | Draft |
-| [X3 Operations](X3-operations.md) | Commissioning, go-live, routine operations, backup, change, handover | Scaffold |
+| [X3 Operations](X3-operations.md) | Commissioning, go-live, routine operations, backup, change, handover | Draft |
 | [90 Replication](90-replication.md) | Step 1 to done, for a new building | Scaffold |
 | [91 Troubleshooting index](91-troubleshooting-index.md) | Every fault, by symptom | Scaffold |
 | [92 Glossary](92-glossary.md) | Every term, defined once | Scaffold |
