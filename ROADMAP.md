@@ -3811,6 +3811,13 @@ and it cites this file's IDs for feature state rather than copying it.
       - **F-024:** two real Wi-Fi names were committed in `outage-recovery.md` and here. They are now removed.
       - **F-025:** every device signed into the mesh account can open a shell on the edge, whose service account has
         passwordless sudo. That is the operator's to restrict.
+
+      **Then `docs/04-data.md`:** the system of record table by table, the read and write model, ingestion, the sizing
+      method with the pilot's measured row counts, the spreadsheet mirror against Google's own limits, and a ten-query
+      cookbook. The queries parse as PostgreSQL but have not been run (Q-15). Writing it found:
+      - an evidence row's wording was wrong (E-126). phase4 did create anonymous read policies, and phase5 dropped them,
+        so the final state is unchanged (E-161);
+      - the role model is flat: every signed-in account may do everything the policies allow (E-163).
 - [ ] **RM-145e** Phases D and E: the site and PDF build, docs CI, conventions, and the three-reader verification (FINAL GATE).
 
 ### The Reports page, from the operator's brief — RM-137 onward (2026-09-22)
