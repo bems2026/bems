@@ -4,7 +4,7 @@ Companion to [`docs/bridge-contract.md`](bridge-contract.md), which stays the si
 of truth for field names — this doc's schema is **additive**, never a rename. The full
 layered-architecture rationale (why Supabase, why a narrow `ibems-server` instead of a
 general backend, the full phased rollout) lives in the approved architecture plan at
-`/home/bems/.claude/plans/dreamy-herding-lemur.md` — outside this repo, so copy the
+`~/.claude/plans/dreamy-herding-lemur.md` on the edge — outside this repo, so copy the
 relevant sections here if this doc needs to travel with the code. This doc covers only the
 storage layer's wire contract.
 

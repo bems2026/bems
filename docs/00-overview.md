@@ -5,7 +5,7 @@ audience: [administrator, integrator, operator, installer]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo b8af936 · edge checkout fcb1ff6
-evidence: [E-010, E-011, E-017, E-018, E-021, E-023, E-026, E-041, E-051, E-113, E-115, E-120, E-125, E-056, E-058, E-060, E-062, E-063, E-064, E-065, E-066, E-070, E-076, E-078, E-080, E-082, E-083, E-084, E-086, E-087, E-110, E-111, E-122, E-123, E-126, E-127, E-128, E-129, E-134, E-135, E-137, E-138, E-161]
+evidence: [E-010, E-011, E-017, E-018, E-021, E-023, E-026, E-041, E-051, E-056, E-058, E-060, E-062, E-063, E-064, E-065, E-066, E-070, E-076, E-078, E-080, E-082, E-083, E-084, E-086, E-087, E-110, E-111, E-113, E-115, E-120, E-122, E-123, E-125, E-126, E-127, E-128, E-129, E-134, E-135, E-137, E-138, E-161, E-183]
 ---
 
 # Overview
@@ -30,8 +30,8 @@ explains them.
 | Holds a room at a comfort target | An infrared commander, stepped by a room-temperature loop | Field-validated [E-084, E-113] |
 | Flags unusual consumption | Rolling statistics: two tests must agree | Field-validated [E-076, E-080] |
 | Produces reports | Daily, weekly and monthly figures with their coverage, exportable as CSV | Field-validated [E-080; ROADMAP EX-033] |
-| Keeps control through an internet outage | A local audit buffer and offline session checks | Field-validated for ingestion [E-134]; implemented for commands [E-078] |
-| Reaches the building from off site | Over a private mesh network, never exposed to the internet | Implemented; configured on the edge [E-026] |
+| Keeps control through an internet outage | A local audit buffer and offline session checks | Field-validated for ingestion [E-134]; implemented, not validated, for commands [E-078] |
+| Reaches the building from off site | Over a private mesh network, never exposed to the internet | Field-validated: in use from off site [E-026, E-183] |
 
 Planned items (generation from the solar inverter, occupancy and daylight sensing, prediction) are listed only in
 [94 Roadmap](94-roadmap.md).

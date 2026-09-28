@@ -250,8 +250,9 @@ The manual lives in `docs/`, starting at `docs/README.md`. It describes the syst
   if none fits, and list the ID in the page's `evidence:`. What cannot be verified is marked
   `[UNVERIFIED]`, never softened. A problem found goes in `docs/audit/findings.md`; a gap in
   `open-questions.md`, with an owner.
-- **Status labels.** Pages: `Scaffold`, `Draft`. ADRs: `Proposed`, `Accepted`. Features:
-  `Field-validated`, `Implemented`, `Implemented, not validated`. Planned features appear **only**
+- **Status labels**, as `docs/README.md` defines them. Pages: `Scaffold`, `Draft`, `Reviewed`, `Verified`. ADRs:
+  `Proposed`, `Accepted`. Features: `Field-validated`, `Bench-validated`, `Implemented, not validated`, and `Planned`,
+  which appears **only**
   in `94-roadmap.md`.
 - **Chapters follow the spine** in `_templates/chapter-spine.md`: What it is, What you need, How to
   install, How to configure, How to verify, How to operate, How it fails (five columns, every one

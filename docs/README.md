@@ -4,8 +4,8 @@ purpose: Front page of the adoption and replication manual — where to start, b
 audience: [operator, administrator, installer, integrator]
 status: Draft
 last_verified: 2026-09-24
-applies_to: repo afa5aaf
-evidence: [E-051]
+applies_to: repo cdf750f
+evidence: [E-051, E-060, E-061, E-062, E-063, E-064, E-065, E-066, E-071, E-086, E-135, E-168, E-170, E-196]
 ---
 
 # iBEMS — adoption and replication manual
@@ -18,9 +18,10 @@ operates and improves its own**, from nothing.
 It describes a system, not an installation. Everything specific to the pilot site lives in one chapter,
 [99-worked-example](99-worked-example.md). Every other chapter applies to any building.
 
-!!! warning "This manual is being written"
-    The chapters are built in gated phases (ROADMAP RM-145), and the status table below says honestly which ones exist.
-    Until a chapter is written, the documents in [Reference](#reference) remain the authority on their subjects.
+!!! note "Every chapter is drafted"
+    All chapters were written by 2026-09-24 (ROADMAP RM-145) and are marked **Draft**. A chapter becomes **Reviewed**
+    once someone other than its author has read it. Where a chapter and a document in [Reference](#reference) disagree,
+    trust the one verified more recently, and say so in [open questions](audit/open-questions.md).
 
 ## Start here, by role
 
@@ -30,6 +31,24 @@ It describes a system, not an installation. Everything specific to the pilot sit
 | **Administrator:** you own the system for the institution | [00 Overview](00-overview.md) → [X1 Security](X1-security.md) → [X3 Operations](X3-operations.md) → [04 Data](04-data.md) → [93 Governance](93-governance-compliance.md) |
 | **Installer:** you fit devices and wire panels | [01a Device roles](01a-device-roles.md) → [01 Field devices](01-field-devices.md) → [physical-install](physical-install.md) → [02 Network](02-network.md) |
 | **Integrator:** you build and maintain the stack | [00 Overview](00-overview.md) → [03 Edge](03-edge.md) → [02 Network](02-network.md) → [04 Data](04-data.md) → [05 Interface](05-interface.md) → [X2 Control logic](X2-control-logic.md) → [90 Replication](90-replication.md) |
+
+**Developer:** you change the code. Start with [Find it in the code](#find-it-in-the-code), then
+[03 Edge](03-edge.md), [X2 Control logic](X2-control-logic.md) and [04 Data](04-data.md).
+
+## Find it in the code
+
+| Question | Where | Read |
+|---|---|---|
+| Which devices exist, and on which circuits? | `shared/sites/<site>/` (`site`, `devices`, `circuits`), read through `shared/registry.mjs`. `shared/siteConfig.mjs` picks the site. | [03](03-edge.md), ADR-0007 [E-063] |
+| Where is a raw reading turned into volts, amps and watts? | The parser on each device's Node-RED tab, generated from the capability catalogue `shared/deviceCapabilities.mjs` by `npm run fix-dp-parsers:pi`. The scale is per product. | [03 § Parsing](03-edge.md#parsing-raw-datapoint-to-engineering-unit) [E-135] |
+| Where are readings combined into one per device, and into building totals? | `shared/buildLatest.mjs`, inlined into the generated bridge tab (`node-red-bridge/build-flow.mjs`) | [03](03-edge.md), [04](04-data.md) [E-062, E-168] |
+| What writes the database? | `server/ingest.mjs`, every 60 s | [04 § Ingestion](04-data.md#ingestion) [E-086] |
+| Where is the schema? | `supabase/schema.sql`, then every `supabase/phase*.sql` in filename order | [04](04-data.md) [E-064] |
+| Where is a command authorised? | `server/proxy.mjs` (`handleCommand`): a verified session with a user; break-glass refused. Then `shared/commands.mjs` (`validateCommand`) checks the body. | [X1 § Authentication](X1-security.md#authentication-and-authorisation-end-to-end), [X2](X2-control-logic.md#when-the-system-refuses-to-act) [E-066, E-170] |
+| Where is it recorded, and then sent? | `server/auditedDispatch.mjs` records first; `server/dispatchLight.mjs` sends it to the flow | [X2](X2-control-logic.md) [E-065, E-196] |
+| What runs unattended? | `server/scheduler.mjs`: schedules, auto-shed and the aircon loop, deciding in `schedulePlan.mjs`, `shedPlan.mjs` and `acuLoopPlan.mjs` | [X2](X2-control-logic.md#where-each-strategy-lives) [E-071] |
+| Where are the pages? | `src/App.tsx` routes by URL hash to `src/components/<page>/`; the live connection is `src/hooks/useLiveConnection.ts` | [05 § Architecture](05-interface.md#architecture) [E-060] |
+| Where does the browser find the bridge? | `src/config/bridge.ts`, the only place a bridge address appears | [05](05-interface.md#architecture) [E-061] |
 
 ## The manual
 

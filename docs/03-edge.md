@@ -5,7 +5,7 @@ audience: [integrator, installer]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo b8af936 · edge checkout fcb1ff6
-evidence: [E-010, E-011, E-012, E-013, E-014, E-015, E-016, E-017, E-018, E-019, E-020, E-021, E-022, E-023, E-024, E-025, E-026, E-027, E-028, E-029, E-030, E-128, E-035, E-036, E-038, E-042, E-044, E-046, E-047, E-050, E-051, E-052, E-056, E-062, E-066, E-067, E-078, E-079, E-082, E-085, E-086, E-110, E-111, E-118, E-119, E-124, E-129, E-130, E-131, E-132, E-133, E-134, E-135, E-136, E-138, E-139, E-140, E-141, E-142, E-143, E-144]
+evidence: [E-010, E-011, E-012, E-013, E-014, E-015, E-016, E-017, E-018, E-019, E-020, E-021, E-022, E-023, E-024, E-025, E-026, E-027, E-028, E-029, E-030, E-035, E-036, E-038, E-042, E-044, E-046, E-047, E-050, E-051, E-052, E-056, E-062, E-066, E-067, E-078, E-079, E-082, E-085, E-086, E-110, E-111, E-118, E-119, E-124, E-128, E-129, E-130, E-131, E-132, E-133, E-134, E-135, E-136, E-138, E-139, E-140, E-141, E-142, E-143, E-144, E-145]
 ---
 
 # Edge computing
@@ -438,4 +438,4 @@ Site specifics for each entry are in [99-worked-example](99-worked-example.md).
 | A card or SSD imaged from the working edge server | The card is the most likely part to fail, and an image turns a rebuild into a swap | [UNVERIFIED] |
 | A rated power supply | Under-voltage looks like software instability | [UNVERIFIED] |
 | A second board of the same model | The whole site depends on one computer | [UNVERIFIED] |
-| The off-card credential copy, and where it is | Without it, a rebuild means re-pairing every device [E-079, E-140] | — |
+| The off-card credential copy, and where it is | Without it, a rebuild means re-exporting every device's local key from the vendor account and re-entering every stored flow credential [E-079, E-140, E-145]. Re-pairing is forced only if the vendor account is lost too. | — |

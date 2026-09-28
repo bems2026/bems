@@ -124,6 +124,8 @@ is added the same way ([X3](X3-operations.md#change-control)).
 | Commander (C) | An IR hub the vendor's local protocol supports, in line of sight of the unit | 1 per unit or per group in sight | |
 | Sensor (E) | Supported class | Only after the first month | |
 | Uninterruptible supply | For the edge and the access point | 1 | |
+| Hosted database | A plan whose size cap is above the site's measured volume, with backups ([04](04-data.md#sizing-and-retention)) | 1 project per site | |
+| Mesh network | An institutional account; one device per administrator ([02](02-network.md), [X1](X1-security.md#accounts)) | 1 account | |
 | Spares | [X3 § What to keep on the shelf](X3-operations.md#what-to-keep-on-the-shelf) | | |
 
 **Expected result.** A priced list, with the electrician's labour priced separately.
@@ -136,16 +138,21 @@ model, or plan the work of a new device class ([01](01-field-devices.md)).
 
 ### Step 4: Bench build
 
-**Precondition.** The edge server, one metered switch and one switch, on a bench. Nothing is in a panel.
+**Precondition.** The edge server, one metered switch and one switch, on a bench. Nothing is in a panel. **A copy of
+the repository that the institution controls** (a fork of [the public repository](https://github.com/bems2026/bems)): the site's own files
+live in it, and the edge runs from it. A workstation with Node.js 22 or 24 and git.
 
 **Procedure.**
 
-1. Run the software with no hardware at all: `npm run mock`, then `npm run dev` ([`replication.md`](replication.md)
+1. On the workstation, clone the institution's copy and run `npm ci`. Then run the software with no hardware at
+   all: `npm run mock`, then `npm run dev` ([`replication.md`](replication.md)
    step 7).
 2. Build the edge ([03](03-edge.md#how-to-install)), with `HARDWARE_DISPATCH_ENABLED` left **unset**, so every command
    is recorded as `dry_run`.
-3. Scaffold the site (`npm run site:new`), fill in `site.mjs`, and run `npm run site:check` ([`replication.md`](replication.md)
-   steps 1–4 and 10).
+3. Scaffold the site (`npm run site:new`), fill in `site.mjs`, point the deployment at it in
+   `shared/siteConfig.mjs`, regenerate the flow (`npm run build:flow`), and run `npm run site:check`
+   ([`replication.md`](replication.md) steps 1–6 and 10). Commit the site's files to the institution's copy; the edge
+   pulls them from there. Until `siteConfig.mjs` points at the new site, the edge runs the pilot's devices.
 4. Set up the database and add the site's row ([04](04-data.md#how-to-install)).
 5. Pair the two devices and enrol them ([01](01-field-devices.md#how-to-install)).
 6. Sign in, switch each device from the app, and read back its `dry_run` row ([05](05-interface.md#how-to-verify)).
@@ -166,12 +173,12 @@ isolation first ([02](02-network.md#how-it-fails), [01](01-field-devices.md#how-
 
 | # | Layer | Chapter | Done when |
 |---|---|---|---|
-| 6.1 | Network: the dedicated segment, addresses, uplink, mesh | [02](02-network.md#how-to-install) | The edge and one device answer on the segment; packet yield measured |
-| 6.2 | Edge: operating system, installer, services, flow | [03](03-edge.md#how-to-install) | `preflight` reads `Ready` |
-| 6.3 | Data: schema, site row, keys, backup | [04](04-data.md#how-to-install) | `ingestion_health` fresh every minute |
-| 6.4 | Field devices: meters, switches, commanders, by a qualified electrician | [01](01-field-devices.md#how-to-install), [`physical-install.md`](physical-install.md) | Every device reporting within its window for 24 h |
-| 6.5 | Interface: build, kiosk, remote access | [05](05-interface.md#how-to-install) | A signed-in browser shows `LIVE` |
-| 6.6 | Security: sign-up off, accounts, SSH policy, credential copy | [X1](X1-security.md#how-to-install) | X1's checks pass |
+| 5.1 | Network: the dedicated segment, addresses, uplink, mesh | [02](02-network.md#how-to-install) | The edge and one device answer on the segment; packet yield measured |
+| 5.2 | Edge: operating system, installer, services, flow | [03](03-edge.md#how-to-install) | `preflight` reads `Ready` |
+| 5.3 | Data: schema, site row, keys, backup | [04](04-data.md#how-to-install) | `ingestion_health` fresh every minute |
+| 5.4 | Field devices: meters, switches, commanders, by a qualified electrician | [01](01-field-devices.md#how-to-install), [`physical-install.md`](physical-install.md) | Every device reporting within its window for 24 h |
+| 5.5 | Interface: build, kiosk, remote access | [05](05-interface.md#how-to-install) | A signed-in browser shows `LIVE` |
+| 5.6 | Security: sign-up off, accounts, SSH policy, credential copy | [X1](X1-security.md#how-to-install) | X1's checks pass |
 
 **Expected result.** The whole system running, with the interlock still off.
 
@@ -208,7 +215,9 @@ and read how the code realises it ([X2](X2-control-logic.md#the-priority-order-a
 
 1. Run X2a §8's test manual with the interlock off. Record each result ([X2a § 8](X2a-control-strategy.md#8-test-manual)).
 2. Decide on the interlock, and record the decision on its form ([X2](X2-control-logic.md#the-dispatch-interlock)).
-   Restart the proxy and the scheduler, and read the state back from the scheduler's start line.
+   It is `HARDWARE_DISPATCH_ENABLED` in `server/.env` on the edge. Then run
+   `sudo systemctl restart ibems-proxy ibems-scheduler`, and read the state back with
+   `journalctl -u ibems-scheduler | grep dispatch= | tail -1`.
 3. With the interlock as decided, run the control and reliability tests again.
 4. Assemble the commissioning pack and sign the certificate ([X3](X3-operations.md#the-commissioning-pack)).
 

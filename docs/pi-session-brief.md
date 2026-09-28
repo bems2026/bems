@@ -30,7 +30,7 @@ authority section below says which those are.
 > What has not changed is the *authority* boundary below — a flow write still needs asking, from
 > either place — nor the value of being on the Pi, which is the journal, the network and
 > `flows.json` being local rather than a round trip away. Two traps are specific to the remote
-> case: paths are the **Pi's** (`/home/bems/bems`, not the workstation checkout), and a
+> case: paths are the **Pi's** (`~/bems` in the service account's home, not the workstation checkout), and a
 > multi-line search/replace written on Windows will not match a CRLF file, which fails silently
 > and looks like a no-op rather than an error.
 

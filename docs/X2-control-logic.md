@@ -49,7 +49,7 @@ Nothing is pushed. The page writes a row, and the edge reads it on its next pass
 | Shed tiers | `device_config.load_shed_group`, `socket_config.load_shed_group` | The scheduler | Within 60 s |
 | An aircon room-target rule | `acu_rules`, through `upsert_acu_rule` (checked against the live floor) | The scheduler | Within 60 s |
 | The room-temperature floor | `sites.policy`, through `set_acu_min_room_target` | The proxy, live; **the loop, not at all**: it uses the build value (F-033) | Next command at the proxy; the loop only after a rebuild and restart |
-| The dispatch interlock | `HARDWARE_DISPATCH_ENABLED` in `server/.env` | The proxy and the scheduler, **at start** | After restarting both [E-131] |
+| The dispatch interlock | `HARDWARE_DISPATCH_ENABLED` in `server/.env` | The proxy and the scheduler, **at start**: the scheduler logs it as `dispatch=` [E-041], and both refuse to start with it on and no relay token [E-199] | After restarting both [E-131] |
 
 Evidence: E-071 (refresh 60 s, tick 15 s), E-121, E-198.
 

@@ -1,6 +1,7 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-24, 13:03 — **RM-145: public sign-up was open, and any signed-in account can arm a
+**Last audited:** 2026-09-29 — **RM-145: Phases D and E done; the FINAL GATE awaits the operator. The broker is still open (F-001, E-212).**
+**Earlier, 2026-09-24, 13:03 — **RM-145: public sign-up was open, and any signed-in account can arm a
 schedule that switches real loads (F-026, Critical). The operator turned sign-up off, read back at 13:03. Reviewing
 the existing accounts is still open (Q-17, §0 first entry).**
 **Earlier, 06:10 — RM-145: GATE A passed. The broker is still open at 05:56 today, and the
@@ -3900,6 +3901,23 @@ and it cites this file's IDs for feature state rather than copying it.
       - The PR template gains a docs checkbox, and `CLAUDE.md` a "Documentation conventions" section.
       - Linting found **58 lists the site rendered as run-on paragraphs** (no blank line before them; GitHub renders
         them, Python-Markdown does not). All are fixed, and 246 front-matter evidence lists were completed.
+
+      **Phase E, the three-reader pass, 2026-09-29.** Each pass changed something:
+      - **A facility engineer following 90:** seven fixes. The step-5 table was numbered 6.x. Step 4 never said where the
+        code comes from, or that the site's files belong in a copy of the repository the institution controls. It cited
+        replication.md steps 1–4, which skips pointing the deployment at the new site, so the edge would have kept the
+        pilot's devices. Step 7 did not say where the interlock is set or how to read it back. The bill of materials
+        lacked the database plan and the mesh account.
+      - **A developer on day one:** the front page still said the manual was being written, and there was no code map.
+        It now has "Find it in the code": ten questions, from where a reading is parsed to where a command is authorised
+        and where the schema is, each with its file and chapter. Two feature labels in 00 were off the scale.
+      - **An auditor:** ten statements drawn at random (seeded); eight traced to their rows. Two did not: the interlock's
+        "read at start" cited a general row (now E-041 and E-199), and 03 claimed a lost credential copy means
+        re-pairing every device, when keys can be re-exported (E-145). Both are corrected, not softened.
+      - The definition of done was run, with its output recorded at the gate. Two pre-existing reference docs carried
+        the service account's home path, which is now written with ~. The last eight legacy originals were archived
+        outside git. E-212 records that the interlock still runs with its Phase A value, that sign-up is still off, and
+        that **the broker is still open** (F-001).
 
 ### The Reports page, from the operator's brief — RM-137 onward (2026-09-22)
 
