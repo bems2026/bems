@@ -3899,6 +3899,25 @@ Node-RED context flush and a stage-by-stage rollout. Stages: 0 measure, 1 archiv
       `server/archive-backfill.mjs`; `archiveDb.mjs` gains `insertRows` and `countRange`. Tests: `archiveBackfill.test.mjs`
       (9), `archiveDb.test.mjs` (+2); each failed against a neutered copy. **Runs after** RM-148a has archived for a day:
       then the backfill, then the Aug 16–17 raw export in `~/backups/pre-retention-20260915/raw-before-2026-08-18/`.
+- [ ] **RM-148c** Stage 3, a slimmer cloud row and phase48. **Built, tested and rehearsed; not applied.**
+      - `server/cloudCapabilities.mjs`: the cloud's copy of `capabilities` keeps what the catalogue calls a
+        measurement, switch state, the codes the scrub tools read back (`device_state`, pinned in `KEPT_FOR_READERS`),
+        and the system's flags (`measurement_frozen`, `frozen_since`, `channel_map`, `scrub`, which phase47's
+        `reading_measured` reads). Every other setting and diagnostic stays on the edge. A code or device the catalogue
+        does not know is kept, not guessed at. Measured on the edge's first 400 archived rows: 194 → 84 characters a
+        row on average (lights 133 → 18, outlets 270 → 99, meters 262 → 214; a meter's other channel lives only there).
+        `server/ingest.mjs` applies it in `sendToCloud`, which the uploader, the direct path and the old buffer's drain
+        all use; the archive keeps the full row. Tests: `cloudCapabilities.test.mjs` (9, one reading `ingest.mjs`'s
+        wiring from source); each failed against a neutered copy.
+      - `supabase/phase48_hot_tier.sql`: drops the eight indexes that duplicate a key (each named with the key that
+        covers it; the one on `readings` is tens of MB), vacuums the two raw tables at 2 % instead of 20 %, and adds
+        `readings_manifest` / `building_totals_manifest` (per-hour counts, at most 48 hours, service role only) for
+        Stage 4's janitor. No row is touched. `test/phase48-hot-tier-schema.test.mjs` (5); `supabase/rehearse.sh`
+        re-applies it twice and checks the indexes, the vacuum settings, exact counts, the 48-hour refusal and the
+        privileges. **Rehearsed on the edge 2026-09-29: REHEARSAL PASSED**, every earlier phase's assertions included.
+      - Moved out of phase48, to Stage 5 with the read routing: `node_totals` reading across the raw/hourly seam.
+      - **Order:** paste phase48 into the SQL editor (it frees the duplicate index's space at once), then restart
+        `ibems-ingest` for the slim rows. Neither depends on the backfill.
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 

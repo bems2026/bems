@@ -2041,6 +2041,78 @@ delete from readings where device_id = 'mtr_held';
 delete from devices where id = 'mtr_held';
 SQL
 
+# ---- phase48: the hot tier's indexes, vacuum and manifests (RM-148) ---------------------------------
+#
+# The file loop above applied phase48 once to the fixture database. Pasted twice is the case that
+# happens by hand, so twice more here; then the duplicates must be gone with every covering key
+# intact, and the janitor's counts must match rows put in for the purpose.
+echo "== phase48: re-applying twice, then the manifests against real rows =="
+psql < "$HERE/phase48_hot_tier.sql" >/dev/null
+psql < "$HERE/phase48_hot_tier.sql" >/dev/null
+psql <<'SQL'
+insert into devices (id, display_name, class) values ('mtr_manifest', 'Rehearsal Manifest Meter', 'meter')
+  on conflict (id) do nothing;
+-- 90 minutes: 60 in the first hour, 30 in the second.
+insert into readings (device_id, ts, online)
+select 'mtr_manifest', timestamptz '2026-05-01 00:00:00+00' + (i || ' minutes')::interval, true
+  from generate_series(0, 89) i;
+insert into building_totals (ts, site_id, total_power_w)
+select timestamptz '2026-05-01 00:00:00+00' + (i || ' minutes')::interval, 'mmsu-nberic-care', 100
+  from generate_series(0, 89) i;
+
+do $$
+declare
+  n int;
+begin
+  select count(*) into n from pg_indexes where schemaname = 'public' and indexname in (
+    'readings_device_id_ts_idx', 'readings_hourly_device_id_hour_idx', 'building_totals_hourly_hour_idx',
+    'anomalies_device_id_ts_idx', 'monthly_reports_month_idx', 'period_reports_lookup_idx',
+    'energy_tariffs_site_from_idx', 'emission_factors_site_from_idx');
+  assert n = 0, format('phase48: %s duplicate index(es) survived', n);
+
+  select count(*) into n from pg_constraint c join pg_class t on t.oid = c.conrelid
+   where c.contype in ('p', 'u') and t.relname in ('readings', 'readings_hourly', 'building_totals_hourly',
+         'anomalies', 'monthly_reports', 'period_reports', 'energy_tariffs', 'emission_factors');
+  assert n >= 8, format('phase48: every covering key must survive, found %s', n);
+
+  select count(*) into n from pg_class
+   where relname in ('readings', 'building_totals') and reloptions @> array['autovacuum_vacuum_scale_factor=0.02'];
+  assert n = 2, format('phase48: both raw tables vacuum at 2 %%, found %s', n);
+
+  select count(*) into n from readings_manifest(timestamptz '2026-05-01 00:00+00', timestamptz '2026-05-01 02:00+00') m
+   where m.device_id = 'mtr_manifest';
+  assert n = 2, format('phase48: two hours hold readings, the manifest listed %s', n);
+  select m.n into n from readings_manifest(timestamptz '2026-05-01 00:00+00', timestamptz '2026-05-01 02:00+00') m
+   where m.device_id = 'mtr_manifest' and m.hour = timestamptz '2026-05-01 00:00+00';
+  assert n = 60, format('phase48: the first hour holds 60 readings, the manifest said %s', n);
+  select m.n into n from readings_manifest(timestamptz '2026-05-01 00:00+00', timestamptz '2026-05-01 02:00+00') m
+   where m.device_id = 'mtr_manifest' and m.hour = timestamptz '2026-05-01 01:00+00';
+  assert n = 30, format('phase48: the second hour holds 30 readings, the manifest said %s', n);
+  select sum(m.n) into n from building_totals_manifest(timestamptz '2026-05-01 00:00+00', timestamptz '2026-05-01 02:00+00') m;
+  assert n = 90, format('phase48: 90 totals rows, the manifest summed %s', n);
+
+  begin
+    perform readings_manifest(timestamptz '2026-05-01 00:00+00', timestamptz '2026-05-03 01:00+00');
+    assert false, 'phase48: a window over 48 hours must be refused, not cut short';
+  exception when raise_exception then
+    null;  -- expected
+  end;
+
+  assert not has_function_privilege('authenticated', 'readings_manifest(timestamptz, timestamptz)', 'execute'),
+    'phase48: a signed-in reader must not call the janitor''s manifest';
+  assert not has_function_privilege('anon', 'building_totals_manifest(timestamptz, timestamptz)', 'execute'),
+    'phase48: anon must not call the janitor''s manifest';
+  assert has_function_privilege('service_role', 'readings_manifest(timestamptz, timestamptz)', 'execute'),
+    'phase48: the service role runs the janitor and must be able to call it';
+
+  raise notice 'phase48: the hot tier — assertions passed';
+end $$;
+
+delete from building_totals where ts >= timestamptz '2026-05-01 00:00:00+00' and ts < timestamptz '2026-05-01 02:00:00+00';
+delete from readings where device_id = 'mtr_manifest';
+delete from devices where id = 'mtr_manifest';
+SQL
+
 echo
 echo "== REHEARSAL PASSED =="
 echo "Every migration applied in order against PostgreSQL 16, and every function behaved as"

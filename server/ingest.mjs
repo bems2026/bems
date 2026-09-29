@@ -34,6 +34,7 @@ import { selectAnomalyCandidates, detectAnomaly, pushSample } from './anomalySta
 import { runIngestCycle, msUntilNextTick } from './ingestCycle.mjs';
 import { openArchive } from './archiveDb.mjs';
 import { drainArchive } from './archiveUpload.mjs';
+import { readingsForCloud } from './cloudCapabilities.mjs';
 import {
   runRetention,
   runTotalsRetention,
@@ -165,7 +166,8 @@ async function flushBuffer() {
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
     try {
-      await supabase.upsert(entry.table, entry.rows, entry.onConflict ? { onConflict: entry.onConflict } : undefined);
+      // Through sendToCloud, so a buffered reading is slimmed exactly as a live one is (RM-148).
+      await sendToCloud(entry.table, entry.rows, entry.onConflict);
     } catch (err) {
       writeBuffer(BUFFER_PATH, entries.slice(i));
       throw err;
@@ -226,9 +228,12 @@ let capabilityColumnsPresent = true;
  */
 async function sendToCloud(table, rows, onConflict) {
   if (rows.length === 0) return;
+  // RM-148: the cloud's copy of `capabilities` keeps measurements, switch state and the codes read
+  // back out of it; the archive keeps everything (server/cloudCapabilities.mjs).
+  const cloudRows = table === 'readings' ? readingsForCloud(rows) : rows;
   const payload = table === 'readings' && !capabilityColumnsPresent
-    ? withoutCapabilityColumns(rows)
-    : rows;
+    ? withoutCapabilityColumns(cloudRows)
+    : cloudRows;
   try {
     await supabase.upsert(table, payload, onConflict ? { onConflict } : undefined);
   } catch (err) {
@@ -240,7 +245,7 @@ async function sendToCloud(table, rows, onConflict) {
     if (table === 'readings' && capabilityColumnsPresent && isMissingCapabilityColumnError(err)) {
       console.warn('[ibems-ingest] readings has no capability columns — apply supabase/phase28_reading_capabilities.sql. Recording without them; every pre-phase28 field is unaffected.');
       capabilityColumnsPresent = false;
-      await supabase.upsert(table, withoutCapabilityColumns(rows), onConflict ? { onConflict } : undefined);
+      await supabase.upsert(table, withoutCapabilityColumns(cloudRows), onConflict ? { onConflict } : undefined);
       return;
     }
     throw err;
@@ -253,8 +258,9 @@ async function writeOrBuffer(table, rows, onConflict) {
   try {
     await sendToCloud(table, rows, onConflict);
   } catch (err) {
-    const payload = table === 'readings' && !capabilityColumnsPresent ? withoutCapabilityColumns(rows) : rows;
-    appendToBuffer(BUFFER_PATH, { table, rows: payload, onConflict, buffered_at: new Date().toISOString() });
+    // The full rows: the buffer is drained through sendToCloud, which slims them, and a buffer left
+    // at a restart is taken into the archive, which keeps everything.
+    appendToBuffer(BUFFER_PATH, { table, rows, onConflict, buffered_at: new Date().toISOString() });
     throw err;
   }
 }
