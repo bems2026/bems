@@ -198,6 +198,7 @@ function tempStatePaths() {
     SCHEDULER_AUDIT_BUFFER_PATH: join(dir, 'command-audit-buffer-scheduler.ndjson'),
     JWKS_CACHE_PATH: join(dir, 'jwks.json'),
     DEVICE_CREDENTIALS_PATH: join(dir, 'device-credentials.json'),
+    ARCHIVE_DB_PATH: join(dir, 'archive', 'archive.sqlite'),
     // Not a path, but the same kind of leak: a test proxy must not sit on the device-discovery ports.
     LAN_PRESENCE: 'off',
   };

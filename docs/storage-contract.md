@@ -92,12 +92,19 @@ charted under another's label.
 
 ## Outage behavior
 
-If Supabase is unreachable, `server/ingest.mjs` buffers pending `readings`/
-`building_totals` writes to a local NDJSON file (`server/ingestBuffer.mjs`, path via
-`INGEST_BUFFER_PATH`) and drains it oldest-first on reconnect — see that file's header and
-`docs/phase-f-runbook.md`-style DoD in the architecture plan's Phase 3. `ingestion_health`
-is *not* buffered — it's a derived status snapshot, not data, and the next successful tick
-corrects it.
+**Since RM-148, local first.** Every tick is committed to the edge's own archive
+(`server/archiveDb.mjs`, SQLite, default `server/data/archive/archive.sqlite`, override
+`ARCHIVE_DB_PATH`) before anything is sent. `server/archiveUpload.mjs` then drains whatever the
+cloud does not have yet, oldest first, moving a per-table cursor only over rows the cloud accepted.
+An outage therefore leaves rows in the archive, and they upload on reconnect. A row the database
+refuses for good is quarantined in the archive (`upload_rejects`) rather than blocking the rows
+behind it. `ingestion_health.buffered_row_count` counts rows the archive still owes the cloud.
+
+If the archive cannot be opened or written, the tick falls back to the older path: straight to
+Supabase, with failures buffered to a local NDJSON file (`server/ingestBuffer.mjs`, path via
+`INGEST_BUFFER_PATH`) and drained oldest-first on reconnect. A buffer left over from before the
+archive is taken into the archive at startup. `ingestion_health` is *not* buffered — it's a derived
+status snapshot, not data, and the next successful tick corrects it.
 
 ## Environment
 

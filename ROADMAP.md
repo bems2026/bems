@@ -1,6 +1,10 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-29, 14:51 — **RM-147: the Control page has one rule for on and off (solid green on, hollow
+**Last audited:** 2026-09-29, 20:00 — **RM-148: the data tier. The database stands at 409 of the Free plan's 500 MB, nearly
+all of it 30 days of raw readings. The plan keeps 14 days in the cloud and every raw row on the Pi, with a daily off-edge
+copy. Stage 1 (RM-148a: the archive and local-first ingest) is built and tested, not deployed; §0's first entry says what
+is next.**
+**Earlier, 14:51 — RM-147: the Control page has one rule for on and off (solid green on, hollow
 off, pulsing while switching, hatched when unavailable), neutral bulk buttons, per-panel counts, a legend, and a lamp
 click that no longer gets lost on press.**
 **Earlier, 2026-09-29, 08:50 — RM-146: fifteen devices dark since the weekend (an access-point drop on Saturday
@@ -382,6 +386,15 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
+### 2026-09-29 — the data tier (RM-148): what the operator does next
+
+The database is at 409 of 500 MB. Nothing is at risk today, but it is the next thing to fill.
+1. **Stage 0, read-only.** In the database's SQL editor, run Q-01's two queries (`docs/audit/open-questions.md`) and
+   `select avg(pg_column_size(capabilities)), avg(pg_column_size(r.*)) from readings r where ts > now() - interval '1 day';`.
+   In the Logs Explorer, count the last day's API requests by path. Paste the numbers; they close Q-01 and size Stage 3.
+2. **Stage 1, deploy RM-148a** once it is pushed: pull on the edge, restart `ibems-ingest ibems-proxy ibems-scheduler`,
+   and let it run a day before the backfill (Stage 2).
+
 ### 2026-09-24, 12:00 — two security changes for the operator (RM-145 audit)
 
 Found by the manual's audit, read-only. Both are in `docs/audit/findings.md`, and neither needs a code change to close.
@@ -390,8 +403,7 @@ Found by the manual's audit, read-only. Both are in `docs/audit/findings.md`, an
    self-made account could arm a schedule that the scheduler fires on real loads. Add new accounts by invitation.
    **Still to do:** review *Authentication → Users* and delete any account you do not recognise. The database refuses to
    delete one that has acted (E-184): ban that one, and look at what it did. Answer Q-17 with the count only.
-2. **F-001 (Critical): restore the broker to loopback.** The corrected one-line command from RM-145's GATE A has not
-   been run yet. Read it back with `ss -tln | grep 1883`.
+2. ~~**F-001 (Critical): restore the broker to loopback.**~~ **Done 2026-09-29 (RM-146b)**, read back as loopback only.
 
 
 ### 2026-09-22, 17:00 — end of day: the list, by who can do it (supersedes the 10:55 walkthrough)
@@ -3838,6 +3850,41 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       **Deployed:** built on the edge at 15:10:38 on 2026-09-29 (the served script went from `index-DGcKHoNp.js` to
       `index-Cuaz1HFy.js`, and the old files are gone from `dist/`). The kiosk loaded the page again at 15:10:39 and
       15:12:47, so it is on the new build.
+
+### The data tier: 14 days in the cloud, everything on the Pi — RM-148 (2026-09-29)
+
+**Why.** Measured 2026-09-29 from the edge (read-only, service role): the hosted database stood at **409 of the Free
+plan's 500 MB**, above which it turns read-only and ingest's own writes fail (F-004). `readings` held 836,178 rows over
+its 30-day window, and each row repeated a 130–330 character `capabilities` blob every minute: a light sends 2 distinct
+sets a day, an outlet 10. Log ingestion stood at 0.91 of 1 GB. Raw minute data older than 30 days existed nowhere. The
+plan, approved by the operator the same day: the cloud keeps **14 days** of raw rows (the hourly tables and reports stay
+for good), the Pi keeps **every** raw row permanently in SQLite, each sealed day is copied to the project's file
+storage, and nothing is pruned from the cloud until the Pi holds it. The operator chose a daily off-edge copy, a 5-minute
+Node-RED context flush and a stage-by-stage rollout. Stages: 0 measure, 1 archive + local-first ingest, 2 backfill,
+3 slim cloud rows + phase48, 4 janitor + 14 days + a one-time hot-tier reset, 5 read routing, 6 edge resilience,
+7 records (an ADR amending ADR-001 §5).
+
+- [ ] **RM-148a** Stage 1, the archive and local-first ingest. **Built and tested; not deployed.**
+      - `server/archiveDb.mjs`: the archive, via the built-in `node:sqlite` (no dependency). WAL, `synchronous=FULL`,
+        STRICT tables, schema in `PRAGMA user_version`. Default path `server/data/archive/archive.sqlite`
+        (`ARCHIVE_DB_PATH`). A repeated capability set is stored once (`capability_sets`). A row carrying a field the
+        archive does not know refuses the whole tick, so a new column cannot vanish from both copies. Rows copied from
+        the cloud or imported from old files are kept but never uploaded (`ORIGIN`).
+      - `server/archiveUpload.mjs`: drains rows past each stream's cursor to Supabase, oldest first, 2,000 a batch,
+        within a 20 s budget so a backlog cannot make a tick skip its next sample. A refusal of the rows themselves is
+        halved down to the bad row, which is quarantined (`upload_rejects`) so it cannot wedge the rows behind it (the
+        wedge `readingCapabilities.mjs` describes). A refusal that is about the table (every row refused) quarantines
+        nothing and is reported instead.
+      - `server/ingestCycle.mjs`: with an archive, the whole tick is archived in one transaction, then synced. If the
+        archive fails, the tick goes straight to Supabase the old way and says why; `server/ingest.mjs` raises that on
+        the alert channel once, and again on recovery. At startup a leftover `ingest-buffer.ndjson` is taken into the
+        archive and set aside. `ingestion_health.buffered_row_count` now counts rows the archive still owes the cloud.
+      - `server/supabaseRest.mjs`: a refusal carries its HTTP `status`.
+      - Tests: `archiveDb.test.mjs` (15), `archiveUpload.test.mjs` (9), `supabaseRest.test.mjs` (3, new),
+        `archiveRuntime.test.mjs` (1: `node:sqlite` must load), `ingestCycle.test.mjs` (+5), `testStatePaths.test.mjs`
+        (`ARCHIVE_DB_PATH` is live state; every proxy spawn redirects it). Each was run against a neutered copy of the
+        code and failed. The restart map gains the two modules (`docs/pi-session-brief.md`).
+      - **Not yet:** deployed; read back against the cloud for 24 h. Supabase is unchanged by this stage.
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 

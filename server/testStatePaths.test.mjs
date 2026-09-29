@@ -31,7 +31,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 /** Every env var naming a path under `server/data/`. Additions here need a redirect below. */
 // DEVICE_CREDENTIALS_PATH (2026-09-17): imported local keys. A test import landing in the real file
 // would put fixture devices into the live Add Device list, with keys that fit no device.
-const STATEFUL_ENV_VARS = ['COMMAND_AUDIT_BUFFER_PATH', 'SCHEDULER_AUDIT_BUFFER_PATH', 'JWKS_CACHE_PATH', 'DEVICE_CREDENTIALS_PATH'];
+// ARCHIVE_DB_PATH (RM-148): the permanent raw archive. A test writing into the real one would put
+// fixture readings into the building's history — and on the Pi, into the copy that outlives the cloud's.
+const STATEFUL_ENV_VARS = ['COMMAND_AUDIT_BUFFER_PATH', 'SCHEDULER_AUDIT_BUFFER_PATH', 'JWKS_CACHE_PATH', 'DEVICE_CREDENTIALS_PATH', 'ARCHIVE_DB_PATH'];
 
 const TMPDIR_BUILT = /mkdtempSync\(\s*join\(\s*os\.tmpdir\(\)/;
 
@@ -113,6 +115,8 @@ test('the production defaults really do live under server/, which is what makes 
   // be deleted rather than left implying a protection it no longer provides.
   const proxy = readFileSync(join(HERE, 'proxy.mjs'), 'utf8');
   const scheduler = readFileSync(join(HERE, 'scheduler.mjs'), 'utf8');
+  const ingest = readFileSync(join(HERE, 'ingest.mjs'), 'utf8');
+  assert.match(ingest, /process\.env\.ARCHIVE_DB_PATH \|\| path\.join\(__dirname, 'data', 'archive', 'archive\.sqlite'\)/);
   assert.match(proxy, /'data', 'command-audit-buffer\.ndjson'/);
   assert.match(proxy, /'data', 'jwks\.json'/);
   assert.match(scheduler, /'data', 'command-audit-buffer-scheduler\.ndjson'/);

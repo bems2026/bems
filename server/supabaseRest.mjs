@@ -41,7 +41,12 @@ export function makeSupabaseClient({ url, serviceRoleKey, fetchImpl = fetch, tim
       });
       if (!res.ok) {
         const text = await res.text().catch(() => '');
-        throw new Error(`Supabase ${init.method} ${endpoint.replace(base, '')} -> ${res.status}: ${text.slice(0, 300)}`);
+        // `status` rides on the error (RM-148): the uploader quarantines rows only on a refusal of
+        // the rows themselves, and retries anything else — which it can only tell apart by status.
+        throw Object.assign(
+          new Error(`Supabase ${init.method} ${endpoint.replace(base, '')} -> ${res.status}: ${text.slice(0, 300)}`),
+          { status: res.status },
+        );
       }
       return res;
     } finally {

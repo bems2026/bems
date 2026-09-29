@@ -289,3 +289,75 @@ test('a body that iterates but means nothing writes no rows, and says how many i
   // `writeOrBuffer` returns early on an empty array, so nothing reaches Supabase either way.
   assert.deepEqual(calls.writes.flatMap((w) => w.rows), []);
 });
+
+// --- RM-148: local first ------------------------------------------------------------------------
+//
+// With an archive, the cycle commits the whole tick locally BEFORE anything is sent, and the
+// cloud gets it from the archive's uploader. Without one, it behaves exactly as above — which is
+// also the fallback when the archive itself fails, so a broken disk cannot stop the cloud record.
+
+function localFirst({ archive, sync, ...rest } = {}) {
+  const { io, calls } = harness(rest);
+  calls.archived = [];
+  calls.syncs = 0;
+  calls.order = [];
+  io.archive = archive ?? ((batch) => { calls.order.push('archive'); calls.archived.push(batch); });
+  io.sync = sync ?? (async () => { calls.order.push('sync'); calls.syncs++; return { ok: true, error: null }; });
+  return { io, calls };
+}
+
+test('local first: the whole tick is archived in one call, then synced, and nothing is written directly', async () => {
+  const anomaly = { device_id: 'mtr_co_yellow', ts: AT, metric: 'power_w' };
+  const { io, calls } = localFirst({ detectAnomalies: () => [anomaly] });
+
+  const result = await runIngestCycle(io);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.archived, true);
+  assert.deepEqual(calls.order, ['archive', 'sync']);
+  assert.equal(calls.archived.length, 1);
+  const [batch] = calls.archived;
+  assert.deepEqual(batch.readings.map((r) => r.device_id), ['mtr_co_yellow', 'co1']);
+  assert.equal(batch.totals.total_power_w, 746.5);
+  assert.deepEqual(batch.anomalies, [anomaly]);
+  assert.deepEqual(calls.writes, []);
+  assert.equal(calls.flushes, 0);
+  assert.deepEqual(calls.health, [{ ok: true, lastError: null }]);
+});
+
+test('local first: a cloud outage leaves the tick archived and the cycle reported unhealthy', async () => {
+  const { io, calls } = localFirst({ sync: async () => ({ ok: false, error: 'fetch failed' }) });
+  const result = await runIngestCycle(io);
+  assert.equal(result.ok, false);
+  assert.equal(result.stage, 'supabase');
+  assert.equal(result.archived, true);
+  assert.equal(calls.archived.length, 1);
+  assert.deepEqual(calls.health, [{ ok: false, lastError: 'fetch failed' }]);
+});
+
+test('local first: a sync that throws is an unhealthy cycle, not an escaped one', async () => {
+  const { io, calls } = localFirst({ sync: async () => { throw new Error('database is locked'); } });
+  const result = await runIngestCycle(io);
+  assert.equal(result.ok, false);
+  assert.match(result.error, /database is locked/);
+  assert.equal(calls.health.length, 1);
+});
+
+test('local first: when the archive fails, the tick still reaches the cloud the old way, and says why', async () => {
+  const { io, calls } = localFirst({ archive: () => { throw new Error('SQLITE_FULL: database or disk is full'); } });
+  const result = await runIngestCycle(io);
+  assert.equal(result.archived, false);
+  assert.match(result.archiveError, /SQLITE_FULL/);
+  assert.equal(result.ok, true, 'the cloud record was kept, which is what ok has always meant');
+  assert.equal(calls.flushes, 1);
+  assert.deepEqual(calls.writes.map((w) => w.table), ['readings', 'building_totals']);
+  assert.equal(calls.syncs, 0);
+});
+
+test('local first: a bridge outage archives nothing', async () => {
+  const { io, calls } = localFirst({ fetchLatest: async () => { throw new Error('ECONNREFUSED'); } });
+  const result = await runIngestCycle(io);
+  assert.equal(result.stage, 'bridge');
+  assert.deepEqual(calls.archived, []);
+  assert.equal(calls.syncs, 0);
+});

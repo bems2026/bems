@@ -86,13 +86,7 @@ export async function runIngestCycle(io) {
     return { ok: false, stage: 'payload', error, readingCount: 0, hasTotals: false, anomalyCount: 0, rejectionCount: 0, rejections: [], readings: [] };
   }
 
-  // Drain any backlog first so buffered rows land before this cycle's, preserving order.
-  try {
-    await io.flushBuffer();
-  } catch {
-    // Still down — this cycle's writes below will also buffer; the flushBuffer error is
-    // the same underlying failure, no need to log it twice.
-  }
+  const anomalyRows = io.detectAnomalies(readings);
 
   let ok = true;
   let error = null;
@@ -101,27 +95,30 @@ export async function runIngestCycle(io) {
     error = String(err);
   };
 
-  try {
-    await io.write('readings', readings, 'device_id,ts');
-  } catch (err) {
-    record(err);
-  }
-
-  if (totals) {
+  // RM-148, LOCAL FIRST. The whole tick is committed to the Pi's archive before anything is sent,
+  // and the cloud gets it from the archive's uploader — so a WAN outage costs nothing but delay.
+  // If the archive itself fails, the tick falls through to the direct path below: a broken disk
+  // must not stop the cloud record, and `archiveError` says why so the daemon can raise it.
+  let archived = false;
+  let archiveError = null;
+  if (io.archive) {
     try {
-      await io.write('building_totals', [totals], 'ts');
+      await io.archive({ readings, totals, anomalies: anomalyRows });
+      archived = true;
     } catch (err) {
-      record(err);
+      archiveError = String(err);
     }
   }
 
-  const anomalyRows = io.detectAnomalies(readings);
-  if (anomalyRows.length > 0) {
+  if (archived) {
     try {
-      await io.write('anomalies', anomalyRows, 'device_id,ts,metric');
+      const synced = await io.sync();
+      if (!synced.ok) record(synced.error);
     } catch (err) {
       record(err);
     }
+  } else {
+    await writeDirectly(io, { readings, totals, anomalyRows }, record);
   }
 
   await io.updateHealth(ok, error, rejections);
@@ -130,6 +127,8 @@ export async function runIngestCycle(io) {
     ok,
     stage: ok ? null : 'supabase',
     error,
+    archived,
+    archiveError,
     readingCount: readings.length,
     hasTotals: Boolean(totals),
     anomalyCount: anomalyRows.length,
@@ -147,4 +146,37 @@ export async function runIngestCycle(io) {
     // to do with it belongs to the daemon, not here.
     readings,
   };
+}
+
+/** The pre-RM-148 path: each table straight to Supabase, buffering on failure. */
+async function writeDirectly(io, { readings, totals, anomalyRows }, record) {
+  // Drain any backlog first so buffered rows land before this cycle's, preserving order.
+  try {
+    await io.flushBuffer();
+  } catch {
+    // Still down — this cycle's writes below will also buffer; the flushBuffer error is
+    // the same underlying failure, no need to log it twice.
+  }
+
+  try {
+    await io.write('readings', readings, 'device_id,ts');
+  } catch (err) {
+    record(err);
+  }
+
+  if (totals) {
+    try {
+      await io.write('building_totals', [totals], 'ts');
+    } catch (err) {
+      record(err);
+    }
+  }
+
+  if (anomalyRows.length > 0) {
+    try {
+      await io.write('anomalies', anomalyRows, 'device_id,ts,metric');
+    } catch (err) {
+      record(err);
+    }
+  }
 }

@@ -8,8 +8,10 @@
  * same cadence its own history ring buffer already samples at (`TIMING.HISTORY_SAMPLE_MS`,
  * `shared/registry.mjs`), and upserts normalized rows into Supabase — turning that
  * in-memory 24h ring buffer into durable, queryable history without touching anything
- * that drives relays. On Supabase failure, writes are buffered locally (`ingestBuffer.mjs`)
- * and drained oldest-first on reconnect; no data is dropped, just delayed.
+ * that drives relays. Since RM-148 every tick is committed to the Pi's own archive first
+ * (`archiveDb.mjs`) and the cloud is fed from it (`archiveUpload.mjs`), so a Supabase or WAN
+ * outage costs delay, not data. If the archive cannot be opened or written, the tick falls back
+ * to the older path: straight to Supabase, buffered locally (`ingestBuffer.mjs`) on failure.
  *
  *     SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node server/ingest.mjs
  *
@@ -18,6 +20,7 @@
  */
 
 import './netDefaults.mjs';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TIMING, METERED, SITE, DEVICE_REGISTRY } from '../shared/registry.mjs';
@@ -29,6 +32,8 @@ import { appendToBuffer, readBuffer, writeBuffer, bufferCount } from './ingestBu
 import { takeBufferedCommands, restoreUndrained } from './auditQueue.mjs';
 import { selectAnomalyCandidates, detectAnomaly, pushSample } from './anomalyStats.mjs';
 import { runIngestCycle, msUntilNextTick } from './ingestCycle.mjs';
+import { openArchive } from './archiveDb.mjs';
+import { drainArchive } from './archiveUpload.mjs';
 import {
   runRetention,
   runTotalsRetention,
@@ -62,6 +67,11 @@ const COMMAND_BUFFER_PATHS = [
   process.env.SCHEDULER_AUDIT_BUFFER_PATH || path.join(__dirname, 'data', 'command-audit-buffer-scheduler.ndjson'),
 ];
 const RETENTION_DAYS = Number(process.env.INGEST_RETENTION_DAYS) || DEFAULT_RETENTION_DAYS;
+/**
+ * RM-148: the permanent raw archive. Under `server/data/` with the other live state, so CI's
+ * "tests left no state behind" check and server/testStatePaths.test.mjs cover it too.
+ */
+const ARCHIVE_PATH = process.env.ARCHIVE_DB_PATH || path.join(__dirname, 'data', 'archive', 'archive.sqlite');
 
 /**
  * The out-of-dashboard alarm (FI-005). Inert unless NTFY_TOPIC is set — a deployment never
@@ -210,7 +220,11 @@ async function drainCommandAudit() {
  */
 let capabilityColumnsPresent = true;
 
-async function writeOrBuffer(table, rows, onConflict) {
+/**
+ * One upsert to Supabase, tolerating a database that predates phase28. Used by the archive's
+ * uploader and by the direct fallback path alike, so both write the same thing.
+ */
+async function sendToCloud(table, rows, onConflict) {
   if (rows.length === 0) return;
   const payload = table === 'readings' && !capabilityColumnsPresent
     ? withoutCapabilityColumns(rows)
@@ -226,14 +240,72 @@ async function writeOrBuffer(table, rows, onConflict) {
     if (table === 'readings' && capabilityColumnsPresent && isMissingCapabilityColumnError(err)) {
       console.warn('[ibems-ingest] readings has no capability columns — apply supabase/phase28_reading_capabilities.sql. Recording without them; every pre-phase28 field is unaffected.');
       capabilityColumnsPresent = false;
-      try {
-        await supabase.upsert(table, withoutCapabilityColumns(rows), onConflict ? { onConflict } : undefined);
-        return;
-      } catch { /* fall through and buffer, as any other failure would */ }
+      await supabase.upsert(table, withoutCapabilityColumns(rows), onConflict ? { onConflict } : undefined);
+      return;
     }
+    throw err;
+  }
+}
+
+/** The direct path's write: straight to Supabase, buffered to NDJSON when that fails. */
+async function writeOrBuffer(table, rows, onConflict) {
+  if (rows.length === 0) return;
+  try {
+    await sendToCloud(table, rows, onConflict);
+  } catch (err) {
+    const payload = table === 'readings' && !capabilityColumnsPresent ? withoutCapabilityColumns(rows) : rows;
     appendToBuffer(BUFFER_PATH, { table, rows: payload, onConflict, buffered_at: new Date().toISOString() });
     throw err;
   }
+}
+
+/**
+ * RM-148. `null` when the archive could not be opened — the daemon then runs the pre-RM-148 way
+ * rather than not at all, and says so loudly.
+ */
+let archive = null;
+/** Edge-triggered, like the fleet alarm: one notice when the archive starts failing, one when it recovers. */
+let archiveFailing = false;
+
+function openArchiveOrFallBack() {
+  try {
+    archive = openArchive(ARCHIVE_PATH);
+  } catch (err) {
+    console.error(`[ibems-ingest] ARCHIVE UNAVAILABLE at ${ARCHIVE_PATH} — writing straight to Supabase instead: ${String(err)}`);
+    return;
+  }
+  // The old NDJSON buffer's rows never reached the cloud. Take them into the archive, which now
+  // owes them to the cloud, and set the file aside rather than deleting it.
+  const leftover = readBuffer(BUFFER_PATH);
+  if (leftover.length === 0) return;
+  try {
+    const counts = archive.importBufferEntries(leftover);
+    const setAside = `${BUFFER_PATH}.imported-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+    fs.renameSync(BUFFER_PATH, setAside);
+    console.log(`[ibems-ingest] took the outage buffer into the archive: ${counts.readings} readings, ${counts.building_totals} totals, ${counts.anomalies} anomalies (${counts.skipped} other entr${counts.skipped === 1 ? 'y' : 'ies'} left in ${setAside})`);
+  } catch (err) {
+    console.error(`[ibems-ingest] could not take the outage buffer into the archive; it stays where it is and drains the old way: ${String(err)}`);
+  }
+}
+
+async function noteArchiveHealth(archiveError) {
+  if (archiveError && !archiveFailing) {
+    archiveFailing = true;
+    await notifier.notify('iBEMS archive failing', `The Pi's raw archive refused a tick; readings are going straight to the cloud. ${archiveError}`, 'high');
+  } else if (!archiveError && archiveFailing) {
+    archiveFailing = false;
+    await notifier.notify('iBEMS archive recovered', 'The Pi is archiving readings again.', 'default');
+  }
+}
+
+function pendingCount() {
+  let n = bufferCount(BUFFER_PATH);
+  if (archive) {
+    try {
+      n += Object.values(archive.lag()).reduce((a, b) => a + b, 0);
+    } catch { /* the health row is best-effort; the tick reports archive trouble itself */ }
+  }
+  return n;
 }
 
 /**
@@ -251,7 +323,8 @@ async function updateHealth(ok, lastError = null, rejections = []) {
     ok,
     lastError,
     rejections,
-    bufferedRowCount: bufferCount(BUFFER_PATH),
+    // Since RM-148: rows the archive still owes the cloud, plus anything left in the old buffer.
+    bufferedRowCount: pendingCount(),
     siteId: SITE.id,
     nowIso: new Date().toISOString(),
     withScrubColumns: scrubColumnsPresent,
@@ -274,13 +347,26 @@ async function updateHealth(ok, lastError = null, rejections = []) {
 }
 
 async function tick() {
+  let synced = null;
   const result = await runIngestCycle({
     fetchLatest: () => fetchJson(`${BRIDGE_URL}/readings/latest`, TIMING.FETCH_TIMEOUT_MS),
     flushBuffer,
     write: writeOrBuffer,
     detectAnomalies,
     updateHealth,
+    ...(archive ? {
+      archive: (batch) => archive.insertTick(batch),
+      sync: async () => (synced = await drainArchive({ archive, send: sendToCloud })),
+    } : {}),
   });
+
+  if (archive) await noteArchiveHealth(result.archiveError);
+  if (result.archiveError) {
+    console.error(`[ibems-ingest] archive refused this tick, sent straight to Supabase instead: ${result.archiveError}`);
+  }
+  if (synced?.rejected) {
+    console.error(`[ibems-ingest] ${synced.rejected} row(s) refused by Supabase for good and quarantined in the archive (upload_rejects)`);
+  }
 
   // Judged only on a cycle that actually reached the bridge. A bridge outage means we have no
   // idea what the devices are doing, and reporting that as "every device dropped" would be the
@@ -307,7 +393,9 @@ async function tick() {
     console.error(`[ibems-ingest] ${stamp} scrub refused ${result.rejectionCount} field(s): ${result.rejections.map(String).join('; ')}`);
   }
   if (result.ok) {
-    console.log(`[ibems-ingest] ${stamp} wrote ${result.readingCount} readings${result.hasTotals ? ' + totals' : ''}${result.anomalyCount ? ` + ${result.anomalyCount} anomalies` : ''}`);
+    // A backlog drained this tick is said, so an outage's recovery is visible in the journal.
+    const extra = synced ? synced.uploaded.readings - result.readingCount : 0;
+    console.log(`[ibems-ingest] ${stamp} wrote ${result.readingCount} readings${result.hasTotals ? ' + totals' : ''}${result.anomalyCount ? ` + ${result.anomalyCount} anomalies` : ''}${result.archived ? ' (archived first)' : ''}${extra > 0 ? `, plus ${extra} backlog reading(s) from the archive` : ''}`);
   } else if (result.stage === 'payload') {
     console.error(`[ibems-ingest] ${stamp} bridge answered with an unusable payload, nothing to write: ${result.error}`);
   } else if (result.stage === 'bridge') {
@@ -315,6 +403,8 @@ async function tick() {
     // different fixes, and conflating them in the log is how a 2.4/5 GHz band mismatch ends
     // up looking like a database problem.
     console.error(`[ibems-ingest] ${stamp} bridge unreachable, nothing to write: ${result.error}`);
+  } else if (result.archived) {
+    console.error(`[ibems-ingest] ${stamp} Supabase unreachable, archived locally (${pendingCount()} row(s) waiting to upload): ${result.error}`);
   } else {
     console.error(`[ibems-ingest] ${stamp} Supabase unreachable, buffered (${bufferCount(BUFFER_PATH)} pending): ${result.error}`);
   }
@@ -434,7 +524,8 @@ const reportPassWithRetry = retryingPass(reportPass);
  * alarming on devices it has no evidence about.
  */
 async function main() {
-  console.log(`[ibems-ingest] starting — bridge=${BRIDGE_URL} poll=${POLL_MS}ms buffer=${BUFFER_PATH}`);
+  console.log(`[ibems-ingest] starting — bridge=${BRIDGE_URL} poll=${POLL_MS}ms archive=${ARCHIVE_PATH} buffer=${BUFFER_PATH}`);
+  openArchiveOrFallBack();
 
   const knownOnline = await loadKnownOnline({
     select: supabase.select,
@@ -491,6 +582,8 @@ for (const sig of ['SIGTERM', 'SIGINT']) {
   process.on(sig, () => {
     console.log(`[ibems-ingest] received ${sig}, shutting down`);
     stopping = true;
+    // WAL already makes an interrupted tick all-or-nothing; closing checkpoints it tidily.
+    try { archive?.close(); } catch { /* exiting regardless */ }
     process.exit(0);
   });
 }
