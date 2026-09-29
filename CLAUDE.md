@@ -35,6 +35,8 @@ node-red-bridge/   generated flow, plus deploy/verify/rotate scripts for the rea
 mock-bridge/       local fake bridge, same contract, no hardware needed
 src/               React + Vite + TypeScript frontend
 server/            ingestion daemon, authenticated proxy, systemd units
+server/data/       LIVE STATE on the edge, gitignored: the permanent raw archive (RM-148, archive/),
+                   the outage queues, the key caches. Never delete any of it; tests must never write there.
 supabase/          schema.sql plus phase migrations, applied in order
 test/              bridge/contract tests (node --test)
 ```

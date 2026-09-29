@@ -1,7 +1,11 @@
 # ADR-001 — The time-series store stays Postgres (Supabase). No InfluxDB
 
 **Status:** Accepted, 2026-08-21. Amended 2026-08-22 to answer the split proposal and
-Google Sheets, both raised after the original decision.
+Google Sheets, both raised after the original decision. **Amended by
+[ADR-0011](adr/ADR-0011-edge-archive-hot-tier.md) (2026-09-29):** raw minutes now live permanently on
+the edge, in SQLite, with each sealed day copied off it; the cloud keeps 14 days of them plus every
+rollup. Reason 5 below ("nowhere good to run it") is answered there; the rest of this record stands —
+the reports, RLS and joins all still run in the one hosted database.
 **Decides:** ROADMAP §5 — "should iBEMS move device readings to a purpose-built time-series
 database?", and the follow-up form of the same question: "should Supabase be the brain for
 application logic while InfluxDB is the engine for sensor telemetry, with Google Sheets as

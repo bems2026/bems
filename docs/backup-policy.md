@@ -121,7 +121,8 @@ Stated plainly, because discovering these mid-incident is the worst time to lear
 - **`auth.users` is not exported.** Operator accounts must be recreated. Every `commands` row
   references `requested_by` as a `uuid` — restored into a project with different user ids,
   those references point at nobody. The audit rows survive; their attribution does not.
-- **Raw `readings` and `building_totals` are not exported**, by design (see above).
+- **Raw `readings` and `building_totals` are not exported**, by design (see above). Since RM-148 they have a
+  backup of their own: see the next section.
 - **`ingestion_health` and `acu_loop_state` are not exported**, deliberately. One is a status
   snapshot rewritten every tick; the other is what the aircon loop believes it last commanded.
   Restoring either would restore a stale claim — for the loop, a stale belief about a device's
@@ -137,6 +138,35 @@ Stated plainly, because discovering these mid-incident is the worst time to lear
 - **Secrets are not exported.** `server/.env` holds the service-role key, the break-glass
   hash and the light API token. It is gitignored and it is not in the backup. Losing the Pi
   means rotating all three — `node-red-bridge/rotate-light-api-token.mjs` covers the last one.
+
+## The raw minutes — the edge archive and its sealed days (RM-148)
+
+Raw per-minute rows are not in the export above. Since RM-148 their permanent home is the edge's own archive,
+`server/data/archive/archive.sqlite`, with every row ingest writes, the history copied down from the cloud, and the
+16–17 Aug 2026 export ([ADR-0011](adr/ADR-0011-edge-archive-hot-tier.md)).
+
+With the hot tier switched on (`ARCHIVE_HOT_TIER=1` in `server/.env`):
+
+- **Every complete UTC day is sealed off the edge.** It is written as one gzip CSV per stream beside the archive, then
+  copied to the project's private file storage, bucket `ibems-archive`, created by `npm run archive:storage -- --apply`.
+- **The cloud keeps its raw rows until that copy exists.** It prunes a day only after the day is sealed, copied, and
+  covered row for row by the archive.
+
+**The restore drill.** Run it after switching the hot tier on, and then quarterly with the export restore above:
+
+```bash
+npm run archive:restore -- --day=2026-09-01
+```
+
+It downloads that day's sealed files, loads them into a throwaway archive, seals them again, and checks that the result
+has the same sha256 as the day recorded when it was sealed. It writes nothing outside a temporary directory.
+
+**Recovering from a lost or failed card:**
+
+1. `npm run archive:restore -- --since=<first day> --until=<yesterday> --into=<new file> --apply` rebuilds the sealed
+   days into a new archive. A day the bucket does not hold is listed, not guessed.
+2. With ingest stopped, move the new file into place as `server/data/archive/archive.sqlite`.
+3. `npm run archive:backfill -- --apply` copies the days the cloud still holds that were not yet sealed.
 
 ## Verifying — the step that actually closes RM-006d
 

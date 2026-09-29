@@ -1,10 +1,11 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-29, 20:30 — **RM-148: the data tier. The database is on the Free plan at 392 of 500 MB (Q-01
-closed, E-218): `readings` is 346 MB, and its `capabilities` jsonb is 271 of an average 320 bytes a row. The plan keeps 14
-days in the cloud and every raw row on the Pi, with a daily off-edge copy. Stage 1 (RM-148a) is deployed and read back:
-every tick since 20:01 is archived before the cloud gets it (E-219). Stage 2's backfill (RM-148b) is built; §0 says what
-is next.**
+**Last audited:** 2026-09-30 — **RM-148: the data tier, Stages 0–3 done on the edge and read back; 4–6 built and
+waiting on the operator; 7's records written (ADR-0011).** The database was on the Free plan at 392 of 500 MB (E-218).
+The edge now archives every tick before the cloud gets it (E-219), holds every raw row the cloud held plus 16–17 Aug,
+869,841 readings in 108 MB (E-220), and the cloud's rows are 57 % slimmer since phase48 (E-221). What is left for the
+operator, in order, is §0's first entry.
+**Earlier, 2026-09-29, 20:30 — RM-148 Stage 0: Q-01 closed (392 MB, E-218); Stage 1 deployed at 20:01.**
 **Earlier, 14:51 — RM-147: the Control page has one rule for on and off (solid green on, hollow
 off, pulsing while switching, hatched when unavailable), neutral bulk buttons, per-panel counts, a legend, and a lamp
 click that no longer gets lost on press.**
@@ -4014,6 +4015,19 @@ Node-RED context flush and a stage-by-stage rollout. Stages: 0 measure, 1 archiv
         - `disk_free` (warn under 10 GB, error under 2 GB; the archive only grows).
 
         `test/preflight.test.mjs` (+4).
+- [x] **RM-148g** Stage 7, the records.
+      - [ADR-0011](docs/adr/ADR-0011-edge-archive-hot-tier.md): raw history's permanent home is the edge, with a sealed
+        copy off it, and the cloud keeps 14 days. It amends ADR-001 §5, whose reasons (an unbacked store on an unreliable
+        node, a second authorization model) it answers one by one, with its own reversal triggers.
+      - Also updated:
+        - `docs/adr-001-timeseries-store.md`: an "amended by" note;
+        - `docs/04-data.md`: the tiers;
+        - `docs/backup-policy.md`: the sealed days, the restore drill, recovering from a lost card;
+        - `docs/storage-contract.md`: local-first ingest;
+        - `docs/03-edge.md`: the context flush;
+        - `docs/pi-session-brief.md`: the restart map;
+        - `CLAUDE.md`: `server/data/` is live state;
+        - evidence rows E-218 to E-221; Q-01 closed; F-004 confirmed.
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 

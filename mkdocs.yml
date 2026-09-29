@@ -97,6 +97,7 @@ nav:
       - ADR-0008 Web app: adr/ADR-0008-standalone-web-app.md
       - ADR-0009 Anomalies: adr/ADR-0009-anomaly-rolling-statistics.md
       - ADR-0010 Predictive: adr/ADR-0010-defer-predictive.md
+      - ADR-0011 Edge archive: adr/ADR-0011-edge-archive-hot-tier.md
   - Reference:
       - Bridge contract: bridge-contract.md
       - Storage contract: storage-contract.md
