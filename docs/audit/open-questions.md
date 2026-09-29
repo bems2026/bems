@@ -3,9 +3,9 @@ title: Open questions
 purpose: Every gap the audit could not close, with who closes it and the next action
 audience: [administrator, operator]
 status: Draft
-last_verified: 2026-09-24
+last_verified: 2026-09-29
 applies_to: repo 2f4c570 · edge checkout fcb1ff6
-evidence: [E-012, E-023, E-027, E-029, E-034, E-038, E-045, E-058, E-079, E-084, E-090, E-176, E-184, E-187, E-203, E-205, E-207, E-208, E-210, E-211]
+evidence: [E-012, E-023, E-027, E-029, E-034, E-038, E-045, E-058, E-079, E-084, E-090, E-176, E-184, E-187, E-203, E-205, E-207, E-208, E-210, E-211, E-218]
 ---
 
 # Open questions
@@ -21,7 +21,7 @@ Until a question is closed, any manual statement that depends on it is marked `[
 
 | ID | Question | Why it matters | Owner | Next action | Blocks |
 |---|---|---|---|---|---|
-| Q-01 | What is the database's current size, bytes per row for the big tables, and plan tier? | The sizing and retention method (prompt §9 L4), and F-004's read-only risk. | Operator | In the database's SQL editor, run the two queries under this table and paste the output. Read the plan tier from the project's billing page. | `04-data.md` sizing; F-004 |
+| Q-01 | ~~What is the database's current size, bytes per row for the big tables, and plan tier?~~ **Closed 2026-09-29.** Free plan, 392 MB; `readings` is 346 MB at 435 bytes a row with indexes, and `capabilities` is 271 of an average 320 bytes (E-218). | — | — | — | — |
 | Q-02 | Who widened the broker on 2026-09-17, and does anything on the LAN genuinely need to publish to it (the ESP32 sniffer, the inverter bridge)? | Decides F-001's fix: loopback only, or a LAN listener with a password file. It also decides how the ADR on MQTT reads. | Operator | Answer from memory or notes. The next session may also skim the edge's own Claude Code session transcripts for 2026-09-17, read-only, per prompt A1. | F-001, F-005, ADR on MQTT |
 | Q-03 | ~~Does a copy of the edge's credentials exist off the SD card?~~ **Closed 2026-09-24. Yes, a complete copy exists** (E-079, stated by the operator). The remaining gap, writing the practice down and running one restore drill, is carried by F-002. | — | — | — | — |
 | Q-04 | Does the edge's SSH daemon accept passwords? | F-008. | Operator | `ssh <edge-user>@<edge-host> 'sudo sshd -T \| grep -iE "^(passwordauthentication\|permitrootlogin)"'` and paste the output. | `X1-security.md` |

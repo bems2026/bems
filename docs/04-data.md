@@ -3,9 +3,9 @@ title: Data and storage
 purpose: Understand, size and query the relational store, its ingestion and retention (L4)
 audience: [integrator, administrator]
 status: Draft
-last_verified: 2026-09-24
+last_verified: 2026-09-29
 applies_to: repo fd6fadc
-evidence: [E-042, E-058, E-064, E-065, E-066, E-070, E-078, E-080, E-081, E-082, E-083, E-084, E-085, E-086, E-088, E-089, E-090, E-111, E-121, E-122, E-124, E-126, E-134, E-137, E-138, E-142, E-149, E-157, E-161, E-162, E-163, E-164, E-165, E-166, E-167, E-168, E-193]
+evidence: [E-042, E-058, E-064, E-065, E-066, E-070, E-078, E-080, E-081, E-082, E-083, E-084, E-085, E-086, E-088, E-089, E-090, E-111, E-121, E-122, E-124, E-126, E-134, E-137, E-138, E-142, E-149, E-157, E-161, E-162, E-163, E-164, E-165, E-166, E-167, E-168, E-193, E-218]
 ---
 
 # Data and storage
@@ -96,14 +96,14 @@ boundary [E-165].
 | Raw rows per day | devices × 86 400 ÷ interval_s | 20 × 86 400 ÷ 60 = 28 800; measured ≈ 28 600 [E-081] |
 | Raw rows at steady state | rows/day × 30 | ≈ 860 000; measured 858 691 [E-080] |
 | Hourly rows per year | devices × 24 × 365 | ≈ 175 000, permanent |
-| **Bytes per row** | **measure it:** `pg_total_relation_size(table) ÷ rows`, indexes included | **Not yet measured** [UNVERIFIED — Q-01] |
-| Raw storage | steady rows × bytes/row | Needs the line above |
+| **Bytes per row** | **measure it:** `pg_total_relation_size(table) ÷ rows`, indexes included | **435** for `readings`, of which the `capabilities` jsonb is 271 of an average 320 bytes of data [E-218] |
+| Raw storage | steady rows × bytes/row | 833 171 × 435 ≈ **346 MB** of a 392 MB database [E-218] |
 
 **The plan's cap.** On the Supabase Free plan, the database turns **read-only above 500 MB** and ingest stops writing.
-The plan also pauses after a week of inactivity and has no automatic backups [E-089]. The pilot's plan tier is not
-recorded [E-090]. **Worked threshold:** 500 MB ÷ 860 000 rows ≈ **580 bytes per raw row**. If `readings` rows, with
-indexes, weigh more than that, the raw window alone fills a Free project, before the hourly tables, reports and audit
-trail are counted. Measure it before relying on Free (F-004).
+The plan also pauses after a week of inactivity and has no automatic backups [E-089]. The pilot is on the Free plan at
+392 MB [E-218]. **Worked threshold:** 500 MB ÷ 860 000 rows ≈ **580 bytes per raw row**. The pilot's 435 bytes is under
+it, but with only about 90 MB to spare once everything else is counted. So RM-148 keeps 14 days of raw rows in the
+cloud and every raw row on the edge (F-004).
 
 ### The spreadsheet mirror
 

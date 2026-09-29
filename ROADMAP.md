@@ -1,8 +1,9 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-29, 20:00 — **RM-148: the data tier. The database stands at 409 of the Free plan's 500 MB, nearly
-all of it 30 days of raw readings. The plan keeps 14 days in the cloud and every raw row on the Pi, with a daily off-edge
-copy. Stage 1 (RM-148a: the archive and local-first ingest) is built and tested, not deployed; §0's first entry says what
+**Last audited:** 2026-09-29, 20:30 — **RM-148: the data tier. The database is on the Free plan at 392 of 500 MB (Q-01
+closed, E-218): `readings` is 346 MB, and its `capabilities` jsonb is 271 of an average 320 bytes a row. The plan keeps 14
+days in the cloud and every raw row on the Pi, with a daily off-edge copy. Stage 1 (RM-148a) is deployed and read back:
+every tick since 20:01 is archived before the cloud gets it (E-219). Stage 2's backfill (RM-148b) is built; §0 says what
 is next.**
 **Earlier, 14:51 — RM-147: the Control page has one rule for on and off (solid green on, hollow
 off, pulsing while switching, hatched when unavailable), neutral bulk buttons, per-panel counts, a legend, and a lamp
@@ -388,12 +389,13 @@ other four and none needed changing.
 
 ### 2026-09-29 — the data tier (RM-148): what the operator does next
 
-The database is at 409 of 500 MB. Nothing is at risk today, but it is the next thing to fill.
-1. **Stage 0, read-only.** In the database's SQL editor, run Q-01's two queries (`docs/audit/open-questions.md`) and
-   `select avg(pg_column_size(capabilities)), avg(pg_column_size(r.*)) from readings r where ts > now() - interval '1 day';`.
-   In the Logs Explorer, count the last day's API requests by path. Paste the numbers; they close Q-01 and size Stage 3.
-2. **Stage 1, deploy RM-148a** once it is pushed: pull on the edge, restart `ibems-ingest ibems-proxy ibems-scheduler`,
-   and let it run a day before the backfill (Stage 2).
+The database is at 392 of 500 MB (E-218). Nothing is at risk today, but it is the next thing to fill.
+1. ~~**Stage 0**~~ **Done 2026-09-29**: Q-01 closed (E-218). **Still open:** the day's API requests by path. That query
+   runs in the **Logs Explorer**, not the SQL editor, where `edge_logs` does not exist. It decides whether Stage 3 folds
+   ingest's three requests a minute into one.
+2. ~~**Stage 1**~~ **Deployed 2026-09-29 20:01** (`ibems-ingest` restarted by the operator) and read back (E-219).
+3. **Stage 2, after a day of Stage 1** (about 20:00 on 2026-09-30): `npm run archive:backfill -- --apply` on the edge,
+   then `-- --import=<the Aug 16–17 export> --apply`.
 
 ### 2026-09-24, 12:00 — two security changes for the operator (RM-145 audit)
 
@@ -3864,7 +3866,7 @@ Node-RED context flush and a stage-by-stage rollout. Stages: 0 measure, 1 archiv
 3 slim cloud rows + phase48, 4 janitor + 14 days + a one-time hot-tier reset, 5 read routing, 6 edge resilience,
 7 records (an ADR amending ADR-001 §5).
 
-- [ ] **RM-148a** Stage 1, the archive and local-first ingest. **Built and tested; not deployed.**
+- [x] **RM-148a** Stage 1, the archive and local-first ingest. **Deployed 2026-09-29 20:01 and read back (E-219).**
       - `server/archiveDb.mjs`: the archive, via the built-in `node:sqlite` (no dependency). WAL, `synchronous=FULL`,
         STRICT tables, schema in `PRAGMA user_version`. Default path `server/data/archive/archive.sqlite`
         (`ARCHIVE_DB_PATH`). A repeated capability set is stored once (`capability_sets`). A row carrying a field the
@@ -3884,7 +3886,9 @@ Node-RED context flush and a stage-by-stage rollout. Stages: 0 measure, 1 archiv
         `archiveRuntime.test.mjs` (1: `node:sqlite` must load), `ingestCycle.test.mjs` (+5), `testStatePaths.test.mjs`
         (`ARCHIVE_DB_PATH` is live state; every proxy spawn redirects it). Each was run against a neutered copy of the
         code and failed. The restart map gains the two modules (`docs/pi-session-brief.md`).
-      - **Not yet:** deployed; read back against the cloud for 24 h. Supabase is unchanged by this stage.
+      - **Read back:** every tick since 20:01 logs `(archived first)`; nothing is pending or quarantined. The cloud held one
+        tick more than the archive, the previous process's last one at 20:01:01, from before the archive existed. The
+        backfill copies it. The 24-hour read-back is still to do. Supabase is unchanged by this stage.
       - The new tests also pass on the edge's own Node 22.23.2 (59 of 59, run there read-only on 2026-09-29).
 - [ ] **RM-148b** Stage 2, the backfill. **Built and tested; not run.** `npm run archive:backfill` (dry run by default,
       `--apply` to write) copies what the cloud holds into the archive as `cloud` rows, which the uploader never sends
