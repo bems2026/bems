@@ -39,6 +39,12 @@ const APPLY = process.argv.includes('--apply');
 const STREAM_NAMES = arg('streams', Object.keys(STREAMS).join(',')).split(',').filter(Boolean);
 const IMPORT_DIR = arg('import', null);
 const ARCHIVE_PATH = process.env.ARCHIVE_DB_PATH || path.join(HERE, 'data', 'archive', 'archive.sqlite');
+/**
+ * Asked one device at a time only where one device fills a window: a reading a minute is 720 a
+ * device in 12 hours. Anomalies run to a few hundred a day for the whole fleet, so asking per
+ * device would be 20 requests where one does.
+ */
+const PER_DEVICE = new Set(['readings']);
 /** Rough bytes per row on the wire, for the egress estimate only. */
 const WIRE_BYTES = { readings: 450, building_totals: 330, anomalies: 300 };
 
@@ -110,7 +116,7 @@ async function runBackfill() {
     }
     const sinceMs = arg('since', null) ? Date.parse(arg('since')) : Math.floor(Date.parse(oldest) / 3_600_000) * 3_600_000;
     const rows = await count(stream);
-    const scopes = 'device_id' in STREAMS[stream].columns ? deviceIds.length : 1;
+    const scopes = PER_DEVICE.has(stream) ? deviceIds.length : 1;
     const windows = windowsBetween(sinceMs, untilMs, WINDOW_MS).length * scopes;
     plans.push({ stream, sinceMs, rows, windows });
     console.log(`${stream}: ${rows.toLocaleString()} row(s) in the cloud from ${new Date(sinceMs).toISOString()}, ` +
@@ -144,7 +150,7 @@ async function runBackfill() {
       const result = await backfillStream({
         archive,
         stream,
-        deviceIds,
+        deviceIds: PER_DEVICE.has(stream) ? deviceIds : undefined,
         sinceMs,
         untilMs,
         fetchWindow: (s, w) => supabase.select(s, windowQuery(s, { ...w, limit: PAGE_LIMIT })),
