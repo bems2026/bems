@@ -126,3 +126,14 @@ test('it says plainly where the testing stops', () => {
   assert.match(src, /NEVER BEEN RUN END TO\s*#?\s*END ON A REAL MACHINE/i, 'the header must state that no real machine has been installed');
   assert.match(src, /systemctl.{0,40}STUB/is, 'the header must say systemd was never exercised');
 });
+
+test('it installs the bounded persistent journal the edge runs with, from this repository — RM-125, F-010', () => {
+  // The drop-in lived only in /etc on the edge, the same exposure shape as the broker and uiHost: a
+  // rebuild would have gone back to Raspberry Pi OS's volatile journal with no diff and no alarm.
+  const conf = readFileSync(join(ROOT, 'server', 'journald-ibems.conf'), 'utf8');
+  for (const line of ['[Journal]', 'Storage=persistent', 'SystemMaxUse=200M', 'SystemMaxFileSize=32M', 'MaxRetentionSec=90day']) {
+    assert.ok(conf.split(/\r?\n/).includes(line), `journald-ibems.conf must say ${line}`);
+  }
+  assert.match(code, /server\/journald-ibems\.conf/);
+  assert.match(code, /journald\.conf\.d\/50-ibems-persistent\.conf/, 'numbered above the OS\'s own 40-rpi-volatile-storage.conf');
+});

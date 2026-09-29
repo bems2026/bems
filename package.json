@@ -63,7 +63,8 @@
     "rebind:pi": "node node-red-bridge/rebind-device.mjs",
     "keys:import": "node server/import-keys.mjs",
     "set-device-ip:pi": "node node-red-bridge/set-device-ip.mjs",
-    "capability-route:pi": "node node-red-bridge/add-capability-route.mjs"
+    "capability-route:pi": "node node-red-bridge/add-capability-route.mjs",
+    "context-flush:pi": "node scripts/context-flush.mjs"
   },
   "dependencies": {
     "@fontsource-variable/manrope": "^5.3.0",

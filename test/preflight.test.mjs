@@ -25,6 +25,9 @@ const healthy = () => ({
     timers: { 'ibems-wifi-prefer.timer': 'active', 'ibems-lan-map.timer': 'active', 'ibems-fleet-recover.timer': 'active' },
     addresses: { pinned: 6, total: 6, lanMapDevices: 6, lanMapFreshestMs: 4 * 60_000 },
     polls: { total: 6, unpolled: [] },
+    contextFlush: { module: 'localfilesystem', flushIntervalS: 300 },
+    archive: { present: true, newestAgeMs: 60_000, pending: 0 },
+    disk: { freeBytes: 50e9 },
   },
 });
 
@@ -385,4 +388,67 @@ test('the broker remedy restores both loopback listeners, and names the safe way
   assert.match(fix, /listener 1883 127\.0\.0\.1/);
   assert.match(fix, /listener 1883 ::1/);
   assert.match(fix, /password_file/);
+});
+
+/**
+ * RM-148 — the edge now keeps the permanent raw archive, so three facts about the host matter that
+ * nothing in this repository can hold: Node-RED's context flush (measured 2026-09-29 as most of the
+ * SD card's 19 GB a day of writes), whether the archive is being written, and how much disk is left.
+ */
+test('a Node-RED context saved every 30 seconds is a warning that names the setting', () => {
+  const obs = healthy();
+  obs.host.contextFlush = { module: 'localfilesystem', flushIntervalS: null };
+  const check = find(assessDeployment(obs), 'context_flush');
+  assert.equal(check.level, LEVELS.WARN);
+  assert.match(check.detail, /30 s/);
+  assert.match(check.fix, /flushInterval: 300/);
+  obs.host.contextFlush = { module: 'localfilesystem', flushIntervalS: 300 };
+  assert.equal(find(assessDeployment(obs), 'context_flush').level, LEVELS.OK);
+  obs.host.contextFlush = null;
+  assert.equal(find(assessDeployment(obs), 'context_flush').level, LEVELS.UNCHECKED);
+});
+
+test('an archive not written for a quarter of an hour is an error; none at all is a warning', () => {
+  const obs = healthy();
+  assert.equal(find(assessDeployment(obs), 'archive_current').level, LEVELS.OK);
+  obs.host.archive = { present: true, newestAgeMs: 20 * 60_000, pending: 0 };
+  const stale = find(assessDeployment(obs), 'archive_current');
+  assert.equal(stale.level, LEVELS.ERROR);
+  assert.match(stale.detail, /20 min/);
+  obs.host.archive = { present: false, newestAgeMs: null, pending: null };
+  assert.equal(find(assessDeployment(obs), 'archive_current').level, LEVELS.WARN);
+  obs.host.archive = { present: true, newestAgeMs: 60_000, pending: 5000 };
+  const behind = find(assessDeployment(obs), 'archive_current');
+  assert.equal(behind.level, LEVELS.WARN);
+  assert.match(behind.detail, /5,?000 row\(s\) waiting/);
+  obs.host.archive = null;
+  assert.equal(find(assessDeployment(obs), 'archive_current').level, LEVELS.UNCHECKED);
+});
+
+test('free disk under 10 GB is a warning and under 2 GB an error, because the archive only grows', () => {
+  const obs = healthy();
+  assert.equal(find(assessDeployment(obs), 'disk_free').level, LEVELS.OK);
+  obs.host.disk = { freeBytes: 5e9 };
+  assert.equal(find(assessDeployment(obs), 'disk_free').level, LEVELS.WARN);
+  obs.host.disk = { freeBytes: 1e9 };
+  assert.equal(find(assessDeployment(obs), 'disk_free').level, LEVELS.ERROR);
+  obs.host.disk = null;
+  assert.equal(find(assessDeployment(obs), 'disk_free').level, LEVELS.UNCHECKED);
+});
+
+test('the context flush is read from settings.js as Node-RED would, ignoring the commented examples', async () => {
+  const { contextFlushFrom } = await import('../scripts/preflight.mjs');
+  const stock = [
+    '/** contextStorage: { default: { module: "memory", config: { flushInterval: 5 } } } */',
+    'module.exports = {',
+    '    // contextStorage: { default: { module: "memory" } },',
+    '    contextStorage: {',
+    '        default: { module: "localfilesystem" },',
+    '    },',
+    '};',
+  ].join('\n');
+  assert.deepEqual(contextFlushFrom(stock), { module: 'localfilesystem', flushIntervalS: null });
+  const tuned = stock.replace('{ module: "localfilesystem" }', '{ module: "localfilesystem", config: { flushInterval: 300 } }');
+  assert.deepEqual(contextFlushFrom(tuned), { module: 'localfilesystem', flushIntervalS: 300 });
+  assert.deepEqual(contextFlushFrom('module.exports = {};'), { module: null, flushIntervalS: null });
 });

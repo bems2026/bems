@@ -394,8 +394,16 @@ The database is at 392 of 500 MB (E-218). Nothing is at risk today, but it is th
    runs in the **Logs Explorer**, not the SQL editor, where `edge_logs` does not exist. It decides whether Stage 3 folds
    ingest's three requests a minute into one.
 2. ~~**Stage 1**~~ **Deployed 2026-09-29 20:01** (`ibems-ingest` restarted by the operator) and read back (E-219).
-3. **Stage 2, after a day of Stage 1** (about 20:00 on 2026-09-30): `npm run archive:backfill -- --apply` on the edge,
-   then `-- --import=<the Aug 16–17 export> --apply`.
+3. ~~**Stage 2**~~ **Run 2026-09-29 on the operator's "proceed"** and read back: the edge holds every raw row the cloud
+   held, per device-hour, plus 16–17 Aug (E-220).
+4. ~~**Stage 3**~~ **phase48 applied and `ibems-ingest` restarted 20:52**; slim rows read back (E-221). Re-run the size
+   query in the SQL editor to record what phase48 freed.
+5. **Stage 5, operator:** paste `supabase/phase49_node_totals_archive.sql`; then on the edge
+   `git pull --ff-only && npm run build` and restart `ibems-proxy` (the archive routes, the 30-day chart, the export).
+6. **Stage 6, operator:** `npm run context-flush:pi` (dry run), then `-- --apply` and `sudo systemctl restart nodered`; restart
+   `ibems-proxy` for the quieter log. `npm run preflight` then checks both.
+7. **Stage 4, last:** `npm run archive:storage -- --apply`, `ARCHIVE_HOT_TIER=1` in `server/.env`, restart ingest, watch
+   the days seal and copy off the edge, run the restore drill, then the one-time reset (`npm run archive:reset`).
 
 ### 2026-09-24, 12:00 — two security changes for the operator (RM-145 audit)
 
@@ -3890,7 +3898,7 @@ Node-RED context flush and a stage-by-stage rollout. Stages: 0 measure, 1 archiv
         tick more than the archive, the previous process's last one at 20:01:01, from before the archive existed. The
         backfill copies it. The 24-hour read-back is still to do. Supabase is unchanged by this stage.
       - The new tests also pass on the edge's own Node 22.23.2 (59 of 59, run there read-only on 2026-09-29).
-- [ ] **RM-148b** Stage 2, the backfill. **Built and tested; not run.** `npm run archive:backfill` (dry run by default,
+- [x] **RM-148b** Stage 2, the backfill. **Run 2026-09-29 and read back (E-220).** `npm run archive:backfill` (dry run by default,
       `--apply` to write) copies what the cloud holds into the archive as `cloud` rows, which the uploader never sends
       back: one device, one 12-hour window at a time, a full page never trusted (split down to a minute, since PostgREST
       caps silently at 1,000), and every window checked afterwards (the archive must hold at least what the cloud
@@ -3899,7 +3907,7 @@ Node-RED context flush and a stage-by-stage rollout. Stages: 0 measure, 1 archiv
       `server/archive-backfill.mjs`; `archiveDb.mjs` gains `insertRows` and `countRange`. Tests: `archiveBackfill.test.mjs`
       (9), `archiveDb.test.mjs` (+2); each failed against a neutered copy. **Runs after** RM-148a has archived for a day:
       then the backfill, then the Aug 16–17 raw export in `~/backups/pre-retention-20260915/raw-before-2026-08-18/`.
-- [ ] **RM-148c** Stage 3, a slimmer cloud row and phase48. **Built, tested and rehearsed; not applied.**
+- [x] **RM-148c** Stage 3, a slimmer cloud row and phase48. **Applied 2026-09-29 20:52 and read back (E-221).**
       - `server/cloudCapabilities.mjs`: the cloud's copy of `capabilities` keeps what the catalogue calls a
         measurement, switch state, the codes the scrub tools read back (`device_state`, pinned in `KEPT_FOR_READERS`),
         and the system's flags (`measurement_frozen`, `frozen_since`, `channel_map`, `scrub`, which phase47's
@@ -3987,6 +3995,25 @@ Node-RED context flush and a stage-by-stage rollout. Stages: 0 measure, 1 archiv
         rows, which Stages 3–4 remove at the source.
       - **Order:** paste phase49 into the SQL editor, then restart `ibems-proxy` (the archive routes) and
         `npm run build` on the edge (the 30-day chart and the export).
+- [ ] **RM-148f** Stage 6, the edge's own resilience. **Built and tested; not applied.**
+      - **The SD card's biggest writer.** Node-RED rewrote its 3.7 MB of flow context, the bridge's eleven 24-hour
+        rings, every 30 s: about two thirds of the card's 19 GB a day (measured 2026-09-29).
+        `npm run context-flush:pi` (`scripts/context-flush.mjs`, a dry run until `--apply`, which backs the file up)
+        sets `flushInterval: 300` on the one active `contextStorage` line of `~/.node-red/settings.js`. It refuses a
+        file it does not recognise, and ignores the commented examples. The operator chose 5 minutes: an unclean power
+        cut loses at most 5 minutes of rings (the archive holds them) and a few Wh of an outlet's accumulator.
+        `test/context-flush.test.mjs` (3).
+      - **A quieter journal.** `server/proxy.mjs` logged two lines for every kiosk read, about 32,000 a day, which held
+        the 200 MB persistent journal to five days instead of ninety. Authorized reads are now counted and summarised
+        by path every 10 minutes. Refusals, writes and upgrades are still logged as they happen. `proxy.test.mjs` (+1).
+      - **The journal drop-in is in the repo (F-010).** `server/journald-ibems.conf` is the edge's own
+        `50-ibems-persistent.conf`, installed by `scripts/install.sh`. `test/install-script.test.mjs` (+1).
+      - **Preflight** gains:
+        - `context_flush` (reads `settings.js` as Node-RED would, comments stripped: `contextFlushFrom`);
+        - `archive_current` (the newest archived reading under 15 minutes old, and the upload backlog);
+        - `disk_free` (warn under 10 GB, error under 2 GB; the archive only grows).
+
+        `test/preflight.test.mjs` (+4).
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 

@@ -279,6 +279,19 @@ for unit in ibems-dashboard ibems-proxy ibems-ingest ibems-scheduler; do
 done
 act "systemctl daemon-reload" sudo systemctl daemon-reload
 
+# A persistent journal, bounded (RM-125). Raspberry Pi OS keeps the journal in RAM by default, so a
+# reboot erases what the daemons logged just before it, which is when it is needed. Numbered 50 so it
+# sorts after the OS's own 40-rpi-volatile-storage.conf. Kept in the repo since RM-148 (F-010).
+JOURNALD_DROPIN=/etc/systemd/system/journald.conf.d/50-ibems-persistent.conf
+if [ -f "$JOURNALD_DROPIN" ]; then
+  ok "persistent journal already configured — left untouched"
+else
+  act "install server/journald-ibems.conf as $JOURNALD_DROPIN" \
+    sudo install -D -m 0644 "$HERE/server/journald-ibems.conf" "$JOURNALD_DROPIN"
+  act "create /var/log/journal so the journal has somewhere to go" sudo mkdir -p /var/log/journal
+  act "restart systemd-journald" sudo systemctl restart systemd-journald
+fi
+
 # =============================================================================
 step "8. Start the services"
 # =============================================================================

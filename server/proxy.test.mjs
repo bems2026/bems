@@ -235,10 +235,14 @@ async function setup(proxyEnv = {}) {
     ...tempStatePaths(),
     ...proxyEnv,
   });
+  let output = '';
+  proxyChild.stdout.on('data', (chunk) => { output += chunk.toString(); });
 
   return {
     proxyUrl: `http://localhost:${proxyPort}`,
     supabaseState: fakeAuth.state,
+    /** What the proxy has written to stdout since it started listening — its journal, on the Pi. */
+    log: () => output,
     cleanup: () => {
       fakeAuth.server.close();
       bridgeChild.kill();
@@ -1688,5 +1692,30 @@ test('GET /api/archive/status says what the edge holds, and an edge with no arch
     assert.equal(res.status, 503);
   } finally {
     without.cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// RM-148, Stage 6 — the journal keeps what is worth keeping
+// ---------------------------------------------------------------------------------------------
+
+test('an authorized read is counted, not logged line by line; a refusal is still logged as it happens', async () => {
+  // Measured 2026-09-29: two lines for every kiosk read (an OPTIONS and a GET), about 32,000 a day,
+  // which pushed the persistent journal's 200 MB cap to five days of history instead of ninety.
+  const { proxyUrl, cleanup, log } = await setup({ PROXY_LOG_SUMMARY_MS: '400' });
+  try {
+    const auth = { headers: { Authorization: `Bearer ${VALID_TOKEN}` } };
+    await fetch(`${proxyUrl}/api/capabilities`, auth);
+    await fetch(`${proxyUrl}/api/capabilities`, auth);
+    await fetch(`${proxyUrl}/api/capabilities`);
+    await fetch(`${proxyUrl}/api/devices`, { method: 'OPTIONS' });
+    await new Promise((r) => setTimeout(r, 900));
+    const out = log();
+    assert.doesNotMatch(out, /GET \/api\/capabilities [^\n]*-> OK/, 'an authorized read is not a line of its own');
+    assert.doesNotMatch(out, /OPTIONS/, 'a preflight is not a line of its own');
+    assert.match(out, /GET \/api\/capabilities [^\n]*-> 401/, 'a refusal is logged when it happens');
+    assert.match(out, /served 2 authorized read\(s\)[^\n]*\/api\/capabilities ×2/, 'reads are summarised');
+  } finally {
+    cleanup();
   }
 });

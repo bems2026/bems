@@ -814,12 +814,28 @@ async function handleCommand(req, res, token) {
   res.end(JSON.stringify({ ...ack, via: outcome.via ?? null }));
 }
 
+/**
+ * What the journal hears about requests — RM-148, Stage 6. Every request used to be a line, and a
+ * kiosk read is two (an OPTIONS and a GET): about 32,000 lines a day on 2026-09-29, which held the
+ * persistent journal's 200 MB cap to five days of history instead of the ninety RM-125 set it up for.
+ * Refusals, writes and upgrades are still logged as they happen; authorized reads are counted and
+ * summarised once per interval, by path, so the traffic is still visible without drowning the rest.
+ */
+const LOG_SUMMARY_MS = Number(process.env.PROXY_LOG_SUMMARY_MS) || 10 * 60 * 1000;
+const servedReads = new Map();
+setInterval(() => {
+  if (servedReads.size === 0) return;
+  const total = [...servedReads.values()].reduce((a, n) => a + n, 0);
+  const span = LOG_SUMMARY_MS >= 60_000 ? `${Math.round(LOG_SUMMARY_MS / 60_000)} min` : `${Math.round(LOG_SUMMARY_MS / 1000)} s`;
+  console.log(`[ibems-proxy] served ${total} authorized read(s) in the last ${span}: ${[...servedReads].map(([p, n]) => `${p} ×${n}`).join(', ')}`);
+  servedReads.clear();
+}, LOG_SUMMARY_MS).unref();
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const origin = req.headers['origin'] || '-';
 
   if (req.method === 'OPTIONS') {
-    console.log(`[ibems-proxy] OPTIONS ${url.pathname} origin=${origin}`);
     res.writeHead(204, CORS_HEADERS);
     return res.end();
   }
@@ -830,7 +846,11 @@ const server = http.createServer(async (req, res) => {
 
   const token = tokenFromRequest(req, url);
   const authorized = await isAuthorized(token);
-  console.log(`[ibems-proxy] ${req.method} ${url.pathname} origin=${origin} token=${token ? token.slice(0, 12) + '…' : 'none'} -> ${authorized ? 'OK' : '401'}`);
+  if (authorized && req.method === 'GET') {
+    servedReads.set(url.pathname, (servedReads.get(url.pathname) ?? 0) + 1);
+  } else {
+    console.log(`[ibems-proxy] ${req.method} ${url.pathname} origin=${origin} token=${token ? token.slice(0, 12) + '…' : 'none'} -> ${authorized ? 'OK' : '401'}`);
+  }
   if (!authorized) return sendJson(res, 401, { error: 'unauthorized' });
 
   if (req.method === 'GET' && url.pathname === '/api/tuya/devices') {

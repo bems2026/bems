@@ -3,9 +3,9 @@ title: Edge computing
 purpose: Build, configure and operate the local server that runs the control logic (L3)
 audience: [integrator, installer]
 status: Draft
-last_verified: 2026-09-24
+last_verified: 2026-09-29
 applies_to: repo b8af936 · edge checkout fcb1ff6
-evidence: [E-010, E-011, E-012, E-013, E-014, E-015, E-016, E-017, E-018, E-019, E-020, E-021, E-022, E-023, E-024, E-025, E-026, E-027, E-028, E-029, E-030, E-035, E-036, E-038, E-042, E-044, E-046, E-047, E-050, E-051, E-052, E-056, E-062, E-066, E-067, E-078, E-079, E-082, E-085, E-086, E-110, E-111, E-118, E-119, E-124, E-128, E-129, E-130, E-131, E-132, E-133, E-134, E-135, E-136, E-138, E-139, E-140, E-141, E-142, E-143, E-144, E-145, E-214, E-215]
+evidence: [E-010, E-011, E-012, E-013, E-014, E-015, E-016, E-017, E-018, E-019, E-020, E-021, E-022, E-023, E-024, E-025, E-026, E-027, E-028, E-029, E-030, E-035, E-036, E-038, E-042, E-044, E-046, E-047, E-050, E-051, E-052, E-056, E-062, E-066, E-067, E-078, E-079, E-082, E-085, E-086, E-110, E-111, E-118, E-119, E-124, E-128, E-129, E-130, E-131, E-132, E-133, E-134, E-135, E-136, E-138, E-139, E-140, E-141, E-142, E-143, E-144, E-145, E-214, E-215, E-218]
 ---
 
 # Edge computing
@@ -82,7 +82,7 @@ These live in `~/.node-red/settings.js`, which is not in the repository. The val
 | `uiHost` | `"127.0.0.1"` | The default is every interface. One port serves the admin API **and every http-in node**, so on all interfaces the device network could read live data with no credential. That was measured, then closed on 2026-09-01. Reach the editor with `ssh -L 1880:127.0.0.1:1880 <edge-user>@<edge-host>`. | E-019, E-133, E-140 |
 | `adminAuth` | set | Protects the editor and admin API. The flow scripts authenticate as `NODE_RED_ADMIN_USER`. | E-019, E-042 |
 | `credentialSecret` | set, **and kept somewhere off the card** | It encrypts `flows_cred.json`. If it is lost, those credentials cannot be recovered and must be re-entered. | E-019, E-140 |
-| `contextStorage` | `localfilesystem` | Device state survives a Node-RED restart. The in-memory default forgets it. | E-019, E-046 |
+| `contextStorage` | `localfilesystem`, with `config: { flushInterval: 300 }` | Device state survives a Node-RED restart. The in-memory default forgets it. The default save every 30 s rewrote 3.7 MB each time, most of the card's writes; `npm run context-flush:pi` sets 300 s, and `npm run preflight` checks it (`context_flush`). | E-019, E-046, E-218 |
 | `httpNodeAuth` | not set | Acceptable **only** because of `uiHost` above. The http-in endpoints are reachable only from the edge itself, through the proxy. | E-047 |
 
 ### Parsing: raw datapoint to engineering unit

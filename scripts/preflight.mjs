@@ -388,6 +388,68 @@ export function assessDeployment(obs) {
     'Reading the flow needs NODE_RED_ADMIN_USER and NODE_RED_ADMIN_PASS in server/.env. Each poller is a dry run first; back up ~/.node-red/flows.json, then --apply: npm run poll-meters:pi -- --host=127.0.0.1 (CT meters), poll-outlets:pi (outlets), poll-switches:pi (light switches), aircon:pi (the IR hub\'s poll gate).',
   );
 
+  /**
+   * Node-RED's context is saved every 30 s by default — RM-148. Its flow context holds the bridge's
+   * eleven 24-hour history rings, 3.7 MB rewritten in full at every save: measured 2026-09-29 as about
+   * two thirds of the SD card's 19 GB of writes a day. Every ring point is also in the edge's archive
+   * now, so a 5-minute save costs at most 5 minutes of ring on an unclean power cut (a clean stop
+   * saves on close). A consumer SD card wears out from writes long before anything else here fails.
+   */
+  const flush = host.contextFlush ?? null;
+  const flushS = flush?.flushIntervalS ?? 30;
+  add(
+    'context_flush',
+    'Node-RED saves its context sparingly',
+    flush === null ? LEVELS.UNCHECKED : flush.module === 'localfilesystem' && flushS >= 120 ? LEVELS.OK : LEVELS.WARN,
+    flush === null
+      ? 'not checked'
+      : flush.module !== 'localfilesystem'
+        ? `context storage is ${flush.module ?? 'unset'} — device state will not survive a restart`
+        : `context saved every ${flushS} s${flushS < 120 ? ' — the bridge rewrites 3.7 MB each time' : ''}`,
+    'In ~/.node-red/settings.js set contextStorage: { default: { module: "localfilesystem", config: { flushInterval: 300 } } } — back the file up first — and restart Node-RED. A clean stop still saves on close; an unclean power cut loses at most 5 minutes of the 24-hour rings, which the edge archive also holds.',
+  );
+
+  /**
+   * The edge archive is being written — RM-148. Every tick is archived before the cloud gets it, and
+   * the archive is the only permanent copy of raw minutes. A daemon that has fallen back to writing
+   * straight to the cloud still records the cloud's 14 days, and loses the rest for good.
+   */
+  const archive = host.archive ?? null;
+  const archiveAgeMin = archive?.newestAgeMs == null ? null : Math.round(archive.newestAgeMs / 60_000);
+  add(
+    'archive_current',
+    'The edge archive holds the last minutes',
+    archive === null
+      ? LEVELS.UNCHECKED
+      : !archive.present
+        ? LEVELS.WARN
+        : archiveAgeMin === null || archiveAgeMin >= 15
+          ? LEVELS.ERROR
+          : (archive.pending ?? 0) > 1000
+            ? LEVELS.WARN
+            : LEVELS.OK,
+    archive === null
+      ? 'not checked'
+      : !archive.present
+        ? 'no archive on this edge — raw minutes live only in the cloud, and only for its window'
+        : archiveAgeMin === null || archiveAgeMin >= 15
+          ? `the newest archived reading is ${archiveAgeMin ?? '?'} min old`
+          : (archive.pending ?? 0) > 1000
+            ? `${archive.pending.toLocaleString('en-US')} row(s) waiting to upload — the cloud is behind`
+            : `newest reading ${archiveAgeMin} min old, ${archive.pending ?? 0} waiting to upload`,
+    'journalctl -u ibems-ingest for "ARCHIVE UNAVAILABLE" or "archive refused". The archive is server/data/archive/archive.sqlite (ARCHIVE_DB_PATH); ingest creates it on start. Rows waiting to upload drain by themselves once the cloud answers — a backlog that does not shrink is a refused row: see upload_rejects.',
+  );
+
+  /** Free disk — RM-148. The archive grows about 1.3 GB a year, and nothing on this host prunes it. */
+  const freeBytes = host.disk?.freeBytes ?? null;
+  add(
+    'disk_free',
+    'Room on the disk for the archive',
+    freeBytes === null ? LEVELS.UNCHECKED : freeBytes >= 10e9 ? LEVELS.OK : freeBytes >= 2e9 ? LEVELS.WARN : LEVELS.ERROR,
+    freeBytes === null ? 'not checked' : `${(freeBytes / 1e9).toFixed(1)} GB free`,
+    'The archive only grows, about 1.3 GB a year; every sealed day is also in the project\'s file storage. Free space by clearing old flows.json backups and ~/backups, or move to a larger card or a USB SSD (docs/03-edge.md). Never delete the archive to make room.',
+  );
+
   const errors = checks.filter((c) => c.level === LEVELS.ERROR);
   const warnings = checks.filter((c) => c.level === LEVELS.WARN);
   const unchecked = checks.filter((c) => c.level === LEVELS.UNCHECKED);
@@ -423,6 +485,25 @@ export function pollCoverage(flows) {
 }
 
 // --- CLI ---------------------------------------------------------------------
+/**
+ * Node-RED's default context store and its flush interval, read from `settings.js` — RM-148.
+ *
+ * The stock file is mostly commented-out examples, several of them `contextStorage` blocks, so
+ * comments are stripped first: a match inside one would report a setting Node-RED never reads.
+ * `flushIntervalS` is null when unset, which Node-RED treats as 30 seconds.
+ */
+export function contextFlushFrom(settingsText) {
+  const code = String(settingsText)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:"'])\/\/[^\n]*/g, '$1');
+  const at = code.search(/\bcontextStorage\s*:/);
+  if (at === -1) return { module: null, flushIntervalS: null };
+  const block = code.slice(at, at + 600);
+  const module = block.match(/default\s*:\s*\{\s*module\s*:\s*["']([\w-]+)["']/)?.[1] ?? null;
+  const flush = block.match(/flushInterval\s*:\s*(\d+)/)?.[1];
+  return { module, flushIntervalS: flush === undefined ? null : Number(flush) };
+}
+
 // Everything below is I/O. It gathers observations and hands them to the pure function above, so
 // the verdict table stays testable and this half stays as thin as it can be.
 if (process.argv[1] && process.argv[1].endsWith('preflight.mjs')) {
@@ -699,6 +780,43 @@ if (process.argv[1] && process.argv[1].endsWith('preflight.mjs')) {
       host.addresses.total = null;
       host.polls = null;
     }
+  }
+
+  // --- RM-148: Node-RED's context flush, the edge archive, and room on the disk ---------------------
+  try {
+    const { homedir } = await import('node:os');
+    host.contextFlush = contextFlushFrom(readFileSync(join(homedir(), '.node-red', 'settings.js'), 'utf8'));
+  } catch {
+    host.contextFlush = null;
+  }
+  try {
+    const { existsSync } = await import('node:fs');
+    const archivePath = process.env.ARCHIVE_DB_PATH || valueOf('ARCHIVE_DB_PATH') || join(ROOT, 'server', 'data', 'archive', 'archive.sqlite');
+    if (!existsSync(archivePath)) {
+      host.archive = { present: false, newestAgeMs: null, pending: null };
+    } else {
+      const { openArchive } = await import('../server/archiveDb.mjs');
+      const archive = openArchive(archivePath, { readOnly: true });
+      try {
+        const stats = archive.stats();
+        host.archive = {
+          present: true,
+          newestAgeMs: stats.newest ? Date.now() - Date.parse(stats.newest) : null,
+          pending: Object.values(archive.lag()).reduce((a, n) => a + n, 0),
+        };
+      } finally {
+        archive.close();
+      }
+    }
+  } catch {
+    host.archive = null;
+  }
+  try {
+    const { statfsSync } = await import('node:fs');
+    const st = statfsSync(ROOT);
+    host.disk = { freeBytes: Number(st.bavail) * Number(st.bsize) };
+  } catch {
+    host.disk = null;
   }
 
   const result = assessDeployment({ siteId: SITE.id, env, database, vendor, network, bridge, broker, services, host });
