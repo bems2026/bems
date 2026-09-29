@@ -1,7 +1,8 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-29, 07:30 — **RM-146: fifteen devices dark since the weekend (an access-point drop on Saturday
-13:47 left switches and outlets hung or off the Wi-Fi; the IR hub died on Friday). They need a power cycle on site.
+**Last audited:** 2026-09-29, 08:30 — **RM-146: fifteen devices dark since the weekend (an access-point drop on Saturday
+13:47 left switches and outlets hung or off the Wi-Fi; the IR hub died on Friday). Recovered on 29 September, after the edge
+and the devices lost power at about 07:55: 19 of 20 online by 08:29.
 The fleet alarm now settles, escalates and reminds (RM-146a). The broker is back on loopback (F-001 closed, RM-146b).**
 **Earlier, 2026-09-29 — RM-145: Phases D and E done; the FINAL GATE awaits the operator.**
 **Earlier, 2026-09-24, 13:03 — **RM-145: public sign-up was open, and any signed-in account can arm a
@@ -3780,8 +3781,11 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 ### The weekend outage of 25–29 September — RM-146 (2026-09-29)
 
-- [ ] **RM-146** Fifteen devices dark since the weekend: all seven light switches, all seven outlets, and the IR
-      hub. Diagnosed read-only on 2026-09-29 (`docs/audit/evidence-ledger.md` E-213):
+- [x] **RM-146** Fifteen devices dark since the weekend: all seven light switches, all seven outlets, and the IR
+      hub. **Recovered 2026-09-29 (E-216):** the edge lost power at about 07:55 and came back with the devices. By 08:14
+      the recovery timer had reconnected all but the hub, which came back at 08:27. 19 of 20 entries were online at 08:29;
+      the 20th is a derived sensor, not a device. The power cycle cured them, as diagnosed. Who cut the power is not
+      recorded. Diagnosed read-only on 2026-09-29 (`docs/audit/evidence-ledger.md` E-213):
       - **The IR hub went first, Friday about 12:00**, with no network event and no command. It lost power or hung;
         only someone at the office can say which.
       - **Saturday 13:47 the access point dropped every client**; the edge re-associated in 23 s. The switches and
@@ -3791,14 +3795,15 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
         reach either kind, so they need their power cycled on site.**
       - Not a weekly pattern: the weekends of 5, 12 and 19 September were clean. The weekend only meant nobody was there.
       - Aggravating, not proven: a solar-logger hotspot on channel 4 overlaps the device network on channel 1.
-      - **Open:** power-cycle the fifteen on site and read them back. At the AP: DHCP reservations, the channel, why it
-        restarted at 13:47. Consider the UPS (RM-131).
+      - **Still open, at the AP:** DHCP reservations, the channel, and why it restarted at 13:47. Consider the UPS
+        (RM-131). The next time an access point drops, expect the same hang and the same cure.
 - [x] **RM-146a** The fleet alarm, which sent 23 notices in two days and then nothing for three while the outage grew, now
       settles: it enters after 5 minutes and leaves after 10, reports again when 3 more devices drop, and repeats every
       12 hours while anything is down. `server/fleetAlarm.mjs` (`enterAfter`, `leaveAfter`, `growBy`,
       `remindEveryMs`; defaults unchanged), `server/notify.mjs` (`worse`, `still`), `server/ingest.mjs`
-      (`FLEET_ALARM_OPTIONS`). Tests: `server/fleetAlarm.test.mjs` (+7), `server/notify.test.mjs` (+2). Needs
-      `ibems-ingest` restarted on the edge.
+      (`FLEET_ALARM_OPTIONS`). Tests: `server/fleetAlarm.test.mjs` (+7), `server/notify.test.mjs` (+2). Deployed:
+      `ibems-ingest` restarted on the edge at 08:16 on 2026-09-29, after the fleet had recovered. So its notices have not yet
+      fired in the field.
 - [x] **RM-146b** F-001 closed: the broker restored to loopback on 2026-09-29 (the two listener lines uncommented,
       mosquitto restarted), read back as `127.0.0.1:1883` and `[::1]:1883` only. `npm run preflight` now checks it
       (`broker_not_exposed`: a TCP probe of 1883 from each non-loopback address, like the bridge's), so the next widening
