@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Snowflake } from 'lucide-react';
+import { Power, PowerOff, Snowflake } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { primaryOfClass } from '@/lib/siteDevices';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
@@ -103,6 +103,10 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
 
   /** What to call it on screen. The registry's own display name, never this building's. */
   const name = device?.display_name ?? 'Aircon';
+  /** The chip's tone follows the page's one state rule (see `PlanLegend`): green only for on, amber
+   * for the two states that warn — an old reading, a command in flight — and neutral otherwise. */
+  const statusText = unknown ? 'no reading yet' : stale ? 'stale' : busy ? 'switching…' : on ? 'on' : 'off';
+  const statusTone = unknown ? '' : stale || busy ? ' badge--warn' : on ? ' badge--good' : '';
 
   const dispatch = (action: 'on' | 'off') => {
     if (!acuId) return; // no aircon at this site; the control is not rendered, but the guard is cheap
@@ -158,7 +162,10 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
             <b className="control-ir-unit__name">{name}</b>
             <div className="control-ir-unit__meta">{device?.id ?? '—'}</div>
           </div>
-          <span className={`badge${on ? ' badge--good' : ''}`}>{unknown ? 'no reading yet' : stale ? 'stale' : busy ? 'switching…' : on ? 'on' : 'off'}</span>
+          <span className={`badge control-ir-status${statusTone}`} title="The last state this system sent. An IR aircon cannot report its own.">
+            <span className="badge__dot" aria-hidden="true" />
+            {statusText}
+          </span>
         </div>
 
         <div className="control-ir-unit__readouts" style={stale ? { opacity: 0.6 } : undefined}>
@@ -181,14 +188,21 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
           )}
         </p>
 
+        {/* THE NEXT COMMAND, composed here and sent below. Every row carries a visible label now:
+            Mode and Fan had only an aria-label, so a sighted operator saw two unlabelled pill rows
+            beside a labelled setpoint. The visible labels are aria-hidden because each control
+            already carries the same word as its accessible name. */}
         <div className="control-ir-state">
-          <PillGroup label="Mode" options={AC_MODE_OPTIONS} value={draft.mode} disabled={busy} onChange={(mode) => update({ mode })} />
+          <div className="control-ir-field">
+            <span className="metric-label" aria-hidden="true">MODE</span>
+            <PillGroup label="Mode" options={AC_MODE_OPTIONS} value={draft.mode} disabled={busy} onChange={(mode) => update({ mode })} />
+          </div>
 
-          <div className="control-ir-setpoint">
-            <label className="metric-label" htmlFor="acu-setpoint">
-              SETPOINT
-            </label>
-            <div className="control-ir-setpoint__row">
+          <div className="control-ir-field-row">
+            <div className="control-ir-setpoint">
+              <label className="metric-label" htmlFor="acu-setpoint">
+                SETPOINT
+              </label>
               <select
                 id="acu-setpoint"
                 className="control-ir-setpoint__select"
@@ -202,39 +216,54 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
                   </option>
                 ))}
               </select>
+            </div>
+            {/* A real switch, like every other on/off on this page. It was a pill whose label
+                flipped between "Swing on" and "Swing off" and whose fill inverted — which is the
+                classic ambiguous toggle: nobody can tell whether the words are the state or what a
+                click will do. The track answers that the same way the lighting switches do. */}
+            <div className="control-ir-swing">
+              <span className="metric-label" aria-hidden="true">SWING</span>
               <button
                 type="button"
                 role="switch"
                 aria-checked={draft.swing}
                 aria-label="Swing"
-                className={`control-ir-swing${draft.swing ? ' control-ir-swing--on' : ''}`}
+                className={`quick-toggle${draft.swing ? ' quick-toggle--on' : ''}`}
                 disabled={busy}
                 onClick={() => update({ swing: !draft.swing })}
               >
-                Swing {draft.swing ? 'on' : 'off'}
+                <span className="quick-toggle__knob" />
               </button>
             </div>
-            {/* Below the building's room-comfort policy. Said here rather than refused: the number
-                is about the room, and somebody who needs 18 °C for an hour is entitled to ask. */}
-            {policyNote && (
-              <p className="control-ir-setpoint__policy" role="status">
-                {policyNote}
-              </p>
-            )}
           </div>
+          {/* Below the building's room-comfort policy. Said here rather than refused: the number
+              is about the room, and somebody who needs 18 °C for an hour is entitled to ask. */}
+          {policyNote && (
+            <p className="control-ir-setpoint__policy" role="status">
+              {policyNote}
+            </p>
+          )}
 
-          <PillGroup label="Fan" options={AC_FAN_OPTIONS} value={draft.fan} disabled={busy} onChange={(fan) => update({ fan })} />
+          <div className="control-ir-field">
+            <span className="metric-label" aria-hidden="true">FAN</span>
+            <PillGroup label="Fan" options={AC_FAN_OPTIONS} value={draft.fan} disabled={busy} onChange={(fan) => update({ fan })} />
+          </div>
         </div>
 
         <p className={`control-ir-unit__path${blocked ? ' control-ir-unit__path--blocked' : ''}`} role="status">
           {pathText}
         </p>
 
+        {/* The card's one primary action, full width with its OFF beside it at the same size. They
+            were 10.5px quick-row buttons, the smallest type on the card for the two commands that
+            drive a compressor. Blue is "press this", not "on": the state colours stay on states. */}
         <div className="control-ir-unit__actions">
-          <button type="button" className="quick-btn quick-btn--primary" disabled={busy || blocked !== null} onClick={() => askDispatch('on')}>
+          <button type="button" className="quick-btn quick-btn--primary control-ir-send" disabled={busy || blocked !== null} onClick={() => askDispatch('on')}>
+            <Power size={15} aria-hidden="true" />
             Send ON at {draft.setpoint_c}°C
           </button>
-          <button type="button" className="quick-btn" disabled={busy} onClick={() => askDispatch('off')}>
+          <button type="button" className="quick-btn control-ir-send" disabled={busy} onClick={() => askDispatch('off')}>
+            <PowerOff size={15} aria-hidden="true" />
             Send OFF
           </button>
         </div>

@@ -910,8 +910,8 @@ body::before {
 }
 /* White reads fine against the light theme's --accent, but the dark theme's --accent was
    tuned for text-ON-page use (WCAG-verified there), not as a background under white — dark
-   text is what actually clears AA against it, the same pairing .stale-flag/
-   .control-plan-btn--accent already use for --accent/--warn elsewhere in this file. */
+   text is what actually clears AA against it, the same pairing .stale-flag already uses for
+   --accent/--warn elsewhere in this file. */
 :root[data-theme='dark'] .nav-brand-mark {
   color: #1a1206;
 }
@@ -3432,6 +3432,16 @@ body::before {
 .control-plan-panel--outlets {
   min-height: 420px;
 }
+/* The panel's label and, beside it, how many of its relays are on (`PlanTally`). Wraps rather
+   than squeezing: at 375px the two sit on two lines, which is fine; truncating either is not. */
+.control-plan-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
 .control-plan-panel__label {
   display: flex;
   align-items: center;
@@ -3439,32 +3449,134 @@ body::before {
   font: 600 var(--fs-2xs) 'IBM Plex Mono', monospace;
   color: var(--muted-2);
   letter-spacing: 0.08em;
-  margin-bottom: var(--sp-3);
+}
+.control-plan-tally {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 600 var(--fs-xxs) 'IBM Plex Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* Hollow when nothing is on, solid green when something is — the lamps' own on/off shapes. */
+.control-plan-tally__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--muted-2);
+  flex: none;
+}
+.control-plan-tally--on .control-plan-tally__dot {
+  background: var(--good);
+  border-color: var(--good);
 }
 .control-plan-panel__actions {
   display: flex;
   gap: var(--sp-2);
   margin-top: var(--sp-3);
 }
+/*
+ * "All … on" and "All … off" — peers, so styled alike. "Off" used to be the one filled button,
+ * in amber: the colour a lit lamp wore on the plan above it. So the control that switches
+ * everything OFF looked like the only thing on the panel that was ON, and "on" beside it looked
+ * disabled. Neither carries a state colour now; the Power/PowerOff glyph and the verb say which is
+ * which, and the confirmation each one opens says exactly what it will do.
+ */
 .control-plan-btn {
   flex: 1;
-  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  border: 1px solid var(--border-strong);
   background: var(--bg-surface);
+  color: var(--txt);
   border-radius: var(--r-sm);
-  padding: 8px;
+  padding: 8px 10px;
   font: 700 var(--fs-xs) 'Manrope', sans-serif;
   cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
-.control-plan-btn--accent {
-  border: none;
-  background: var(--accent);
-  color: #1e293b;
+.control-plan-btn:hover {
+  background: var(--bg-inset);
+  border-color: var(--muted-2);
+}
+.control-plan-btn svg {
+  color: var(--muted);
+  flex: none;
+}
+
+/* The plan's key — `PlanLegend.tsx`, which also records the state-colour rule these follow. */
+.control-plan-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+  list-style: none;
+  margin: calc(-1 * var(--sp-2)) 0 var(--sp-4);
+  padding: 0;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.control-plan-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.control-legend-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1.5px solid var(--muted-2);
+  flex: none;
+}
+.control-legend-swatch--on {
+  background: var(--good);
+  border-color: var(--good);
+}
+.control-legend-swatch--busy {
+  border-color: var(--warn);
+  animation: outlet-toggle-pulse 1.1s ease-in-out infinite;
+}
+.control-legend-swatch--unavailable {
+  border-style: dashed;
+  background: repeating-linear-gradient(45deg, var(--muted-2) 0 1.5px, transparent 1.5px 4px);
+  opacity: 0.7;
+}
+.control-legend-puck {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--muted-2);
+  overflow: hidden;
+  flex: none;
+}
+.control-legend-puck__half {
+  flex: 1;
+}
+.control-legend-puck__half + .control-legend-puck__half {
+  border-left: 1.5px solid var(--muted-2);
+}
+.control-legend-puck__half--on {
+  background: var(--good);
 }
 
 /* Ceiling luminaires — spatial now, same plan container/positioning system as the outlet
    plan below (`.control-outlet-plan`, shared so both cards read as one system and match
    heights automatically). A lamp square sits at its real `LIGHT_PLAN` coordinate; all 3
    squares on a row are independently clickable but share one relay's state. */
+/*
+ * A lamp's four states — the rule is in `PlanLegend.tsx`. OFF is hollow, ON is solid green:
+ * a shape difference as well as a colour one, so it reads without colour vision.
+ *
+ * Off used to be a --bg-inset square with a --border edge, which measured 1.2:1 (light) and 1.1:1
+ * (dark) against the panel: an off lamp, an unreachable lamp and an empty patch of floor were one
+ * dark blot. The --muted-2 outline clears 3:1 (SC 1.4.11) on the panel in both themes (5.2:1 light,
+ * 4.9:1 dark), and --good as a fill clears it too (5.3:1 light, 5.8:1 dark). The amber it replaced
+ * measured 2.1:1 on the light panel.
+ */
 .control-lamp {
   position: absolute;
   transform: translate(-50%, -50%);
@@ -3472,17 +3584,51 @@ body::before {
   height: 26px;
   border-radius: 6px;
   cursor: pointer;
-  background: var(--bg-inset);
-  border: 1px solid var(--border);
-  transition: background 0.18s ease, box-shadow 0.18s ease;
+  background: transparent;
+  border: 1.5px solid var(--muted-2);
+  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+/* A ring, not a fill change, for the reason `.quick-toggle:hover` gives: the fill carries on/off.
+   Mixed from --muted-2 because --chip-bg is near-white and vanished on the light plan. */
+.control-lamp:not(:disabled):hover {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--muted-2) 30%, transparent);
 }
 .control-lamp--on {
-  background: var(--accent);
-  border-color: var(--accent);
-  box-shadow: 0 0 10px rgb(245 158 11 / 0.5);
+  background: var(--good);
+  border-color: var(--good);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--good) 45%, transparent);
+}
+/* In flight: the state it was asked for, outlined in the warn tone and pulsing — the same signal
+   `.outlet-socket-toggle--busy` gives in the list below. */
+.control-lamp--busy {
+  border-color: var(--warn);
+  cursor: progress;
+  animation: outlet-toggle-pulse 1.1s ease-in-out infinite;
 }
 .control-lamp:disabled {
   cursor: default;
+}
+.control-lamp--busy:disabled {
+  cursor: progress;
+}
+/*
+ * Press feedback that keeps the lamp where it is. The shared `:active { transform: scale(0.96) }`
+ * (Press feedback, above) REPLACED this element's `translate(-50%, -50%)`, which is what centres it
+ * on its plan coordinate. So on mousedown the lamp jumped half its own size down and right, the
+ * release landed just outside it, and no click fired: a press on the middle of a lamp — where
+ * anyone presses — did nothing. Found 2026-09-29 by clicking the plan in a browser; jsdom, which
+ * has no layout, could never have shown it.
+ */
+.control-lamp:not(:disabled):active {
+  transform: translate(-50%, -50%) scale(0.96);
+}
+/* Dashed and hatched — the hatch is the one symbol the lamp, the outlet half and the legend share. */
+.control-lamp--unavailable {
+  /* Neutral even when the last reading was on: that state is not one anybody can act on now. */
+  border-color: var(--muted-2);
+  border-style: dashed;
+  background: repeating-linear-gradient(45deg, var(--muted-2) 0 1.5px, transparent 1.5px 5px);
+  box-shadow: none;
   opacity: 0.6;
 }
 .control-light-plan__label {
@@ -3559,37 +3705,54 @@ body::before {
  * rounded corners instead. Radius is 12px, not 13px: the 1px border means the halves live in
  * a 24px content box, and matching that keeps the circle true.
  */
+/* The puck's edge and its centre line are --muted-2 for the reason `.control-lamp` gives: an off
+   socket has to be visible as a socket, and --border-strong was ~1.4:1 against the panel. */
 .control-outlet-pin__puck {
   display: flex;
   width: 26px;
   height: 26px;
   margin: 0 auto;
   border-radius: 50%;
-  border: 1px solid var(--border-strong);
+  border: 1.5px solid var(--muted-2);
 }
 .control-outlet-pin__half {
   flex: 1;
   border: none;
   cursor: pointer;
   padding: 0;
-  background: var(--bg-inset);
+  background: transparent;
   transition: background 0.15s ease;
   /* Anchor for the coarse-pointer hit expander (end of file). */
   position: relative;
 }
 .control-outlet-pin__half--left {
-  border-right: 1px solid var(--border-strong);
+  border-right: 1.5px solid var(--muted-2);
   border-radius: 12px 0 0 12px;
 }
 .control-outlet-pin__half--right {
   border-radius: 0 12px 12px 0;
 }
-.control-outlet-pin__half--on {
-  background: var(--accent);
+.control-outlet-pin__half:not(:disabled):hover {
+  background: color-mix(in srgb, var(--muted-2) 30%, transparent);
+}
+.control-outlet-pin__half--on,
+.control-outlet-pin__half--on:not(:disabled):hover {
+  background: var(--good);
+}
+.control-outlet-pin__half--busy {
+  cursor: progress;
+  animation: outlet-toggle-pulse 1.1s ease-in-out infinite;
 }
 .control-outlet-pin__half:disabled {
   cursor: default;
-  opacity: 0.6;
+}
+.control-outlet-pin__half--busy:disabled {
+  cursor: progress;
+}
+/* Hatched rather than dashed: a half-circle has no edge of its own to dash. */
+.control-outlet-pin__half--unavailable {
+  background: repeating-linear-gradient(45deg, var(--muted-2) 0 1.5px, transparent 1.5px 4px);
+  opacity: 0.55;
 }
 .control-outlet-pin__warn {
   margin-top: 1px;
@@ -3682,9 +3845,14 @@ body::before {
   justify-content: space-between;
   align-items: center;
 }
+/* --txt, not --blue: blue is this app's link and primary-action colour, and a unit's name in it
+   read as something to click. */
 .control-ir-unit__name {
   font-size: var(--fs-sm-lg);
-  color: var(--blue);
+  color: var(--txt);
+}
+.control-ir-status {
+  font-weight: 600;
 }
 .control-ir-unit__meta {
   font: 500 var(--fs-xxs) 'IBM Plex Mono', monospace;
@@ -3704,14 +3872,23 @@ body::before {
    screen-reader-correct for free, and on a phone it opens the platform's own wheel, which is
    far easier to hit than fifteen small buttons would be. */
 .control-ir-setpoint {
-  margin-top: var(--sp-3);
-}
-.control-ir-setpoint__row {
   display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  margin-top: 4px;
+  flex-direction: column;
+  gap: 6px;
+}
+/* One labelled field of the next command: its label above, its control below. */
+.control-ir-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* Setpoint and Swing side by side, bottoms aligned; they wrap under each other if the card is
+   ever too narrow for both. */
+.control-ir-field-row {
+  display: flex;
+  align-items: flex-end;
   flex-wrap: wrap;
+  gap: var(--sp-3) var(--sp-5);
 }
 .control-ir-setpoint__select {
   min-height: 32px;
@@ -3733,6 +3910,23 @@ body::before {
   flex-wrap: wrap;
   gap: var(--sp-2);
   margin-top: var(--sp-3);
+}
+/* The card's two commands at a size that matches what they do — they were `.quick-btn`'s 10.5px
+   Overview-row size. Equal width, so OFF is as easy to find as ON. Declared after `.quick-btn`,
+   which is what lets the font size here win at equal specificity. */
+.control-ir-send {
+  flex: 1 1 140px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 9px 12px;
+  font-size: var(--fs-sm);
+}
+.control-ir-send:not(.quick-btn--primary) {
+  color: var(--txt);
+  border-color: var(--border-strong);
 }
 .control-ir-unit__last {
   margin: var(--sp-2) 0 0;
@@ -3761,28 +3955,20 @@ body::before {
   margin-top: 0;
 }
 .control-ir-setpoint__policy {
-  margin: var(--sp-2) 0 0;
+  margin: calc(-1 * var(--sp-1)) 0 0;
   font-size: var(--fs-xxs);
   color: var(--warn);
 }
+/* Swing is a `.quick-toggle` now — the page's one on/off control — under its own label. The 4px
+   block margin centres the 24px track in the select's 32px row, so the two bottoms line up. */
 .control-ir-swing {
-  min-height: 32px;
-  padding: 4px 12px;
-  border-radius: var(--r-pill);
-  border: 1px solid var(--border);
-  background: var(--bg-surface);
-  color: var(--muted);
-  font: 600 var(--fs-xs) inherit;
-  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
 }
-.control-ir-swing--on {
-  background: var(--txt);
-  border-color: var(--txt);
-  color: var(--bg-page); /* see .devices-filter-chip--active's comment on why not #ffffff */
-}
-.control-ir-swing:disabled {
-  cursor: default;
-  opacity: 0.6;
+.control-ir-swing .quick-toggle {
+  margin-block: 4px;
 }
 .control-ir-unit__path {
   margin: var(--sp-3) 0 0;
@@ -9797,9 +9983,9 @@ button.space-plan__pin {
   .devices-filter-chip,
   .analytics-scope-btn,
   .automation-write-btn,
-  /* The aircon's state controls (2026-09-17) — on the Control page, which is a kiosk page. */
+  /* The aircon's state controls (2026-09-17) — on the Control page, which is a kiosk page. Swing
+     left this list on 2026-09-29: it is a `.quick-toggle` now, whose hit-area expander is below. */
   .pill-group__pill,
-  .control-ir-swing,
   .control-ir-setpoint__select,
   .enroll-wizard__detected > summary,
   /* Add Device's key import (2026-09-17): its disclosure and the "whole account" checkbox row. */

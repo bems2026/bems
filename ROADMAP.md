@@ -1,6 +1,9 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-29, 08:50 — **RM-146: fifteen devices dark since the weekend (an access-point drop on Saturday
+**Last audited:** 2026-09-29, 14:51 — **RM-147: the Control page has one rule for on and off (solid green on, hollow
+off, pulsing while switching, hatched when unavailable), neutral bulk buttons, per-panel counts, a legend, and a lamp
+click that no longer gets lost on press.**
+**Earlier, 2026-09-29, 08:50 — RM-146: fifteen devices dark since the weekend (an access-point drop on Saturday
 13:47 left switches and outlets hung or off the Wi-Fi; the IR hub died on Friday). Recovered on 29 September by the
 operator's power cycle of the office at about 07:55: 19 of 20 online, read back at 08:43.
 The fleet alarm now settles, escalates and reminds (RM-146a). The broker is back on loopback (F-001 closed, RM-146b).**
@@ -3810,6 +3813,29 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       mosquitto restarted), read back as `127.0.0.1:1883` and `[::1]:1883` only. `npm run preflight` now checks it
       (`broker_not_exposed`: a TCP probe of 1883 from each non-loopback address, like the bridge's), so the next widening
       is caught. `scripts/preflight.mjs`; `test/preflight.test.mjs` (+5).
+
+### The Control page: one rule for on and off — RM-147 (2026-09-29)
+
+- [x] **RM-147** The operator found the Control page's on/off colours confusing, and they were:
+      - "All rows off" and "All outlets off" were the only filled buttons, in the amber a lit lamp wore on the plan above
+        them, so the button that switches everything off looked like the one thing that was on;
+      - the plans drew "on" in amber, the lists beside them drew the same relay green, and amber is also the app's
+        warning colour;
+      - an off lamp (a `--border` edge, 1.2:1 against the panel) looked the same as an unreachable one.
+
+      **One rule now, recorded in `PlanLegend.tsx`:** on is solid `--good`, off is a hollow `--muted-2` outline, switching
+      pulses with a warn-tone edge, and unavailable is dashed and hatched. That is shape as well as colour, and every
+      state clears 3:1 in both themes (E-217). The bulk buttons are unfilled peers with Power/PowerOff icons. Each plan
+      panel says "N of M on" (`relayTally.ts`, `PlanTally.tsx`), and a legend explains the symbols. The plan's sockets
+      are S1/S2, as in the list, the log and Automation, not DP1/DP2. The aircon card labels Mode, Fan and Swing on
+      screen, Swing is a real switch rather than a pill whose words flipped, and Send ON/OFF are full size. The
+      Overview's fallback plan (`FloorPlanView.tsx`) follows the same rule, and no longer draws "OFF" in the fault red.
+      **A real bug found while verifying in a browser:** the shared `:active { transform: scale(0.96) }` replaced each
+      lamp's centring `translate`. A press on the middle of a lamp moved it from under the pointer, and no click fired.
+      jsdom cannot see that. It is fixed and guarded by `test/css-press-feedback.test.mjs`, which fails with the fix
+      removed. Tests: `relayTally.test.ts` (+5), `ControlPage.test.tsx` (+3, and DP1 → S1). Verified against the mock
+      bridge in both themes and at 375 px.
+      **Needs `npm run build` on the edge before the kiosk shows it.**
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 

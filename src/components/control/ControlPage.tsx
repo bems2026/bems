@@ -16,6 +16,7 @@ import { SwitchesListCard } from './SwitchesListCard';
 import { OutletsListCard } from './OutletsListCard';
 import { IrCommandCenterCard } from './IrCommandCenterCard';
 import { CommandLogCard } from './CommandLogCard';
+import { PlanLegend } from './PlanLegend';
 import { useControlLog } from './controlLog';
 import type { DeviceClass } from '@/lib/types';
 import { dispatchScope } from './dispatchScope';
@@ -154,10 +155,13 @@ export function ControlPage() {
               <div className="card-head">
                 <div>
                   <h3 className="card-title">Lighting &amp; outlet plan</h3>
-                  <p className="card-sub">Click a lamp, a row switch, or an outlet socket to switch it.</p>
+                  {/* There is no separate "row switch" to click: any of a row's three lamps switches
+                      the row, which is what this used to leave the operator to discover. */}
+                  <p className="card-sub">Click a lamp to switch its whole row, or half an outlet to switch that socket.</p>
                 </div>
                 <span className="control-plan-card__tag">LAYOUT PER AS-BUILT SKETCH</span>
               </div>
+              <PlanLegend />
               <div className="control-plan-grid">
                 <LightingMatrixCard />
                 <OutletPlanCard />

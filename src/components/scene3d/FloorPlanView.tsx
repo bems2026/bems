@@ -22,6 +22,14 @@ import type { Reading } from '@/lib/types';
 const STALE_OPACITY = 0.5;
 
 /**
+ * The Control page's state rule (`control/PlanLegend.tsx`), so the same relay is the same colour on
+ * both plans: on is --good, off is neutral. This drew on in the amber that means "warning" elsewhere,
+ * and "OFF" in --bad, the fault red — as though a switched-off socket were an alarm.
+ */
+const ON_FILL = 'var(--good)';
+const OFF_TEXT = 'var(--muted-2)';
+
+/**
  * Read-only 2D floor plan. Geometry ported from the live Node-RED dashboard's two
  * `ui_template` nodes — `Lighting Floor Plan` (id `8a84d5fec547c73f`) and `Outlet Floor
  * Plan (Status Only)` (id `a8e6460facb3860c`) — same 320×550 viewBox, rewritten from
@@ -102,7 +110,7 @@ function LightingPlan({ readings }: { readings: Record<string, Reading> }) {
         const reading = readings[id];
         const stale = isReadingStale(reading);
         const on = reading?.state === 'on';
-        const fill = stale ? 'var(--muted-2)' : on ? 'var(--accent)' : 'var(--bg-surface-2)';
+        const fill = stale ? 'var(--muted-2)' : on ? ON_FILL : 'var(--bg-surface-2)';
         const rectY = LIGHT_PLAN.rowPy(row) - S / 2;
         return (
           <g key={id}>
@@ -143,16 +151,16 @@ function OutletPlan({ readings }: { readings: Record<string, Reading> }) {
           <g key={id}>
             <path
               d={`M ${x} ${y - 12} A 12 12 0 0 0 ${x} ${y + 12} Z`}
-              fill={stale ? 'var(--muted-2)' : s1 ? 'var(--accent)' : 'var(--bg-inset)'}
-              stroke="var(--accent)"
+              fill={stale ? 'var(--muted-2)' : s1 ? ON_FILL : 'var(--bg-inset)'}
+              stroke="var(--muted-2)"
               strokeWidth={1.5}
               opacity={stale ? STALE_OPACITY : 1}
               className={s1 && !stale ? 'floorplan-pin--on' : undefined}
             />
             <path
               d={`M ${x} ${y - 12} A 12 12 0 0 1 ${x} ${y + 12} Z`}
-              fill={stale ? 'var(--muted-2)' : s2 ? 'var(--accent)' : 'var(--bg-inset)'}
-              stroke="var(--accent)"
+              fill={stale ? 'var(--muted-2)' : s2 ? ON_FILL : 'var(--bg-inset)'}
+              stroke="var(--muted-2)"
               strokeWidth={1.5}
               opacity={stale ? STALE_OPACITY : 1}
               className={s2 && !stale ? 'floorplan-pin--on' : undefined}
@@ -163,7 +171,7 @@ function OutletPlan({ readings }: { readings: Record<string, Reading> }) {
               fontSize={8}
               fontWeight={900}
               textAnchor="middle"
-              fill={stale ? 'var(--muted)' : s1 ? 'var(--good)' : 'var(--bad)'}
+              fill={stale ? 'var(--muted)' : s1 ? 'var(--good)' : OFF_TEXT}
             >
               {stale ? '?' : s1 ? 'ON' : 'OFF'}
             </text>
@@ -173,7 +181,7 @@ function OutletPlan({ readings }: { readings: Record<string, Reading> }) {
               fontSize={8}
               fontWeight={900}
               textAnchor="middle"
-              fill={stale ? 'var(--muted)' : s2 ? 'var(--good)' : 'var(--bad)'}
+              fill={stale ? 'var(--muted)' : s2 ? 'var(--good)' : OFF_TEXT}
             >
               {stale ? '?' : s2 ? 'ON' : 'OFF'}
             </text>

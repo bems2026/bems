@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Lightbulb } from 'lucide-react';
+import { Lightbulb, Power, PowerOff } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useDevicesFor } from '@/hooks/useDevicesFor';
 import { useCommandStore } from '@/stores/commandStore';
@@ -10,6 +10,7 @@ import { useRelayState } from '@/hooks/useRelayState';
 import { useControlLog } from './controlLog';
 import { useControlPlan } from './useControlPlan';
 import { PlanRoomPicker } from './PlanRoomPicker';
+import { PlanTally } from './PlanTally';
 import type { Device } from '@/lib/types';
 
 /**
@@ -64,9 +65,12 @@ export function LightingMatrixCard() {
 
   return (
     <div className="control-plan-panel">
-      <div className="control-plan-panel__label">
-        <Lightbulb size={12} className="title-icon" aria-hidden="true" />
-        CEILING LUMINAIRES · L1-L7
+      <div className="control-plan-panel__head">
+        <div className="control-plan-panel__label">
+          <Lightbulb size={12} className="title-icon" aria-hidden="true" />
+          CEILING LUMINAIRES · L1-L7
+        </div>
+        <PlanTally devices={lights} />
       </div>
       <PlanRoomPicker id="lighting-plan-room" source={source} rooms={rooms} roomId={roomId} setRoomId={setRoomId} />
       {plan ? (
@@ -102,11 +106,17 @@ export function LightingMatrixCard() {
           {unplaced.map((d) => d.display_name).join(', ')}. They are in the list below.
         </p>
       )}
+      {/* Two peers, styled alike. "All rows off" used to be filled amber — the colour a LIT lamp
+          wears — so the button that turns everything off looked like the one thing on the panel
+          that was on. Neither is filled now: both are gated by a confirmation, and the icon and
+          verb carry the difference, not a colour borrowed from the state. */}
       <div className="control-plan-panel__actions">
         <button type="button" className="control-plan-btn" onClick={askAllOn}>
+          <Power size={14} aria-hidden="true" />
           All rows on
         </button>
-        <button type="button" className="control-plan-btn control-plan-btn--accent" onClick={askAllOff}>
+        <button type="button" className="control-plan-btn" onClick={askAllOff}>
+          <PowerOff size={14} aria-hidden="true" />
           All rows off
         </button>
       </div>
@@ -123,11 +133,19 @@ function LightRow({ device, cells }: { device: Device; cells?: { x: number; y: n
   // The derivation is shared with every other relay control (`useRelayState`); only the markup
   // is special here, because these lamps are absolutely positioned within a plan container (see
   // `pct(px, VB_W)` below) and cannot be wrapped in StaleDataBadge's own div without breaking
-  // that positioning — dimming comes from the existing `.control-lamp:disabled` rule instead.
+  // that positioning — the lamp's own `--busy` and `--unavailable` classes carry those states.
   //
   // Sharing it also aligned the refusal rule: this lamp used to omit `unknown`, so a light that
   // had never reported offered a toggle with no state to toggle *from*.
-  const { on, disabled, stale } = useRelayState(device.id);
+  const { on, busy, disabled, stale } = useRelayState(device.id);
+  // Refused for any reason but a command in flight: no reading yet, or offline. Drawn dashed and
+  // hatched — an off lamp and a lamp nobody can reach used to be the same dark square.
+  const unavailable = disabled && !busy;
+  const hint = busy
+    ? `${device.display_name}: switching…`
+    : unavailable
+      ? `${device.display_name}: unavailable — no reading, or offline`
+      : `${device.display_name}: ${on ? 'on' : 'off'}${stale ? ` (no reading in the last ${staleWindowLabel(reading)})` : ''} — click to switch the row ${on ? 'off' : 'on'}`;
 
   // Not gated on `stale` — see `RelayToggle`. Gating the handler but not the control is what
   // made a click on an enabled button do nothing silently.
@@ -159,10 +177,13 @@ function LightRow({ device, cells }: { device: Device; cells?: { x: number; y: n
             aria-label={isPrimary ? device.display_name : undefined}
             aria-hidden={isPrimary ? undefined : true}
             tabIndex={isPrimary ? 0 : -1}
-            className={`control-lamp${on ? ' control-lamp--on' : ''}${at ? '' : ' control-lamp--inline'}`}
+            className={`control-lamp${on ? ' control-lamp--on' : ''}${busy ? ' control-lamp--busy' : ''}${unavailable ? ' control-lamp--unavailable' : ''}${at ? '' : ' control-lamp--inline'}`}
             style={at ? { left: `${at.x * 100}%`, top: `${at.y * 100}%` } : undefined}
             disabled={disabled}
-            title={isPrimary && stale ? `${device.display_name}: stale — no reading in the last ${staleWindowLabel(reading)}` : undefined}
+            aria-busy={isPrimary ? busy : undefined}
+            // On every fixture, not only the first: the mouse can reach all three, and each one
+            // should say what a click will do before it does it.
+            title={hint}
             onClick={toggle}
           />
         );

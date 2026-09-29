@@ -224,7 +224,7 @@ describe('ControlPage', () => {
     await waitFor(() => expect(screen.getByText('IR')).toBeInTheDocument());
   });
 
-  it('the outlet plan\'s DP1/DP2 puck toggles a single socket directly — ungated, like every other single-device control', async () => {
+  it('the outlet plan\'s S1/S2 puck toggles a single socket directly — ungated, like every other single-device control', async () => {
     vi.mocked(bridgeClient.sendCommand).mockResolvedValue(ack({ device_id: 'co1', socket: 1, action: 'on' }));
     useDeviceStore.setState({
       devices: [outlet(1)],
@@ -242,7 +242,9 @@ describe('ControlPage', () => {
       saved: { co1: { ...emptyDeviceConfig('co1'), spaceNodeId: 'room', planX: 0.5, planY: 0.5 } },
     });
     render(<ControlPage />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Outlet 1 DP1' }));
+    // S1, not DP1: the list, the command log and the Automation page all call a socket S1, and the
+    // plan was the one place that spoke the vendor's datapoint name instead.
+    fireEvent.click(await screen.findByRole('button', { name: 'Outlet 1 S1' }));
     expect(bridgeClient.sendCommand).toHaveBeenCalledWith(expect.objectContaining({ device_id: 'co1', socket: 1, action: 'on' }));
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
@@ -255,6 +257,44 @@ describe('ControlPage', () => {
     expect(bridgeClient.sendCommand).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Turn outlets off' }));
     await waitFor(() => expect(bridgeClient.sendCommand).toHaveBeenCalledTimes(4)); // 2 outlets x 2 sockets
+  });
+
+  // The bulk buttons act on a whole panel, so the panel says what state that panel is in before
+  // anyone reaches for them — rather than leaving it to the colour of each lamp.
+  it('each plan panel says how many of its relays are on, and how many cannot be switched', () => {
+    const now = new Date().toISOString();
+    useDeviceStore.setState({
+      devices: [light(1), light(2), light(3), outlet(1)],
+      latestReadings: {
+        l1: { device_id: 'l1', ts: now, online: true, state: 'on' },
+        l2: { device_id: 'l2', ts: now, online: true, state: 'off' },
+        co1: { device_id: 'co1', ts: now, online: true, state: 'on', socket_states: { 1: 'on', 2: 'off' } },
+      },
+    });
+    render(<ControlPage />);
+    expect(screen.getByText('1 of 3 on · 1 unavailable')).toBeInTheDocument();
+    expect(screen.getByText('1 of 2 sockets on')).toBeInTheDocument();
+  });
+
+  it('the plan carries a legend for what on, off and unavailable look like', () => {
+    useDeviceStore.setState({ devices: [light(1), outlet(1)] });
+    render(<ControlPage />);
+    const legend = screen.getByRole('list', { name: 'Plan legend' });
+    expect(within(legend).getByText('On')).toBeInTheDocument();
+    expect(within(legend).getByText('Off')).toBeInTheDocument();
+    expect(within(legend).getByText(/Unavailable/)).toBeInTheDocument();
+    expect(within(legend).getByText(/left half S1/)).toBeInTheDocument();
+  });
+
+  // The aircon's three state controls now each carry a visible label. Mode and Fan had only an
+  // aria-label, so a sighted operator saw two unlabelled rows of pills beside a labelled setpoint.
+  it('labels the aircon\'s mode and fan rows on screen, not only for a screen reader', () => {
+    useDeviceStore.setState({ devices: [acu()] });
+    render(<ControlPage />);
+    const card = screen.getByText('IR AIRCON').closest('.control-ir-card') as HTMLElement;
+    expect(within(card).getByText('MODE')).toBeInTheDocument();
+    expect(within(card).getByText('FAN')).toBeInTheDocument();
+    expect(within(card).getByText('SWING')).toBeInTheDocument();
   });
 });
 

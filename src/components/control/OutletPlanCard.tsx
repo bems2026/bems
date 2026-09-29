@@ -1,4 +1,5 @@
-import { Plug } from 'lucide-react';
+import { useMemo } from 'react';
+import { Plug, Power, PowerOff } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useDevicesFor } from '@/hooks/useDevicesFor';
 import { useCommandStore } from '@/stores/commandStore';
@@ -10,7 +11,11 @@ import { useRelayState } from '@/hooks/useRelayState';
 import { useControlLog } from './controlLog';
 import { useControlPlan } from './useControlPlan';
 import { PlanRoomPicker } from './PlanRoomPicker';
+import { PlanTally } from './PlanTally';
 import type { Device, SocketIndex } from '@/lib/types';
+
+/** A module constant so `PlanTally`'s memo holds — see its note. */
+const OUTLET_SOCKETS: SocketIndex[] = [1, 2];
 
 export function OutletPlanCard() {
   const send = useCommandStore((s) => s.send);
@@ -22,7 +27,7 @@ export function OutletPlanCard() {
   // actions while still getting a clickable puck on the plan, and being switched by this card's
   // own "all on".
   const { included } = useDevicesFor('control');
-  const outlets = included.filter((d) => d.class === 'outlet_dual');
+  const outlets = useMemo(() => included.filter((d) => d.class === 'outlet_dual'), [included]);
   const { plan, source, rooms, roomId, setRoomId, aspect } = useControlPlan();
   const unplaced = outlets.filter((d) => !plan?.OUTLET_POSITIONS[d.id]);
 
@@ -50,9 +55,12 @@ export function OutletPlanCard() {
 
   return (
     <div className="control-plan-panel control-plan-panel--outlets">
-      <div className="control-plan-panel__label">
-        <Plug size={12} className="title-icon" aria-hidden="true" />
-        CONVENIENCE OUTLETS · CO1-CO7
+      <div className="control-plan-panel__head">
+        <div className="control-plan-panel__label">
+          <Plug size={12} className="title-icon" aria-hidden="true" />
+          CONVENIENCE OUTLETS · CO1-CO7
+        </div>
+        <PlanTally devices={outlets} sockets={OUTLET_SOCKETS} unit="sockets" />
       </div>
       <PlanRoomPicker id="outlet-plan-room" source={source} rooms={rooms} roomId={roomId} setRoomId={setRoomId} />
       {plan ? (
@@ -92,11 +100,14 @@ export function OutletPlanCard() {
           {unplaced.map((d) => d.display_name).join(', ')}. They are in the list below.
         </p>
       )}
+      {/* Peers, styled alike — see the same pair in `LightingMatrixCard`. */}
       <div className="control-plan-panel__actions">
         <button type="button" className="control-plan-btn" onClick={askAllOn}>
+          <Power size={14} aria-hidden="true" />
           All outlets on
         </button>
-        <button type="button" className="control-plan-btn control-plan-btn--accent" onClick={askAllOff}>
+        <button type="button" className="control-plan-btn" onClick={askAllOff}>
+          <PowerOff size={14} aria-hidden="true" />
           All outlets off
         </button>
       </div>
@@ -118,11 +129,26 @@ function OutletPin({ device, left, top }: { device: Device; left?: string; top?:
   const s2 = useRelayState(device.id, 2);
   const stale = s1.stale;
 
+  // S1/S2 — the list's, the log's and the Automation page's name for a socket. This used to log and
+  // label "DP1", the vendor's datapoint number, so one socket had two names on one page.
   const toggle = (socket: SocketIndex, on: boolean) => {
     const next = on ? 'off' : 'on';
     send(device.id, socket, next);
-    log('RELAY', `${device.display_name} DP${socket} → ${next}`);
+    log('RELAY', `${device.display_name} S${socket} → ${next}`);
   };
+
+  /** One half's classes and tooltip. Refused for any reason but a command in flight means
+   * unavailable — drawn hatched, never as an off socket that merely will not respond. */
+  const half = (socket: SocketIndex, s: typeof s1, side: 'left' | 'right') => {
+    const unavailable = s.disabled && !s.busy;
+    const state = s.busy ? 'switching…' : unavailable ? 'unavailable — no reading, or offline' : s.on ? 'on' : 'off';
+    return {
+      className: `control-outlet-pin__half control-outlet-pin__half--${side}${s.on ? ' control-outlet-pin__half--on' : ''}${s.busy ? ' control-outlet-pin__half--busy' : ''}${unavailable ? ' control-outlet-pin__half--unavailable' : ''}`,
+      title: `${device.display_name} S${socket}: ${state}${stale && !unavailable ? ' (reading is stale)' : ''}${unavailable || s.busy ? '' : ` — click to switch ${s.on ? 'off' : 'on'}`}`,
+    };
+  };
+  const h1 = half(1, s1, 'left');
+  const h2 = half(2, s2, 'right');
 
   return (
     <div className={left ? 'control-outlet-pin' : 'control-outlet-pin control-outlet-pin--inline'} style={left ? { left, top } : undefined}>
@@ -135,20 +161,22 @@ function OutletPin({ device, left, top }: { device: Device; left?: string; top?:
         <div className="control-outlet-pin__puck" role="group" aria-label={`${device.display_name} sockets`}>
           <button
             type="button"
-            className={`control-outlet-pin__half control-outlet-pin__half--left${s1.on ? ' control-outlet-pin__half--on' : ''}`}
+            className={h1.className}
             disabled={s1.disabled}
             aria-pressed={s1.on}
-            aria-label={`${device.display_name} DP1`}
-            title={`DP1: ${s1.unknown ? 'unknown' : stale ? 'stale' : s1.busy ? 'switching…' : s1.on ? 'on' : 'off'}`}
+            aria-busy={s1.busy}
+            aria-label={`${device.display_name} S1`}
+            title={h1.title}
             onClick={() => toggle(1, s1.on)}
           />
           <button
             type="button"
-            className={`control-outlet-pin__half control-outlet-pin__half--right${s2.on ? ' control-outlet-pin__half--on' : ''}`}
+            className={h2.className}
             disabled={s2.disabled}
             aria-pressed={s2.on}
-            aria-label={`${device.display_name} DP2`}
-            title={`DP2: ${s2.unknown ? 'unknown' : stale ? 'stale' : s2.busy ? 'switching…' : s2.on ? 'on' : 'off'}`}
+            aria-busy={s2.busy}
+            aria-label={`${device.display_name} S2`}
+            title={h2.title}
             onClick={() => toggle(2, s2.on)}
           />
         </div>

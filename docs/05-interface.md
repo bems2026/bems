@@ -5,7 +5,7 @@ audience: [operator, administrator, integrator]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo f0c7267
-evidence: [E-004, E-023, E-025, E-026, E-060, E-061, E-065, E-066, E-071, E-076, E-082, E-110, E-111, E-115, E-152, E-163, E-165, E-168, E-169, E-170, E-172, E-173, E-174, E-175, E-176, E-177, E-179, E-180, E-181, E-182, E-183, E-184, E-185]
+evidence: [E-004, E-023, E-025, E-026, E-060, E-061, E-065, E-066, E-071, E-076, E-082, E-110, E-111, E-115, E-152, E-163, E-165, E-168, E-169, E-170, E-172, E-173, E-174, E-175, E-176, E-177, E-179, E-180, E-181, E-182, E-183, E-184, E-185, E-217]
 ---
 
 # User interface
@@ -65,7 +65,7 @@ menu, because they are read at other times, by other people [E-060].
 |---|---|---|---|---|
 | **Overview** (`#overview`) | The building at a glance | Live demand; energy today, this week and this month; phase currents and their balance; energy by branch; a 3D model of the room; weather; the last 24 h of demand; device status counts; the active schedules; indoor and outdoor climate | **Quick Control** sends real commands: aircon on and off, and a light switch | A chart with no points says "No data". "Nothing armed" when no schedule is armed. |
 | **Analytics** (`#analytics`) | Trends and consumption | Power, voltage and current by branch and by outlet. Data-quality badges on each chart: live, estimated, gaps, frozen. Each branch meter and each outlet. Metered against total (the untracked load). Totals by space. Ranges 24 h, 7 d, 30 d, 1 y. | Parameter and range choices; read-only | Without the database, only the 24 h range exists, and *By space* says there is no stored history [E-174] |
-| **Control** (`#control`) | Manual overrides | Bulk actions (lights off, outlets off, aircon off), each behind a confirmation. The lighting and outlet plan, if one is drawn for the site. Every switch, every outlet socket, and the IR aircon with mode, setpoint, fan and swing. How commands reach the devices. A command log for this session. | Switch any relay; send an aircon state | Each relay is marked `NOT DISPATCHED` when dispatch is closed [E-174] |
+| **Control** (`#control`) | Manual overrides | Bulk actions (lights off, outlets off, aircon off), each behind a confirmation. The lighting and outlet plan, if one is drawn for the site, with a legend, and a count of how many relays each panel has on [E-217]. Every switch, every outlet socket, and the IR aircon with mode, setpoint, fan and swing. How commands reach the devices. A command log for this session. | Switch any relay; send an aircon state | Each relay is marked `NOT DISPATCHED` when dispatch is closed [E-174] |
 | **Devices** (`#devices`) | The fleet | One row per device: class, voltage, current, power, last seen, communication, state | *Add device* (enrol, import keys); *Manage* per device: its capabilities, its metadata, and Remove for devices added through the app [E-179] | A skeleton while the list loads; the list is retried until it arrives [E-183] |
 | **Automation** (`#automation/summary`, `/time`, `/state`, `/events`) | Rules that act unattended | **Summary:** what is armed, what fires next, what automation did in the last 24 h. **Time-Driven:** schedules per relay, on a week timeline. **State-Driven:** demand thresholds and load-shed tiers. **Event-Driven:** aircon room-temperature rules. Cards for what is not installed, each naming its blocker. | Add, arm, disarm and delete rules, then *Save changes* | A banner says when saved rules cannot reach hardware on this deployment [E-174] |
 | **Reports** (account menu, `#reports`) | Finished days, weeks and months | Overview, Circuits, Usage patterns and Compare tabs. A coverage banner: how much of the period was recorded. Cost and emissions once a rate is set. | Period picker; *Export*: a PDF, or one of four CSVs (building by day, devices for the period, devices by day, every reading) | Without the database it says reports need stored history, "rather than an empty table that would look like a month with no consumption" [E-174] |
@@ -280,6 +280,7 @@ The proxy logs each attempt but not its outcome, and nothing limits repeated att
 | Motion and contrast preferences | Reduced motion and high contrast are honoured | E-175 |
 | Screen readers | A skip link to the content; focus moves into each new page; stale readings are announced | `src/App.tsx`, E-175 |
 | Colour | No circuit is told apart by colour alone | ROADMAP RM-139 |
+| Relay state | One rule on every plan and list. On is solid green, off is a hollow outline, switching pulses, and unavailable (no reading, or offline) is dashed and hatched. The states differ in shape, not only colour, and the plan carries a legend. Amber means a warning, never "on". | E-217 |
 
 ## How it fails
 
