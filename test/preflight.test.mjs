@@ -18,6 +18,7 @@ const healthy = () => ({
   vendor: { authenticated: true, error: null },
   network: { distinctDevices: 6 },
   bridge: { reachable: true, deviceCount: 6, expectedCount: 6, lanExposed: false, exposedOn: null },
+  broker: { lanExposed: false, exposedOn: null },
   services: { nodered: 'active', 'ibems-ingest': 'active' },
   host: {
     journal: { storage: 'persistent', onDisk: true },
@@ -339,4 +340,49 @@ test('pollCoverage counts enabled tuya nodes and names the ones no GET reaches',
     fn('cmd', "msg.payload = { dps: 1, set: true }; return msg;", ['m']),
   ];
   assert.deepEqual(pollCoverage(flows), { total: 4, unpolled: ['C.O yellow'] }, 'a command formatter is not a poll; a quiesced node is not counted');
+});
+
+/**
+ * The broker, checked the way the bridge is — F-001.
+ *
+ * From 2026-09-17 to 2026-09-29 the MQTT broker listened on every interface with anonymous
+ * access, on the same Wi-Fi as the field devices, and nothing said so for twelve days: its
+ * listener lives only in `/etc/mosquitto/`, and this check did not exist. It found out by a
+ * documentation audit.
+ */
+test('a broker accepting connections off this machine is reported, not passed over', () => {
+  const obs = healthy();
+  obs.broker = { lanExposed: true, exposedOn: '192.0.2.10' };
+  const check = find(assessDeployment(obs), 'broker_not_exposed');
+  assert.equal(check.level, LEVELS.WARN);
+  assert.match(check.detail, /192\.0\.2\.10/);
+});
+
+test('a loopback-only broker, or none at all, passes', () => {
+  const check = find(assessDeployment(healthy()), 'broker_not_exposed');
+  assert.equal(check.level, LEVELS.OK);
+  assert.match(check.detail, /loopback/);
+});
+
+test('an unchecked broker is unchecked, never assumed safe', () => {
+  const obs = healthy();
+  obs.broker = { lanExposed: null, exposedOn: null };
+  assert.equal(find(assessDeployment(obs), 'broker_not_exposed').level, LEVELS.UNCHECKED);
+  delete obs.broker;
+  assert.equal(find(assessDeployment(obs), 'broker_not_exposed').level, LEVELS.UNCHECKED);
+});
+
+test('broker exposure is a warning, not an error, like the bridge', () => {
+  const obs = healthy();
+  obs.broker = { lanExposed: true, exposedOn: '192.0.2.10' };
+  assert.equal(assessDeployment(obs).ready, true);
+});
+
+test('the broker remedy restores both loopback listeners, and names the safe way to open it', () => {
+  const obs = healthy();
+  obs.broker = { lanExposed: true, exposedOn: '192.0.2.10' };
+  const { fix } = find(assessDeployment(obs), 'broker_not_exposed');
+  assert.match(fix, /listener 1883 127\.0\.0\.1/);
+  assert.match(fix, /listener 1883 ::1/);
+  assert.match(fix, /password_file/);
 });

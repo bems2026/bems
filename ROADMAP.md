@@ -3800,7 +3800,9 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       (`FLEET_ALARM_OPTIONS`). Tests: `server/fleetAlarm.test.mjs` (+7), `server/notify.test.mjs` (+2). Needs
       `ibems-ingest` restarted on the edge.
 - [x] **RM-146b** F-001 closed: the broker restored to loopback on 2026-09-29 (the two listener lines uncommented,
-      mosquitto restarted), read back as `127.0.0.1:1883` and `[::1]:1883` only.
+      mosquitto restarted), read back as `127.0.0.1:1883` and `[::1]:1883` only. `npm run preflight` now checks it
+      (`broker_not_exposed`: a TCP probe of 1883 from each non-loopback address, like the bridge's), so the next widening
+      is caught. `scripts/preflight.mjs`; `test/preflight.test.mjs` (+5).
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 

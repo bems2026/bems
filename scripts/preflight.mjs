@@ -56,6 +56,7 @@ export function assessDeployment(obs) {
   const vendor = obs?.vendor ?? {};
   const network = obs?.network ?? {};
   const bridge = obs?.bridge ?? {};
+  const broker = obs?.broker ?? {};
   const services = obs?.services ?? {};
   const host = obs?.host ?? {};
   const siteId = obs?.siteId ?? '(unknown)';
@@ -250,6 +251,26 @@ export function assessDeployment(obs) {
         ? `answering on ${bridge.exposedOn ?? 'a non-loopback address'} with no credential`
         : 'not checked',
     'Set uiHost: "127.0.0.1" in ~/.node-red/settings.js and restart Node-RED. Every legitimate consumer is a process on this machine and already uses that literal address. The editor is then reached with an SSH tunnel — ssh -L 1880:127.0.0.1:1880 <host> — rather than by widening the listener back.',
+  );
+
+  /**
+   * The MQTT broker, checked the same way — F-001.
+   *
+   * From 2026-09-17 to 2026-09-29 Mosquitto listened on every interface with anonymous access,
+   * on the Wi-Fi the field devices use. Its listener lives only in `/etc/mosquitto/`, the same
+   * shape as `uiHost` above, and nothing noticed for twelve days. No broker at all passes: the
+   * probe then finds nothing listening, which is the same safe answer.
+   */
+  add(
+    'broker_not_exposed',
+    'The MQTT broker is not reachable off this machine',
+    broker.lanExposed === false ? LEVELS.OK : broker.lanExposed === true ? LEVELS.WARN : LEVELS.UNCHECKED,
+    broker.lanExposed === false
+      ? 'bound to loopback, or not running'
+      : broker.lanExposed === true
+        ? `accepting connections on ${broker.exposedOn ?? 'a non-loopback address'}:1883`
+        : 'not checked',
+    'In /etc/mosquitto/mosquitto.conf keep exactly "listener 1883 127.0.0.1" and "listener 1883 ::1", remove any listener on 0.0.0.0 (check conf.d/ too), and restart mosquitto. If something off this machine genuinely must publish, add a listener on the LAN address with password_file and allow_anonymous false, rather than widening loopback.',
   );
 
   // --- services ------------------------------------------------------------
@@ -575,6 +596,35 @@ if (process.argv[1] && process.argv[1].endsWith('preflight.mjs')) {
     }
   }
 
+  // --- the broker ----------------------------------------------------------
+  /**
+   * The same probe as the bridge's, on the broker's port: a plain TCP connection from each
+   * non-loopback address. A broker bound to loopback refuses it; a widened one accepts. `null`
+   * when there is no such address to try, never "fine".
+   */
+  const broker = { lanExposed: null, exposedOn: null };
+  if (candidates.length > 0) {
+    const net = await import('node:net');
+    broker.lanExposed = false;
+    for (const address of candidates) {
+      const open = await new Promise((resolve) => {
+        const socket = net.connect({ host: address, port: 1883 });
+        const done = (result) => {
+          socket.destroy();
+          resolve(result);
+        };
+        socket.setTimeout(3_000, () => done(false));
+        socket.once('connect', () => done(true));
+        socket.once('error', () => done(false));
+      });
+      if (open) {
+        broker.lanExposed = true;
+        broker.exposedOn = address;
+        break;
+      }
+    }
+  }
+
   // --- services ------------------------------------------------------------
   const services = {};
   if (process.platform === 'linux') {
@@ -651,7 +701,7 @@ if (process.argv[1] && process.argv[1].endsWith('preflight.mjs')) {
     }
   }
 
-  const result = assessDeployment({ siteId: SITE.id, env, database, vendor, network, bridge, services, host });
+  const result = assessDeployment({ siteId: SITE.id, env, database, vendor, network, bridge, broker, services, host });
 
   const MARK = {
     [LEVELS.OK]: '\x1b[32m  ok  \x1b[0m',
