@@ -209,22 +209,36 @@ export function openArchive(file, { readOnly = false } = {}) {
   function importBufferEntries(entries) {
     const counts = { readings: 0, building_totals: 0, anomalies: 0, skipped: 0 };
     for (const entry of entries) {
-      const rows = Array.isArray(entry?.rows) ? entry.rows : [];
       if (!(entry?.table in STREAMS)) {
         counts.skipped += 1;
         continue;
       }
-      assertKnownKeys(entry.table, rows);
-      db.exec('BEGIN IMMEDIATE');
-      try {
-        counts[entry.table] += insertRows(entry.table, rows, ORIGIN.buffer);
-        db.exec('COMMIT');
-      } catch (err) {
-        try { db.exec('ROLLBACK'); } catch { /* reported below */ }
-        throw err;
-      }
+      counts[entry.table] += insertStreamRows(entry.table, Array.isArray(entry.rows) ? entry.rows : [], { origin: ORIGIN.buffer });
     }
     return counts;
+  }
+
+  /** Rows of one stream in one transaction — the backfill's and the importers' way in. */
+  function insertStreamRows(stream, rows, { origin = ORIGIN.ingest } = {}) {
+    if (!(stream in STREAMS)) throw new Error(`archive: ${stream} is not a stream (${Object.keys(STREAMS).join(', ')})`);
+    assertKnownKeys(stream, rows);
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const n = insertRows(stream, rows, origin);
+      db.exec('COMMIT');
+      return n;
+    } catch (err) {
+      try { db.exec('ROLLBACK'); } catch { /* reported below */ }
+      throw err;
+    }
+  }
+
+  /** Rows held for `[sinceMs, untilMs)`, whatever their origin; optionally one device's only. */
+  function countRange(stream, { sinceMs, untilMs, deviceId }) {
+    if (!(stream in STREAMS)) throw new Error(`archive: ${stream} is not a stream`);
+    const byDevice = deviceId !== undefined && 'device_id' in STREAMS[stream].columns;
+    return prepare(`SELECT count(*) AS n FROM ${stream} WHERE ts >= ? AND ts < ?${byDevice ? ' AND device_id = ?' : ''}`)
+      .get(sinceMs, untilMs, ...(byDevice ? [deviceId] : [])).n;
   }
 
   const cursorOf = (stream) => prepare('SELECT through_id FROM upload_cursor WHERE stream = ?').get(stream)?.through_id ?? 0;
@@ -289,6 +303,8 @@ export function openArchive(file, { readOnly = false } = {}) {
     file,
     insertTick,
     importBufferEntries,
+    insertRows: insertStreamRows,
+    countRange,
     pending,
     advance,
     lag,

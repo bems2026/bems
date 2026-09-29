@@ -3885,6 +3885,16 @@ Node-RED context flush and a stage-by-stage rollout. Stages: 0 measure, 1 archiv
         (`ARCHIVE_DB_PATH` is live state; every proxy spawn redirects it). Each was run against a neutered copy of the
         code and failed. The restart map gains the two modules (`docs/pi-session-brief.md`).
       - **Not yet:** deployed; read back against the cloud for 24 h. Supabase is unchanged by this stage.
+      - The new tests also pass on the edge's own Node 22.23.2 (59 of 59, run there read-only on 2026-09-29).
+- [ ] **RM-148b** Stage 2, the backfill. **Built and tested; not run.** `npm run archive:backfill` (dry run by default,
+      `--apply` to write) copies what the cloud holds into the archive as `cloud` rows, which the uploader never sends
+      back: one device, one 12-hour window at a time, a full page never trusted (split down to a minute, since PostgREST
+      caps silently at 1,000), and every window checked afterwards (the archive must hold at least what the cloud
+      returned). `--import=DIR` takes an NDJSON export in as `import` rows. The dry run prints rows, requests and the
+      egress estimate (about 0.38 GB for the 30 days held on 2026-09-29, of the plan's 5 GB). `server/archiveBackfill.mjs`,
+      `server/archive-backfill.mjs`; `archiveDb.mjs` gains `insertRows` and `countRange`. Tests: `archiveBackfill.test.mjs`
+      (9), `archiveDb.test.mjs` (+2); each failed against a neutered copy. **Runs after** RM-148a has archived for a day:
+      then the backfill, then the Aug 16–17 raw export in `~/backups/pre-retention-20260915/raw-before-2026-08-18/`.
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 

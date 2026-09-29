@@ -163,6 +163,24 @@ test('the old NDJSON outage buffer is taken in as rows still owed to the cloud',
   archive.close();
 });
 
+test('rows of one stream go in together, with the origin they are given', (t) => {
+  const { archive } = tempArchive(t);
+  const n = archive.insertRows('building_totals', [totals(), totals({ ts: new Date(AT_MS + 60_000).toISOString() })], { origin: ORIGIN.cloud });
+  assert.equal(n, 2);
+  assert.equal(archive.lag().building_totals, 0, 'a row copied from the cloud is not owed back to it');
+  assert.throws(() => archive.insertRows('devices', [{ id: 'co1' }]), /not a stream/);
+  archive.close();
+});
+
+test('counting a range answers per stream, per device and half-open', (t) => {
+  const { archive } = tempArchive(t);
+  archive.insertTick({ readings: [reading(), reading({ device_id: 'co2' }), reading({ ts: new Date(AT_MS + 60_000).toISOString() })] });
+  assert.equal(archive.countRange('readings', { sinceMs: AT_MS, untilMs: AT_MS + 60_000 }), 2);
+  assert.equal(archive.countRange('readings', { sinceMs: AT_MS, untilMs: AT_MS + 120_000, deviceId: 'co1' }), 2);
+  assert.equal(archive.countRange('readings', { sinceMs: AT_MS + 60_000, untilMs: AT_MS + 120_000, deviceId: 'co2' }), 0);
+  archive.close();
+});
+
 test('a quarantined row is recorded with its reason', (t) => {
   const { archive } = tempArchive(t);
   archive.insertTick({ readings: [reading()] });
