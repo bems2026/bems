@@ -69,6 +69,8 @@ import { auditedDispatch } from './auditedDispatch.mjs';
 import { createJwksCache } from './jwksCache.mjs';
 import { verifyEs256Jwt } from './jwtVerify.mjs';
 import { createBufferedAudit } from './auditQueue.mjs';
+import { openArchive } from './archiveDb.mjs';
+import { RAW_RETENTION_DAYS } from '../shared/retention.mjs';
 import { bufferCount } from './ingestBuffer.mjs';
 import { buildCloudDispatch } from './cloudDispatchConfig.mjs';
 import { handleEnroll } from './enrollRoute.mjs';
@@ -406,6 +408,58 @@ const CORS_HEADERS = {
 function sendJson(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json', ...CORS_HEADERS });
   res.end(JSON.stringify(body));
+}
+
+/**
+ * RM-148: the edge's raw archive, READ-ONLY. The ingest daemon is its only writer; this process only
+ * answers from it, for history older than the cloud's raw window (`shared/retention.mjs`). Opened on
+ * first use and kept open — a WAL reader never blocks the writer — and dropped on any error so the
+ * next request opens it afresh.
+ */
+const ARCHIVE_PATH = process.env.ARCHIVE_DB_PATH || join(dirname(fileURLToPath(import.meta.url)), 'data', 'archive', 'archive.sqlite');
+/** A month plus a day: the longest report period, whichever way its window falls. One device's minutes for it are about 45,000 rows. */
+const ARCHIVE_MAX_WINDOW_MS = 32 * 24 * 3600 * 1000;
+let archiveReader = null;
+
+function readArchive(fn) {
+  try {
+    archiveReader ??= openArchive(ARCHIVE_PATH, { readOnly: true });
+    return fn(archiveReader);
+  } catch (err) {
+    try { archiveReader?.close(); } catch { /* reopened on the next request */ }
+    archiveReader = null;
+    throw err;
+  }
+}
+
+function handleArchiveStatus(res) {
+  try {
+    const s = readArchive((a) => a.stats());
+    return sendJson(res, 200, { available: true, oldest: s.oldest, newest: s.newest, readings: s.readings, bytes: s.bytes, hot_days: RAW_RETENTION_DAYS });
+  } catch (err) {
+    return sendJson(res, 200, { available: false, reason: String(err?.message ?? err).split(' — ')[0], hot_days: RAW_RETENTION_DAYS });
+  }
+}
+
+/** One device's minute readings for a window, in the shape `src/lib/readingsExport.ts` exports. */
+function handleArchiveReadings(url, res) {
+  const deviceId = url.searchParams.get('device_id');
+  const sinceMs = Date.parse(url.searchParams.get('since') ?? '');
+  const untilMs = Date.parse(url.searchParams.get('until') ?? '');
+  if (!deviceId || Number.isNaN(sinceMs) || Number.isNaN(untilMs) || untilMs <= sinceMs) {
+    return sendJson(res, 400, { error: 'bad_window', detail: 'device_id, since and until (ISO instants, since before until) are required' });
+  }
+  if (untilMs - sinceMs > ARCHIVE_MAX_WINDOW_MS) {
+    return sendJson(res, 400, { error: 'window_too_long', detail: 'at most 32 days of one device per request' });
+  }
+  let rows;
+  try {
+    rows = readArchive((a) => [...a.rowsBetween('readings', { sinceMs, untilMs, deviceId })]
+      .map((r) => ({ ts: r.ts, voltage: r.voltage, current: r.current, power_w: r.power_w, energy_kwh_today: r.energy_kwh_today, online: r.online })));
+  } catch (err) {
+    return sendJson(res, 503, { error: 'archive_unavailable', detail: String(err?.message ?? err).split(' — ')[0] });
+  }
+  return sendJson(res, 200, { device_id: deviceId, rows });
 }
 
 async function readJsonBody(req) {
@@ -895,6 +949,12 @@ const server = http.createServer(async (req, res) => {
       // can send only its captured library. With one, every state is sendable over the LAN.
       acu_local_ir_protocol: SITE.aircon?.ir_protocol ?? null,
     });
+  }
+  if (req.method === 'GET' && url.pathname === '/api/archive/status') {
+    return handleArchiveStatus(res);
+  }
+  if (req.method === 'GET' && url.pathname === '/api/archive/readings') {
+    return handleArchiveReadings(url, res);
   }
   if (req.method === 'POST' && url.pathname === '/api/enroll') {
     // Authenticated like every other route above. Deliberately NOT behind

@@ -7,7 +7,9 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { supabase } from '@/config/supabase';
 import { downloadCsv, downloadCsvParts } from '@/lib/csv';
 import { dailyCsv, deviceCsv, deviceDailyCsv } from '@/lib/reportCsv';
-import { fetchReadingsForExport, readingsCsvParts, type ReadingsClient } from '@/lib/readingsExport';
+import { fetchReadingsForExport, rawFromEdge, readingsCsvParts, type ReadingsClient } from '@/lib/readingsExport';
+import { edgeRawSource } from '@/lib/edgeArchive';
+import { RAW_RETENTION_DAYS } from '@shared/retention.mjs';
 import { getReportWindow } from '@/lib/circuitSeries';
 import { LOAD_LABELS } from '@shared/circuits.mjs';
 import { reportFilename } from '@/lib/reportFiles';
@@ -346,9 +348,14 @@ export function ReportsPage() {
       if (ids.length === 0) throw new Error(`No device on ${narrowed ?? 'this building'} takes readings.`);
       progress('Finding the period…');
       const win = await getReportWindow(period, selected, { signal });
-      const readings = await fetchReadingsForExport(supabase as unknown as ReadingsClient, ids, { startIso: win.win_start, endIso: win.win_end }, {
+      const exportWindow = { startIso: win.win_start, endIso: win.win_end };
+      // RM-148: minutes older than the cloud's raw window come from the edge's archive; if the edge
+      // cannot answer, the cloud's hourly averages stand in, labelled as such, as they always have.
+      const fromEdge = rawFromEdge(exportWindow, Date.now(), RAW_RETENTION_DAYS);
+      const readings = await fetchReadingsForExport(supabase as unknown as ReadingsClient, ids, exportWindow, {
         signal,
         onProgress: (p) => progress(`${p.fetched.toLocaleString(undefined)} readings so far · ${nameOf(p.deviceId)}`),
+        ...(fromEdge ? { rawFrom: edgeRawSource } : {}),
       });
       const parts = readingsCsvParts({
         devices: ids.map((id) => ({ id, name: nameOf(id), circuit: branchOf(id), use: loadLabelOf(id) })),
@@ -359,7 +366,9 @@ export function ReportsPage() {
       const name = reportFilename(period, selected, 'readings', 'csv', narrowed);
       downloadCsvParts(name, parts);
       const count = readings.reduce((a, d) => a + d.raw.length + d.hourly.length, 0);
-      return `Saved ${name} · ${count.toLocaleString(undefined)} rows from ${ids.length} devices`;
+      const edge = readings.filter((d) => d.source === 'edge').length;
+      const tier = !fromEdge ? '' : edge === readings.length ? ' · minutes from the on-site archive' : edge > 0 ? ` · minutes from the on-site archive for ${edge} of ${readings.length}` : ' · the on-site archive did not answer, so older hours are hourly averages';
+      return `Saved ${name} · ${count.toLocaleString(undefined)} rows from ${ids.length} devices${tier}`;
     }
 
     if (format === 'device-csv') {

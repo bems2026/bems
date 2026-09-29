@@ -293,11 +293,13 @@ export function openArchive(file, { readOnly = false, targetVersion = ARCHIVE_SC
   }
 
   /** Every row in `[sinceMs, untilMs)`, whatever its origin, in a fixed order, with `origin` added. */
-  function* rowsBetween(stream, { sinceMs, untilMs }) {
+  function* rowsBetween(stream, { sinceMs, untilMs, deviceId }) {
     const { entries, select, join } = cloudSelect(stream);
     const order = ['ts', 'device_id', 'metric'].filter((c) => c in STREAMS[stream].columns).map((c) => `t.${c}`).join(', ');
+    const byDevice = deviceId !== undefined && 'device_id' in STREAMS[stream].columns;
     const it = prepare(`SELECT t.origin AS _origin, ${select} FROM ${stream} t ${join}
-                        WHERE t.ts >= ? AND t.ts < ? ORDER BY ${order}`).iterate(sinceMs, untilMs);
+                        WHERE t.ts >= ? AND t.ts < ?${byDevice ? ' AND t.device_id = ?' : ''} ORDER BY ${order}`)
+      .iterate(sinceMs, untilMs, ...(byDevice ? [deviceId] : []));
     for (const r of it) yield { ...toCloudRow(entries, r), origin: r._origin };
   }
 

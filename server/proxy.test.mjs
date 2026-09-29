@@ -1595,3 +1595,98 @@ test('offline, a break-glass session is still view-only', async () => {
     ctx.cleanup();
   }
 });
+
+// ---------------------------------------------------------------------------------------------
+// RM-148 — the edge archive, read-only, for history older than the cloud's raw window
+// ---------------------------------------------------------------------------------------------
+
+/** A temp archive holding three co1 minutes and one co2 minute, and the env that points a proxy at it. */
+async function seededArchive() {
+  const { openArchive } = await import('./archiveDb.mjs');
+  const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-proxy-archive-'));
+  const file = join(dir, 'archive', 'archive.sqlite');
+  const archive = openArchive(file);
+  const row = (device_id, ts, power_w) => ({
+    device_id, ts, voltage: 230, current: 0.1, power_w, energy_kwh_today: 0.5, online: true,
+    total_energy_kwh: null, warn_power_w: null, power_type: null, net_state: null, fault: null, capabilities: { switch_1: true },
+  });
+  archive.insertRows('readings', [
+    row('co1', '2026-08-20T00:00:00.000Z', 10), row('co1', '2026-08-20T00:01:00.000Z', 11),
+    row('co2', '2026-08-20T00:01:00.000Z', 99), row('co1', '2026-08-20T00:02:00.000Z', 12),
+  ], { origin: 2 });
+  archive.close();
+  return { env: { ARCHIVE_DB_PATH: file }, dir };
+}
+
+test('GET /api/archive/readings serves one device\'s minutes from the edge, oldest first, in the export\'s shape', async () => {
+  const seeded = await seededArchive();
+  const { proxyUrl, cleanup } = await setup(seeded.env);
+  try {
+    const q = 'device_id=co1&since=2026-08-20T00:00:00.000Z&until=2026-08-20T00:02:00.000Z';
+    const res = await fetch(`${proxyUrl}/api/archive/readings?${q}`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.device_id, 'co1');
+    assert.deepEqual(body.rows, [
+      { ts: '2026-08-20T00:00:00.000Z', voltage: 230, current: 0.1, power_w: 10, energy_kwh_today: 0.5, online: true },
+      { ts: '2026-08-20T00:01:00.000Z', voltage: 230, current: 0.1, power_w: 11, energy_kwh_today: 0.5, online: true },
+    ]);
+  } finally {
+    cleanup();
+    fs.rmSync(seeded.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); // Windows: the killed proxy still holds the file a moment
+  }
+});
+
+test('GET /api/archive/readings is behind the same login as everything else', async () => {
+  const seeded = await seededArchive();
+  const { proxyUrl, cleanup } = await setup(seeded.env);
+  try {
+    const res = await fetch(`${proxyUrl}/api/archive/readings?device_id=co1&since=2026-08-20T00:00:00Z&until=2026-08-21T00:00:00Z`);
+    assert.equal(res.status, 401);
+  } finally {
+    cleanup();
+    fs.rmSync(seeded.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); // Windows: the killed proxy still holds the file a moment
+  }
+});
+
+test('GET /api/archive/readings refuses a window it cannot answer in one response', async () => {
+  const seeded = await seededArchive();
+  const { proxyUrl, cleanup } = await setup(seeded.env);
+  const get = (q) => fetch(`${proxyUrl}/api/archive/readings?${q}`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
+  try {
+    assert.equal((await get('device_id=co1&since=2026-08-01T00:00:00Z&until=2026-09-03T00:00:00Z')).status, 400, 'over 32 days');
+    assert.equal((await get('since=2026-08-01T00:00:00Z&until=2026-08-02T00:00:00Z')).status, 400, 'no device');
+    assert.equal((await get('device_id=co1&since=nonsense&until=2026-08-02T00:00:00Z')).status, 400, 'bad instant');
+    assert.equal((await get('device_id=co1&since=2026-08-02T00:00:00Z&until=2026-08-01T00:00:00Z')).status, 400, 'backwards');
+  } finally {
+    cleanup();
+    fs.rmSync(seeded.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); // Windows: the killed proxy still holds the file a moment
+  }
+});
+
+test('GET /api/archive/status says what the edge holds, and an edge with no archive says so', async () => {
+  const seeded = await seededArchive();
+  const withArchive = await setup(seeded.env);
+  try {
+    const res = await fetch(`${withArchive.proxyUrl}/api/archive/status`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.available, true);
+    assert.equal(body.readings, 4);
+    assert.equal(body.oldest, '2026-08-20T00:00:00.000Z');
+    assert.equal(body.hot_days, 14);
+  } finally {
+    withArchive.cleanup();
+    fs.rmSync(seeded.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); // Windows: the killed proxy still holds the file a moment
+  }
+
+  const without = await setup();
+  try {
+    const status = await (await fetch(`${without.proxyUrl}/api/archive/status`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } })).json();
+    assert.equal(status.available, false);
+    const res = await fetch(`${without.proxyUrl}/api/archive/readings?device_id=co1&since=2026-08-20T00:00:00Z&until=2026-08-21T00:00:00Z`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
+    assert.equal(res.status, 503);
+  } finally {
+    without.cleanup();
+  }
+});

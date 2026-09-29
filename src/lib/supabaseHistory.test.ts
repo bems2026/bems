@@ -7,8 +7,10 @@ import {
   mapReadingsRows,
   BUCKET_SECONDS,
   ARCHIVE_BUCKET_SECONDS,
+  RANGE_MS,
 } from './supabaseHistory';
 import { GRID_STEP_MS } from './timeseries';
+import { RAW_RETENTION_DAYS } from '@shared/retention.mjs';
 
 describe('mapReadingsRows', () => {
   it('maps a full row straight through', () => {
@@ -146,7 +148,26 @@ describe('stored buckets and the chart grid (RM-076)', () => {
     // readings_buckets and readings_archive floor on the epoch; lib/timeseries floors on the epoch.
     // If these ever differ, every stored point lands between two chart slots.
     expect(BUCKET_SECONDS['7d'] * 1000).toBe(GRID_STEP_MS['7d']);
-    expect(BUCKET_SECONDS['30d'] * 1000).toBe(GRID_STEP_MS['30d']);
+    expect(ARCHIVE_BUCKET_SECONDS['30d'] * 1000).toBe(GRID_STEP_MS['30d']);
     expect(ARCHIVE_BUCKET_SECONDS['1y'] * 1000).toBe(GRID_STEP_MS['1y']);
+  });
+});
+
+describe('which tier answers a range (RM-148)', () => {
+  // The cloud keeps RAW_RETENTION_DAYS of raw rows; older hours live only in readings_hourly.
+  // readings_buckets reads raw rows alone, so a range longer than the raw window would come back
+  // silently short — a "30 d" chart drawing 14 days. Every such range must read through the
+  // archive RPC, which merges both tables.
+  it('reads raw rows only for ranges inside the raw window', () => {
+    for (const [range, ms] of Object.entries(RANGE_MS)) {
+      expect(ms, `${range} must fit the ${RAW_RETENTION_DAYS}-day raw window to be read from raw rows`).toBeLessThanOrEqual(RAW_RETENTION_DAYS * 86_400_000);
+    }
+  });
+
+  it('reads 30 days through the archive, at hourly resolution', () => {
+    expect(ARCHIVE_RANGES).toContain('30d');
+    const w = archiveWindow('30d', Date.parse('2026-10-01T00:00:00Z'));
+    expect(Date.parse(w.untilIso) - Date.parse(w.sinceIso)).toBe(30 * 86_400_000);
+    expect(w.bucketSeconds).toBe(3600);
   });
 });

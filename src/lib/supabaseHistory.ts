@@ -28,21 +28,25 @@
 import { supabase } from '@/config/supabase';
 import type { HistoryPoint } from './types';
 
-export type LongRange = '7d' | '30d';
+/**
+ * Ranges read from raw rows. Only ranges inside the cloud's raw window (RAW_RETENTION_DAYS,
+ * `shared/retention.mjs`) may be: `readings_buckets` reads `readings` alone, so a longer range would
+ * come back silently short. Since RM-148 that window is 14 days, and 30 days reads through the
+ * archive RPC below with the year.
+ */
+export type LongRange = '7d';
 
-const RANGE_MS: Record<LongRange, number> = {
+export const RANGE_MS: Record<LongRange, number> = {
   '7d': 7 * 24 * 60 * 60 * 1000,
-  '30d': 30 * 24 * 60 * 60 * 1000,
 };
 
 /**
  * Bucket width per range. Chosen so the point count lands well under both the RPC's own
  * `max_buckets` guard and PostgREST's 1000-row cap, with enough resolution to still show a
- * daily load shape: 7d/15min = 672 points, 30d/1h = 720 points.
+ * daily load shape: 7d/15min = 672 points.
  */
 export const BUCKET_SECONDS: Record<LongRange, number> = {
   '7d': 15 * 60,
-  '30d': 60 * 60,
 };
 
 /** Above this, assume we hit a cap rather than reached the end of the data. Must stay under
@@ -142,10 +146,11 @@ export async function getLongHistory(deviceId: string, range: LongRange): Promis
  * unreachable from the app. These ranges cross that boundary; the RPC merges both tables and
  * deduplicates the seam, so a caller never has to know where the boundary currently sits.
  */
-export const ARCHIVE_RANGES = ['1y'] as const;
+export const ARCHIVE_RANGES = ['30d', '1y'] as const;
 export type ArchiveRange = (typeof ARCHIVE_RANGES)[number];
 
 const ARCHIVE_RANGE_MS: Record<ArchiveRange, number> = {
+  '30d': 30 * 24 * 60 * 60 * 1000,
   '1y': 365 * 24 * 60 * 60 * 1000,
 };
 
@@ -157,6 +162,7 @@ const ARCHIVE_RANGE_MS: Record<ArchiveRange, number> = {
  * 1y/1d = 365 points.
  */
 export const ARCHIVE_BUCKET_SECONDS: Record<ArchiveRange, number> = {
+  '30d': 60 * 60, // 720 points: the hourly floor, and the grid the raw 30d chart always had
   '1y': 24 * 60 * 60,
 };
 

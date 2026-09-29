@@ -3954,12 +3954,39 @@ Node-RED context flush and a stage-by-stage rollout. Stages: 0 measure, 1 archiv
         - `archiveDb.test.mjs` (+6: schema v2, `sealed_days`, the migration from v1).
 
         Every gate was checked against a neutered copy of the code, and each copy failed.
-      - **Order:** after RM-148b's backfill is read back:
+      - **Order:** after RM-148b's backfill is read back, and after RM-148e's phase49 is applied:
         1. `archive:storage -- --apply`;
         2. `ARCHIVE_HOT_TIER=1` and restart ingest;
         3. watch the days seal and copy;
         4. the restore drill;
         5. then the reset.
+- [ ] **RM-148e** Stage 5, each read from the tier that holds it. **Built, tested and rehearsed; not deployed.**
+      - **The 30-day chart** (`src/lib/supabaseHistory.ts`) moves to `readings_archive`, hourly, with the year.
+        `readings_buckets` reads raw rows alone, and a range longer than the raw window would come back silently short.
+        A test pins that every raw-read range fits `RAW_RETENTION_DAYS`. That fixes FI-034's timeout at its cause once
+        the raw window is 14 days.
+      - **A bug that already existed, fixed:** `node_totals` read raw rows only, so the Space totals card's "1 y" has
+        been the last 30 days presented as a year. At 14 days its "30 d" would have been 14.
+        `supabase/phase49_node_totals_archive.sql` reads hours the raw table no longer holds from `readings_hourly`,
+        by `readings_archive`'s rule: the rolled hour wins the seam, averages are weighted by each hour's samples, and
+        nothing observed is NULL, never 0. Counts stay 0, as phase22 returned them. The signature is unchanged.
+        `test/phase49-…-schema.test.mjs` (5); `rehearse.sh` checks exact merged figures, re-applies the file twice,
+        and phase22's own assertions still pass against it. **REHEARSAL PASSED on the edge, 2026-09-29.**
+      - **Minute readings older than the cloud's window come from the edge.**
+        - `GET /api/archive/readings` (one device, at most 32 days) and `GET /api/archive/status` in
+          `server/proxy.mjs`. They sit behind the same login as everything else and read the archive read-only.
+        - `src/lib/edgeArchive.ts` calls them; anything short of rows is `null`, so the export falls back to the cloud.
+        - `readingsExport.ts` takes a raw source (`rawFromEdge` decides by the window's start). The whole window comes
+          from one tier, so there is no seam. The hourly fill for hours with no minute left is kept, and each device's
+          result says which tier answered. The Reports page says so when it saves the file.
+        - Tests: `proxy.test.mjs` (+4), `edgeArchive.test.ts` (3), `readingsExport.test.ts` (+4),
+          `supabaseHistory.test.ts` (+2), `archiveDb.test.mjs` (+1).
+      - **Deferred, with its reason:** reading the Circuits tab's complete days from the stored `period_reports` rows
+        instead of `report_device_daily_energy`. Those rows do not hold `resolution` or `clipped_hours`, which the
+        per-day CSV prints ("made from") and the charts note. The month read's timeouts came from 30 days of wide raw
+        rows, which Stages 3–4 remove at the source.
+      - **Order:** paste phase49 into the SQL editor, then restart `ibems-proxy` (the archive routes) and
+        `npm run build` on the edge (the 30-day chart and the export).
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 

@@ -19,9 +19,9 @@ import { TIMING } from '@/lib/timing';
 import type { SyncStatus } from '@/lib/dataQuality';
 import type { HistoryPoint } from '@/lib/types';
 
-/** '24h' is the original, bridge-backed range — unchanged. '7d' is Phase 4's Supabase-backed
- * addition; '1y' is Phase 10's, crossing the retention boundary into `readings_hourly`.
- * All four are only meaningful once `supabase` is configured. */
+/** '24h' is the original, bridge-backed range — unchanged. '7d' reads the cloud's raw rows;
+ * '30d' and '1y' read through the archive RPC, crossing the raw window (14 days since RM-148)
+ * into `readings_hourly`. All four are only meaningful once `supabase` is configured. */
 export type AnalyticsRange = '24h' | LongRange | ArchiveRange;
 
 function isArchiveRange(range: AnalyticsRange): range is ArchiveRange {
@@ -64,8 +64,8 @@ const reasonText = (reason: unknown) => (reason instanceof Error ? reason.messag
  * loading flicker.
  *
  * `range` picks the data source, not just a query parameter: '24h' stays on the bridge (the
- * bridge's own ring buffer is capped at 24h), '7d'/'30d' read Supabase, and '1y' reads through the
- * archive RPC so it spans the retention boundary.
+ * bridge's own ring buffer is capped at 24h), '7d' reads Supabase's raw rows, and '30d' and '1y' read
+ * through the archive RPC so they span the raw window (RM-148).
  *
  * SYNCHRONISATION — RM-076. The hook also reports `sync`: whether this range has answered, when its
  * history last arrived, and how many fetches in a row have failed since. The page used to know only

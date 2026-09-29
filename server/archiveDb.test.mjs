@@ -219,6 +219,14 @@ test('a day\'s rows come back in a fixed order, whatever their origin', (t) => {
   archive.close();
 });
 
+test('a day\'s rows can be read for one device only', (t) => {
+  const { archive } = tempArchive(t);
+  archive.insertTick({ readings: [reading(), reading({ device_id: 'co2' })] });
+  const rows = [...archive.rowsBetween('readings', { sinceMs: AT_MS, untilMs: AT_MS + 60_000, deviceId: 'co2' })];
+  assert.deepEqual(rows.map((r) => r.device_id), ['co2']);
+  archive.close();
+});
+
 test('each stream reports the span of time it holds', (t) => {
   const { archive } = tempArchive(t);
   assert.deepEqual(archive.span('anomalies'), { oldestMs: null, newestMs: null });

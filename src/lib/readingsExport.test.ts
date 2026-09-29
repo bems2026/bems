@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fetchDeviceReadings, fetchReadingsForExport, localStamp, readingsCsvParts, type ReadingsClient } from './readingsExport';
+import { fetchDeviceReadings, fetchReadingsForExport, localStamp, rawFromEdge, readingsCsvParts, type ReadingsClient } from './readingsExport';
 
 /**
  * RM-098 — every reading, for a week or a month.
@@ -142,6 +142,40 @@ describe('fetchDeviceReadings', () => {
   });
 });
 
+describe('minute readings from the edge (RM-148)', () => {
+  const NOW = Date.parse('2026-10-20T00:00:00Z');
+
+  it('asks the edge only for a window that starts before the cloud’s raw window', () => {
+    expect(rawFromEdge({ startIso: '2026-10-01T00:00:00Z', endIso: '2026-10-08T00:00:00Z' }, NOW, 14)).toBe(true);
+    expect(rawFromEdge({ startIso: '2026-10-07T00:00:00Z', endIso: '2026-10-14T00:00:00Z' }, NOW, 14)).toBe(false);
+  });
+
+  it('takes the minutes from the edge when it answers, and fills only hours with no minute left from the cloud', async () => {
+    const hourly = (hour: string): HourRow => ({ device_id: 'm1', hour, power_w_avg: 40, power_w_max: 50, voltage_avg: 230, current_avg: 0.2, energy_kwh_today_max: 0.05, sample_count: 60, online_sample_count: 52 });
+    const cloud = fakeClient({ readings: [], readings_hourly: [hourly('2026-09-07T17:00:00+00:00'), hourly('2026-09-07T18:00:00+00:00')] });
+    const edgeRows = [reading('m1', 0), reading('m1', 1)].map((r) => ({ ts: r.ts, voltage: r.voltage, current: r.current, power_w: r.power_w, energy_kwh_today: r.energy_kwh_today, online: r.online }));
+    const rawFrom = async (deviceId: string) => (deviceId === 'm1' ? edgeRows : []);
+
+    const got = await fetchDeviceReadings(cloud, 'm1', WIN, { rawFrom });
+
+    expect(got.source).toBe('edge');
+    expect(got.raw).toEqual(edgeRows);
+    expect(got.hourly.map((h) => h.hour)).toEqual(['2026-09-07T17:00:00+00:00']);
+  });
+
+  it('falls back to the cloud when the edge cannot answer, and says so', async () => {
+    const cloud = fakeClient({ readings: [reading('m1', 0)], readings_hourly: [] });
+    const got = await fetchDeviceReadings(cloud, 'm1', WIN, { rawFrom: async () => null });
+    expect(got.source).toBe('cloud');
+    expect(got.raw).toHaveLength(1);
+  });
+
+  it('reads the cloud as before when no edge is offered', async () => {
+    const got = await fetchDeviceReadings(fakeClient({ readings: [reading('m1', 0)], readings_hourly: [] }), 'm1', WIN);
+    expect(got.source).toBe('cloud');
+  });
+});
+
 describe('fetchReadingsForExport', () => {
   it('reads every device and reports its progress', async () => {
     const client = fakeClient({ readings: [...Array.from({ length: 3 }, (_, i) => reading('m1', i)), ...Array.from({ length: 2 }, (_, i) => reading('m2', i))], readings_hourly: [] });
@@ -159,7 +193,7 @@ describe('readingsCsvParts', () => {
   const devices = [{ id: 'm1', name: 'Lighting meter', circuit: 'Lights B', use: 'Lighting' }];
 
   it('writes one row per reading, in the building’s own time, with its units in the header', () => {
-    const csv = readingsCsvParts({ devices, readings: [{ deviceId: 'm1', raw: [reading('m1', 0), reading('m1', 1)], hourly: [] }], utcOffsetMinutes: 480, timezone: 'Asia/Manila' }).join('');
+    const csv = readingsCsvParts({ devices, readings: [{ deviceId: 'm1', raw: [reading('m1', 0), reading('m1', 1)], hourly: [], source: 'cloud' }], utcOffsetMinutes: 480, timezone: 'Asia/Manila' }).join('');
     const lines = csv.split('\r\n');
     expect(lines[0]).toBe(
       'Local time (Asia/Manila),Device ID,Device,Circuit,Use,Resolution,Voltage (V),Current (A),Power (W),Highest power in hour (W),Energy counter today (kWh),Online,Note'
@@ -169,14 +203,14 @@ describe('readingsCsvParts', () => {
   });
 
   it('leaves an offline row’s figures empty and says why, never a repeated value as a reading', () => {
-    const csv = readingsCsvParts({ devices, readings: [{ deviceId: 'm1', raw: [reading('m1', 0, { online: false })], hourly: [] }], utcOffsetMinutes: 480, timezone: 'Asia/Manila' }).join('');
+    const csv = readingsCsvParts({ devices, readings: [{ deviceId: 'm1', raw: [reading('m1', 0, { online: false })], hourly: [], source: 'cloud' }], utcOffsetMinutes: 480, timezone: 'Asia/Manila' }).join('');
     expect(csv.split('\r\n')[1]).toBe('2026-09-08 02:00:00,m1,Lighting meter,Lights B,Lighting,minute,,,,,,no,offline — not a reading');
   });
 
   it('marks the reading where the counter jumped by more than the circuit could draw', () => {
     // The live shape: 0.111 -> 67.391 in a minute at 49 W.
     const raw = [reading('m1', 0, { energy_kwh_today: 0.111 }), reading('m1', 1, { energy_kwh_today: 67.391 }), reading('m1', 2, { energy_kwh_today: 67.392 })];
-    const lines = readingsCsvParts({ devices, readings: [{ deviceId: 'm1', raw, hourly: [] }], utcOffsetMinutes: 480, timezone: 'Asia/Manila' }).join('').split('\r\n');
+    const lines = readingsCsvParts({ devices, readings: [{ deviceId: 'm1', raw, hourly: [], source: 'cloud' }], utcOffsetMinutes: 480, timezone: 'Asia/Manila' }).join('').split('\r\n');
     expect(lines[2]).toMatch(/counter jumped \+67\.28 kWh while drawing 49 W — not counted$/);
     expect(lines[1]).toMatch(/,$/);
     expect(lines[3]).toMatch(/,$/);
@@ -185,7 +219,7 @@ describe('readingsCsvParts', () => {
   it('writes an hour that only survives as an average as one hourly row, and says so', () => {
     const csv = readingsCsvParts({
       devices,
-      readings: [{ deviceId: 'm1', raw: [], hourly: [{ hour: '2026-09-07T17:00:00+00:00', power_w_avg: 40, power_w_max: 50, voltage_avg: 230, current_avg: 0.2, energy_kwh_today_max: 0.05, sample_count: 60, online_sample_count: 52 }] }],
+      readings: [{ deviceId: 'm1', raw: [], hourly: [{ hour: '2026-09-07T17:00:00+00:00', power_w_avg: 40, power_w_max: 50, voltage_avg: 230, current_avg: 0.2, energy_kwh_today_max: 0.05, sample_count: 60, online_sample_count: 52 }], source: 'cloud' }],
       utcOffsetMinutes: 480,
       timezone: 'Asia/Manila',
     }).join('');
@@ -193,7 +227,7 @@ describe('readingsCsvParts', () => {
   });
 
   it('neutralises a device name a spreadsheet would run as a formula', () => {
-    const csv = readingsCsvParts({ devices: [{ ...devices[0], name: '=HYPERLINK("x")' }], readings: [{ deviceId: 'm1', raw: [reading('m1', 0)], hourly: [] }], utcOffsetMinutes: 480, timezone: 'Asia/Manila' }).join('');
+    const csv = readingsCsvParts({ devices: [{ ...devices[0], name: '=HYPERLINK("x")' }], readings: [{ deviceId: 'm1', raw: [reading('m1', 0)], hourly: [], source: 'cloud' }], utcOffsetMinutes: 480, timezone: 'Asia/Manila' }).join('');
     expect(csv).toContain(`"'=HYPERLINK(""x"")"`);
   });
 });

@@ -5,7 +5,7 @@ import { boundDay, type HourAgg } from './boundedEnergy';
  * Every reading behind a report, for export — RM-098.
  *
  * The operator asked for a CSV that shows each reading a circuit recorded over a week or a month —
- * time, voltage, current, power — not only the report's totals. Minute readings are kept for 30 days;
+ * time, voltage, current, power — not only the report's totals. The cloud keeps minute readings for 14 days;
  * older hours survive only as hourly averages (retention, phase31), so the file holds a minute row where
  * one exists and an hourly row, labelled as one, for an hour that is only an average now. Which an hour
  * gets is decided by the data, not by a date: nothing here assumes where retention has reached.
@@ -75,6 +75,25 @@ export interface DeviceReadings {
   raw: ExportReading[];
   /** Only hours with no minute readings left. */
   hourly: HourlyReading[];
+  /** Where the minute readings came from: the edge's permanent archive, or the cloud's raw window (RM-148). */
+  source: 'edge' | 'cloud';
+}
+
+/**
+ * One device's minute readings for a window from the edge's archive, or `null` when the edge cannot
+ * answer (no archive, an older proxy, or the page served from somewhere other than the edge).
+ */
+export type RawSource = (deviceId: string, win: Window, signal?: AbortSignal) => Promise<ExportReading[] | null>;
+
+const DAY_MS = 86_400_000;
+
+/**
+ * RM-148: the cloud keeps `hotDays` of minute readings; the edge keeps all of them. A window that
+ * starts before the cloud's raw window takes its minutes from the edge — the whole window, so there is
+ * no seam to stitch — and one inside it reads the cloud as it always has.
+ */
+export function rawFromEdge(win: Window, nowMs: number, hotDays: number): boolean {
+  return Date.parse(win.startIso) < nowMs - hotDays * DAY_MS;
 }
 
 export interface Window {
@@ -85,6 +104,8 @@ export interface Window {
 interface FetchOptions {
   signal?: AbortSignal;
   onRows?: (fetched: number) => void;
+  /** Minute readings from the edge; tried first when given, the cloud used when it answers `null`. */
+  rawFrom?: RawSource;
 }
 
 async function pageAll<T extends Record<string, unknown>>(
@@ -116,18 +137,10 @@ async function pageAll<T extends Record<string, unknown>>(
 
 /** One device's minute readings for the window, and its hourly rows for hours with none left. */
 export async function fetchDeviceReadings(client: ReadingsClient, deviceId: string, win: Window, options: FetchOptions = {}): Promise<DeviceReadings> {
-  const { signal } = options;
-  const rawQuery = () =>
-    client.from('readings').select('ts,voltage,current,power_w,energy_kwh_today,online').eq('device_id', deviceId).gte('ts', win.startIso).lt('ts', win.endIso);
-  const raw = await pageAll(rawQuery as () => Query<ExportReading & Record<string, unknown>>, 'ts', options, `The readings of ${deviceId}`);
-
-  let counter = client.from('readings').select('ts', { count: 'exact', head: true }).eq('device_id', deviceId).gte('ts', win.startIso).lt('ts', win.endIso);
-  if (signal) counter = counter.abortSignal(signal);
-  const counted = await counter;
-  if (counted.error) throw new Error(`The readings of ${deviceId} could not be counted: ${counted.error.message}`);
-  if (typeof counted.count === 'number' && counted.count !== raw.length) {
-    throw new Error(`The readings of ${deviceId} changed while exporting (${raw.length} fetched, ${counted.count} counted). Try again.`);
-  }
+  const { signal, rawFrom, onRows } = options;
+  const fromEdge = rawFrom ? await rawFrom(deviceId, win, signal) : null;
+  const raw = fromEdge ?? (await fetchCloudRaw(client, deviceId, win, options));
+  if (fromEdge) onRows?.(fromEdge.length);
 
   const hourlyQuery = () =>
     client
@@ -140,7 +153,24 @@ export async function fetchDeviceReadings(client: ReadingsClient, deviceId: stri
   const rawHours = new Set(raw.map((r) => Math.floor(Date.parse(r.ts) / HOUR_MS)));
   const hourly = hours.filter((h) => !rawHours.has(Math.floor(Date.parse(h.hour) / HOUR_MS)));
 
-  return { deviceId, raw, hourly };
+  return { deviceId, raw, hourly, source: fromEdge ? 'edge' : 'cloud' };
+}
+
+/** The cloud's minute readings for one device, paged and checked against an exact count. */
+async function fetchCloudRaw(client: ReadingsClient, deviceId: string, win: Window, options: FetchOptions): Promise<ExportReading[]> {
+  const { signal } = options;
+  const rawQuery = () =>
+    client.from('readings').select('ts,voltage,current,power_w,energy_kwh_today,online').eq('device_id', deviceId).gte('ts', win.startIso).lt('ts', win.endIso);
+  const raw = await pageAll(rawQuery as () => Query<ExportReading & Record<string, unknown>>, 'ts', options, `The readings of ${deviceId}`);
+
+  let counter = client.from('readings').select('ts', { count: 'exact', head: true }).eq('device_id', deviceId).gte('ts', win.startIso).lt('ts', win.endIso);
+  if (signal) counter = counter.abortSignal(signal);
+  const counted = await counter;
+  if (counted.error) throw new Error(`The readings of ${deviceId} could not be counted: ${counted.error.message}`);
+  if (typeof counted.count === 'number' && counted.count !== raw.length) {
+    throw new Error(`The readings of ${deviceId} changed while exporting (${raw.length} fetched, ${counted.count} counted). Try again.`);
+  }
+  return raw;
 }
 
 /** Every device's readings, two at a time, with progress across all of them. */
@@ -148,7 +178,7 @@ export async function fetchReadingsForExport(
   client: ReadingsClient,
   deviceIds: readonly string[],
   win: Window,
-  { signal, concurrency = 2, onProgress }: { signal?: AbortSignal; concurrency?: number; onProgress?: (p: { deviceId: string; fetched: number }) => void } = {}
+  { signal, concurrency = 2, onProgress, rawFrom }: { signal?: AbortSignal; concurrency?: number; onProgress?: (p: { deviceId: string; fetched: number }) => void; rawFrom?: RawSource } = {}
 ): Promise<DeviceReadings[]> {
   const results: DeviceReadings[] = new Array(deviceIds.length);
   const done = new Map<string, number>();
@@ -160,6 +190,7 @@ export async function fetchReadingsForExport(
       const deviceId = deviceIds[i];
       results[i] = await fetchDeviceReadings(client, deviceId, win, {
         signal,
+        rawFrom,
         onRows: (fetched) => {
           done.set(deviceId, fetched);
           onProgress?.({ deviceId, fetched: total() });

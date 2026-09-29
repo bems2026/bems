@@ -2113,6 +2113,66 @@ delete from readings where device_id = 'mtr_manifest';
 delete from devices where id = 'mtr_manifest';
 SQL
 
+# ---- phase49: a space's totals across the raw window (RM-148) -----------------------------------------
+#
+# The bug: node_totals read raw rows only, so a window reaching back past the raw table's oldest row
+# (the Space totals card's "1 y", and "30 d" once raw rows keep 14 days) silently covered less than it
+# said. Seeded here: two rolled-up hours with no raw rows behind them, one raw hour with an offline
+# row in it, and one hour present in BOTH, where the rollup must win.
+echo "== phase49: re-applying twice, then node_totals across rolled and raw hours =="
+psql < "$HERE/phase49_node_totals_archive.sql" >/dev/null
+psql < "$HERE/phase49_node_totals_archive.sql" >/dev/null
+psql <<'SQL'
+insert into devices (id, display_name, class) values ('mtr_space', 'Rehearsal Space Meter', 'meter')
+  on conflict (id) do nothing;
+insert into space_nodes (id, site_id, parent_id, kind, name)
+values ('00000000-0000-4000-8000-000000000049', 'mmsu-nberic-care', null, 'room', 'Phase49 Room'),
+       ('00000000-0000-4000-8000-000000000050', 'mmsu-nberic-care', null, 'room', 'Phase49 Empty Room');
+insert into device_config (device_id, space_node_id) values ('mtr_space', '00000000-0000-4000-8000-000000000049')
+  on conflict (device_id) do update set space_node_id = excluded.space_node_id;
+
+insert into readings_hourly (device_id, hour, power_w_avg, power_w_max, voltage_avg, current_avg,
+                             energy_kwh_today_max, sample_count, online_sample_count)
+values ('mtr_space', timestamptz '2026-04-01 00:00+00', 100, 150, 230, 0.5, 1, 60, 60),
+       ('mtr_space', timestamptz '2026-04-01 01:00+00', 200, 250, 230, 0.9, 1, 60, 60),
+       ('mtr_space', timestamptz '2026-04-20 11:00+00',  50,  60, 230, 0.2, 1, 60, 60);
+insert into readings (device_id, ts, power_w, online) values
+  ('mtr_space', timestamptz '2026-04-20 10:05+00', 300, true),
+  ('mtr_space', timestamptz '2026-04-20 10:06+00', 500, true),
+  ('mtr_space', timestamptz '2026-04-20 10:07+00', 999, false),   -- a frozen offline figure: never counted
+  ('mtr_space', timestamptz '2026-04-20 11:30+00', 1000, true);   -- an hour the rollup already holds
+
+do $$
+declare
+  t record;
+begin
+  select * into t from node_totals('00000000-0000-4000-8000-000000000049', timestamptz '2026-03-31 00:00+00', timestamptz '2026-04-21 00:00+00');
+  assert t.sample_count = 183, format('phase49: 60+60+60 rolled + 3 raw samples, got %s', t.sample_count);
+  assert t.online_sample_count = 182, format('phase49: 180 rolled + 2 raw observed, got %s', t.online_sample_count);
+  assert abs(t.avg_power_w - (100 * 60 + 200 * 60 + 50 * 60 + 400 * 2)::numeric / 182) < 0.000001,
+    format('phase49: the average must weight each hour by its samples, got %s', t.avg_power_w);
+  assert t.peak_power_w = 500, format('phase49: peak 500 — the frozen 999 is offline, the 1000 is in a rolled hour; got %s', t.peak_power_w);
+  assert t.reporting_count = 1 and t.device_count = 1, format('phase49: one device, reporting; got %s / %s', t.device_count, t.reporting_count);
+
+  -- The window the bug hid: entirely before the raw rows, it used to read as nothing at all.
+  select * into t from node_totals('00000000-0000-4000-8000-000000000049', timestamptz '2026-04-01 00:00+00', timestamptz '2026-04-01 02:00+00');
+  assert t.sample_count = 120 and t.avg_power_w = 150, format('phase49: two rolled hours alone must read 120 samples at 150 W, got %s / %s', t.sample_count, t.avg_power_w);
+
+  -- Nothing to look at is 0 samples and NULL power, as phase22 answered it.
+  select * into t from node_totals('00000000-0000-4000-8000-000000000050', timestamptz '2026-03-31 00:00+00', timestamptz '2026-04-21 00:00+00');
+  assert t.sample_count = 0 and t.online_sample_count = 0, format('phase49: an empty room counts 0, got %s / %s', t.sample_count, t.online_sample_count);
+  assert t.avg_power_w is null and t.peak_power_w is null, 'phase49: an empty room reports NULL power, never 0';
+
+  raise notice 'phase49: a space across the raw window — assertions passed';
+end $$;
+
+delete from readings where device_id = 'mtr_space';
+delete from readings_hourly where device_id = 'mtr_space';
+delete from device_config where device_id = 'mtr_space';
+delete from space_nodes where id in ('00000000-0000-4000-8000-000000000049', '00000000-0000-4000-8000-000000000050');
+delete from devices where id = 'mtr_space';
+SQL
+
 echo
 echo "== REHEARSAL PASSED =="
 echo "Every migration applied in order against PostgreSQL 16, and every function behaved as"
