@@ -219,7 +219,7 @@ A new operator is competent when they can do each of these, unaided, and a secon
 | 2026-08-25 | Six of seven outlets offline for hours, unnoticed | The only place it would have shown was a screen nobody was watching | The fleet notice (FI-005) | E-200 | An alarm must reach someone who is not looking |
 | 2026-09-02 | The kiosk ran week-old software | A single-page app never reloads | The build watch | E-183 | Deploying is not the same as being seen |
 | 2026-09-22 | A database restore rehearsed end to end | — | `npm run restore:rehearse` | E-124 | Only a rehearsed backup is a backup |
-| 2026-09-26 | Fifteen devices dark over a weekend, found on Tuesday | The access point dropped every client; switches and outlets hung or stayed off the Wi-Fi, and the alarm had gone quiet | A power loss on 29 September at about 07:55 brought them back, and the recovery timer reconnected them; the alarm now escalates and repeats | E-213, E-216 | An outage that grows must be reported again |
+| 2026-09-26 | Fifteen devices dark over a weekend, found on Tuesday | The access point dropped every client; switches and outlets hung or stayed off the Wi-Fi, and the alarm had gone quiet | The operator's power cycle of the office on 29 September, before 08:00, brought them back, and the recovery timer reconnected them; the alarm now escalates and repeats | E-213, E-216 | An outage that grows must be reported again |
 
 ## What to keep on the shelf
 
