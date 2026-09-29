@@ -35,6 +35,9 @@ import { runIngestCycle, msUntilNextTick } from './ingestCycle.mjs';
 import { openArchive } from './archiveDb.mjs';
 import { drainArchive } from './archiveUpload.mjs';
 import { readingsForCloud } from './cloudCapabilities.mjs';
+import { runHotTierPass } from './hotTier.mjs';
+import { makeStorageClient } from './supabaseStorage.mjs';
+import { RAW_RETENTION_DAYS } from '../shared/retention.mjs';
 import {
   runRetention,
   runTotalsRetention,
@@ -73,6 +76,29 @@ const RETENTION_DAYS = Number(process.env.INGEST_RETENTION_DAYS) || DEFAULT_RETE
  * "tests left no state behind" check and server/testStatePaths.test.mjs cover it too.
  */
 const ARCHIVE_PATH = process.env.ARCHIVE_DB_PATH || path.join(__dirname, 'data', 'archive', 'archive.sqlite');
+/** Each sealed UTC day, beside the archive, before and after it is copied off the edge. */
+const SEALED_DIR = path.join(path.dirname(ARCHIVE_PATH), 'sealed');
+/** The private bucket in the project's file storage that holds the sealed days. */
+const ARCHIVE_BUCKET = process.env.ARCHIVE_BUCKET || 'ibems-archive';
+/**
+ * With an archive behind it, the cloud keeps RAW_RETENTION_DAYS (14) of raw rows; without one the
+ * daemon keeps the pre-RM-148 window (RETENTION_DAYS, 30) rather than prune with nothing behind it.
+ */
+const HOT_DAYS = Number(process.env.INGEST_RETENTION_DAYS) || RAW_RETENTION_DAYS;
+/**
+ * RM-148 Stage 4 is the operator's to switch on, in `server/.env`, after the backfill (Stage 2) has
+ * been read back and the bucket exists: `ARCHIVE_HOT_TIER=1`. Until then the raw tables keep the
+ * 30-day window they have always had, whatever else is deployed — a restart for another stage must
+ * not start pruning to 14 days.
+ */
+const HOT_TIER = process.env.ARCHIVE_HOT_TIER === '1';
+/**
+ * RM-148's operator switch for the one-time hot-tier reset. While this file exists the daemon keeps
+ * archiving every tick but sends nothing to the cloud and runs no retention or reports, so the
+ * cloud's raw tables can be emptied and reloaded from the archive without a gap or a half-read day.
+ */
+const PAUSE_PATH = process.env.INGEST_PAUSE_PATH || path.join(__dirname, 'data', 'ingest.pause');
+const paused = () => fs.existsSync(PAUSE_PATH);
 
 /**
  * The out-of-dashboard alarm (FI-005). Inert unless NTFY_TOPIC is set — a deployment never
@@ -110,6 +136,7 @@ const supabase = makeSupabaseClient({
   serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
   timeoutMs: TIMING.FETCH_TIMEOUT_MS,
 });
+const storage = makeStorageClient({ url: SUPABASE_URL, serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY });
 
 let stopping = false;
 
@@ -362,7 +389,9 @@ async function tick() {
     updateHealth,
     ...(archive ? {
       archive: (batch) => archive.insertTick(batch),
-      sync: async () => (synced = await drainArchive({ archive, send: sendToCloud })),
+      sync: async () => (paused()
+        ? { ok: false, error: `cloud upload paused by the operator (${PAUSE_PATH}); archiving continues` }
+        : (synced = await drainArchive({ archive, send: sendToCloud }))),
     } : {}),
   });
 
@@ -448,7 +477,16 @@ const RETENTION_PASSES = [
  * job; pruning is housekeeping, and housekeeping failing is not a reason to stop recording
  * the building's electricity. */
 async function retentionPass() {
-  for (const { run, usesConfiguredWindow, describe } of RETENTION_PASSES) {
+  if (paused()) {
+    console.log(`[ibems-ingest] retention: skipped, paused by the operator (${PAUSE_PATH})`);
+    return;
+  }
+  // RM-148: with the archive behind it, the raw tables go through the verified janitor to HOT_DAYS,
+  // after the pass seals complete days and copies them off the edge. Anomalies keep their own pass.
+  const hot = Boolean(archive) && HOT_TIER;
+  const passes = hot ? RETENTION_PASSES.filter((p) => !p.usesConfiguredWindow) : RETENTION_PASSES;
+  if (hot) await hotTierPass();
+  for (const { run, usesConfiguredWindow, describe } of passes) {
     try {
       const result = await run({
         client: supabase,
@@ -465,11 +503,34 @@ async function retentionPass() {
   }
 }
 
+/** RM-148's hot tier: seal and copy off the edge, then prune the cloud where the edge holds it. */
+async function hotTierPass() {
+  const r = await runHotTierPass({
+    client: supabase, archive, storage, bucket: ARCHIVE_BUCKET, siteId: SITE.id, sealedDir: SEALED_DIR, hotDays: HOT_DAYS,
+  });
+  if (r.seal.sealed.length || r.seal.uploaded.length) {
+    console.log(`[ibems-ingest] archive: sealed ${r.seal.sealed.length} day-stream(s), copied ${r.seal.uploaded.length} off the edge`);
+  }
+  for (const e of r.seal.errors) console.error(`[ibems-ingest] archive: ${e}`);
+  for (const stream of ['readings', 'building_totals']) {
+    const s = r[stream];
+    if (s.error) console.error(`[ibems-ingest] retention ${stream} failed (will retry on the next check): ${s.error}`);
+    else if (s.steps) console.log(`[ibems-ingest] retention ${stream}: pruned ${s.deleted} raw row(s) in ${s.steps} verified step(s), rolled ${s.rolled} hour(s)${s.backfilled ? `, after copying ${s.backfilled} missing row(s) down` : ''}`);
+    if (s.blocked) console.warn(`[ibems-ingest] retention ${stream}: held back — ${s.blocked}`);
+    else if (!s.steps && !s.error) console.log(`[ibems-ingest] retention ${stream}: nothing to do (${s.reason})`);
+  }
+}
+
 /** One report-generation pass, guarded like the retention pass and for the same reason:
  * ingesting is this process's job, and a monthly summary failing is not a reason to stop
  * recording the building's electricity. Resolves whether it succeeded, so a failure can be asked
  * again within minutes (RM-143, `retryingPass`) rather than at the next six-hourly check. */
 async function reportPass() {
+  if (paused()) {
+    // Not a failure: a report made while the raw tables are being reloaded would read half a day.
+    console.log(`[ibems-ingest] reports: skipped, paused by the operator (${PAUSE_PATH})`);
+    return true;
+  }
   try {
     const { generated, generatedWeeks = [], generatedDays = [], failed, reason } = await runReportGeneration({ client: supabase });
     if (generated.length > 0) {
@@ -530,7 +591,8 @@ const reportPassWithRetry = retryingPass(reportPass);
  * alarming on devices it has no evidence about.
  */
 async function main() {
-  console.log(`[ibems-ingest] starting — bridge=${BRIDGE_URL} poll=${POLL_MS}ms archive=${ARCHIVE_PATH} buffer=${BUFFER_PATH}`);
+  console.log(`[ibems-ingest] starting — bridge=${BRIDGE_URL} poll=${POLL_MS}ms archive=${ARCHIVE_PATH} buffer=${BUFFER_PATH} ` +
+    `raw retention=${HOT_TIER ? `${HOT_DAYS} days, verified (hot tier on)` : `${RETENTION_DAYS} days (hot tier off)`}`);
   openArchiveOrFallBack();
 
   const knownOnline = await loadKnownOnline({

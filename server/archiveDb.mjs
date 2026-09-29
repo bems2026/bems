@@ -31,7 +31,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-export const ARCHIVE_SCHEMA_VERSION = 1;
+export const ARCHIVE_SCHEMA_VERSION = 2;
 
 /** Where a row came from. Stored as a small integer; the names are the contract. */
 export const ORIGIN = Object.freeze({ ingest: 0, buffer: 1, cloud: 2, import: 3 });
@@ -93,6 +93,11 @@ const MIGRATIONS = [
    CREATE TABLE upload_cursor (stream TEXT PRIMARY KEY, through_id INTEGER NOT NULL, updated_at INTEGER NOT NULL) STRICT;
    CREATE TABLE upload_rejects (stream TEXT NOT NULL, row_id INTEGER NOT NULL, reason TEXT, at INTEGER NOT NULL,
                                 PRIMARY KEY (stream, row_id)) STRICT;`,
+  // 2 — RM-148 Stage 4: each UTC day, per stream, sealed into a file and copied off the edge.
+  `CREATE TABLE sealed_days (
+     day TEXT NOT NULL, stream TEXT NOT NULL, rows INTEGER NOT NULL, sha256 TEXT NOT NULL, bytes INTEGER NOT NULL,
+     path TEXT NOT NULL, sealed_at INTEGER NOT NULL, uploaded_at INTEGER, storage_path TEXT,
+     PRIMARY KEY (day, stream)) STRICT;`,
 ];
 
 function toStored(kind, value, col) {
@@ -125,9 +130,10 @@ function fromStored(kind, value) {
 
 /**
  * @param {string} file
- * @param {{ readOnly?: boolean }} [opts]
+ * @param {{ readOnly?: boolean, targetVersion?: number }} [opts]  `targetVersion` is for tests of the
+ *   migrations themselves: it builds an archive as an older release would have left it.
  */
-export function openArchive(file, { readOnly = false } = {}) {
+export function openArchive(file, { readOnly = false, targetVersion = ARCHIVE_SCHEMA_VERSION } = {}) {
   if (!readOnly) fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new DatabaseSync(file, { readOnly });
   db.exec('PRAGMA busy_timeout = 5000');
@@ -139,7 +145,7 @@ export function openArchive(file, { readOnly = false } = {}) {
     db.exec('PRAGMA synchronous = FULL');
     db.exec('PRAGMA journal_size_limit = 67108864');
     db.exec('PRAGMA foreign_keys = ON');
-    migrate(db);
+    migrate(db, targetVersion);
   } else if (userVersion(db) < ARCHIVE_SCHEMA_VERSION) {
     db.close();
     throw new Error(`archive at ${file} is not initialised (schema ${ARCHIVE_SCHEMA_VERSION} expected) — the ingest daemon creates it`);
@@ -244,21 +250,75 @@ export function openArchive(file, { readOnly = false } = {}) {
   const cursorOf = (stream) => prepare('SELECT through_id FROM upload_cursor WHERE stream = ?').get(stream)?.through_id ?? 0;
   const uploadable = `origin IN (${UPLOADABLE.join(', ')})`;
 
+  /** `SELECT` list and join that rebuild a stream's cloud columns from the stored ones. */
+  function cloudSelect(stream) {
+    const entries = Object.entries(STREAMS[stream].columns);
+    return {
+      entries,
+      select: entries.map(([col, kind]) => (kind === 'json' ? 'c.json AS capabilities' : `t.${col}`)).join(', '),
+      join: entries.some(([, kind]) => kind === 'json') ? 'LEFT JOIN capability_sets c ON c.id = t.cap_id' : '',
+    };
+  }
+
+  function toCloudRow(entries, r) {
+    const row = {};
+    for (const [col, kind] of entries) {
+      row[col] = kind === 'json' ? (r[col] === null ? null : JSON.parse(r[col])) : fromStored(kind, r[col]);
+    }
+    return row;
+  }
+
   /** The next rows to upload for one stream, oldest first, as `{ id, row }` with `row` in the cloud's shape. */
   function pending(stream, limit) {
-    const entries = Object.entries(STREAMS[stream].columns);
-    const select = entries.map(([col, kind]) => (kind === 'json' ? 'c.json AS capabilities' : `t.${col}`)).join(', ');
-    const join = entries.some(([, kind]) => kind === 'json') ? 'LEFT JOIN capability_sets c ON c.id = t.cap_id' : '';
+    const { entries, select, join } = cloudSelect(stream);
     const rows = prepare(`SELECT t.id AS _id, ${select} FROM ${stream} t ${join}
                           WHERE t.id > ? AND t.${uploadable} ORDER BY t.id LIMIT ?`).all(cursorOf(stream), limit);
-    return rows.map((r) => {
-      const row = {};
-      for (const [col, kind] of entries) {
-        row[col] = kind === 'json' ? (r[col] === null ? null : JSON.parse(r[col])) : fromStored(kind, r[col]);
-      }
-      return { id: r._id, row };
-    });
+    return rows.map((r) => ({ id: r._id, row: toCloudRow(entries, r) }));
   }
+
+  /** Rows still owed to the cloud with a timestamp before `beforeMs`. The janitor's first gate. */
+  function pendingBefore(stream, beforeMs) {
+    return prepare(`SELECT count(*) AS n FROM ${stream} WHERE id > ? AND ${uploadable} AND ts < ?`).get(cursorOf(stream), beforeMs).n;
+  }
+
+  /**
+   * Rows per device and hour in `[sinceMs, untilMs)`, keyed `${device_id}|${hourStartMs}` — the shape of the
+   * cloud's `readings_manifest`. A stream without devices keys on `|${hourStartMs}`.
+   */
+  function countsByDeviceHour(stream, { sinceMs, untilMs }) {
+    const device = 'device_id' in STREAMS[stream].columns ? 'device_id' : "''";
+    const rows = prepare(`SELECT ${device} AS d, (ts / 3600000) * 3600000 AS h, count(*) AS n FROM ${stream}
+                          WHERE ts >= ? AND ts < ? GROUP BY 1, 2`).all(sinceMs, untilMs);
+    return new Map(rows.map((r) => [`${r.d}|${r.h}`, r.n]));
+  }
+
+  /** Every row in `[sinceMs, untilMs)`, whatever its origin, in a fixed order, with `origin` added. */
+  function* rowsBetween(stream, { sinceMs, untilMs }) {
+    const { entries, select, join } = cloudSelect(stream);
+    const order = ['ts', 'device_id', 'metric'].filter((c) => c in STREAMS[stream].columns).map((c) => `t.${c}`).join(', ');
+    const it = prepare(`SELECT t.origin AS _origin, ${select} FROM ${stream} t ${join}
+                        WHERE t.ts >= ? AND t.ts < ? ORDER BY ${order}`).iterate(sinceMs, untilMs);
+    for (const r of it) yield { ...toCloudRow(entries, r), origin: r._origin };
+  }
+
+  /** A day sealed into a file (again, if its rows changed): not uploaded until `markUploaded` says so. */
+  function recordSeal({ day, stream, rows, sha256, bytes, path: file }) {
+    prepare(`INSERT OR REPLACE INTO sealed_days (day, stream, rows, sha256, bytes, path, sealed_at, uploaded_at, storage_path)
+             VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL)`).run(day, stream, rows, sha256, bytes, file, Date.now());
+  }
+
+  function markUploaded(day, stream, storagePath) {
+    prepare('UPDATE sealed_days SET uploaded_at = ?, storage_path = ? WHERE day = ? AND stream = ?').run(Date.now(), storagePath, day, stream);
+  }
+
+  /** The oldest and newest instant a stream holds, or nulls when it holds nothing. */
+  function span(stream) {
+    const r = prepare(`SELECT min(ts) AS o, max(ts) AS n FROM ${stream}`).get();
+    return { oldestMs: r.o ?? null, newestMs: r.n ?? null };
+  }
+
+  const sealOf = (day, stream) => prepare('SELECT * FROM sealed_days WHERE day = ? AND stream = ?').get(day, stream) ?? null;
+  const seals = () => prepare('SELECT * FROM sealed_days ORDER BY day, stream').all();
 
   /** Marks everything up to and including `throughId` as uploaded. Never moves backwards. */
   function advance(stream, throughId) {
@@ -304,6 +364,14 @@ export function openArchive(file, { readOnly = false } = {}) {
     insertTick,
     importBufferEntries,
     insertRows: insertStreamRows,
+    pendingBefore,
+    countsByDeviceHour,
+    rowsBetween,
+    recordSeal,
+    markUploaded,
+    sealOf,
+    seals,
+    span,
     countRange,
     pending,
     advance,
@@ -321,9 +389,9 @@ function userVersion(db) {
   return db.prepare('PRAGMA user_version').get().user_version;
 }
 
-function migrate(db) {
+function migrate(db, targetVersion = MIGRATIONS.length) {
   const from = userVersion(db);
-  for (let v = from; v < MIGRATIONS.length; v++) {
+  for (let v = from; v < Math.min(targetVersion, MIGRATIONS.length); v++) {
     db.exec('BEGIN IMMEDIATE');
     try {
       db.exec(MIGRATIONS[v]);

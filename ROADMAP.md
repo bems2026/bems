@@ -3918,6 +3918,48 @@ Node-RED context flush and a stage-by-stage rollout. Stages: 0 measure, 1 archiv
       - Moved out of phase48, to Stage 5 with the read routing: `node_totals` reading across the raw/hourly seam.
       - **Order:** paste phase48 into the SQL editor (it frees the duplicate index's space at once), then restart
         `ibems-ingest` for the slim rows. Neither depends on the backfill.
+- [ ] **RM-148d** Stage 4, the verified 14-day window, sealed days and the reset. **Built and tested; switched off.**
+      - `shared/retention.mjs`: `RAW_RETENTION_DAYS = 14`.
+      - `server/archiveSeal.mjs`: each complete UTC day (an hour after it ends) sealed per stream to a gzip CSV beside
+        the archive: every origin, fixed order, so the same rows give the same sha256. Text and JSON are always quoted, so
+        NULL and `""` survive. It is copied to a private bucket (`server/supabaseStorage.mjs`), and re-sealed and copied
+        again if its row count changes. At most 7 days a pass.
+      - `server/archiveJanitor.mjs`: prunes the cloud one UTC day at a time towards an hour-aligned cutoff. Each step
+        must pass three gates: nothing older is still to upload; the archive holds at least the cloud's count for
+        every device and hour (a shortfall is copied down first, and one that cannot be filled stops it); and the day is
+        sealed, current and copied off the edge. It uses the existing `roll_up_and_prune_*` unchanged.
+      - `server/hotTier.mjs` runs sealing, then both tables' prunes, each guarded on its own.
+      - `server/ingest.mjs` runs it on the retention cadence **only with `ARCHIVE_HOT_TIER=1` in `server/.env`**.
+        Without it, the raw tables keep 30 days, so a restart for another stage cannot start pruning. The
+        `server/data/ingest.pause` file stops uploads, retention and reports while archiving continues.
+      - The one-time reset, instead of `VACUUM FULL`, whose side-by-side copy could tip the database into read-only
+        mode:
+        - pause;
+        - `npm run archive:reset`, a read-only readiness check (paused? nothing older than the window left? the archive
+          covers the cloud's window per device and hour?). It prints the `truncate readings, building_totals;` to run;
+        - the operator runs the truncate;
+        - `npm run archive:reset -- --reload --apply` puts the window back from the archive, every origin, slimmed
+          (`server/archiveReload.mjs`);
+        - unpause.
+      - `npm run archive:storage [-- --apply]` makes the private bucket and reports its use of the 1 GB.
+      - `npm run archive:restore -- --day=D` is the restore drill: it downloads a sealed day, restores it into a
+        throwaway archive, re-seals it and compares the sha256 with the recorded one. `--since --until --into --apply`
+        recovers after losing the card.
+      - Tests:
+        - `archiveSeal.test.mjs` (11, including a restore round trip to the same sha256);
+        - `archiveJanitor.test.mjs` (9);
+        - `hotTier.test.mjs` (5, including the daemon's wiring from source);
+        - `archiveReload.test.mjs` (3);
+        - `supabaseStorage.test.mjs` (5);
+        - `archiveDb.test.mjs` (+6: schema v2, `sealed_days`, the migration from v1).
+
+        Every gate was checked against a neutered copy of the code, and each copy failed.
+      - **Order:** after RM-148b's backfill is read back:
+        1. `archive:storage -- --apply`;
+        2. `ARCHIVE_HOT_TIER=1` and restart ingest;
+        3. watch the days seal and copy;
+        4. the restore drill;
+        5. then the reset.
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 

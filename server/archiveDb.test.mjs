@@ -181,6 +181,82 @@ test('counting a range answers per stream, per device and half-open', (t) => {
   archive.close();
 });
 
+test('rows still owed to the cloud can be counted up to an instant', (t) => {
+  // Stage 4's janitor must not prune a cloud hour while a row for it is still waiting to go up.
+  const { archive } = tempArchive(t);
+  archive.insertTick({ readings: [reading(), reading({ ts: new Date(AT_MS + 3_600_000).toISOString() })] });
+  assert.equal(archive.pendingBefore('readings', AT_MS + 60_000), 1);
+  assert.equal(archive.pendingBefore('readings', AT_MS + 7_200_000), 2);
+  archive.advance('readings', archive.pending('readings', 1)[0].id);
+  assert.equal(archive.pendingBefore('readings', AT_MS + 60_000), 0);
+  archive.close();
+});
+
+test('counts per device and hour, in the shape the cloud\'s manifest has', (t) => {
+  const { archive } = tempArchive(t);
+  const hour = Math.floor(AT_MS / 3_600_000) * 3_600_000;
+  archive.insertTick({ readings: [reading(), reading({ device_id: 'co2' })] });
+  archive.insertTick({ readings: [reading({ ts: new Date(AT_MS + 60_000).toISOString() })] });
+  archive.insertTick({ readings: [reading({ ts: new Date(hour + 3_600_000).toISOString() })], totals: totals() });
+  const counts = archive.countsByDeviceHour('readings', { sinceMs: hour, untilMs: hour + 2 * 3_600_000 });
+  assert.deepEqual([...counts.entries()].sort(), [
+    [`co1|${hour}`, 2], [`co1|${hour + 3_600_000}`, 1], [`co2|${hour}`, 1],
+  ].sort());
+  assert.deepEqual([...archive.countsByDeviceHour('building_totals', { sinceMs: hour, untilMs: hour + 3_600_000 }).entries()], [[`|${hour}`, 1]]);
+  archive.close();
+});
+
+test('a day\'s rows come back in a fixed order, whatever their origin', (t) => {
+  // A sealed day must be reproducible: the same rows give the same file.
+  const { archive } = tempArchive(t);
+  const day = Date.parse('2026-08-16T00:00:00Z');
+  archive.insertTick({ readings: [reading({ device_id: 'co2', ts: new Date(day + 60_000).toISOString() })] });
+  archive.insertTick({ readings: [reading({ device_id: 'co1', ts: new Date(day + 60_000).toISOString() })] }, { origin: ORIGIN.cloud });
+  archive.insertTick({ readings: [reading({ device_id: 'co9', ts: new Date(day - 1).toISOString() })] });
+  const rows = [...archive.rowsBetween('readings', { sinceMs: day, untilMs: day + 86_400_000 })];
+  assert.deepEqual(rows.map((r) => [r.device_id, r.origin]), [['co1', ORIGIN.cloud], ['co2', ORIGIN.ingest]]);
+  assert.deepEqual(rows[0].capabilities, reading().capabilities);
+  archive.close();
+});
+
+test('each stream reports the span of time it holds', (t) => {
+  const { archive } = tempArchive(t);
+  assert.deepEqual(archive.span('anomalies'), { oldestMs: null, newestMs: null });
+  archive.insertTick({ readings: [reading(), reading({ ts: new Date(AT_MS + 60_000).toISOString() })] });
+  assert.deepEqual(archive.span('readings'), { oldestMs: AT_MS, newestMs: AT_MS + 60_000 });
+  archive.close();
+});
+
+test('a seal is recorded, found again, and marked uploaded', (t) => {
+  const { archive } = tempArchive(t);
+  assert.equal(archive.sealOf('2026-08-16', 'readings'), null);
+  archive.recordSeal({ day: '2026-08-16', stream: 'readings', rows: 3, sha256: 'abc', bytes: 120, path: 'sealed/x.csv.gz' });
+  assert.equal(archive.sealOf('2026-08-16', 'readings').uploaded_at, null);
+  archive.markUploaded('2026-08-16', 'readings', 'site/raw/2026/08/2026-08-16.readings.csv.gz');
+  const seal = archive.sealOf('2026-08-16', 'readings');
+  assert.equal(seal.rows, 3);
+  assert.ok(seal.uploaded_at > 0);
+  assert.equal(seal.storage_path, 'site/raw/2026/08/2026-08-16.readings.csv.gz');
+  archive.recordSeal({ day: '2026-08-16', stream: 'readings', rows: 4, sha256: 'def', bytes: 130, path: 'sealed/x.csv.gz' });
+  assert.equal(archive.sealOf('2026-08-16', 'readings').uploaded_at, null, 'a re-seal must be uploaded again');
+  archive.close();
+});
+
+test('an archive made by the first schema is brought up to date on open', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ibems-archive-migrate-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'archive.sqlite');
+  const v1 = openArchive(file, { targetVersion: 1 });
+  v1.insertTick({ readings: [reading()] });
+  assert.equal(v1.schemaVersion(), 1);
+  v1.close();
+  const now = openArchive(file);
+  assert.equal(now.schemaVersion(), ARCHIVE_SCHEMA_VERSION);
+  assert.equal(now.stats().readings, 1);
+  assert.equal(now.sealOf('2026-08-16', 'readings'), null);
+  now.close();
+});
+
 test('a quarantined row is recorded with its reason', (t) => {
   const { archive } = tempArchive(t);
   archive.insertTick({ readings: [reading()] });
