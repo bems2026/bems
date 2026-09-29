@@ -41,4 +41,4 @@ Each record was written after the audit and checked against its evidence rows. T
   weighed. Those tables say so, and give only reasons the evidence supports now.
 
 One premise the prompt carried was refuted: MQTT was not "dropped". The broker is installed and running, and exposed
-(F-001). ADR-0003 records what was actually decided.
+(F-001, restored to loopback on 2026-09-29). ADR-0003 records what was actually decided.

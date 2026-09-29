@@ -17,7 +17,7 @@ flowchart LR
     dash["Dashboard :5183<br/>static files, public key inside"]
     nr["Node-RED :1880, loopback only<br/>editor behind adminAuth"]
     daemons["Ingest · scheduler"]
-    broker["Broker :1883"]
+    broker["Broker :1883, loopback only"]
     shell["SSH :22 · VNC :5900"]
   end
 
@@ -33,5 +33,4 @@ flowchart LR
   daemons -->|"vendor secret, aircon only, if set"| vendor
   daemons -->|"topic name"| notif
   admin -->|"mesh SSH, check mode · then passwordless sudo"| shell
-  lanb -. "anonymous · F-001" .-> broker
   lanb -. "account password via PAM · F-007" .-> shell

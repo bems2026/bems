@@ -1,6 +1,9 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-29 — **RM-145: Phases D and E done; the FINAL GATE awaits the operator. The broker is still open (F-001, E-212).**
+**Last audited:** 2026-09-29, 07:30 — **RM-146: fifteen devices dark since the weekend (an access-point drop on Saturday
+13:47 left switches and outlets hung or off the Wi-Fi; the IR hub died on Friday). They need a power cycle on site.
+The fleet alarm now settles, escalates and reminds (RM-146a). The broker is back on loopback (F-001 closed, RM-146b).**
+**Earlier, 2026-09-29 — RM-145: Phases D and E done; the FINAL GATE awaits the operator.**
 **Earlier, 2026-09-24, 13:03 — **RM-145: public sign-up was open, and any signed-in account can arm a
 schedule that switches real loads (F-026, Critical). The operator turned sign-up off, read back at 13:03. Reviewing
 the existing accounts is still open (Q-17, §0 first entry).**
@@ -3775,7 +3778,29 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 ## 2. Current roadmap (active execution)
 
+### The weekend outage of 25–29 September — RM-146 (2026-09-29)
 
+- [ ] **RM-146** Fifteen devices dark since the weekend: all seven light switches, all seven outlets, and the IR
+      hub. Diagnosed read-only on 2026-09-29 (`docs/audit/evidence-ledger.md` E-213):
+      - **The IR hub went first, Friday about 12:00**, with no network event and no command. It lost power or hung;
+        only someone at the office can say which.
+      - **Saturday 13:47 the access point dropped every client**; the edge re-associated in 23 s. The switches and
+        outlets then flickered and dropped one by one until Monday. Their circuits stayed powered (the branch meters show
+        the usual standby), none moved address, and every node is pinned. Four outlets still answer on the network but
+        refuse their control port, which is a hung firmware; the rest are off the Wi-Fi. **A Node-RED restart cannot
+        reach either kind, so they need their power cycled on site.**
+      - Not a weekly pattern: the weekends of 5, 12 and 19 September were clean. The weekend only meant nobody was there.
+      - Aggravating, not proven: a solar-logger hotspot on channel 4 overlaps the device network on channel 1.
+      - **Open:** power-cycle the fifteen on site and read them back. At the AP: DHCP reservations, the channel, why it
+        restarted at 13:47. Consider the UPS (RM-131).
+- [x] **RM-146a** The fleet alarm, which sent 23 notices in two days and then nothing for three while the outage grew, now
+      settles: it enters after 5 minutes and leaves after 10, reports again when 3 more devices drop, and repeats every
+      12 hours while anything is down. `server/fleetAlarm.mjs` (`enterAfter`, `leaveAfter`, `growBy`,
+      `remindEveryMs`; defaults unchanged), `server/notify.mjs` (`worse`, `still`), `server/ingest.mjs`
+      (`FLEET_ALARM_OPTIONS`). Tests: `server/fleetAlarm.test.mjs` (+7), `server/notify.test.mjs` (+2). Needs
+      `ibems-ingest` restarted on the edge.
+- [x] **RM-146b** F-001 closed: the broker restored to loopback on 2026-09-29 (the two listener lines uncommented,
+      mosquitto restarted), read back as `127.0.0.1:1883` and `[::1]:1883` only.
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 
@@ -10523,7 +10548,7 @@ may not.
 | ~~3~~ | ~~Architecture planning proposed MQTT + Home Assistant as the device layer~~ | — | **Resolved 2026-08-26 at the source.** The code was always right; the fix was to stop the planning doc from saying otherwise. `ibems-architecture-upgrade_2.md` (one level up, outside this repo) was rewritten: Home Assistant is now recorded as *not adopted*, MQTT as *not the device bus*, and both sit in a settled-decisions table so they are not re-proposed. It had been steering readers into planning around a component nobody was going to install. |
 | 4 | Mosquitto is described as dropped, but the broker is installed and running on the Pi | planning docs vs. the live host | **Both, partially — and now measurably idle.** The bridge genuinely does not use MQTT; the broker is still installed, running, and subscribed to by one flow node. As of 2026-08-26 it carries **no traffic at all**: five minutes on every topic, zero messages (§5 Q2). So it is not a second device layer, it is a dependency nothing currently feeds — which is the thing to weigh before RM-026 chooses to route the inverter through it. **RM-026 has since chosen it**, so the broker acquires its first real consumer — and a liveness check on that topic is part of that work, not an extra, precisely because nothing noticed the last publisher going silent. |
 | ~~5~~ | ~~`README.md` points at a Stage 1 plan path outside the repo~~ | — | **Resolved.** `README.md` now points at `ROADMAP.md` and the two in-repo docs. |
-| 6 | **The broker is described as loopback-only, but since 2026-09-17 it has listened on every interface with anonymous access.** | EX-131, `CLAUDE.md` §Site facts, `SECURITY.md`, `docs/pi-session-brief.md` (Broker row) vs. the live host | **The host.** Measured read-only on 2026-09-23 (RM-145). In `mosquitto.conf` both loopback listeners are commented out. `conf.d/bems.conf` (mtime 2026-09-17 15:47) declares `listener 1883 0.0.0.0` with `allow_anonymous true`, and `ss -tln` shows `0.0.0.0:1883`. No enabled flow node uses the broker. The journal was volatile that day, so nothing records who or why. **Open until the operator restores loopback or adds a password-protected LAN listener**, after which EX-131 and the four documents are re-verified. `npm run preflight` does not check the broker, which is why nothing noticed. `docs/audit/findings.md` F-001 and F-005, evidence E-028. |
+| ~~6~~ | **Resolved 2026-09-29 (RM-146b): loopback-only again, so the documents are true.** Was: **The broker is described as loopback-only, but since 2026-09-17 it has listened on every interface with anonymous access.** | EX-131, `CLAUDE.md` §Site facts, `SECURITY.md`, `docs/pi-session-brief.md` (Broker row) vs. the live host | **The host.** Measured read-only on 2026-09-23 (RM-145). In `mosquitto.conf` both loopback listeners are commented out. `conf.d/bems.conf` (mtime 2026-09-17 15:47) declares `listener 1883 0.0.0.0` with `allow_anonymous true`, and `ss -tln` shows `0.0.0.0:1883`. No enabled flow node uses the broker. The journal was volatile that day, so nothing records who or why. **Open until the operator restores loopback or adds a password-protected LAN listener**, after which EX-131 and the four documents are re-verified. `npm run preflight` does not check the broker, which is why nothing noticed. `docs/audit/findings.md` F-001 and F-005, evidence E-028. |
 
 ---
 

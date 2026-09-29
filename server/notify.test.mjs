@@ -81,3 +81,18 @@ test('the recovery message closes the loop and asks for nothing', () => {
   assert.match(m.body, /No action needed/);
   assert.equal(m.priority, 'default');
 });
+
+test('a growing outage says how many are down now, and stays urgent', () => {
+  const m = fleetMessage({ kind: 'worse', devices: ['a', 'b', 'c', 'd', 'e', 'f'] });
+  assert.match(m.title, /now 6 devices/);
+  assert.match(m.body, /a, b, c, d, e, f/);
+  assert.equal(m.priority, 'high');
+});
+
+test('a reminder says the outage is still going on, without shouting', () => {
+  const m = fleetMessage({ kind: 'still', devices: ['a', 'b', 'c'] });
+  assert.match(m.title, /still/);
+  assert.match(m.body, /a, b, c/);
+  assert.match(m.body, /power/);
+  assert.equal(m.priority, 'default');
+});

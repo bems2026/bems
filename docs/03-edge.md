@@ -5,7 +5,7 @@ audience: [integrator, installer]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo b8af936 · edge checkout fcb1ff6
-evidence: [E-010, E-011, E-012, E-013, E-014, E-015, E-016, E-017, E-018, E-019, E-020, E-021, E-022, E-023, E-024, E-025, E-026, E-027, E-028, E-029, E-030, E-035, E-036, E-038, E-042, E-044, E-046, E-047, E-050, E-051, E-052, E-056, E-062, E-066, E-067, E-078, E-079, E-082, E-085, E-086, E-110, E-111, E-118, E-119, E-124, E-128, E-129, E-130, E-131, E-132, E-133, E-134, E-135, E-136, E-138, E-139, E-140, E-141, E-142, E-143, E-144, E-145]
+evidence: [E-010, E-011, E-012, E-013, E-014, E-015, E-016, E-017, E-018, E-019, E-020, E-021, E-022, E-023, E-024, E-025, E-026, E-027, E-028, E-029, E-030, E-035, E-036, E-038, E-042, E-044, E-046, E-047, E-050, E-051, E-052, E-056, E-062, E-066, E-067, E-078, E-079, E-082, E-085, E-086, E-110, E-111, E-118, E-119, E-124, E-128, E-129, E-130, E-131, E-132, E-133, E-134, E-135, E-136, E-138, E-139, E-140, E-141, E-142, E-143, E-144, E-145, E-214]
 ---
 
 # Edge computing
@@ -426,7 +426,7 @@ Site specifics for each entry are in [99-worked-example](99-worked-example.md).
 | 2026-08-25 | A device diagnosed as a hardware fault | Its connection had given up in software (Confirmed) | A Node-RED restart; now automated | E-118, E-022 | Restart before you drive anywhere |
 | 2026-09-01 | Live data readable from the device network with no credential | Node-RED bound to every interface | `uiHost` set to loopback; `preflight` now checks it | E-133 | A setting that lives only on the host needs something that notices when it goes away |
 | 2026-09-13 | A fix committed and "deployed" changed nothing | The ingest daemon still ran modules from four days earlier | Restart all three daemons after `server/` or `shared/` changes | E-131 | A commit is not a deployment |
-| 2026-09-17 | The broker open to the device network again | Its loopback listeners were commented out; who did it is unrecorded | Loopback-only restore chosen; the check is outstanding (F-001) | E-028, E-029 | The same exposure shape recurs; it needs a check, not a note |
+| 2026-09-17 | The broker open to the device network again | Its loopback listeners were commented out; who did it is unrecorded | Restored to loopback on 2026-09-29 [E-214]; a preflight check for it is still outstanding (F-001) | E-028, E-029 | The same exposure shape recurs; it needs a check, not a note |
 | 2026-09-21 | The evidence of a device fault vanished | The journal was volatile, and two reboots erased it | A persistent, bounded journal | E-136 | Keep logs across reboots, bounded for the card's sake |
 | 2026-09-22 | A circuit held a stale reading for hours | Nothing polled the meters, and the driver never reads on connect | A 60 s poll on every device; `preflight` fails without one | E-119 | A value nobody asked for again is a memory, not a measurement |
 | 2026-09-23 | The board at 80 °C, throttling | Heat; the kiosk browser is the largest steady load (Hypothesis) | Pending a site check (F-003) | E-015, E-016 | Measure heat before blaming software for slowness |

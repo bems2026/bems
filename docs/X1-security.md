@@ -5,7 +5,7 @@ audience: [administrator, integrator]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo 04b213f
-evidence: [E-019, E-025, E-026, E-027, E-028, E-033, E-041, E-042, E-043, E-065, E-066, E-079, E-100, E-101, E-122, E-131, E-154, E-160, E-161, E-163, E-164, E-169, E-170, E-171, E-172, E-176, E-177, E-184, E-186, E-187, E-188, E-189, E-190, E-191, E-192, E-193]
+evidence: [E-019, E-025, E-026, E-027, E-028, E-033, E-041, E-042, E-043, E-065, E-066, E-079, E-100, E-101, E-122, E-131, E-154, E-160, E-161, E-163, E-164, E-169, E-170, E-171, E-172, E-176, E-177, E-184, E-186, E-187, E-188, E-189, E-190, E-191, E-192, E-193, E-214]
 ---
 
 # Security and access
@@ -49,7 +49,7 @@ flowchart LR
     dash["Dashboard :5183<br/>static files, public key inside"]
     nr["Node-RED :1880, loopback only<br/>editor behind adminAuth"]
     daemons["Ingest · scheduler"]
-    broker["Broker :1883"]
+    broker["Broker :1883, loopback only"]
     shell["SSH :22 · VNC :5900"]
   end
 
@@ -65,7 +65,6 @@ flowchart LR
   daemons -->|"vendor secret, aircon only, if set"| vendor
   daemons -->|"topic name"| notif
   admin -->|"mesh SSH, check mode · then passwordless sudo"| shell
-  lanb -. "anonymous · F-001" .-> broker
   lanb -. "account password via PAM · F-007" .-> shell
 ```
 
@@ -79,7 +78,7 @@ Four boundaries matter, from the widest to the narrowest:
 |---|---|---|
 | **The public internet** | Anyone | The database accepts nothing without a signed-in session; no policy grants the anonymous role anything [E-161]. Accounts are made only by invitation [E-176, E-177]. The public key in the page is public by design [E-171]. |
 | **The mesh network** | Devices enrolled in the site's tailnet | Tailnet-only Serve, with Funnel off [E-026]. SSH to the edge asks for a browser re-check [E-154], but any enrolled device may open it (F-025). |
-| **The device segment** | Anyone with the device Wi-Fi's password | The bridge listens on loopback only. **The broker and VNC do not** (F-001, F-007). The dashboard and the proxy listen on every interface; the proxy requires a session [E-025]. |
+| **The device segment** | Anyone with the device Wi-Fi's password | The bridge and, since 2026-09-29, the broker listen on loopback only [E-214]. **VNC does not** (F-007). The dashboard and the proxy listen on every interface; the proxy requires a session [E-025]. |
 | **The edge host** | The service account, and anyone holding the SD card | File modes (600) against other local users. **Nothing against someone holding the card**: it is not encrypted [E-188]. The service account has passwordless sudo [E-160]. |
 
 ### The credential inventory
@@ -171,9 +170,9 @@ habits keep it that way:
   in. Give the kiosk its own account, so that its commands are recognisable in the audit trail.
 - **The edge is not a workstation.** Its desktop session has been used for general browsing, with site data for other
   services in a second browser profile (F-022). Browse elsewhere.
-- **Listeners on the device segment:** the dashboard (5183), the proxy (8080), SSH (22), VNC (5900), the broker (1883)
-  and rpcbind (111) [E-025]. Only the dashboard and the proxy need to be there, and SSH is reachable over the mesh.
-  See F-001, F-007 and F-014.
+- **Listeners on the device segment:** the dashboard (5183), the proxy (8080), SSH (22), VNC (5900) and rpcbind (111)
+  [E-025]. Only the dashboard and the proxy need to be there, and SSH is reachable over the mesh. See F-007 and F-014.
+  The broker (1883) was on this list until 2026-09-29, when it went back to loopback [E-214].
 
 ### Personal data
 
@@ -194,7 +193,7 @@ The legal basis and the institution's obligations are in [93](93-governance-comp
 | **Someone leaves** | They keep an account, a mesh device, and any shared password they knew | The offboarding list under [How to operate](#how-to-operate) | Compare the account list and the tailnet's devices with the staff list, quarterly |
 | **A borrowed or lost laptop** | With the mesh and a browser session: the dashboard, and **a root shell on the edge** (F-025) | Narrow the SSH policy to named devices; the re-check in SSH [E-154]; remove the device from the tailnet | The tailnet console's *last seen*; SSH sessions in the edge's journal `[UNVERIFIED]` |
 | **A factory-reset device** | iBEMS loses it. Someone else may pair it. | Physical access to devices | The device goes offline; the vendor app no longer lists it |
-| **Anyone on the device Wi-Fi** | Read and publish on the broker; guess the VNC password; read plain-HTTP session tokens | Broker to loopback (F-001); VNC off or loopback (F-007); people use the mesh path | `ss -tln` on the edge |
+| **Anyone on the device Wi-Fi** | Guess the VNC password; read plain-HTTP session tokens. (The broker was open until 2026-09-29.) | Broker on loopback, done [E-214]; VNC off or loopback (F-007); people use the mesh path | `ss -tln` on the edge |
 | **A secret committed** | Depends on the secret; the vendor secret reaches hardware directly | Ignore rules, named staging, the scan | The scan; the code host's secret scanning `[UNVERIFIED]` |
 | **The SD card taken** | Every secret, and the system with it | Locked location; an off-card copy of the credentials (F-002) | The edge goes silent |
 | **The Node-RED editor exposed** | Full control of the flow | Loopback only; admin login; tunnel for access | `preflight`'s `bridge_not_exposed` |
@@ -228,7 +227,7 @@ The legal basis and the institution's obligations are in [93](93-governance-comp
 **Rollback.** None of these steps needs one; each narrows access. If step 6 locks out the administrator, change the
 policy back in the tailnet's console, which does not depend on the edge.
 
-**Tested.** Steps 1, 3 and 4 hold on the pilot [E-176, E-043, E-019]. Steps 5 and 6 do not yet (F-001, F-025).
+**Tested.** Steps 1, 3 and 4 hold on the pilot [E-176, E-043, E-019]. Step 5 holds since 2026-09-29 [E-214]; step 6 does not yet (F-025).
 Step 7 is stated but not drilled (E-079).
 
 ## How to configure
@@ -283,7 +282,7 @@ the rest. Confirm the off-card credential copy is current.
 | Date | Symptom | Root cause | Fix | Evidence | Lesson |
 |---|---|---|---|---|---|
 | 2026-08-25 | Env-file backups with live secrets beside a public checkout | Backups named in ways the ignore rules did not match | Broad ignore patterns; named staging | E-190 | Ignore rules must anticipate names nobody has chosen yet |
-| 2026-09-17 | The broker opened to every interface | A host change that nothing in the repository declares | Open: restore loopback (F-001) | E-028 | Host-only settings need a check that reads them |
+| 2026-09-17 | The broker opened to every interface | A host change that nothing in the repository declares | Restored to loopback on 2026-09-29 [E-214] | E-028 | Host-only settings need a check that reads them |
 | 2026-09-22 | Real private addresses in committed test fixtures | Fixtures built from a live file | Open (F-009) | E-101 | Build fixtures from documentation ranges |
 | 2026-09-24 | Anyone could create an account | Sign-up left at the provider's default | Sign-up off | E-169, E-176 | With no roles, who can sign in is the whole access policy |
 

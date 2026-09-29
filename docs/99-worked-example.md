@@ -5,7 +5,7 @@ audience: [integrator, administrator]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo 2e79005
-evidence: [E-010, E-011, E-012, E-015, E-017, E-018, E-021, E-023, E-026, E-041, E-051, E-080, E-081, E-084, E-087, E-125, E-156, E-157, E-158, E-166, E-168, E-175]
+evidence: [E-010, E-011, E-012, E-015, E-017, E-018, E-021, E-023, E-026, E-041, E-051, E-080, E-081, E-084, E-087, E-125, E-156, E-157, E-158, E-166, E-168, E-175, E-214]
 ---
 
 # Worked example: the pilot site
@@ -97,7 +97,7 @@ Faults and chores specific to this site, tracked in [`ROADMAP.md`](../ROADMAP.md
 
 And from the audit, for this site's operator:
 
-- **Restore the broker to loopback** (F-001).
+- ~~Restore the broker to loopback (F-001).~~ Done on 2026-09-29 [E-214].
 - **Review the account list** (Q-17), now that sign-up is off (F-026).
 - Narrow the mesh network's SSH policy (F-025), and turn VNC off or bind it to loopback (F-007).
 

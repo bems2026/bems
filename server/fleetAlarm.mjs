@@ -82,7 +82,31 @@ export async function loadKnownOnline({ select, deviceIds, days = KNOWN_ONLINE_D
   return results.filter((id) => id !== null);
 }
 
-export function createFleetAlarm({ threshold = DEFAULT_THRESHOLD, knownOnline } = {}) {
+/**
+ * FLAPPING AND SILENCE, 2026-09-26. Two failures of the plain edge trigger, on one weekend:
+ *   - One flaky outlet kept the fleet hovering at the threshold, and the alarm sent 23 notices in
+ *     two days, often a minute apart: "stuck", then "recovered", then "stuck". That teaches people
+ *     to ignore the channel.
+ *   - Once it was "stuck", the outage grew from 3 devices to 15 over three days, and it said
+ *     nothing more, because it only speaks on a transition.
+ *
+ * So, all optional, and all off by default so the behaviour above is unchanged unless asked for:
+ *   - `enterAfter` / `leaveAfter`: the condition must hold for that many consecutive ticks before
+ *     the alarm enters or leaves. A one-minute flicker changes nothing.
+ *   - `growBy`: while alarming, report again (`worse`) when the number down has grown by this
+ *     many since the last notice.
+ *   - `remindEveryMs`: while alarming, report again (`still`) when this long has passed since the
+ *     last notice. A growth notice restarts that clock.
+ */
+export function createFleetAlarm({
+  threshold = DEFAULT_THRESHOLD,
+  knownOnline,
+  enterAfter = 1,
+  leaveAfter = 1,
+  growBy = Infinity,
+  remindEveryMs = Infinity,
+  now = () => Date.now(),
+} = {}) {
   /**
    * Devices observed online at least once since this process started, PLUS those the caller
    * knows have a history of being online. Anything not an array is ignored rather than trusted,
@@ -90,11 +114,23 @@ export function createFleetAlarm({ threshold = DEFAULT_THRESHOLD, knownOnline } 
    */
   const everOnline = new Set(Array.isArray(knownOnline) ? knownOnline.filter((d) => typeof d === 'string') : []);
   let alarming = false;
+  // Consecutive ticks on the other side of the threshold from the current state.
+  let streak = 0;
+  // What the last notice said, and when: the baseline for `worse` and `still`.
+  let notifiedCount = 0;
+  let notifiedAt = 0;
+
+  const notice = (kind, down) => {
+    notifiedCount = down.length;
+    notifiedAt = now();
+    return { kind, devices: down.sort() };
+  };
 
   return {
     /**
      * @param readings rows shaped like `/api/readings/latest`
-     * @returns `{ kind: 'stuck' | 'recovered', devices }` on a transition, otherwise null
+     * @returns `{ kind: 'stuck' | 'worse' | 'still' | 'recovered', devices }` when there is something
+     *          to say, otherwise null
      */
     observe(readings) {
       const rows = Array.isArray(readings) ? readings : [];
@@ -112,14 +148,18 @@ export function createFleetAlarm({ threshold = DEFAULT_THRESHOLD, knownOnline } 
       // hardware — it simply does not appear in `down`, which is the behaviour we want.
       const stuck = down.length >= threshold;
 
-      if (stuck && !alarming) {
-        alarming = true;
-        return { kind: 'stuck', devices: down.sort() };
+      // On the far side of the threshold from where we are: count it, and act once it has held.
+      if (stuck !== alarming) {
+        streak += 1;
+        if (streak < (alarming ? leaveAfter : enterAfter)) return null;
+        streak = 0;
+        alarming = stuck;
+        return notice(stuck ? 'stuck' : 'recovered', down);
       }
-      if (!stuck && alarming) {
-        alarming = false;
-        return { kind: 'recovered', devices: down.sort() };
-      }
+      streak = 0;
+
+      if (alarming && down.length >= notifiedCount + growBy) return notice('worse', down);
+      if (alarming && now() - notifiedAt >= remindEveryMs) return notice('still', down);
       return null;
     },
   };

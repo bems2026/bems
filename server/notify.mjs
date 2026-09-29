@@ -90,6 +90,26 @@ export function fleetMessage(event) {
     };
   }
   const list = event.devices.join(', ');
+  if (event.kind === 'worse') {
+    return {
+      title: `iBEMS: now ${event.devices.length} devices have stopped responding`,
+      body:
+        `${list}\n\n` +
+        'The outage is growing. The edge restarts Node-RED by itself for a device it can still reach; ' +
+        'a device that has left the network needs its power cycled: the outlet, or the lighting breaker.',
+      priority: 'high',
+    };
+  }
+  if (event.kind === 'still') {
+    return {
+      title: `iBEMS: ${event.devices.length} devices are still not responding`,
+      body:
+        `${list}\n\n` +
+        'Nothing has recovered since the last notice. If nobody has been on site, the devices most likely ' +
+        'need their power cycled: the outlet, or the lighting breaker.',
+      priority: 'default',
+    };
+  }
   return {
     title: `iBEMS: ${event.devices.length} devices stopped responding`,
     body:

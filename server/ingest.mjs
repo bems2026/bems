@@ -68,7 +68,8 @@ const RETENTION_DAYS = Number(process.env.INGEST_RETENTION_DAYS) || DEFAULT_RETE
  * given a channel loses the feature rather than failing, matching how the Tuya client and the
  * cloud-dispatch fallback already treat missing configuration.
  *
- * Edge-triggered: createFleetAlarm returns an event only on a transition, never on every tick.
+ * Edge-triggered: createFleetAlarm returns an event on a settled transition, a growth step or a
+ * reminder interval (FLEET_ALARM_OPTIONS below), never on every tick.
  * This daemon ticks once a minute, so a level check would send the same notification 480 times
  * overnight and the channel would simply be muted.
  */
@@ -78,7 +79,15 @@ const notifier = createNotifier(process.env);
  * read and the alarm has to exist before it completes; an unseeded alarm is the pre-2026-09-03
  * behaviour, which is safe but blind to an outage that predates this process.
  */
-let fleetAlarm = createFleetAlarm();
+/**
+ * Settled, not instantaneous — 2026-09-26. The plain edge trigger sent 23 notices in two days while
+ * one flaky outlet held the fleet at the threshold, then said nothing for three days while the
+ * outage grew from 3 devices to 15. Entering takes 5 minutes of trouble and leaving 10 minutes of
+ * health, at one tick a minute. A growth of 3 devices is reported, and a standing outage is repeated
+ * every 12 hours, so nobody finds a weekend's outage on Monday.
+ */
+const FLEET_ALARM_OPTIONS = { enterAfter: 5, leaveAfter: 10, growBy: 3, remindEveryMs: 12 * 3600 * 1000 };
+let fleetAlarm = createFleetAlarm(FLEET_ALARM_OPTIONS);
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.error('[ibems-ingest] SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required — see server/.env.example');
@@ -432,7 +441,7 @@ async function main() {
     deviceIds: DEVICE_REGISTRY.map((d) => d.id),
   });
   if (knownOnline?.length) {
-    fleetAlarm = createFleetAlarm({ knownOnline });
+    fleetAlarm = createFleetAlarm({ knownOnline, ...FLEET_ALARM_OPTIONS });
     console.log(`[ibems-ingest] fleet alarm seeded with ${knownOnline.length} of ${DEVICE_REGISTRY.length} device(s) seen online in the last ${KNOWN_ONLINE_DAYS} days`);
   } else {
     console.warn('[ibems-ingest] fleet alarm NOT seeded — it cannot report an outage that started before this process did');

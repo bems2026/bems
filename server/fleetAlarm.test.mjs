@@ -226,3 +226,83 @@ test('the window is the configured number of days back from now', async () => {
   await loadKnownOnline({ select, deviceIds: ['a'], days: 7, nowMs });
   assert.ok(seen.includes(encodeURIComponent('2026-08-27T12:00:00.000Z').replace(/%3A/g, '%3A')) || seen.includes('2026-08-27'), seen);
 });
+
+// --- Flapping and silence, 2026-09-26 -------------------------------------------------------------
+// The IR hub dropped on the Friday. From then one flaky outlet kept the fleet hovering at the
+// threshold, and the alarm sent 23 notices in two days, often a minute apart: "stuck", then
+// "recovered". Then the access point dropped every client; switch after outlet failed to come back,
+// and the outage grew from 3 devices to 15 over the weekend. The alarm, already "stuck", said
+// nothing more for three days. The options below close both, and default to the old behaviour.
+
+const fleet = (downIds, upIds = []) => [...downIds.map(down), ...upIds.map(up)];
+const seeded = (opts) => createFleetAlarm({ knownOnline: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'], ...opts });
+
+test('with enterAfter, one bad tick does not fire; the condition has to hold', () => {
+  const a = seeded({ enterAfter: 3 });
+  assert.equal(a.observe(fleet(['a', 'b', 'c'])), null);
+  assert.equal(a.observe(fleet(['a', 'b', 'c'])), null);
+  assert.equal(a.observe(fleet(['a', 'b', 'c']))?.kind, 'stuck');
+});
+
+test('with enterAfter, a condition that clears before it settles never fires, and the count restarts', () => {
+  const a = seeded({ enterAfter: 3 });
+  a.observe(fleet(['a', 'b', 'c']));
+  a.observe(fleet(['a', 'b', 'c']));
+  assert.equal(a.observe(fleet(['a', 'b'], ['c'])), null);
+  assert.equal(a.observe(fleet(['a', 'b', 'c'])), null, 'one bad tick after a good one is a new count');
+});
+
+test('with leaveAfter, a device that flickers back for a minute does not report recovery', () => {
+  const a = seeded({ leaveAfter: 3 });
+  assert.equal(a.observe(fleet(['a', 'b', 'c']))?.kind, 'stuck');
+  assert.equal(a.observe(fleet(['a', 'b'], ['c'])), null);
+  assert.equal(a.observe(fleet(['a', 'b', 'c'])), null, 'still stuck, and it never claimed recovery');
+  a.observe(fleet(['a', 'b'], ['c']));
+  a.observe(fleet(['a', 'b'], ['c']));
+  assert.equal(a.observe(fleet(['a', 'b'], ['c']))?.kind, 'recovered');
+});
+
+test('with growBy, an outage that keeps growing is reported again, once per step', () => {
+  const a = seeded({ growBy: 3 });
+  assert.equal(a.observe(fleet(['a', 'b', 'c']))?.kind, 'stuck');
+  assert.equal(a.observe(fleet(['a', 'b', 'c', 'd', 'e'])), null, 'two more is not yet a step');
+  const e = a.observe(fleet(['a', 'b', 'c', 'd', 'e', 'f']));
+  assert.equal(e?.kind, 'worse');
+  assert.deepEqual(e.devices, ['a', 'b', 'c', 'd', 'e', 'f']);
+  assert.equal(a.observe(fleet(['a', 'b', 'c', 'd', 'e', 'f'])), null, 'not again on the next tick');
+});
+
+test('with remindEveryMs, a long outage is repeated at that interval, never every tick', () => {
+  let t = 0;
+  const a = seeded({ remindEveryMs: 1000, now: () => t });
+  assert.equal(a.observe(fleet(['a', 'b', 'c']))?.kind, 'stuck');
+  t = 999;
+  assert.equal(a.observe(fleet(['a', 'b', 'c'])), null);
+  t = 1000;
+  assert.equal(a.observe(fleet(['a', 'b', 'c']))?.kind, 'still');
+  t = 1500;
+  assert.equal(a.observe(fleet(['a', 'b', 'c'])), null);
+  t = 2000;
+  assert.equal(a.observe(fleet(['a', 'b', 'c']))?.kind, 'still');
+});
+
+test('a growth notice restarts the reminder clock, so the two do not arrive together', () => {
+  let t = 0;
+  const a = seeded({ growBy: 1, remindEveryMs: 1000, now: () => t });
+  a.observe(fleet(['a', 'b', 'c']));
+  t = 900;
+  assert.equal(a.observe(fleet(['a', 'b', 'c', 'd']))?.kind, 'worse');
+  t = 1000;
+  assert.equal(a.observe(fleet(['a', 'b', 'c', 'd'])), null, 'only 100 ms since the last notice');
+  t = 1900;
+  assert.equal(a.observe(fleet(['a', 'b', 'c', 'd']))?.kind, 'still');
+});
+
+test('the defaults keep the original behaviour: immediate edges, and no growth or reminder notices', () => {
+  let t = 0;
+  const a = seeded({ now: () => t });
+  assert.equal(a.observe(fleet(['a', 'b', 'c']))?.kind, 'stuck');
+  t = 10 * 24 * 3600e3;
+  assert.equal(a.observe(fleet(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'])), null);
+  assert.equal(a.observe(fleet([], ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']))?.kind, 'recovered');
+});

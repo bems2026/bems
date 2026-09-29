@@ -5,7 +5,7 @@ audience: [operator, administrator]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo 537f956
-evidence: [E-017, E-018, E-027, E-038, E-039, E-065, E-076, E-110, E-111, E-124, E-131, E-157, E-183, E-186, E-188, E-200, E-201]
+evidence: [E-017, E-018, E-027, E-038, E-039, E-065, E-076, E-110, E-111, E-124, E-131, E-157, E-183, E-186, E-188, E-200, E-201, E-213]
 ---
 
 # Operations and lifecycle
@@ -130,8 +130,12 @@ The routine checks below are the verification: each says what good looks like.
 
 How you learn that recording stopped before a month of data is lost:
 
-- **From the edge, with `NTFY_TOPIC` set:** a notice when the fleet drops or recovers, and one when each monthly
-  report is made. The monthly notice doubles as a heartbeat: **a month with no notice means something stopped** [E-200].
+- **From the edge, with `NTFY_TOPIC` set:** a notice when three or more devices have been down for 5 minutes, another
+  when 3 more drop, a reminder every 12 hours while they stay down, and one when they have been back for 10 minutes.
+  Before 2026-09-29 it fired on every crossing and never repeated. It sent 23 notices in two days, then stayed silent
+  for three while an outage grew from 3 devices to 15 [E-213]. There is also a notice when each monthly report is made,
+  which doubles as a heartbeat: **a month with no notice means something stopped** [E-200]. **Subscribe to the topic
+  on the operator's phone**; a notice nobody receives is no alarm.
 - **From anywhere:** `ingestion_health.last_success_at` in the database. It should be under a minute old
   ([04](04-data.md#how-to-verify)).
 - **The gap:** every notice comes from the edge itself. If the edge dies, nothing says so (F-034). Until an outside
@@ -215,6 +219,7 @@ A new operator is competent when they can do each of these, unaided, and a secon
 | 2026-08-25 | Six of seven outlets offline for hours, unnoticed | The only place it would have shown was a screen nobody was watching | The fleet notice (FI-005) | E-200 | An alarm must reach someone who is not looking |
 | 2026-09-02 | The kiosk ran week-old software | A single-page app never reloads | The build watch | E-183 | Deploying is not the same as being seen |
 | 2026-09-22 | A database restore rehearsed end to end | — | `npm run restore:rehearse` | E-124 | Only a rehearsed backup is a backup |
+| 2026-09-26 | Fifteen devices dark over a weekend, found on Tuesday | The access point dropped every client; switches and outlets hung or stayed off the Wi-Fi, and the alarm had gone quiet | Power-cycle on site; the alarm now escalates and repeats | E-213 | An outage that grows must be reported again |
 
 ## What to keep on the shelf
 

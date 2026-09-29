@@ -5,7 +5,7 @@ audience: [integrator, administrator]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo 8e398f8 · edge checkout fcb1ff6
-evidence: [E-002, E-014, E-019, E-022, E-025, E-026, E-027, E-028, E-033, E-042, E-066, E-078, E-117, E-118, E-132, E-133, E-134, E-145, E-146, E-154, E-155, E-156, E-157, E-158, E-159, E-160]
+evidence: [E-002, E-014, E-019, E-022, E-025, E-026, E-027, E-028, E-033, E-042, E-066, E-078, E-117, E-118, E-132, E-133, E-134, E-145, E-146, E-154, E-155, E-156, E-157, E-158, E-159, E-160, E-214]
 ---
 
 # Network and communication
@@ -71,7 +71,7 @@ It costs one access point and one SSID.
 | Port | Service | Should it be reachable from the device segment? |
 |---|---|---|
 | TCP 1880 | Node-RED | **No.** It is bound to loopback [E-019, E-133]. |
-| TCP 1883 | MQTT broker | **No.** It is being restored to loopback (F-001) [E-028]. |
+| TCP 1883 | MQTT broker | **No.** Loopback only again since 2026-09-29 (F-001, fixed) [E-214]. |
 | TCP 8080 | Proxy | Yes, with a session: it is the only authenticated door [E-025] |
 | TCP 5183 | Dashboard (static files) | Yes. It carries no data without a session. |
 | TCP 5900 | VNC | **Decide** (F-007) [E-033] |
@@ -162,7 +162,7 @@ Remote access is a **mesh VPN** (Tailscale) [E-026, E-027]:
 - **Tailscale SSH in check mode.** A browser re-approval is required from time to time. A session that hangs silently
   is waiting for that approval [E-154].
 - **No key expiry on the edge node,** so the building does not drop off the mesh network on a timer [E-027].
-- **What is deliberately not exposed:** Node-RED, and after F-001 the broker, both loopback-only. The database is
+- **What is deliberately not exposed:** Node-RED and, since 2026-09-29, the broker, both loopback-only (F-001, fixed) [E-214]. The database is
   reached only as a hosted HTTPS service. **No port forwarding is needed**, because remote access rides the mesh
   network. Whether the pilot's router forwards anything was not read [UNVERIFIED — confirm at site].
 - **Review the access policy** (F-025). Every device signed into the account can open a shell on the edge, and the

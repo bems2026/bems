@@ -2,7 +2,7 @@
 title: ADR-0003 — MQTT is not the device transport; the broker is kept for the inverter bridge alone
 status: Accepted
 date: 2026-08-10
-evidence: [E-018, E-028, E-030, E-104, E-202, E-203, E-205]
+evidence: [E-018, E-028, E-030, E-104, E-202, E-203, E-205, E-214]
 ---
 
 # ADR-0003 — MQTT is not the device transport; the broker is kept for the inverter bridge alone
@@ -43,8 +43,8 @@ This is how the system was built from its first commit [E-203]. The rejection of
 
 - The live flow's only MQTT nodes are the broker's config node and one **disabled** input from the retired ESP32
   [E-030].
-- **The broker still runs, and on 2026-09-17 it was opened to every interface with anonymous access** (F-001) [E-028].
-  Four documents still say it is loopback-only (F-005) [E-104]. A broker nothing uses is still an exposure.
+- **The broker still runs.** On 2026-09-17 it was opened to every interface with anonymous access (F-001) [E-028],
+  and on 2026-09-29 it was restored to loopback [E-214]. A broker nothing uses is still an exposure when it is widened.
 - The inverter bridge, when it comes, must either run on the edge (loopback) or use a password-protected listener
   bound to the LAN address. **Widening the loopback listener is reinstating the problem**, not configuring the feature.
 
