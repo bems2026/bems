@@ -438,6 +438,8 @@ async function tick() {
     // different fixes, and conflating them in the log is how a 2.4/5 GHz band mismatch ends
     // up looking like a database problem.
     console.error(`[ibems-ingest] ${stamp} bridge unreachable, nothing to write: ${result.error}`);
+  } else if (result.archived && paused()) {
+    console.log(`[ibems-ingest] ${stamp} cloud upload paused by the operator (${PAUSE_PATH}); archived ${result.readingCount} readings, ${pendingCount()} row(s) waiting to upload`);
   } else if (result.archived) {
     console.error(`[ibems-ingest] ${stamp} Supabase unreachable, archived locally (${pendingCount()} row(s) waiting to upload): ${result.error}`);
   } else {

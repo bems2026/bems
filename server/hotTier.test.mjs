@@ -129,6 +129,9 @@ test('the daemon runs the hot tier only with an archive, and the pause flag stop
   const tick = fn('tick');
   assert.match(tick, /archive: \(batch\) => archive\.insertTick\(batch\)/, 'archiving continues while paused');
   assert.match(tick, /sync: async \(\) => \(paused\(\)/, 'uploads stop while paused');
+  // Seen on the edge 2026-09-30: a paused tick logged "Supabase unreachable", which sends whoever
+  // reads the journal looking for an outage that is not there.
+  assert.match(tick, /\} else if \(result\.archived && paused\(\)\) \{\s*console\.log\(`\[ibems-ingest\] \$\{stamp\} cloud upload paused by the operator/);
   assert.match(src, /hotDays: HOT_DAYS/);
   assert.match(src, /const HOT_DAYS = Number\(process\.env\.INGEST_RETENTION_DAYS\) \|\| RAW_RETENTION_DAYS;/);
 });

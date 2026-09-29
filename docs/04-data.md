@@ -5,7 +5,7 @@ audience: [integrator, administrator]
 status: Draft
 last_verified: 2026-09-29
 applies_to: repo fd6fadc
-evidence: [E-042, E-058, E-064, E-065, E-066, E-070, E-078, E-080, E-081, E-082, E-083, E-084, E-085, E-086, E-088, E-089, E-090, E-111, E-121, E-122, E-124, E-126, E-134, E-137, E-138, E-142, E-149, E-157, E-161, E-162, E-163, E-164, E-165, E-166, E-167, E-168, E-193, E-218, E-219, E-220, E-221]
+evidence: [E-042, E-058, E-064, E-065, E-066, E-070, E-078, E-080, E-081, E-082, E-083, E-084, E-085, E-086, E-088, E-089, E-090, E-111, E-121, E-122, E-124, E-126, E-134, E-137, E-138, E-142, E-149, E-157, E-161, E-162, E-163, E-164, E-165, E-166, E-167, E-168, E-193, E-218, E-219, E-220, E-221, E-222]
 ---
 
 # Data and storage
@@ -93,9 +93,9 @@ boundary [E-165].
 The ingest daemon commits each tick to a SQLite archive before the cloud gets it, and the history the cloud held was
 copied into it; per device and hour, the archive held every row the cloud did [E-219, E-220]. The cloud's copy of a
 reading's `capabilities` keeps only measurements, switch state and the codes something reads back (57 % smaller,
-E-221). With the operator's switch on, the cloud's raw window becomes **14 days**, pruned only where the edge holds
-the rows and the day's sealed copy is off the edge. Minute exports of older periods are then read from the edge
-through the proxy.
+E-221). **Since 2026-09-30 the cloud's raw window is 14 days**, pruned only where the edge holds the rows and the day's
+sealed copy is off the edge. The raw tables were reset from the archive the same morning, and the two match per
+device-hour both ways [E-222]. Minute exports of older periods are read from the edge through the proxy.
 
 **The method**, with the pilot's numbers:
 

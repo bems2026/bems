@@ -2,7 +2,7 @@
 title: ADR-0011 — Raw history's permanent home is the edge, with a sealed copy off it; the cloud keeps 14 days
 status: Accepted
 date: 2026-09-29
-evidence: [E-089, E-218, E-219, E-220, E-221]
+evidence: [E-089, E-218, E-219, E-220, E-221, E-222]
 ---
 
 # ADR-0011 — Raw history's permanent home is the edge, with a sealed copy off it; the cloud keeps 14 days
@@ -70,13 +70,13 @@ What was measured on 2026-09-29 changed the question.
   is free disk, and that Node-RED saves its context sparingly. Saving every 30 s had been most of the card's writes.
 - **A restore has two halves.** Sealed days come back from the file storage, and the recent days come from the cloud
   (`archive:backfill`).
-- **The cloud keeps 14 days of raw readings only once the operator switches the hot tier on.** Until then it keeps 30
-  days, as before.
+- **The cloud keeps 14 days of raw readings only while the operator's switch is on** (`ARCHIVE_HOT_TIER=1`, on since
+  2026-09-30 [E-222]). Without it the daemon keeps 30 days, as before.
 
 ## What would change this answer
 
-- **The file storage fills.** At about 0.6–1.2 MB a sealed day, 1 GB lasts roughly 2.5 to 4.5 years. `npm run
-  archive:storage` reports its use.
+- **The file storage fills.** A sealed day measured about 0.2 MB (38 days were 7.7 MB [E-222]), so 1 GB lasts over ten
+  years at this fleet's size. `npm run archive:storage` reports its use.
 - **Several sites share one database** (FI-003). Then ADR-001's triggers apply again, and this is the starting point.
 - **A per-minute read of an old period is needed from somewhere other than the edge**, and the proxy cannot be
   reached from there.

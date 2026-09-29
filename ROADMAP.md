@@ -1,10 +1,15 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-30 — **RM-148: the data tier, Stages 0–3 done on the edge and read back; 4–6 built and
-waiting on the operator; 7's records written (ADR-0011).** The database was on the Free plan at 392 of 500 MB (E-218).
-The edge now archives every tick before the cloud gets it (E-219), holds every raw row the cloud held plus 16–17 Aug,
-869,841 readings in 108 MB (E-220), and the cloud's rows are 57 % slimmer since phase48 (E-221). What is left for the
-operator, in order, is §0's first entry.
+**Last audited:** 2026-09-30, 06:45 — **RM-148 done: the cloud keeps 14 days of raw rows, the edge keeps every raw
+minute since 16 Aug, and each sealed day is copied off the edge.**
+- The hot tier was switched on at 06:17. Its first verified pass pruned 464,092 readings in 17 steps.
+- The raw tables were then reset from the edge: the cloud and the archive match per device-hour both ways over the whole
+  window.
+- Queries that timed out now answer in 0.5–1.7 s.
+- The SD card's writes went from 18.9 to 6.9 GB a day.
+
+Evidence E-218 to E-223. §0's first entry says what is left.
+**Earlier, 2026-09-30 — Stages 0–3 read back, 4–6 built; ADR-0011.**
 **Earlier, 2026-09-29, 20:30 — RM-148 Stage 0: Q-01 closed (392 MB, E-218); Stage 1 deployed at 20:01.**
 **Earlier, 14:51 — RM-147: the Control page has one rule for on and off (solid green on, hollow
 off, pulsing while switching, hatched when unavailable), neutral bulk buttons, per-panel counts, a legend, and a lamp
@@ -388,23 +393,24 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
-### 2026-09-29 — the data tier (RM-148): what the operator does next
+### 2026-09-30 — the data tier (RM-148): done, and what is left to watch
 
-The database is at 392 of 500 MB (E-218). Nothing is at risk today, but it is the next thing to fill.
-1. ~~**Stage 0**~~ **Done 2026-09-29**: Q-01 closed (E-218). **Still open:** the day's API requests by path. That query
-   runs in the **Logs Explorer**, not the SQL editor, where `edge_logs` does not exist. It decides whether Stage 3 folds
-   ingest's three requests a minute into one.
-2. ~~**Stage 1**~~ **Deployed 2026-09-29 20:01** (`ibems-ingest` restarted by the operator) and read back (E-219).
-3. ~~**Stage 2**~~ **Run 2026-09-29 on the operator's "proceed"** and read back: the edge holds every raw row the cloud
-   held, per device-hour, plus 16–17 Aug (E-220).
-4. ~~**Stage 3**~~ **phase48 applied and `ibems-ingest` restarted 20:52**; slim rows read back (E-221). Re-run the size
-   query in the SQL editor to record what phase48 freed.
-5. **Stage 5, operator:** paste `supabase/phase49_node_totals_archive.sql`; then on the edge
-   `git pull --ff-only && npm run build` and restart `ibems-proxy` (the archive routes, the 30-day chart, the export).
-6. **Stage 6, operator:** `npm run context-flush:pi` (dry run), then `-- --apply` and `sudo systemctl restart nodered`; restart
-   `ibems-proxy` for the quieter log. `npm run preflight` then checks both.
-7. **Stage 4, last:** `npm run archive:storage -- --apply`, `ARCHIVE_HOT_TIER=1` in `server/.env`, restart ingest, watch
-   the days seal and copy off the edge, run the restore drill, then the one-time reset (`npm run archive:reset`).
+All seven stages are done and read back (E-218 to E-223).
+- The cloud keeps 14 days of raw rows, pruned only where the edge holds them and the day is sealed off the edge.
+- The edge archive holds every raw minute since 16 Aug.
+- The database went from 392 MB to 323 MB after phase48. The reset gave the raw tables' space back after that.
+
+**Left, for the operator:**
+1. Run the size query once more (`select pg_size_pretty(sum(pg_database_size(datname))) from pg_database;`) to record
+   the reset's result.
+2. The day's API requests by path, run in the **Logs Explorer**, not the SQL editor. It decides whether ingest's three
+   requests a minute should become one. Log ingestion is not enforced before early 2027.
+3. Quarterly: `npm run archive:restore -- --day=<any sealed day>` on the edge, the restore drill.
+
+**To watch:**
+- `npm run preflight`: `archive_current`, `disk_free`, `context_flush`.
+- The journal reaching past 14 days now that the proxy is quiet.
+- `npm run archive:storage` for the bucket's use of its 1 GB.
 
 ### 2026-09-24, 12:00 — two security changes for the operator (RM-145 audit)
 
@@ -3927,7 +3933,9 @@ Node-RED context flush and a stage-by-stage rollout. Stages: 0 measure, 1 archiv
       - Moved out of phase48, to Stage 5 with the read routing: `node_totals` reading across the raw/hourly seam.
       - **Order:** paste phase48 into the SQL editor (it frees the duplicate index's space at once), then restart
         `ibems-ingest` for the slim rows. Neither depends on the backfill.
-- [ ] **RM-148d** Stage 4, the verified 14-day window, sealed days and the reset. **Built and tested; switched off.**
+- [x] **RM-148d** Stage 4, the verified 14-day window, sealed days and the reset. **Switched on 2026-09-30 06:17; reset
+      06:19–06:30; read back (E-222).** Sealed days measured about 0.2 MB a day, not the 0.6–1.2 estimated: the 1 GB
+      bucket holds over ten years. The pause now logs as a pause, not as "Supabase unreachable".
       - `shared/retention.mjs`: `RAW_RETENTION_DAYS = 14`.
       - `server/archiveSeal.mjs`: each complete UTC day (an hour after it ends) sealed per stream to a gzip CSV beside
         the archive: every origin, fixed order, so the same rows give the same sha256. Text and JSON are always quoted, so
@@ -3969,7 +3977,10 @@ Node-RED context flush and a stage-by-stage rollout. Stages: 0 measure, 1 archiv
         3. watch the days seal and copy;
         4. the restore drill;
         5. then the reset.
-- [ ] **RM-148e** Stage 5, each read from the tier that holds it. **Built, tested and rehearsed; not deployed.**
+- [x] **RM-148e** Stage 5, each read from the tier that holds it. **phase49 applied, dashboard built and proxy
+      restarted 2026-09-30 06:04; read back (E-223, E-222 for the timings).** The building's Space totals for 30 d and
+      1 y timed out (57014) that morning, since the old function read the same 250 MB of wide raw rows. After the reset
+      every level and window answers in 0.5–1.7 s.
       - **The 30-day chart** (`src/lib/supabaseHistory.ts`) moves to `readings_archive`, hourly, with the year.
         `readings_buckets` reads raw rows alone, and a range longer than the raw window would come back silently short.
         A test pins that every raw-read range fits `RAW_RETENTION_DAYS`. That fixes FI-034's timeout at its cause once
@@ -3996,7 +4007,8 @@ Node-RED context flush and a stage-by-stage rollout. Stages: 0 measure, 1 archiv
         rows, which Stages 3–4 remove at the source.
       - **Order:** paste phase49 into the SQL editor, then restart `ibems-proxy` (the archive routes) and
         `npm run build` on the edge (the 30-day chart and the export).
-- [ ] **RM-148f** Stage 6, the edge's own resilience. **Built and tested; not applied.**
+- [x] **RM-148f** Stage 6, the edge's own resilience. **Applied 2026-09-30 06:04–06:05; read back (E-223):** the SD
+      card's writes went from 18.9 to 6.9 GB a day.
       - **The SD card's biggest writer.** Node-RED rewrote its 3.7 MB of flow context, the bridge's eleven 24-hour
         rings, every 30 s: about two thirds of the card's 19 GB a day (measured 2026-09-29).
         `npm run context-flush:pi` (`scripts/context-flush.mjs`, a dry run until `--apply`, which backs the file up)
@@ -4485,8 +4497,9 @@ cannot draw more than 150 W, and the outlet branch is never at 0 A.
       runtime journal (79 MB, everything since 17:02) is now on disk. **This lives only in `/etc` on the Pi**
       — the same exposure shape as the broker and `uiHost`: a rebuild loses it silently. `npm run preflight`
       does not check it yet.
-- [ ] **FI-034** `readings_buckets` over the full 30-day raw window hits the statement timeout; the RM-122
-      scan had to be chunked by six days. A `p_until` parameter, or an index note.
+- [x] **FI-034** ~~`readings_buckets` over the full 30-day raw window hits the statement timeout.~~ **Closed by
+      RM-148e (2026-09-30):** the 30-day chart reads `readings_archive` (1.2 s for 720 hourly buckets, E-222), and raw
+      rows are kept for 14 days.
 - [x] **FI-035** ~~The operator described C.O Yellow as "outlets and aircon"; RM-088 records the aircon on
       CARE ACU alone.~~ **Answered 2026-09-22:** both are true. C.O Yellow carries the CARE office's
       outlets AND, in another room, the director's office aircon, at about two thirds of the branch;

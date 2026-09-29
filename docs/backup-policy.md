@@ -152,7 +152,8 @@ With the hot tier switched on (`ARCHIVE_HOT_TIER=1` in `server/.env`):
 - **The cloud keeps its raw rows until that copy exists.** It prunes a day only after the day is sealed, copied, and
   covered row for row by the archive.
 
-**The restore drill.** Run it after switching the hot tier on, and then quarterly with the export restore above:
+**The restore drill.** It was first run on 2026-09-30, for 15 Sep and 16 Aug, and passed: every file downloaded, re-sealed
+and recorded with the same sha256. Run it again quarterly, with the export restore above:
 
 ```bash
 npm run archive:restore -- --day=2026-09-01
