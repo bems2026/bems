@@ -3835,7 +3835,9 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       jsdom cannot see that. It is fixed and guarded by `test/css-press-feedback.test.mjs`, which fails with the fix
       removed. Tests: `relayTally.test.ts` (+5), `ControlPage.test.tsx` (+3, and DP1 → S1). Verified against the mock
       bridge in both themes and at 375 px.
-      **Needs `npm run build` on the edge before the kiosk shows it.**
+      **Deployed:** built on the edge at 15:10:38 on 2026-09-29 (the served script went from `index-DGcKHoNp.js` to
+      `index-Cuaz1HFy.js`, and the old files are gone from `dist/`). The kiosk loaded the page again at 15:10:39 and
+      15:12:47, so it is on the new build.
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 
