@@ -14,7 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { openArchive } from './archiveDb.mjs';
-import { drainArchive, isTransientFailure } from './archiveUpload.mjs';
+import { drainArchive, isTransientFailure, uploadDue, uploadIntervalFrom } from './archiveUpload.mjs';
 
 const AT_MS = Date.parse('2026-08-16T09:00:00+08:00');
 
@@ -161,6 +161,30 @@ test('the drain stops starting new batches once its time budget is spent', async
   assert.equal(result.ok, true);
   assert.equal(calls.length, 2);
   assert.equal(archive.lag().readings, 2);
+});
+
+test('an upload is due every interval, at once for an anomaly, and not in between', () => {
+  // RM-149: every request to the cloud is a line in its log, and the Free plan's log quota is the
+  // tight one. The archive holds every minute already, so the cloud can take them five at a time;
+  // an anomaly still goes up at once, because the kiosk shows the last fifteen minutes of them.
+  const every = 5 * 60_000;
+  assert.equal(uploadDue({ nowMs: 1_000_000, lastUploadMs: null, intervalMs: every, hasAnomalies: false }), true, 'the first tick uploads');
+  assert.equal(uploadDue({ nowMs: 1_000_000 + 60_000, lastUploadMs: 1_000_000, intervalMs: every, hasAnomalies: false }), false);
+  assert.equal(uploadDue({ nowMs: 1_000_000 + 60_000, lastUploadMs: 1_000_000, intervalMs: every, hasAnomalies: true }), true);
+  assert.equal(uploadDue({ nowMs: 1_000_000 + every - 2_000, lastUploadMs: 1_000_000, intervalMs: every, hasAnomalies: false }), true,
+    'a tick a moment early still counts: ticks are a minute apart, and waiting for the next one would make the interval six');
+  assert.equal(uploadDue({ nowMs: 1_000_000 + 60_000, lastUploadMs: 1_000_000, intervalMs: 0, hasAnomalies: false }), true, 'an interval of 0 uploads every tick');
+});
+
+test('the upload interval from the environment: 0 is kept, nonsense is not', () => {
+  // `Number(x) || default` would turn 0 back into five minutes, and a typo into NaN, which never
+  // compares due: the cloud would then hear only about anomalies.
+  assert.equal(uploadIntervalFrom(undefined), 5 * 60_000);
+  assert.equal(uploadIntervalFrom(''), 5 * 60_000);
+  assert.equal(uploadIntervalFrom('0'), 0);
+  assert.equal(uploadIntervalFrom('120000'), 120_000);
+  assert.equal(uploadIntervalFrom('5min'), 5 * 60_000);
+  assert.equal(uploadIntervalFrom('-1'), 5 * 60_000);
 });
 
 test('which failures are worth retrying and which are the row', () => {

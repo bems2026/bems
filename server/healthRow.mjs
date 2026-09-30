@@ -74,3 +74,31 @@ export function withoutScrubColumns(row) {
   for (const column of SCRUB_COLUMNS) delete out[column];
   return out;
 }
+
+/**
+ * When the health row is written — RM-149. It used to be every tick: 1,440 upserts a day, each a line
+ * in the hosted database's log, whose Free-plan quota was the tight one. Now it goes up with each
+ * upload of the archive (`force`), at once when health changes (`ok` flips either way, so a bridge
+ * outage shows the minute it starts), and at least once an interval otherwise, so an uploader that
+ * has stopped still shows. Refused fields from the ticks in between are carried into the next write,
+ * never dropped: a guard that discards silently is the failure this row exists to expose.
+ */
+export function createHealthCadence({ intervalMs, now = Date.now }) {
+  let lastWriteMs = null;
+  let lastOk = null;
+  let held = [];
+  return {
+    /** This tick's rejections in; the rejections to write out when a write is due, else null. */
+    due(rejections = [], { force = false, ok = null } = {}) {
+      held.push(...rejections);
+      const t = now();
+      const flipped = ok !== null && lastOk !== null && ok !== lastOk;
+      if (!force && !flipped && lastWriteMs !== null && t - lastWriteMs < intervalMs - 5_000) return null;
+      const out = held;
+      held = [];
+      lastWriteMs = t;
+      if (ok !== null) lastOk = ok;
+      return out;
+    },
+  };
+}

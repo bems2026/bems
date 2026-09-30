@@ -127,8 +127,8 @@ test('the daemon runs the hot tier only with an archive, and the pause flag stop
     'with the hot tier on, the 30-day raw passes must not also run');
   assert.match(fn('reportPass'), /if \(paused\(\)\) \{[\s\S]*?return true;/, 'reports must stop while paused');
   const tick = fn('tick');
-  assert.match(tick, /archive: \(batch\) => archive\.insertTick\(batch\)/, 'archiving continues while paused');
-  assert.match(tick, /sync: async \(\) => \(paused\(\)/, 'uploads stop while paused');
+  assert.match(tick, /archive: \(batch\) => \{[^}]*return archive\.insertTick\(batch\);\s*\}/, 'archiving continues while paused');
+  assert.match(tick, /sync: async \(\) => \{\s*if \(paused\(\)\) return \{ ok: false/, 'uploads stop while paused, before anything else is decided');
   // Seen on the edge 2026-09-30: a paused tick logged "Supabase unreachable", which sends whoever
   // reads the journal looking for an outage that is not there.
   assert.match(tick, /\} else if \(result\.archived && paused\(\)\) \{\s*console\.log\(`\[ibems-ingest\] \$\{stamp\} cloud upload paused by the operator/);

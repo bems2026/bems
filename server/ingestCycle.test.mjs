@@ -361,3 +361,15 @@ test('local first: a bridge outage archives nothing', async () => {
   assert.deepEqual(calls.archived, []);
   assert.equal(calls.syncs, 0);
 });
+
+test('local first: a tick whose upload waits for the next interval is healthy and says it did not upload', async () => {
+  // RM-149: the cloud takes the archive's rows every five minutes. A tick in between archived its
+  // rows and sent nothing, which is neither a failure nor a write.
+  const { io } = localFirst({ sync: async () => ({ ok: true, error: null, deferred: true }) });
+  const result = await runIngestCycle(io);
+  assert.equal(result.ok, true);
+  assert.equal(result.archived, true);
+  assert.equal(result.uploaded, false);
+  const { io: io2 } = localFirst();
+  assert.equal((await runIngestCycle(io2)).uploaded, true);
+});

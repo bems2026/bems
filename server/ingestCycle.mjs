@@ -110,10 +110,14 @@ export async function runIngestCycle(io) {
     }
   }
 
+  // Whether anything went to the cloud this tick. With an archive, the uploader may wait for its
+  // interval (RM-149): the rows are safe on the edge, and a waiting tick is neither a failure nor a write.
+  let uploaded = true;
   if (archived) {
     try {
       const synced = await io.sync();
       if (!synced.ok) record(synced.error);
+      if (synced.deferred) uploaded = false;
     } catch (err) {
       record(err);
     }
@@ -129,6 +133,7 @@ export async function runIngestCycle(io) {
     error,
     archived,
     archiveError,
+    uploaded,
     readingCount: readings.length,
     hasTotals: Boolean(totals),
     anomalyCount: anomalyRows.length,

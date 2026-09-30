@@ -120,3 +120,36 @@ test('a real outage is NOT mistaken for the missing migration', () => {
     assert.equal(isMissingScrubColumnError(err), false, String(err));
   }
 });
+
+// --- RM-149: the health row goes up with the uploads, not every minute -------------------------------
+
+test('the health row is written with each upload, or once an interval, and no refused field is dropped between', async () => {
+  const { createHealthCadence } = await import('./healthRow.mjs');
+  let t = 0;
+  const cadence = createHealthCadence({ intervalMs: 300_000, now: () => t });
+  assert.deepEqual(cadence.due(['a']), ['a'], 'the first tick writes');
+  t = 60_000;
+  assert.equal(cadence.due(['b']), null, 'a minute later, with no upload, it waits');
+  t = 120_000;
+  assert.equal(cadence.due([]), null);
+  t = 180_000;
+  assert.deepEqual(cadence.due(['c'], { force: true }), ['b', 'c'], 'an upload takes the health row with it, carrying what was refused meanwhile');
+  t = 181_000 + 300_000;
+  assert.deepEqual(cadence.due([]), [], 'an interval with nothing uploaded still writes, so a stopped uploader shows');
+});
+
+test('createHealthCadence: a change of health is written at once, both ways', async () => {
+  // A bridge outage must show on the row the minute it starts, not up to an interval later.
+  const { createHealthCadence } = await import('./healthRow.mjs');
+  let t = 0;
+  const cadence = createHealthCadence({ intervalMs: 300_000, now: () => t });
+  assert.deepEqual(cadence.due([], { ok: true }), []);
+  t = 60_000;
+  assert.equal(cadence.due([], { ok: true }), null, 'still healthy: waits');
+  t = 120_000;
+  assert.deepEqual(cadence.due([], { ok: false }), [], 'failing now: written at once');
+  t = 180_000;
+  assert.equal(cadence.due([], { ok: false }), null, 'still failing: waits');
+  t = 240_000;
+  assert.deepEqual(cadence.due([], { ok: true }), [], 'recovered: written at once');
+});

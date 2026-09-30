@@ -25,7 +25,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TIMING, METERED, SITE, DEVICE_REGISTRY } from '../shared/registry.mjs';
 import { shapeDeviceRows, shapeAnomalyRows } from './shapeRows.mjs';
-import { buildHealthRow, isMissingScrubColumnError, withoutScrubColumns } from './healthRow.mjs';
+import { buildHealthRow, isMissingScrubColumnError, withoutScrubColumns, createHealthCadence } from './healthRow.mjs';
 import { isMissingCapabilityColumnError, withoutCapabilityColumns } from './readingCapabilities.mjs';
 import { makeSupabaseClient } from './supabaseRest.mjs';
 import { appendToBuffer, readBuffer, writeBuffer, bufferCount } from './ingestBuffer.mjs';
@@ -33,7 +33,7 @@ import { takeBufferedCommands, restoreUndrained } from './auditQueue.mjs';
 import { selectAnomalyCandidates, detectAnomaly, pushSample } from './anomalyStats.mjs';
 import { runIngestCycle, msUntilNextTick } from './ingestCycle.mjs';
 import { openArchive } from './archiveDb.mjs';
-import { drainArchive } from './archiveUpload.mjs';
+import { drainArchive, uploadDue, uploadIntervalFrom } from './archiveUpload.mjs';
 import { readingsForCloud } from './cloudCapabilities.mjs';
 import { runHotTierPass } from './hotTier.mjs';
 import { makeStorageClient } from './supabaseStorage.mjs';
@@ -99,6 +99,18 @@ const HOT_TIER = process.env.ARCHIVE_HOT_TIER === '1';
  */
 const PAUSE_PATH = process.env.INGEST_PAUSE_PATH || path.join(__dirname, 'data', 'ingest.pause');
 const paused = () => fs.existsSync(PAUSE_PATH);
+/**
+ * RM-149: how often the archive is drained to the cloud (and the health row written with it).
+ * Every request is a line in the hosted database's log, whose Free-plan quota was the tight one.
+ * The archive holds every minute meanwhile; an anomaly still goes up the tick it is found.
+ */
+const UPLOAD_EVERY_MS = uploadIntervalFrom(process.env.INGEST_UPLOAD_MS);
+let lastUploadMs = null;
+let uploadedThisTick = false;
+let tickHadAnomalies = false;
+const healthCadence = createHealthCadence({ intervalMs: UPLOAD_EVERY_MS });
+/** The device list as last sent; it changes only when a device is enrolled or removed. */
+let lastDevicesSnapshot = null;
 
 /**
  * The out-of-dashboard alarm (FI-005). Inert unless NTFY_TOPIC is set — a deployment never
@@ -182,7 +194,12 @@ async function fetchJson(url, timeoutMs) {
 
 async function syncDevices() {
   const devices = await fetchJson(`${BRIDGE_URL}/devices`, TIMING.FETCH_TIMEOUT_MS);
-  await supabase.upsert('devices', shapeDeviceRows(devices), { onConflict: 'id' });
+  const rows = shapeDeviceRows(devices);
+  // RM-149: unchanged is the usual answer, and sending it anyway was 288 requests a day.
+  const snapshot = JSON.stringify(rows);
+  if (snapshot === lastDevicesSnapshot) return;
+  await supabase.upsert('devices', rows, { onConflict: 'id' });
+  lastDevicesSnapshot = snapshot;
 }
 
 /** Drains the local buffer oldest-first. Stops and re-persists the remainder at the first
@@ -352,10 +369,14 @@ function pendingCount() {
 let scrubColumnsPresent = true;
 
 async function updateHealth(ok, lastError = null, rejections = []) {
+  // RM-149: with the archive's uploads, not every tick; refused fields in between are carried
+  // forward, never dropped. Without an archive every tick writes, as before.
+  const toWrite = healthCadence.due(rejections, { force: uploadedThisTick || !archive, ok });
+  if (toWrite === null) return;
   const row = buildHealthRow({
     ok,
     lastError,
-    rejections,
+    rejections: toWrite,
     // Since RM-148: rows the archive still owes the cloud, plus anything left in the old buffer.
     bufferedRowCount: pendingCount(),
     siteId: SITE.id,
@@ -381,6 +402,8 @@ async function updateHealth(ok, lastError = null, rejections = []) {
 
 async function tick() {
   let synced = null;
+  uploadedThisTick = false;
+  tickHadAnomalies = false;
   const result = await runIngestCycle({
     fetchLatest: () => fetchJson(`${BRIDGE_URL}/readings/latest`, TIMING.FETCH_TIMEOUT_MS),
     flushBuffer,
@@ -388,10 +411,23 @@ async function tick() {
     detectAnomalies,
     updateHealth,
     ...(archive ? {
-      archive: (batch) => archive.insertTick(batch),
-      sync: async () => (paused()
-        ? { ok: false, error: `cloud upload paused by the operator (${PAUSE_PATH}); archiving continues` }
-        : (synced = await drainArchive({ archive, send: sendToCloud }))),
+      // Archiving never waits and never pauses: it is the record.
+      archive: (batch) => {
+        tickHadAnomalies = batch.anomalies.length > 0;
+        return archive.insertTick(batch);
+      },
+      sync: async () => {
+        if (paused()) return { ok: false, error: `cloud upload paused by the operator (${PAUSE_PATH}); archiving continues` };
+        if (!uploadDue({ nowMs: Date.now(), lastUploadMs, intervalMs: UPLOAD_EVERY_MS, hasAnomalies: tickHadAnomalies })) {
+          return { ok: true, error: null, deferred: true };
+        }
+        // An attempt, not a success, starts the next interval: during an outage the retry then comes
+        // every interval rather than every minute, and each failed attempt is a line in the log too.
+        lastUploadMs = Date.now();
+        uploadedThisTick = true;
+        synced = await drainArchive({ archive, send: sendToCloud });
+        return synced;
+      },
     } : {}),
   });
 
@@ -427,10 +463,15 @@ async function tick() {
   if (result.rejectionCount) {
     console.error(`[ibems-ingest] ${stamp} scrub refused ${result.rejectionCount} field(s): ${result.rejections.map(String).join('; ')}`);
   }
-  if (result.ok) {
-    // A backlog drained this tick is said, so an outage's recovery is visible in the journal.
-    const extra = synced ? synced.uploaded.readings - result.readingCount : 0;
-    console.log(`[ibems-ingest] ${stamp} wrote ${result.readingCount} readings${result.hasTotals ? ' + totals' : ''}${result.anomalyCount ? ` + ${result.anomalyCount} anomalies` : ''}${result.archived ? ' (archived first)' : ''}${extra > 0 ? `, plus ${extra} backlog reading(s) from the archive` : ''}`);
+  if (result.ok && result.uploaded === false) {
+    console.log(`[ibems-ingest] ${stamp} archived ${result.readingCount} readings${result.hasTotals ? ' + totals' : ''}; uploads every ${UPLOAD_EVERY_MS / 60_000} min, ${pendingCount()} row(s) waiting`);
+  } else if (result.ok && synced) {
+    // Since RM-149 an upload carries every minute archived since the last one, so it is reported as
+    // what went up, not as this tick plus a "backlog": an outage's recovery is the large figure here.
+    const up = synced.uploaded;
+    console.log(`[ibems-ingest] ${stamp} archived ${result.readingCount} readings${result.hasTotals ? ' + totals' : ''}${result.anomalyCount ? ` + ${result.anomalyCount} anomalies` : ''}; uploaded ${up.readings} reading(s), ${up.building_totals} total(s), ${up.anomalies} anomal${up.anomalies === 1 ? 'y' : 'ies'} from the archive`);
+  } else if (result.ok) {
+    console.log(`[ibems-ingest] ${stamp} wrote ${result.readingCount} readings${result.hasTotals ? ' + totals' : ''}${result.anomalyCount ? ` + ${result.anomalyCount} anomalies` : ''}`);
   } else if (result.stage === 'payload') {
     console.error(`[ibems-ingest] ${stamp} bridge answered with an unusable payload, nothing to write: ${result.error}`);
   } else if (result.stage === 'bridge') {

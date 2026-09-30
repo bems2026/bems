@@ -25,6 +25,37 @@ export const UPLOAD_BATCH = 2000;
 /** Well inside one 60 s tick, leaving room for the bridge fetch and one slow request. */
 export const UPLOAD_BUDGET_MS = 20_000;
 
+/**
+ * How often the archive is drained to the cloud — RM-149. Every request to the hosted database is
+ * a line in its log, and the Free plan's log quota was the tight one (0.97 of 1 GB, 2026-09-30).
+ * The archive already holds every minute, so the cloud takes them five at a time. Nothing that acts
+ * on the building reads these rows: the scheduler and the fleet alarm read the bridge.
+ */
+export const UPLOAD_INTERVAL_MS = 5 * 60_000;
+/** Ticks are a minute apart and land a little either side of it; a tick this close counts as on time. */
+const EARLY_SLACK_MS = 5_000;
+
+/**
+ * Is an upload due this tick? On the first tick, once the interval has passed, and at once when this
+ * tick found an anomaly — the kiosk shows the last fifteen minutes of those, and five minutes late
+ * would be a third of that window.
+ */
+export function uploadDue({ nowMs, lastUploadMs, intervalMs = UPLOAD_INTERVAL_MS, hasAnomalies = false }) {
+  if (hasAnomalies || lastUploadMs === null || lastUploadMs === undefined) return true;
+  return nowMs - lastUploadMs >= intervalMs - EARLY_SLACK_MS;
+}
+
+/**
+ * `INGEST_UPLOAD_MS` as an interval. 0 is honoured (every tick, as before RM-149); anything that is
+ * not a non-negative number falls back to the default, because NaN would make `uploadDue` false for
+ * ever and leave the cloud waiting on anomalies alone.
+ */
+export function uploadIntervalFrom(raw) {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return UPLOAD_INTERVAL_MS;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : UPLOAD_INTERVAL_MS;
+}
+
 /** Worth trying again later, as opposed to a refusal of these particular rows. */
 export function isTransientFailure(err) {
   const status = err?.status;
