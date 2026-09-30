@@ -1,6 +1,14 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-30, 13:15 — **RM-150 done: the database now watches the edge, and posts to the phone after
+**Last audited:** 2026-09-30, evening — **RM-151 and RM-152 done.**
+- **Reports → Month → August** loads signed in with no timeouts. The cause was row security meeting an hour-by-hour
+  probe (F-037). phase52 is applied and took each function from 3.6-5.4 s to 0.26-0.92 s. The page now loads only what
+  the open tab shows (E-229).
+- **The alerts bell** shows one incident per device, with current problems apart from past ones. "Mark as seen" is
+  remembered, and C.O Yellow's week-old, genuine power warning no longer repeats (E-230).
+- **A setting can no longer reach the wrong clamp** of the shared meter (F-036).
+
+**Earlier, 13:15 — RM-150 done: the database now watches the edge, and posts to the phone after
 15 minutes without an upload (F-034 closed, E-228).** The test notice went through the database and ntfy took it; the
 first scheduled check ran at 13:10.
 **Earlier, 12:15 — phase50 applied and read back (E-227): the scheduler reads one snapshot, and
@@ -407,6 +415,31 @@ other four and none needed changing.
 ---
 
 ## 0. Triage — what to do next
+
+### 2026-09-30 — Reports timeouts (RM-151) and the alerts bell (RM-152): done
+
+- **Reports.** August timed out on Overview and Usage patterns only when signed in. The functions ran as the caller,
+  and row security stopped their hour-by-hour probe from using the index (F-037, E-229).
+  - The operator applied phase52, which makes the five run as their owner. Nothing else changes, and a schema test
+    pins why that is safe.
+  - The page now loads Usage patterns only when it is opened, runs at most two database functions at once, retries a
+    timeout once, and no longer lets one failed read hide a whole tab.
+- **The bell.** C.O Yellow's warning was real: 1.9-3.0 kW against the meter's 2,000 W limit, for eight hours on
+  23 Sep. It repeated because a week-old episode was listed as current, under a key the sliding week kept changing
+  (E-230).
+  - The bell now shows one incident per device: "Needs attention" apart from "Earlier this week".
+  - "Mark as seen" and "Dismiss" are remembered by each browser.
+  - The operator keeps the 2,000 W limit.
+- **Found and fixed on the way:** a setting could reach the other clamp of the shared C.O Yellow and L.O Yellow meter
+  while it reads swapped (F-036). The proxy now refuses it.
+
+**Nothing left for the operator.** To watch: the Reports page's month views, and whether the bell's badge stays quiet
+when nothing is wrong.
+
+**Noted for later, not done:**
+- The z-score anomaly detector wrote 1,354 rows in 7 days, and flags ordinary on/off swings such as C.O Yellow's
+  253 W against ~30 W. Only anomalies under 3 minutes old reach the bell.
+- The C.O Yellow limit is a safety call for whoever knows the breaker rating.
 
 ### 2026-09-30 — a watchdog off the edge (RM-150, F-034): done
 
@@ -4192,6 +4225,64 @@ Finding F-034 (High): every notice came from the edge itself, so an edge that di
       - The anon key is refused both the table and the check.
       - **F-034 closed.** Not exercised live: a real 15-minute silence. The rehearsal covers it, and §0 has the drill.
 
+### Reports that load when signed in — RM-151 (2026-09-30)
+
+The operator reported Reports → Month → August failing on Overview ("report_demand_summary failed: canceling statement
+due to statement timeout") and on all three Usage patterns charts, after the RM-148 reset. The same calls as the service
+role took 0.6 s, so the cause was only visible signed in (E-229, F-037).
+
+- [x] **RM-151a** [`supabase/phase52_report_invoker_speed.sql`](supabase/phase52_report_invoker_speed.sql). **Applied
+      by the operator and read back.**
+      - It alters `report_daily_series`, `report_demand_summary`, `report_hour_profile`, `report_hour_matrix` and
+        `report_demand_curve` to security definer with `search_path = public, pg_temp`. No body changes.
+      - Why: under row security, the probe `t2.ts < b.hour + interval '1 hour'` could not bound the index, because
+        `+ interval` is not leakproof. Signed in, every hourly probe read to the end of the raw table.
+      - Measured signed in: 3.6-5.4 s per function before, 0.26-0.92 s after, and all five in 0.85 s.
+      - The rehearsal reproduces it: 14,639 ms against 25 ms, with the same answer.
+      - `test/phase52-report-invoker-speed-schema.test.mjs` pins the two things that make a definer safe here:
+        - the four tables' latest policies still admit exactly `authenticated`;
+        - any later migration that redefines one of the five must keep it a definer.
+
+        The rehearsal re-applies phase52 last, because its earlier re-applies of phase37-47 reset the functions to
+        invoker.
+- [x] **RM-151b** The page loads what the tab shows. **Built, deployed (`377718a`), verified signed in.**
+      - Usage patterns' three series load only while it or the export drawer is open (`want.patterns`).
+      - The daily series and the summary are separate sections, so one failing hides only itself. The verdict, tiles
+        and findings wait for both; the three charts do not.
+      - At most two database functions run at once per page (`createLimiter`, which hands a place straight on).
+      - A 57014 is retried once, after about 3 s.
+      - Tests: `reportLoader.test.ts` (+4), `useReportData.test.ts` (+3, existing moved to daily/summary), each
+        neutered.
+
+### The alerts bell, one incident per device — RM-152 (2026-09-30)
+
+The operator reported "C.O Yellow raised its own power warning … for X min" repeating, with a confusing "Ack" (E-230).
+
+- [x] **RM-152** **Built, deployed (`68c6bf7`), verified in the browser.**
+      - **Incidents.** `toIncidents` / `describeIncident` in `src/lib/capabilityEpisodes.ts`:
+        - one per device and kind, never keyed by a time;
+        - active while the last reading is within 20 minutes;
+        - plain wording in the building's clock, with the meter's limit and the peak;
+        - a severity.
+      - **The fetch** (`src/lib/supabaseCapabilityHistory.ts`) reads 8 days and shows episodes that ended in 7, with
+        their real start. It pages past the 1,000-row cap and refuses past ten pages (F-038).
+      - **The popover** (`src/components/layout/AlertsPopover.tsx`):
+        - "Needs attention" (counted) and "Earlier this week" (not counted);
+        - severity in words and colour, the circuit, and "Open device" through a new `#devices/<id>` deep link;
+        - "Mark as seen" and "Dismiss", remembered per browser (`src/lib/alertSeen.ts`, the operator's choice), with
+          an inline Undo;
+        - an empty state that claims no more than it knows;
+        - at most 80% of the screen tall.
+      - **The swap guard** (`server/proxy.mjs`, F-036). A per-channel setting on a demuxed meter is refused with 409
+        `channels_not_direct` unless its reading says `direct`. `commandStore` says why in a sentence.
+      - **Tests:**
+        - `capabilityEpisodes` (+12), `supabaseCapabilityHistory` (+5, and the 12 existing kept), `alertSeen` (5),
+          `AlertsPopover` (20, rewritten), `commandStore` (+1), `proxy` (+1);
+        - seven neuters, each failing a test.
+      - `docs/05-interface.md` describes the new bell.
+      - **Not changed:** C.O Yellow's 2,000 W limit, which the operator keeps. It can be changed from Devices → Manage →
+        Capabilities, which is audited and now swap-safe.
+
 ### The adoption and replication manual — RM-145 (2026-09-23)
 
 The written half of the replication framework (Track B, RM-033). It is a book-grade manual, built in `docs/` beside
@@ -4345,9 +4436,10 @@ and it cites this file's IDs for feature state rather than copying it.
       **Measured from the Pi (service role), not assumed:** a week's first `readings_archive` read took
       0.9–5.4 s a meter, the second 0.42–0.56 s, at any concurrency; two-at-a-time was the slowest first
       read (5.4 s) and a warm week took 0.52 s at once vs 0.95 s two at a time — a cold cache, not
-      contention, so `getCircuitTrend` keeps `Promise.all`. **Open:** the operator's signed-in
-      `EXPLAIN (ANALYZE, BUFFERS)` of the slow call, to confirm `shared read` on the first attempt; no SQL
-      change without it. Tests: `reportLoader.test.ts` (+15), `reportQueryErrors.test.ts` (9, new),
+      contention, so `getCircuitTrend` keeps `Promise.all`. ~~**Open:** the operator's signed-in
+      `EXPLAIN (ANALYZE, BUFFERS)` of the slow call~~ **Closed by RM-151 (2026-09-30):** measured signed in, the
+      cause of the building reports' timeouts was row security, not a cold cache (E-229). The service-role
+      timings above could not show it. Tests: `reportLoader.test.ts` (+15), `reportQueryErrors.test.ts` (9, new),
       `useReportData.test.ts` (+1, one updated); a neuter dropping 57014 fails 12.
 - [x] **RM-138** A report not made yet is said, not silent. The operator (22 Sept, 20:30) could not tell the
       missing week of 14 Sept from a broken pipeline. **It was not late:** week key Monday 00:00Z, ends

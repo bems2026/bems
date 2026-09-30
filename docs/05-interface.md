@@ -5,7 +5,7 @@ audience: [operator, administrator, integrator]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo f0c7267
-evidence: [E-004, E-023, E-025, E-026, E-060, E-061, E-065, E-066, E-071, E-076, E-082, E-110, E-111, E-115, E-152, E-163, E-165, E-168, E-169, E-170, E-172, E-173, E-174, E-175, E-176, E-177, E-179, E-180, E-181, E-182, E-183, E-184, E-185, E-217]
+evidence: [E-004, E-023, E-025, E-026, E-060, E-061, E-065, E-066, E-071, E-076, E-082, E-110, E-111, E-115, E-152, E-163, E-165, E-168, E-169, E-170, E-172, E-173, E-174, E-175, E-176, E-177, E-179, E-180, E-181, E-182, E-183, E-184, E-185, E-217, E-230]
 ---
 
 # User interface
@@ -215,16 +215,28 @@ command: schedules, auto-shed and the aircon loop, with the time and the status.
 off, and its note names the tier and the limit that was breached (`auto-shed <tier>: <breach>`) [E-185]. To restore,
 switch the load back on from Control once the demand is understood.
 
-**Interpret an alert.** The bell in the header gathers four kinds [E-185]:
+**Interpret an alert.** The bell in the header gathers five kinds [E-185]:
 
 - a device whose reading went stale;
 - unusual power, flagged by the ingest daemon only when two statistical tests agree [E-076];
 - a fleet-level row when many devices stopped together. It carries the remedy: restart Node-RED before suspecting
   hardware;
-- a device whose command only landed through the vendor cloud.
+- a device whose command only landed through the vendor cloud;
+- what a device reported about itself: a fault, a power reading above the limit set on the meter, or no network.
 
-*Ack* hides an alert in this browser until the page is reloaded. It changes nothing on the device, and the alert returns
-on reload if the cause remains.
+The bell has two lists (RM-152) [E-230]:
+
+- **Needs attention** is what is wrong now, and only it is counted on the badge.
+- **Earlier this week** holds a device's own reports that have stopped: one row per device, with its older episodes
+  under the row.
+
+Each row carries a severity (Critical, Warning or Notice, in words as well as colour) and the circuit it is on.
+*Open device* goes to that device's panel.
+
+**Mark as seen** hides a current alert until it changes: a device report returns when a new episode starts, and any
+other alert after 12 hours. **Dismiss** hides a past report until there is a newer one. Both are remembered by that
+browser, so the kiosk and a laptop each keep their own, and neither changes anything on the device. Either can be
+undone for a few seconds from the line at the top of the list.
 
 **Export data.** *Reports → Export*. Choose the PDF, or a CSV: the building by day; each device for the period; each
 device by day; or every reading. Older hours in the last one are hourly averages, and a month of it is a large file.
