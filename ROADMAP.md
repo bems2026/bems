@@ -435,8 +435,8 @@ other four and none needed changing.
 - **The operator's rules.** Friday is a full working day, Saturday as recorded, and 21 and 31 Aug are holidays. The
   2026 holidays are in the site calendar, and the Eid dates will be added when they are proclaimed.
 
-**For the operator.** Rebuild the baseline (`npm run baseline:build`) only if the office's routine or equipment
-changes. The comparison means most from October on, since August and September are its own window.
+**Deployed 2026-10-01 06:33 (`58c8221`).** **For the operator.** Rebuild the baseline (`npm run baseline:build`) only if
+the office's routine or equipment changes. The comparison means most from October on, since August and September are its own window.
 
 ### 2026-09-30 — Reports timeouts (RM-151) and the alerts bell (RM-152): done
 
@@ -4312,6 +4312,10 @@ August and September recordings. It shows business as usual: weekdays working 08
 holidays, no working from home, and no energy management. The recorded data sits behind it as the backup. It is the
 reference energy avoided is measured from, and it answers §5 Q12. Decisions are in
 [ADR-0012](docs/adr/ADR-0012-projected-baseline.md); evidence is E-231 and E-232.
+
+**Deployed 2026-10-01 (`58c8221`, CI and Docs green).** Built on the edge, which serves the new bundle; the three
+daemons were restarted at 06:33 and logged no error. `npm run baseline:build` from the edge's own checkout, on the
+rows as of 06:32, reproduced every figure below.
 
 - [x] **RM-153a** The site's working calendar. **Built and tested.**
       - `shared/sites/<site>/site.mjs` gains `working_hours` (08:00 to 17:00), `working_week` (Monday to Friday) and
