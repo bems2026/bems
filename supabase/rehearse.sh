@@ -2356,6 +2356,68 @@ begin
 end $$;
 SQL
 
+# ---- phase52: the reports' building functions run as their owner (RM-151) ------------------------------
+#
+# The blocks above re-applied phase37, 40, 44 and 47, and each `create or replace` reset its functions to
+# security invoker. That is the trap this file's header warns about. So phase52 is applied again here, last.
+# The block also reproduces why it exists: a month of hourly rows with no raw rows behind them, then 20,000
+# raw minutes after them. Signed in, as an invoker, every hourly probe reads to the end of the raw table.
+echo "== phase52: re-applying twice, then the signed-in cost as invoker and as definer =="
+psql < "$HERE/phase52_report_invoker_speed.sql" >/dev/null
+psql < "$HERE/phase52_report_invoker_speed.sql" >/dev/null
+psql <<'SQL'
+insert into building_totals (ts, site_id, total_power_w)
+select timestamptz '2026-06-01 00:00+00' + (i || ' minutes')::interval, 'mmsu-nberic-care', 100 + (i % 50)
+  from generate_series(0, 19999) i
+    on conflict do nothing;
+insert into building_totals_hourly (hour, total_power_w_avg, total_power_w_max, sample_count)
+select timestamptz '2026-05-01 00:00+00' + (i || ' hours')::interval, 200 + (i % 24), 300, 60
+  from generate_series(0, 743) i
+    on conflict do nothing;
+analyze building_totals;
+analyze building_totals_hourly;
+
+do $$
+declare
+  n int;
+  t0 timestamptz;
+  inv_ms numeric;
+  def_ms numeric;
+  a jsonb;
+  b jsonb;
+begin
+  select count(*) into n from pg_proc
+   where proname in ('report_daily_series', 'report_demand_summary', 'report_hour_profile', 'report_hour_matrix', 'report_demand_curve')
+     and prosecdef and proconfig @> array['search_path=public, pg_temp'];
+  assert n = 5, format('phase52: five definers with a fixed search path, found %s', n);
+  assert not has_function_privilege('anon', 'report_demand_summary(text, date, text)', 'execute'), 'phase52: anon must not execute';
+  assert has_function_privilege('authenticated', 'report_hour_matrix(text, date, text)', 'execute'), 'phase52: the signed-in role executes';
+
+  -- The same month, signed in, first as the invoker it used to be.
+  alter function public.report_demand_summary(text, date, text) security invoker;
+  set local role authenticated;
+  t0 := clock_timestamp();
+  select to_jsonb(s) into a from report_demand_summary('month', '2026-05-01', 'UTC') s;
+  inv_ms := extract(epoch from clock_timestamp() - t0) * 1000;
+  reset role;
+
+  alter function public.report_demand_summary(text, date, text) security definer;
+  set local role authenticated;
+  t0 := clock_timestamp();
+  select to_jsonb(s) into b from report_demand_summary('month', '2026-05-01', 'UTC') s;
+  def_ms := extract(epoch from clock_timestamp() - t0) * 1000;
+  reset role;
+
+  assert a = b, format('phase52: the definer must give the same answer: %s against %s', b, a);
+  assert (b->>'n')::int = 744, format('phase52: the seeded month has 744 hourly samples, got %s', b->>'n');
+  raise notice 'phase52: a month signed in: % ms as invoker, % ms as definer, same answer', round(inv_ms), round(def_ms);
+  raise notice 'phase52: the reports run as their owner — assertions passed';
+end $$;
+
+delete from building_totals where ts >= timestamptz '2026-06-01 00:00+00' and ts < timestamptz '2026-06-15 00:00+00';
+delete from building_totals_hourly where hour >= timestamptz '2026-05-01 00:00+00' and hour < timestamptz '2026-06-01 00:00+00';
+SQL
+
 echo
 echo "== REHEARSAL PASSED =="
 echo "Every migration applied in order against PostgreSQL 16, and every function behaved as"
