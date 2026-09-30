@@ -144,6 +144,21 @@ const circuitsTemplate = (slug) => `/**
 export const CIRCUITS = [];
 `;
 
+const baselineTemplate = (slug) => `/**
+ * The projected baseline of the ${slug} deployment — RM-153.
+ *
+ * NULL ON PURPOSE. A baseline is what this building uses as a matter of routine, and a building
+ * nobody has recorded has no routine to describe. Reports shows no Baseline figures until this is
+ * filled, and says why rather than borrowing another building's.
+ *
+ * Do not write it by hand. Record at least four weeks with no automation acting and at least 99% of
+ * minutes, set the site's working calendar in site.mjs, then run \`npm run baseline:build\` on the
+ * edge (a dry run by default; \`--write\` replaces this file). See \`docs/90-replication.md\`.
+ */
+
+export const BASELINE = null;
+`;
+
 /**
  * Writes the directory. Pure enough to test: `root` is the repository root, so a test can hand
  * it a temporary one and assert against real files without a fixture framework.
@@ -166,15 +181,17 @@ export function scaffoldSite({ root, slug }) {
   writeFileSync(join(dir, 'site.mjs'), siteTemplate(slug));
   writeFileSync(join(dir, 'devices.mjs'), devicesTemplate(slug));
   writeFileSync(join(dir, 'circuits.mjs'), circuitsTemplate(slug));
+  writeFileSync(join(dir, 'baseline.mjs'), baselineTemplate(slug));
 
   return {
     slug,
     dir,
     nextStep:
-      `Edit shared/siteConfig.mjs to point at the new site — three lines, all of them '${slug}':\n` +
+      `Edit shared/siteConfig.mjs to point at the new site — four lines, all of them '${slug}':\n` +
       `    export { SITE } from './sites/${slug}/site.mjs';\n` +
       `    export { CIRCUITS } from './sites/${slug}/circuits.mjs';\n` +
-      `    export { BUILT_IN_DEVICES } from './sites/${slug}/devices.mjs';`,
+      `    export { BUILT_IN_DEVICES } from './sites/${slug}/devices.mjs';\n` +
+      `    export { BASELINE } from './sites/${slug}/baseline.mjs';`,
   };
 }
 
@@ -197,6 +214,7 @@ if (process.argv[1] && process.argv[1].endsWith('site-new.mjs')) {
     console.log('  site.mjs      identity, timezone, policy   — every TODO in it is a real fact to fill in');
     console.log('  devices.mjs   empty; enrol hardware from the Devices page');
     console.log('  circuits.mjs  empty; until it is filled in, every phase reads "not metered"');
+    console.log('  baseline.mjs  null; built by npm run baseline:build once four clean weeks are recorded');
     console.log('');
     console.log('This did NOT activate the site — repointing a running deployment is a deliberate act.');
     console.log(nextStep);

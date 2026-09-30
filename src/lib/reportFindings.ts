@@ -1,3 +1,4 @@
+import { SITE } from '@shared/siteConfig.mjs';
 import { coverageOf } from './supabaseReports';
 import type { DailyRow, DemandSummary, HourRow } from './reportSeries';
 
@@ -33,41 +34,68 @@ export interface DayKindAverage {
 export interface WeekdayWeekend {
   weekday: DayKindAverage;
   weekend: DayKindAverage;
+  /** Complete days left out because the site calendar names them a holiday. */
+  holidays: number;
+  /** The site's rest days by name, Monday-first order — what "weekend" meant for these figures. */
+  restDays: string[];
   reason: string | null;
 }
 
-/**
- * Saturday and Sunday. The site configuration has no working week, so this is an assumption — the
- * page says so beside the figure rather than leaving a reader to guess which days were which.
- * The day is a bare date the SQL resolved in the building's zone, so its weekday is taken in UTC.
- */
-function isWeekend(localDay: string): boolean {
+/** The part of the site calendar this reads — RM-153. */
+export interface WorkingCalendar {
+  working_week: readonly number[];
+  non_working_days: readonly { date: string; name: string }[];
+}
+
+/** Monday to Friday when a site declares no working week, which is what this assumed before RM-153. */
+export const SITE_CALENDAR: WorkingCalendar = {
+  working_week: SITE.working_week ?? [1, 2, 3, 4, 5],
+  non_working_days: SITE.non_working_days ?? [],
+};
+
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/** The day is a bare date the SQL resolved in the building's zone, so its weekday is taken in UTC. */
+export function weekdayOf(localDay: string): number {
   const [y, m, d] = localDay.slice(0, 10).split('-').map(Number);
-  const weekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-  return weekday === 0 || weekday === 6;
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
 }
 
 const mean = (values: readonly number[]) => values.reduce((a, v) => a + v, 0) / values.length;
 
-export function weekdayWeekend(daily: readonly DailyRow[]): WeekdayWeekend {
+export function weekdayWeekend(daily: readonly DailyRow[], calendar: WorkingCalendar = SITE_CALENDAR): WeekdayWeekend {
+  const holidayDates = new Set(calendar.non_working_days.map((h) => h.date));
+  // Monday first, so an ordinary week reads "Saturday and Sunday".
+  const restDays = [1, 2, 3, 4, 5, 6, 0].filter((i) => !calendar.working_week.includes(i)).map((i) => WEEKDAY_NAMES[i]);
   const weekday: number[] = [];
   const weekend: number[] = [];
+  let holidays = 0;
   for (const d of daily) {
     if (coverageOf(d.usable_sample_count, d.expected_samples)?.band !== 'complete') continue;
     if (typeof d.energy_kwh !== 'number' || !Number.isFinite(d.energy_kwh)) continue;
-    (isWeekend(d.local_day) ? weekend : weekday).push(d.energy_kwh);
+    // Neither group: a closed office counted as a weekday drags the weekday towards a weekend day,
+    // and it is not a weekend day either.
+    if (holidayDates.has(d.local_day.slice(0, 10))) {
+      holidays++;
+      continue;
+    }
+    (calendar.working_week.includes(weekdayOf(d.local_day)) ? weekday : weekend).push(d.energy_kwh);
   }
 
   if (weekday.length < MIN_WEEKDAYS || weekend.length < MIN_WEEKEND_DAYS) {
     return {
       weekday: { kwh: null, days: weekday.length },
       weekend: { kwh: null, days: weekend.length },
+      holidays,
+      restDays,
       reason: `Needs at least ${MIN_WEEKDAYS} complete weekdays and ${MIN_WEEKEND_DAYS} complete weekend days; this period has ${weekday.length} and ${weekend.length}.`,
     };
   }
   return {
     weekday: { kwh: mean(weekday), days: weekday.length },
     weekend: { kwh: mean(weekend), days: weekend.length },
+    holidays,
+    restDays,
     reason: null,
   };
 }

@@ -43,6 +43,7 @@
     "tuya:spec": "node --env-file=server/.env server/tuya-spec.mjs",
     "demand:profile": "node server/demand-profile.mjs",
     "baseline:report": "node server/baseline-report.mjs",
+    "baseline:build": "node server/baseline-build.mjs",
     "shed:profile": "node server/shed-profile.mjs",
     "check:meters": "node server/check-meter-swap.mjs",
     "scrub:meters": "node server/scrub-meter-swap.mjs",

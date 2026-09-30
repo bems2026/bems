@@ -50,7 +50,23 @@ const CHAR_W = 4.9;
 
 const kwh = (v: number) => `${v.toFixed(2)} kWh`;
 
-export function circuitDailyEnergyChart(points: readonly CircuitDayPoint[], series: readonly CircuitSeriesDef[], spec: ChartSpec): Scene {
+/** RM-153: a run of columns to shade behind the stacks, such as the working hours of a day. */
+export interface ColumnBand {
+  /** First column, by index. */
+  from: number;
+  /** Last column, by index, inclusive. */
+  to: number;
+  /** Named in the legend and the description, so the shading is never colour alone. */
+  label: string;
+}
+
+export function circuitDailyEnergyChart(
+  points: readonly CircuitDayPoint[],
+  series: readonly CircuitSeriesDef[],
+  spec: ChartSpec,
+  /** `desc` replaces the generated description, for columns that are not recorded days (RM-153's modelled hours). */
+  options: { band?: ColumnBand; desc?: string } = {}
+): Scene {
   const { width, height, palette, idPrefix, title } = spec;
   const box = plotBox(width, height, MARGINS);
   const marks: Mark[] = [];
@@ -67,9 +83,11 @@ export function circuitDailyEnergyChart(points: readonly CircuitDayPoint[], seri
     return { width, height, idPrefix, title, desc: 'No circuit recorded anything in this period, so there is nothing to draw.', defs, marks };
   }
 
-  const desc = `Energy per day for ${series.length} circuit${series.length === 1 ? '' : 's'}, stacked. ${
+  const bandNote = options.band ? ` ${options.band.label} are shaded.` : '';
+  const generated = `Energy per day for ${series.length} circuit${series.length === 1 ? '' : 's'}, stacked.${bandNote} ${
     missing > 0 ? `${missing} of ${points.length} days were not recorded and are drawn as gaps.` : `All ${points.length} days were recorded.`
   }`;
+  const desc = options.desc ?? generated;
 
   const y = linearScale([scale.min, scale.max], [box.bottom, box.y]);
   const band = bandScale(points.length, [box.x, box.right], 0.32);
@@ -77,6 +95,13 @@ export function circuitDailyEnergyChart(points: readonly CircuitDayPoint[], seri
   for (const tick of scale.ticks) {
     marks.push({ kind: 'line', x1: box.x, y1: y(tick), x2: box.right, y2: y(tick), stroke: palette.grid, width: 1 });
     marks.push({ kind: 'text', x: box.x - 6, y: y(tick), dy: 3.5, text: scale.max >= 10 ? String(Math.round(tick)) : String(tick), fill: palette.textMuted, size: 9, anchor: 'end' });
+  }
+
+  // --- the band, behind everything that follows ---
+  const slot = box.w / Math.max(points.length, 1);
+  const shade = options.band;
+  if (shade) {
+    marks.push({ kind: 'rect', x: box.x + shade.from * slot, y: box.y, w: (shade.to - shade.from + 1) * slot, h: box.h, fill: palette.grid, opacity: 0.55 });
   }
 
   // --- gaps, one block per outage ---
@@ -88,7 +113,6 @@ export function circuitDailyEnergyChart(points: readonly CircuitDayPoint[], seri
     else runs.push({ from: i, to: i });
   });
   if (runs.length > 0) defs.push({ kind: 'hatch', id: gapId, stroke: palette.gap });
-  const slot = box.w / Math.max(points.length, 1);
   for (const run of runs) {
     const x = box.x + run.from * slot;
     const w = (run.to - run.from + 1) * slot;
@@ -134,6 +158,11 @@ export function circuitDailyEnergyChart(points: readonly CircuitDayPoint[], seri
     marks.push({ kind: 'rect', x: lx, y: ly - 5, w: 10, h: 10, fill: colour(s), rx: 2 });
     marks.push({ kind: 'text', x: lx + 14, y: ly, dy: 3, text: s.label, fill: palette.textMuted, size: 9, anchor: 'start' });
     lx += 14 + s.label.length * CHAR_W + 14;
+  }
+  if (shade) {
+    marks.push({ kind: 'rect', x: lx, y: ly - 5, w: 10, h: 10, fill: palette.grid, opacity: 0.55, rx: 2 });
+    marks.push({ kind: 'text', x: lx + 14, y: ly, dy: 3, text: shade.label, fill: palette.textMuted, size: 9, anchor: 'start' });
+    lx += 14 + shade.label.length * CHAR_W + 14;
   }
   if (runs.length > 0) {
     marks.push({ kind: 'rect', x: lx, y: ly - 5, w: 10, h: 10, fill: `url(#${gapId})`, opacity: 0.45 });

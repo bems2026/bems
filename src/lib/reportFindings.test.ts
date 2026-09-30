@@ -47,6 +47,28 @@ describe('weekdayWeekend', () => {
     expect(result.weekday.days).toBe(5);
   });
 
+  it('reads the working week from the site, not a hard-coded Saturday and Sunday (RM-153)', () => {
+    // An office that works Sunday to Thursday: its Friday and Saturday are the rest days.
+    const calendar = { working_week: [0, 1, 2, 3, 4], non_working_days: [] };
+    const result = weekdayWeekend([...WEEK, ...WEEKEND], calendar);
+    expect(result.weekday.days).toBe(5); // Sun 9th + Mon-Thu 3rd-6th
+    expect(result.weekend.days).toBe(2); // Fri 7th + Sat 8th
+    expect(result.restDays).toEqual(['Friday', 'Saturday']);
+  });
+
+  it('leaves a holiday out of both groups rather than filing it as a working day', () => {
+    // 2026-08-21 is a Friday and Ninoy Aquino Day. Counted as a weekday, a closed office would
+    // drag the weekday average towards a weekend day's.
+    const calendar = { working_week: [1, 2, 3, 4, 5], non_working_days: [{ date: '2026-08-21', name: 'Ninoy Aquino Day' }] };
+    const result = weekdayWeekend([...WEEK, ...WEEKEND, day('2026-08-21', { energy_kwh: 2 })], calendar);
+    expect(result.weekday).toEqual({ kwh: 20, days: 5 });
+    expect(result.holidays).toBe(1);
+  });
+
+  it('defaults to the site calendar, whose rest days are Saturday and Sunday', () => {
+    expect(weekdayWeekend([...WEEK, ...WEEKEND]).restDays).toEqual(['Saturday', 'Sunday']);
+  });
+
   it('refuses when there are too few complete days of either kind, and says which', () => {
     const result = weekdayWeekend([...WEEK, WEEKEND[0]]);
     expect(result.weekend.kwh).toBeNull();

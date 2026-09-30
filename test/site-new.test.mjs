@@ -44,7 +44,7 @@ test('it writes a site directory a deployment could actually use', async () => {
   try {
     const result = scaffoldSite({ root, slug: 'test-lab' });
     const dir = join(root, 'shared', 'sites', 'test-lab');
-    for (const f of ['site.mjs', 'devices.mjs', 'circuits.mjs']) {
+    for (const f of ['site.mjs', 'devices.mjs', 'circuits.mjs', 'baseline.mjs']) {
       assert.ok(existsSync(join(dir, f)), `expected ${f}`);
     }
     assert.equal(result.slug, 'test-lab');
@@ -67,6 +67,8 @@ test('it writes a site directory a deployment could actually use', async () => {
     const circuits = await import(pathToFileURL(join(dir, 'circuits.mjs')).href);
     assert.deepEqual(devices.BUILT_IN_DEVICES, [], 'a new site has no hardware until somebody enrols it');
     assert.deepEqual(circuits.CIRCUITS, [], 'and no metered circuits until somebody wires them');
+    const baseline = await import(pathToFileURL(join(dir, 'baseline.mjs')).href);
+    assert.equal(baseline.BASELINE, null, 'and no baseline until four clean weeks have been recorded (RM-153)');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -118,6 +120,7 @@ test('it does not activate the site — that is a person\'s decision', () => {
     // ...but it must say exactly what to change, or "one line" is only true for whoever wrote it.
     assert.match(result.nextStep, /siteConfig\.mjs/);
     assert.match(result.nextStep, /test-lab/);
+    assert.match(result.nextStep, /BASELINE/, 'all four re-exports, or the pointer is left half on the old building');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -128,7 +131,7 @@ test('the scaffolded files carry no reference to any other building', () => {
   try {
     scaffoldSite({ root, slug: 'test-lab' });
     const dir = join(root, 'shared', 'sites', 'test-lab');
-    for (const f of ['site.mjs', 'devices.mjs', 'circuits.mjs']) {
+    for (const f of ['site.mjs', 'devices.mjs', 'circuits.mjs', 'baseline.mjs']) {
       const text = readFileSync(join(dir, f), 'utf8');
       assert.equal(/mmsu|nberic|care\b/i.test(text), false, `${f} mentions the original site`);
     }

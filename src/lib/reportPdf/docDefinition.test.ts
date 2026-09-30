@@ -441,3 +441,39 @@ describe('estimated loads — RM-130', () => {
     expect(flat(buildDocDefinition(report({ sections: ['apportioned'], apportioned: [] })))).not.toMatch(/Estimated, not metered/);
   });
 });
+
+describe('the baseline section — RM-153', () => {
+  const projected = {
+    heading: 'Baseline · business as usual',
+    lede: 'What this office would use with nothing managing it.',
+    rows: [['Expected energy, a standard month', '328 kWh']] as [string, string][],
+    against: { heading: 'Against the baseline — October 2026', lines: ['Energy avoided: 28.0 kWh.'] },
+    caveatsTitle: 'What this baseline assumes',
+    caveats: [{ lead: 'Not adjusted for weather.', body: 'It uses no outdoor temperature.' }],
+  };
+  const baseChart = {
+    section: 'projected' as ReportSectionId,
+    title: 'A working day, hour by hour — projected baseline',
+    svg: '<svg xmlns="http://www.w3.org/2000/svg"/>',
+    desc: '',
+    table: { headers: ['Hour', 'kWh'], rows: [['08:00', '1.20']] },
+  };
+
+  it('prints the baseline, its chart inside its own section, the comparison and what it assumes — before the refusals', () => {
+    const def = buildDocDefinition(report({ sections: ['projected'], projected, charts: [baseChart] }));
+    const text = allText(def.content).join(' ');
+    expect(text).toContain('Baseline · business as usual');
+    expect(text).toContain('328 kWh');
+    expect(text).toContain('Energy avoided: 28.0 kWh.');
+    expect(text).toContain('What this baseline assumes');
+    const at = (s: string) => index(def, s);
+    expect(at('A working day, hour by hour')).toBeGreaterThan(at('Baseline · business as usual'));
+    expect(at('What this baseline assumes')).toBeLessThan(at('What this report does not say'));
+  });
+
+  it('prints none of it when the section was not chosen', () => {
+    const text = allText(buildDocDefinition(report({ sections: ['keyFigures'], projected, charts: [baseChart] })).content).join(' ');
+    expect(text).not.toContain('Baseline · business as usual');
+    expect(text).not.toContain('A working day, hour by hour');
+  });
+});

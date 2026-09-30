@@ -20,7 +20,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { checkSite } from '../scripts/site-check.mjs';
-import { SITE, CIRCUITS, BUILT_IN_DEVICES } from '../shared/siteConfig.mjs';
+import { SITE, CIRCUITS, BUILT_IN_DEVICES, BASELINE } from '../shared/siteConfig.mjs';
 import { DEVICE_CLASSES } from '../shared/registry.mjs';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -199,10 +199,12 @@ test('a meter two circuits claim is an error — it would be counted twice', () 
 test('the live site passes its own check with no errors', () => {
   // If the checker cannot approve the one deployment known to work, it is measuring the wrong
   // thing — and every new site would be sent chasing a fault this building also has.
-  const r = checkSite({ slug: SITE.id, site: SITE, devices: BUILT_IN_DEVICES, circuits: CIRCUITS });
+  const r = checkSite({ slug: SITE.id, site: SITE, devices: BUILT_IN_DEVICES, circuits: CIRCUITS, baseline: BASELINE });
   assert.deepEqual(r.errors, [], JSON.stringify(r.errors, null, 1));
   assert.equal(r.ok, true);
   assert.equal(codes(r).warnings.includes('circuit_load_missing'), false, 'every branch here has a load category');
+  assert.equal(codes(r).warnings.includes('no_working_calendar'), false, 'this office has stated when it works (RM-153)');
+  assert.equal(codes(r).warnings.includes('no_baseline'), false, 'and has a baseline');
 });
 
 /**
@@ -249,4 +251,66 @@ test('a complete location passes', () => {
   const r = run({ site: site({ location: { place: 'Batac City', lat: 18.0553, lon: 120.5646 } }) });
   assert.deepEqual(r.errors, []);
   assert.equal(codes(r).warnings.includes('no_location'), false);
+});
+
+// ---------------------------------------------------------------------------
+// When the office works (RM-153)
+// ---------------------------------------------------------------------------
+
+const calendar = {
+  working_hours: { start: '08:00', end: '17:00' },
+  working_week: [1, 2, 3, 4, 5],
+  non_working_days: [{ date: '2026-08-31', name: 'National Heroes Day' }],
+};
+
+test('a site with no working calendar passes, and is told what it loses', () => {
+  // `site:new` writes none: when an office works is a fact about the office, and a template that
+  // guessed would put a guess under every "working day" the reports print.
+  const r = run();
+  assert.deepEqual(r.errors, []);
+  assert.ok(codes(r).warnings.includes('no_working_calendar'));
+});
+
+test('a complete working calendar passes without that warning', () => {
+  const r = run({ site: site(calendar) });
+  assert.deepEqual(r.errors, []);
+  assert.equal(codes(r).warnings.includes('no_working_calendar'), false);
+});
+
+test('working hours must be two HH:MM times, start before end', () => {
+  for (const working_hours of [{ start: '8:00', end: '17:00' }, { start: '17:00', end: '08:00' }, { start: '08:00' }, { start: '08:00', end: '24:30' }]) {
+    const r = run({ site: site({ ...calendar, working_hours }) });
+    assert.ok(codes(r).errors.includes('working_hours_invalid'), JSON.stringify(working_hours));
+  }
+});
+
+test('the working week is distinct weekday numbers, 0 (Sunday) to 6', () => {
+  for (const working_week of [[1, 2, 7], [1, 1, 2], [], ['mon']]) {
+    const r = run({ site: site({ ...calendar, working_week }) });
+    assert.ok(codes(r).errors.includes('working_week_invalid'), JSON.stringify(working_week));
+  }
+});
+
+test('a non-working day is a real calendar date with a name, listed once', () => {
+  const bad = [
+    [{ date: '2026-02-30', name: 'No such day' }],
+    [{ date: '2026-8-31', name: 'Not zero-padded' }],
+    [{ date: '2026-08-31', name: '' }],
+    [{ date: '2026-08-31', name: 'A' }, { date: '2026-08-31', name: 'B' }],
+  ];
+  for (const non_working_days of bad) {
+    const r = run({ site: site({ ...calendar, non_working_days }) });
+    assert.ok(codes(r).errors.includes('non_working_day_invalid'), JSON.stringify(non_working_days));
+  }
+});
+
+test('a baseline built for another site is an error — it would be compared against this building', () => {
+  const r = run({ site: site(calendar), baseline: { site_id: 'some-other-site' } });
+  assert.ok(codes(r).errors.includes('baseline_other_site'));
+});
+
+test('no baseline is a warning, not an error — a new site has nothing to build one from yet', () => {
+  const r = run({ site: site(calendar), baseline: null });
+  assert.deepEqual(r.errors, []);
+  assert.ok(codes(r).warnings.includes('no_baseline'));
 });

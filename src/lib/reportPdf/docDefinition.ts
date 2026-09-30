@@ -79,6 +79,16 @@ export interface PdfReport {
   baseline?: { gate: readonly string[] | null; rows: readonly (readonly [string, string])[]; caveat: string } | null;
   circuits?: { branches: readonly PdfDeviceRow[]; devices: readonly PdfDeviceRow[]; untracked: string | null } | null;
   comparison?: { heading: string; lines: readonly string[] } | null;
+  /** RM-153: the projected baseline, the period against it, and what it assumes. Its charts are `charts` with
+   *  section `projected`, drawn inside this section rather than with the others. */
+  projected?: {
+    heading: string;
+    lede: string;
+    rows: readonly (readonly [string, string])[];
+    against: { heading: string; lines: readonly string[] };
+    caveatsTitle: string;
+    caveats: readonly { lead: string; body: string }[];
+  } | null;
   /** Charts the reader chose whose data could not be loaded when the document was made — RM-081b. */
   omitted?: readonly string[];
   /** RM-099. Absent means Detailed. */
@@ -273,7 +283,7 @@ export function buildDocDefinition(r: PdfReport) {
     });
   }
   // RM-130: an estimate's chart is drawn inside its own section below, beside its figures.
-  const drawn = r.charts.filter((chart) => (chart.section === undefined || has(chart.section)) && chart.section !== 'apportioned');
+  const drawn = r.charts.filter((chart) => (chart.section === undefined || has(chart.section)) && chart.section !== 'apportioned' && chart.section !== 'projected');
   for (const chart of drawn) {
     if (detail === 'simple') {
       // Simple: the picture and what it shows, and no number table under it.
@@ -383,6 +393,36 @@ export function buildDocDefinition(r: PdfReport) {
         ...r.comparison.lines.map((line) => ({ text: line, style: 'note' })),
         { text: PLAIN_COMPARISON_TITLE, style: 'h3' },
         { ul: PLAIN_COMPARISON_LIMITS.map((c) => ({ text: [{ text: c.lead, bold: true }, ' ', c.body] })), style: 'note' },
+      ],
+      unbreakable: true,
+    });
+  }
+
+  // --- the projected baseline — RM-153 ------------------------------------------------------------
+  if (has('projected') && r.projected) {
+    const p = r.projected;
+    content.push(
+      { text: p.heading, style: 'h2' },
+      { text: p.lede, style: 'note' },
+      {
+        table: {
+          headerRows: 1,
+          widths: ['*', 'auto'],
+          body: [[{ text: 'Figure', style: 'th' }, { text: 'Value', style: 'th' }], ...p.rows.map(([label, value]) => [label, value])],
+        },
+        layout: 'lightHorizontalLines',
+        margin: [0, 4, 0, 4],
+      }
+    );
+    for (const chart of r.charts.filter((c) => c.section === 'projected')) {
+      content.push({ text: chart.title, style: 'h3' }, { svg: chart.svg, width: CONTENT_WIDTH }, { text: chart.desc, style: 'note' });
+    }
+    content.push({
+      stack: [
+        { text: p.against.heading, style: 'h3' },
+        ...p.against.lines.map((line) => ({ text: line, style: 'note' })),
+        { text: p.caveatsTitle, style: 'h3' },
+        { ul: p.caveats.map((c) => ({ text: [{ text: c.lead, bold: true }, ' ', c.body] })), style: 'note' },
       ],
       unbreakable: true,
     });

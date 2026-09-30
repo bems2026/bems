@@ -39,6 +39,7 @@ export type ReportSectionId =
   | 'baseline'
   | 'circuits'
   | 'comparison'
+  | 'projected'
   | 'notSaid';
 
 export interface ReportSection {
@@ -79,6 +80,9 @@ export const REPORT_SECTIONS: readonly ReportSection[] = [
   { id: 'baseline', label: 'Usual and high demand', detail: 'detailed' },
   { id: 'circuits', label: 'By circuit', detail: 'detailed' },
   { id: 'comparison', label: 'Compared with the previous period', detail: 'detailed' },
+  // RM-153: the projected baseline and this period against it — in both depths, because energy avoided is
+  // the figure a document about savings is read for. (`baseline` above is the older usual-and-high demand.)
+  { id: 'projected', label: 'The baseline, and this period against it', detail: 'both' },
   {
     id: 'notSaid',
     label: 'What this report does not say',

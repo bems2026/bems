@@ -3,9 +3,9 @@ title: Architecture decisions
 purpose: Index of every architecture decision record, including the two that predate this folder
 audience: [integrator, administrator]
 status: Draft
-last_verified: 2026-09-29
+last_verified: 2026-09-30
 applies_to: repo 23bb463
-evidence: [E-030, E-032, E-062, E-063, E-072, E-075, E-076, E-203, E-205, E-218]
+evidence: [E-030, E-032, E-062, E-063, E-072, E-075, E-076, E-203, E-205, E-218, E-231, E-232]
 ---
 
 # Architecture decisions
@@ -29,6 +29,7 @@ files, and moving it would change code, which this documentation work does not d
 | [ADR-0009](ADR-0009-anomaly-rolling-statistics.md) | Anomaly detection is rolling statistics, and both tests must agree | Accepted | 2026-08-19 |
 | [ADR-0010](ADR-0010-defer-predictive.md) | Predictive control and maintenance wait for enough history | Proposed | 2026-09-24 |
 | [ADR-0011](ADR-0011-edge-archive-hot-tier.md) | Raw history's permanent home is the edge, with a sealed copy off it; the cloud keeps 14 days. Amends ADR-001 §5. | Accepted | 2026-09-29 |
+| [ADR-0012](ADR-0012-projected-baseline.md) | The baseline is a model built from four recorded weeks, committed as a site file. Amends RM-097's word rule for the Baseline tab. | Accepted | 2026-09-30 |
 
 ## How these were dated and checked
 

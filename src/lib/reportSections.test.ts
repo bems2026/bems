@@ -61,3 +61,15 @@ describe('the sections of a day — RM-124', () => {
     expect(normaliseSections(['dailyEnergy', 'hourlyEnergy'], 'detailed', 'day')).toEqual(['coverage', 'hourlyEnergy', 'notSaid']);
   });
 });
+
+describe('the baseline section — RM-153', () => {
+  it('comes after the comparison and before the refusals, in both depths and for every kind of period', () => {
+    for (const detail of ['simple', 'detailed'] as const) {
+      for (const period of ['day', 'week', 'month'] as const) {
+        const ids = sectionsFor(detail, period).map((s) => s.id);
+        expect(ids).toContain('projected');
+        expect(ids.indexOf('projected')).toBe(ids.length - 2);
+      }
+    }
+  });
+});

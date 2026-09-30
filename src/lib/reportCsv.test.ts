@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { dailyCsv, deviceCsv, deviceDailyCsv } from './reportCsv';
+import { baselineCsv, dailyCsv, deviceCsv, deviceDailyCsv } from './reportCsv';
+import { SITE_BASELINE, compareWithBaseline, type ProjectedBaseline } from './baselineCompare';
 import type { DeviceDayRow } from './circuitSeries';
 import type { DailyRow } from './reportSeries';
 import type { PeriodDeviceReport } from './supabaseReports';
@@ -197,5 +198,65 @@ describe('deviceDailyCsv — devices, one row per day (RM-098)', () => {
   it('calls a partly recorded day partial, and names where older figures came from', () => {
     const csv = deviceDailyCsv({ ...base, rows: [day('a', '2026-08-17', { online_minutes: 359, resolution: 'mixed' })] });
     expect(lines(csv)[1]).toMatch(/,25,partial,minute readings and hourly averages,$/);
+  });
+});
+
+describe('baselineCsv — RM-153', () => {
+  // The site's own committed baseline: the file is its backup, so it must carry every figure the tab shows.
+  const b = SITE_BASELINE as ProjectedBaseline;
+  /** RFC 4180 cells: a note with a comma in it arrives quoted. */
+  const cells = (line: string) => [...line.matchAll(/("(?:[^"]|"")*"|[^,]*)(,|$)/g)].slice(0, -1).map((m) => m[1].replace(/^"|"$/g, '').replace(/""/g, '"'));
+  const rowsOf = (csv: string) => csv.split('\r\n').slice(1).map(cells);
+  const header = (csv: string) => csv.split('\r\n')[0];
+
+  it('is one long table: what, which day, hour, use, value, unit, note — no preamble', () => {
+    const csv = baselineCsv({ baseline: b, comparison: null, periodLabel: 'September 2026' });
+    expect(header(csv)).toBe('Section,Day,Hour,Use,Value,Unit,Note');
+  });
+
+  it('carries every hour of every modelled day, for every use, and the figures read off them', () => {
+    const rows = rowsOf(baselineCsv({ baseline: b, comparison: null, periodLabel: 'September 2026' }));
+    const profile = rows.filter((r) => r[0] === 'Projected hour');
+    expect(profile).toHaveLength(Object.keys(b.day_types).length * 24 * b.loads.length);
+    const day = rows.find((r) => r[0] === 'Projected day' && r[1] === 'Working day' && r[3] === 'Total');
+    expect(day?.[4]).toBe('13.83');
+    expect(rows.find((r) => r[0] === 'Projected week' && r[3] === 'Total')?.[4]).toBe('75.4');
+    expect(rows.find((r) => r[0] === 'Projected month' && r[3] === 'Total')?.[4]).toBe('328');
+    expect(rows.find((r) => r[0] === 'Peak operating draw')?.[4]).toBe('2893');
+  });
+
+  it('keeps the recorded days as the backup, each saying what became of it', () => {
+    const rows = rowsOf(baselineCsv({ baseline: b, comparison: null, periodLabel: 'September 2026' }));
+    const recorded = rows.filter((r) => r[0] === 'Recorded day' && r[3] === 'Total');
+    expect(recorded).toHaveLength(b.recorded.days.length);
+    expect(recorded.find((r) => r[1] === '2026-08-25')?.[6]).toBe('Used: Working day');
+    expect(recorded.find((r) => r[1] === '2026-09-01')?.[6]).toMatch(/^Left out: office evidently closed/);
+  });
+
+  it('adds the period against the baseline, with the direction in words and never a minus sign', () => {
+    const comparison = compareWithBaseline({
+      baseline: b,
+      period: 'month',
+      start: '2026-10-01',
+      holidays: [],
+      recordedKwh: 400,
+      recordedByLoad: { lighting: 10, aircon: 150, other: 240 },
+      coverage: { ratio: 1, band: 'complete' },
+    });
+    const csv = baselineCsv({ baseline: b, comparison, periodLabel: 'October 2026' });
+    const rows = rowsOf(csv);
+    const diff = rows.find((r) => r[0] === 'Against the baseline' && r[3] === 'Total' && r[6]?.startsWith('Difference'));
+    expect(diff?.[6]).toBe('Difference: more than expected');
+    expect(csv).not.toMatch(/,'?-\d/);
+  });
+
+  it('says why a period was not compared, in place of figures', () => {
+    const comparison = compareWithBaseline({
+      baseline: b, period: 'month', start: '2026-10-01', holidays: [], recordedKwh: 100, recordedByLoad: {}, coverage: { ratio: 0.48, band: 'partial' },
+    });
+    const rows = rowsOf(baselineCsv({ baseline: b, comparison, periodLabel: 'October 2026' }));
+    const against = rows.filter((r) => r[0] === 'Against the baseline');
+    expect(against).toHaveLength(1);
+    expect(against[0].join(',')).toMatch(/48% recorded/);
   });
 });

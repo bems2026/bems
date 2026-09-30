@@ -1,6 +1,12 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-30, evening — **RM-151 and RM-152 done.**
+**Last audited:** 2026-10-01 — **RM-153 done: a projected baseline on the Reports page.**
+- **Reports → Baseline** shows what the office uses with nothing managing it, built from 25 Aug to 22 Sep: a working
+  day 13.83 kWh, a week 75.4 kWh, a standard month 328 kWh (E-232). It sets any fully recorded period against it,
+  and the recorded days behind it ship as its backup. The site now has a working calendar with the 2026 holidays
+  (ADR-0012, E-231).
+
+**Earlier, 2026-09-30, evening — RM-151 and RM-152 done.**
 - **Reports → Month → August** loads signed in with no timeouts. The cause was row security meeting an hour-by-hour
   probe (F-037). phase52 is applied and took each function from 3.6-5.4 s to 0.26-0.92 s. The page now loads only what
   the open tab shows (E-229).
@@ -415,6 +421,22 @@ other four and none needed changing.
 ---
 
 ## 0. Triage — what to do next
+
+### 2026-09-30 — a projected baseline on the Reports page (RM-153): done
+
+- **What it is.** What the office would use with nothing managing it: weekdays working 08:00 to 17:00, weekends as
+  recorded, no holidays. It was built from 25 Aug to 22 Sep, the four weeks before automation first acted, recorded
+  at 99.4–99.6% (E-231).
+- **The figures (E-232).** A working day is 13.83 kWh, a Saturday 4.65 and a Sunday 1.63. A week is 75.4 kWh and a
+  standard month 328 kWh. The peak operating draw is 2.89 kW.
+- **Where.** Reports → **Baseline**: projected or as recorded, by day, week or month. It sets the selected period
+  against the baseline (energy avoided) once at least 95% of it was recorded. The Baseline CSV and the PDF carry the
+  same figures.
+- **The operator's rules.** Friday is a full working day, Saturday as recorded, and 21 and 31 Aug are holidays. The
+  2026 holidays are in the site calendar, and the Eid dates will be added when they are proclaimed.
+
+**For the operator.** Rebuild the baseline (`npm run baseline:build`) only if the office's routine or equipment
+changes. The comparison means most from October on, since August and September are its own window.
 
 ### 2026-09-30 — Reports timeouts (RM-151) and the alerts bell (RM-152): done
 
@@ -4282,6 +4304,72 @@ The operator reported "C.O Yellow raised its own power warning … for X min" re
       - `docs/05-interface.md` describes the new bell.
       - **Not changed:** C.O Yellow's 2,000 W limit, which the operator keeps. It can be changed from Devices → Manage →
         Capabilities, which is audited and now swap-safe.
+
+### A projected baseline on the Reports page — RM-153 (2026-09-30)
+
+The operator asked for a baseline with complete daily, weekly and monthly figures on the Reports page, built from the
+August and September recordings. It shows business as usual: weekdays working 08:00 to 17:00, weekends not, no
+holidays, no working from home, and no energy management. The recorded data sits behind it as the backup. It is the
+reference energy avoided is measured from, and it answers §5 Q12. Decisions are in
+[ADR-0012](docs/adr/ADR-0012-projected-baseline.md); evidence is E-231 and E-232.
+
+- [x] **RM-153a** The site's working calendar. **Built and tested.**
+      - `shared/sites/<site>/site.mjs` gains `working_hours` (08:00 to 17:00), `working_week` (Monday to Friday) and
+        `non_working_days`: the 2026 regular and special non-working days of Proclamation No. 1006, each named. The
+        Eid dates await their own proclamations.
+      - `npm run site:check` validates all three, and warns when a site has none or no baseline (+7 tests).
+      - `npm run site:new` scaffolds `baseline.mjs` as `null`, and names the fourth line to change in
+        `shared/siteConfig.mjs`.
+      - The Usage patterns finding "Weekday vs weekend" reads the site's working week instead of a hard-coded Saturday
+        and Sunday, and leaves holidays out of both groups (+3 tests).
+- [x] **RM-153b** The model and its build. **Built, tested, run on the edge.**
+      - `server/baselineModel.mjs`, pure (+19 tests on a synthetic fortnight, the trim, dropped hours, the ceiling, the
+        automation rule and the render round trip each neutered in-test):
+        - hourly averages per meter, filed by the load its circuit carries;
+        - days left out by rule, by holiday, by too few recorded hours, or because an automation source acted;
+        - each hour the mean of its days, leaving out the highest and lowest once there are five;
+        - Friday modelled on Monday to Thursday; Saturday and Sunday as recorded;
+        - a week, a standard month of 365.25 / 12 days, and the peak operating draw;
+        - the recorded backup: every day of 16 Aug to 30 Sep with what the model did with it.
+      - `server/baseline-build.mjs` (`npm run baseline:build`, a dry run; `--write`; `--save` and `--from` for a
+        repeatable build). It reads `readings_archive`, `report_hour_matrix` and `commands`, and only reads.
+      - `shared/sites/<site>/baseline-rules.mjs` holds the operator's rules, each exclusion with its reason.
+        `baseline.mjs` is generated from it and committed. `test/site-baseline.test.mjs` fails when either drifts
+        (+10 tests).
+      - **The figures (E-232):**
+        - 11 working days, 4 Saturdays and 4 Sundays;
+        - a working day 13.83 kWh, a Saturday 4.65, a Sunday 1.63;
+        - a week 75.4 kWh, a standard month 328 kWh;
+        - peak operating draw 2,893 W.
+- [x] **RM-153c** The **Baseline** tab, after Usage patterns (`src/components/reports/BaselineReport.tsx`,
+      `src/lib/baselineCompare.ts`). **Built, tested, and verified signed in on the dev server (2026-10-01).**
+      - **Projected baseline | Recorded Aug–Sep**, at the page's Daily, Weekly and Monthly resolution:
+        - Daily: a day type hour by hour, stacked by use, with the working hours shaded;
+        - Weekly: the typical week;
+        - Monthly: Expected energy, Expected demand, Base standby load, Peak operating draw, cost once a rate is set,
+          and a table by use.
+      - Recorded: each weekday group as it was (the lighter Friday shows), and every recorded day with what became
+        of it.
+      - **Against the baseline**: the selected period over its own calendar, with holidays as closed days. It is
+        refused under 95% recorded, and says when the period is the baseline's own window.
+      - No fetch: a static import and the rows the page already holds.
+      - The word rule (RM-097) now exempts this panel only; `ReportsPage.tabs.test.tsx` still holds the other four
+        to it.
+      - Tests: `baselineCompare` (14; the holiday rule and the refusal neutered), `BaselineReport` (12), the tabs
+        test (+2), and the stacked chart's shaded band and caller's description (+2).
+      - **In the browser:** August refused at 27% recorded; the week of 21 Sep 5.1 kWh above the baseline, with the
+        own-window note; 30 Sep 9.7 kWh below it. Both views at the three resolutions, and the recorded-days table
+        with every day's fate. No request of its own: the only calls while it was open were the bell's. The Baseline
+        CSV (774 lines) and a Simple PDF (10 sections) were generated and captured in the page, not saved.
+- [x] **RM-153d** Exports. **Built and tested.**
+      - **Baseline (CSV)**: one long table covering every modelled hour, the day, week and month, the recorded days
+        with their fate, and the period against the baseline. It never carries a minus sign (+5 tests).
+      - **PDF section** "The baseline, and this period against it", in both depths: the figures, two charts, the
+        comparison and the assumptions (+7 tests).
+- [x] **RM-153e** Found on the way: the Reports caveat `COMPARISON_NOT_ADJUSTED` said an outdoor sensor exists on
+      site. It was never installed (E-125), so the sentence now says no outdoor temperature is recorded.
+- [x] **RM-153f** Records: ADR-0012, `docs/90-replication.md` step 6, `docs/05-interface.md`, E-231 and E-232,
+      and the restart map (`baseline.mjs` is loaded by every daemon through `siteConfig`).
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 
@@ -11131,3 +11219,8 @@ may not.
     prints to a terminal and leaves nothing citable behind. The Reports page already has the CSV
     serializer and the coverage-honesty logic this would need (EX-033, EX-034), so the gap is an
     output, not a calculation.
+
+    **Answered 2026-09-30 by RM-153.** The Reports page's Baseline tab is the citable summary: the
+    projected day, week and month with the recorded days behind them, exported as the Baseline CSV and
+    a PDF section (E-232, ADR-0012). `npm run baseline:report` still summarises a recorded window for
+    the deliverable; the tab is what a period is measured against.

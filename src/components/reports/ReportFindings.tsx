@@ -47,7 +47,8 @@ export function ReportFindings({ label, daily, hours, hoursLoading = false, summ
                 <span className="reports-figure report-finding__value">{week.weekday.kwh.toFixed(1)} kWh a weekday</span>
                 <span className="reports-figure report-finding__value">{week.weekend.kwh.toFixed(1)} kWh a weekend day</span>
                 <span className="reports-figure__caveat report-kpi__sub">
-                  From {week.weekday.days} full weekdays and {week.weekend.days} full weekend days (Saturday and Sunday)
+                  From {week.weekday.days} full weekdays and {week.weekend.days} full weekend days ({week.restDays.join(' and ')})
+                  {week.holidays > 0 ? `, leaving out ${week.holidays} holiday${week.holidays === 1 ? '' : 's'}` : ''}
                   {week.weekday.kwh > 0 ? ` — a weekend day uses ${Math.round((week.weekend.kwh / week.weekday.kwh) * 100)}% of a weekday.` : '.'}
                 </span>
               </>

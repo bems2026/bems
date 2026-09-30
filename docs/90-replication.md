@@ -5,7 +5,7 @@ audience: [integrator, administrator, installer]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo 29403b5
-evidence: [E-063, E-065, E-088, E-122, E-130, E-134, E-137, E-149, E-157, E-176, E-196, E-205, E-206]
+evidence: [E-063, E-065, E-088, E-122, E-130, E-134, E-137, E-149, E-157, E-176, E-196, E-205, E-206, E-232]
 ---
 
 # Replication — step 1 to done
@@ -198,8 +198,16 @@ isolation first ([02](02-network.md#how-it-fails), [01](01-field-devices.md#how-
    normal cycle.
 3. Produce the baseline: `npm run baseline:report` writes a summary and the dataset it came from, read-only
    [E-206]. `npm run demand:profile` gives the demand profile for choosing thresholds later.
+4. Set the site's working calendar in `site.mjs`: `working_hours`, `working_week` and `non_working_days`, each
+   holiday named. `npm run site:check` checks them.
+5. Write the site's `baseline-rules.mjs` beside `site.mjs`: the window, and every day left out with its reason
+   (tests, outages, holidays). Then run `npm run baseline:build` on the edge. It reads only, prints the day types,
+   the typical week and the standard month, and says why each unused day was left out. Add `--write` to write the
+   site's `baseline.mjs`, and commit both files [E-232]. The Reports page's **Baseline** tab reads it
+   ([ADR-0012](adr/ADR-0012-projected-baseline.md)).
 
-**Expected result.** A baseline report with coverage stated, kept with the commissioning pack.
+**Expected result.** A baseline report with coverage stated, kept with the commissioning pack, and a committed
+`baseline.mjs` whose figures the Baseline tab shows.
 
 **Done when.** The baseline covers at least four normal weeks at ≥ 99 % of expected minutes per meter [E-157].
 

@@ -25,7 +25,7 @@ import { useExportAction } from '@/lib/useExportAction';
  * generated, so nobody files a whole-building PDF believing it is one branch's.
  */
 
-export type ExportFormat = 'pdf' | 'daily-csv' | 'device-csv' | 'device-daily-csv' | 'readings-csv';
+export type ExportFormat = 'pdf' | 'daily-csv' | 'device-csv' | 'device-daily-csv' | 'readings-csv' | 'baseline-csv';
 
 /** Which formats follow the part of the building the page is narrowed to. */
 const FOLLOWS_SCOPE: readonly ExportFormat[] = ['device-csv', 'device-daily-csv', 'readings-csv'];
@@ -53,6 +53,12 @@ const FORMATS: readonly { id: ExportFormat; label: string; hint: string }[] = [
     id: 'readings-csv',
     label: 'Every reading (CSV)',
     hint: 'Every reading each device took: time, voltage, current, power and its energy counter. Older hours are hourly averages. A month is a large file and takes a while.',
+  },
+  {
+    // RM-153.
+    id: 'baseline-csv',
+    label: 'Baseline (CSV)',
+    hint: 'The projected baseline hour by hour for each kind of day, its week and month, the recorded days it was built from and what became of each — and this period against it.',
   },
 ];
 

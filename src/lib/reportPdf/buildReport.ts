@@ -22,6 +22,24 @@ import { apportionedEstimates, shareWords } from '@/lib/apportionment';
 import type { HourlyEnergyPoint } from '@/components/reports/charts/hourlyEnergyChart';
 import type { DailyEnergyPoint } from '@/components/reports/charts/dailyEnergyChart';
 import { LOAD_LABELS } from '@shared/circuits.mjs';
+import { BASELINE_LEDE, BASELINE_OWN_WINDOW, BASELINE_TITLE } from '@shared/reportProse.mjs';
+import { loadShareSegments } from '@/lib/circuitCharts';
+import {
+  baselineAssumptionItems,
+  chartDesc,
+  compareWithBaseline,
+  dayNoun,
+  describeAgainstBaseline,
+  expectedFor,
+  loadSeries,
+  periodDates,
+  profilePoints,
+  shortDate,
+  weekPoints,
+  windowText,
+  type Holiday,
+  type ProjectedBaseline,
+} from '@/lib/baselineCompare';
 import { CONTENT_WIDTH, type PdfChart, type PdfDeviceRow, type PdfReport } from './docDefinition';
 
 /**
@@ -79,6 +97,10 @@ export interface PdfReportInput {
   circuits?: PdfCircuitInput | null;
   /** RM-130: each estimate's own bars — per day for a week or month, per hour for a day; null when not read. */
   apportionedSeries?: readonly { id: string; days: readonly DailyEnergyPoint[] | null; hours: readonly HourlyEnergyPoint[] | null }[];
+  /** RM-153: the site's projected baseline, or null when it has none; absent leaves the section out. */
+  baseline?: ProjectedBaseline | null;
+  /** The site calendar's holidays, counted as closed days when the period is set against the baseline. */
+  holidays?: readonly Holiday[];
 }
 
 const f = (v: number | null | undefined, digits = 2) => (v === null || v === undefined || !Number.isFinite(v) ? null : v.toFixed(digits));
@@ -372,6 +394,82 @@ export function buildPdfReport(input: PdfReportInput): PdfReport {
     }
   }
 
+  // --- the projected baseline — RM-153 --------------------------------------------------------------
+  // The same figures, comparison and caveats as the Baseline tab, from the same functions.
+  let projected: PdfReport['projected'] = null;
+  const projectedCharts: PdfChart[] = [];
+  const projectedOmitted: string[] = [];
+  if (sections.includes('projected')) {
+    const b = input.baseline ?? null;
+    if (!b) {
+      projectedOmitted.push('The baseline (this site has none yet)');
+    } else {
+      const working = b.day_types[b.week.days[1]];
+      const series = loadSeries(b);
+      const table = (first: string, points: ReturnType<typeof weekPoints>) => ({
+        headers: [first, ...series.map((x) => `${x.label} (kWh)`)],
+        rows: points.map((pt) => [pt.day, ...pt.values.map((v) => f(v, 3))]),
+      });
+      const hours = profilePoints(working, b.loads);
+      const startHour = Number(b.working_hours.start.slice(0, 2));
+      const endHour = Number(b.working_hours.end.slice(0, 2));
+      const band = { from: startHour, to: endHour - 1, label: `Working hours ${b.working_hours.start}–${b.working_hours.end}` };
+      for (const [scene, t] of [
+        [circuitDailyEnergyChart(hours, series, spec('pdf-bl-day', 240, `A ${dayNoun(working.label)}, hour by hour — projected baseline`), { band, desc: chartDesc.projectedDay(b, working) }), table('Hour', hours)],
+        [circuitDailyEnergyChart(weekPoints(b), series, spec('pdf-bl-week', 240, 'A typical week, day by day — projected baseline'), { desc: chartDesc.week() }), table('Day', weekPoints(b))],
+      ] as const) {
+        projectedCharts.push({ section: 'projected', title: scene.title, svg: sceneToSvg(scene, PRINT_PALETTE), desc: scene.desc, table: t });
+      }
+
+      const month = period === 'month' && building ? expectedFor(b, periodDates('month', building.period_start), []) : null;
+      const rowsOut: [string, string][] = [
+        ...Object.values(b.day_types).map((t): [string, string] => [`Expected energy, a ${dayNoun(t.label)}`, `${t.kwh.total.toFixed(2)} kWh`]),
+        ['Expected energy, a typical week', `${b.week.kwh.total.toFixed(1)} kWh`],
+        ['Expected energy, a standard month', `${b.standard_month.kwh.total.toFixed(0)} kWh`],
+        ...(month ? [[`Expected energy, ${periodLabel} as a full working month`, `${month.kwh.total.toFixed(0)} kWh`] as [string, string]] : []),
+        ['Expected demand', `${kw(working.working_hours_avg_w)} (average draw, ${b.working_hours.start}–${b.working_hours.end})`],
+        ['Base standby load', `${Math.round(working.standby_w)} W (overnight)`],
+        [
+          'Peak operating draw',
+          `${kw(b.peak_operating_draw.w)} (${Math.round(b.peak_operating_draw.quantile * 10)} in 10 of ${b.peak_operating_draw.days} working days stayed below it)`,
+        ],
+        ...series.map((x): [string, string] => [`${x.label}, a typical week`, `${(b.week.kwh[x.id] ?? 0).toFixed(1)} kWh`]),
+      ];
+
+      const c = building
+        ? compareWithBaseline({
+            baseline: b,
+            period,
+            start: building.period_start,
+            holidays: input.holidays ?? [],
+            recordedKwh: building.energy_kwh,
+            recordedByLoad: Object.fromEntries(loadShareSegments(rows).map((x) => [x.id, x.kwh])),
+            coverage: buildingCoverage,
+          })
+        : null;
+      const lines = !c
+        ? ['Not compared: this period has no stored report.']
+        : !c.comparable
+          ? [`Not compared: ${c.reason}`]
+          : [
+              describeAgainstBaseline(c, period),
+              `Expected ${c.expectedKwh.toFixed(1)} kWh; recorded ${c.recordedKwh.toFixed(1)} kWh.`,
+              c.avoidedKwh > 0 ? `Energy avoided: ${c.avoidedKwh.toFixed(1)} kWh.` : 'No energy avoided.',
+              ...c.byLoad.map((l) => `${l.label}: expected ${l.expectedKwh.toFixed(1)} kWh, recorded ${l.recordedKwh === null ? '—' : `${l.recordedKwh.toFixed(1)} kWh`}.`),
+              ...(c.holidays.length > 0 ? [`Counted as closed days: ${c.holidays.map((h) => `${shortDate(h.date)}, ${h.name}`).join('; ')}.`] : []),
+              ...(c.ownWindowDays > 0 ? [BASELINE_OWN_WINDOW] : []),
+            ];
+      projected = {
+        heading: 'Baseline · business as usual',
+        lede: `${BASELINE_LEDE} Built from ${windowText(b)}.`,
+        rows: rowsOut,
+        against: { heading: `Against the baseline — ${periodLabel}`, lines },
+        caveatsTitle: BASELINE_TITLE,
+        caveats: baselineAssumptionItems(b),
+      };
+    }
+  }
+
   return {
     title: 'Energy report',
     siteName: input.siteName,
@@ -414,10 +512,11 @@ export function buildPdfReport(input: PdfReportInput): PdfReport {
         return { section: c.section, title: scene.title, svg: sceneToSvg(scene, PRINT_PALETTE), desc: scene.desc, table };
       }),
       ...estimateCharts,
+      ...projectedCharts,
     ],
     // RM-081b: a chosen chart whose data could not be read is named, so the document says what it left
     // out rather than silently being one chart shorter than the reader asked for.
-    omitted: [...CHARTS.filter((c) => sections.includes(c.section) && !c.has(context)).map((c) => c.label), ...estimateOmitted],
+    omitted: [...CHARTS.filter((c) => sections.includes(c.section) && !c.has(context)).map((c) => c.label), ...estimateOmitted, ...projectedOmitted],
     deviceRows: scopedRows.map(deviceRow),
     baseline: {
       gate: thin ? [TOO_LITTLE_TITLE, ...tooLittleRecorded(summary?.usable_minutes ?? 0, observedDays)] : null,
@@ -440,6 +539,7 @@ export function buildPdfReport(input: PdfReportInput): PdfReport {
                 : null,
           },
     comparison,
+    projected,
     caveats: PLAIN_NOT_SAID,
   };
 }

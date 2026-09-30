@@ -38,13 +38,13 @@ function offsetAt(timeZone, date) {
 }
 
 /**
- * @param {{ slug: string, site: Record<string, any>, devices: readonly any[], circuits: readonly any[] }} input
+ * @param {{ slug: string, site: Record<string, any>, devices: readonly any[], circuits: readonly any[], baseline?: Record<string, any>|null }} input
  * @returns {{ ok: boolean, errors: {code: string, message: string}[], warnings: {code: string, message: string}[] }}
  *
  * Everything is passed in rather than imported, so this can check a site that is not the active
  * one — and so the tests can hand it shapes no real directory would ever contain.
  */
-export function checkSite({ slug, site, devices, circuits }) {
+export function checkSite({ slug, site, devices, circuits, baseline }) {
   const errors = [];
   const warnings = [];
   const err = (code, message) => errors.push({ code, message });
@@ -102,6 +102,52 @@ export function checkSite({ slug, site, devices, circuits }) {
     err('policy_missing', 'policy must be an object, even if every rule in it is null');
   } else if (site.policy.acu_min_setpoint_c !== null && typeof site.policy.acu_min_setpoint_c !== 'number') {
     err('policy_acu_floor_invalid', 'policy.acu_min_setpoint_c must be a number or null');
+  }
+
+  // --- when the office works (RM-153) --------------------------------------
+  // The reports say which days were working days and the baseline which hours it expects the office
+  // open. None of it is required — a scaffolded site has no calendar — but a malformed one is worse
+  // than none, because every "working day" printed from it would be quietly wrong.
+  const hasCalendar = site.working_hours != null || site.working_week != null || site.non_working_days != null;
+  if (!hasCalendar) {
+    warn('no_working_calendar', 'no working hours or working week — reports fall back to Monday–Friday and cannot build a baseline');
+  } else {
+    const hhmm = (s) => {
+      const m = typeof s === 'string' ? s.match(/^([01]\d|2[0-3]):([0-5]\d)$/) : null;
+      return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+    };
+    const wh = site.working_hours;
+    const start = hhmm(wh?.start);
+    const end = hhmm(wh?.end);
+    if (start === null || end === null || start >= end) {
+      err('working_hours_invalid', 'working_hours must be { start, end } as HH:MM in the building\'s own day, start before end');
+    }
+    const week = site.working_week;
+    const weekOk =
+      Array.isArray(week) && week.length > 0 && week.every((d) => Number.isInteger(d) && d >= 0 && d <= 6) && new Set(week).size === week.length;
+    if (!weekOk) {
+      err('working_week_invalid', 'working_week must list distinct weekday numbers, 0 (Sunday) to 6 (Saturday)');
+    }
+    const days = site.non_working_days ?? [];
+    const seenDay = new Set();
+    for (const d of Array.isArray(days) ? days : [null]) {
+      const iso = typeof d?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.date) ? d.date : null;
+      // Round-tripped through a UTC date so 2026-02-30 is caught: Date would roll it into March.
+      const real = iso !== null && new Date(`${iso}T00:00:00Z`).toISOString().slice(0, 10) === iso;
+      const named = typeof d?.name === 'string' && d.name.trim() !== '';
+      if (!real || !named || seenDay.has(iso)) {
+        err('non_working_day_invalid', `non_working_days entry ${JSON.stringify(d)} must be a real YYYY-MM-DD date with a name, listed once`);
+      }
+      if (iso) seenDay.add(iso);
+    }
+  }
+
+  // --- the projected baseline (RM-153) -------------------------------------
+  // `undefined` means the caller did not ask; `null` is what `site:new` writes.
+  if (baseline === null) {
+    warn('no_baseline', 'no projected baseline — build one with npm run baseline:build once four clean weeks are recorded');
+  } else if (baseline !== undefined && baseline?.site_id !== site.id) {
+    err('baseline_other_site', `the baseline was built for "${baseline?.site_id}", not "${site.id}" — it would be compared against the wrong building`);
   }
 
   // --- timezone: one fact, carried twice, and it has to stay one fact ------
@@ -251,7 +297,7 @@ export function checkSite({ slug, site, devices, circuits }) {
 
 // --- CLI ---------------------------------------------------------------------
 if (process.argv[1] && process.argv[1].endsWith('site-check.mjs')) {
-  const { SITE, CIRCUITS, BUILT_IN_DEVICES } = await import('../shared/siteConfig.mjs');
+  const { SITE, CIRCUITS, BUILT_IN_DEVICES, BASELINE } = await import('../shared/siteConfig.mjs');
   const { readFileSync } = await import('node:fs');
   const { join } = await import('node:path');
 
@@ -260,7 +306,7 @@ if (process.argv[1] && process.argv[1].endsWith('site-check.mjs')) {
   const pointer = readFileSync(join(import.meta.dirname, '..', 'shared', 'siteConfig.mjs'), 'utf8');
   const slug = pointer.match(/\.\/sites\/([^/]+)\/site\.mjs/)?.[1] ?? '';
 
-  const { ok, errors, warnings } = checkSite({ slug, site: SITE, devices: BUILT_IN_DEVICES, circuits: CIRCUITS });
+  const { ok, errors, warnings } = checkSite({ slug, site: SITE, devices: BUILT_IN_DEVICES, circuits: CIRCUITS, baseline: BASELINE ?? null });
 
   console.log(`site: ${SITE.id}  (shared/sites/${slug}/)`);
   console.log(`      ${BUILT_IN_DEVICES.length} device(s), ${CIRCUITS.length} circuit(s)\n`);

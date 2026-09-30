@@ -30,6 +30,10 @@ describe('reportFilename', () => {
     expect(reportFilename('month', '2026-09-01', 'readings', 'csv', 'Lighting')).toBe('ibems-month-report-2026-09-readings-lighting.csv');
   });
 
+  it('gives the baseline CSV its own name — RM-153', () => {
+    expect(reportFilename('month', '2026-10-01', 'baseline', 'csv')).toBe('ibems-month-report-2026-10-baseline.csv');
+  });
+
   it('names a per-device CSV narrowed to one branch for that branch — RM-082c', () => {
     // So a branch's export cannot overwrite the whole building's in the same downloads folder.
     expect(reportFilename('month', '2026-08-01', 'devices', 'csv', 'East Wing Sockets')).toBe('ibems-month-report-2026-08-east-wing-sockets.csv');

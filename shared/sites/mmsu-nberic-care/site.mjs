@@ -128,6 +128,54 @@ export const SITE = Object.freeze({
   ]),
 
   /**
+   * When this office works — RM-153.
+   *
+   * Stated by the operator on 2026-09-30 as the basis of the projected baseline: weekdays are working
+   * days, 08:00–17:00, and weekends are not. `working_week` uses `Date.getUTCDay()` numbering
+   * (0 = Sunday … 6 = Saturday) because every consumer takes the weekday of a bare local date in UTC,
+   * as `src/lib/reportFindings.ts` does. `end` is exclusive: the last working hour is 16:00–17:00.
+   *
+   * This is the office's calendar, not a schedule. Nothing switches on it; the reports read it to say
+   * which days were working days, and the baseline to know which hours it expects the office open.
+   */
+  working_hours: Object.freeze({ start: '08:00', end: '17:00' }),
+  working_week: Object.freeze([1, 2, 3, 4, 5]),
+
+  /**
+   * Days a working weekday is not worked, in the building's own date — RM-153.
+   *
+   * The 2026 regular holidays and special non-working days of Proclamation No. 1006, as the
+   * Palace published them. Eid al-Fitr and Eid al-Adha are declared by their own proclamations
+   * each year, so they are absent until those are issued, and a local or university suspension is
+   * added here by hand when it happens. The special WORKING day of 25 February is a working day
+   * and is not listed.
+   *
+   * The projected baseline assumes none of these (the operator's rule: business as usual). The
+   * comparison of a real period against it counts each one as a non-working day, so a month with
+   * a holiday is not charged a working day it never had.
+   */
+  non_working_days: Object.freeze([
+    Object.freeze({ date: '2026-01-01', name: "New Year's Day" }),
+    Object.freeze({ date: '2026-02-17', name: 'Chinese New Year' }),
+    Object.freeze({ date: '2026-04-02', name: 'Maundy Thursday' }),
+    Object.freeze({ date: '2026-04-03', name: 'Good Friday' }),
+    Object.freeze({ date: '2026-04-04', name: 'Black Saturday' }),
+    Object.freeze({ date: '2026-04-09', name: 'Araw ng Kagitingan' }),
+    Object.freeze({ date: '2026-05-01', name: 'Labor Day' }),
+    Object.freeze({ date: '2026-06-12', name: 'Independence Day' }),
+    Object.freeze({ date: '2026-08-21', name: 'Ninoy Aquino Day' }),
+    Object.freeze({ date: '2026-08-31', name: 'National Heroes Day' }),
+    Object.freeze({ date: '2026-11-01', name: "All Saints' Day" }),
+    Object.freeze({ date: '2026-11-02', name: "All Souls' Day" }),
+    Object.freeze({ date: '2026-11-30', name: 'Bonifacio Day' }),
+    Object.freeze({ date: '2026-12-08', name: 'Feast of the Immaculate Conception' }),
+    Object.freeze({ date: '2026-12-24', name: 'Christmas Eve' }),
+    Object.freeze({ date: '2026-12-25', name: 'Christmas Day' }),
+    Object.freeze({ date: '2026-12-30', name: 'Rizal Day' }),
+    Object.freeze({ date: '2026-12-31', name: "New Year's Eve" }),
+  ]),
+
+  /**
    * Which 3D scene pack renders for this site, or null for none. Consumed in RM-032; declared
    * now so the field does not have to be retrofitted into every site directory later.
    */

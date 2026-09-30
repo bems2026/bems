@@ -91,6 +91,27 @@ describe('circuitDailyEnergyChart', () => {
     expect(scene.hits ?? []).toEqual([]);
   });
 
+  it('shades a band of columns and names it in the legend, when asked — RM-153\'s working hours', () => {
+    const hours = Array.from({ length: 24 }, (_, h) => day(h + 1, [0.1, 0.2], { label: String(h) }));
+    const plain = circuitDailyEnergyChart(hours, SERIES, spec('cd'));
+    const shaded = circuitDailyEnergyChart(hours, SERIES, spec('cd'), { band: { from: 8, to: 16, label: 'Working hours 08:00–17:00' } });
+    const bands = (s: ReturnType<typeof circuitDailyEnergyChart>) => rects(s.marks).filter((r) => r.fill === PRINT_PALETTE.grid && r.h > 20);
+    expect(bands(plain)).toHaveLength(0);
+    const [band] = bands(shaded);
+    // Nine columns of 24, starting at the ninth: 08:00 up to, not including, 17:00.
+    const slot = (640 - 44 - 10) / 24;
+    expect(band.x).toBeCloseTo(44 + 8 * slot, 6);
+    expect(band.w).toBeCloseTo(9 * slot, 6);
+    expect(legendTexts(shaded.marks, 240)).toContain('Working hours 08:00–17:00');
+    expect(shaded.desc).toMatch(/Working hours 08:00–17:00 are shaded/);
+  });
+
+  it('takes the caller\'s description when the columns are not recorded days — RM-153\'s modelled hours', () => {
+    const hours = Array.from({ length: 24 }, (_, h) => day(h + 1, [0.1, 0.2], { label: String(h) }));
+    const scene = circuitDailyEnergyChart(hours, SERIES, spec('cd'), { desc: 'A working day, hour by hour, stacked by use.' });
+    expect(scene.desc).toBe('A working day, hour by hour, stacked by use.');
+  });
+
   it('prints the same picture it draws, with ids in its own namespace', () => {
     const scene = circuitDailyEnergyChart(week, SERIES, spec('cd'));
     const svg = sceneToSvg(scene, PRINT_PALETTE);

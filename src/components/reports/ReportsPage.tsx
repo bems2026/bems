@@ -6,7 +6,8 @@ import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { supabase } from '@/config/supabase';
 import { downloadCsv, downloadCsvParts } from '@/lib/csv';
-import { dailyCsv, deviceCsv, deviceDailyCsv } from '@/lib/reportCsv';
+import { baselineCsv, dailyCsv, deviceCsv, deviceDailyCsv } from '@/lib/reportCsv';
+import { SITE_BASELINE, SITE_HOLIDAYS, compareWithBaseline } from '@/lib/baselineCompare';
 import { fetchReadingsForExport, rawFromEdge, readingsCsvParts, type ReadingsClient } from '@/lib/readingsExport';
 import { edgeRawSource } from '@/lib/edgeArchive';
 import { RAW_RETENTION_DAYS } from '@shared/retention.mjs';
@@ -42,6 +43,7 @@ import {
 } from '@/lib/circuitBreakdown';
 import type { TabDef } from '@/components/ui/Tabs';
 import { UsagePatterns } from './UsagePatterns';
+import { BaselineReport } from './BaselineReport';
 import { CircuitDeepDive } from './CircuitDeepDive';
 import { ComparisonReport } from './ComparisonReport';
 import { CoverageBanner } from './CoverageBanner';
@@ -73,9 +75,10 @@ import { apportionedEstimates, estimateDayPoints, estimateHourPoints } from '@/l
  * tariff read costs the cost line, a hung heatmap query costs the four hourly charts, and a
  * malformed row costs one card — and each says so where it would have been, with a Retry.
  *
- * FOUR TABS, EACH ONE QUESTION — RM-096. Overview: how much, with the few figures and two charts that say
- * it. Circuits: where it went and what it was for, circuit by circuit. Usage patterns: when. Compare: what
- * changed. The words are the office's (RM-097): no p50 or p95, no "baseline", no "DSM ceiling".
+ * FIVE TABS, EACH ONE QUESTION — RM-096. Overview: how much, with the few figures and two charts that say
+ * it. Circuits: where it went and what it was for, circuit by circuit. Usage patterns: when. Baseline (RM-153):
+ * what business as usual would use, and this period against it. Compare: what changed. The words are the
+ * office's (RM-097): no p50 or p95, no "DSM ceiling", and "baseline" only on the tab the operator named so.
  *
  * THE HEADLINE COMES FIRST AND LARGEST — RM-082. The period is named with its coverage badge, then
  * the key figures, then the coverage in detail, then what else the period recorded, then the
@@ -104,6 +107,8 @@ const REPORT_TABS: TabDef[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'circuits', label: 'Circuits' },
   { id: 'patterns', label: 'Usage patterns' },
+  // RM-153: the one tab that says "baseline" — the operator named it (ADR-0012 amends RM-097 for it alone).
+  { id: 'baseline', label: 'Baseline' },
   { id: 'compare', label: 'Compare' },
 ];
 
@@ -323,6 +328,8 @@ export function ReportsPage() {
     exportUnavailable['device-daily-csv'] = 'Needs the database update (phase42) — until it is applied, per-device days are not available.';
   }
 
+  if (!SITE_BASELINE) exportUnavailable['baseline-csv'] = 'This site has no baseline yet — it is built once four weeks have been recorded.';
+
   if (!supabase) {
     return (
       <>
@@ -342,7 +349,8 @@ export function ReportsPage() {
   const chartsLoading = charts === null && dailySeries.status === 'loading';
   // RM-124: a day is read hour by hour; its "energy per day" would be one bar.
   const overviewCharts: readonly ReportChartKind[] = period === 'day' ? ['hourly', 'useShare'] : ['daily', 'useShare'];
-  const tabCharts = tab === 'patterns' ? USAGE_CHARTS : tab === 'circuits' ? CIRCUIT_CHARTS : tab === 'compare' ? [] : overviewCharts;
+  // The Baseline tab draws from a committed file, so it never waits and holds no chart places.
+  const tabCharts = tab === 'patterns' ? USAGE_CHARTS : tab === 'circuits' ? CIRCUIT_CHARTS : tab === 'compare' || tab === 'baseline' ? [] : overviewCharts;
   /**
    * Performs one export and says, in words, what was saved. Throws with the reason when it cannot —
    * `ExportDrawer` shows that beside its button. Names come from `reportFilename`, never from the
@@ -414,6 +422,25 @@ export function ReportsPage() {
       return `Saved ${name} · ${scopedRows.length} devices${narrowed ? ` on ${narrowed}` : ''}`;
     }
 
+    if (format === 'baseline-csv') {
+      // RM-153: the committed baseline and this period against it, from the rows the page already holds.
+      if (!SITE_BASELINE) throw new Error('This site has no baseline yet.');
+      const comparison = building
+        ? compareWithBaseline({
+            baseline: SITE_BASELINE,
+            period,
+            start: selected,
+            holidays: SITE_HOLIDAYS,
+            recordedKwh: building.energy_kwh,
+            recordedByLoad: Object.fromEntries(useSegments.map((s) => [s.id, s.kwh])),
+            coverage: buildingCoverage,
+          })
+        : null;
+      const name = reportFilename(period, selected, 'baseline', 'csv');
+      downloadCsv(name, baselineCsv({ baseline: SITE_BASELINE, comparison, periodLabel }));
+      return `Saved ${name} · the baseline, its ${SITE_BASELINE.recorded.days.length} recorded days, and ${periodLabel} against it`;
+    }
+
     if (format === 'daily-csv') {
       const days = dailySeries.data;
       if (!days) throw new Error('The daily figures have not loaded.');
@@ -462,6 +489,8 @@ export function ReportsPage() {
       scopeLabel: narrowed,
       circuits: circuitInput,
       apportionedSeries,
+      baseline: SITE_BASELINE,
+      holidays: SITE_HOLIDAYS,
     });
     const assembled = performance.now();
     const name = reportFilename(period, selected, 'report', 'pdf', [narrowed, detail === 'simple' ? 'simple' : null].filter(Boolean).join(' '));
@@ -701,6 +730,16 @@ export function ReportsPage() {
             ) : chartsLoading ? (
               <ReportSkeleton label={periodLabel} period={period} parts={['kpis', 'charts']} kinds={USAGE_CHARTS} />
             ) : null}
+          </>
+        ) : null}
+
+        {/* ---- Baseline — RM-153 ------------------------------------------------------------------ */}
+        {tab === 'baseline' && selected ? (
+          <>
+            <ReportSectionNote section={report.devices} what="the per-device figures" quietWhileLoading />
+            <ErrorBoundary scope="The baseline" variant="inline" resetKey={scopeKey}>
+              <BaselineReport period={period} start={selected} building={building} rows={rows} pricing={pricing} />
+            </ErrorBoundary>
           </>
         ) : null}
 

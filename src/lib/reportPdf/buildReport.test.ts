@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildPdfReport, type PdfReportInput } from './buildReport';
 import type { PeriodBuildingReport, PeriodDeviceReport } from '@/lib/supabaseReports';
 import type { DemandSummary } from '@/lib/reportSeries';
+import { SITE_BASELINE, type ProjectedBaseline } from '@/lib/baselineCompare';
 
 /**
  * RM-083b. Assembling the document moved out of `ExportPdfButton` into a pure function, so the export
@@ -338,5 +339,49 @@ describe('the estimate, charted in the document — RM-130', () => {
     expect(report.charts.filter((c) => c.section === 'apportioned')).toEqual([]);
     expect(report.omitted).toEqual(["Director's office aircon, per day"]);
     expect(report.apportioned).toHaveLength(1);
+  });
+});
+
+describe('the baseline section — RM-153', () => {
+  const b = SITE_BASELINE as ProjectedBaseline;
+  const sept = (o: Partial<PdfReportInput> = {}) =>
+    input({
+      periodLabel: 'October 2026',
+      building: building({ period_start: '2026-10-01', energy_kwh: 300 }),
+      sections: ['projected'],
+      baseline: b,
+      holidays: [],
+      ...o,
+    });
+
+  it('carries the baseline figures, its two charts, and the period against it', () => {
+    const report = buildPdfReport(sept());
+    expect(report.projected?.rows.map(([label]) => label)).toEqual(
+      expect.arrayContaining(['Expected energy, a working day', 'Expected energy, a typical week', 'Expected energy, a standard month', 'Peak operating draw', 'Base standby load'])
+    );
+    expect(report.projected?.rows.find(([l]) => l === 'Expected energy, a standard month')?.[1]).toBe('328 kWh');
+    expect(report.charts.filter((c) => c.section === 'projected').map((c) => c.title)).toEqual([
+      'A working day, hour by hour — projected baseline',
+      'A typical week, day by day — projected baseline',
+    ]);
+    expect(report.projected?.against.lines.join(' ')).toMatch(/Energy avoided|more than the baseline expects|less than the baseline expects/);
+    expect(report.projected?.caveats.map((c) => c.lead)).toContain('Not adjusted for weather.');
+  });
+
+  it('refuses the comparison under 95% recorded, and says so in the document', () => {
+    const report = buildPdfReport(sept({ building: building({ period_start: '2026-10-01', online_sample_count: Math.round(FULL * 0.5) }) }));
+    expect(report.projected?.against.lines.join(' ')).toMatch(/Not compared: This month was 50% recorded/);
+  });
+
+  it('names the section as left out when the site has no baseline, rather than printing an empty one', () => {
+    const report = buildPdfReport(sept({ baseline: null }));
+    expect(report.projected).toBeNull();
+    expect(report.omitted).toContain('The baseline (this site has none yet)');
+  });
+
+  it('draws nothing for it when the section was not chosen', () => {
+    const report = buildPdfReport(sept({ sections: ['keyFigures'] }));
+    expect(report.projected).toBeNull();
+    expect(report.charts.some((c) => c.section === 'projected')).toBe(false);
   });
 });

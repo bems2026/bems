@@ -4,6 +4,8 @@ import type { DailyRow } from './reportSeries';
 import type { DeviceDayRow } from './circuitSeries';
 import { emissionsPerDay, pricePerDay, type Factor, type Rate } from './energyCost';
 import { energyFlagOf, energyFlagText, usableEnergy } from './boundedEnergy';
+import type { BaselineComparison, ProjectedBaseline } from './baselineCompare';
+import { LOAD_LABELS } from '@shared/circuits.mjs';
 
 /**
  * The report's two CSVs — RM-083. Pure: rows in, text out; `downloadCsv` does the DOM part.
@@ -210,4 +212,91 @@ export function deviceDailyCsv({
     { key: 'note', header: 'Note' },
   ];
   return toCsv(flat, columns);
+}
+
+/**
+ * The projected baseline as one long table — RM-153.
+ *
+ * The baseline's backup, and the figures behind every number the Baseline tab shows: each modelled day
+ * hour by hour and use by use, the day, week and month read off them, the recorded days it was built from
+ * with what became of each, and the chosen period against it. LONG rather than wide, because the rows are
+ * of several kinds: a spreadsheet filters on Section and pivots on Day, Hour and Use, and no row is a total
+ * of rows beside it in the same column.
+ *
+ * NO MINUS SIGN. `toCsv` neutralises a cell starting with "-" (a spreadsheet would read it as a formula),
+ * and the direction of a difference is said in the Note instead — which is how the page says it too.
+ */
+export function baselineCsv({
+  baseline: b,
+  comparison,
+  periodLabel,
+}: {
+  baseline: ProjectedBaseline;
+  comparison: BaselineComparison | null;
+  periodLabel: string;
+}): string {
+  interface Row {
+    section: string;
+    day: string | null;
+    hour: string | null;
+    use: string;
+    value: number | string | null;
+    unit: string | null;
+    note: string | null;
+  }
+  const label = (load: string) => (LOAD_LABELS as Record<string, string>)[load] ?? (load === 'total' ? 'Total' : load);
+  const uses = [...b.loads, 'total'];
+  const rows: Row[] = [];
+  const push = (section: string, day: string | null, hour: string | null, use: string, value: number | string | null, unit: string | null, note: string | null = null) =>
+    rows.push({ section, day, hour, use, value, unit, note });
+
+  for (const t of Object.values(b.day_types)) {
+    for (let h = 0; h < 24; h++) {
+      for (const l of b.loads) push('Projected hour', t.label, `${String(h).padStart(2, '0')}:00`, label(l), round(t.profile_w[l][h], 1), 'W', 'average draw in the hour');
+    }
+  }
+  for (const t of Object.values(b.day_types)) {
+    for (const u of uses) push('Projected day', t.label, null, label(u), round(t.kwh[u], 2), 'kWh', `from ${t.days.length} recorded days`);
+    push('Base standby load', t.label, null, 'Total', round(t.standby_w, 0), 'W', 'overnight, 00:00–05:00');
+    push('Expected demand', t.label, null, 'Total', round(t.working_hours_avg_w, 0), 'W', `average draw, ${b.working_hours.start}–${b.working_hours.end}`);
+  }
+  for (const u of uses) push('Projected week', null, null, label(u), round(b.week.kwh[u], 1), 'kWh', 'five working days, a Saturday and a Sunday');
+  for (const u of uses) push('Projected month', null, null, label(u), round(b.standard_month.kwh[u], 0), 'kWh', `a standard month of ${b.standard_month.days} days`);
+  push('Peak operating draw', null, null, 'Total', round(b.peak_operating_draw.w, 0), 'W', `highest minute of a busy working day; ${Math.round(b.peak_operating_draw.quantile * 10)} in 10 of ${b.peak_operating_draw.days} working days stayed below it`);
+
+  for (const d of b.recorded.days) {
+    const fate = d.used_as ? `Used: ${b.day_types[d.used_as]?.label ?? d.used_as}` : `Left out: ${d.reason ?? 'no reason recorded'}`;
+    for (const u of uses) push('Recorded day', d.date, null, label(u), d.hours_recorded > 0 ? round(d.kwh[u], 3) : null, 'kWh', u === 'total' ? fate : null);
+    push('Recorded day', d.date, null, 'Hours recorded', d.hours_recorded, 'hours', null);
+  }
+  for (const p of b.recorded.profiles) {
+    for (let h = 0; h < 24; h++) {
+      for (const l of b.loads) push('Recorded average hour', p.label, `${String(h).padStart(2, '0')}:00`, label(l), round(p.profile_w[l][h], 1), 'W', `average of ${p.days.length} recorded days`);
+    }
+  }
+
+  if (comparison && !comparison.comparable) {
+    push('Against the baseline', periodLabel, null, 'Total', null, null, `Not compared: ${comparison.reason}`);
+  } else if (comparison) {
+    const byUse = [...comparison.byLoad.map((l) => ({ use: l.label, expected: l.expectedKwh, recorded: l.recordedKwh })), { use: 'Total', expected: comparison.expectedKwh, recorded: comparison.recordedKwh as number | null }];
+    for (const r of byUse) {
+      push('Against the baseline', periodLabel, null, r.use, round(r.expected, 2), 'kWh', 'Expected');
+      push('Against the baseline', periodLabel, null, r.use, round(r.recorded, 2), 'kWh', 'Recorded');
+      if (r.recorded !== null) {
+        const d = r.recorded - r.expected;
+        push('Against the baseline', periodLabel, null, r.use, round(Math.abs(d), 2), 'kWh', `Difference: ${d <= 0 ? 'less' : 'more'} than expected`);
+      }
+    }
+    for (const h of comparison.holidays) push('Against the baseline', h.date, null, 'Total', null, null, `Counted as a closed day: ${h.name}`);
+  }
+
+  return toCsv(rows, [
+    { key: 'section', header: 'Section' },
+    { key: 'day', header: 'Day' },
+    { key: 'hour', header: 'Hour' },
+    { key: 'use', header: 'Use' },
+    { key: 'value', header: 'Value' },
+    { key: 'unit', header: 'Unit' },
+    { key: 'note', header: 'Note' },
+  ]);
 }

@@ -106,9 +106,9 @@ export const COMPARISON_NOT_ADJUSTED = [
   {
     lead: 'It is not weather-adjusted.',
     body:
-      'No degree-day normalisation is applied. An outdoor temperature sensor exists on this site ' +
-      'and its readings are not retained per period, so this is computable in principle and ' +
-      'simply is not stored — which is a different statement from unavailable.',
+      'No degree-day normalisation is applied, because no outdoor temperature is recorded per ' +
+      'period. The pilot’s stand-alone outdoor sensor was never installed; until one is, a hot ' +
+      'period and a mild one are compared as if the weather were the same.',
   },
   {
     lead: 'It is not adjusted for occupancy or operating hours.',
@@ -164,3 +164,72 @@ export function tooLittleRecorded(minutes, days) {
       `${BASELINE_MIN_SAMPLES} minutes across ${BASELINE_MIN_DAYS} days, so read the figures below as a sample.`,
   ];
 }
+
+/*
+ * THE PROJECTED BASELINE — RM-153.
+ *
+ * What the Baseline tab, its CSV and its PDF section say about what the baseline assumes. The one
+ * place the Reports page uses the word: the operator named the tab, and the brief it answers is
+ * written in it. `docs/adr/ADR-0012-projected-baseline.md` amends RM-097 for this tab only; the
+ * other four keep the plain-words rule, and `ReportsPage.tabs.test.tsx` still holds them to it.
+ *
+ * Plain terms throughout — Expected energy, Base standby load, Peak operating draw — and no
+ * statistician's words: "leaving out the highest and the lowest day" rather than a trimmed mean.
+ */
+export const BASELINE_TITLE = 'What this baseline assumes';
+
+/** One sentence under the tab's heading: what the baseline is, and what it is for. */
+export const BASELINE_LEDE =
+  'What this office would use with nothing managing it — a typical working week, with no holidays ' +
+  'and no energy-saving measures. Energy avoided is the baseline minus what was actually used.';
+
+/**
+ * @param {{
+ *   workingHours: string,
+ *   windowText: string,
+ *   dayCounts: string,
+ *   modelled: readonly { lead: string, body: string }[],
+ *   unmetered: readonly { group: string, label: string, branch: string, share: number, basis: string }[],
+ * }} facts
+ * @returns {{ lead: string, body: string }[]}
+ */
+export function baselineAssumptions({ workingHours, windowText, dayCounts, modelled, unmetered }) {
+  return [
+    {
+      lead: 'Business as usual.',
+      body: `Weekdays are working days, ${workingHours}; no holidays, no working from home, and no energy-saving measures acting.`,
+    },
+    ...modelled,
+    {
+      lead: `Built from ${windowText}.`,
+      body:
+        `${dayCounts}. Each hour is the average of its days, leaving out the highest and the lowest ` +
+        'once there are five or more, so no single unusual day moves it.',
+    },
+    {
+      lead: 'Not adjusted for weather.',
+      body: 'It uses no outdoor temperature, so a hot month is held to the same aircon use as a mild one.',
+    },
+    ...unmetered.map((u) => ({
+      lead: `${u.group} includes the ${u.label}.`,
+      body: `It has no meter of its own: about ${Math.round(u.share * 100)}% of ${u.branch} (${u.basis}).`,
+    })),
+    {
+      lead: 'An expectation, not a saving.',
+      body: 'Using less than the baseline is energy avoided only if nothing else changed — the weather, the people, the equipment.',
+    },
+  ];
+}
+
+/** Why a period is not set against the baseline — the same 95% line every other comparison keeps. */
+export function baselineNotCompared(periodNoun, percent) {
+  return (
+    `This ${periodNoun} was ${percent}% recorded. Set against the baseline, the missing hours would read as energy ` +
+    'avoided, so it is compared only when at least 95% of it was recorded.'
+  );
+}
+
+/** Said beside a comparison whose period the baseline was built from. */
+export const BASELINE_OWN_WINDOW =
+  'Part of this period is one the baseline was built from, so a small difference here is expected and says little. ' +
+  'The comparison means most for periods after the baseline was set.';
