@@ -32,6 +32,7 @@
     "scheduler": "node server/scheduler.mjs",
     "backup": "node server/backup.mjs",
     "backup:cycle": "node --disable-warning=ExperimentalWarning server/backup-cycle.mjs",
+    "watchdog:setup": "node server/watchdog-setup.mjs",
     "archive:backfill": "node server/archive-backfill.mjs",
     "archive:storage": "node server/archive-storage.mjs",
     "archive:reset": "node server/archive-reset.mjs",

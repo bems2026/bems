@@ -81,6 +81,21 @@ create or replace function auth.uid() returns uuid language sql stable as
 create schema if not exists storage;
 create table if not exists storage.objects (
   id uuid primary key default gen_random_uuid(), bucket_id text, name text, metadata jsonb);
+-- phase51's watchdog posts through pg_net and runs from pg_cron, neither of which a bare Postgres has.
+-- The stubs keep the signatures phase51 checks for: http_post records what it would have sent, and
+-- schedule replaces a job of the same name, as pg_cron does.
+create schema if not exists net;
+create table if not exists net.rehearsal_posts (id bigserial primary key, url text, body jsonb, at timestamptz default now());
+create table if not exists net._http_response (id bigint primary key, status_code int, error_msg text);
+create or replace function net.http_post(url text, body jsonb default '{}'::jsonb, params jsonb default '{}'::jsonb,
+  headers jsonb default '{"Content-Type": "application/json"}'::jsonb, timeout_milliseconds int default 2000)
+  returns bigint language sql as $$ insert into net.rehearsal_posts (url, body) values (url, body) returning id $$;
+create schema if not exists cron;
+create table if not exists cron.job (jobid bigserial primary key, jobname text unique, schedule text, command text);
+create table if not exists cron.job_run_details (runid bigserial primary key, jobid bigint, end_time timestamptz);
+create or replace function cron.schedule(job_name text, schedule text, command text) returns bigint language sql as
+  $$ insert into cron.job (jobname, schedule, command) values (job_name, schedule, command)
+     on conflict (jobname) do update set schedule = excluded.schedule, command = excluded.command returning jobid $$;
 do $$
 begin
   if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon; end if;
@@ -2258,6 +2273,87 @@ begin
 end $$;
 
 delete from devices where id in ('acu_snap', 'l_snap');
+SQL
+
+# ---- phase51: the watchdog that runs off the edge (RM-150, F-034) ----------------------------------------
+#
+# Walked through every state it has: silent (one notice), still silent (quiet, then a reminder), recovered
+# (one notice), healthy (quiet), and an edge that never reported. The stubbed http_post records what would
+# have been sent.
+echo "== phase51: re-applying twice, then the watchdog through silence, a reminder and recovery =="
+psql < "$HERE/phase51_edge_watchdog.sql" >/dev/null
+psql < "$HERE/phase51_edge_watchdog.sql" >/dev/null
+psql <<'SQL'
+do $$
+declare
+  n int;
+  sent int;
+  b jsonb;
+begin
+  insert into ingestion_health (id, site_id, last_success_at, last_error)
+    values (1, 'mmsu-nberic-care', now() - interval '1 hour', 'fetch failed')
+    on conflict (id) do update set site_id = excluded.site_id, last_success_at = excluded.last_success_at, last_error = excluded.last_error;
+  insert into edge_watchdog (site_id, ntfy_topic) values ('mmsu-nberic-care', 'rehearsal-topic')
+    on conflict (site_id) do update set ntfy_topic = excluded.ntfy_topic, state = 'ok', alerted_at = null;
+  delete from net.rehearsal_posts;
+
+  sent := edge_watchdog_check();
+  assert sent = 1, format('phase51: an hour of silence posts once, sent %s', sent);
+  select body into b from net.rehearsal_posts order by id desc limit 1;
+  assert b->>'topic' = 'rehearsal-topic' and b->>'title' like '%gone silent%', format('phase51: the notice, got %s', b);
+  assert b->>'message' like '%for 60 min%' and b->>'message' like '%fetch failed%', format('phase51: it says how long and the last error, got %s', b->>'message');
+  assert (select state from edge_watchdog where site_id = 'mmsu-nberic-care') = 'silent', 'phase51: the state is silent';
+
+  sent := edge_watchdog_check();
+  assert sent = 0, format('phase51: still silent, but the reminder is not due: sent %s', sent);
+
+  update edge_watchdog set alerted_at = now() - interval '7 hours' where site_id = 'mmsu-nberic-care';
+  sent := edge_watchdog_check();
+  select body into b from net.rehearsal_posts order by id desc limit 1;
+  assert sent = 1 and b->>'title' like '%still silent%', format('phase51: a reminder after 6 hours, sent %s, got %s', sent, b->>'title');
+
+  update ingestion_health set last_success_at = now(), last_error = null where id = 1;
+  sent := edge_watchdog_check();
+  select body into b from net.rehearsal_posts order by id desc limit 1;
+  assert sent = 1 and b->>'title' like '%recording again%', format('phase51: recovery posts once, sent %s, got %s', sent, b->>'title');
+  assert (select state from edge_watchdog where site_id = 'mmsu-nberic-care') = 'ok', 'phase51: the state is ok again';
+
+  sent := edge_watchdog_check();
+  assert sent = 0, format('phase51: healthy and already said so: sent %s', sent);
+  assert (select checked_at from edge_watchdog where site_id = 'mmsu-nberic-care') > now() - interval '1 minute',
+    'phase51: each run records when it checked';
+
+  update ingestion_health set last_success_at = null where id = 1;
+  sent := edge_watchdog_check();
+  select body into b from net.rehearsal_posts order by id desc limit 1;
+  assert sent = 1 and b->>'message' like '%no successful upload from the edge on record%', format('phase51: never reported, got %s', b->>'message');
+
+  assert edge_watchdog_ping('mmsu-nberic-care') is not null, 'phase51: the test notice is sent';
+  select body into b from net.rehearsal_posts order by id desc limit 1;
+  assert b->>'title' like '%armed%' and b->>'message' like '%15 minutes%', format('phase51: the test notice, got %s', b);
+
+  select count(*) into n from cron.job where jobname = 'ibems-edge-watchdog' and schedule = '*/10 * * * *';
+  assert n = 1, 'phase51: one watchdog job, every ten minutes, however often the file is pasted';
+  select count(*) into n from cron.job where jobname = 'ibems-cron-cleanup';
+  assert n = 1, 'phase51: one cleanup job';
+
+  begin
+    insert into edge_watchdog (site_id, ntfy_topic, stale_after) values ('rehearsal-second-site', 't', interval '5 minutes');
+    assert false, 'phase51: a threshold under 10 minutes must be refused';
+  exception when check_violation then
+    null;  -- expected
+  end;
+
+  assert not has_table_privilege('anon', 'edge_watchdog', 'select'), 'phase51: anon must not read the topic';
+  assert not has_table_privilege('authenticated', 'edge_watchdog', 'select'), 'phase51: a signed-in reader must not read the topic';
+  assert (select relrowsecurity from pg_class where relname = 'edge_watchdog'), 'phase51: RLS is on';
+  assert not has_function_privilege('authenticated', 'edge_watchdog_check()', 'execute'), 'phase51: only the service role runs the check';
+  assert has_function_privilege('service_role', 'edge_watchdog_ping(text)', 'execute'), 'phase51: the setup command can send a test notice';
+
+  delete from edge_watchdog where site_id = 'mmsu-nberic-care';
+  delete from net.rehearsal_posts;
+  raise notice 'phase51: the off-edge watchdog — assertions passed';
+end $$;
 SQL
 
 echo

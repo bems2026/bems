@@ -82,6 +82,7 @@ export const NOT_BACKED_UP = {
   readings: 'Raw per-minute rows, pruned at 30 days by design. Their permanent form is readings_hourly, which is exported.',
   building_totals: 'Raw per-minute building totals, pruned at 30 days by design. Their permanent form is building_totals_hourly, which is exported.',
   ingestion_health: 'A one-row status snapshot the ingest daemon rewrites every tick. Restored, it would be a stale claim about a daemon that is not running there.',
+  edge_watchdog: 'Where the database sends its "the edge has gone silent" notice (RM-150): the notice topic, which is a credential of sorts, and the last state. It is written from server/.env by `npm run watchdog:setup -- --apply`, which is also how a new project gets it.',
   acu_loop_state: 'The setpoint the aircon loop believes it last commanded. Restored into a new project it would be a stale belief about a device, and the planner is built to refuse to step from a value it lacks rather than from a wrong one.',
 };
 
