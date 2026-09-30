@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { readBuffer } from './ingestBuffer.mjs';
+import { SITE } from '../shared/registry.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCHEDULER = join(HERE, 'scheduler.mjs');
@@ -21,13 +22,40 @@ let nextPort = 21400;
  * row's final state — a strictly stronger assertion than before, since it now proves the
  * whole record -> dispatch -> record-outcome sequence rather than just the opening insert.
  */
-function startFakeSupabase(scheduleRows, dsm = { max_phase_current: null, max_total_kw: null, auto_shed: false, updated_by: null }, deviceConfig = [], failCommandInsert = false, dropCommandWrites = false, socketConfig = null, acuRules = null, acuState = []) {
+function startFakeSupabase(scheduleRows, dsm = { max_phase_current: null, max_total_kw: null, auto_shed: false, updated_by: null }, deviceConfig = [], failCommandInsert = false, dropCommandWrites = false, socketConfig = null, acuRules = null, acuState = [], serveSnapshot = false) {
   return new Promise((resolve) => {
     const port = nextPort++;
-    const state = { commands: [], acuStateWrites: [] };
+    // `tableReads` and `snapshotCalls` are RM-149's: what the configuration cost in requests.
+    const state = { commands: [], acuStateWrites: [], tableReads: [], snapshotCalls: [] };
     const server = http.createServer(async (req, res) => {
       let raw = '';
       for await (const chunk of req) raw += chunk;
+      if (req.url.startsWith('/rest/v1/rpc/scheduler_snapshot')) {
+        state.snapshotCalls.push(raw ? JSON.parse(raw) : null);
+        // Absent unless asked for: every test above this one was written against a database
+        // without phase50, and still describes the fallback exactly.
+        if (!serveSnapshot) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          return res.end('{"code":"PGRST202","message":"Could not find the function public.scheduler_snapshot(p_site_id) in the schema cache"}');
+        }
+        // What phase50 returns, built from the same inputs the table routes below serve.
+        const rules = acuRules ?? [];
+        const acuIds = new Set(rules.map((r) => r.acu_device_id));
+        const body = {
+          schedules: Array.isArray(scheduleRows) ? scheduleRows : scheduleRows ? [scheduleRows] : [],
+          dsm,
+          device_config: deviceConfig,
+          socket_config: socketConfig ?? [],
+          acu_rules: rules,
+          acu_loop_state: acuState,
+          acu_commands: state.commands.filter((c) => acuIds.has(c.device_id))
+            .map(({ device_id, source, requested_at }) => ({ device_id, source, requested_at }))
+            .reverse().slice(0, 50),
+        };
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify(body));
+      }
+      if (req.method === 'GET') state.tableReads.push(req.url.slice('/rest/v1/'.length).split('?')[0]);
       if (req.url.startsWith('/rest/v1/schedules')) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         // RM-066: a device holds MANY rows, so this takes an array. A single row is still
@@ -191,7 +219,7 @@ function dueNowRow(over = {}) {
 const CYCLE_DONE = /first cycle complete/;
 
 async function run(env, scheduleRow, until = CYCLE_DONE, opts = {}) {
-  const sb = await startFakeSupabase(scheduleRow, opts.dsm, opts.deviceConfig, opts.failCommandInsert, opts.dropCommandWrites, opts.socketConfig ?? null, opts.acuRules ?? null, opts.acuState ?? []);
+  const sb = await startFakeSupabase(scheduleRow, opts.dsm, opts.deviceConfig, opts.failCommandInsert, opts.dropCommandWrites, opts.socketConfig ?? null, opts.acuRules ?? null, opts.acuState ?? [], opts.serveSnapshot ?? false);
   const light = await startFakeLight(opts.latest);
   const child = spawn(process.execPath, [SCHEDULER], {
     env: {
@@ -215,7 +243,7 @@ async function run(env, scheduleRow, until = CYCLE_DONE, opts = {}) {
   child.stdout.on('data', (c) => { out += c.toString(); });
   child.stderr.on('data', (c) => { out += c.toString(); });
 
-  const snapshot = () => ({ commands: sb.state.commands, lightRequests: light.state.requests, acuStateWrites: sb.state.acuStateWrites, out });
+  const snapshot = () => ({ commands: sb.state.commands, lightRequests: light.state.requests, acuStateWrites: sb.state.acuStateWrites, tableReads: sb.state.tableReads, snapshotCalls: sb.state.snapshotCalls, out });
   const holds = () => {
     const s = snapshot();
     return until instanceof RegExp ? until.test(s.out) : until(s);
@@ -892,4 +920,75 @@ test('at the 16C floor it holds, warns once, and records the alert', async () =>
   assert.equal(r.lightRequests.length, 0, 'it does not keep trying below the floor');
   assert.match(r.out, /floor/i);
   assert.equal(r.acuStateWrites.some((w) => w.alert_kind === 'floor_reached'), true);
+});
+
+
+/* ===========================================================================
+ * RM-149 — the configuration in one request.
+ *
+ * Every request is a line in the hosted database's log, whose Free-plan quota was the tight one,
+ * and the seven reads a minute were about 10,000 a day. With supabase/phase50 applied the scheduler
+ * asks `scheduler_snapshot` instead; without it, it reads table by table exactly as every test above
+ * describes (their fake answers 404 for the function, as an un-migrated database does).
+ * ======================================================================== */
+
+test('with phase50 applied, a refresh is one request, and a due schedule still fires', async () => {
+  await waitForRoomInMinute();
+  const r = await run({ ...OPEN, SCHEDULE_REFRESH_MS: '200' }, dueNowRow(),
+    (s) => s.lightRequests.length >= 1 && s.snapshotCalls.length >= 3, { serveSnapshot: true });
+  assert.equal(r.lightRequests[0].url, '/light/1');
+  assert.deepEqual(r.tableReads, [], 'no table is read one by one while the snapshot answers');
+  assert.equal(r.snapshotCalls[0].p_site_id, SITE.id, 'the thresholds asked for are this site\'s');
+});
+
+test('the snapshot feeds shedding the same thresholds and tiers the tables did', async () => {
+  const r = await run({}, null, (s) => s.commands.some((c) => c.source === 'dsm_autoshed' && c.status), {
+    dsm: dsmOn,
+    deviceConfig: [{ device_id: 'l1', load_shed_group: 'group_1' }, { device_id: 'l2', load_shed_group: 'group_2' }],
+    latest: OVER,
+    serveSnapshot: true,
+  });
+  const shed = r.commands.filter((c) => c.source === 'dsm_autoshed');
+  assert.equal(shed[0].device_id, 'l1', 'group_1 sheds before group_2');
+  assert.equal(shed[0].requested_by, SHED_USER);
+  assert.deepEqual(r.tableReads, []);
+});
+
+test('the snapshot feeds the aircon loop its rules and remembered state', async () => {
+  const r = await run({ ...OPEN }, [], (s) => s.lightRequests.length >= 1, {
+    acuRules: [acuRule()],
+    acuState: [{ rule_id: 'acu-r1', commanded_c: 25, last_step_at: null, last_direction: null, alert_kind: null }],
+    latest: [acuHot(25, 27)],
+    settleMs: 900,
+    serveSnapshot: true,
+  });
+  assert.equal(r.lightRequests[0].url, '/acu');
+  assert.equal(r.lightRequests[0].body.state.setpoint_c, 24, 'one degree down from the remembered 25');
+  assert.deepEqual(r.tableReads, []);
+});
+
+test('without phase50 it reads table by table, says so once, and does not ask again every minute', async () => {
+  const r = await run({ SCHEDULE_REFRESH_MS: '200' }, [],
+    (s) => s.tableReads.filter((t) => t === 'schedules').length >= 3);
+  assert.equal(r.snapshotCalls.length, 1, 'asked once; asked again only an hour later');
+  assert.equal(r.out.match(/scheduler_snapshot not found/g)?.length, 1);
+  for (const table of ['schedules', 'dsm_thresholds', 'device_config', 'socket_config', 'acu_rules', 'acu_loop_state']) {
+    assert.ok(r.tableReads.includes(table), `the fallback still reads ${table}`);
+  }
+});
+
+test('a raised alert reaches the notifier rather than throwing out of the tick', async () => {
+  // Found 2026-09-30 in the Pi's journal, seven times in a month: `notify` was the notifier object,
+  // called as a function, so every raised alert threw "notify is not a function". The phone never
+  // heard, and the rest of that tick's loop pass was skipped. The notifier here points at a port
+  // nothing listens on, so "could not send" proves it was called; a throw shows as "tick error".
+  const r = await run({ ...OPEN, NTFY_TOPIC: 'ibems-test', NTFY_SERVER: 'http://127.0.0.1:9' }, [],
+    /\[ibems-notify\] could not send|tick error/, {
+      acuRules: [acuRule()],
+      acuState: [{ rule_id: 'acu-r1', commanded_c: 16, alert_kind: null }],
+      latest: [acuHot(16, 30)],
+      timeoutMs: 45_000,
+    });
+  assert.doesNotMatch(r.out, /tick error/);
+  assert.match(r.out, /\[ibems-notify\] could not send/);
 });

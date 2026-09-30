@@ -76,6 +76,11 @@ create or replace function auth.role() returns text language sql stable as
 -- how this stub was found to be short in the first place.
 create or replace function auth.uid() returns uuid language sql stable as
   $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+-- phase50's usage_bytes() sums the file store, so it needs storage.objects: a fourth symbol, and only
+-- the two columns it reads. Supabase's own table has many more.
+create schema if not exists storage;
+create table if not exists storage.objects (
+  id uuid primary key default gen_random_uuid(), bucket_id text, name text, metadata jsonb);
 do $$
 begin
   if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon; end if;
@@ -2171,6 +2176,88 @@ delete from readings_hourly where device_id = 'mtr_space';
 delete from device_config where device_id = 'mtr_space';
 delete from space_nodes where id in ('00000000-0000-4000-8000-000000000049', '00000000-0000-4000-8000-000000000050');
 delete from devices where id = 'mtr_space';
+SQL
+
+# ---- phase50: the scheduler's configuration in one request, and the plan's two sizes (RM-149) -------
+#
+# The snapshot must hold exactly what the scheduler's seven reads held: every row of each table, this
+# site's thresholds and no other's, and the newest fifty commands to a rule's aircon, newest first.
+echo "== phase50: re-applying twice, then the snapshot against the tables it replaces =="
+psql < "$HERE/phase50_request_budget.sql" >/dev/null
+psql < "$HERE/phase50_request_budget.sql" >/dev/null
+psql <<'SQL'
+insert into devices (id, display_name, class) values ('acu_snap', 'Rehearsal Snapshot Aircon', 'acu_ir'),
+  ('l_snap', 'Rehearsal Snapshot Light', 'switch')
+  on conflict (id) do nothing;
+
+do $$
+declare
+  u uuid;
+  s jsonb;
+  n bigint;
+  rule_id uuid;
+begin
+  insert into auth.users default values returning id into u;
+  insert into acu_rules (acu_device_id, sensor_device_id, target_c, days, window_start, window_end, enabled, updated_by)
+    values ('acu_snap', 'acu_snap', 24.5, '1111100', '07:40', '17:00', true, u) returning id into rule_id;
+  insert into acu_loop_state (rule_id, commanded_c, last_step_at) values (rule_id, 24, timestamptz '2026-05-02 08:00+00');
+  -- Sixty commands to the rule's aircon, a minute apart, and five to a light no rule names.
+  insert into commands (device_id, action, target, requested_by, status, source, requested_at)
+  select 'acu_snap', 'on', 'AC_POWER', u, 'dispatched', 'acu_loop', timestamptz '2026-05-02 00:00+00' + (i || ' minutes')::interval
+    from generate_series(1, 60) i;
+  insert into commands (device_id, action, target, requested_by, status, source, requested_at)
+  select 'l_snap', 'on', '1', u, 'dispatched', 'schedule', timestamptz '2026-05-03 00:00+00' + (i || ' minutes')::interval
+    from generate_series(1, 5) i;
+
+  s := scheduler_snapshot('mmsu-nberic-care');
+
+  assert jsonb_array_length(s->'schedules') = (select count(*) from schedules), 'phase50: every schedule row';
+  assert jsonb_array_length(s->'device_config') = (select count(*) from device_config), 'phase50: every device_config row';
+  assert jsonb_array_length(s->'socket_config') = (select count(*) from socket_config), 'phase50: every socket_config row';
+  assert jsonb_array_length(s->'acu_rules') = (select count(*) from acu_rules), 'phase50: every rule';
+  assert jsonb_array_length(s->'acu_loop_state') = (select count(*) from acu_loop_state), 'phase50: every loop state';
+
+  assert s->'acu_rules' @> jsonb_build_array(jsonb_build_object(
+      'id', rule_id, 'acu_device_id', 'acu_snap', 'target_c', 24.5, 'days', '1111100',
+      'window_start', '07:40', 'window_end', '17:00', 'enabled', true, 'updated_by', u)),
+    'phase50: a rule comes back with its values';
+  assert (select (e->>'last_step_at')::timestamptz from jsonb_array_elements(s->'acu_loop_state') e
+           where e->>'rule_id' = rule_id::text) = timestamptz '2026-05-02 08:00+00',
+    'phase50: a timestamp comes back as one the scheduler can parse';
+
+  assert jsonb_array_length(s->'acu_commands') = 50, 'phase50: the newest fifty, as the scheduler asked for';
+  assert (s->'acu_commands'->0->>'requested_at')::timestamptz = timestamptz '2026-05-02 01:00+00',
+    format('phase50: newest first, got %s', s->'acu_commands'->0->>'requested_at');
+  assert (s->'acu_commands'->49->>'requested_at')::timestamptz = timestamptz '2026-05-02 00:11+00',
+    format('phase50: the fiftieth is the eleventh minute, got %s', s->'acu_commands'->49->>'requested_at');
+  select count(*) into n from jsonb_array_elements(s->'acu_commands') e where e->>'device_id' <> 'acu_snap';
+  assert n = 0, 'phase50: only aircons a rule names';
+
+  assert (s->'dsm'->>'max_total_kw')::numeric = (select max_total_kw from dsm_thresholds where site_id = 'mmsu-nberic-care')
+      or (s->'dsm'->>'max_total_kw' is null and (select max_total_kw from dsm_thresholds where site_id = 'mmsu-nberic-care') is null),
+    'phase50: this site''s thresholds';
+  assert scheduler_snapshot('no-such-site')->'dsm' = 'null'::jsonb, 'phase50: a site with no thresholds has none';
+
+  insert into storage.objects (bucket_id, name, metadata)
+    values ('rehearsal-bucket', 'a', '{"size": 1000}'), ('rehearsal-bucket', 'b', '{"size": 234}');
+  assert (usage_bytes()->>'storage')::bigint = (select sum((metadata->>'size')::bigint) from storage.objects),
+    'phase50: storage is the sum of every object';
+  assert (usage_bytes()->>'database')::bigint > 0, 'phase50: the database has a size';
+
+  assert not has_function_privilege('authenticated', 'scheduler_snapshot(text)', 'execute'),
+    'phase50: a signed-in reader must not call the scheduler''s snapshot';
+  assert not has_function_privilege('anon', 'usage_bytes()', 'execute'), 'phase50: anon must not read the sizes';
+  assert has_function_privilege('service_role', 'scheduler_snapshot(text)', 'execute')
+     and has_function_privilege('service_role', 'usage_bytes()', 'execute'),
+    'phase50: the service role runs the scheduler and preflight';
+
+  delete from storage.objects where bucket_id = 'rehearsal-bucket';
+  delete from commands where device_id in ('acu_snap', 'l_snap');
+  delete from acu_rules where id = rule_id;
+  raise notice 'phase50: the request budget — assertions passed';
+end $$;
+
+delete from devices where id in ('acu_snap', 'l_snap');
 SQL
 
 echo

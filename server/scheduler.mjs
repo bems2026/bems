@@ -105,10 +105,46 @@ let acuState = {};
 /** Newest non-loop command per aircon, for the manual/schedule hold. */
 let acuRecentCommands = {};
 const PROCESS_STARTED_AT = new Date().toISOString();
-const notify = createNotifier(process.env);
+const notifier = createNotifier(process.env);
 let stopping = false;
 /** Guards against firing the same minute twice if a tick runs long or the clock jitters. */
 let lastFiredMinute = null;
+
+/**
+ * The configuration in ONE request — RM-149. Every request is a line in the hosted database's log,
+ * whose Free-plan quota was the tight one, and the seven reads below, once a minute, were about
+ * 10,000 a day. `scheduler_snapshot` (supabase/phase50) returns the same rows, column for column, and
+ * feeds the same `apply*` functions.
+ *
+ * Until phase50 is applied the database answers 404 and the seven reads carry on, exactly as before.
+ * The function is asked for again an hour later, so pasting the migration takes effect without a
+ * restart.
+ */
+const SNAPSHOT_RETRY_MS = 60 * 60_000;
+let snapshotMissingAt = null;
+
+async function refreshConfig() {
+  if (snapshotMissingAt === null || Date.now() - snapshotMissingAt >= SNAPSHOT_RETRY_MS) {
+    const res = await sb('rpc/scheduler_snapshot', { method: 'POST', body: JSON.stringify({ p_site_id: SITE.id }) });
+    if (res.ok) {
+      if (snapshotMissingAt !== null) console.log('[ibems-scheduler] scheduler_snapshot is available — configuration now in one request');
+      snapshotMissingAt = null;
+      const snap = await res.json();
+      applySchedules(snap.schedules ?? []);
+      applyDsmConfig(snap.dsm ?? {}, snap.device_config ?? [], snap.socket_config ?? []);
+      applyAcuRules(snap.acu_rules ?? [], snap.acu_loop_state ?? [], snap.acu_commands ?? []);
+      return;
+    }
+    if (res.status !== 404) throw new Error(`scheduler_snapshot failed: HTTP ${res.status} ${await res.text().catch(() => '')}`);
+    if (snapshotMissingAt === null) console.warn('[ibems-scheduler] scheduler_snapshot not found (supabase/phase50 not applied) — reading the configuration table by table');
+    snapshotMissingAt = Date.now();
+  }
+  // Settled separately, as they always were: one table failing must not stop the others refreshing.
+  // Each error names its table.
+  const failed = (await Promise.allSettled([refreshSchedules(), refreshDsmConfig(), refreshAcuRules()]))
+    .filter((r) => r.status === 'rejected');
+  if (failed.length > 0) throw new Error(failed.map((r) => String(r.reason?.message ?? r.reason)).join('; '));
+}
 
 async function refreshSchedules() {
   // No `&socket=is.null` any more: RM-066 made the socket meaningful, so filtering it out here
@@ -117,7 +153,11 @@ async function refreshSchedules() {
   // only report on rows it can see.
   const res = await sb('schedules?select=id,device_id,socket,rule,enabled,updated_by,label');
   if (!res.ok) throw new Error(`schedules fetch failed: HTTP ${res.status} ${await res.text().catch(() => '')}`);
-  schedules = await res.json();
+  applySchedules(await res.json());
+}
+
+function applySchedules(rows) {
+  schedules = rows;
 
   /**
    * Armed rules that can never fire, counted out loud.
@@ -152,16 +192,18 @@ async function refreshDsmConfig() {
   // stop shedding: `shedTargets` falls back to the device-level tier for any socket with no
   // row, which is exactly the pre-RM-067 behaviour. Logged once per refresh, never fatal.
   if (!sRes.ok) console.warn(`[ibems-scheduler] socket_config unreadable (HTTP ${sRes.status}) — falling back to device-level shed tiers`);
-  const row = (await tRes.json())[0] ?? {};
+  applyDsmConfig((await tRes.json())[0] ?? {}, await cRes.json(), sRes.ok ? await sRes.json() : []);
+}
+
+function applyDsmConfig(row, configRows, socketRows) {
   thresholds = {
     maxPhaseA: row.max_phase_current ?? null,
     maxTotalKw: row.max_total_kw ?? null,
     autoShed: row.auto_shed === true,
   };
   shedActor = row.updated_by ?? null;
-  shedGroups = Object.fromEntries((await cRes.json()).map((r) => [r.device_id, r.load_shed_group ?? null]));
+  shedGroups = Object.fromEntries(configRows.map((r) => [r.device_id, r.load_shed_group ?? null]));
 
-  const socketRows = sRes.ok ? await sRes.json() : [];
   socketShedGroups = {};
   for (const r of socketRows) {
     (socketShedGroups[r.device_id] ??= {})[r.socket] = r.load_shed_group ?? null;
@@ -185,11 +227,27 @@ async function refreshAcuRules() {
     if (acuRules.length > 0) console.warn(`[ibems-scheduler] acu_rules unreadable (HTTP ${rRes.status}) — keeping the ${acuRules.length} rule(s) already loaded`);
     return;
   }
-  acuRules = await rRes.json();
+  const rules = await rRes.json();
+  const stateRows = sRes.ok ? await sRes.json() : [];
+
+  // The newest command per aircon, whatever asked for it. One query for every rule rather than
+  // one per rule, and only the aircons any rule names.
+  let commandRows = null;
+  const acuIds = [...new Set(rules.map((r) => r.acu_device_id))];
+  if (acuIds.length > 0) {
+    const list = acuIds.map((id) => `"${id}"`).join(',');
+    const cRes = await sb(`commands?select=device_id,source,requested_at&device_id=in.(${list})&order=requested_at.desc&limit=50`);
+    if (cRes.ok) commandRows = await cRes.json();
+  }
+  applyAcuRules(rules, stateRows, commandRows);
+}
+
+/** `commandRows` null means they could not be read, and the last ones read are kept. */
+function applyAcuRules(rules, stateRows, commandRows) {
+  acuRules = rules;
   if (acuRules.length === 0) return;
 
-  const rows = sRes.ok ? await sRes.json() : [];
-  const seen = new Map(rows.map((r) => [r.rule_id, r]));
+  const seen = new Map(stateRows.map((r) => [r.rule_id, r]));
   const next = {};
   for (const rule of acuRules) {
     const row = seen.get(rule.id);
@@ -214,18 +272,10 @@ async function refreshAcuRules() {
   }
   acuState = next;
 
-  // The newest command per aircon, whatever asked for it. One query for every rule rather than
-  // one per rule, and only the aircons any rule names.
-  const acuIds = [...new Set(acuRules.map((r) => r.acu_device_id))];
-  if (acuIds.length > 0) {
-    const list = acuIds.map((id) => `"${id}"`).join(',');
-    const cRes = await sb(`commands?select=device_id,source,requested_at&device_id=in.(${list})&order=requested_at.desc&limit=50`);
-    if (cRes.ok) {
-      const rows2 = await cRes.json();
-      const newest = {};
-      for (const row of rows2) if (!newest[row.device_id]) newest[row.device_id] = row;
-      acuRecentCommands = newest;
-    }
+  if (commandRows !== null) {
+    const newest = {};
+    for (const row of commandRows) if (!newest[row.device_id]) newest[row.device_id] = row;
+    acuRecentCommands = newest;
   }
 }
 
@@ -542,7 +592,7 @@ async function acuTick() {
       alert_kind: alert.transition === 'raised' ? alert.kind : null,
       alert_since: alert.transition === 'raised' ? now.toISOString() : null,
     });
-    if (alert.transition === 'raised') notify(alert.message);
+    if (alert.transition === 'raised') await notifier.notify('iBEMS aircon loop', alert.message, 'high');
   }
 
   for (const action of plan.actions) {
@@ -581,9 +631,7 @@ async function main() {
       `schedulable=${DISPATCHABLE_DEVICE_IDS.length} device(s) refresh=${REFRESH_MS}ms tick=${TICK_MS}ms`,
   );
   try {
-    await refreshSchedules();
-    await refreshDsmConfig();
-    await refreshAcuRules();
+    await refreshConfig();
     const tiered = Object.values(shedGroups).filter((g) => g && g !== 'never').length;
     console.log(
       `[ibems-scheduler] loaded ${schedules.length} schedule row(s); auto-shed ${thresholds.autoShed ? 'ON' : 'off'}, ` +
@@ -594,9 +642,7 @@ async function main() {
   }
 
   setInterval(() => {
-    refreshSchedules().catch((err) => console.error('[ibems-scheduler] schedule refresh failed:', String(err)));
-    refreshDsmConfig().catch((err) => console.error('[ibems-scheduler] DSM config refresh failed:', String(err)));
-    refreshAcuRules().catch((err) => console.error('[ibems-scheduler] acu rule refresh failed:', String(err)));
+    refreshConfig().catch((err) => console.error('[ibems-scheduler] configuration refresh failed:', String(err)));
   }, REFRESH_MS);
 
   // Checked every 15s rather than once a minute so a schedule is never missed because the
