@@ -3,9 +3,9 @@ title: Data and storage
 purpose: Understand, size and query the relational store, its ingestion and retention (L4)
 audience: [integrator, administrator]
 status: Draft
-last_verified: 2026-09-29
+last_verified: 2026-09-30
 applies_to: repo fd6fadc
-evidence: [E-042, E-058, E-064, E-065, E-066, E-070, E-078, E-080, E-081, E-082, E-083, E-084, E-085, E-086, E-088, E-089, E-090, E-111, E-121, E-122, E-124, E-126, E-134, E-137, E-138, E-142, E-149, E-157, E-161, E-162, E-163, E-164, E-165, E-166, E-167, E-168, E-193, E-218, E-219, E-220, E-221, E-222]
+evidence: [E-042, E-058, E-064, E-065, E-066, E-070, E-078, E-080, E-081, E-082, E-083, E-084, E-085, E-086, E-088, E-089, E-090, E-111, E-121, E-122, E-124, E-126, E-134, E-137, E-138, E-142, E-149, E-157, E-161, E-162, E-163, E-164, E-165, E-166, E-167, E-168, E-193, E-218, E-219, E-220, E-221, E-222, E-224, E-225]
 ---
 
 # Data and storage
@@ -144,9 +144,17 @@ spreadsheet ([ADR index](adr/README.md)).
 |---|---|---|
 | 1 | In the SQL editor, run `schema.sql`, then every `phase*.sql` in filename order | Each runs without error. Re-running one is safe; the tests enforce it. |
 | 2 | Add this site's row: run `npm run site:sql` and paste the one statement it prints | One row in `sites`, with the site's time zone |
-| 3 | Put the URL and keys into `server/.env` on the edge, then start the daemons | `ingestion_health.last_success_at` advances every minute |
+| 3 | Put the URL and keys into `server/.env` on the edge, then start the daemons | `ingestion_health.last_success_at` advances every 5 minutes, with each upload from the edge's archive (E-225) |
 
-**Done when.** `npm run preflight` passes `db_reachable` and `db_site_row`.
+**Done when.** `npm run preflight` passes `db_reachable` and `db_site_row`, and `db_size` and `storage_size` read under 70 % of the
+plan's caps. Those two need `phase50`'s `usage_bytes()`; the defaults are the Free plan's 500 MB and 1 GB (E-224).
+
+**The request budget (RM-149).** Every request to the hosted database is a line in its log, and on the Free plan the log's
+quota was the one near its limit (E-224). So the edge asks little, and asks in bulk:
+
+- Ingest uploads what the archive holds every 5 minutes, and at once for an anomaly.
+- The scheduler reads its whole configuration with one call to `scheduler_snapshot`.
+- The device list goes up only when it changes.
 
 **Rollback.** Drop the project and start again. Nothing else depends on it until the daemons write.
 

@@ -43,9 +43,15 @@ export function foldersToDrop(names, keep) {
   return dated.slice(Math.max(1, keep));
 }
 
-/** A day that was sealed AND copied off the edge, at random; null when there is none. */
+/**
+ * A day that was sealed AND copied off the edge, at random; null when there is none. A day whose
+ * readings were sealed is preferred: they are nearly all of the archive, and some early days hold
+ * only anomalies because their raw minutes were pruned before the archive existed.
+ */
 export function pickDrillDay(seals, random = Math.random) {
-  const days = [...new Set(seals.filter((s) => s.uploaded_at).map((s) => s.day))].sort();
+  const uploaded = seals.filter((s) => s.uploaded_at);
+  const withReadings = uploaded.filter((s) => s.stream === 'readings');
+  const days = [...new Set((withReadings.length ? withReadings : uploaded).map((s) => s.day))].sort();
   return days.length ? days[Math.min(days.length - 1, Math.floor(random() * days.length))] : null;
 }
 

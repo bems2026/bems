@@ -197,3 +197,15 @@ test('the drill picks a day that was sealed and copied off the edge, never one o
   assert.equal(pickDrillDay(seals, () => 0.99), '2026-08-18');
   assert.equal(pickDrillDay([{ day: '2026-08-17', uploaded_at: null }], () => 0), null);
 });
+
+test('the drill prefers a day whose readings were sealed, over one that holds only anomalies', () => {
+  // Seen on the edge 2026-09-30: the drill drew 2026-08-27, a day whose raw minutes were pruned before
+  // the archive existed, so it restored 418 anomalies and proved nothing about the readings.
+  const seals = [
+    { day: '2026-08-27', stream: 'anomalies', uploaded_at: 1 },
+    { day: '2026-09-11', stream: 'readings', uploaded_at: 1 },
+    { day: '2026-09-11', stream: 'anomalies', uploaded_at: 1 },
+  ];
+  assert.equal(pickDrillDay(seals, () => 0), '2026-09-11');
+  assert.equal(pickDrillDay([{ day: '2026-08-27', stream: 'anomalies', uploaded_at: 1 }], () => 0), '2026-08-27', 'with no readings sealed, any day will do');
+});

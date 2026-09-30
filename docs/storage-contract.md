@@ -21,13 +21,13 @@ directly via `@supabase/supabase-js` + RLS, once Phase 5's auth lands).
 
 | Table | Populated from | Cadence |
 |---|---|---|
-| `devices` | `GET /api/devices` | Once at ingest startup, then every `INGEST_DEVICE_SYNC_MS` (default 5 min) |
-| `readings` | `GET /api/readings/latest`, per-device entries | Every `INGEST_POLL_MS` (default `TIMING.HISTORY_SAMPLE_MS` = 60s, matching the bridge's own ring-buffer sample rate) |
+| `devices` | `GET /api/devices` | Read at ingest startup, then every `INGEST_DEVICE_SYNC_MS` (default 5 min); sent only when the list has changed (RM-149) |
+| `readings` | `GET /api/readings/latest`, per-device entries | Sampled and archived on the edge every `INGEST_POLL_MS` (default `TIMING.HISTORY_SAMPLE_MS` = 60s, matching the bridge's own ring-buffer sample rate). Uploaded from the archive every `INGEST_UPLOAD_MS` (default 5 min), and at once on a tick that found an anomaly (RM-149) |
 | `building_totals` | `GET /api/readings/latest`'s `_totals` pseudo-entry | Same as `readings` |
 | `commands` | App-originated command attempts (Phase 6+) | On write |
 | `schedules` | App-originated schedule edits (Phase 6+) | On write |
 | `dsm_thresholds` | App-originated threshold edits (Phase 6+) | On write |
-| `ingestion_health` | `server/ingest.mjs`, every tick | Every `INGEST_POLL_MS`, best-effort (not buffered on outage) |
+| `ingestion_health` | `server/ingest.mjs` | With each upload, at once when health changes either way, and at least every `INGEST_UPLOAD_MS`; every tick on an edge with no archive. Best-effort (not buffered on outage). Fields the scrub refused between writes are carried into the next one (RM-149) |
 | `readings_hourly` | `readings` rows aged past the retention window, aggregated in Postgres | Whenever a retention pass finds something older than `INGEST_RETENTION_DAYS` (checked every 6h) |
 | `anomalies` | `server/anomalyStats.mjs`, on a flagged tick | Only when a reading is flagged |
 

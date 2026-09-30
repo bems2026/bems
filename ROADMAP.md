@@ -1,6 +1,16 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-30, 06:45 — **RM-148 done: the cloud keeps 14 days of raw rows, the edge keeps every raw
+**Last audited:** 2026-09-30, 11:30 — **RM-149 done: the edge asks the database about a quarter as often, the unused
+file storage holds a weekly backup, and a sealed day is restored every week as a drill.**
+- The database stood at 129 MB after the reset (E-224). The quota still near its limit was log ingestion, 0.97 of 1 GB,
+  and every request is a line in that log.
+- Ingest uploads every 5 minutes, and at once for an anomaly. The scheduler's seven reads a minute become one call once
+  phase50 is applied. Together that is about 16,000 requests a day down to about 4,000.
+- The first weekly backup: 19 tables, 0.70 MB, every copy read back, drill passed (E-226).
+- Found and fixed on the way: aircon-loop alerts never reached the phone (F-035).
+
+Evidence E-224 to E-226. §0's first entry says what is left: paste phase50.
+**Earlier, 2026-09-30, 06:45 — RM-148 done: the cloud keeps 14 days of raw rows, the edge keeps every raw
 minute since 16 Aug, and each sealed day is copied off the edge.**
 - The hot tier was switched on at 06:17. Its first verified pass pruned 464,092 readings in 17 steps.
 - The raw tables were then reset from the edge: the cloud and the archive match per device-hour both ways over the whole
@@ -393,6 +403,30 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
+### 2026-09-30 — the request budget and the file storage (RM-149): one paste left
+
+RM-149a–c are deployed and read back (E-225, E-226).
+
+**Left, for the operator:**
+1. **Paste `supabase/phase50_request_budget.sql` into the SQL editor.** It adds two read-only functions for the
+   service role and changes no table; it was rehearsed on the edge. No restart is needed: the scheduler asks for its
+   snapshot again within the hour and logs `scheduler_snapshot is available`. Then `npm run preflight` reads
+   `db_size` and `storage_size`, which warn until it is in.
+2. Optional, a day later: `select calls, left(query, 110) from pg_stat_statements order by calls desc limit 15;` in
+   the SQL editor, to see the drop in the busiest statements.
+
+**Considered and deliberately not done:**
+- **The proxy's sign-in check** is cached for 60 s. A longer cache means fewer requests, but a signed-out or removed
+  user keeps access for longer. That is the operator's call, not a tuning.
+- **The kiosk's anomaly poll** stays at 60 s. Anomalies now upload the minute they are found, and the kiosk shows the
+  last fifteen minutes of them.
+- **More raw days in the cloud.** There is room: 129 of 500 MB, growing about 30–45 MB a year. But nothing reads raw
+  rows older than 14 days that the rollups or the edge do not already answer.
+- **Log query (100 GB)** is the allowance for searching the logs in the dashboard. It holds nothing and needs nothing.
+
+**To watch:** `npm run preflight` (`db_size`, `storage_size`, the four timers); `journalctl -u ibems-backup` after
+Sunday 2026-10-04 03:30; log ingestion on the usage page falling over the next cycle.
+
 ### 2026-09-30 — the data tier (RM-148): done, and what is left to watch
 
 All seven stages are done and read back (E-218 to E-223).
@@ -400,17 +434,16 @@ All seven stages are done and read back (E-218 to E-223).
 - The edge archive holds every raw minute since 16 Aug.
 - The database went from 392 MB to 323 MB after phase48. The reset gave the raw tables' space back after that.
 
-**Left, for the operator:**
-1. Run the size query once more (`select pg_size_pretty(sum(pg_database_size(datname))) from pg_database;`) to record
-   the reset's result.
-2. The day's API requests by path, run in the **Logs Explorer**, not the SQL editor. It decides whether ingest's three
-   requests a minute should become one. Log ingestion is not enforced before early 2027.
-3. Quarterly: `npm run archive:restore -- --day=<any sealed day>` on the edge, the restore drill.
+**Left, for the operator:** all three are closed.
+1. ~~Run the size query once more~~ **Done: 129 MB (E-224).**
+2. ~~The day's API requests by path~~ **Superseded by RM-149**, which cut the requests at their source from the code's
+   own counts.
+3. ~~Quarterly restore drill~~ **Automatic since RM-149c:** it runs every week with the backup.
 
 **To watch:**
 - `npm run preflight`: `archive_current`, `disk_free`, `context_flush`.
 - The journal reaching past 14 days now that the proxy is quiet.
-- `npm run archive:storage` for the bucket's use of its 1 GB.
+- `npm run preflight`'s `storage_size` for the bucket's use of its 1 GB.
 
 ### 2026-09-24, 12:00 — two security changes for the operator (RM-145 audit)
 
@@ -4040,6 +4073,75 @@ Node-RED context flush and a stage-by-stage rollout. Stages: 0 measure, 1 archiv
         - `docs/pi-session-brief.md`: the restart map;
         - `CLAUDE.md`: `server/data/` is live state;
         - evidence rows E-218 to E-221; Q-01 closed; F-004 confirmed.
+
+### The request budget, and the file storage put to use — RM-149 (2026-09-30)
+
+After RM-148 the database stood at 129 of 500 MB (E-224). The quota still near its limit was log ingestion: 0.97 of
+1 GB. Every request to the project is a line in that log, and the edge sent about 16,000 a day. The 1 GB of file
+storage held only the sealed days, about 0.2 MB a day, and the Free plan keeps no backups of its own.
+
+- [x] **RM-149a** Ingest uploads on an interval. **Deployed `b7925a1`, read back (E-225).**
+      - The archive drains to the cloud every `INGEST_UPLOAD_MS` (default 5 min; `uploadDue`, `uploadIntervalFrom`
+        in `server/archiveUpload.mjs`), and at once on a tick that found an anomaly. A waiting tick is healthy
+        (`runIngestCycle` reports `uploaded: false`). An attempt, not a success, starts the next interval, so an
+        outage is retried every interval.
+      - The health row goes up with each upload, at once when health flips either way, and at least once an interval.
+        Refused fields in between are carried, never dropped (`createHealthCadence`, `server/healthRow.mjs`).
+      - The device list is sent only when it has changed.
+      - Nothing that acts on the building reads these rows: the scheduler and the fleet alarm read the bridge, and day
+        reports wait an hour past midnight.
+      - Tests: `archiveUpload.test.mjs` (+2), `healthRow.test.mjs` (+2), `ingestCycle.test.mjs` (+1),
+        `requestBudget.test.mjs` (3, the wiring from source), `hotTier.test.mjs` (updated). About 4,900 requests a day
+        become about 900.
+- [x] **RM-149b** The scheduler's configuration in one request. **Deployed `d539938`; phase50 awaits the operator.**
+      - [`supabase/phase50_request_budget.sql`](supabase/phase50_request_budget.sql) adds `scheduler_snapshot(site)`:
+        the seven reads' rows, column for column, in one call. It also adds `usage_bytes()`, the database and file
+        storage sizes. Both are stable, security invoker, and the service role's alone. Rehearsed on the edge
+        (`supabase/rehearse.sh`, applied twice).
+      - `server/scheduler.mjs` splits each refresh into a fetch and an apply. Without phase50 it reads table by table as
+        before, says so once, and asks again an hour later, so the paste needs no restart. About 10,000 requests a day
+        become about 1,440.
+      - **Fixed on the way (F-035):** every raised aircon-loop alert threw `notify is not a function`, 7 times in
+        September. The phone never heard.
+      - Tests: `scheduler.test.mjs` (+5); `test/phase50-request-budget-schema.test.mjs` (7) pins each snapshot key to
+        the columns the scheduler's own read selects.
+- [x] **RM-149c** A weekly backup into file storage, with a restore drill. **Deployed `dffb5b1`; the timer is
+      enabled; first run read back (E-226).**
+      - `server/backupCycle.mjs` runs the steps in this order:
+        1. It exports every table `server/backup.mjs` keeps, as gzipped NDJSON, onto the edge
+           (`~/backups/ibems-weekly`).
+        2. It uploads them to the bucket under `<site>/backup/<UTC day>/`, the manifest last.
+        3. It reads every copy back and compares its sha256.
+        4. Only then does it remove older backups: eight weeks are kept in the bucket and four on the edge. Only dated
+           folders are removed, never a sealed day.
+        5. It restores one sealed day as a drill, preferring a day whose readings were sealed.
+
+        Any failure goes to the phone.
+      - `server/backup-cycle.mjs` (`npm run backup:cycle`, dry run by default); `ibems-backup.service` and `.timer`,
+        Sundays 03:30, Persistent.
+      - The drill moved into `server/archiveDrill.mjs`, shared with `archive:restore`. It had no test before. It now
+        fails when a stream recorded as copied is missing from the bucket.
+      - Other pieces:
+        - the storage client gains `list` (paged) and `remove`;
+        - preflight gains `db_size` and `storage_size`, which warn at 70 % of the plan's caps and error at 90 %
+          (`SUPABASE_DB_QUOTA_MB`, `SUPABASE_STORAGE_QUOTA_MB`; defaults 500 and 1000);
+        - preflight's timer check picks up `ibems-backup.timer` by construction.
+      - Tests: `backupCycle.test.mjs` (8), `archiveDrill.test.mjs` (4), `supabaseStorage.test.mjs` (+2),
+        `preflight.test.mjs` (+4). Each was checked against a neutered implementation.
+      - About 0.7 MB a week now. At a year of rollups and anomalies, about 6 MB a backup and 50 MB for eight, beside
+        about 75 MB a year of sealed days.
+- [x] **RM-149d** The records.
+      - The docs:
+        - `docs/storage-contract.md`: the cadences;
+        - `docs/04-data.md`: the request budget, and the size checks at setup;
+        - `docs/03-edge.md`: the ingest row and the backup timer;
+        - `docs/backup-policy.md`: the weekly backup, and the drill now weekly.
+      - `server/.env.example`: `INGEST_UPLOAD_MS`, `BACKUP_*`, the quota variables.
+      - The audit records:
+        - evidence rows E-224 to E-226;
+        - F-035 (Medium, fixed);
+        - F-034's threshold raised to 15 minutes;
+        - the audit README's count of findings.
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 

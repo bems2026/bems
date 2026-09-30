@@ -3,9 +3,9 @@ title: Edge computing
 purpose: Build, configure and operate the local server that runs the control logic (L3)
 audience: [integrator, installer]
 status: Draft
-last_verified: 2026-09-29
+last_verified: 2026-09-30
 applies_to: repo b8af936 · edge checkout fcb1ff6
-evidence: [E-010, E-011, E-012, E-013, E-014, E-015, E-016, E-017, E-018, E-019, E-020, E-021, E-022, E-023, E-024, E-025, E-026, E-027, E-028, E-029, E-030, E-035, E-036, E-038, E-042, E-044, E-046, E-047, E-050, E-051, E-052, E-056, E-062, E-066, E-067, E-078, E-079, E-082, E-085, E-086, E-110, E-111, E-118, E-119, E-124, E-128, E-129, E-130, E-131, E-132, E-133, E-134, E-135, E-136, E-138, E-139, E-140, E-141, E-142, E-143, E-144, E-145, E-214, E-215, E-218]
+evidence: [E-010, E-011, E-012, E-013, E-014, E-015, E-016, E-017, E-018, E-019, E-020, E-021, E-022, E-023, E-024, E-025, E-026, E-027, E-028, E-029, E-030, E-035, E-036, E-038, E-042, E-044, E-046, E-047, E-050, E-051, E-052, E-056, E-062, E-066, E-067, E-078, E-079, E-082, E-085, E-086, E-110, E-111, E-118, E-119, E-124, E-128, E-129, E-130, E-131, E-132, E-133, E-134, E-135, E-136, E-138, E-139, E-140, E-141, E-142, E-143, E-144, E-145, E-214, E-215, E-218, E-225, E-226]
 ---
 
 # Edge computing
@@ -41,13 +41,14 @@ same stack. That is a Hypothesis: only a Pi 4 has been run.
 |---|---|---|---|
 | `nodered.service` | Node-RED, on loopback:1880, with its memory capped at 512 MB and its journal rate-limited | on failure, after 20 s | network |
 | `ibems-proxy.service` | `server/proxy.mjs`: the only authenticated door (:8080) | on failure, after 10 s | `nodered` |
-| `ibems-ingest.service` | `server/ingest.mjs`: readings into the database every 60 s, plus retention, reports and the fleet alarm | on failure, after 10 s | `nodered` |
+| `ibems-ingest.service` | `server/ingest.mjs`: readings into the edge archive every 60 s and up to the database every 5 min, plus retention, reports and the fleet alarm | on failure, after 10 s | `nodered` |
 | `ibems-scheduler.service` | `server/scheduler.mjs`: schedules, auto-shed, the room-target loop | on failure, after 10 s | `nodered` |
 | `ibems-dashboard.service` | `serve -s dist -l 5183`: the built web app | on failure, after 10 s | network |
 | `ibems-kiosk.service` (**user**) | Chromium in `--kiosk` on the wall display | always, after 5 s | the graphical login. It waits for the Wayland socket, then for the dashboard to answer, before opening. |
 | `ibems-lan-map.timer` | Learns device addresses from their own broadcasts (30 s listen) | — | 2 min after boot, then every 10 min |
 | `ibems-fleet-recover.timer` | Restarts Node-RED when a device is reachable but its connection has given up. It needs two checks in a row, acts at most once an hour, and never within 10 min of boot. | — | 12 min after boot, then every 5 min |
 | `ibems-wifi-prefer.timer` | Returns the edge to its preferred Wi-Fi profile (runs as root) | — | 90 s after boot, then every 5 min |
+| `ibems-backup.timer` | `server/backup-cycle.mjs`: the database's tables into file storage and onto the edge, each copy read back, eight weeks kept, and one sealed day restored as a drill (E-226) | — | Sundays 03:30, and at the next boot if a run was missed |
 
 Evidence: E-020, E-021, E-022, E-023. All four long-running daemons had `NRestarts=0` at the audit.
 

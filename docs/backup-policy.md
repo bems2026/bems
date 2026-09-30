@@ -75,9 +75,36 @@ table failed**, so a partial backup announces itself rather than looking complet
 `supabase/*.sql` under version control, which is a better home for them than a nightly
 tarball. See that file's header.
 
-Suggested cadence: **monthly, right after the report for the previous month appears**, since
-that is the point at which a month becomes permanent. Copy the directory somewhere that is not
-the Pi — the Pi is the single most likely thing in this system to fail.
+### Every week, by itself — `ibems-backup.timer` (RM-149)
+
+Since 2026-09-30 the edge takes this backup itself, every Sunday at 03:30 (`server/backup-cycle.mjs`,
+`server/backupCycle.mjs`), and puts it where the Pi's card is not:
+
+1. Every table above is exported as gzipped NDJSON, kept on the edge in `~/backups/ibems-weekly/<UTC day>/`
+   (`BACKUP_LOCAL_DIR`), and uploaded to the private bucket that holds the sealed raw days, under
+   `<site>/backup/<UTC day>/`.
+2. The manifest (rows and sha256 per table, or the error) goes up last. **A folder with a manifest is a finished backup;
+   one without is an interrupted one.**
+3. Every copy is downloaded again and its sha256 compared.
+4. Only then are older backups removed: the newest eight stay in the bucket (`BACKUP_KEEP_WEEKS`) and four on the edge.
+   A failed week removes nothing, and a sealed day is never touched.
+5. One sealed day, drawn at random, is restored as a drill (below).
+
+A failure of any step is sent to the phone (`NTFY_TOPIC`) and leaves `systemctl status ibems-backup` failed. The first
+run exported 19 tables, 0.70 MB, and its drill passed (E-226). `npm run preflight` reports the file store's use of its
+1 GB as `storage_size`.
+
+```bash
+npm run backup:cycle                 # dry run: what it would export, where, and what it keeps
+sudo systemctl start ibems-backup    # a run now; journalctl -u ibems-backup for the result
+```
+
+To restore from the bucket, download a dated folder, `gunzip` each `.ndjson.gz`, and follow "Restoring" below; the
+files are the same NDJSON `backup.mjs` writes.
+
+A manual export is still worth taking **right after the report for a month appears**, since that is the point at
+which a month becomes permanent. Copy it somewhere that is neither the Pi nor the hosting account: the weekly copy
+lives in the same account as the database, so it does not survive losing access to that account.
 
 ## Restoring
 
@@ -153,7 +180,9 @@ With the hot tier switched on (`ARCHIVE_HOT_TIER=1` in `server/.env`):
   covered row for row by the archive.
 
 **The restore drill.** It was first run on 2026-09-30, for 15 Sep and 16 Aug, and passed: every file downloaded, re-sealed
-and recorded with the same sha256. Run it again quarterly, with the export restore above:
+and recorded with the same sha256. **It now runs every week with the backup**, on a day drawn at random from those
+whose readings were sealed and copied (E-226). It fails when a stream the archive recorded as copied is missing from
+the bucket. To run it by hand:
 
 ```bash
 npm run archive:restore -- --day=2026-09-01
