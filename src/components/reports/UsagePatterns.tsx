@@ -17,6 +17,12 @@ interface Props {
   period: ReportPeriod;
   start: string;
   charts: ChartsData;
+  /**
+   * RM-151: whether the daily series AND the demand summary are in. The verdict "too little recorded",
+   * the three tiles and the findings are statements about both, so they wait for both. A failure is
+   * said by the page's own note, never read as a thin period. The three charts draw regardless.
+   */
+  basis: 'ready' | 'loading' | 'error';
   hoursLoading: boolean;
   loading: Partial<Record<ReportChartKind, boolean>>;
 }
@@ -24,24 +30,31 @@ interface Props {
 /** Headline demand in kilowatts, as every headline tile on the page is. */
 const kw = (w: number | null | undefined) => (w === null || w === undefined || !Number.isFinite(w) ? null : `${(w / 1000).toFixed(2)} kW`);
 
-function DemandTile({ term, value, sub }: { term: string; value: string | null; sub: string }) {
+function DemandTile({ term, value, sub, pending }: { term: string; value: string | null; sub: string; pending: boolean }) {
   return (
     <div>
       <dt>{term}</dt>
       <dd>
-        {value === null ? <span className="reports-figure reports-figure--missing">—</span> : <span className="reports-figure">{value}</span>}
+        {pending ? (
+          <span className="reports-figure reports-figure--missing">Loading…</span>
+        ) : value === null ? (
+          <span className="reports-figure reports-figure--missing">—</span>
+        ) : (
+          <span className="reports-figure">{value}</span>
+        )}
         <span className="reports-figure__caveat report-kpi__sub">{sub}</span>
       </dd>
     </div>
   );
 }
 
-export function UsagePatterns({ period, start, charts, hoursLoading, loading }: Props) {
+export function UsagePatterns({ period, start, charts, basis, hoursLoading, loading }: Props) {
   const label = formatPeriod(period, start);
   const summary = charts.summary ?? null;
   const recordedDays = charts.daily.filter((d) => d.usable_sample_count > 0).length;
   // Real readings and days that held one — never rows, which a meter writes while reading nothing.
-  const thin = summary === null || summary.usable_minutes < BASELINE_MIN_SAMPLES || recordedDays < BASELINE_MIN_DAYS;
+  const thin = basis === 'ready' && (summary === null || summary.usable_minutes < BASELINE_MIN_SAMPLES || recordedDays < BASELINE_MIN_DAYS);
+  const pending = basis === 'loading' && summary === null;
 
   return (
     <>
@@ -58,13 +71,15 @@ export function UsagePatterns({ period, start, charts, hoursLoading, loading }: 
 
       <section className="report-patterns" aria-label={`Demand for ${label}`}>
         <dl className="report-kpis">
-          <DemandTile term="Usual demand" value={kw(summary?.p50_w)} sub="Half the time above, half below" />
-          <DemandTile term="High demand" value={kw(summary?.p95_w)} sub="Above this only 1 minute in 20" />
-          <DemandTile term="Highest demand" value={kw(summary?.max_w)} sub="The most drawn in any minute" />
+          <DemandTile term="Usual demand" value={kw(summary?.p50_w)} sub="Half the time above, half below" pending={pending} />
+          <DemandTile term="High demand" value={kw(summary?.p95_w)} sub="Above this only 1 minute in 20" pending={pending} />
+          <DemandTile term="Highest demand" value={kw(summary?.max_w)} sub="The most drawn in any minute" pending={pending} />
         </dl>
       </section>
 
-      <ReportFindings label={label} daily={charts.daily} hours={charts.hours} hoursLoading={hoursLoading} summary={summary} />
+      {basis === 'ready' ? (
+        <ReportFindings label={label} daily={charts.daily} hours={charts.hours} hoursLoading={hoursLoading} summary={summary} />
+      ) : null}
 
       <ReportCharts period={period} start={start} {...charts} only={['hours', 'heat', 'curve']} loading={loading} />
 

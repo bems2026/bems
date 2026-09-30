@@ -128,29 +128,64 @@ export interface RetryOptions {
   /** Attempts after the first. */
   retries?: number;
   baseMs?: number;
+  /** RM-151: the wait before the one retry a statement timeout gets. */
+  statementTimeoutMs?: number;
   sleep?: (ms: number) => Promise<void>;
   random?: () => number;
 }
 
 const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+/** The database cancelled the statement for time: it already spent its whole limit on it. */
+const isStatementTimeout = (err: unknown) => err instanceof ReportQueryError && err.code === '57014';
+
 /**
  * Retries a transient failure with exponential backoff and jitter, and nothing else. The jitter is
  * a factor between 0.5 and 1.5, so a kiosk and a laptop that lost the network together do not come
  * back in lockstep.
+ *
+ * A STATEMENT TIMEOUT GETS ONE RETRY, AFTER A PAUSE — RM-151. Each cancelled statement cost the
+ * database its full limit, about 8 s, and two quick retries tripled that just when it was already too
+ * much. Five sections doing it together was the August 2026 timeout wave. One retry keeps what it is
+ * for, a cold first read that the second finds warm (measured 2026-09-22), and the pause gives the
+ * database room first.
  */
 export async function retryTransient<T>(
   run: () => Promise<T>,
-  { retries = 2, baseMs = 600, sleep = realSleep, random = Math.random }: RetryOptions = {}
+  { retries = 2, baseMs = 600, statementTimeoutMs = 3000, sleep = realSleep, random = Math.random }: RetryOptions = {}
 ): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
       return await run();
     } catch (err) {
-      if (attempt >= retries || !isTransient(err)) throw err;
-      await sleep(baseMs * 2 ** attempt * (0.5 + random()));
+      const timedOut = isStatementTimeout(err);
+      if (attempt >= (timedOut ? Math.min(retries, 1) : retries) || !isTransient(err)) throw err;
+      await sleep((timedOut ? statementTimeoutMs : baseMs * 2 ** attempt) * (0.5 + random()));
     }
   }
+}
+
+/**
+ * At most `max` tasks at once; the rest wait their turn, in order — RM-151. The Reports page asked
+ * the database for every building series together. A task that fails frees its place like one that
+ * succeeds.
+ */
+export function createLimiter(max: number) {
+  let active = 0;
+  const waiting: Array<() => void> = [];
+  return async function limit<T>(task: () => Promise<T>): Promise<T> {
+    // A finishing task hands its place straight to the next in line rather than freeing it, so a
+    // caller arriving in between cannot take it too and make one more than `max`.
+    if (active >= max) await new Promise<void>((resolve) => waiting.push(resolve));
+    else active++;
+    try {
+      return await task();
+    } finally {
+      const next = waiting.shift();
+      if (next) next();
+      else active--;
+    }
+  };
 }
 
 export interface ReportCache<T> {

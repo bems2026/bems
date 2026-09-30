@@ -102,15 +102,19 @@ beforeEach(() => {
 afterEach(cleanup);
 
 const allReady = (r: ReturnType<typeof useReportData>) =>
-  [r.periods, r.devices, r.core, r.hours, r.matrix, r.curve, r.pricing, r.ceiling].every((s) => s.status === 'ready');
+  [r.periods, r.devices, r.daily, r.summary, r.hours, r.matrix, r.curve, r.pricing, r.ceiling].every((s) => s.status === 'ready');
+
+/** Usage patterns is showing — RM-151: only then are its three series asked for. */
+const PATTERNS = { patterns: true };
 
 describe('useReportData', () => {
   it('reads the newest period, and every section of it, handing each request a signal it can be cancelled with', async () => {
-    const { result } = renderHook(() => useReportData('month', FAST));
+    const { result } = renderHook(() => useReportData('month', FAST, PATTERNS));
     await waitFor(() => expect(allReady(result.current)).toBe(true));
 
     expect(result.current.selected).toBe('2026-08-01');
-    expect(result.current.core.data?.daily).toEqual([day]);
+    expect(result.current.daily.data).toEqual([day]);
+    expect(series.getDemandSummary).toHaveBeenCalledWith('month', '2026-08-01', signalled);
     expect(result.current.ceiling.data).toBeCloseTo(2210, 6);
     expect(reports.getDevicePeriodReports).toHaveBeenCalledWith('month', '2026-08-01', signalled);
     expect(series.getDailySeries).toHaveBeenCalledWith('month', '2026-08-01', signalled);
@@ -124,29 +128,92 @@ describe('useReportData', () => {
     // The defect this exists for: an all-or-nothing load hid five charts behind one failed read
     // of a table that only prices them.
     vi.mocked(tariffs.getTariffs).mockRejectedValue(new Error('permission denied for table energy_tariffs'));
-    const { result } = renderHook(() => useReportData('month', FAST));
+    const { result } = renderHook(() => useReportData('month', FAST, PATTERNS));
 
     await waitFor(() => expect(result.current.pricing.status).toBe('error'));
     expect(result.current.pricing.error).toMatch(/permission denied/);
     await waitFor(() => expect(result.current.curve.status).toBe('ready'));
-    expect(result.current.core.status).toBe('ready');
+    expect(result.current.daily.status).toBe('ready');
     expect(result.current.matrix.status).toBe('ready');
   });
 
   it('confines a slow duration curve to the curve, and keeps the hour profile and heatmap that loaded', async () => {
     // Live, 2026-09-15, signed in: `report_demand_curve` was cancelled by the statement timeout on
     // every attempt, and it took two charts that had loaded down with it. Since 2026-09-22 a timeout
-    // is asked again by itself — so one on EVERY attempt still ends as an error, after three asks.
+    // is asked again by itself, and since RM-151 only ONCE: a timeout on every attempt ends as an
+    // error after two asks, not three.
     const timeout = new ReportQueryError('report_demand_curve failed', { code: '57014', message: 'canceling statement due to statement timeout' }, 500);
     vi.mocked(series.getDemandCurve).mockRejectedValue(timeout);
-    const { result } = renderHook(() => useReportData('month', FAST));
+    const { result } = renderHook(() => useReportData('month', FAST, PATTERNS));
 
     await waitFor(() => expect(result.current.curve.status).toBe('error'));
     expect(result.current.curve.error).toBe('report_demand_curve failed: canceling statement due to statement timeout');
-    expect(series.getDemandCurve).toHaveBeenCalledTimes(3);
+    expect(series.getDemandCurve).toHaveBeenCalledTimes(2);
     await waitFor(() => expect(result.current.hours.status).toBe('ready'));
     expect(result.current.matrix.status).toBe('ready');
-    expect(result.current.core.status).toBe('ready');
+    expect(result.current.daily.status).toBe('ready');
+  });
+
+  it('asks for none of Usage patterns’ series while only the Overview is showing — RM-151', async () => {
+    // August 2026: the Overview fired the hour profile, the busy hours and the demand curve on every
+    // visit, beside the two it draws, and all five crossed the database's time limit together.
+    const { result, rerender } = renderHook(({ want }) => useReportData('month', FAST, want), {
+      initialProps: { want: {} as { patterns?: boolean } },
+    });
+    await waitFor(() => expect(result.current.daily.status).toBe('ready'));
+    await waitFor(() => expect(result.current.summary.status).toBe('ready'));
+    expect(result.current.hours.status).toBe('idle');
+    expect(result.current.matrix.status).toBe('idle');
+    expect(result.current.curve.status).toBe('idle');
+    expect(series.getHourProfile).not.toHaveBeenCalled();
+    expect(series.getHourMatrix).not.toHaveBeenCalled();
+    expect(series.getDemandCurve).not.toHaveBeenCalled();
+
+    rerender({ want: PATTERNS });
+    await waitFor(() => expect(result.current.curve.status).toBe('ready'));
+    expect(series.getHourProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the daily figures when the demand summary fails, and the other way round — RM-151', async () => {
+    const timeout = new ReportQueryError('report_demand_summary failed', { code: '57014', message: 'canceling statement due to statement timeout' }, 500);
+    vi.mocked(series.getDemandSummary).mockRejectedValue(timeout);
+    const { result } = renderHook(() => useReportData('month', FAST));
+    await waitFor(() => expect(result.current.summary.status).toBe('error'));
+    expect(result.current.daily.status).toBe('ready');
+    expect(result.current.daily.data).toEqual([day]);
+    // Retrying the summary does not ask for the daily series again.
+    expect(series.getDailySeries).toHaveBeenCalledTimes(1);
+  });
+
+  it('never has more than two database functions running at once — RM-151', async () => {
+    let running = 0;
+    let most = 0;
+    const releases: Array<() => void> = [];
+    const held = <T,>(value: T) =>
+      (async () => {
+        running++;
+        most = Math.max(most, running);
+        await new Promise<void>((resolve) => releases.push(resolve));
+        running--;
+        return value;
+      }) as () => Promise<T>;
+    vi.mocked(series.getDailySeries).mockImplementation(held([day]));
+    vi.mocked(series.getDemandSummary).mockImplementation(held(null));
+    vi.mocked(series.getHourProfile).mockImplementation(held([]));
+    vi.mocked(series.getHourMatrix).mockImplementation(held([]));
+    vi.mocked(series.getDemandCurve).mockImplementation(held([]));
+    const { result } = renderHook(() => useReportData('month', FAST, PATTERNS));
+    await waitFor(() => expect(releases.length).toBe(2));
+    // Let everything else settle: nothing more may start while two are held.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(releases.length).toBe(2);
+    while (!allReady(result.current)) {
+      await act(async () => {
+        releases.shift()?.();
+        await new Promise((r) => setTimeout(r, 5));
+      });
+    }
+    expect(most).toBe(2);
   });
 
   it('asks again by itself when the database cancels a statement for time, which is what Retry used to do', async () => {
@@ -164,17 +231,17 @@ describe('useReportData', () => {
 
   it('confines a heatmap failure to the heatmap, and keeps the headline figures', async () => {
     vi.mocked(series.getHourMatrix).mockRejectedValue(new Error('report_hour_matrix failed: statement timeout'));
-    const { result } = renderHook(() => useReportData('month', FAST));
+    const { result } = renderHook(() => useReportData('month', FAST, PATTERNS));
 
     await waitFor(() => expect(result.current.matrix.status).toBe('error'));
-    expect(result.current.core.status).toBe('ready');
+    expect(result.current.daily.status).toBe('ready');
     expect(result.current.devices.status).toBe('ready');
     await waitFor(() => expect(result.current.curve.status).toBe('ready'));
   });
 
   it('asks again when Retry is pressed, and recovers', async () => {
     vi.mocked(series.getHourMatrix).mockRejectedValueOnce(new Error('boom')).mockResolvedValue([]);
-    const { result } = renderHook(() => useReportData('month', FAST));
+    const { result } = renderHook(() => useReportData('month', FAST, PATTERNS));
     await waitFor(() => expect(result.current.matrix.status).toBe('error'));
 
     act(() => result.current.matrix.retry());
@@ -186,11 +253,11 @@ describe('useReportData', () => {
 
   it('turns a request that never answers into a timeout, rather than a page that loads forever', async () => {
     vi.mocked(series.getHourMatrix).mockReturnValue(new Promise(() => {}));
-    const { result } = renderHook(() => useReportData('month', { timeouts: { matrix: 30 }, retry: { retries: 0 } }));
+    const { result } = renderHook(() => useReportData('month', { timeouts: { matrix: 30 }, retry: { retries: 0 } }, PATTERNS));
 
     await waitFor(() => expect(result.current.matrix.status).toBe('error'));
     expect(result.current.matrix.error).toMatch(/did not answer/);
-    expect(result.current.core.status).toBe('ready');
+    expect(result.current.daily.status).toBe('ready');
   });
 
   it('retries a network failure by itself, without anybody pressing anything', async () => {
@@ -198,7 +265,7 @@ describe('useReportData', () => {
     vi.mocked(series.getDailySeries).mockRejectedValueOnce(new TypeError('Failed to fetch')).mockResolvedValue([day]);
     const { result } = renderHook(() => useReportData('month', FAST));
 
-    await waitFor(() => expect(result.current.core.status).toBe('ready'));
+    await waitFor(() => expect(result.current.daily.status).toBe('ready'));
     expect(series.getDailySeries).toHaveBeenCalledTimes(2);
   });
 
@@ -208,11 +275,11 @@ describe('useReportData', () => {
       return [];
     });
     const { result } = renderHook(() => useReportData('month', FAST));
-    await waitFor(() => expect(result.current.core.status).toBe('error'));
+    await waitFor(() => expect(result.current.daily.status).toBe('error'));
 
     act(() => result.current.select('2026-07-01'));
-    await waitFor(() => expect(result.current.core.status).toBe('ready'));
-    expect(result.current.core.error).toBeNull();
+    await waitFor(() => expect(result.current.daily.status).toBe('ready'));
+    expect(result.current.daily.error).toBeNull();
   });
 
   it('never exposes a month’s figures while the list of weeks is still loading', async () => {
@@ -229,20 +296,21 @@ describe('useReportData', () => {
     expect(result.current.periods.status).toBe('loading');
     expect(result.current.selected).toBeNull();
     expect(result.current.devices.data).toBeNull();
-    expect(result.current.core.data).toBeNull();
+    expect(result.current.daily.data).toBeNull();
+    expect(result.current.summary.data).toBeNull();
     expect(result.current.curve.data).toBeNull();
   });
 
   it('answers a period it has already read from memory, instead of asking again', async () => {
     const { result } = renderHook(() => useReportData('month', FAST));
-    await waitFor(() => expect(result.current.core.status).toBe('ready'));
+    await waitFor(() => expect(result.current.daily.status).toBe('ready'));
 
     act(() => result.current.select('2026-07-01'));
-    await waitFor(() => expect(result.current.core.status).toBe('ready'));
+    await waitFor(() => expect(result.current.daily.status).toBe('ready'));
     act(() => result.current.select('2026-08-01'));
 
     // Ready in the same render, with no loading state in between.
-    expect(result.current.core.status).toBe('ready');
+    expect(result.current.daily.status).toBe('ready');
     expect(vi.mocked(series.getDailySeries).mock.calls.filter(([, start]) => start === '2026-08-01')).toHaveLength(1);
   });
 
@@ -253,7 +321,8 @@ describe('useReportData', () => {
     await waitFor(() => expect(result.current.periods.status).toBe('ready'));
     expect(result.current.selected).toBeNull();
     expect(result.current.devices.status).toBe('idle');
-    expect(result.current.core.status).toBe('idle');
+    expect(result.current.daily.status).toBe('idle');
+    expect(result.current.summary.status).toBe('idle');
     expect(result.current.curve.status).toBe('idle');
   });
 
@@ -279,7 +348,7 @@ describe('ceilingWatts', () => {
 
 describe('the Circuits tab’s sections — RM-094', () => {
   it('fetches nothing for the circuits until something shows them, and says idle rather than loading', async () => {
-    const { result } = renderHook(() => useReportData('month', FAST));
+    const { result } = renderHook(() => useReportData('month', FAST, PATTERNS));
     await waitFor(() => expect(allReady(result.current)).toBe(true));
     expect(result.current.deviceDaily.status).toBe('idle');
     expect(result.current.trend.status).toBe('idle');
@@ -310,7 +379,7 @@ describe('the Circuits tab’s sections — RM-094', () => {
     const { result } = renderHook(() => useReportData('month', FAST, { circuits: true }));
     await waitFor(() => expect(result.current.trend.status).toBe('error'));
     await waitFor(() => expect(result.current.deviceDaily.status).toBe('ready'));
-    expect(result.current.core.status).toBe('ready');
+    expect(result.current.daily.status).toBe('ready');
   });
 });
 

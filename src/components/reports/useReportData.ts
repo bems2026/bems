@@ -25,7 +25,7 @@ import { getEmissionFactors, getTariffs, type FactorEntry, type TariffEntry } fr
 import { fetchScheduleContext } from '@/lib/supabaseConfig';
 import { getCircuitTrend, getDeviceDailyEnergy, type CircuitTrend, type DeviceDaily } from '@/lib/circuitSeries';
 import { buildingMeters, measuredDeviceIds } from '@/lib/circuitBreakdown';
-import { createReportCache, retryTransient, withTimeout, type ReportCache, type RetryOptions } from '@/lib/reportLoader';
+import { createLimiter, createReportCache, retryTransient, withTimeout, type ReportCache, type RetryOptions } from '@/lib/reportLoader';
 import { nextChangeAt, pendingPeriods, type PendingPeriod } from '@/lib/pendingPeriods';
 
 /**
@@ -45,7 +45,8 @@ import { nextChangeAt, pendingPeriods, type PendingPeriod } from '@/lib/pendingP
  *
  *   periods  the stored reports of this kind            → the picker
  *   devices  per-device rows for the selected period    → the device table, circuits, CSV
- *   core     daily series + demand summary              → headline figures, coverage, daily chart
+ *   daily    the daily series                           → the daily chart, cost, the daily CSV
+ *   summary  the demand summary                         → headline coverage, the demand tiles
  *   hours    hour-of-day profile                        → the load profile chart
  *   matrix   day × hour matrix                          → the heatmap
  *   curve    duration curve                             → the load duration chart
@@ -56,6 +57,16 @@ import { nextChangeAt, pendingPeriods, type PendingPeriod } from '@/lib/pendingP
  *
  * THE LAST TWO LOAD ONLY WHEN ASKED — RM-094. They are the Circuits tab's and the exports', and the
  * page's rule is that nothing fetches for a panel nobody opened; `want` says who is looking.
+ * Since RM-151 so do `hours`, `matrix` and `curve`: they are Usage patterns' and the PDF's, and the
+ * Overview used to fire them anyway.
+ *
+ * `daily` AND `summary` ARE TWO SECTIONS — RM-151. As one `core` they failed together, retried
+ * together, and a summary that timed out hid the daily chart and every Usage patterns chart with it.
+ *
+ * NO MORE THAN TWO DATABASE FUNCTIONS AT ONCE — RM-151. The building series are the page's heavy
+ * reads; five together, each retried, is what crossed the database's time limit for August 2026. Each
+ * attempt waits for a place, and its timeout starts when it gets one. Plain table reads (the list, the
+ * device rows, the rates, the ceiling) are not limited.
  *
  * DERIVED BY KEY, NEVER CLEARED IN AN EFFECT — the same rule `ReportsPage` has held since c5d4e18.
  * Every outcome is tagged with the request it answers, and a section whose tag does not match the
@@ -67,7 +78,24 @@ import { nextChangeAt, pendingPeriods, type PendingPeriod } from '@/lib/pendingP
  * to a period already read answers at once.
  */
 
-export type SectionName = 'periods' | 'devices' | 'core' | 'hours' | 'hourEnergy' | 'matrix' | 'curve' | 'pricing' | 'ceiling' | 'deviceDaily' | 'trend';
+export type SectionName =
+  | 'periods'
+  | 'devices'
+  | 'daily'
+  | 'summary'
+  | 'hours'
+  | 'hourEnergy'
+  | 'matrix'
+  | 'curve'
+  | 'pricing'
+  | 'ceiling'
+  | 'deviceDaily'
+  | 'trend';
+
+/** The sections that call a database function rather than read a table — these share the limiter. */
+const HEAVY: ReadonlySet<SectionName> = new Set(['daily', 'summary', 'hours', 'hourEnergy', 'matrix', 'curve', 'deviceDaily', 'trend']);
+/** How many heavy reads may be in flight at once. */
+export const HEAVY_AT_ONCE = 2;
 export type SectionStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 export interface Section<T> {
@@ -77,11 +105,6 @@ export interface Section<T> {
   error: string | null;
   /** Drops this section's cached answer and asks again. */
   retry: () => void;
-}
-
-export interface CoreData {
-  daily: DailyRow[];
-  summary: DemandSummary | null;
 }
 
 export interface PricingData {
@@ -95,7 +118,9 @@ export interface ReportData {
   selected: string | null;
   select: (start: string) => void;
   devices: Section<PeriodDeviceReport[]>;
-  core: Section<CoreData>;
+  daily: Section<DailyRow[]>;
+  summary: Section<DemandSummary | null>;
+  /** Idle until Usage patterns or an export asks — RM-151. */
   hours: Section<HourRow[]>;
   /** RM-124: a day's hourly credits per device. Idle for a week or a month. */
   hourEnergy: Section<HourEnergyRow[]>;
@@ -114,6 +139,8 @@ export interface ReportData {
 /** Which of the on-demand sections a caller is showing — RM-094. */
 export interface ReportWants {
   circuits?: boolean;
+  /** RM-151: the hour profile, the busy hours and the demand levels — Usage patterns and the PDF. */
+  patterns?: boolean;
 }
 
 export interface ReportDataOptions {
@@ -127,7 +154,8 @@ export interface ReportDataOptions {
 export const DEFAULT_TIMEOUTS: Record<SectionName, number> = {
   periods: 20_000,
   devices: 20_000,
-  core: 30_000,
+  daily: 30_000,
+  summary: 30_000,
   hours: 30_000,
   hourEnergy: 30_000,
   matrix: 45_000,
@@ -142,7 +170,8 @@ export const DEFAULT_TIMEOUTS: Record<SectionName, number> = {
 const LABELS: Record<SectionName, string> = {
   periods: 'The list of reports',
   devices: 'The per-device figures',
-  core: 'The daily figures',
+  daily: 'The daily figures',
+  summary: 'The demand summary',
   hours: 'The typical day chart',
   hourEnergy: 'The hour by hour chart',
   matrix: 'The busy hours chart',
@@ -170,6 +199,8 @@ type Outcome<T> = { id: string; ok: true; data: T } | { id: string; ok: false; e
 interface Resolved {
   timeouts: Record<SectionName, number>;
   retry: RetryOptions;
+  /** Per mount, like the cache: two pages open in one session each get their own two places. */
+  limit: ReturnType<typeof createLimiter>;
 }
 
 const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err));
@@ -185,13 +216,17 @@ function useSection<T>(
   const [outcome, setOutcome] = useState<Outcome<T> | null>(null);
   const ms = opts.timeouts[name];
   const retryOptions = opts.retry;
+  const limit = opts.limit;
 
   useEffect(() => {
     if (key === null) return;
     let cancelled = false;
     const id = `${key}#${attempt}`;
+    // Each ATTEMPT takes a place, so a retry's pause does not hold one, and the timeout runs only
+    // from the moment the request is actually sent.
+    const attemptOnce = () => withTimeout(loader, ms, LABELS[name]);
     cache
-      .get(key, () => retryTransient(() => withTimeout(loader, ms, LABELS[name]), retryOptions))
+      .get(key, () => retryTransient(HEAVY.has(name) ? () => limit(attemptOnce) : attemptOnce, retryOptions))
       .then(
         (data) => {
           if (!cancelled) setOutcome({ id, ok: true, data: data as T });
@@ -203,7 +238,7 @@ function useSection<T>(
     return () => {
       cancelled = true;
     };
-  }, [name, key, attempt, loader, cache, ms, retryOptions]);
+  }, [name, key, attempt, loader, cache, ms, retryOptions, limit]);
 
   const retry = useCallback(() => {
     if (key !== null) cache.invalidate(key);
@@ -229,6 +264,7 @@ export function useReportData(period: ReportPeriod, options?: ReportDataOptions,
   const [opts] = useState<Resolved>(() => ({
     timeouts: { ...DEFAULT_TIMEOUTS, ...options?.timeouts },
     retry: options?.retry ?? {},
+    limit: createLimiter(HEAVY_AT_ONCE),
   }));
   const [cache] = useState(() => createReportCache<unknown>({ max: 60 }));
   const enabled = supabase !== null;
@@ -336,17 +372,8 @@ export function useReportData(period: ReportPeriod, options?: ReportDataOptions,
     (signal: AbortSignal) => getDevicePeriodReports(period, requireStart(selected), { signal }),
     [period, selected]
   );
-  const loadCore = useCallback(
-    async (signal: AbortSignal): Promise<CoreData> => {
-      const start = requireStart(selected);
-      const [daily, summary] = await Promise.all([
-        getDailySeries(period, start, { signal }),
-        getDemandSummary(period, start, { signal }),
-      ]);
-      return { daily, summary };
-    },
-    [period, selected]
-  );
+  const loadDaily = useCallback((signal: AbortSignal) => getDailySeries(period, requireStart(selected), { signal }), [period, selected]);
+  const loadSummary = useCallback((signal: AbortSignal) => getDemandSummary(period, requireStart(selected), { signal }), [period, selected]);
   const loadHours = useCallback((signal: AbortSignal) => getHourProfile(period, requireStart(selected), { signal }), [period, selected]);
   // RM-124: a day's hourly credits, for every measured device at once — one call serves the
   // Overview (summed over the building meters) and the Circuits tab (one device each). Only a
@@ -377,6 +404,7 @@ export function useReportData(period: ReportPeriod, options?: ReportDataOptions,
     [period, selected]
   );
   const onDemand = (section: string) => (want.circuits ? at(section) : null);
+  const forPatterns = (section: string) => (want.patterns ? at(section) : null);
 
   return {
     periods: shownPeriods,
@@ -385,11 +413,12 @@ export function useReportData(period: ReportPeriod, options?: ReportDataOptions,
     pending,
     arrived,
     devices: useSection('devices', at('devices'), loadDevices, cache, opts),
-    core: useSection('core', at('core'), loadCore, cache, opts),
-    hours: useSection('hours', at('hours'), loadHours, cache, opts),
-    matrix: useSection('matrix', at('matrix'), loadMatrix, cache, opts),
+    daily: useSection('daily', at('daily'), loadDaily, cache, opts),
+    summary: useSection('summary', at('summary'), loadSummary, cache, opts),
+    hours: useSection('hours', forPatterns('hours'), loadHours, cache, opts),
+    matrix: useSection('matrix', forPatterns('matrix'), loadMatrix, cache, opts),
     hourEnergy: useSection('hourEnergy', period === 'day' ? at('hourEnergy') : null, loadHourEnergy, cache, opts),
-    curve: useSection('curve', at('curve'), loadCurve, cache, opts),
+    curve: useSection('curve', forPatterns('curve'), loadCurve, cache, opts),
     pricing: useSection('pricing', enabled ? 'pricing' : null, loadPricing, cache, opts),
     ceiling: useSection('ceiling', enabled ? 'ceiling' : null, loadCeiling, cache, opts),
     deviceDaily: useSection('deviceDaily', onDemand('deviceDaily'), loadDeviceDaily, cache, opts),

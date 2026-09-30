@@ -136,8 +136,14 @@ export function ReportsPage() {
   const panelRef = useRef<HTMLDivElement>(null);
   const chartWidth = useMeasuredChartWidth(panelRef);
   // RM-094: the circuit series load only while something shows them — the Circuits tab, or an export.
-  const report = useReportData(period, undefined, { circuits: tab === 'circuits' || exportOpen });
-  const { periods, selected, select, core, hours, hourEnergy, matrix, curve, pricing, ceiling } = report;
+  // RM-151: likewise Usage patterns' three charts, which the Overview used to fire on every visit.
+  const report = useReportData(period, undefined, {
+    circuits: tab === 'circuits' || exportOpen,
+    patterns: tab === 'patterns' || exportOpen,
+  });
+  const { periods, selected, select, daily: dailySeries, summary, hours, hourEnergy, matrix, curve, pricing, ceiling } = report;
+  /** The summary as `ReportKpis` reads it: `undefined` while it loads, `null` when there is none or it failed. */
+  const summaryShown = summary.status === 'ready' ? (summary.data ?? null) : summary.status === 'error' ? null : undefined;
   const months = periods.data;
   const rows = report.devices.data;
 
@@ -169,12 +175,13 @@ export function ReportsPage() {
   const useSegments = useMemo(() => loadShareSegments(rows ?? []), [rows]);
 
   /** The charts need the daily series; each of the other three draws when its own series arrives
-   *  (RM-081b). The ceiling is optional: a failed read draws the curve without its line. */
+   *  (RM-081b). The ceiling is optional: a failed read draws the curve without its line.
+   *  RM-151: the summary rides along when it has arrived, and is not a condition for drawing. */
   const charts: ChartsData | null = useMemo(
     () =>
-      core.data
+      dailySeries.data
         ? {
-            daily: core.data.daily,
+            daily: dailySeries.data,
             hours: hours.data,
             hourEnergy: hourEnergy.data,
             matrix: matrix.data,
@@ -183,10 +190,33 @@ export function ReportsPage() {
             useSegments,
             untracked,
             ceilingW: ceiling.data ?? null,
-            summary: core.data.summary,
+            summary: summary.data ?? null,
           }
         : null,
-    [core.data, hours.data, hourEnergy.data, matrix.data, curve.data, segments, useSegments, untracked, ceiling.data]
+    [dailySeries.data, summary.data, hours.data, hourEnergy.data, matrix.data, curve.data, segments, useSegments, untracked, ceiling.data]
+  );
+  /**
+   * RM-151: when the daily series itself failed, what does not depend on it still draws — "Energy by
+   * use" from the stored rows, and Usage patterns' three charts from their own series. With no days
+   * to size them by, they take their month-sized defaults.
+   */
+  const withoutDaily: ChartsData | null = useMemo(
+    () =>
+      dailySeries.status === 'error'
+        ? {
+            daily: [],
+            hours: hours.data,
+            hourEnergy: hourEnergy.data,
+            matrix: matrix.data,
+            curve: curve.data,
+            segments,
+            useSegments,
+            untracked,
+            ceilingW: ceiling.data ?? null,
+            summary: summary.data ?? null,
+          }
+        : null,
+    [dailySeries.status, summary.data, hours.data, hourEnergy.data, matrix.data, curve.data, segments, useSegments, untracked, ceiling.data]
   );
 
   /**
@@ -194,14 +224,14 @@ export function ReportsPage() {
    * the summary and the bars above it cannot describe different days.
    */
   const priced = useMemo(() => {
-    const days: DayEnergy[] = (core.data?.daily ?? []).map((d) => ({
+    const days: DayEnergy[] = (dailySeries.data ?? []).map((d) => ({
       day: d.local_day.slice(0, 10),
       // A day whose rows carried no reading has no energy to price. Passing its 0 through would
       // price it at zero, which says the building spent nothing rather than that nobody watched.
       kwh: d.usable_sample_count > 0 ? d.energy_kwh : null,
     }));
     return { cost: costOf(days, pricing.data?.tariffs ?? []), carbon: carbonOf(days, pricing.data?.factors ?? []) };
-  }, [core.data, pricing.data]);
+  }, [dailySeries.data, pricing.data]);
 
   const selectedIndex = months && selected ? months.findIndex((m) => m.period_start.slice(0, 10) === selected) : -1;
   const building = months && selectedIndex >= 0 ? months[selectedIndex] : null;
@@ -216,9 +246,10 @@ export function ReportsPage() {
    * zero from a period that was not fully observed is held back rather than printed: it is either
    * "not observed" or a floor of nothing, and neither reads correctly as "0.00 kWh".
    */
-  const notObserved = core.data
-    ? core.data.summary?.usable_minutes === 0
-    : building !== null && building.energy_kwh === 0 && !isQuotable(buildingCoverage);
+  const notObserved =
+    summary.status === 'ready'
+      ? summary.data?.usable_minutes === 0
+      : building !== null && building.energy_kwh === 0 && !isQuotable(buildingCoverage);
 
   /**
    * Which exports cannot run for this period right now, each with the reason — RM-083b. A cost the
@@ -231,7 +262,7 @@ export function ReportsPage() {
       : pricing.status === 'loading'
         ? 'Still loading the rates.'
         : null;
-  const failedPart = core.status === 'error' || report.devices.status === 'error';
+  const failedPart = dailySeries.status === 'error' || summary.status === 'error' || report.devices.status === 'error';
   /**
    * RM-140: the Circuits series load when the drawer opens (RM-094's `want`), and this gate did not wait for
    * them — a PDF made at once printed the circuit charts as "could not be loaded" when they were only still
@@ -240,7 +271,8 @@ export function ReportsPage() {
   const circuitsStillLoading = report.deviceDaily.status === 'loading' || report.trend.status === 'loading';
   const chartsStillLoading = hours.status === 'loading' || matrix.status === 'loading' || curve.status === 'loading' || circuitsStillLoading;
   const exportUnavailable: Partial<Record<ExportFormat, string>> = {};
-  if (!charts || !rows) {
+  // The PDF prints the demand summary beside the charts, so it waits for that as well (RM-151 split it out).
+  if (!charts || !rows || summary.status !== 'ready') {
     exportUnavailable.pdf = failedPart ? 'Part of this report could not be loaded. Retry it on the page first.' : 'The report is still loading.';
   } else if (chartsStillLoading || (period === 'day' && hourEnergy.status === 'loading')) {
     exportUnavailable.pdf = 'The charts are still loading.';
@@ -265,9 +297,9 @@ export function ReportsPage() {
     exportSectionNotes.apportioned = leftOut;
   }
   if (report.trend.status === 'error') exportSectionNotes.circuitTrend = leftOut;
-  if (!core.data) {
+  if (!dailySeries.data) {
     exportUnavailable['daily-csv'] =
-      core.status === 'error' ? 'The daily figures could not be loaded. Retry them on the page first.' : 'The daily figures are still loading.';
+      dailySeries.status === 'error' ? 'The daily figures could not be loaded. Retry them on the page first.' : 'The daily figures are still loading.';
   } else if (pricingReason) {
     exportUnavailable['daily-csv'] = pricingReason;
   }
@@ -307,7 +339,7 @@ export function ReportsPage() {
   const scopeKey = `${period}:${selected ?? ''}`;
   /** Placeholders only while nothing has failed: a failure shows its Retry note instead, and a
    *  skeleton beside an error would say the part is still coming when it is not. */
-  const chartsLoading = charts === null && core.status === 'loading';
+  const chartsLoading = charts === null && dailySeries.status === 'loading';
   // RM-124: a day is read hour by hour; its "energy per day" would be one bar.
   const overviewCharts: readonly ReportChartKind[] = period === 'day' ? ['hourly', 'useShare'] : ['daily', 'useShare'];
   const tabCharts = tab === 'patterns' ? USAGE_CHARTS : tab === 'circuits' ? CIRCUIT_CHARTS : tab === 'compare' ? [] : overviewCharts;
@@ -383,10 +415,11 @@ export function ReportsPage() {
     }
 
     if (format === 'daily-csv') {
-      if (!core.data) throw new Error('The daily figures have not loaded.');
+      const days = dailySeries.data;
+      if (!days) throw new Error('The daily figures have not loaded.');
       const name = reportFilename(period, selected, 'daily', 'csv');
-      downloadCsv(name, dailyCsv({ daily: core.data.daily, tariffs: pricing.data?.tariffs ?? [], factors: pricing.data?.factors ?? [] }));
-      return `Saved ${name} · ${core.data.daily.length} days`;
+      downloadCsv(name, dailyCsv({ daily: days, tariffs: pricing.data?.tariffs ?? [], factors: pricing.data?.factors ?? [] }));
+      return `Saved ${name} · ${days.length} days`;
     }
 
     if (!charts || !rows) throw new Error('The report has not finished loading.');
@@ -538,7 +571,7 @@ export function ReportsPage() {
             <ReportKpis
               period={period}
               building={building}
-              summary={core.status === 'ready' ? (core.data?.summary ?? null) : core.status === 'error' ? null : undefined}
+              summary={summaryShown}
               notObserved={notObserved}
               cost={priced.cost}
               carbon={priced.carbon}
@@ -583,7 +616,8 @@ export function ReportsPage() {
 
         {tab === 'overview' && selected ? (
           <>
-            <ReportSectionNote section={core} what="the daily figures" quietWhileLoading />
+            <ReportSectionNote section={dailySeries} what="the daily figures" quietWhileLoading />
+            <ReportSectionNote section={summary} what="the demand summary" quietWhileLoading />
             <ReportSectionNote section={report.devices} what="the per-device figures" quietWhileLoading />
             {period === 'day' ? <ReportSectionNote section={hourEnergy} what="the hour by hour chart" quietWhileLoading /> : null}
             {charts ? (
@@ -596,13 +630,22 @@ export function ReportsPage() {
               />
             ) : chartsLoading ? (
               <ReportSkeleton label={periodLabel} period={period} parts={['charts']} kinds={overviewCharts} />
+            ) : withoutDaily ? (
+              // RM-151: the daily chart's own note says why it is missing; "Energy by use" needs only the stored rows.
+              <ReportCharts
+                period={period}
+                start={selected}
+                {...withoutDaily}
+                only={overviewCharts.filter((k) => k === 'useShare')}
+                loading={{ useShare: report.devices.status === 'loading' }}
+              />
             ) : null}
-            {core.data ? (
-              <ErrorBoundary scope="How much was recorded" variant="inline" resetKey={core.data}>
+            {dailySeries.data && summary.status === 'ready' ? (
+              <ErrorBoundary scope="How much was recorded" variant="inline" resetKey={dailySeries.data}>
                 <CoverageBanner
-                  summary={core.data.summary}
-                  observedDays={core.data.daily.filter((d) => d.usable_sample_count > 0).length}
-                  completeDays={core.data.daily.filter((d) => d.expected_samples > 0 && d.usable_sample_count / d.expected_samples >= 0.95).length}
+                  summary={summary.data ?? null}
+                  observedDays={dailySeries.data.filter((d) => d.usable_sample_count > 0).length}
+                  completeDays={dailySeries.data.filter((d) => d.expected_samples > 0 && d.usable_sample_count / d.expected_samples >= 0.95).length}
                   label={periodLabel}
                   collapsible
                 />
@@ -638,17 +681,19 @@ export function ReportsPage() {
         {/* ---- Usage patterns ------------------------------------------------------------------- */}
         {tab === 'patterns' && selected ? (
           <>
-            <ReportSectionNote section={core} what="the daily figures" />
+            <ReportSectionNote section={dailySeries} what="the daily figures" />
+            <ReportSectionNote section={summary} what="the demand summary" />
             <ReportSectionNote section={hours} what="the typical day chart" quietWhileLoading />
             <ReportSectionNote section={matrix} what="the busy hours chart" quietWhileLoading />
             <ReportSectionNote section={curve} what="the demand levels chart" quietWhileLoading />
             <ReportSectionNote section={ceiling} what="the max total draw" quietWhileLoading />
-            {charts ? (
-              <ErrorBoundary scope="The usage patterns" variant="inline" resetKey={charts}>
+            {charts ?? withoutDaily ? (
+              <ErrorBoundary scope="The usage patterns" variant="inline" resetKey={charts ?? withoutDaily}>
                 <UsagePatterns
                   period={period}
                   start={selected}
-                  charts={charts}
+                  charts={(charts ?? withoutDaily) as ChartsData}
+                  basis={dailySeries.status === 'ready' && summary.status === 'ready' ? 'ready' : dailySeries.status === 'error' || summary.status === 'error' ? 'error' : 'loading'}
                   hoursLoading={hours.status === 'loading'}
                   loading={{ hours: hours.status === 'loading', heat: matrix.status === 'loading', curve: curve.status === 'loading' }}
                 />

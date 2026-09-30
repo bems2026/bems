@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
+  createLimiter,
   createReportCache,
   isTransient,
   retryTransient,
@@ -139,6 +140,29 @@ describe('retryTransient', () => {
     expect(run).toHaveBeenCalledTimes(2);
   });
 
+  it('asks again only ONCE after a statement timeout, and waits a few seconds first', async () => {
+    // RM-151. A cancelled statement cost the database its whole limit, about 8 s. Two quick retries
+    // tripled that load at the moment it was already too much; five sections doing it together was
+    // the August timeout wave. One retry keeps what the retry is for (a cold first read, measured
+    // 2026-09-22), after a pause long enough for the pages to warm.
+    const timeout = new ReportQueryError('report_demand_summary failed', { code: '57014', message: 'canceling statement due to statement timeout' }, 500);
+    const waits: number[] = [];
+    const run = vi.fn().mockRejectedValue(timeout);
+    await expect(
+      retryTransient(run, {
+        retries: 2,
+        baseMs: 600,
+        sleep: (ms) => {
+          waits.push(ms);
+          return Promise.resolve();
+        },
+        random: () => 0.5,
+      })
+    ).rejects.toBe(timeout);
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(waits).toEqual([3000]);
+  });
+
   it('does not ask again after a refusal carrying its code', async () => {
     const refusal = new ReportQueryError('readings_archive failed for mtr_arec_acu', { code: '42501', message: 'permission denied' }, 403);
     const run = vi.fn().mockRejectedValue(refusal);
@@ -168,6 +192,72 @@ describe('retryTransient', () => {
       })
     ).rejects.toThrow();
     expect(waits).toEqual([600, 1200]);
+  });
+});
+
+describe('createLimiter', () => {
+  it('runs at most its limit at once, and starts the next the moment one finishes', async () => {
+    // RM-151: the page used to fire every building series together. Two at a time is enough to fill
+    // a month in about a second, and never five statements competing for the database at once.
+    const limit = createLimiter(2);
+    let active = 0;
+    let most = 0;
+    const releases: Array<() => void> = [];
+    const task = () =>
+      limit(async () => {
+        active++;
+        most = Math.max(most, active);
+        await new Promise<void>((resolve) => releases.push(resolve));
+        active--;
+        return 'done';
+      });
+    const all = Promise.all([task(), task(), task(), task(), task()]);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(releases).toHaveLength(2);
+    while (releases.length) {
+      releases.shift()?.();
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    await expect(all).resolves.toEqual(['done', 'done', 'done', 'done', 'done']);
+    expect(most).toBe(2);
+  });
+
+  it('a caller arriving just as one finishes does not make one too many', async () => {
+    // The newcomer is timed to arrive in the microtask between the first task's release and the
+    // waiting task's resumption. If a release merely freed its place, both would start.
+    const limit = createLimiter(1);
+    let running = 0;
+    let most = 0;
+    const task = (until: Promise<void>) => () => {
+      running++;
+      most = Math.max(most, running);
+      return until.then(() => {
+        running--;
+      });
+    };
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => (open = resolve));
+    const first = limit(task(gate));
+    const queued = limit(task(Promise.resolve()));
+    let late: Promise<void> | undefined;
+    gate
+      .then(() => {})
+      .then(() => {
+        late = limit(task(Promise.resolve()));
+      });
+    open();
+    await first;
+    await queued;
+    await new Promise((r) => setTimeout(r, 0));
+    await late;
+    expect(most).toBe(1);
+  });
+
+  it('a task that fails still frees its place', async () => {
+    const limit = createLimiter(1);
+    await expect(limit(() => Promise.reject(new Error('boom')))).rejects.toThrow('boom');
+    await expect(limit(async () => 'next')).resolves.toBe('next');
   });
 });
 
