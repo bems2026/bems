@@ -1,8 +1,10 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-30, 12:15 — **phase50 applied and read back (E-227): the scheduler reads one snapshot, and
-preflight reads 120 of 500 MB and 9 of 1,000 MB. RM-150 built: a watchdog in the database that posts when the edge goes
-silent (F-034), rehearsed, waiting for its paste.**
+**Last audited:** 2026-09-30, 13:15 — **RM-150 done: the database now watches the edge, and posts to the phone after
+15 minutes without an upload (F-034 closed, E-228).** The test notice went through the database and ntfy took it; the
+first scheduled check ran at 13:10.
+**Earlier, 12:15 — phase50 applied and read back (E-227): the scheduler reads one snapshot, and
+preflight reads 120 of 500 MB and 9 of 1,000 MB.**
 **Earlier, 11:30 — RM-149 done: the edge asks the database about a quarter as often, the unused
 file storage holds a weekly backup, and a sealed day is restored every week as a drill.**
 - The database stood at 129 MB after the reset (E-224). The quota still near its limit was log ingestion, 0.97 of 1 GB,
@@ -406,18 +408,23 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
-### 2026-09-30 — a watchdog off the edge (RM-150, F-034): one paste and one command left
+### 2026-09-30 — a watchdog off the edge (RM-150, F-034): done
 
-Every notice this system sends comes from the edge, so an edge that lost its power or its internet said nothing.
-`supabase/phase51_edge_watchdog.sql` has the database check the edge's health row every 10 minutes and post to the
-same ntfy topic after 15 minutes of silence. It reminds every 6 hours and posts once more on recovery. Rehearsed on
-the edge; not yet applied.
+Every notice this system sent came from the edge, so an edge that lost its power or its internet said nothing. The
+database now checks the edge's health row every 10 minutes. After 15 minutes of silence it posts to the same ntfy topic,
+reminds every 6 hours, and posts once more on recovery.
+- The operator applied phase51. `npm run watchdog:setup -- --apply` armed it, and its test notice went through the
+  database to ntfy (HTTP 200).
+- The first scheduled check ran at 13:10 and found the edge healthy (E-228).
 
-**Left, for the operator:**
-1. **Paste `supabase/phase51_edge_watchdog.sql` into the SQL editor.** It enables `pg_net` and `pg_cron` with
-   Supabase's own statements, and stops with a message if either cannot be enabled.
-2. **On the edge: `npm run watchdog:setup -- --apply`.** It copies the topic from `server/.env` into the database, and
-   sends one test notice through the database to the phone. Nothing is watched until it has run.
+**Optional, for the operator:** a live drill. It sends two real notices and holds the cloud's data back for about half
+an hour; nothing is lost, because the archive keeps every minute.
+1. On the edge, `touch server/data/ingest.pause`. Uploads stop and archiving continues.
+2. Within 25 minutes the phone gets "the edge has gone silent", with the last error "cloud upload paused by the
+   operator".
+3. `rm server/data/ingest.pause`. Within 10 minutes the phone gets "recording again".
+
+**To watch:** `edge_watchdog.checked_at` (service role) advancing every 10 minutes.
 
 ### 2026-09-30 — the request budget and the file storage (RM-149): done
 
@@ -4162,7 +4169,7 @@ storage held only the sealed days, about 0.2 MB a day, and the Free plan keeps n
 
 Finding F-034 (High): every notice came from the edge itself, so an edge that died said nothing.
 
-- [x] **RM-150a** The check, in the database. **Built `cbfc41f` and rehearsed; waiting for the operator's paste.**
+- [x] **RM-150a** The check, in the database. **Built `cbfc41f`, rehearsed, applied by the operator.**
       - [`supabase/phase51_edge_watchdog.sql`](supabase/phase51_edge_watchdog.sql):
         - `pg_cron` runs `edge_watchdog_check()` every 10 minutes.
         - When `ingestion_health.last_success_at` is 15 minutes old (never under 10: the edge writes every 5 since
@@ -4178,8 +4185,12 @@ Finding F-034 (High): every notice came from the edge itself, so an edge that di
         reported. It also checks the test notice, one job per name, the 10-minute floor, RLS and the privileges.
       - Tests: `test/phase51-edge-watchdog-schema.test.mjs` (7), `server/edgeWatchdog.test.mjs` (3).
       - `edge_watchdog` is excluded from the weekly backup, with its reason (`NOT_BACKED_UP`).
-- [ ] **RM-150b** Armed and read back. The operator pastes phase51; `npm run watchdog:setup -- --apply` on the edge
-      delivers the test notice; `edge_watchdog.checked_at` advances every 10 minutes. Then F-034 is closed.
+- [x] **RM-150b** Armed and read back (E-228). The operator pasted phase51 on 2026-09-30.
+      - `npm run watchdog:setup -- --apply` wrote the row and sent the test notice through the database; ntfy answered
+        HTTP 200.
+      - The first scheduled check stamped `checked_at` at 05:10:00 UTC and left the state `ok`.
+      - The anon key is refused both the table and the check.
+      - **F-034 closed.** Not exercised live: a real 15-minute silence. The rehearsal covers it, and §0 has the drill.
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 

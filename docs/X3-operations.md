@@ -5,7 +5,7 @@ audience: [operator, administrator]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo 537f956
-evidence: [E-017, E-018, E-027, E-038, E-039, E-065, E-076, E-110, E-111, E-124, E-131, E-157, E-183, E-186, E-188, E-200, E-201, E-213, E-216, E-225]
+evidence: [E-017, E-018, E-027, E-038, E-039, E-065, E-076, E-110, E-111, E-124, E-131, E-157, E-183, E-186, E-188, E-200, E-201, E-213, E-216, E-225, E-228]
 ---
 
 # Operations and lifecycle
@@ -138,12 +138,11 @@ How you learn that recording stopped before a month of data is lost:
   on the operator's phone**; a notice nobody receives is no alarm.
 - **From anywhere:** `ingestion_health.last_success_at` in the database. It should be under 5 minutes old: since
   RM-149 the edge writes it with each upload [E-225] ([04](04-data.md#how-to-verify)).
-- **From the database, off the edge (RM-150, F-034):** once `supabase/phase51_edge_watchdog.sql` is applied and
-  `npm run watchdog:setup -- --apply` has run on the edge, the database reads that row every 10 minutes. When it is
-  15 minutes old, the database posts to the same topic. It reminds every 6 hours and says when uploads resume. This is
-  the one notice that still arrives when the edge has lost its power or its internet.
-- **Until the watchdog is armed:** every notice comes from the edge itself, and the daily look at the header pill
-  **is** the monitor.
+- **From the database, off the edge (RM-150, F-034):** the database reads that row every 10 minutes. When it is 15
+  minutes old, the database posts to the same topic. It reminds every 6 hours and says when uploads resume. This is
+  the one notice that still arrives when the edge has lost its power or its internet. Armed on 2026-09-30 [E-228].
+  `edge_watchdog.checked_at` shows its last run. A new site needs `supabase/phase51_edge_watchdog.sql`, then
+  `npm run watchdog:setup -- --apply` on its edge; the test notice it sends is the proof.
 
 ### Change control
 
