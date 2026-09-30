@@ -5,7 +5,7 @@ audience: [operator, administrator]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo 537f956
-evidence: [E-017, E-018, E-027, E-038, E-039, E-065, E-076, E-110, E-111, E-124, E-131, E-157, E-183, E-186, E-188, E-200, E-201, E-213, E-216]
+evidence: [E-017, E-018, E-027, E-038, E-039, E-065, E-076, E-110, E-111, E-124, E-131, E-157, E-183, E-186, E-188, E-200, E-201, E-213, E-216, E-225]
 ---
 
 # Operations and lifecycle
@@ -136,10 +136,14 @@ How you learn that recording stopped before a month of data is lost:
   for three while an outage grew from 3 devices to 15 [E-213]. There is also a notice when each monthly report is made,
   which doubles as a heartbeat: **a month with no notice means something stopped** [E-200]. **Subscribe to the topic
   on the operator's phone**; a notice nobody receives is no alarm.
-- **From anywhere:** `ingestion_health.last_success_at` in the database. It should be under a minute old
-  ([04](04-data.md#how-to-verify)).
-- **The gap:** every notice comes from the edge itself. If the edge dies, nothing says so (F-034). Until an outside
-  check exists, the daily look at the header pill **is** the monitor.
+- **From anywhere:** `ingestion_health.last_success_at` in the database. It should be under 5 minutes old: since
+  RM-149 the edge writes it with each upload [E-225] ([04](04-data.md#how-to-verify)).
+- **From the database, off the edge (RM-150, F-034):** once `supabase/phase51_edge_watchdog.sql` is applied and
+  `npm run watchdog:setup -- --apply` has run on the edge, the database reads that row every 10 minutes. When it is
+  15 minutes old, the database posts to the same topic. It reminds every 6 hours and says when uploads resume. This is
+  the one notice that still arrives when the edge has lost its power or its internet.
+- **Until the watchdog is armed:** every notice comes from the edge itself, and the daily look at the header pill
+  **is** the monitor.
 
 ### Change control
 
@@ -207,7 +211,7 @@ A new operator is competent when they can do each of these, unaided, and a secon
 | Symptom | Likely cause | Check that tells the causes apart | Fix | How to confirm it held |
 |---|---|---|---|---|
 | A month with no report notice | The edge, ingest or the notice topic stopped | `ingestion_health.last_success_at`; `systemctl status ibems-ingest` | Restore the service; re-subscribe the topic | The next notice arrives |
-| Days of data missing, found late | Nothing outside the edge watched it (F-034) | Report coverage; the edge's uptime | Restore recording; add the outside check | Coverage back to ≥ 99 % |
+| Days of data missing, found late | Nothing outside the edge watched it (F-034) | Report coverage; the edge's uptime; `edge_watchdog.checked_at` | Restore recording; arm the database's watchdog (phase51, `watchdog:setup`) | Coverage back to ≥ 99 %; the watchdog's test notice arrives |
 | The fleet offline after a power cut | The devices came back before the network, or a node gave up | [outage-recovery](outage-recovery.md) | As the runbook says | Every device within its window |
 | A change works, then vanishes after a rebuild | A host-only setting was lost (F-010) | 03's host-only list against the host | Restore from the `.bak`; record the setting | `preflight` passes |
 | A restore brings the flow back without its credentials | A different `credentialSecret` | [X1](X1-security.md#how-it-fails) | Restore the original `settings.js` | The nodes connect |

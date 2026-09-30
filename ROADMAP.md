@@ -1,6 +1,9 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-09-30, 11:30 — **RM-149 done: the edge asks the database about a quarter as often, the unused
+**Last audited:** 2026-09-30, 12:15 — **phase50 applied and read back (E-227): the scheduler reads one snapshot, and
+preflight reads 120 of 500 MB and 9 of 1,000 MB. RM-150 built: a watchdog in the database that posts when the edge goes
+silent (F-034), rehearsed, waiting for its paste.**
+**Earlier, 11:30 — RM-149 done: the edge asks the database about a quarter as often, the unused
 file storage holds a weekly backup, and a sealed day is restored every week as a drill.**
 - The database stood at 129 MB after the reset (E-224). The quota still near its limit was log ingestion, 0.97 of 1 GB,
   and every request is a line in that log.
@@ -403,15 +406,26 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
-### 2026-09-30 — the request budget and the file storage (RM-149): one paste left
+### 2026-09-30 — a watchdog off the edge (RM-150, F-034): one paste and one command left
 
-RM-149a–c are deployed and read back (E-225, E-226).
+Every notice this system sends comes from the edge, so an edge that lost its power or its internet said nothing.
+`supabase/phase51_edge_watchdog.sql` has the database check the edge's health row every 10 minutes and post to the
+same ntfy topic after 15 minutes of silence. It reminds every 6 hours and posts once more on recovery. Rehearsed on
+the edge; not yet applied.
 
 **Left, for the operator:**
-1. **Paste `supabase/phase50_request_budget.sql` into the SQL editor.** It adds two read-only functions for the
-   service role and changes no table; it was rehearsed on the edge. No restart is needed: the scheduler asks for its
-   snapshot again within the hour and logs `scheduler_snapshot is available`. Then `npm run preflight` reads
-   `db_size` and `storage_size`, which warn until it is in.
+1. **Paste `supabase/phase51_edge_watchdog.sql` into the SQL editor.** It enables `pg_net` and `pg_cron` with
+   Supabase's own statements, and stops with a message if either cannot be enabled.
+2. **On the edge: `npm run watchdog:setup -- --apply`.** It copies the topic from `server/.env` into the database, and
+   sends one test notice through the database to the phone. Nothing is watched until it has run.
+
+### 2026-09-30 — the request budget and the file storage (RM-149): done
+
+RM-149a–c are deployed and read back (E-225, E-226). **phase50 was applied by the operator and read back (E-227).**
+
+**Left, for the operator:**
+1. ~~Paste `supabase/phase50_request_budget.sql`~~ **Done.** The scheduler switched to the snapshot without a
+   restart; preflight reads 120 of 500 MB and 9 of 1,000 MB.
 2. Optional, a day later: `select calls, left(query, 110) from pg_stat_statements order by calls desc limit 15;` in
    the SQL editor, to see the drop in the busiest statements.
 
@@ -4093,7 +4107,8 @@ storage held only the sealed days, about 0.2 MB a day, and the Free plan keeps n
       - Tests: `archiveUpload.test.mjs` (+2), `healthRow.test.mjs` (+2), `ingestCycle.test.mjs` (+1),
         `requestBudget.test.mjs` (3, the wiring from source), `hotTier.test.mjs` (updated). About 4,900 requests a day
         become about 900.
-- [x] **RM-149b** The scheduler's configuration in one request. **Deployed `d539938`; phase50 awaits the operator.**
+- [x] **RM-149b** The scheduler's configuration in one request. **Deployed `d539938`; phase50 applied by the operator
+      and read back (E-227).**
       - [`supabase/phase50_request_budget.sql`](supabase/phase50_request_budget.sql) adds `scheduler_snapshot(site)`:
         the seven reads' rows, column for column, in one call. It also adds `usage_bytes()`, the database and file
         storage sizes. Both are stable, security invoker, and the service role's alone. Rehearsed on the edge
@@ -4142,6 +4157,29 @@ storage held only the sealed days, about 0.2 MB a day, and the Free plan keeps n
         - F-035 (Medium, fixed);
         - F-034's threshold raised to 15 minutes;
         - the audit README's count of findings.
+
+### A watchdog over the edge, off the edge — RM-150 (2026-09-30)
+
+Finding F-034 (High): every notice came from the edge itself, so an edge that died said nothing.
+
+- [x] **RM-150a** The check, in the database. **Built `cbfc41f` and rehearsed; waiting for the operator's paste.**
+      - [`supabase/phase51_edge_watchdog.sql`](supabase/phase51_edge_watchdog.sql):
+        - `pg_cron` runs `edge_watchdog_check()` every 10 minutes.
+        - When `ingestion_health.last_success_at` is 15 minutes old (never under 10: the edge writes every 5 since
+          RM-149), `pg_net` posts to the site's ntfy topic. The notice says for how long, since when, and the last error.
+        - It is edge-triggered: one notice, a reminder every 6 hours, one on recovery.
+        - `edge_watchdog` holds the topic, with RLS on, no policy and nothing granted to the browser's roles. The
+          functions are security definer with a pinned search path, and the service role's alone.
+        - A daily job prunes this project's cron run history to 7 days.
+      - `npm run watchdog:setup` (`server/watchdog-setup.mjs`; `server/edgeWatchdog.mjs`): copies `NTFY_TOPIC` and
+        `NTFY_SERVER` from `server/.env` into the database, never printing the topic whole. With `--apply` it sends a
+        test notice through the database and reports whether the server took it.
+      - The rehearsal, on the edge, walks it through: silence, still silent, a reminder, recovery, healthy, and never
+        reported. It also checks the test notice, one job per name, the 10-minute floor, RLS and the privileges.
+      - Tests: `test/phase51-edge-watchdog-schema.test.mjs` (7), `server/edgeWatchdog.test.mjs` (3).
+      - `edge_watchdog` is excluded from the weekly backup, with its reason (`NOT_BACKED_UP`).
+- [ ] **RM-150b** Armed and read back. The operator pastes phase51; `npm run watchdog:setup -- --apply` on the edge
+      delivers the test notice; `edge_watchdog.checked_at` advances every 10 minutes. Then F-034 is closed.
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 
