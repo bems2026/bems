@@ -21,15 +21,33 @@
 
 import { supabase } from '@/config/supabase';
 import { assertNotTruncated } from './supabaseHistory';
-import { foldEpisodes, type CapabilityEpisode, type EpisodeSample } from './capabilityEpisodes';
+import { foldEpisodes, EPISODE_GAP_MS, type CapabilityEpisode, type EpisodeSample } from './capabilityEpisodes';
 
 /** How far back trouble is worth reporting. A week covers a weekend plus a public holiday —
  * the same reasoning as `fleetAlarm`'s known-online window. */
 export const TROUBLE_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** Enough rows for a week of continuous trouble on the whole fleet, and a cap that says so if
- * it is ever hit rather than quietly returning a prefix. */
-const MAX_ROWS = 5000;
+/**
+ * How far back the rows are READ — a day more than the week shown, RM-152.
+ *
+ * Reading exactly the week shown cut the oldest episode at the window's edge, and that edge moves
+ * every poll: a week-old episode's start, and so its "for X min", changed every five minutes. Reading a
+ * day further back lets an episode that ENDED inside the week keep its real start. One that still
+ * begins at the very edge of what was read is marked `clipped` and says "before".
+ */
+export const TROUBLE_FETCH_MS = TROUBLE_LOOKBACK_MS + 24 * 60 * 60 * 1000;
+
+/**
+ * PostgREST answers at most 1,000 rows however many are asked for, and says nothing when it stops —
+ * the cap `supabaseHistory.ts` records. The old `limit(5000)` could therefore never see its own
+ * truncation: a meter in warning for a whole day (1,440 rows) came back as its oldest 1,000. So the
+ * rows are read a page at a time, and past ten pages the fetch refuses rather than show a prefix.
+ */
+const PAGE_ROWS = 1000;
+const MAX_PAGES = 10;
+/** For `fetchEnergyBetween`, which reads in one request: the server's own cap, so a full answer is
+ *  recognised as possibly cut short and refused. It was 5,000, which the server never returns. */
+const MAX_ROWS = PAGE_ROWS;
 
 /**
  * `net_state` values that mean something is wrong.
@@ -57,45 +75,62 @@ function required() {
  * rather than a week of identical rows. On this fleet today that is exactly what happens, and
  * "nothing since Tuesday" is the answer, not a blank.
  */
-export async function fetchTroubleEpisodes(sinceMs = TROUBLE_LOOKBACK_MS): Promise<CapabilityEpisode[]> {
+type Page = PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>;
+
+/** Every row a query matches, a page at a time. Ordered by the whole primary key (ts, device_id), so a
+ *  page boundary can never land between two tied rows and drop or repeat one. */
+async function allPages(column: string, page: (from: number, to: number) => Page): Promise<Array<Record<string, unknown>>> {
+  const rows: Array<Record<string, unknown>> = [];
+  for (let n = 0; n < MAX_PAGES; n++) {
+    const { data, error } = await page(n * PAGE_ROWS, n * PAGE_ROWS + PAGE_ROWS - 1);
+    if (error) throw new Error(`Supabase capability history fetch failed for ${column}: ${error.message}`);
+    const got = (data ?? []) as Array<Record<string, unknown>>;
+    rows.push(...got);
+    if (got.length < PAGE_ROWS) return rows;
+  }
+  throw new Error(`readings.${column}: more than ${PAGE_ROWS * MAX_PAGES} rows in ${TROUBLE_FETCH_MS / 86_400_000} days; not showing a prefix of them`);
+}
+
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+export async function fetchTroubleEpisodes(nowMs = Date.now()): Promise<CapabilityEpisode[]> {
   const db = required();
-  const since = new Date(Date.now() - sinceMs).toISOString();
+  const readFrom = nowMs - TROUBLE_FETCH_MS;
+  const since = new Date(readFrom).toISOString();
 
   // Written out three times rather than through a shared builder. The wrapper that would remove
   // the repetition has to be generic over PostgREST's filter types, and the version that
   // typechecked was harder to read than this is — three queries that each say plainly which
   // column they ask for and what counts as abnormal in it.
-  const collect = (
-    column: 'fault' | 'power_type' | 'net_state',
-    data: unknown[] | null,
-    error: { message: string } | null,
-  ): EpisodeSample[] => {
-    if (error) throw new Error(`Supabase capability history fetch failed for ${column}: ${error.message}`);
-    const rows = (data ?? []) as Array<Record<string, unknown>>;
-    assertNotTruncated(rows, MAX_ROWS, `readings.${column}`);
-    return rows.map((r) => ({
-      device_id: String(r.device_id), ts: String(r.ts), value: r[column] as string | number,
-    }));
-  };
-
-  const [faultRes, warnRes, netRes] = await Promise.all([
-    db.from('readings').select('device_id,ts,fault')
-      .gte('ts', since).neq('fault', 0).order('ts', { ascending: true }).limit(MAX_ROWS),
-    db.from('readings').select('device_id,ts,power_type')
-      .gte('ts', since).eq('power_type', 'warn').order('ts', { ascending: true }).limit(MAX_ROWS),
-    db.from('readings').select('device_id,ts,net_state')
-      .gte('ts', since).in('net_state', [...DEGRADED_NET_STATES]).order('ts', { ascending: true }).limit(MAX_ROWS),
+  const [faultRows, warnRows, netRows] = await Promise.all([
+    allPages('fault', (a, b) => db.from('readings').select('device_id,ts,fault')
+      .gte('ts', since).neq('fault', 0).order('ts', { ascending: true }).order('device_id', { ascending: true }).range(a, b)),
+    // RM-152: with what it drew and the limit it was set to, so the bell can say "2,983 W against 2,000 W".
+    allPages('power_type', (a, b) => db.from('readings').select('device_id,ts,power_type,power_w,warn_power_w')
+      .gte('ts', since).eq('power_type', 'warn').order('ts', { ascending: true }).order('device_id', { ascending: true }).range(a, b)),
+    allPages('net_state', (a, b) => db.from('readings').select('device_id,ts,net_state')
+      .gte('ts', since).in('net_state', [...DEGRADED_NET_STATES]).order('ts', { ascending: true }).order('device_id', { ascending: true }).range(a, b)),
   ]);
 
-  const faults = collect('fault', faultRes.data, faultRes.error);
-  const warns = collect('power_type', warnRes.data, warnRes.error);
-  const offline = collect('net_state', netRes.data, netRes.error);
+  const samples = (rows: Array<Record<string, unknown>>, column: string): EpisodeSample[] =>
+    rows.map((r) => ({
+      device_id: String(r.device_id),
+      ts: String(r.ts),
+      value: r[column] as string | number,
+      power_w: num(r.power_w),
+      limit_w: num(r.warn_power_w),
+    }));
 
+  const shownFrom = nowMs - TROUBLE_LOOKBACK_MS;
   return [
-    ...foldEpisodes(faults, 'fault'),
-    ...foldEpisodes(warns, 'power_warn'),
-    ...foldEpisodes(offline, 'net_degraded'),
-  ].sort((a, b) => Date.parse(b.from) - Date.parse(a.from));
+    ...foldEpisodes(samples(faultRows, 'fault'), 'fault'),
+    ...foldEpisodes(samples(warnRows, 'power_type'), 'power_warn'),
+    ...foldEpisodes(samples(netRows, 'net_state'), 'net_degraded'),
+  ]
+    // Shown when it ENDED inside the week, whenever it began.
+    .filter((e) => Date.parse(e.to) >= shownFrom)
+    .map((e) => (Date.parse(e.from) - readFrom < EPISODE_GAP_MS ? { ...e, clipped: true } : e))
+    .sort((a, b) => Date.parse(b.from) - Date.parse(a.from));
 }
 
 /**

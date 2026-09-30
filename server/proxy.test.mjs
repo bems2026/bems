@@ -127,7 +127,8 @@ function startFakeLightEndpoint() {
     const port = nextPort++;
     // `offline` names devices this bridge should report as unreachable. Empty means every
     // device is online, which is what the dispatch tests below assume.
-    const state = { requests: [], healthReads: 0, offline: new Set(), failNext: false, statusCode: null };
+    // `channelMaps`: device id -> the `channel_map` its reading carries (RM-152). Absent means none.
+    const state = { requests: [], healthReads: 0, offline: new Set(), channelMaps: {}, failNext: false, statusCode: null };
     const server = http.createServer(async (req, res) => {
       let raw = '';
       for await (const chunk of req) raw += chunk;
@@ -137,7 +138,11 @@ function startFakeLightEndpoint() {
       // below reads as "what actually reached the hardware endpoint".
       if (req.method === 'GET' && req.url === '/api/readings/latest') {
         state.healthReads += 1;
-        const rows = DEVICE_REGISTRY.map((d) => ({ device_id: d.id, online: !state.offline.has(d.id) }));
+        const rows = DEVICE_REGISTRY.map((d) => ({
+          device_id: d.id,
+          online: !state.offline.has(d.id),
+          ...(state.channelMaps[d.id] ? { channel_map: state.channelMaps[d.id] } : {}),
+        }));
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify(rows));
       }
@@ -548,6 +553,41 @@ test('a capability the catalogue refuses is rejected before anything is recorded
     assert.equal(res.status, 400);
     assert.equal((await res.json()).code, 'capability_not_writable');
     assert.equal(supabaseState.insertedCommands.length, 0, 'nothing recorded');
+  } finally {
+    cleanup();
+  }
+});
+
+test('a setting on a demuxed meter is refused while its clamps are swapped, and sent once they are direct — RM-152', async () => {
+  // C.O Yellow and L.O Yellow share one dual-channel meter, and the bridge swaps their channels on
+  // READ when the meter reports its clamps swapped. The write route addresses the physical dp, so a
+  // power limit written for C.O Yellow during a swapped spell would land on the lighting branch.
+  const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch();
+  const send = () =>
+    fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'mtr_co_yellow', action: 'set', capability: 'warn_power', value: 2500 }),
+    });
+  try {
+    lightState.channelMaps.mtr_co_yellow = { assignment: 'swapped', rule: 'ceiling', since: '2026-09-30T06:21:00+08:00', flips: 3 };
+    const refused = await send();
+    assert.equal(refused.status, 409);
+    const body = await refused.json();
+    assert.equal(body.error, 'channels_not_direct');
+    assert.equal(body.code, 'channels_not_direct', 'the code the browser turns into a sentence');
+    assert.match(body.detail, /swapped/);
+    assert.equal(supabaseState.insertedCommands.length, 0, 'nothing recorded');
+    assert.equal(lightState.requests.length, 0, 'nothing sent');
+
+    delete lightState.channelMaps.mtr_co_yellow;
+    const unknown = await send();
+    assert.equal(unknown.status, 409, 'an assignment that cannot be read cannot be checked');
+
+    lightState.channelMaps.mtr_co_yellow = { assignment: 'direct', rule: 'idle', since: '2026-09-29T03:03:05+08:00', flips: 32 };
+    const accepted = await send();
+    assert.equal(accepted.status, 202);
+    assert.equal(lightState.requests.at(-1).url, '/capability/mtr_co_yellow');
   } finally {
     cleanup();
   }

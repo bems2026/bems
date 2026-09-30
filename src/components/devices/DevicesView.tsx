@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { siteTime } from '@/lib/siteTime';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useDeviceStore } from '@/stores/deviceStore';
@@ -26,6 +26,12 @@ const CLASS_ORDER: DeviceClass[] = DEVICE_CLASS_ORDER;
 const CLASS_FILTER_LABEL = (cls: DeviceClass) => DEVICE_CLASS_CATALOG[cls].label;
 
 const CLASS_PILL_LABEL = (cls: DeviceClass) => DEVICE_CLASS_CATALOG[cls].pill;
+
+/** The device a `#devices/<id>` link names, or null. */
+function deviceFromHash(): string | null {
+  const [route, sub] = window.location.hash.slice(1).split('/');
+  return route === 'devices' && sub ? decodeURIComponent(sub) : null;
+}
 
 type CommState = 'no-data' | 'offline' | 'stale' | 'live';
 
@@ -67,7 +73,22 @@ export function DevicesView() {
   // into a `0.6fr` column. They are `DevicePanel`'s three tabs now. Nothing may be rendered
   // inside a row: the table is a strict nine-column ARIA grid and `DevicesView.test.tsx` asserts
   // every row has exactly one cell per column header, so an expanding row would break that.
-  const [openId, setOpenId] = useState<string | null>(null);
+  // RM-152: `#devices/<id>` opens that device's panel, which is where the alerts bell's "Open device"
+  // leads. Read on mount and on every hash change; closing puts the plain `#devices` back, so a reload
+  // does not reopen a panel somebody closed.
+  const [openId, setOpenId] = useState<string | null>(() => deviceFromHash());
+  useEffect(() => {
+    const onHashChange = () => {
+      const id = deviceFromHash();
+      if (id) setOpenId(id);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+  const closePanel = () => {
+    setOpenId(null);
+    if (deviceFromHash()) window.history.replaceState(null, '', '#devices');
+  };
   const [enrolling, setEnrolling] = useState(false);
   // Only enrolled devices can be removed. The built-in ones are hand-written in registry.mjs,
   // and no button is shown for them at all — a disabled control invites a click and then
@@ -135,7 +156,7 @@ export function DevicesView() {
           key={openDevice.id}
           device={openDevice}
           canRemove={enrolledIds.has(openDevice.id)}
-          onClose={() => setOpenId(null)}
+          onClose={closePanel}
           // Nothing to refetch: the fleet list is polled from the bridge, which reads the flow
           // that was just written, so the row clears itself on the next poll. The panel stays
           // open on purpose so its "Removed." result and the redeploy note stay readable.

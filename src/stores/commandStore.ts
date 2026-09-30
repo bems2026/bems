@@ -101,6 +101,9 @@ const FAILURE_COPY: Record<string, string> = {
   no_dispatch_route: 'This deployment cannot command a device of this kind.',
   audit_log_unreachable: 'Nothing was sent: the audit trail could not be written, and this system will not move a relay it cannot record.',
   break_glass_cannot_command: 'Local sign-in is view-only. Sign in with your account to send commands.',
+  // RM-152: a setting on a meter whose two clamps are swapped would reach the other circuit.
+  channels_not_direct:
+    'Nothing was sent: this meter’s two clamps are swapped right now, or it could not be checked, so the setting could reach the other circuit. Try again in a few minutes.',
 };
 
 export function describeFailure(err: unknown): string {

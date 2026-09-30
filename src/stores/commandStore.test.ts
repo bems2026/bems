@@ -84,6 +84,16 @@ describe('useCommandStore.send', () => {
     expect(useCommandStore.getState().pending['l1'].error).toMatch(/nothing was sent/i);
   });
 
+  it('says a meter setting was held back because its clamps are swapped — RM-152', async () => {
+    // The proxy refuses a per-channel setting on C.O Yellow / L.O Yellow unless the meter reads
+    // "direct", because the write would otherwise land on the other circuit.
+    vi.mocked(bridgeClient.sendCommand).mockRejectedValue(new BridgeFetchError('HTTP 409: channels_not_direct', 409, 'channels_not_direct'));
+    await useCommandStore.getState().send('mtr_co_yellow', undefined, 'on');
+    const error = useCommandStore.getState().pending['mtr_co_yellow'].error ?? '';
+    expect(error).toMatch(/nothing was sent/i);
+    expect(error).toMatch(/other circuit/i);
+  });
+
   it('tells a break-glass user why their command was refused, instead of implying a fault', async () => {
     vi.mocked(bridgeClient.sendCommand).mockRejectedValue(new BridgeFetchError('HTTP 403: break_glass_cannot_command', 403, 'break_glass_cannot_command'));
     await useCommandStore.getState().send('l1', undefined, 'on');

@@ -30,7 +30,7 @@
 import { describe, it, expect } from 'vitest';
 import { CAPABILITY_PROFILES } from '@shared/deviceCapabilities.mjs';
 import {
-  foldEpisodes, describeEpisode, EPISODE_GAP_MS, FAULT_BIT_LABELS,
+  foldEpisodes, toIncidents, describeIncident, durationText, ACTIVE_WINDOW_MS, EPISODE_GAP_MS, FAULT_BIT_LABELS,
   type EpisodeSample, type CapabilityEpisode,
 } from './capabilityEpisodes';
 
@@ -53,7 +53,19 @@ describe('folding samples into episodes', () => {
     // One minute of a fault is the case most likely to be dismissed as noise, and is exactly
     // what "did it report anything before it went dark" is asking about.
     const out = foldEpisodes([s(0, 1)], 'fault');
-    expect(out).toEqual([{ device_id: 'co5', kind: 'fault', value: 1, from: t(0), to: t(0), samples: 1 }]);
+    expect(out).toEqual([{ device_id: 'co5', kind: 'fault', value: 1, from: t(0), to: t(0), samples: 1, peakW: null, limitW: null }]);
+  });
+
+  it('keeps the most drawn and the meter’s own limit, when the samples carry them — RM-152', () => {
+    const out = foldEpisodes(
+      [
+        { ...s(0, 'warn'), power_w: 1919.6, limit_w: 2000 },
+        { ...s(1, 'warn'), power_w: 2982.8, limit_w: 2000 },
+        { ...s(2, 'warn'), power_w: 2100, limit_w: null },
+      ],
+      'power_warn',
+    );
+    expect(out[0]).toMatchObject({ peakW: 2982.8, limitW: 2000, samples: 3 });
   });
 
   it('splits when the value changes', () => {
@@ -127,57 +139,119 @@ describe('folding samples into episodes', () => {
   });
 });
 
-describe('describeEpisode', () => {
-  const ep = (over: Partial<CapabilityEpisode> = {}): CapabilityEpisode => ({
-    device_id: 'co5', kind: 'fault', value: 1,
-    from: '2026-09-08T09:00:00Z', to: '2026-09-08T09:04:00Z', samples: 5, ...over,
+/**
+ * RM-152. The live case these were written against: C.O Yellow's meter, limit 2,000 W, read above it
+ * from 08:01 to 16:06 Manila on 23 Sep 2026 (117 readings, 1.9-3.0 kW). A week later the bell was
+ * still listing it, with a start and a "for X min" that changed every five minutes.
+ */
+const NOW = Date.parse('2026-09-30T05:38:00Z');
+const coYellow = (over: Partial<CapabilityEpisode> = {}): CapabilityEpisode => ({
+  device_id: 'mtr_co_yellow', kind: 'power_warn', value: 'warn',
+  from: '2026-09-23T00:01:00Z', to: '2026-09-23T08:06:14Z', samples: 117, peakW: 2982.8, limitW: 2000, ...over,
+});
+
+describe('incidents — RM-152', () => {
+  it('one device’s warnings are ONE incident, the newest first and the rest as its history', () => {
+    const earlier = coYellow({ from: '2026-09-17T01:20:00Z', to: '2026-09-17T06:57:00Z', samples: 2 });
+    const out = toIncidents([earlier, coYellow()], NOW);
+    expect(out).toHaveLength(1);
+    expect(out[0].key).toBe('trouble:power_warn:mtr_co_yellow');
+    expect(out[0].latest.from).toBe('2026-09-23T00:01:00Z');
+    expect(out[0].history.map((e) => e.from)).toEqual(['2026-09-17T01:20:00Z']);
   });
 
-  it('decodes a fault bitmap into what actually went wrong', () => {
-    // Bit 0 is ov_cr. A raw "1" on screen tells an operator nothing; "over-current" tells them
-    // where to look. phase28's own column comment spells the order out.
-    const { title, body } = describeEpisode(ep({ value: 1 }), 'Outlet 5');
-    expect(title).toMatch(/Outlet 5/);
-    expect(body).toMatch(/over-current/);
+  it('the key does not move when the week’s edge cuts into the oldest episode', () => {
+    // THE DEFECT. The key used to carry the episode's start, which the sliding window kept moving.
+    const before = toIncidents([coYellow()], NOW)[0].key;
+    const after = toIncidents([coYellow({ from: '2026-09-23T05:46:51Z', samples: 48, clipped: true })], NOW + 5 * 60_000)[0].key;
+    expect(after).toBe(before);
   });
 
-  it('names every bit that is set, not just the first', () => {
+  it('is active only while its last reading is recent; a week-old one has ended', () => {
+    expect(toIncidents([coYellow()], NOW)[0].active).toBe(false);
+    const live = coYellow({ from: new Date(NOW - 30 * 60_000).toISOString(), to: new Date(NOW - 6 * 60_000).toISOString() });
+    expect(toIncidents([live], NOW)[0].active).toBe(true);
+    const lapsed = coYellow({ to: new Date(NOW - ACTIVE_WINDOW_MS - 60_000).toISOString() });
+    expect(toIncidents([lapsed], NOW)[0].active).toBe(false);
+  });
+
+  it('what is happening now comes before what ended', () => {
+    const live = coYellow({ device_id: 'mtr_lo_red', from: new Date(NOW - 10 * 60_000).toISOString(), to: new Date(NOW - 60_000).toISOString() });
+    expect(toIncidents([coYellow(), live], NOW).map((i) => i.device_id)).toEqual(['mtr_lo_red', 'mtr_co_yellow']);
+  });
+
+  it('a device’s different kinds of trouble stay separate incidents', () => {
+    const out = toIncidents([coYellow(), coYellow({ kind: 'net_degraded', value: 'no_net' })], NOW);
+    expect(out.map((i) => i.key).sort()).toEqual(['trouble:net_degraded:mtr_co_yellow', 'trouble:power_warn:mtr_co_yellow']);
+  });
+});
+
+describe('describeIncident — RM-152', () => {
+  const incident = (over: Partial<CapabilityEpisode> = {}, now = NOW) => toIncidents([coYellow(over)], now)[0];
+
+  it('says it in plain words: the limit, when, how long, and the peak', () => {
+    const { title, body, severity, source } = describeIncident(incident(), 'C.O Yellow', NOW);
+    expect(title).toBe('C.O Yellow: power above its limit');
+    expect(body).toMatch(/2,000 W/);
+    expect(body).toMatch(/08:01/);
+    expect(body).toMatch(/16:06/);
+    expect(body).toMatch(/\(8 h\)/);
+    expect(body).toMatch(/2,983 W/);
+    // The paragraph about whose verdict it is became one short label.
+    expect(`${title} ${body}`).not.toMatch(/verdict|threshold this system/i);
+    expect(source).toBe('From the meter');
+    expect(severity).toBe('notice');
+  });
+
+  it('a warning that is still on is a warning, and says since when', () => {
+    const live = incident({ from: new Date(NOW - 45 * 60_000).toISOString(), to: new Date(NOW - 60_000).toISOString() });
+    const { body, severity } = describeIncident(live, 'C.O Yellow', NOW);
+    expect(severity).toBe('warning');
+    expect(body).toMatch(/has been above it since/);
+    expect(body).toMatch(/45 min so far/);
+  });
+
+  it('an episode cut by the window’s edge says it began before then', () => {
+    const { body } = describeIncident(incident({ from: '2026-09-23T05:46:51Z', clipped: true }), 'C.O Yellow', NOW);
+    expect(body).toMatch(/before 13:46/);
+  });
+
+  it('decodes a fault bitmap into what actually went wrong, every bit that is set', () => {
     // 1 | 4 = ov_cr + ov_pwr. Reporting one of two faults would send somebody to fix half of it.
-    const { body } = describeEpisode(ep({ value: 5 }), 'Outlet 5');
-    expect(body).toMatch(/over-current/);
-    expect(body).toMatch(/over-power/);
+    const f = toIncidents([coYellow({ kind: 'fault', value: 5, device_id: 'co5' })], NOW)[0];
+    const { title, body, source } = describeIncident(f, 'Outlet 5', NOW);
+    expect(title).toBe('Outlet 5: device fault');
+    expect(body).toMatch(/over-current and over-power/);
+    expect(source).toBe('From the device');
   });
 
   it('falls back to the raw value rather than inventing a name for an unknown bit', () => {
-    const { body } = describeEpisode(ep({ value: 1 << 9 }), 'Outlet 5');
-    expect(body).toMatch(/512/);
+    const f = toIncidents([coYellow({ kind: 'fault', value: 1 << 9, device_id: 'co5' })], NOW)[0];
+    expect(describeIncident(f, 'Outlet 5', NOW).body).toMatch(/512/);
   });
 
-  it('describes a power warning as the DEVICE’s verdict, not this system’s', () => {
-    // The distinction matters: an anomaly row is a z-score this system computed, and this is the
-    // meter saying it is over the threshold set on it. Where they disagree the device is the one
-    // wired to the circuit.
-    const { title, body } = describeEpisode(ep({ kind: 'power_warn', value: 'warn' }), 'C.O Yellow');
-    expect(title).toMatch(/C\.O Yellow/);
-    expect(`${title} ${body}`).toMatch(/its own|itself|the device/i);
+  it('an active fault is critical', () => {
+    const f = toIncidents([coYellow({ kind: 'fault', value: 1, from: new Date(NOW - 120_000).toISOString(), to: new Date(NOW - 60_000).toISOString() })], NOW)[0];
+    expect(describeIncident(f, 'Outlet 5', NOW).severity).toBe('critical');
   });
 
-  it('describes a no_net spell as the device reporting no network', () => {
-    const { title } = describeEpisode(ep({ kind: 'net_degraded', value: 'no_net' }), 'L.O Red');
-    expect(title).toMatch(/L\.O Red/);
-    expect(title.toLowerCase()).toMatch(/network/);
-  });
-
-  it('says how long it lasted, and when it ended', () => {
-    const { body } = describeEpisode(ep({ from: '2026-09-08T09:00:00Z', to: '2026-09-08T09:04:00Z' }), 'Outlet 5');
-    expect(body).toMatch(/4 min/);
-  });
-
-  it('a single-sample episode reads as a moment, not a zero-minute span', () => {
-    // "reported for 0 minutes" is worse than useless — it reads as a bug in the report.
-    const { body } = describeEpisode(ep({ from: 't', to: 't', samples: 1, value: 1 }), 'Outlet 5');
+  it('a single reading reads as a moment, not a zero-minute span', () => {
+    const one = incident({ from: '2026-09-23T00:01:00Z', to: '2026-09-23T00:01:00Z', samples: 1 });
+    const { body } = describeIncident(one, 'C.O Yellow', NOW);
     expect(body).not.toMatch(/0 min/);
-    expect(body).toMatch(/once|one reading/i);
+    expect(body).toMatch(/one reading/);
+  });
+
+  it('with no limit reported, it says the meter has one rather than printing a number', () => {
+    const { body } = describeIncident(incident({ limitW: null }), 'C.O Yellow', NOW);
+    expect(body).toMatch(/has a limit set on it/);
+    expect(body).not.toMatch(/null|NaN/);
+  });
+
+  it('durations read the way a person says them', () => {
+    expect(durationText(30_000)).toBe('under a minute');
+    expect(durationText(4 * 60_000)).toBe('4 min');
+    expect(durationText(8 * 3_600_000 + 5 * 60_000)).toBe('8 h');
   });
 
   it('the fault labels cover exactly the bits the catalogue declares', () => {

@@ -6,8 +6,54 @@
  * What IS tested is everything with a judgement in it, because each of these has a wrong answer
  * that would look plausible on screen.
  */
-import { describe, it, expect } from 'vitest';
-import { energyBetween, DEGRADED_NET_STATES, TROUBLE_LOOKBACK_MS } from './supabaseCapabilityHistory';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { energyBetween, fetchTroubleEpisodes, DEGRADED_NET_STATES, TROUBLE_FETCH_MS, TROUBLE_LOOKBACK_MS } from './supabaseCapabilityHistory';
+
+/**
+ * RM-152 — reading the week of device-reported trouble, which this file used to leave untested
+ * ("mocking the query builder would test the mock"). Two defects made it worth a fake: the fetch asked
+ * for `limit(5000)` from a server that answers at most 1,000 rows and says nothing, so its truncation
+ * check could never fire; and it read exactly the week it showed, so the oldest episode was cut at an
+ * edge that moved every poll. The fake answers at most 1,000 rows per range, like the real server.
+ */
+const db = vi.hoisted(() => ({
+  rows: { fault: [], power_type: [], net_state: [] } as Record<string, Array<Record<string, unknown>>>,
+  ranges: [] as Array<{ column: string; from: number; to: number }>,
+}));
+
+vi.mock('@/config/supabase', () => {
+  const PAGE = 1000;
+  const chain = (column: string) => {
+    const self: Record<string, unknown> = {};
+    for (const m of ['gte', 'neq', 'eq', 'in', 'order']) self[m] = () => self;
+    self.range = (from: number, to: number) => {
+      db.ranges.push({ column, from, to });
+      return Promise.resolve({ data: db.rows[column].slice(from, Math.min(to + 1, from + PAGE)), error: null });
+    };
+    return self;
+  };
+  return {
+    supabase: {
+      from: () => ({
+        select: (cols: string) => chain(cols.includes('fault') ? 'fault' : cols.includes('power_type') ? 'power_type' : 'net_state'),
+      }),
+    },
+  };
+});
+
+
+const NOW = Date.parse('2026-09-30T05:38:00Z');
+const MIN = 60_000;
+/** A warn row per minute for `minutes`, starting at `startMs`. */
+const warnRun = (startMs: number, minutes: number, device = 'mtr_co_yellow') =>
+  Array.from({ length: minutes }, (_, i) => ({
+    device_id: device, ts: new Date(startMs + i * MIN).toISOString(), power_type: 'warn', power_w: 2000 + i, warn_power_w: 2000,
+  }));
+
+beforeEach(() => {
+  db.rows = { fault: [], power_type: [], net_state: [] };
+  db.ranges = [];
+});
 
 describe('DEGRADED_NET_STATES', () => {
   it('does not treat local_net as trouble', () => {
@@ -104,5 +150,49 @@ describe('energyBetween', () => {
 describe('the lookback window', () => {
   it('is a week — long enough to cover a weekend plus a public holiday', () => {
     expect(TROUBLE_LOOKBACK_MS).toBe(7 * 24 * 60 * 60 * 1000);
+  });
+});
+
+describe('fetchTroubleEpisodes — RM-152', () => {
+  it('reads past the server’s 1,000-row cap, a page at a time: a whole day of warning is one whole episode', async () => {
+    db.rows.power_type = warnRun(NOW - 2 * 86_400_000, 1440);
+    const episodes = await fetchTroubleEpisodes(NOW);
+    expect(episodes).toHaveLength(1);
+    expect(episodes[0].samples).toBe(1440);
+    expect(episodes[0].peakW).toBe(2000 + 1439);
+    expect(episodes[0].limitW).toBe(2000);
+    expect(db.ranges.filter((r) => r.column === 'power_type').map((r) => [r.from, r.to])).toEqual([[0, 999], [1000, 1999]]);
+  });
+
+  it('refuses rather than show a prefix when there are more than ten pages', async () => {
+    db.rows.power_type = warnRun(NOW - 7 * 86_400_000, 10_000);
+    await expect(fetchTroubleEpisodes(NOW)).rejects.toThrow(/more than 10000 rows/);
+  });
+
+  it('shows an episode that ENDED in the week with its real start, and leaves out one that ended before it', async () => {
+    const readFrom = NOW - TROUBLE_FETCH_MS;
+    const shownFrom = NOW - TROUBLE_LOOKBACK_MS;
+    db.rows.power_type = [
+      // Ended before the week: not shown.
+      ...warnRun(readFrom + 2 * 3_600_000, 60, 'mtr_lo_red'),
+      // Began before the week, ended inside it: shown, from where it really began.
+      ...warnRun(shownFrom - 3 * 3_600_000, 6 * 60),
+    ];
+    const episodes = await fetchTroubleEpisodes(NOW);
+    expect(episodes.map((e) => e.device_id)).toEqual(['mtr_co_yellow']);
+    expect(episodes[0].from).toBe(new Date(shownFrom - 3 * 3_600_000).toISOString());
+    expect(episodes[0].clipped).toBeUndefined();
+  });
+
+  it('marks an episode that begins at the very edge of what was read, so it can say "before"', async () => {
+    const readFrom = NOW - TROUBLE_FETCH_MS;
+    db.rows.power_type = warnRun(readFrom + MIN, 26 * 60);
+    const [episode] = await fetchTroubleEpisodes(NOW);
+    expect(episode.clipped).toBe(true);
+  });
+
+  it('a healthy fleet is three empty answers and no episodes', async () => {
+    await expect(fetchTroubleEpisodes(NOW)).resolves.toEqual([]);
+    expect(db.ranges).toHaveLength(3);
   });
 });

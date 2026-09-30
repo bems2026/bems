@@ -1221,14 +1221,88 @@ body::before {
 .alerts-popover__row:hover {
   background: var(--bg-inset);
 }
+/* RM-152: the severity is the chip's word and icon, never the title's colour alone, so a title reads
+   in the text colour and a warning no longer looks exactly like a critical. */
 .alerts-popover__title {
-  margin: 0;
+  margin: 2px 0 0;
   font-size: var(--fs-xs-lg);
   font-weight: 700;
-  color: var(--red);
-  display: flex;
+  color: var(--txt);
+}
+.alerts-popover__main {
+  min-width: 0;
+}
+.alerts-popover__section {
+  margin: var(--sp-3) var(--sp-4) 0;
+  font-size: var(--fs-3xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+.alerts-popover__sev {
+  display: inline-flex;
   align-items: center;
   gap: 4px;
+  font-size: var(--fs-3xs);
+  font-weight: 700;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 0 6px;
+}
+.alerts-popover__sev--critical {
+  color: var(--bad);
+}
+.alerts-popover__sev--warning {
+  color: var(--warn);
+}
+.alerts-popover__sev--notice {
+  color: var(--blue);
+}
+.alerts-popover__circuit {
+  margin: 2px 0 0;
+  font-size: var(--fs-3xs);
+  color: var(--muted);
+}
+.alerts-popover__link {
+  color: var(--accent-text);
+  font-weight: 700;
+}
+.alerts-popover__more {
+  margin-top: 4px;
+  font-size: var(--fs-3xs);
+  color: var(--muted-2);
+}
+.alerts-popover__more summary {
+  cursor: pointer;
+}
+.alerts-popover__history {
+  margin: 4px 0 0;
+  padding-left: var(--sp-4);
+}
+.alerts-popover__detail {
+  margin: 4px 0 0;
+  font-family: 'IBM Plex Mono', monospace;
+  overflow-wrap: anywhere;
+}
+.alerts-popover__done {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-xs);
+  color: var(--txt);
+  border-bottom: 1px solid var(--border-faint);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.alerts-popover__undo {
+  border: none;
+  background: none;
+  color: var(--accent-text);
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
 }
 .alerts-popover__body {
   margin: 2px 0 0;
@@ -10046,6 +10120,7 @@ button.space-plan__pin {
   .control-plan-btn,
   .outlet-socket-toggle,
   .alerts-popover__ack,
+  .alerts-popover__undo,
   .analytics-energy-period,
   .automation-filter-chip,
   /*

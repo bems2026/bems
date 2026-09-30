@@ -198,6 +198,34 @@ async function readDeviceLatest(device) {
   return rows.find((r) => r.device_id === device.id) ?? null;
 }
 
+/** The meters whose two channels the bridge demuxes: `channel_demux` in the site's config. */
+const DEMUXED_DEVICE_IDS = new Set((SITE.channel_demux ?? []).flatMap((pair) => pair.devices));
+
+/**
+ * A setting on a demuxed meter goes to the clamp this circuit is on RIGHT NOW, or nowhere — RM-152.
+ *
+ * The bridge swaps every per-channel dp on READ while the meter reports its clamps swapped
+ * (`shared/channelDemux.mjs`), but the write route (`node-red-bridge/capabilityRoutePlan.mjs`)
+ * addresses the physical dp. So during a swapped spell a power limit written for C.O Yellow would
+ * land on the lighting branch's clamp: the other circuit, with no error anywhere. Refused unless the
+ * latest reading says `direct`. An assignment that cannot be read is refused too, because it cannot
+ * be checked. Refused before anything is recorded, like the other validation refusals.
+ */
+async function channelSwapRefusal(device, cmd) {
+  if (cmd.action !== 'set' || !DEMUXED_DEVICE_IDS.has(device.id)) return null;
+  const latest = await readDeviceLatest(device).catch(() => null);
+  const assignment = latest?.channel_map?.assignment ?? latest?.capabilities?.channel_map?.assignment ?? null;
+  if (assignment === 'direct') return null;
+  return {
+    error: 'channels_not_direct',
+    code: 'channels_not_direct',
+    detail:
+      assignment === 'swapped'
+        ? 'This meter is reporting its two clamps swapped right now, so a setting sent for this circuit would reach the other one. Nothing was sent. Try again once the meter reads direct.'
+        : 'Could not confirm which clamp this meter is attributing to this circuit right now, so nothing was sent.',
+  };
+}
+
 /**
  * Whether the aircon's full state can reach the vendor cloud from here — for the Control page, so
  * it can say "this needs the cloud, and there is none" before somebody presses Send rather than
@@ -610,6 +638,8 @@ async function handleCommand(req, res, token) {
 
   const { cmd } = validated;
   const device = DEVICE_REGISTRY.find((d) => d.id === cmd.device_id); // already validated to exist
+  const swapped = await channelSwapRefusal(device, cmd);
+  if (swapped) return sendJson(res, 409, swapped);
   const acceptedAtMs = Date.now();
   const ack = buildAck(cmd, acceptedAtMs);
 
