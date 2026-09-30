@@ -1,0 +1,29 @@
+# iBEMS RM-149: the weekly backup of the database into file storage, and a restore drill.
+#
+# Exports every table server/backup.mjs keeps, puts it in the private bucket beside the sealed raw
+# days and on this machine, reads every copy back, keeps eight weeks, and restores one sealed day
+# at random to prove the off-edge copy still restores. A failure goes to the phone (NTFY_TOPIC).
+# See server/backupCycle.mjs.
+#
+# Install (as root):
+#   cp server/ibems-backup.service server/ibems-backup.timer /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now ibems-backup.timer
+# Run once now:  systemctl start ibems-backup   then   journalctl -u ibems-backup
+#
+# Runs as the repo's user: it reads server/.env and the archive, and writes ~/backups/ibems-weekly.
+
+[Unit]
+Description=iBEMS: weekly backup of the database into file storage, and a restore drill
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=bems
+Group=bems
+WorkingDirectory=/home/bems/bems
+EnvironmentFile=/home/bems/bems/server/.env
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning server/backup-cycle.mjs --apply
+SyslogIdentifier=ibems-backup
+Nice=10
+TimeoutStartSec=30min

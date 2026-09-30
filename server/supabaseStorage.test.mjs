@@ -56,3 +56,28 @@ test('a download comes back as bytes', async () => {
   const bytes = await makeStorageClient({ url: 'https://db.example', serviceRoleKey: 'k', fetchImpl }).download('b', 'p');
   assert.deepEqual([...bytes], [1, 2, 3]);
 });
+
+test('a listing asks for one folder, by name, and pages past the first thousand', async () => {
+  // RM-149's weekly backups rotate by listing their folder. Storage returns at most `limit` entries
+  // and says nothing when it stops there, so a full page means ask again.
+  const pages = [Array.from({ length: 1000 }, (_, i) => ({ name: `a${i}`, id: String(i) })), [{ name: 'last', id: 'x' }]];
+  const { calls, fetchImpl } = network(() => new Response(JSON.stringify(pages.shift() ?? []), { status: 200 }));
+  const storage = makeStorageClient({ url: 'https://db.example', serviceRoleKey: 'k', fetchImpl });
+  const entries = await storage.list('ibems-archive', 'site/backup');
+  assert.equal(entries.length, 1001);
+  assert.equal(calls[0].url, 'https://db.example/storage/v1/object/list/ibems-archive');
+  assert.equal(calls[0].init.method, 'POST');
+  assert.deepEqual(JSON.parse(calls[0].init.body), { prefix: 'site/backup', limit: 1000, offset: 0, sortBy: { column: 'name', order: 'asc' } });
+  assert.equal(JSON.parse(calls[1].init.body).offset, 1000);
+});
+
+test('removing names each object, and nothing is sent for an empty list', async () => {
+  const { calls, fetchImpl } = network(() => new Response('[]', { status: 200 }));
+  const storage = makeStorageClient({ url: 'https://db.example', serviceRoleKey: 'k', fetchImpl });
+  await storage.remove('ibems-archive', []);
+  assert.equal(calls.length, 0);
+  await storage.remove('ibems-archive', ['site/backup/2026-08-01/sites.ndjson.gz']);
+  assert.equal(calls[0].url, 'https://db.example/storage/v1/object/ibems-archive');
+  assert.equal(calls[0].init.method, 'DELETE');
+  assert.deepEqual(JSON.parse(calls[0].init.body), { prefixes: ['site/backup/2026-08-01/sites.ndjson.gz'] });
+});

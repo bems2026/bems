@@ -58,6 +58,31 @@ export function makeStorageClient({ url, serviceRoleKey, fetchImpl = fetch, time
         throw err;
       }
     },
+    /**
+     * The entries directly under `prefix` (a folder: sub-folders come back with `id: null`). Storage
+     * stops at `limit` without saying so, so a full page means ask for the next.
+     */
+    async list(bucket, prefix) {
+      const out = [];
+      for (let offset = 0; ; offset += 1000) {
+        const res = await request('POST', `/object/list/${encodeURIComponent(bucket)}`, {
+          body: JSON.stringify({ prefix, limit: 1000, offset, sortBy: { column: 'name', order: 'asc' } }),
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const page = await res.json();
+        out.push(...page);
+        if (page.length < 1000) return out;
+      }
+    },
+    /** Deletes the named objects. Only the RM-149 backup rotation calls this; sealed days are never removed. */
+    async remove(bucket, paths) {
+      if (paths.length === 0) return [];
+      const res = await request('DELETE', `/object/${encodeURIComponent(bucket)}`, {
+        body: JSON.stringify({ prefixes: paths }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      return await res.json();
+    },
     async createBucket(id) {
       await request('POST', '/bucket', {
         body: JSON.stringify({ id, name: id, public: false }),

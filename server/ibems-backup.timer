@@ -1,0 +1,17 @@
+# Fires server/backup-cycle.mjs. See ibems-backup.service for install steps.
+#
+# Weekly, early on Sunday, when nobody is changing configuration and the office is empty. Persistent,
+# so a week the Pi was off at that hour runs at the next boot rather than being skipped; the delay
+# keeps it off the minute every other timer and the ingest tick land on.
+
+[Unit]
+Description=iBEMS: weekly backup into file storage, Sunday early morning
+
+[Timer]
+OnCalendar=Sun *-*-* 03:30:00
+RandomizedDelaySec=20min
+Persistent=true
+Unit=ibems-backup.service
+
+[Install]
+WantedBy=timers.target

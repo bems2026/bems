@@ -121,7 +121,7 @@ export async function fetchAll({ fetchPage, table, order, pageSize = PAGE_SIZE }
   }
 }
 
-function makePageFetcher({ url, serviceRoleKey, timeoutMs = 30_000 }) {
+export function makePageFetcher({ url, serviceRoleKey, timeoutMs = 30_000 }) {
   const base = url.replace(/\/+$/, '');
   return async ({ table, order, from, to }) => {
     const endpoint = `${base}/rest/v1/${table}?select=*&order=${encodeURIComponent(order)}.asc`;

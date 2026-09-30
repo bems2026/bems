@@ -14,7 +14,11 @@ const healthy = () => ({
     NODE_RED_ADMIN_USER: 'set',
     NODE_RED_ADMIN_PASS: 'set',
   },
-  database: { reachable: true, siteRowFound: true },
+  database: {
+    reachable: true,
+    siteRowFound: true,
+    usage: { databaseBytes: 135e6, storageBytes: 8e6, databaseQuotaBytes: 500e6, storageQuotaBytes: 1e9 },
+  },
   vendor: { authenticated: true, error: null },
   network: { distinctDevices: 6 },
   bridge: { reachable: true, deviceCount: 6, expectedCount: 6, lanExposed: false, exposedOn: null },
@@ -434,6 +438,52 @@ test('free disk under 10 GB is a warning and under 2 GB an error, because the ar
   assert.equal(find(assessDeployment(obs), 'disk_free').level, LEVELS.ERROR);
   obs.host.disk = null;
   assert.equal(find(assessDeployment(obs), 'disk_free').level, LEVELS.UNCHECKED);
+});
+
+test('the database is a warning at 70 % of its cap and an error at 90 %, because above it the project turns read-only', () => {
+  // RM-149. A Free project above 500 MB stops taking writes, the edge's own included, and returns to
+  // read-write only once it is back under: the warning has to come while there is room to act.
+  const obs = healthy();
+  const ok = find(assessDeployment(obs), 'db_size');
+  assert.equal(ok.level, LEVELS.OK);
+  assert.match(ok.detail, /135 of 500 MB/);
+  obs.database.usage = { ...obs.database.usage, databaseBytes: 360e6 };
+  assert.equal(find(assessDeployment(obs), 'db_size').level, LEVELS.WARN);
+  obs.database.usage = { ...obs.database.usage, databaseBytes: 460e6 };
+  const full = find(assessDeployment(obs), 'db_size');
+  assert.equal(full.level, LEVELS.ERROR);
+  assert.match(full.fix, /read-only/);
+  assert.match(full.fix, /never VACUUM FULL/i, 'the one remedy that makes it worse is named');
+});
+
+test('file storage is a warning at 70 % and an error at 90 %, because the sealed days and backups live there', () => {
+  const obs = healthy();
+  assert.equal(find(assessDeployment(obs), 'storage_size').level, LEVELS.OK);
+  obs.database.usage = { ...obs.database.usage, storageBytes: 750e6 };
+  assert.equal(find(assessDeployment(obs), 'storage_size').level, LEVELS.WARN);
+  obs.database.usage = { ...obs.database.usage, storageBytes: 950e6 };
+  assert.equal(find(assessDeployment(obs), 'storage_size').level, LEVELS.ERROR);
+});
+
+test('sizes are unchecked when not read, a warning when phase50 is missing, and skipped when the database is down', () => {
+  const obs = healthy();
+  obs.database.usage = null;
+  assert.equal(find(assessDeployment(obs), 'db_size').level, LEVELS.UNCHECKED);
+  assert.equal(find(assessDeployment(obs), 'storage_size').level, LEVELS.UNCHECKED);
+  obs.database.usage = { missing: true };
+  const missing = find(assessDeployment(obs), 'db_size');
+  assert.equal(missing.level, LEVELS.WARN);
+  assert.match(missing.fix, /phase50/);
+  obs.database = { reachable: false, siteRowFound: null, usage: null };
+  assert.equal(find(assessDeployment(obs), 'db_size').level, LEVELS.SKIPPED);
+  assert.equal(find(assessDeployment(obs), 'storage_size').level, LEVELS.SKIPPED);
+});
+
+test('the plan\'s caps come from the environment, and default to the Free plan\'s', async () => {
+  const { planQuotas } = await import('../scripts/preflight.mjs');
+  assert.deepEqual(planQuotas({}), { databaseQuotaBytes: 500e6, storageQuotaBytes: 1e9 });
+  assert.deepEqual(planQuotas({ SUPABASE_DB_QUOTA_MB: '8000', SUPABASE_STORAGE_QUOTA_MB: '100000' }), { databaseQuotaBytes: 8000e6, storageQuotaBytes: 100000e6 });
+  assert.deepEqual(planQuotas({ SUPABASE_DB_QUOTA_MB: 'lots' }), { databaseQuotaBytes: 500e6, storageQuotaBytes: 1e9 });
 });
 
 test('the context flush is read from settings.js as Node-RED would, ignoring the commented examples', async () => {

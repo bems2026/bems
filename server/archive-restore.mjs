@@ -15,15 +15,13 @@
  */
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import zlib from 'node:zlib';
-import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { loadDotEnv } from '../node-red-bridge/nodeRedAdmin.mjs';
 import { makeStorageClient } from './supabaseStorage.mjs';
-import { openArchive, STREAMS } from './archiveDb.mjs';
-import { rowsFromCsv, sealDay, storagePathFor, dayStartMs, utcDay } from './archiveSeal.mjs';
+import { openArchive } from './archiveDb.mjs';
+import { dayStartMs, utcDay } from './archiveSeal.mjs';
+import { drillDay, restoreDay } from './archiveDrill.mjs';
 import { SITE } from '../shared/registry.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -45,52 +43,23 @@ if (!url || !key) {
 }
 const storage = makeStorageClient({ url, serviceRoleKey: key });
 
-/** One day's streams into `archive`; returns what was found and what it hashed to. */
-async function restoreDay(archive, day) {
-  const out = [];
-  for (const stream of Object.keys(STREAMS)) {
-    const where = storagePathFor({ siteId: SITE.id, day, stream });
-    let bytes;
-    try {
-      bytes = await storage.download(BUCKET, where);
-    } catch (err) {
-      if (err.status === 400 || err.status === 404) { out.push({ stream, missing: true }); continue; }
-      throw err;
-    }
-    const csv = zlib.gunzipSync(bytes).toString('utf8');
-    const rows = rowsFromCsv(stream, csv);
-    for (const origin of new Set(rows.map((r) => r.origin))) {
-      archive.insertRows(stream, rows.filter((r) => r.origin === origin).map(({ origin: _o, ...r }) => r), { origin });
-    }
-    out.push({ stream, rows: rows.length, sha256: crypto.createHash('sha256').update(csv).digest('hex') });
-  }
-  return out;
-}
-
 const day = arg('day', null);
 if (day) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ibems-restore-drill-'));
-  const scratch = openArchive(path.join(dir, 'archive.sqlite'));
   let live = null;
   try { live = openArchive(LIVE_ARCHIVE, { readOnly: true }); } catch { /* the drill still compares the file with itself */ }
-  let failed = false;
+  let result;
   try {
-    for (const r of await restoreDay(scratch, day)) {
-      if (r.missing) { console.log(`${day} ${r.stream}: not in the bucket`); continue; }
-      const resealed = sealDay({ archive: scratch, stream: r.stream, day }).sha256;
-      const recorded = live?.sealOf(day, r.stream)?.sha256 ?? null;
-      const ok = resealed === r.sha256 && (recorded === null || recorded === r.sha256);
-      failed ||= !ok;
-      console.log(`${ok ? 'ok ' : 'NO '} ${day} ${r.stream}: ${r.rows} row(s) restored; downloaded ${r.sha256.slice(0, 12)}, ` +
-        `re-sealed ${resealed.slice(0, 12)}, recorded ${recorded ? recorded.slice(0, 12) : '— (no live archive here)'}`);
-    }
+    result = await drillDay({ storage, bucket: BUCKET, siteId: SITE.id, day, liveArchive: live });
   } finally {
-    scratch.close();
     live?.close();
-    fs.rmSync(dir, { recursive: true, force: true });
   }
-  console.log(failed ? '\nRESTORE DRILL FAILED' : '\nRestore drill passed: the day came back exactly as it was sealed.');
-  process.exitCode = failed ? 1 : 0;
+  for (const r of result.streams) {
+    if (r.missing) { console.log(`${r.ok ? '' : 'NO  '}${day} ${r.stream}: not in the bucket${r.ok ? '' : ', though the archive recorded it uploaded'}`); continue; }
+    console.log(`${r.ok ? 'ok ' : 'NO '} ${day} ${r.stream}: ${r.rows} row(s) restored; downloaded ${r.sha256.slice(0, 12)}, ` +
+      `re-sealed ${r.resealed.slice(0, 12)}, recorded ${r.recorded ? r.recorded.slice(0, 12) : '— (no live archive here)'}`);
+  }
+  console.log(result.ok ? '\nRestore drill passed: the day came back exactly as it was sealed.' : '\nRESTORE DRILL FAILED');
+  process.exitCode = result.ok ? 0 : 1;
 } else {
   const since = arg('since', null);
   const until = arg('until', utcDay(Date.now()));
@@ -112,7 +81,7 @@ if (day) {
     const target = openArchive(into);
     try {
       for (const d of days) {
-        const found = await restoreDay(target, d);
+        const found = await restoreDay({ storage, bucket: BUCKET, siteId: SITE.id, archive: target, day: d });
         console.log(`${d}: ${found.map((r) => (r.missing ? `${r.stream} missing` : `${r.stream} ${r.rows}`)).join(', ')}`);
       }
     } finally {

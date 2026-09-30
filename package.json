@@ -31,6 +31,7 @@
     "ingest": "node server/ingest.mjs",
     "scheduler": "node server/scheduler.mjs",
     "backup": "node server/backup.mjs",
+    "backup:cycle": "node --disable-warning=ExperimentalWarning server/backup-cycle.mjs",
     "archive:backfill": "node server/archive-backfill.mjs",
     "archive:storage": "node server/archive-storage.mjs",
     "archive:reset": "node server/archive-reset.mjs",

@@ -38,6 +38,21 @@ export const LEVELS = Object.freeze({
   SKIPPED: 'skipped',
 });
 
+/**
+ * The plan's caps, in the decimal megabytes the hosting dashboard shows. The defaults are the Free
+ * plan's: 500 MB of database, 1 GB of file storage. A deployment on another plan sets its own.
+ */
+export function planQuotas(env) {
+  const mb = (raw, fallback) => {
+    const n = Number(raw);
+    return (raw !== undefined && raw !== '' && Number.isFinite(n) && n > 0 ? n : fallback) * 1e6;
+  };
+  return {
+    databaseQuotaBytes: mb(env.SUPABASE_DB_QUOTA_MB, 500),
+    storageQuotaBytes: mb(env.SUPABASE_STORAGE_QUOTA_MB, 1000),
+  };
+}
+
 /** Keys that must carry a real value before anything works. */
 const REQUIRED_SUPABASE = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
 const REQUIRED_TUYA = ['TUYA_ACCESS_ID', 'TUYA_ACCESS_SECRET'];
@@ -154,6 +169,46 @@ export function assessDeployment(obs) {
           ? `no sites row for "${siteId}"`
           : 'not checked',
     'Run `npm run site:sql` and paste what it prints — it builds the statement from this site’s own site.mjs, so the id cannot drift from SITE.id. Without the row every site-scoped write is orphaned and nothing else reports the problem.',
+  );
+
+  /**
+   * How close the project is to its plan's caps — RM-149. Above the database cap a Free project turns
+   * read-only, the edge's own writes included, and returns to read-write only once it is back under,
+   * so the warning has to come while there is room to act. Read through `usage_bytes()` (phase50).
+   */
+  const usage = database.usage ?? null;
+  const sizeCheck = (id, title, bytes, quota, fix) => {
+    const pct = bytes / quota;
+    const mb = (n) => Math.round(n / 1e6).toLocaleString('en-US');
+    add(
+      id,
+      title,
+      dbLevel !== LEVELS.OK ? LEVELS.SKIPPED
+        : usage === null ? LEVELS.UNCHECKED
+          : usage.missing ? LEVELS.WARN
+            : pct >= 0.9 ? LEVELS.ERROR : pct >= 0.7 ? LEVELS.WARN : LEVELS.OK,
+      dbLevel !== LEVELS.OK ? 'not attempted — the database was not reached'
+        : usage === null ? 'not checked'
+          : usage.missing ? 'usage_bytes() is not in the database'
+            : `${mb(bytes)} of ${mb(quota)} MB (${Math.round(pct * 100)} %)`,
+      usage?.missing
+        ? 'Apply supabase/phase50_request_budget.sql in the SQL editor; it adds usage_bytes(), which this check reads.'
+        : fix,
+    );
+  };
+  sizeCheck(
+    'db_size',
+    'Database size within the plan',
+    usage?.databaseBytes,
+    usage?.databaseQuotaBytes,
+    'Above the cap the project turns read-only. Raw rows keep RAW_RETENTION_DAYS in the cloud (shared/retention.mjs) and the edge archive keeps them all, so the window can be shortened with INGEST_RETENTION_DAYS and the janitor frees the rest. Never VACUUM FULL near the cap: it builds a second copy of the table before it frees the first. See docs/storage-contract.md; the plan\'s cap is SUPABASE_DB_QUOTA_MB.',
+  );
+  sizeCheck(
+    'storage_size',
+    'File storage within the plan',
+    usage?.storageBytes,
+    usage?.storageQuotaBytes,
+    'The sealed days (about 0.2 MB a day) and the weekly backups live here. Old backups can go; sealed days are the only off-edge copy of raw history, so they stay. Keep fewer weeks with BACKUP_KEEP_WEEKS, or raise the plan. The plan\'s cap is SUPABASE_STORAGE_QUOTA_MB.',
   );
 
   // --- vendor account ------------------------------------------------------
@@ -323,6 +378,7 @@ export function assessDeployment(obs) {
    * The recovery timers are armed — RM-131. `ibems-wifi-prefer` returns the Pi to the device SSID
    * after a boot that beat the access point; `ibems-lan-map` remembers who announced from where;
    * `ibems-fleet-recover` restarts Node-RED when a device is reachable but its node has given up.
+   * Since RM-149 `ibems-backup` is here too: every `server/ibems-*.timer` is, by construction.
    * A timer waiting for its next tick reports `active`; anything else is not armed.
    */
   const timers = host.timers ?? {};
@@ -336,7 +392,7 @@ export function assessDeployment(obs) {
       : timersDown.length === 0
         ? `${Object.keys(timers).length} timer(s) active`
         : timersDown.map(([name, state]) => `${name} is ${state ?? 'unknown'}`).join('; '),
-    'sudo cp server/ibems-*.timer server/ibems-*.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now ibems-wifi-prefer.timer ibems-lan-map.timer ibems-fleet-recover.timer. What each one recovers, and what an outage does without them, is docs/outage-recovery.md.',
+    'sudo cp server/ibems-*.timer server/ibems-*.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now ibems-wifi-prefer.timer ibems-lan-map.timer ibems-fleet-recover.timer ibems-backup.timer. What each recovery timer recovers, and what an outage does without them, is docs/outage-recovery.md; ibems-backup is the weekly database backup (docs/backup-policy.md).',
   );
 
   /**
@@ -558,7 +614,7 @@ if (process.argv[1] && process.argv[1].endsWith('preflight.mjs')) {
   }
 
   // --- database ------------------------------------------------------------
-  const database = { reachable: null, siteRowFound: null };
+  const database = { reachable: null, siteRowFound: null, usage: null };
   if (env.SUPABASE_URL === 'set' && env.SUPABASE_SERVICE_ROLE_KEY === 'set') {
     const url = valueOf('SUPABASE_URL');
     const key = valueOf('SUPABASE_SERVICE_ROLE_KEY');
@@ -576,6 +632,26 @@ if (process.argv[1] && process.argv[1].endsWith('preflight.mjs')) {
       }
     } catch {
       database.reachable = false;
+    }
+    // RM-149: the two sizes the plan caps. 404 is phase50 not applied, which is an answer; anything
+    // else leaves them unchecked.
+    if (database.reachable) {
+      try {
+        const res = await fetch(`${url}/rest/v1/rpc/usage_bytes`, {
+          method: 'POST',
+          headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+          body: '{}',
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (res.status === 404) database.usage = { missing: true };
+        else if (res.ok) {
+          const body = await res.json();
+          const quotas = planQuotas({ SUPABASE_DB_QUOTA_MB: valueOf('SUPABASE_DB_QUOTA_MB'), SUPABASE_STORAGE_QUOTA_MB: valueOf('SUPABASE_STORAGE_QUOTA_MB') });
+          database.usage = { databaseBytes: Number(body.database), storageBytes: Number(body.storage), ...quotas };
+        }
+      } catch {
+        // unchecked
+      }
     }
   }
 
