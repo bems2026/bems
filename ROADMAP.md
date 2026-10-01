@@ -4,7 +4,7 @@
 - Reports → Daily → Circuits described its 24 hour columns as "Energy per day for 4 circuits, stacked. All 24 days were
   recorded." It now reads "Energy per hour, 00:00 to 23:59, for 4 circuits, stacked. All 24 hours were recorded.", as
   the building's own hourly chart does, and an outage is labelled in hours. The PDF's hourly circuit chart said the
-  same and is fixed with it. Not yet built on the edge.
+  same and is fixed with it. Built on the edge at 16:47 (`index-DgWBFWtR.js`), and the served bundle carries it.
 
 **Earlier, 2026-10-01 — RM-155 done: each circuit's energy is banked across a meter reset.
 phase53 is applied (15:56) and read back.**
@@ -4574,7 +4574,10 @@ RM-124 drew a day's circuits hour by hour through the stacked per-day chart, and
 days: on Reports → Daily → Circuits (Wed 23 Sep) a screen reader heard "Energy per day for 4 circuits, stacked. All 24
 days were recorded."
 
-- [x] **RM-156** `circuitDailyEnergyChart` takes `unit: 'hour'`. **Built and tested; not yet built on the edge.**
+- [x] **RM-156** `circuitDailyEnergyChart` takes `unit: 'hour'`. **Built, tested, and built on the edge.**
+      - **Deployed 2026-10-01 at 16:47** from `7f3d08c`, whose only frontend change since the 15:04 build is this one.
+        The served page went from `index-l9JFhuER.js` to `index-DgWBFWtR.js`, and the served bundle contains the new
+        wording. Nothing to restart: no `server/`, `shared/` or bridge file changed. The kiosk reloads itself (RM-043).
       - **The words.** "Energy per hour, 00:00 to 23:59, for N circuits, stacked." then "All 24 hours were recorded."
         or "K of 24 hours were not recorded and are drawn as gaps.", as `hourlyEnergyChart` words it. A gap of several
         hours is labelled "K hours, no data". The default stays `'day'`, so the weekly and monthly charts read as
