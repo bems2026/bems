@@ -2491,8 +2491,10 @@ end \$\$;
 SQL
 }
 
+# The first paste as one transaction, which is how the SQL editor runs it (a failure on 2026-10-01 rolled the
+# whole paste back); the second statement by statement.
 echo "== phase53: applying it over the stored rows, twice =="
-psql < "$HERE/phase53_banked_register.sql" >/dev/null
+psql -1 < "$HERE/phase53_banked_register.sql" >/dev/null
 psql < "$HERE/phase53_banked_register.sql" >/dev/null
 echo "   ok"
 

@@ -36,7 +36,8 @@
 --      `period_reports` gains `energy_kwh_before`, written only by step 5.
 --   2. `register_gain(numeric[])`: what an ordered run of readings rose by, a fall adding nothing.
 --   3. Before anything is replaced, every stored period that still holds raw minutes is counted with
---      the functions as they stand, into a temporary table.
+--      the functions as they stand, and kept in a setting of this session (`ibems.phase53_before`), not a
+--      table — see NO TABLE below.
 --   4. `report_device_daily_energy` and `report_hour_energy` bank the register, and
 --      `roll_up_and_prune_readings` keeps the three numbers. Each is phase47's text with only the lines
 --      that carry the register changed; test/phase53-banked-register-schema.test.mjs holds that.
@@ -53,9 +54,15 @@
 -- (+0.02) and 29 Sep (+0.03), and for any stored week or month that holds those days; nothing else.
 -- The four circuits' week of 21 Sep then reads about 80.60 kWh against the counter's 80.53.
 --
+-- NO TABLE. The first version kept step 3 in a temporary table and dropped it at the end. The SQL editor
+-- stops on a script that creates a table without row level security, and its "Run and enable RLS" appends
+-- an `alter table … enable row level security` after the script — after the drop — so the paste failed and
+-- rolled back whole (2026-10-01; nothing was applied). This file creates no table and drops nothing.
+--
 -- SAFE TO RE-RUN. Columns are added `if not exists`; every function keeps its signature and OUT columns;
 -- a second paste counts step 3 with the new functions, so nothing changes and nothing is restated. No
--- policy, trigger or constraint is created, and `readings` is not altered. Apply by hand in the Supabase
+-- policy, trigger or constraint is created, and `readings` is not altered. It applies the same as one
+-- transaction (as the SQL editor runs it) or statement by statement. Apply by hand in the Supabase
 -- SQL editor; rehearsed by `supabase/rehearse.sh`, which applies it twice. APPLY BEFORE ABOUT 2026-10-07,
 -- when the rollup prunes 23 Sep's minutes and that fall can no longer be banked from the cloud.
 -- =============================================================================
@@ -90,17 +97,10 @@ grant  execute on function public.register_gain(numeric[]) to authenticated, ser
 -- stand — before any of them is replaced. Only a period whose window still holds raw minutes can change:
 -- an hour already rolled up banks to the rule it was stored by.
 -- =============================================================================
-drop table if exists phase53_before;
-create temporary table phase53_before (
-  period       text,
-  period_start date,
-  device_id    text,
-  energy_kwh   numeric
-);
-
 do $$
 declare
   r record;
+  snap jsonb := '[]'::jsonb;
 begin
   for r in
     select distinct p.period, p.period_start
@@ -109,11 +109,16 @@ begin
      where exists (select 1 from readings x where x.ts >= w.win_start and x.ts < w.win_end)
      order by 1, 2
   loop
-    insert into phase53_before (period, period_start, device_id, energy_kwh)
-    select r.period, r.period_start, x.device_id, sum(x.energy_kwh)
-      from public.report_device_daily_energy(r.period, r.period_start) x
-     group by x.device_id;
+    snap := snap || coalesce((
+      select jsonb_agg(jsonb_build_object('period', r.period, 'period_start', r.period_start,
+                                          'device_id', g.device_id, 'energy_kwh', g.e))
+        from (select x.device_id, sum(x.energy_kwh) as e
+                from public.report_device_daily_energy(r.period, r.period_start) x
+               group by x.device_id) g
+    ), '[]'::jsonb);
   end loop;
+  -- For this session, not this transaction: the same whether the paste runs as one or statement by statement.
+  perform set_config('ibems.phase53_before', snap::text, false);
 end $$;
 
 -- =============================================================================
@@ -570,8 +575,13 @@ declare
   r record;
   n int;
   total int := 0;
+  snap jsonb := coalesce(nullif(current_setting('ibems.phase53_before', true), '')::jsonb, '[]'::jsonb);
 begin
-  for r in select distinct b.period, b.period_start from phase53_before b order by 1, 2 loop
+  for r in
+    select distinct b.period, b.period_start
+      from jsonb_to_recordset(snap) as b(period text, period_start date, device_id text, energy_kwh numeric)
+     order by 1, 2
+  loop
     with banked as materialized (
       select x.device_id        as dev,
              sum(x.energy_kwh)  as e,
@@ -585,7 +595,7 @@ begin
            energy_removed_kwh = case when f.removed > 0.001 then f.removed end,
            energy_restated_at = now()
       from banked f
-      join phase53_before b
+      join jsonb_to_recordset(snap) as b(period text, period_start date, device_id text, energy_kwh numeric)
         on b.period = r.period and b.period_start = r.period_start and b.device_id = f.dev
      where p.period = r.period
        and p.period_start = r.period_start
@@ -598,9 +608,8 @@ begin
     total := total + n;
   end loop;
   raise notice 'phase53: restated % stored period_reports row(s)', total;
+  perform set_config('ibems.phase53_before', '', false);
 end $$;
-
-drop table phase53_before;
 
 -- So the API sees the new columns now, rather than after its next schema reload.
 notify pgrst, 'reload schema';

@@ -166,24 +166,31 @@ test('the grants are phase47\'s, restated', () => {
   }
 });
 
-test('the old figures are counted before any function is replaced', () => {
-  const snap = sql.indexOf('insert into phase53_before');
-  assert.ok(snap > -1, 'no snapshot');
+test('the old figures are counted before any function is replaced, and kept for the session', () => {
+  const snap = sql.indexOf("perform set_config('ibems.phase53_before', snap::text, false);");
+  assert.ok(snap > -1, 'no snapshot, or one kept only for a transaction');
   for (const name of ['report_device_daily_energy', 'report_hour_energy', 'roll_up_and_prune_readings']) {
     assert.ok(snap < sql.indexOf(`create or replace function public.${name}(`), `${name} is replaced before the snapshot`);
   }
-  assert.match(sql, /create temporary table phase53_before/);
   assert.match(sql, /exists \(select 1 from readings x where x\.ts >= w\.win_start and x\.ts < w\.win_end\)/, 'only periods that still hold raw minutes');
+});
+
+test('nothing the SQL editor stops to ask about: no table created, nothing dropped', () => {
+  // Its "Run and enable RLS" appends a statement after the script; on 2026-10-01 that statement named a
+  // temporary table the script had already dropped, and the whole paste rolled back.
+  assert.doesNotMatch(sql, /create\s+(temporary\s+|temp\s+)?table/i);
+  assert.doesNotMatch(sql, /\bdrop\s+(table|function|column|schema)/i);
 });
 
 test('the restatement keeps the first figure, and touches only a row built by the old rule that banking changes', () => {
   const block = sql.slice(sql.lastIndexOf('do $$'));
+  assert.match(block, /current_setting\('ibems\.phase53_before', true\)/);
   assert.match(block, /energy_kwh_before\s*=\s*coalesce\(p\.energy_kwh_before, p\.energy_kwh\)/);
   assert.match(block, /energy_restated_at\s*=\s*now\(\)/);
   assert.match(block, /abs\(p\.energy_kwh - b\.energy_kwh\) <= 0\.0005/, 'the stored row must still be the old rule\'s figure');
   assert.match(block, /abs\(f\.e - b\.energy_kwh\) > 0\.0005/, 'a row banking leaves alone is not restated');
   assert.doesNotMatch(block, /generated_at\s*=|online_sample_count\s*=|peak_power_w\s*=/);
-  assert.match(sql, /drop table phase53_before;/);
+  assert.match(block, /set_config\('ibems\.phase53_before', '', false\)/, 'the session setting is cleared');
   assert.match(sql, /notify pgrst, 'reload schema';\s*$/);
 });
 

@@ -452,6 +452,12 @@ other four and none needed changing.
 - **The export.** "Every reading" marks clipped jumps by the same rule.
 
 **For the operator — apply phase53, before about 7 Oct:**
+- **The first paste failed, and applied nothing (2026-10-01).** The file kept its before-figures in a temporary
+  table and dropped it at the end. The SQL editor stopped on the table, and "Run and enable RLS" added a statement
+  after the script that named the dropped table. The error was `42P01 relation "phase53_before" does not exist`, and
+  the whole paste rolled back. Read back afterwards: no new column, no `register_gain`, 23 Sep still 11.21, no row
+  touched. The file now creates no table and drops nothing, so the editor has nothing to ask. Rehearsed both as one
+  transaction and statement by statement.
 - Paste `supabase/phase53_banked_register.sql` into the Supabase SQL editor and run it.
 - It should print **"phase53: restated N stored period_reports row(s)"**. N should be about 4: the C.O Yellow days of
   23, 26 and 29 Sep, and the week of 21 Sep, plus September if its month report was generated first.
@@ -4517,7 +4523,7 @@ is E-235 (the live minutes) and E-236 (the rehearsal); the finding is F-040; ADR
       - **Rejected on the live minutes:** a rate check on each reading, as the bridge's accumulator has. The registers
         report in bursts, and it took 0.82 kWh of real energy out of 24 Sep.
       - **Tests.**
-        - `test/phase53-banked-register-schema.test.mjs` (11): undo the register lines and each of the three
+        - `test/phase53-banked-register-schema.test.mjs` (12): undo the register lines and each of the three
           functions is phase47's, byte for byte.
         - The rehearsal (H, I, J, the restatement, both pastes), neutered twice (E-236).
 - [x] **RM-155b** The same rule in the browser (`src/lib/boundedEnergy.ts`). **Built and tested.**
