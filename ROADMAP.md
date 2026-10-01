@@ -442,7 +442,7 @@ other four and none needed changing.
 - **The Energy card is the sum of the circuits on every tab.** The building's own counter is the check, said in
   words with the days the two part.
 
-**For the operator.** Nothing to apply. Rebuild with `npm run baseline:build -- --write` only when the office's
+**Deployed 13:52 (`eb0fadc`).** **For the operator.** Nothing to apply. Rebuild with `npm run baseline:build -- --write` only when the office's
 routine or equipment changes; it now writes `baseline-days.mjs` too.
 
 **Noted for later, not done:** the SQL that rebuilds each circuit from hourly readings credits nothing around a
@@ -4408,7 +4408,9 @@ rows as of 06:32, reproduced every figure below.
 The operator rejected RM-153's Baseline tab on two counts. The baseline belongs where a period is chosen, read
 through the same tabs as any report. And its days were all the same averaged curve, nothing like a real report.
 They also asked why the Overview and Circuits printed different energy. Decisions are in ADR-0012 (amended) and
-ADR-0013; evidence is E-233 and E-234; the finding is F-039. The pasted brief's synthetic, stochastic model was
+ADR-0013; evidence is E-233 and E-234; the finding is F-039. **Deployed 2026-10-01 13:52 (`eb0fadc`, CI and Docs
+green):** built on the edge, which serves the new bundle; the three daemons restarted with no error; `npm run
+baseline:build` from the edge's checkout reproduced every figure on fresh rows. The pasted brief's synthetic, stochastic model was
 rejected by the operator in favour of real recorded days: its stated figures contradicted the meters.
 
 - [x] **RM-154a** One energy figure per period (`src/lib/periodEnergy.ts`, ADR-0013). **Built, tested, verified.**
