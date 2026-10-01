@@ -15,6 +15,8 @@ phase53 is applied (15:56) and read back.**
   (E-236).
 - **Read back live (E-237).** The week of 21 Sep reads 80.60 kWh on both tabs against the counter's 80.53, and 23 Sep
   reads 22.29. C.O Yellow carries a Restated badge ("was 11.21").
+- **phase54** then rewrote the three "jump removed" caveats still measured the old way, all L.O Yellow. 23 Sep now
+  says 5.03 kWh, as its week does (E-238, E-239). Both migrations are applied.
 
 **Earlier, 2026-10-01 — RM-154 done: the baseline is a period in the calendar, built from real days; one energy figure
 per period.**
@@ -465,13 +467,13 @@ other four and none needed changing.
 - **The page:** 80.60 kWh on both tabs for the week of 21 Sep, the counter's 80.53 stated beside it, and the days
   summing to it. 23 Sep reads 22.29, and the counter note no longer names that day.
 
-**Then fixed in phase54 (RM-155d), awaiting the operator.** L.O Yellow's 23 Sep day row still said "a 4.75 kWh
+**Then fixed in phase54 (RM-155d), applied by the operator and read back (E-239).** L.O Yellow's 23 Sep day row said "a 4.75 kWh
 jump", while its week said 5.03. Its energy did not change, so phase53 left the row and its old-style caveat alone. 5.03
 is the jump itself (0.290 -> 5.322).
 - **The live rows (E-238).** Measured against the function, three rows carry a caveat measured the old way: that day
   (4.753 -> 5.032), and 8 Sep with the week of 7 Sep (76.789 -> 77.197). All three are L.O Yellow.
-- **For the operator.** Paste `supabase/phase54_removed_restated.sql` into the SQL editor and run it. "Success. No rows
-  returned" is the editor's normal answer.
+- **Applied 2026-10-01, read back.** Exactly those three rows changed, and nothing else on them. The page now says "a
+  5.03 kWh jump" on 23 Sep, the same as its week, and "77.20" for 8 Sep and the week of 7 Sep.
 - **What it touches.** Only the caveat, keeping the old one in `energy_removed_kwh_before`. Never the energy.
 
 **What the operator was asked (kept for the record):**
@@ -4584,8 +4586,8 @@ days were recorded."
         description). All three failed on the old wording first.
       - **Not seen on the page:** the Reports page needs a signed-in session, so the page's wiring is checked by the
         type-check and the PDF test, not by a rendered page.
-- [x] **RM-155d** [`supabase/phase54_removed_restated.sql`](supabase/phase54_removed_restated.sql). **Built and
-      rehearsed; awaiting the operator.**
+- [x] **RM-155d** [`supabase/phase54_removed_restated.sql`](supabase/phase54_removed_restated.sql). **Built,
+      rehearsed, applied by the operator 2026-10-01 and read back (E-239).**
       - **The fix.** A stored row that carries a "jump removed" caveat gets the figure as phase53's rule measures it,
         written as the generator writes it. The old figure stays in `energy_removed_kwh_before`.
       - **Guards.** Only rows whose energy is still the rule's, and only when the figure moves by more than 1 Wh. No
