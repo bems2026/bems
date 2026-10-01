@@ -221,6 +221,8 @@ Three things that are easy to get wrong here:
   three (`readings_hourly.energy_kwh_today_first`, `_last`, `energy_kwh_gain`), so an hour pruned later
   banks exactly as it did while raw. A register that never falls banks to its highest value.
   `period_reports.energy_kwh_before` keeps what a row said before phase53 restated it.
+  `removed_kwh` is now the clipped rises less their credits, which is exactly the jump not counted.
+  phase54 rewrote the stored caveats measured the old way, and `energy_removed_kwh_before` keeps them.
 - **Days are grouped in the site's timezone** (`Asia/Manila` by default). Grouping in UTC
   would split every device-day across two report-days and undercount the month's last day.
 - **Coverage travels with every figure.** Each row carries `online_sample_count` and

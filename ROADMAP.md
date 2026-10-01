@@ -465,9 +465,14 @@ other four and none needed changing.
 - **The page:** 80.60 kWh on both tabs for the week of 21 Sep, the counter's 80.53 stated beside it, and the days
   summing to it. 23 Sep reads 22.29, and the counter note no longer names that day.
 
-**Noted for later, not done:** L.O Yellow's 23 Sep day row still says "a 4.75 kWh jump", while its week says 5.03. Its
-energy did not change, so phase53 left the row alone, along with the removed figure the old rule had measured. 5.03 is
-the jump itself (0.290 -> 5.322).
+**Then fixed in phase54 (RM-155d), awaiting the operator.** L.O Yellow's 23 Sep day row still said "a 4.75 kWh
+jump", while its week said 5.03. Its energy did not change, so phase53 left the row and its old-style caveat alone. 5.03
+is the jump itself (0.290 -> 5.322).
+- **The live rows (E-238).** Measured against the function, three rows carry a caveat measured the old way: that day
+  (4.753 -> 5.032), and 8 Sep with the week of 7 Sep (76.789 -> 77.197). All three are L.O Yellow.
+- **For the operator.** Paste `supabase/phase54_removed_restated.sql` into the SQL editor and run it. "Success. No rows
+  returned" is the editor's normal answer.
+- **What it touches.** Only the caveat, keeping the old one in `energy_removed_kwh_before`. Never the energy.
 
 **What the operator was asked (kept for the record):**
 - **The first paste failed, and applied nothing (2026-10-01).** The file kept its before-figures in a temporary
@@ -4579,6 +4584,15 @@ days were recorded."
         description). All three failed on the old wording first.
       - **Not seen on the page:** the Reports page needs a signed-in session, so the page's wiring is checked by the
         type-check and the PDF test, not by a rendered page.
+- [x] **RM-155d** [`supabase/phase54_removed_restated.sql`](supabase/phase54_removed_restated.sql). **Built and
+      rehearsed; awaiting the operator.**
+      - **The fix.** A stored row that carries a "jump removed" caveat gets the figure as phase53's rule measures it,
+        written as the generator writes it. The old figure stays in `energy_removed_kwh_before`.
+      - **Guards.** Only rows whose energy is still the rule's, and only when the figure moves by more than 1 Wh. No
+        function, table or drop.
+      - **Expected live:** three L.O Yellow rows (E-238).
+      - **Tests.** `test/phase54-removed-restated-schema.test.mjs` (7) and the rehearsal (two pastes). Neutered: the
+        energy guard.
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 

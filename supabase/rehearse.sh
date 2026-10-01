@@ -2584,6 +2584,51 @@ delete from readings_hourly where device_id = 'mtr_bank';
 delete from readings where device_id = 'mtr_bank';
 SQL
 
+# ---- phase54: a stored "jump removed" caveat, measured as phase53 measures it (RM-155d) ------------------
+#
+# The phase42 block left July's stored rows with the caveat measured the old way: the week of 6 Jul says
+# 67.15 removed and July 97.05, where phase53's rule says 67.20 and 97.10 — the jump itself, 0.15 -> 67.40.
+# The week of 13 Jul (29.9) and the raw-minute week (50.00) are already right. One more row carries a caveat
+# beside energy these readings do not give, so it must be left alone. First paste as one transaction, as the
+# SQL editor runs it; the second statement by statement.
+echo "== phase54: restating old-style removed figures, twice =="
+psql <<'SQL' >/dev/null
+insert into period_reports (period, period_start, device_id, energy_kwh, energy_removed_kwh, peak_power_w, avg_power_w,
+                            online_sample_count, expected_sample_count, generated_at)
+values ('day', date '2026-07-06', 'mtr_jump', 5.00, 60.00, 60, 50, 360, 1440, timestamptz '2026-07-07 06:00:00+00')
+on conflict (period, period_start, device_id) do update
+  set energy_kwh = excluded.energy_kwh, energy_removed_kwh = excluded.energy_removed_kwh;
+SQL
+psql -1 < "$HERE/phase54_removed_restated.sql" >/dev/null
+psql < "$HERE/phase54_removed_restated.sql" >/dev/null
+psql <<'SQL'
+do $$
+declare
+  r record;
+  n int;
+begin
+  select * into r from period_reports where period = 'week' and period_start = date '2026-07-06' and device_id = 'mtr_jump';
+  assert r.energy_removed_kwh = 67.20 and r.energy_removed_kwh_before = 67.15 and r.energy_kwh = 2.20,
+    format('phase54: the week of 6 Jul says the jump, 67.20, and kept 67.15; got %s / %s / energy %s', r.energy_removed_kwh, r.energy_removed_kwh_before, r.energy_kwh);
+  select * into r from period_reports where period = 'month' and period_start = date '2026-07-01' and device_id = 'mtr_jump';
+  assert r.energy_removed_kwh = 97.10 and r.energy_removed_kwh_before = 97.05 and r.energy_kwh = 4.10,
+    format('phase54: July says 97.10 and kept 97.05; got %s / %s / energy %s', r.energy_removed_kwh, r.energy_removed_kwh_before, r.energy_kwh);
+  select * into r from period_reports where period = 'week' and period_start = date '2026-07-13' and device_id = 'mtr_jump';
+  assert r.energy_removed_kwh = 29.9 and r.energy_removed_kwh_before is null,
+    format('phase54: a caveat already right is not rewritten; got %s / %s', r.energy_removed_kwh, r.energy_removed_kwh_before);
+  select * into r from period_reports where period = 'week' and period_start = date '2026-07-06' and device_id = 'mtr_raw';
+  assert r.energy_removed_kwh = 50.00 and r.energy_removed_kwh_before is null, 'phase54: the raw-minute week is already right';
+  select * into r from period_reports where period = 'day' and period_start = date '2026-07-06' and device_id = 'mtr_jump';
+  assert r.energy_removed_kwh = 60.00 and r.energy_removed_kwh_before is null and r.energy_kwh = 5.00,
+    'phase54: a caveat beside energy these readings do not give is left alone';
+  select count(*) into n from period_reports where energy_removed_kwh_before is not null;
+  assert n = 2, format('phase54: exactly the two old-style caveats are restated, found %s', n);
+  raise notice 'phase54: old-style removed figures restated — assertions passed';
+end $$;
+
+delete from period_reports where period = 'day' and period_start = date '2026-07-06' and device_id = 'mtr_jump';
+SQL
+
 echo
 echo "== REHEARSAL PASSED =="
 echo "Every migration applied in order against PostgreSQL 16, and every function behaved as"
