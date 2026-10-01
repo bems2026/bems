@@ -28,7 +28,7 @@ For a power cut, go straight to [`outage-recovery.md`](outage-recovery.md).
 
 <!-- GENERATED from each chapter's fault table by scripts/docs-troubleshooting.mjs. Edit the chapter, then regenerate; never edit rows here. -->
 
-74 symptoms from 10 chapters. Find what you see, then follow the link: the chapter's row holds
+75 symptoms from 10 chapters. Find what you see, then follow the link: the chapter's row holds
 the likely cause, the check that tells the causes apart, the fix, and how to confirm it held.
 
 | Symptom | Layer or plane | Its five columns |
@@ -71,6 +71,7 @@ the likely cause, the check that tells the causes apart, the fix, and how to con
 | Duplicate rows | L4 Data | [04 · How it fails](04-data.md#how-it-fails) |
 | Wrong time zone in a report | L4 Data | [04 · How it fails](04-data.md#how-it-fails) |
 | A negative or doubled day | L4 Data | [04 · How it fails](04-data.md#how-it-fails) |
+| A circuit's day short of its integrated power | L4 Data | [04 · How it fails](04-data.md#how-it-fails) |
 | Totals do not match the meter on the incomer | L4 Data | [04 · How it fails](04-data.md#how-it-fails) |
 | Storage outruns the plan | L4 Data | [04 · How it fails](04-data.md#how-it-fails) |
 | The project was paused by the host | L4 Data | [04 · How it fails](04-data.md#how-it-fails) |

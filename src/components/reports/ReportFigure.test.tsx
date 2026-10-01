@@ -24,6 +24,14 @@ describe('ReportFigure flags', () => {
     expect(screen.getByText('Corrected').getAttribute('title')).toMatch(/76\.79 kWh jump in the meter’s counter is not counted/);
   });
 
+  it('prints a restated figure and says what it was', () => {
+    const { container } = render(
+      <ReportFigure value={13.908} unit="" digits={2} period="day" flag={{ kind: 'restated', beforeKwh: 11.213, restatedAt: null }} />
+    );
+    expect(container.textContent).toContain('13.91');
+    expect(screen.getByText('Restated').getAttribute('title')).toMatch(/was 11\.21 kWh — energy used after the meter’s counter reset is now counted/);
+  });
+
   it('adds nothing to an unflagged figure', () => {
     const { container } = render(<ReportFigure value={24.188} unit="" digits={2} period="week" />);
     expect(container.textContent).toBe('24.19');

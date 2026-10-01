@@ -2418,6 +2418,170 @@ delete from building_totals where ts >= timestamptz '2026-06-01 00:00+00' and ts
 delete from building_totals_hourly where hour >= timestamptz '2026-05-01 00:00+00' and hour < timestamptz '2026-06-01 00:00+00';
 SQL
 
+# ---- phase53: the register banked across a fall (RM-155) ------------------------------------------------
+#
+# The phase47 block above put phase47's report functions and rollup back, so this starts where the live
+# project stands: the old rule active, stored rows built by it. Three days of raw minutes at 600 W, which
+# is 0.01 kWh a minute, in March 2026 so nothing above moves. Local hour h of local day D in Asia/Manila
+# is (D - 1 day) 16:00 UTC + h.
+#   H, Mon 2 Mar, 10:00-12:59: the register starts at 2.00 and restarts to 0 at 11:30. The old rule
+#      credits 2.89; banked it is 3.78 — 2.00 before the first reading, 179 minutes, less the one the
+#      fall itself swallowed.
+#   I, Tue 3 Mar, 22:00-23:59: the register reads 0 a minute early, at 23:59 — the daily rollover the
+#      live meters show. Nothing rises after it, so banking changes nothing: 6.18 either way.
+#   J, Wed 4 Mar, 08:00-10:59: a restart at 08:30, inside an hour the rollup then prunes, in two passes
+#      split at 09:00 and 10:00 — the way the archive janitor steps. The old rule credits 1.89; banked
+#      it is 2.78, and it must stay 2.78 however the day is split between rolled and raw hours.
+echo "== phase53: seeding falls in raw minutes and the stored rows the old rule built =="
+psql <<'SQL' >/dev/null
+insert into devices (id, display_name, class) values ('mtr_bank', 'Banked Register Meter', 'meter')
+  on conflict (id) do nothing;
+
+insert into readings (device_id, ts, voltage, current, power_w, energy_kwh_today, online)
+select 'mtr_bank', timestamptz '2026-03-02 02:00:00+00' + (n || ' minutes')::interval, 230, 2.6, 600,
+       case when n < 90 then 2.00 + n * 0.01 else (n - 90) * 0.01 end, true
+  from generate_series(0, 179) n
+union all
+select 'mtr_bank', timestamptz '2026-03-03 14:00:00+00' + (n || ' minutes')::interval, 230, 2.6, 600,
+       case when n < 119 then 5.00 + n * 0.01 else 0 end, true
+  from generate_series(0, 119) n
+union all
+select 'mtr_bank', timestamptz '2026-03-04 00:00:00+00' + (n || ' minutes')::interval, 230, 2.6, 600,
+       case when n < 30 then 1.00 + n * 0.01 else (n - 30) * 0.01 end, true
+  from generate_series(0, 179) n;
+
+-- As the old rule stored them: H 2.89, I 6.18, and the week 2.89 + 6.18 + 1.89.
+insert into period_reports (period, period_start, device_id, energy_kwh, peak_power_w, avg_power_w,
+                            online_sample_count, expected_sample_count, generated_at)
+values
+  ('day',   date '2026-03-02', 'mtr_bank',  2.89, 600, 600, 180,  1440, timestamptz '2026-03-03 06:00:00+00'),
+  ('day',   date '2026-03-03', 'mtr_bank',  6.18, 600, 600, 120,  1440, timestamptz '2026-03-04 06:00:00+00'),
+  ('week',  date '2026-03-02', 'mtr_bank', 10.96, 600, 600, 480, 10080, timestamptz '2026-03-10 00:00:00+00'),
+  -- Not what these readings give under the old rule (10.96): built from other data, so left alone.
+  ('month', date '2026-03-01', 'mtr_bank', 99.00, 600, 600, 480, 44640, timestamptz '2026-04-03 00:00:00+00');
+SQL
+
+do_phase53_rule_checks() {
+psql <<SQL
+do \$\$
+declare
+  r record;
+  v numeric;
+begin
+  select * into r from report_device_daily_energy('week', date '2026-03-02', 'Asia/Manila', array['mtr_bank'])
+   where local_day = date '2026-03-02';
+  assert r.energy_kwh = 3.78 and r.counter_kwh = 3.78 and r.removed_kwh is null and r.clipped_hours = 0,
+    format('phase53 H ($1): a restart at 11:30 banks to 3.78 / 3.78 / null / 0, got %s / %s / %s / %s', r.energy_kwh, r.counter_kwh, r.removed_kwh, r.clipped_hours);
+  assert r.online_minutes = 180 and r.peak_power_w = 600, format('phase53 H ($1): minutes and peak are untouched, got %s / %s', r.online_minutes, r.peak_power_w);
+  select sum(energy_kwh) into v from report_hour_energy('day', date '2026-03-02', 'Asia/Manila', array['mtr_bank']);
+  assert v = 3.78, format('phase53 H ($1): its hours sum to the day, got %s', v);
+  select energy_kwh into v from report_hour_energy('day', date '2026-03-02', 'Asia/Manila', array['mtr_bank']) where local_hour = 12;
+  assert v = 0.60, format('phase53 H ($1): the hour after the restart is credited its 0.60, got %s', v);
+
+  select * into r from report_device_daily_energy('week', date '2026-03-02', 'Asia/Manila', array['mtr_bank'])
+   where local_day = date '2026-03-03';
+  assert r.energy_kwh = 6.18 and r.counter_kwh = 6.18, format('phase53 I ($1): the 23:59 rollover changes nothing, got %s / %s', r.energy_kwh, r.counter_kwh);
+
+  select * into r from report_device_daily_energy('week', date '2026-03-02', 'Asia/Manila', array['mtr_bank'])
+   where local_day = date '2026-03-04';
+  assert r.energy_kwh = 2.78, format('phase53 J ($1): a restart at 08:30 banks to 2.78, got %s', r.energy_kwh);
+  select sum(energy_kwh) into v from report_hour_energy('day', date '2026-03-04', 'Asia/Manila', array['mtr_bank']);
+  assert v = 2.78, format('phase53 J ($1): its hours sum to the day, got %s', v);
+end \$\$;
+SQL
+}
+
+echo "== phase53: applying it over the stored rows, twice =="
+psql < "$HERE/phase53_banked_register.sql" >/dev/null
+psql < "$HERE/phase53_banked_register.sql" >/dev/null
+echo "   ok"
+
+psql <<'SQL'
+do $$
+declare
+  r record;
+  n int;
+  v numeric;
+begin
+  -- ---- the restatement ----------------------------------------------------------------------------
+  select * into r from period_reports where period = 'day' and period_start = date '2026-03-02' and device_id = 'mtr_bank';
+  assert r.energy_kwh = 3.78 and r.energy_kwh_before = 2.89 and r.energy_restated_at is not null,
+    format('phase53: H''s stored day is restated 2.89 -> 3.78, and says what it was; got %s before %s', r.energy_kwh, r.energy_kwh_before);
+  assert r.online_sample_count = 180 and r.generated_at = timestamptz '2026-03-03 06:00:00+00',
+    'phase53: coverage and generated_at are never restated';
+  select * into r from period_reports where period = 'week' and period_start = date '2026-03-02' and device_id = 'mtr_bank';
+  assert r.energy_kwh = 12.74 and r.energy_kwh_before = 10.96,
+    format('phase53: the week is restated 10.96 -> 12.74, got %s before %s', r.energy_kwh, r.energy_kwh_before);
+  select * into r from period_reports where period = 'day' and period_start = date '2026-03-03' and device_id = 'mtr_bank';
+  assert r.energy_kwh = 6.18 and r.energy_kwh_before is null and r.energy_restated_at is null,
+    'phase53: a day banking leaves alone is not touched';
+  select * into r from period_reports where period = 'month' and period_start = date '2026-03-01' and device_id = 'mtr_bank';
+  assert r.energy_kwh = 99.00 and r.energy_kwh_before is null,
+    format('phase53: a row not built from these readings is left alone, got %s', r.energy_kwh);
+  select count(*) into n from period_reports where energy_kwh_before is not null;
+  assert n = 2, format('phase53: exactly the two rows that banking changes are restated, found %s', n);
+
+  -- ---- register_gain --------------------------------------------------------------------------------
+  assert register_gain(array[1, 2, 0.5, 1]::numeric[]) = 1.5, 'phase53: a fall adds nothing and the rise after it counts';
+  assert register_gain(array[3]::numeric[]) = 0, 'phase53: one reading rose by nothing';
+  assert register_gain(array[]::numeric[]) is null and register_gain(null) is null, 'phase53: no readings is NULL, not 0';
+
+  -- ---- the earlier fixtures, under the new rule ------------------------------------------------------
+  -- C restarted between hourly rows rolled up before phase53: still 1.8, and its counter now says so.
+  select * into r from report_device_daily_energy('week', date '2026-07-13', 'Asia/Manila', array['mtr_jump'])
+   where local_day = date '2026-07-13';
+  assert r.energy_kwh = 1.8 and r.counter_kwh = 1.8 and r.removed_kwh is null,
+    format('phase53 C: the old hourly restart stays 1.8, banked counter 1.8, got %s / %s / %s', r.energy_kwh, r.counter_kwh, r.removed_kwh);
+  -- A: the jump is still clipped; what was removed is now exactly the jump, 67.25 less its 0.05 credit.
+  select * into r from report_device_daily_energy('week', date '2026-07-06', 'Asia/Manila', array['mtr_jump'])
+   where local_day = date '2026-07-06';
+  assert r.energy_kwh = 0.30 and r.removed_kwh = 67.20 and r.clipped_hours = 1,
+    format('phase53 A: still 0.30 with the jump clipped, 67.20 removed; got %s / %s / %s', r.energy_kwh, r.removed_kwh, r.clipped_hours);
+  -- G: a jump on minutes that never fell is exactly what it was.
+  select * into r from report_device_daily_energy('week', date '2026-07-06', 'Asia/Manila', array['mtr_raw'])
+   where local_day = date '2026-07-09';
+  assert r.energy_kwh = 1.19 and r.removed_kwh = 50.00,
+    format('phase53 G: expected 1.19 / 50.00, got %s / %s', r.energy_kwh, r.removed_kwh);
+  select sum(energy_kwh) into v from report_device_daily_energy('week', date '2026-06-01', 'Asia/Manila', array['mtr_hist']);
+  assert v = 0.59, format('phase53: mtr_hist''s healthy week must stay 0.59, got %s', v);
+end $$;
+SQL
+
+do_phase53_rule_checks "raw minutes"
+
+echo "== phase53: the rollup keeps the banked register, in two passes split mid-day =="
+psql <<'SQL'
+do $$
+declare
+  r record;
+  n int;
+begin
+  perform roll_up_and_prune_readings(timestamptz '2026-03-04 01:00:00+00');
+  select * into r from readings_hourly where device_id = 'mtr_bank' and hour = timestamptz '2026-03-04 00:00:00+00';
+  assert r.energy_kwh_today_first = 1.00 and r.energy_kwh_today_last = 0.29 and r.energy_kwh_gain = 0.58 and r.energy_kwh_today_max = 1.29,
+    format('phase53: J''s 08:00 rolls up as first 1.00, last 0.29, gain 0.58, highest 1.29; got %s / %s / %s / %s',
+           r.energy_kwh_today_first, r.energy_kwh_today_last, r.energy_kwh_gain, r.energy_kwh_today_max);
+  select count(*) into n from readings where device_id = 'mtr_bank' and ts < timestamptz '2026-03-04 01:00:00+00';
+  assert n = 0, format('phase53: the first pass pruned what it rolled, %s rows left', n);
+  select * into r from report_device_daily_energy('day', date '2026-03-04', 'Asia/Manila', array['mtr_bank']);
+  assert r.energy_kwh = 2.78 and r.resolution = 'mixed', format('phase53 J: one hour rolled, two raw: 2.78 mixed, got %s %s', r.energy_kwh, r.resolution);
+  perform roll_up_and_prune_readings(timestamptz '2026-03-04 02:00:00+00');
+  select * into r from report_device_daily_energy('day', date '2026-03-04', 'Asia/Manila', array['mtr_bank']);
+  assert r.energy_kwh = 2.78, format('phase53 J: after the second pass still 2.78, got %s', r.energy_kwh);
+  select * into r from report_device_daily_energy('day', date '2026-03-02', 'Asia/Manila', array['mtr_bank']);
+  assert r.resolution = 'hour', format('phase53 H: rolled up whole, got %s', r.resolution);
+  raise notice 'phase53: the register banked across a fall — assertions passed';
+end $$;
+SQL
+
+do_phase53_rule_checks "rolled up"
+
+psql <<'SQL' >/dev/null
+delete from period_reports where device_id = 'mtr_bank';
+delete from readings_hourly where device_id = 'mtr_bank';
+delete from readings where device_id = 'mtr_bank';
+SQL
+
 echo
 echo "== REHEARSAL PASSED =="
 echo "Every migration applied in order against PostgreSQL 16, and every function behaved as"

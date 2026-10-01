@@ -25,6 +25,14 @@ import type { PeriodDeviceReport } from './supabaseReports';
  * outlets and aircon included — it changed exactly one: that day, 77.502 -> 0.713 kWh, where the
  * circuit's own power readings integrate to 0.708.
  *
+ * THE COUNTER IS BANKED ACROSS A FALL FIRST — RM-155, `supabase/phase53_banked_register.sql`. An hour's
+ * "counter value" is not its highest reading but the register banked to that hour's end: inside the
+ * local day, every rise from one reading to the next adds, and a fall adds nothing and counting goes on
+ * from the lower value. On 2026-09-23 a branch meter fell 5.322 -> 0.290 kWh at 11:20, and the highest
+ * readings lost everything it used until it climbed back past 5.322: 11.21 kWh stored, 14.22 integrated
+ * from its power, 13.91 banked. A register that never fell banks to exactly its highest readings, so
+ * the rule above is unchanged for every healthy day. See {@link bankDay}.
+ *
  * NOT AN ESTIMATE OF A HEALTHY DAY. Power is only ever credited for an hour whose counter has already
  * proven impossible, and RM-077's lesson (power integration overcounts while a meter is frozen) is why
  * it is never used for anything else.
@@ -40,7 +48,10 @@ const HOUR_MS = 3_600_000;
 /** One hour of one device, as the hourly rollup and the raw readings both reduce to it. */
 export interface HourAgg {
   hourStartMs: number;
-  /** The hour's highest `energy_kwh_today` while online; null when no online row carried one. */
+  /**
+   * The register at the hour's end, banked across any fall that day ({@link bankDay}) — the hour's
+   * highest online `energy_kwh_today` when it never fell; null when no online row carried one.
+   */
   energyMaxKwh: number | null;
   powerAvgW: number | null;
   powerMaxW: number | null;
@@ -65,6 +76,63 @@ export interface BoundedDay {
 }
 
 const finite = (v: number | null | undefined): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/**
+ * One hour of a register as banking reads it: its first and last online reading, and what it rose by
+ * between them. Raw minutes reduce to it here; the rollup keeps it since phase53.
+ */
+export interface HourRegister {
+  hourStartMs: number;
+  firstKwh: number;
+  lastKwh: number;
+  gainKwh: number;
+}
+
+/** What an ordered run of register readings rose by, reading to reading. A fall adds nothing. */
+export function registerGain(values: readonly number[]): number {
+  let gain = 0;
+  for (let i = 1; i < values.length; i++) gain += Math.max(values[i] - values[i - 1], 0);
+  return gain;
+}
+
+/** An hour's online register readings, in time order. `null` when there were none. */
+export function hourRegister(hourStartMs: number, values: readonly number[]): HourRegister | null {
+  if (values.length === 0) return null;
+  return { hourStartMs, firstKwh: values[0], lastKwh: values[values.length - 1], gainKwh: registerGain(values) };
+}
+
+/**
+ * An hourly rollup row as banking reads it. A row rolled up before phase53 kept only its highest
+ * reading: read as its first and its last alike, with nothing risen inside it, it banks to exactly the
+ * rule it was stored by.
+ */
+export function rolledHourRegister(
+  hourStartMs: number,
+  row: { energy_kwh_today_max: number | null; energy_kwh_today_first?: number | null; energy_kwh_today_last?: number | null; energy_kwh_gain?: number | null }
+): HourRegister | null {
+  const max = row.energy_kwh_today_max;
+  const last = row.energy_kwh_today_last ?? max;
+  if (!finite(last)) return null;
+  return { hourStartMs, firstKwh: row.energy_kwh_today_first ?? max ?? last, lastKwh: last, gainKwh: row.energy_kwh_gain ?? 0 };
+}
+
+/**
+ * The register banked across a fall, for the hours of ONE local day: the first hour counts from local
+ * midnight, and each hour adds what it rose by inside itself plus any rise from the previous hour's last
+ * reading to its own first. Each hour's banked reading, by hour start — what {@link boundDay} reads as
+ * the hour's counter value.
+ */
+export function bankDay(hours: readonly HourRegister[]): Map<number, number> {
+  const out = new Map<number, number>();
+  let banked = 0;
+  let prevLast = 0;
+  for (const hour of [...hours].sort((a, b) => a.hourStartMs - b.hourStartMs)) {
+    banked += Math.max(hour.firstKwh - prevLast, 0) + hour.gainKwh;
+    prevLast = hour.lastKwh;
+    out.set(hour.hourStartMs, banked);
+  }
+  return out;
+}
 
 /** The rule above, for one local day. `dayStartMs` is that day's local midnight, as an instant. */
 export function boundDay(hours: readonly HourAgg[], dayStartMs: number): BoundedDay {
@@ -123,14 +191,21 @@ export function periodEnergyCheck(row: Pick<PeriodDeviceReport, 'energy_kwh' | '
   return energy > limit ? 'impossible' : 'ok';
 }
 
-export type EnergyFlag = { kind: 'impossible' } | { kind: 'corrected'; removedKwh: number; restatedAt: string | null };
+export type EnergyFlag =
+  | { kind: 'impossible' }
+  | { kind: 'corrected'; removedKwh: number; restatedAt: string | null }
+  | { kind: 'restated'; beforeKwh: number; restatedAt: string | null };
 
-/** What the page must say beside a stored figure, if anything. */
+/** What the page must say beside a stored figure, if anything. A removed jump outranks a restatement. */
 export function energyFlagOf(row: PeriodDeviceReport): EnergyFlag | null {
   if (periodEnergyCheck(row) === 'impossible') return { kind: 'impossible' };
   const removed = row.energy_removed_kwh;
   if (finite(removed) && removed > REMOVED_NOTEWORTHY_KWH) {
     return { kind: 'corrected', removedKwh: removed, restatedAt: row.energy_restated_at ?? null };
+  }
+  const before = row.energy_kwh_before;
+  if (finite(before) && finite(row.energy_kwh) && Math.abs(row.energy_kwh - before) > REMOVED_NOTEWORTHY_KWH) {
+    return { kind: 'restated', beforeKwh: before, restatedAt: row.energy_restated_at ?? null };
   }
   return null;
 }
@@ -142,7 +217,12 @@ export function usableEnergy(row: PeriodDeviceReport): number | null {
 
 /** The words a flag carries, the same on the page, in the CSV and in the PDF. */
 export function energyFlagText(flag: EnergyFlag): string {
-  return flag.kind === 'impossible'
-    ? 'Not possible: more than this circuit’s highest draw could deliver, so it is left out'
-    : `Corrected: a ${flag.removedKwh.toFixed(2)} kWh jump in the meter’s counter is not counted`;
+  switch (flag.kind) {
+    case 'impossible':
+      return 'Not possible: more than this circuit’s highest draw could deliver, so it is left out';
+    case 'corrected':
+      return `Corrected: a ${flag.removedKwh.toFixed(2)} kWh jump in the meter’s counter is not counted`;
+    case 'restated':
+      return `Restated: was ${flag.beforeKwh.toFixed(2)} kWh — energy used after the meter’s counter reset is now counted`;
+  }
 }

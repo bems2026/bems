@@ -152,8 +152,13 @@ export interface PeriodDeviceReport {
    * applied (the columns do not exist, and `select *` simply omits them), null when nothing was removed.
    */
   energy_removed_kwh?: number | null;
-  /** When phase42's one-time correction rewrote this row's energy; null for a row generated with the rule. */
+  /** When phase42's or phase53's one-time correction rewrote this row's energy; null for a row generated with the rule. */
   energy_restated_at?: string | null;
+  /**
+   * The figure this row had before phase53 banked its meter's register across a fall (RM-155). Absent
+   * before phase53 is applied; null for every row it did not restate.
+   */
+  energy_kwh_before?: number | null;
 }
 
 export interface PeriodBuildingReport {

@@ -215,6 +215,12 @@ Three things that are easy to get wrong here:
   5 Wh — and past that, the hour's measured power. A healthy counter's rises sum to its highest
   value, so this changes nothing but a jump. `report_device_daily_energy` computes it per day, both
   generators sum it, and `period_reports.energy_removed_kwh` keeps what was taken out.
+  Since phase53 (RM-155) the counter is **banked across a fall** first: inside the day every rise from one
+  reading to the next adds, and a fall adds nothing and counting goes on from the lower value. Each hour
+  is reduced to its first and last reading and what it rose by between them, and the rollup keeps those
+  three (`readings_hourly.energy_kwh_today_first`, `_last`, `energy_kwh_gain`), so an hour pruned later
+  banks exactly as it did while raw. A register that never falls banks to its highest value.
+  `period_reports.energy_kwh_before` keeps what a row said before phase53 restated it.
 - **Days are grouped in the site's timezone** (`Asia/Manila` by default). Grouping in UTC
   would split every device-day across two report-days and undercount the month's last day.
 - **Coverage travels with every figure.** Each row carries `online_sample_count` and

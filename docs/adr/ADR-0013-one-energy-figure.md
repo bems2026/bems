@@ -2,7 +2,7 @@
 title: ADR-0013 — A period's energy is the sum of its circuits, on every tab
 status: Accepted
 date: 2026-10-01
-evidence: [E-233]
+evidence: [E-233, E-235, E-236]
 ---
 
 # ADR-0013 — A period's energy is the sum of its circuits, on every tab
@@ -54,6 +54,16 @@ the same meters.
 - **The Overview's energy can differ from the stored building row.** The difference is stated beside it, not hidden.
 - **The Overview reads the circuits' days.** That is one more limited database call per period.
 - **Compare reads the earlier period's circuits.** That is one `period_reports` read when the earlier period is chosen.
+
+## Amendment — RM-155 (2026-10-01): the circuits bank across a fall
+
+- **The SQL reduction is fixed.** phase53 banks each meter's register across a fall, minute by minute, the way the
+  bridge's accumulator does; the rollup keeps what banking needs, so a pruned hour banks as it did while raw
+  [E-235, E-236]. The "Fix the SQL" alternative above is no longer an alternative.
+- **The rule here is unchanged.** It still makes the tabs agree with whatever the circuits say; they now say more.
+- **Measured before applying:** the week of 21 Sep reads about 80.60 kWh on its circuits against the counter's 80.53,
+  and 23 Sep about 22.29 against 22.67 integrated from power. The counter note will not fall wholly silent: the
+  counter's own days still do not add up to its week, which is the counter's fault, not the circuits'.
 
 ## What would change this answer
 

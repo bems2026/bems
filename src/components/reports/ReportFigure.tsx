@@ -99,11 +99,11 @@ export function ReportFigure({
       {value.toFixed(digits)}
       {unit ? ` ${unit}` : null}
       {qualified ? <span className="reports-figure__caveat"> (partial {period})</span> : null}
-      {flag?.kind === 'corrected' ? (
+      {flag?.kind === 'corrected' || flag?.kind === 'restated' ? (
         <>
           {' '}
           <span className="badge" title={energyFlagText(flag)}>
-            Corrected
+            {flag.kind === 'corrected' ? 'Corrected' : 'Restated'}
           </span>
         </>
       ) : null}

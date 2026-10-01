@@ -216,6 +216,23 @@ describe('readingsCsvParts', () => {
     expect(lines[3]).toMatch(/,$/);
   });
 
+  it('reads the register banked across a fall, as the reports do (RM-155): a dip and back is a rise the cap judges', () => {
+    // 02:00 local on a 49 W circuit: 0.12 kWh, a reading of 0, then 0.12 again. The highest reading rose
+    // 0.12, inside the 0.22 the circuit could draw since midnight; banked, the return is a second 0.12.
+    const raw = [reading('m1', 0, { energy_kwh_today: 0.12 }), reading('m1', 1, { energy_kwh_today: 0 }), reading('m1', 2, { energy_kwh_today: 0.12 })];
+    const lines = readingsCsvParts({ devices, readings: [{ deviceId: 'm1', raw, hourly: [], source: 'cloud' }], utcOffsetMinutes: 480, timezone: 'Asia/Manila' }).join('').split('\r\n');
+    expect(lines[3]).toMatch(/counter jumped \+0\.12 kWh while drawing 49 W — not counted$/);
+    expect(lines[1]).toMatch(/,$/);
+  });
+
+  it('reads an hour the rollup kept as first, last and gain the same way', () => {
+    // 08:00 local, rolled up: 0.30, down and back to 0.30. Its highest reading is inside the 0.555 kWh a
+    // 50 W circuit could draw since midnight; banked it is 0.60, which is not.
+    const hourly = [{ hour: '2026-09-08T00:00:00+00:00', power_w_avg: 40, power_w_max: 50, voltage_avg: 230, current_avg: 0.2, energy_kwh_today_max: 0.3, energy_kwh_today_first: 0.3, energy_kwh_today_last: 0.3, energy_kwh_gain: 0.3, sample_count: 60, online_sample_count: 60 }];
+    const csv = readingsCsvParts({ devices, readings: [{ deviceId: 'm1', raw: [], hourly, source: 'cloud' }], utcOffsetMinutes: 480, timezone: 'Asia/Manila' }).join('');
+    expect(csv.split('\r\n')[1]).toMatch(/counter jumped \+0\.60 kWh this hour — not counted$/);
+  });
+
   it('writes an hour that only survives as an average as one hourly row, and says so', () => {
     const csv = readingsCsvParts({
       devices,

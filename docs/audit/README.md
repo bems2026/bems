@@ -18,7 +18,7 @@ file or row on the edge was changed** (G5). The dispatch flag was read and left 
 |---|---|
 | [`evidence-ledger.md`](evidence-ledger.md) | 80+ observations. Every one names the command or file that produced it. |
 | [`claims-check.md`](claims-check.md) | Verdicts on the 13 carried-over claims. **Seven are wrong in whole or in part.** |
-| [`findings.md`](findings.md) | 39 findings: **2 Critical, 6 High, 21 Medium, 10 Low** (counted 2026-10-01; some are closed, as each row says). F-002 dropped from Critical on 2026-09-24. |
+| [`findings.md`](findings.md) | 40 findings: **2 Critical, 6 High, 22 Medium, 10 Low** (counted 2026-10-01; some are closed, as each row says). F-002 dropped from Critical on 2026-09-24. |
 | [`open-questions.md`](open-questions.md) | 14 questions, 3 now closed, each with an owner and a next action |
 | [`system-map.md`](system-map.md) | The inventory: repository, processes, ports, live flow, command path and data |
 | [`legacy-docs.md`](legacy-docs.md) | Every doc-like file, in and outside the repo, and what may be carried forward |

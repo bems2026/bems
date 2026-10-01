@@ -1,5 +1,5 @@
 import { csvLine } from './csv';
-import { boundDay, type HourAgg } from './boundedEnergy';
+import { bankDay, boundDay, hourRegister, rolledHourRegister, type HourAgg, type HourRegister } from './boundedEnergy';
 
 /**
  * Every reading behind a report, for export — RM-098.
@@ -19,9 +19,10 @@ import { boundDay, type HourAgg } from './boundedEnergy';
  *   - the rows fetched must equal an exact count taken for the same window, or the export stops and says
  *     to try again, rather than writing a file with a hole in it.
  *
- * A COUNTER JUMP IS MARKED WHERE IT HAPPENED. The rule is `boundDay`'s, the one the reports are generated
- * with; the reading that carried the step is noted "not counted", so a reader of the raw file sees why
- * the report's figure is smaller than the counter.
+ * A COUNTER JUMP IS MARKED WHERE IT HAPPENED. The rule is `boundDay`'s over the register banked across
+ * any fall (`bankDay`, RM-155), the one the reports are generated with; the reading that carried the step
+ * is noted "not counted", so a reader of the raw file sees why the report's figure is smaller than the
+ * counter.
  */
 
 const PAGE = 1000;
@@ -66,6 +67,10 @@ export interface HourlyReading {
   voltage_avg: number | null;
   current_avg: number | null;
   energy_kwh_today_max: number | null;
+  /** The register as banking reads the hour — phase53 (RM-155). Absent before it, null on hours rolled up before it. */
+  energy_kwh_today_first?: number | null;
+  energy_kwh_today_last?: number | null;
+  energy_kwh_gain?: number | null;
   sample_count: number;
   online_sample_count: number;
 }
@@ -142,10 +147,12 @@ export async function fetchDeviceReadings(client: ReadingsClient, deviceId: stri
   const raw = fromEdge ?? (await fetchCloudRaw(client, deviceId, win, options));
   if (fromEdge) onRows?.(fromEdge.length);
 
+  // Every column, so phase53's register columns arrive once it is applied, and asking for them is never
+  // an error before it is.
   const hourlyQuery = () =>
     client
       .from('readings_hourly')
-      .select('hour,power_w_avg,power_w_max,voltage_avg,current_avg,energy_kwh_today_max,sample_count,online_sample_count')
+      .select('*')
       .eq('device_id', deviceId)
       .gte('hour', win.startIso)
       .lt('hour', win.endIso);
@@ -227,18 +234,25 @@ function jumpNotes(readings: DeviceReadings, offsetMs: number): Map<string, stri
     const h = Math.floor(Date.parse(r.ts) / HOUR_MS) * HOUR_MS;
     (byHour.get(h) ?? byHour.set(h, []).get(h)!).push(r);
   }
+  // Each hour's register as banking reads it (RM-155), then banked day by day as the reports do.
+  const registers: HourRegister[] = [];
   const aggs: HourAgg[] = [...byHour.entries()].map(([hourStartMs, rows]) => {
     const e = rows.map((r) => r.energy_kwh_today).filter((v): v is number => v !== null);
     const p = rows.map((r) => r.power_w).filter((v): v is number => v !== null);
+    const reg = hourRegister(hourStartMs, e);
+    if (reg) registers.push(reg);
     return {
       hourStartMs,
-      energyMaxKwh: e.length > 0 ? Math.max(...e) : null,
+      energyMaxKwh: null,
       powerAvgW: p.length > 0 ? p.reduce((a, v) => a + v, 0) / p.length : null,
       powerMaxW: p.length > 0 ? Math.max(...p) : null,
     };
   });
   for (const h of readings.hourly) {
-    aggs.push({ hourStartMs: Date.parse(h.hour), energyMaxKwh: h.energy_kwh_today_max, powerAvgW: h.power_w_avg, powerMaxW: h.power_w_max });
+    const hourStartMs = Date.parse(h.hour);
+    const reg = rolledHourRegister(hourStartMs, h);
+    if (reg) registers.push(reg);
+    aggs.push({ hourStartMs, energyMaxKwh: null, powerAvgW: h.power_w_avg, powerMaxW: h.power_w_max });
   }
 
   const days = new Map<number, HourAgg[]>();
@@ -247,7 +261,9 @@ function jumpNotes(readings: DeviceReadings, offsetMs: number): Map<string, stri
     (days.get(d) ?? days.set(d, []).get(d)!).push(a);
   }
 
-  for (const [dayStart, hours] of days) {
+  for (const [dayStart, dayHours] of days) {
+    const banked = bankDay(registers.filter((r) => localDayStart(r.hourStartMs, offsetMs) === dayStart));
+    const hours = dayHours.map((a) => ({ ...a, energyMaxKwh: banked.get(a.hourStartMs) ?? null }));
     for (const clip of boundDay(hours, dayStart).clipped) {
       const inHour = byHour.get(clip.hourStartMs);
       if (!inHour) {

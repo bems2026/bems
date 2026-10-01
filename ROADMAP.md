@@ -1,7 +1,15 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-10-01, later — **RM-154 done: the baseline is a period in the calendar, built from real days; one
-energy figure per period.**
+**Last audited:** 2026-10-01, evening — **RM-155 built: each circuit's energy is banked across a meter reset.
+phase53 awaits the operator; apply it before about 7 Oct.**
+- **What was wrong.** A meter's register that fell inside a day lost everything the circuit used until it climbed back
+  past its old top. C.O Yellow on 23 Sep: 11.21 kWh stored, 13.91 banked, 14.22 from its own power (F-040, E-235).
+- **phase53** banks the register minute by minute, as the bridge does, and the rollup now keeps what banking needs. It
+  restates the stored rows the old rule built and keeps what they said. It was rehearsed on the edge, and neutered twice
+  (E-236). The week of 21 Sep should then read about 80.60 kWh on its circuits against the counter's 80.53.
+
+**Earlier, 2026-10-01 — RM-154 done: the baseline is a period in the calendar, built from real days; one energy figure
+per period.**
 - **Baseline** is chosen in the Reports calendar and read through the same Overview, Circuits, Usage patterns and
   Compare tabs as any report. Each projected date is one recorded day of its kind, so the days differ as real days do:
   working days 8.06–21.21 kWh, and every day of a month has its bar (E-234, ADR-0012 amended).
@@ -430,6 +438,27 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
+### 2026-10-01 — circuits banked across a meter reset (RM-155): built, awaiting phase53
+
+- **The fault (F-040).** Each circuit's day was rebuilt from the highest register reading of each hour. When a register
+  fell, nothing more was credited until it climbed back past the old top. On 23 Sep C.O Yellow's register fell 5.322 ->
+  0.290 kWh at 11:20, in the channel swap, and its day was stored as 11.21 kWh against 14.22 from its own power (E-235).
+- **The fix.** `supabase/phase53_banked_register.sql` banks the register across a fall:
+  - every rise from one reading to the next adds, and a fall adds nothing;
+  - the hourly cap still clips a jump;
+  - the rollup keeps each hour's first and last reading and what it rose by, so a day pruned later reads the same.
+- **What it restates.** Stored rows that the old rule built and that banking changes. Each keeps its old figure in
+  `energy_kwh_before`, and the page shows them with a **Restated** badge.
+- **The export.** "Every reading" marks clipped jumps by the same rule.
+
+**For the operator — apply phase53, before about 7 Oct:**
+- Paste `supabase/phase53_banked_register.sql` into the Supabase SQL editor and run it.
+- It should print **"phase53: restated N stored period_reports row(s)"**. N should be about 4: the C.O Yellow days of
+  23, 26 and 29 Sep, and the week of 21 Sep, plus September if its month report was generated first.
+- **Why the date:** 23 Sep's minutes leave the cloud's 14-day window about then. After that, that fall can no longer be
+  banked from the cloud.
+- **Nothing to restart.** The page needs `npm run build` on the edge for the Restated badge and the export rule.
+
 ### 2026-10-01 — the baseline in the calendar, and one energy figure (RM-154): done
 
 - **Baseline is chosen in the calendar.** It sits beside "Latest" and "Same month last year", and the label then
@@ -445,9 +474,8 @@ other four and none needed changing.
 **Deployed 13:52 (`eb0fadc`).** **For the operator.** Nothing to apply. Rebuild with `npm run baseline:build -- --write` only when the office's
 routine or equipment changes; it now writes `baseline-days.mjs` too.
 
-**Noted for later, not done:** the SQL that rebuilds each circuit from hourly readings credits nothing around a
-counter that falls; the bridge's counter banks it (E-233). Fixing it would quiet the counter note and needs a
-migration plus a backfill.
+**Noted for later, then done in RM-155:** the SQL that rebuilt each circuit from hourly readings credited nothing
+around a counter that falls; the bridge's counter banks it (E-233). phase53 banks it too.
 
 ### 2026-09-30 — a projected baseline on the Reports page (RM-153): done, then reshaped by RM-154
 
@@ -4466,6 +4494,43 @@ rejected by the operator in favour of real recorded days: its stated figures con
       - Removed: the Baseline tab, `BaselineReport.tsx`, and RM-097's ban on the word "baseline".
       - Tests: picker (+4), `ReportsPage.baseline` (6), tabs (four again), `baselineCompare` (+2), daily chart notes
         (+1), PDF (+3).
+
+### Circuits banked across a meter reset — RM-155 (2026-10-01)
+
+The operator asked to "fix the SQL so circuits bank energy across resets", the alternative ADR-0013 left open. Evidence
+is E-235 (the live minutes) and E-236 (the rehearsal); the finding is F-040; ADR-0013 is amended.
+
+- [x] **RM-155a** [`supabase/phase53_banked_register.sql`](supabase/phase53_banked_register.sql). **Built and rehearsed;
+      awaiting the operator.**
+      - **The rule.** Inside a device's local day, every rise from one online reading to the next adds, and a fall adds
+        nothing. A register that never falls banks to exactly its highest readings, so every healthy day keeps its
+        figure. phase42's cap is untouched.
+      - **Each hour is reduced to three numbers:** its first reading, its last, and what it rose by between them
+        (`register_gain`). Raw minutes are reduced inside `report_device_daily_energy` and `report_hour_energy`.
+      - **The rollup keeps the same three** in `readings_hourly`, so a day pruned later banks exactly as it did while
+        raw. An hour rolled up before phase53 reads as phase42's rule.
+      - **The restatement.** Stored rows that still equal the old rule's figure and that banking changes. Each keeps
+        `energy_kwh_before`; coverage and `generated_at` are not touched.
+      - `counter_kwh` from the daily function is now the banked register, so `removed_kwh` is exactly the jump
+        that was clipped.
+      - **Rejected on the live minutes:** a rate check on each reading, as the bridge's accumulator has. The registers
+        report in bursts, and it took 0.82 kWh of real energy out of 24 Sep.
+      - **Tests.**
+        - `test/phase53-banked-register-schema.test.mjs` (11): undo the register lines and each of the three
+          functions is phase47's, byte for byte.
+        - The rehearsal (H, I, J, the restatement, both pastes), neutered twice (E-236).
+- [x] **RM-155b** The same rule in the browser (`src/lib/boundedEnergy.ts`). **Built and tested.**
+      - The rule is `bankDay`, `hourRegister`, `rolledHourRegister` and `registerGain`.
+      - "Every reading" (`readingsExport.ts`) judges clipped jumps by the banked register. It reads the hourly rows
+        with `select *`, so it works before and after phase53.
+      - A restated row carries a **Restated** badge: "Restated: was 11.21 kWh — energy used after the meter's counter
+        reset is now counted". It appears on the page, in the CSV and in the PDF. A removed jump outranks it.
+      - **Tests.**
+        - `boundedEnergy` (+8): the rehearsal's days with its answers.
+        - `readingsExport` (+2): each fails under the old rule.
+        - `ReportFigure` (+1): neutered.
+- [ ] **RM-155c** After the operator applies phase53: read back the restated rows and the Reports page. The week of 21
+      Sep should be about 80.60 kWh on its circuits and 23 Sep about 22.29.
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 

@@ -5,7 +5,7 @@ audience: [integrator, administrator]
 status: Draft
 last_verified: 2026-09-30
 applies_to: repo fd6fadc
-evidence: [E-042, E-058, E-064, E-065, E-066, E-070, E-078, E-080, E-081, E-082, E-083, E-084, E-085, E-086, E-088, E-089, E-090, E-111, E-121, E-122, E-124, E-126, E-134, E-137, E-138, E-142, E-149, E-157, E-161, E-162, E-163, E-164, E-165, E-166, E-167, E-168, E-193, E-218, E-219, E-220, E-221, E-222, E-224, E-225, E-227]
+evidence: [E-042, E-058, E-064, E-065, E-066, E-070, E-078, E-080, E-081, E-082, E-083, E-084, E-085, E-086, E-088, E-089, E-090, E-111, E-121, E-122, E-124, E-126, E-134, E-137, E-138, E-142, E-149, E-157, E-161, E-162, E-163, E-164, E-165, E-166, E-167, E-168, E-193, E-218, E-219, E-220, E-221, E-222, E-224, E-225, E-227, E-235]
 ---
 
 # Data and storage
@@ -36,7 +36,7 @@ Celsius. Row counts are from the pilot on 2026-09-23 [E-080].
 | Table | One row is | Key columns (units) | Written by | Why it exists |
 |---|---|---|---|---|
 | `readings` | one device, one minute | `device_id`, `ts` (PK); `power_w`, `voltage`, `current`, `energy_kwh_today`, `total_energy_kwh`, `online`, `capabilities` (jsonb) | ingest, every 60 s | The per-minute record, kept 30 days (858,691 rows) |
-| `readings_hourly` | one device, one hour | `device_id`, `hour` (PK); `power_w_avg`, `power_w_max`, `energy_kwh_today_max`, `sample_count`, `online_sample_count` | the retention rollup | The permanent history, once minutes are pruned |
+| `readings_hourly` | one device, one hour | `device_id`, `hour` (PK); `power_w_avg`, `power_w_max`, `energy_kwh_today_max`, `energy_kwh_today_first`, `energy_kwh_today_last`, `energy_kwh_gain`, `sample_count`, `online_sample_count` | the retention rollup | The permanent history, once minutes are pruned |
 | `building_totals` | the building, one minute | `ts` (PK); `total_power_w`, `avg_voltage`, `phase_current_{red,yellow,blue}`, `energy_kwh_{today,week,month}`, plus `*_integrated` | ingest | The building as the **sum of its branch meters** [E-168] |
 | `building_totals_hourly` | the building, one hour | `hour` (PK); averages, maxima, `sample_count` | the retention rollup | Permanent building history |
 | `anomalies` | one flagged reading | `device_id`, `ts`, `metric`; `value`, `z_score`, IQR bounds, `method` | ingest (only when both tests agree) | Unusual-use alerts, kept 365 days |
@@ -283,6 +283,7 @@ RM-140). That export is what government energy reporting draws on ([93](93-gover
 | Duplicate rows | Not possible for readings and totals, which upsert on their keys [E-162] | Check whether the "duplicates" differ in `ts` by seconds | None needed. It is two minutes, not one minute twice. | — |
 | Wrong time zone in a report | A query formatting UTC as local, or a site row with the wrong zone | `select timezone from sites`; is the query converting with `at time zone`? | Fix the site row, or the query | A known event appears at its local time |
 | A negative or doubled day | A counter rolled over, or a register jumped | Compare that day's `energy_kwh` with its integrated power (`*_integrated`). Is `energy_removed_kwh` set on the report row? | Report generation restates such days and records the restatement (`energy_removed_kwh`, `energy_restated_at`) | The day's energy agrees with its integrated power |
+| A circuit's day short of its integrated power | Its register fell inside the day (a restart, a channel swap), and the reduction was not banking it | Compare `energy_kwh` with the circuit's power over the day. Is phase53 applied (`readings_hourly.energy_kwh_gain` exists)? | Apply phase53: it banks the register across a fall and restates stored rows, keeping `energy_kwh_before` [E-235] | The day within a few percent of its integrated power |
 | Totals do not match the meter on the incomer | A branch unmetered, a CT wrong, or silent branches excluded | Query 5; coverage; a clamp meter on each branch | Fix the CT or add the branch meter ([01](01-field-devices.md)) | Within the institution's tolerance |
 | Storage outruns the plan | Raw rows × bytes/row above the cap | `select pg_size_pretty(pg_database_size(current_database()))` | Upgrade the plan, or shorten raw retention | Size flat week on week |
 | The project was paused by the host | Free plan inactivity | The Supabase dashboard; ingest's `last_error` | Restore the project. Pick a plan that never pauses. | `last_success_at` advancing |

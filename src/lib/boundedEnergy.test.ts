@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { boundDay, energyFlagOf, periodEnergyCheck, usableEnergy, type HourAgg } from './boundedEnergy';
+import {
+  bankDay,
+  boundDay,
+  energyFlagOf,
+  energyFlagText,
+  hourRegister,
+  periodEnergyCheck,
+  registerGain,
+  rolledHourRegister,
+  usableEnergy,
+  type HourAgg,
+} from './boundedEnergy';
 import type { PeriodDeviceReport } from './supabaseReports';
 
 /**
@@ -127,5 +138,67 @@ describe('energyFlagOf and usableEnergy', () => {
     expect(energyFlagOf(row({ energy_removed_kwh: 0.0004 }))).toBeNull();
     expect(energyFlagOf(row())).toBeNull();
     expect(usableEnergy(row())).toBe(24.188);
+  });
+
+  it('marks a figure phase53 restated with what it was, and keeps the new figure', () => {
+    const restated = row({ energy_kwh: 13.908, energy_kwh_before: 11.213, energy_restated_at: '2026-10-02T01:00:00Z' });
+    expect(energyFlagOf(restated)).toEqual({ kind: 'restated', beforeKwh: 11.213, restatedAt: '2026-10-02T01:00:00Z' });
+    expect(energyFlagText(energyFlagOf(restated)!)).toBe('Restated: was 11.21 kWh — energy used after the meter’s counter reset is now counted');
+    expect(usableEnergy(restated)).toBe(13.908);
+    expect(energyFlagOf(row({ energy_kwh: 24.188, energy_kwh_before: 24.1884 }))).toBeNull();
+  });
+
+  it('says a jump was removed before it says a figure was restated', () => {
+    const both = row({ energy_kwh: 4.9, energy_removed_kwh: 5.03, energy_kwh_before: 4.6 });
+    expect(energyFlagOf(both)?.kind).toBe('corrected');
+  });
+});
+
+/**
+ * RM-155 — the register banked across a fall, as `supabase/phase53_banked_register.sql` does it. The
+ * hours are phase53's rehearsal fixtures, with the same answers.
+ */
+describe('bankDay — the register banked across a fall', () => {
+  const minutes = (n: number, at: (i: number) => number) => Array.from({ length: n }, (_, i) => at(i));
+  const hours = (values: number[], firstHour: number) =>
+    [0, 1, 2].map((k) => hourRegister(DAY + (firstHour + k) * HOUR, values.slice(k * 60, k * 60 + 60))!);
+  const banked = (m: Map<number, number>) => [...m.values()].map((v) => Number(v.toFixed(2)));
+
+  it('H: counts both runs of a register that restarted at 11:30, less the minute the fall took', () => {
+    const day = hours(minutes(180, (i) => (i < 90 ? 2 + i * 0.01 : (i - 90) * 0.01)), 10);
+    expect(banked(bankDay(day))).toEqual([2.59, 3.18, 3.78]);
+  });
+
+  it('I: changes nothing about the daily rollover a minute early', () => {
+    const values = minutes(120, (i) => (i < 119 ? 5 + i * 0.01 : 0));
+    const day = [0, 1].map((k) => hourRegister(DAY + (22 + k) * HOUR, values.slice(k * 60, k * 60 + 60))!);
+    expect(banked(bankDay(day))).toEqual([5.59, 6.18]);
+  });
+
+  it('banks a register that never fell to exactly its highest reading each hour', () => {
+    const day = hours(minutes(180, (i) => 0.4 + i * 0.002), 7);
+    const max = [0, 1, 2].map((k) => 0.4 + (k * 60 + 59) * 0.002);
+    [...bankDay(day).values()].forEach((v, k) => expect(v).toBeCloseTo(max[k], 9));
+  });
+
+  it('reads an hour rolled up before phase53 as its highest reading — phase42’s rule, exactly', () => {
+    const rolled = (hour: number, max: number) => rolledHourRegister(DAY + hour * HOUR, { energy_kwh_today_max: max })!;
+    // Fixture C: 1.0, 1.4, a restart to 0.1, then 0.5. Both runs count: 1.8.
+    expect(banked(bankDay([rolled(8, 1.0), rolled(9, 1.4), rolled(10, 0.1), rolled(11, 0.5)]))).toEqual([1.0, 1.4, 1.4, 1.8]);
+    expect(rolledHourRegister(DAY, { energy_kwh_today_max: null })).toBeNull();
+  });
+
+  it('J: carries the bank through hours the rollup kept as first, last and gain', () => {
+    // A restart at 08:30 inside an hour since rolled up; 09:00 and 10:00 still minutes.
+    const values = minutes(180, (i) => (i < 30 ? 1 + i * 0.01 : (i - 30) * 0.01));
+    const rolled = rolledHourRegister(DAY + 8 * HOUR, { energy_kwh_today_max: 1.29, energy_kwh_today_first: 1, energy_kwh_today_last: 0.29, energy_kwh_gain: 0.58 })!;
+    const raw = [1, 2].map((k) => hourRegister(DAY + (8 + k) * HOUR, values.slice(k * 60, k * 60 + 60))!);
+    expect(banked(bankDay([...raw, rolled]))).toEqual([1.58, 2.18, 2.78]);
+  });
+
+  it('registerGain: a fall adds nothing, and the rise after it counts', () => {
+    expect(registerGain([1, 2, 0.5, 1])).toBe(1.5);
+    expect(registerGain([3])).toBe(0);
+    expect(hourRegister(DAY, [])).toBeNull();
   });
 });
