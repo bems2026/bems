@@ -1,12 +1,14 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-10-01, evening — **RM-155 built: each circuit's energy is banked across a meter reset.
-phase53 awaits the operator; apply it before about 7 Oct.**
+**Last audited:** 2026-10-01, evening — **RM-155 done: each circuit's energy is banked across a meter reset.
+phase53 is applied (15:56) and read back.**
 - **What was wrong.** A meter's register that fell inside a day lost everything the circuit used until it climbed back
   past its old top. C.O Yellow on 23 Sep: 11.21 kWh stored, 13.91 banked, 14.22 from its own power (F-040, E-235).
 - **phase53** banks the register minute by minute, as the bridge does, and the rollup now keeps what banking needs. It
   restates the stored rows the old rule built and keeps what they said. It was rehearsed on the edge, and neutered twice
-  (E-236). The week of 21 Sep should then read about 80.60 kWh on its circuits against the counter's 80.53.
+  (E-236).
+- **Read back live (E-237).** The week of 21 Sep reads 80.60 kWh on both tabs against the counter's 80.53, and 23 Sep
+  reads 22.29. C.O Yellow carries a Restated badge ("was 11.21").
 
 **Earlier, 2026-10-01 — RM-154 done: the baseline is a period in the calendar, built from real days; one energy figure
 per period.**
@@ -438,7 +440,7 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
-### 2026-10-01 — circuits banked across a meter reset (RM-155): built, awaiting phase53
+### 2026-10-01 — circuits banked across a meter reset (RM-155): done, phase53 applied
 
 - **The fault (F-040).** Each circuit's day was rebuilt from the highest register reading of each hour. When a register
   fell, nothing more was credited until it climbed back past the old top. On 23 Sep C.O Yellow's register fell 5.322 ->
@@ -451,7 +453,17 @@ other four and none needed changing.
   `energy_kwh_before`, and the page shows them with a **Restated** badge.
 - **The export.** "Every reading" marks clipped jumps by the same rule.
 
-**For the operator — apply phase53, before about 7 Oct:**
+**Applied by the operator 2026-10-01 at 15:56, on the second paste.** Read back (E-237):
+- **Six rows restated, not the four predicted.** The two extra are L.O Yellow's 27 Sep and its week, each 0.001 kWh
+  higher: a reading dipped and came back, and banking counts the dip twice.
+- **The page:** 80.60 kWh on both tabs for the week of 21 Sep, the counter's 80.53 stated beside it, and the days
+  summing to it. 23 Sep reads 22.29, and the counter note no longer names that day.
+
+**Noted for later, not done:** L.O Yellow's 23 Sep day row still says "a 4.75 kWh jump", while its week says 5.03. Its
+energy did not change, so phase53 left the row alone, along with the removed figure the old rule had measured. 5.03 is
+the jump itself (0.290 -> 5.322).
+
+**What the operator was asked (kept for the record):**
 - **The first paste failed, and applied nothing (2026-10-01).** The file kept its before-figures in a temporary
   table and dropped it at the end. The SQL editor stopped on the table, and "Run and enable RLS" added a statement
   after the script that named the dropped table. The error was `42P01 relation "phase53_before" does not exist`, and
@@ -4536,8 +4548,12 @@ is E-235 (the live minutes) and E-236 (the rehearsal); the finding is F-040; ADR
         - `boundedEnergy` (+8): the rehearsal's days with its answers.
         - `readingsExport` (+2): each fails under the old rule.
         - `ReportFigure` (+1): neutered.
-- [ ] **RM-155c** After the operator applies phase53: read back the restated rows and the Reports page. The week of 21
-      Sep should be about 80.60 kWh on its circuits and 23 Sep about 22.29.
+- [x] **RM-155c** phase53 applied by the operator (2026-10-01, second paste) and read back (E-237).
+      - **The database.** The new columns and `register_gain` exist. 23 Sep C.O Yellow is 13.908, and its hours sum to
+        13.908. Six rows were restated, each keeping `energy_kwh_before`.
+      - **Signed in, on the dev server.** Week of 21 Sep: 80.60 on the Overview and on Circuits. The counter's 80.53
+        is stated, and the note names only 21 and 22 Sep. C.O Yellow reads 52.28 Restated ("was 49.57"). 23 Sep reads
+        22.29, with C.O Yellow 13.91 Restated ("was 11.21").
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 

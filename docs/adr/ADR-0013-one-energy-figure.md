@@ -2,7 +2,7 @@
 title: ADR-0013 — A period's energy is the sum of its circuits, on every tab
 status: Accepted
 date: 2026-10-01
-evidence: [E-233, E-235, E-236]
+evidence: [E-233, E-235, E-236, E-237]
 ---
 
 # ADR-0013 — A period's energy is the sum of its circuits, on every tab
@@ -61,9 +61,12 @@ the same meters.
   bridge's accumulator does; the rollup keeps what banking needs, so a pruned hour banks as it did while raw
   [E-235, E-236]. The "Fix the SQL" alternative above is no longer an alternative.
 - **The rule here is unchanged.** It still makes the tabs agree with whatever the circuits say; they now say more.
-- **Measured before applying:** the week of 21 Sep reads about 80.60 kWh on its circuits against the counter's 80.53,
-  and 23 Sep about 22.29 against 22.67 integrated from power. The counter note will not fall wholly silent: the
-  counter's own days still do not add up to its week, which is the counter's fault, not the circuits'.
+- **Applied 2026-10-01 and read back [E-237].**
+  - The week of 21 Sep reads 80.60 kWh on its circuits, against the counter's 80.53.
+  - 23 Sep reads 22.29, against 22.67 integrated from power.
+  - The counter note no longer names 23 Sep.
+- **The note does not fall wholly silent.** It still names 21 and 22 Sep, and the counter's own days still do not add
+  up to its week. That is the counter's fault, not the circuits'.
 
 ## What would change this answer
 
