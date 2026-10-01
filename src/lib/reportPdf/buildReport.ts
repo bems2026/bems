@@ -200,7 +200,7 @@ const CHARTS: readonly {
       const hours = circuits?.hours ?? [];
       const series = circuits?.series ?? [];
       return {
-        scene: circuitDailyEnergyChart(hours, series, spec('pdf-ch', 240, `Energy per hour, by circuit${scope}`)),
+        scene: circuitDailyEnergyChart(hours, series, spec('pdf-ch', 240, `Energy per hour, by circuit${scope}`), { unit: 'hour' }),
         table: { headers: ['Hour', ...series.map((s) => `${s.label} (kWh)`)], rows: hours.map((h) => [h.day, ...h.values.map((v) => f(v))]) },
       };
     },

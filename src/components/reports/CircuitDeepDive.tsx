@@ -190,7 +190,7 @@ export function CircuitDeepDive({ period, start, rows, scope, nameOf, deviceDail
         idPrefix: 'cir-hourly',
         title: `Energy per hour, by circuit — ${label}`,
         desc: '',
-      }),
+      }, { unit: 'hour' }),
     [hourPoints, refs, label, chartWidth]
   );
   const hourlyTable = useMemo(

@@ -1,6 +1,12 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-10-01, evening — **RM-155 done: each circuit's energy is banked across a meter reset.
+**Last audited:** 2026-10-01, evening — **RM-156 done: the Daily view's circuit chart speaks of hours, not days.**
+- Reports → Daily → Circuits described its 24 hour columns as "Energy per day for 4 circuits, stacked. All 24 days were
+  recorded." It now reads "Energy per hour, 00:00 to 23:59, for 4 circuits, stacked. All 24 hours were recorded.", as
+  the building's own hourly chart does, and an outage is labelled in hours. The PDF's hourly circuit chart said the
+  same and is fixed with it. Not yet built on the edge.
+
+**Earlier, 2026-10-01 — RM-155 done: each circuit's energy is banked across a meter reset.
 phase53 is applied (15:56) and read back.**
 - **What was wrong.** A meter's register that fell inside a day lost everything the circuit used until it climbed back
   past its old top. C.O Yellow on 23 Sep: 11.21 kWh stored, 13.91 banked, 14.22 from its own power (F-040, E-235).
@@ -4554,6 +4560,25 @@ is E-235 (the live minutes) and E-236 (the rehearsal); the finding is F-040; ADR
       - **Signed in, on the dev server.** Week of 21 Sep: 80.60 on the Overview and on Circuits. The counter's 80.53
         is stated, and the note names only 21 and 22 Sep. C.O Yellow reads 52.28 Restated ("was 49.57"). 23 Sep reads
         22.29, with C.O Yellow 13.91 Restated ("was 11.21").
+
+### The Daily view's circuit chart describes hours — RM-156 (2026-10-01)
+
+RM-124 drew a day's circuits hour by hour through the stacked per-day chart, and the chart's description kept counting
+days: on Reports → Daily → Circuits (Wed 23 Sep) a screen reader heard "Energy per day for 4 circuits, stacked. All 24
+days were recorded."
+
+- [x] **RM-156** `circuitDailyEnergyChart` takes `unit: 'hour'`. **Built and tested; not yet built on the edge.**
+      - **The words.** "Energy per hour, 00:00 to 23:59, for N circuits, stacked." then "All 24 hours were recorded."
+        or "K of 24 hours were not recorded and are drawn as gaps.", as `hourlyEnergyChart` words it. A gap of several
+        hours is labelled "K hours, no data". The default stays `'day'`, so the weekly and monthly charts read as
+        before.
+      - **The callers.** The page's hourly circuit chart (`CircuitDeepDive.tsx`, `cir-hourly`) and the PDF's
+        `circuitHourly` section (`buildReport.ts`, `pdf-ch`). The baseline's projected day passes its own `desc`.
+      - **Tests.** `src/components/reports/charts/circuitCharts.test.ts` (+2: a full day; an outage of four hours, in
+        the description and on the gap) and `src/lib/reportPdf/buildReport.test.ts` (+1 assertion on the PDF chart's
+        description). All three failed on the old wording first.
+      - **Not seen on the page:** the Reports page needs a signed-in session, so the page's wiring is checked by the
+        type-check and the PDF test, not by a rendered page.
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 

@@ -64,8 +64,12 @@ export function circuitDailyEnergyChart(
   points: readonly CircuitDayPoint[],
   series: readonly CircuitSeriesDef[],
   spec: ChartSpec,
-  /** `desc` replaces the generated description, for columns that are not recorded days (RM-153's modelled hours). */
-  options: { band?: ColumnBand; desc?: string } = {}
+  /**
+   * `unit: 'hour'` when the columns are one day's twenty-four hours (RM-124's Daily view): the description and the
+   * gap labels then count hours, as `hourlyEnergyChart` does. `desc` replaces the generated description, for
+   * columns that are not recorded days (RM-153's modelled hours).
+   */
+  options: { band?: ColumnBand; desc?: string; unit?: 'day' | 'hour' } = {}
 ): Scene {
   const { width, height, palette, idPrefix, title } = spec;
   const box = plotBox(width, height, MARGINS);
@@ -83,9 +87,11 @@ export function circuitDailyEnergyChart(
     return { width, height, idPrefix, title, desc: 'No circuit recorded anything in this period, so there is nothing to draw.', defs, marks };
   }
 
+  const unit = options.unit ?? 'day';
+  const per = unit === 'hour' ? 'Energy per hour, 00:00 to 23:59,' : 'Energy per day';
   const bandNote = options.band ? ` ${options.band.label} are shaded.` : '';
-  const generated = `Energy per day for ${series.length} circuit${series.length === 1 ? '' : 's'}, stacked.${bandNote} ${
-    missing > 0 ? `${missing} of ${points.length} days were not recorded and are drawn as gaps.` : `All ${points.length} days were recorded.`
+  const generated = `${per} for ${series.length} circuit${series.length === 1 ? '' : 's'}, stacked.${bandNote} ${
+    missing > 0 ? `${missing} of ${points.length} ${unit}s were not recorded and are drawn as gaps.` : `All ${points.length} ${unit}s were recorded.`
   }`;
   const desc = options.desc ?? generated;
 
@@ -117,8 +123,8 @@ export function circuitDailyEnergyChart(
     const x = box.x + run.from * slot;
     const w = (run.to - run.from + 1) * slot;
     marks.push({ kind: 'rect', x, y: box.y, w, h: box.h, fill: `url(#${gapId})`, opacity: 0.45 });
-    const days = run.to - run.from + 1;
-    const text = days > 1 ? `${days} days, no data` : 'no data';
+    const columns = run.to - run.from + 1;
+    const text = columns > 1 ? `${columns} ${unit}s, no data` : 'no data';
     if (w >= text.length * 4.6) {
       marks.push({ kind: 'text', x: x + w / 2, y: box.y + box.h / 2, text, fill: palette.textMuted, size: 9, anchor: 'middle' });
     }

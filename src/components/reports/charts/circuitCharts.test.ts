@@ -112,6 +112,31 @@ describe('circuitDailyEnergyChart', () => {
     expect(scene.desc).toBe('A working day, hour by hour, stacked by use.');
   });
 
+  describe('one day hour by hour — the Daily view (RM-124)', () => {
+    const hour = (h: number, values: (number | null)[]): CircuitDayPoint => ({
+      day: `${String(h).padStart(2, '0')}:00`,
+      label: String(h).padStart(2, '0'),
+      values,
+      observed: values.some((v) => v !== null),
+      complete: true,
+    });
+
+    it('describes its columns as hours, as the building’s own hourly chart does', () => {
+      const hours = Array.from({ length: 24 }, (_, h) => hour(h, [0.1, 0.2]));
+      const scene = circuitDailyEnergyChart(hours, SERIES, spec('cd'), { unit: 'hour' });
+      expect(scene.desc).toBe('Energy per hour, 00:00 to 23:59, for 2 circuits, stacked. All 24 hours were recorded.');
+    });
+
+    it('counts an outage in hours, in the description and on the gap', () => {
+      // 02:00–05:59 unrecorded: four columns, wide enough for the gap to carry its label.
+      const hours = Array.from({ length: 24 }, (_, h) => hour(h, h >= 2 && h <= 5 ? [null, null] : [0.1, 0.2]));
+      const scene = circuitDailyEnergyChart(hours, SERIES, spec('cd'), { unit: 'hour' });
+      expect(scene.desc).toMatch(/4 of 24 hours were not recorded and are drawn as gaps\./);
+      expect(texts(scene.marks)).toContain('4 hours, no data');
+      expect(texts(scene.marks).join(' ')).not.toMatch(/days/);
+    });
+  });
+
   it('prints the same picture it draws, with ids in its own namespace', () => {
     const scene = circuitDailyEnergyChart(week, SERIES, spec('cd'));
     const svg = sceneToSvg(scene, PRINT_PALETTE);

@@ -270,6 +270,8 @@ describe('a day — RM-124', () => {
     );
     expect(report.charts.map((c) => c.title)).toEqual(['Energy per hour, by circuit — Lighting']);
     expect(report.omitted).toEqual([]);
+    // Its columns are hours, and its description says so.
+    expect(report.charts[0].desc).toBe('Energy per hour, 00:00 to 23:59, for 1 circuit, stacked. All 24 hours were recorded.');
   });
 
   it('names the hourly chart as left out when its rows did not arrive', () => {
