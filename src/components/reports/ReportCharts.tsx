@@ -68,6 +68,8 @@ export interface ChartsData {
   /** Carried in the same bundle because the PDF and the baseline report both need it beside
    *  these series — splitting it out would mean two things to keep in step for one period. */
   summary?: DemandSummary | null;
+  /** RM-154: per day, said on hover — for a projected baseline, which recorded day each one is. */
+  dayNotes?: Readonly<Record<string, string>>;
 }
 
 interface Props extends ChartsData {
@@ -128,6 +130,7 @@ export function ReportCharts({
   useSegments = NONE,
   untracked,
   ceilingW,
+  dayNotes,
   width: widthProp,
   loading = {},
   only = ['daily', 'hours', 'breakdown', 'heat', 'curve'],
@@ -179,8 +182,12 @@ export function ReportCharts({
   );
 
   const dailyScene = useCallback(
-    () => dailyEnergyChart(toDailyPoints(daily), spec('rep-de', reportChartHeight('daily', daily.length), `Energy per day — ${label}`)),
-    [daily, spec, label]
+    () =>
+      dailyEnergyChart(
+        toDailyPoints(daily).map((p) => (dayNotes?.[p.day] ? { ...p, note: dayNotes[p.day] } : p)),
+        spec('rep-de', reportChartHeight('daily', daily.length), `Energy per day — ${label}`)
+      ),
+    [daily, spec, label, dayNotes]
   );
   const dailyTable = useCallback(
     (): ChartTable => ({

@@ -41,3 +41,12 @@ export { BUILT_IN_DEVICES } from './sites/mmsu-nberic-care/devices.mjs';
  * clean weeks have been recorded.
  */
 export { BASELINE } from './sites/mmsu-nberic-care/baseline.mjs';
+
+/**
+ * ...and the recorded days behind that baseline, hour by hour - RM-154.
+ *
+ * A function rather than a re-export, so the browser fetches the module (about 12 kB compressed) only
+ * when a baseline is shown, and the daemons never load it. Resolves to `{ BASELINE_DAYS }`; a new
+ * site's is `null`.
+ */
+export const loadBaselineDays = () => import('./sites/mmsu-nberic-care/baseline-days.mjs');

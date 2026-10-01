@@ -96,10 +96,10 @@ const openTab = async (name: RegExp) => {
 };
 
 describe('the report-type tabs', () => {
-  it('offers five readings of the same period', async () => {
+  it('offers four readings of the same period — the baseline is chosen in the calendar (RM-154)', async () => {
     render(<ReportsPage />);
     const tabs = await screen.findAllByRole('tab');
-    expect(tabs.map((t) => t.textContent)).toEqual(['Overview', 'Circuits', 'Usage patterns', 'Baseline', 'Compare']);
+    expect(tabs.map((t) => t.textContent)).toEqual(['Overview', 'Circuits', 'Usage patterns', 'Compare']);
   });
 
   it('starts on the overview', async () => {
@@ -110,23 +110,14 @@ describe('the report-type tabs', () => {
   it('uses no statistician’s words anywhere a reader looks — RM-097', async () => {
     const { container } = render(<ReportsPage />);
     await screen.findByText(/100\.00 kWh/);
-    // RM-153: the tab strip names the Baseline tab, which the operator asked for by that name; everything
-    // else a reader sees on the other four tabs is still held to the rule.
-    const strip = screen.getByRole('tablist', { name: /report type/i }).textContent ?? '';
+    // RM-154: "baseline" is an everyday word on the page now (the calendar offers it, Compare sets a period against
+    // it). What the rule keeps off the page is the statistician's words.
     for (const name of [/overview/i, /circuits/i, /usage patterns/i, /compare/i]) {
       await openTab(name);
       await waitFor(() =>
-        expect((container.textContent ?? '').replace(strip, '')).not.toMatch(/\bp(50|95|99)\b|median|baseline|DSM|load factor|load duration|percentile/i)
+        expect(container.textContent ?? '').not.toMatch(/\bp(50|95|99)\b|median|DSM|load factor|load duration|percentile|trimmed/i)
       );
     }
-  });
-
-  it('lifts the word "baseline" on the Baseline tab alone, and keeps the statistician’s words off it — RM-153', async () => {
-    render(<ReportsPage />);
-    await openTab(/^baseline$/i);
-    const panel = await screen.findByRole('tabpanel');
-    await waitFor(() => expect(panel.textContent).toMatch(/business as usual/i));
-    expect(panel.textContent).not.toMatch(/\bp(50|95|99)\b|median|DSM|load factor|load duration|percentile|trimmed/i);
   });
 
   it('keeps the control bar to the period, the scope and the export — the tabs are a strip of their own beneath it (RM-101)', async () => {
@@ -230,7 +221,7 @@ describe('each tab names a panel that exists — FI-041', () => {
   // The strip set `aria-controls` on every tab, and the page never rendered the panel it named: a screen
   // reader asked to go to the tab's content found nothing there. The page renders the selected tab's body,
   // so that body is the panel, labelled by its tab.
-  it.each([/overview/i, /circuits/i, /usage patterns/i, /^baseline$/i, /compare/i])('%s', async (name) => {
+  it.each([/overview/i, /circuits/i, /usage patterns/i, /compare/i])('%s', async (name) => {
     render(<ReportsPage />);
     const tab = await openTab(name);
     await waitFor(() => expect(tab).toHaveAttribute('aria-selected', 'true'));

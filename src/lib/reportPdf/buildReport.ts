@@ -37,6 +37,7 @@ import {
   shortDate,
   weekPoints,
   windowText,
+  type BaselineComparison,
   type Holiday,
   type ProjectedBaseline,
 } from '@/lib/baselineCompare';
@@ -101,6 +102,10 @@ export interface PdfReportInput {
   baseline?: ProjectedBaseline | null;
   /** The site calendar's holidays, counted as closed days when the period is set against the baseline. */
   holidays?: readonly Holiday[];
+  /** RM-154: the comparison the page made (the period against its projection) — used in preference to working one out. */
+  baselineComparison?: BaselineComparison | null;
+  /** RM-154: this document is a projected baseline; the sentence says what it was built from. */
+  projectedFrom?: string | null;
 }
 
 const f = (v: number | null | undefined, digits = 2) => (v === null || v === undefined || !Number.isFinite(v) ? null : v.toFixed(digits));
@@ -436,7 +441,9 @@ export function buildPdfReport(input: PdfReportInput): PdfReport {
         ...series.map((x): [string, string] => [`${x.label}, a typical week`, `${(b.week.kwh[x.id] ?? 0).toFixed(1)} kWh`]),
       ];
 
-      const c = building
+      const c = input.baselineComparison
+        ? input.baselineComparison
+        : building
         ? compareWithBaseline({
             baseline: b,
             period,
@@ -471,7 +478,8 @@ export function buildPdfReport(input: PdfReportInput): PdfReport {
   }
 
   return {
-    title: 'Energy report',
+    title: input.projectedFrom ? 'Projected baseline' : 'Energy report',
+    projectedFrom: input.projectedFrom ?? null,
     siteName: input.siteName,
     timezone: input.timezone,
     generatedAt: input.generatedAt,

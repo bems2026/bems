@@ -7,7 +7,7 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { supabase } from '@/config/supabase';
 import { downloadCsv, downloadCsvParts } from '@/lib/csv';
 import { baselineCsv, dailyCsv, deviceCsv, deviceDailyCsv } from '@/lib/reportCsv';
-import { SITE_BASELINE, SITE_HOLIDAYS, compareWithBaseline } from '@/lib/baselineCompare';
+import { SITE_BASELINE, SITE_HOLIDAYS, compareWithProjection, windowText } from '@/lib/baselineCompare';
 import { fetchReadingsForExport, rawFromEdge, readingsCsvParts, type ReadingsClient } from '@/lib/readingsExport';
 import { edgeRawSource } from '@/lib/edgeArchive';
 import { RAW_RETENTION_DAYS } from '@shared/retention.mjs';
@@ -43,7 +43,7 @@ import {
 } from '@/lib/circuitBreakdown';
 import type { TabDef } from '@/components/ui/Tabs';
 import { UsagePatterns } from './UsagePatterns';
-import { BaselineReport } from './BaselineReport';
+import { BaselineNotes } from './BaselineNotes';
 import { CircuitDeepDive } from './CircuitDeepDive';
 import { ComparisonReport } from './ComparisonReport';
 import { CoverageBanner } from './CoverageBanner';
@@ -51,7 +51,10 @@ import { ExportDrawer, type ExportFormat } from './ExportDrawer';
 import { ReportSectionNote } from './ReportSectionNote';
 import { ReportKpis } from './ReportKpis';
 import { CoverageTag, ReportFigure } from './ReportFigure';
-import { useReportData } from './useReportData';
+import { useReportData, type Section } from './useReportData';
+import { readySection, useBaselineReport } from './useBaselineReport';
+import type { HourEnergyRow } from '@/lib/reportSeries';
+import { conservedBuilding, conservedDaily, counterNote, differingDays } from '@/lib/periodEnergy';
 import { carbonOf, costOf, type DayEnergy } from '@/lib/energyCost';
 import { circuitDayPoints, circuitHourPoints, circuitRefs, loadShareSegments, trendChartInput } from '@/lib/circuitCharts';
 import { apportionedEstimates, estimateDayPoints, estimateHourPoints } from '@/lib/apportionment';
@@ -75,10 +78,14 @@ import { apportionedEstimates, estimateDayPoints, estimateHourPoints } from '@/l
  * tariff read costs the cost line, a hung heatmap query costs the four hourly charts, and a
  * malformed row costs one card — and each says so where it would have been, with a Retry.
  *
- * FIVE TABS, EACH ONE QUESTION — RM-096. Overview: how much, with the few figures and two charts that say
- * it. Circuits: where it went and what it was for, circuit by circuit. Usage patterns: when. Baseline (RM-153):
- * what business as usual would use, and this period against it. Compare: what changed. The words are the
- * office's (RM-097): no p50 or p95, no "DSM ceiling", and "baseline" only on the tab the operator named so.
+ * FOUR TABS, EACH ONE QUESTION — RM-096. Overview: how much, with the few figures and two charts that say
+ * it. Circuits: where it went and what it was for, circuit by circuit. Usage patterns: when. Compare: what
+ * changed — against an earlier period, or against the baseline. The words are the office's (RM-097): no p50
+ * or p95, no "DSM ceiling".
+ *
+ * THE BASELINE IS A WAY OF READING A PERIOD — RM-154. Chosen in the calendar, it lays the projected baseline on
+ * the period being read and shows it through the same four tabs: every section below comes through one switch
+ * (recorded, from `useReportData`; or projected, from `useBaselineReport`), so no chart is written twice.
  *
  * THE HEADLINE COMES FIRST AND LARGEST — RM-082. The period is named with its coverage badge, then
  * the key figures, then the coverage in detail, then what else the period recorded, then the
@@ -107,8 +114,6 @@ const REPORT_TABS: TabDef[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'circuits', label: 'Circuits' },
   { id: 'patterns', label: 'Usage patterns' },
-  // RM-153: the one tab that says "baseline" — the operator named it (ADR-0012 amends RM-097 for it alone).
-  { id: 'baseline', label: 'Baseline' },
   { id: 'compare', label: 'Compare' },
 ];
 
@@ -137,20 +142,68 @@ export function ReportsPage() {
    * inventing a correspondence that does not exist.
    */
   const [period, setPeriod] = useState<ReportPeriod>('month');
+  /** RM-154: the period's projected baseline instead of its recorded report — chosen in the calendar. */
+  const [baselineMode, setBaselineMode] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const chartWidth = useMeasuredChartWidth(panelRef);
   // RM-094: the circuit series load only while something shows them — the Circuits tab, or an export.
   // RM-151: likewise Usage patterns' three charts, which the Overview used to fire on every visit.
+  /** RM-154: whether the page shows the period's projected baseline — decided before the reads it saves. */
+  const hasBaseline = SITE_BASELINE !== null;
+  const showBaseline = baselineMode && hasBaseline;
   const report = useReportData(period, undefined, {
-    circuits: tab === 'circuits' || exportOpen,
-    patterns: tab === 'patterns' || exportOpen,
+    // RM-154: a baseline draws its circuits and patterns from the projection, so the recorded ones wait.
+    circuits: !showBaseline && (tab === 'circuits' || exportOpen),
+    patterns: !showBaseline && (tab === 'patterns' || exportOpen),
+    // RM-154: every tab that prints energy per day prints the circuits' sum — and Compare sets them day by day
+    // against the baseline — so the circuits' days are always read.
+    daily: true,
   });
-  const { periods, selected, select, daily: dailySeries, summary, hours, hourEnergy, matrix, curve, pricing, ceiling } = report;
+  const { periods, selected, select, pricing, ceiling } = report;
+
+  /**
+   * RM-154: the baseline for the period being read. `projection` is what the four tabs show in Baseline mode;
+   * `compareProjection` is the same period's baseline with its holidays as closed days, which Compare and the
+   * exports set the recorded period against. Both are arithmetic over committed files — no request.
+   */
+  const projection = useBaselineReport(period, selected, showBaseline);
+  const compareProjection = useBaselineReport(period, selected, hasBaseline && (tab === 'compare' || exportOpen), SITE_HOLIDAYS);
+  const projected = projection.projected;
+  const fromProjection = <T,>(data: T | null): Section<T> =>
+    readySection(data, projection.status === 'ready' ? (data === null ? 'loading' : 'ready') : projection.status, projection.error);
+  const dailySeries = showBaseline ? fromProjection(projected?.daily ?? null) : report.daily;
+  const summary = showBaseline ? fromProjection(projected?.summary ?? null) : report.summary;
+  const hours = showBaseline ? fromProjection(projected?.hours ?? null) : report.hours;
+  const hourEnergy: Section<HourEnergyRow[]> = showBaseline
+    ? period === 'day'
+      ? fromProjection(projected?.hourEnergy ?? null)
+      : readySection<HourEnergyRow[]>(null, 'idle')
+    : report.hourEnergy;
+  const matrix = showBaseline ? fromProjection(projected?.matrix ?? null) : report.matrix;
+  const curve = showBaseline ? fromProjection(projected?.curve ?? null) : report.curve;
+  const devicesSection = showBaseline ? fromProjection(projected?.devices ?? null) : report.devices;
+  const deviceDailySection = showBaseline ? fromProjection(projected?.deviceDaily ?? null) : report.deviceDaily;
+  const trendSection = showBaseline ? fromProjection(projected?.trend ?? null) : report.trend;
+  /** Per day, which recorded day a projected one is — said on hover in the charts. */
+  const dayNotes = showBaseline ? projected?.notes : undefined;
+  /**
+   * RM-154, ADR-0013: each day's energy is the sum of its circuits, so the bars, the cost and the findings
+   * add up to the period's figure and to the Circuits tab. Held back while the circuits' days are on their
+   * way, rather than drawn from the counter and redrawn a moment later; a failed read keeps the counter's
+   * days, and its note says so.
+   */
+  const circuitDays = report.deviceDaily.data?.available ? report.deviceDaily.data.rows : null;
+  const recordedDaily = useMemo(
+    () => (report.daily.data && report.deviceDaily.status !== 'loading' ? conservedDaily(report.daily.data, circuitDays) : null),
+    [report.daily.data, report.deviceDaily.status, circuitDays]
+  );
+  // A projection's days are its circuits' already (`projectPeriod` builds both from the same hours).
+  const dailyShown = showBaseline ? (projected?.daily ?? null) : recordedDaily;
   /** The summary as `ReportKpis` reads it: `undefined` while it loads, `null` when there is none or it failed. */
   const summaryShown = summary.status === 'ready' ? (summary.data ?? null) : summary.status === 'error' ? null : undefined;
   const months = periods.data;
-  const rows = report.devices.data;
+  const rows = devicesSection.data;
 
   /**
    * The whole building, one category of load, or one branch circuit — RM-082c and RM-093. It narrows the
@@ -184,21 +237,22 @@ export function ReportsPage() {
    *  RM-151: the summary rides along when it has arrived, and is not a condition for drawing. */
   const charts: ChartsData | null = useMemo(
     () =>
-      dailySeries.data
+      dailyShown
         ? {
-            daily: dailySeries.data,
+            daily: dailyShown,
             hours: hours.data,
             hourEnergy: hourEnergy.data,
             matrix: matrix.data,
             curve: curve.data,
             segments,
             useSegments,
-            untracked,
+            untracked: showBaseline ? undefined : untracked,
             ceilingW: ceiling.data ?? null,
+            dayNotes,
             summary: summary.data ?? null,
           }
         : null,
-    [dailySeries.data, summary.data, hours.data, hourEnergy.data, matrix.data, curve.data, segments, useSegments, untracked, ceiling.data]
+    [dailyShown, summary.data, hours.data, hourEnergy.data, matrix.data, curve.data, segments, useSegments, untracked, ceiling.data, showBaseline, dayNotes]
   );
   /**
    * RM-151: when the daily series itself failed, what does not depend on it still draws — "Energy by
@@ -216,12 +270,13 @@ export function ReportsPage() {
             curve: curve.data,
             segments,
             useSegments,
-            untracked,
+            untracked: showBaseline ? undefined : untracked,
             ceilingW: ceiling.data ?? null,
+            dayNotes,
             summary: summary.data ?? null,
           }
         : null,
-    [dailySeries.status, summary.data, hours.data, hourEnergy.data, matrix.data, curve.data, segments, useSegments, untracked, ceiling.data]
+    [dailySeries.status, summary.data, hours.data, hourEnergy.data, matrix.data, curve.data, segments, useSegments, untracked, ceiling.data, showBaseline, dayNotes]
   );
 
   /**
@@ -229,21 +284,66 @@ export function ReportsPage() {
    * the summary and the bars above it cannot describe different days.
    */
   const priced = useMemo(() => {
-    const days: DayEnergy[] = (dailySeries.data ?? []).map((d) => ({
+    const days: DayEnergy[] = (dailyShown ?? []).map((d) => ({
       day: d.local_day.slice(0, 10),
       // A day whose rows carried no reading has no energy to price. Passing its 0 through would
       // price it at zero, which says the building spent nothing rather than that nobody watched.
       kwh: d.usable_sample_count > 0 ? d.energy_kwh : null,
     }));
     return { cost: costOf(days, pricing.data?.tariffs ?? []), carbon: carbonOf(days, pricing.data?.factors ?? []) };
-  }, [dailySeries.data, pricing.data]);
+  }, [dailyShown, pricing.data]);
 
   const selectedIndex = months && selected ? months.findIndex((m) => m.period_start.slice(0, 10) === selected) : -1;
-  const building = months && selectedIndex >= 0 ? months[selectedIndex] : null;
+  const recordedBuilding = months && selectedIndex >= 0 ? months[selectedIndex] : null;
+  const building = showBaseline ? (projected?.building ?? null) : recordedBuilding;
   /** The list is newest first, so the period before this one is the next entry — named by its own
    *  label wherever it is shown, because a missing week in between makes it not the calendar's. */
-  const previous = months && selectedIndex >= 0 ? (months[selectedIndex + 1] ?? null) : null;
+  const previous = !showBaseline && months && selectedIndex >= 0 ? (months[selectedIndex + 1] ?? null) : null;
   const buildingCoverage = building ? coverageOf(building.online_sample_count, building.expected_sample_count) : null;
+  /**
+   * RM-154, ADR-0013: the period's energy is the sum of its circuits — the same figure on the Overview, the
+   * Circuits tab, the comparisons and the exports. The building's own counter rides along as `counter_kwh`,
+   * the stated check. "vs the previous period" reads the previous period's own circuits the same way.
+   */
+  const conserved = useMemo(() => (building ? conservedBuilding(building, rows) : null), [building, rows]);
+  const previousConserved = useMemo(
+    () => (previous ? conservedBuilding(previous, report.previousDevices.data) : null),
+    [previous, report.previousDevices.data]
+  );
+  const energyPending = devicesSection.status === 'loading' || (previous !== null && report.previousDevices.status === 'loading');
+
+  /**
+   * RM-154: the recorded period against its baseline — on Compare, in the Baseline CSV and in the PDF. Always the
+   * RECORDED period's figures (the sum of its circuits), whichever mode the page is in.
+   */
+  const recordedConserved = useMemo(
+    () => (recordedBuilding ? conservedBuilding(recordedBuilding, report.devices.data) : null),
+    [recordedBuilding, report.devices.data]
+  );
+  const againstBaseline = useMemo(() => {
+    if (!hasBaseline) return null;
+    const comparison =
+      compareProjection.projected && recordedConserved && recordedBuilding
+        ? compareWithProjection({
+            baseline: SITE_BASELINE,
+            projected: compareProjection.projected,
+            period,
+            recordedKwh: recordedConserved.energy_kwh,
+            recordedByLoad: Object.fromEntries(loadShareSegments(report.devices.data ?? []).map((x) => [x.id, x.kwh])),
+            recordedDaily: (recordedDaily ?? []).map((d) => ({ date: d.local_day.slice(0, 10), kwh: d.usable_sample_count > 0 ? d.energy_kwh : null })),
+            coverage: coverageOf(recordedBuilding.online_sample_count, recordedBuilding.expected_sample_count),
+          })
+        : null;
+    return { status: compareProjection.status, error: compareProjection.error, comparison };
+  }, [hasBaseline, compareProjection.projected, compareProjection.status, compareProjection.error, recordedConserved, recordedBuilding, period, report.devices.data, recordedDaily]);
+  /** How many recorded days the baseline is made of, and from when — said where "Recorded" would be. */
+  const builtFrom = SITE_BASELINE
+    ? { days: Object.values(SITE_BASELINE.day_types).reduce((a, t) => a + t.days.length, 0), window: windowText(SITE_BASELINE) }
+    : null;
+  const counterCheck = useMemo(
+    () => (conserved ? counterNote(conserved, dailySeries.data && dailyShown ? differingDays(dailySeries.data, dailyShown) : []) : null),
+    [conserved, dailySeries.data, dailyShown]
+  );
 
   /**
    * Whether the period's headline figures were ever measured. Once the summary has arrived this
@@ -267,13 +367,13 @@ export function ReportsPage() {
       : pricing.status === 'loading'
         ? 'Still loading the rates.'
         : null;
-  const failedPart = dailySeries.status === 'error' || summary.status === 'error' || report.devices.status === 'error';
+  const failedPart = dailySeries.status === 'error' || summary.status === 'error' || devicesSection.status === 'error';
   /**
    * RM-140: the Circuits series load when the drawer opens (RM-094's `want`), and this gate did not wait for
    * them — a PDF made at once printed the circuit charts as "could not be loaded" when they were only still
    * loading. They are waited for like the other charts, and named beside their sections when they fail.
    */
-  const circuitsStillLoading = report.deviceDaily.status === 'loading' || report.trend.status === 'loading';
+  const circuitsStillLoading = deviceDailySection.status === 'loading' || trendSection.status === 'loading';
   const chartsStillLoading = hours.status === 'loading' || matrix.status === 'loading' || curve.status === 'loading' || circuitsStillLoading;
   const exportUnavailable: Partial<Record<ExportFormat, string>> = {};
   // The PDF prints the demand summary beside the charts, so it waits for that as well (RM-151 split it out).
@@ -297,11 +397,11 @@ export function ReportsPage() {
   }
   if (matrix.status === 'error') exportSectionNotes.heatmap = leftOut;
   if (curve.status === 'error') exportSectionNotes.durationCurve = leftOut;
-  if (report.deviceDaily.status === 'error') {
+  if (deviceDailySection.status === 'error') {
     exportSectionNotes.circuitEnergy = leftOut;
     exportSectionNotes.apportioned = leftOut;
   }
-  if (report.trend.status === 'error') exportSectionNotes.circuitTrend = leftOut;
+  if (trendSection.status === 'error') exportSectionNotes.circuitTrend = leftOut;
   if (!dailySeries.data) {
     exportUnavailable['daily-csv'] =
       dailySeries.status === 'error' ? 'The daily figures could not be loaded. Retry them on the page first.' : 'The daily figures are still loading.';
@@ -310,7 +410,7 @@ export function ReportsPage() {
   }
   if (!rows) {
     exportUnavailable['device-csv'] =
-      report.devices.status === 'error'
+      devicesSection.status === 'error'
         ? 'The per-device figures could not be loaded. Retry them on the page first.'
         : 'The per-device figures are still loading.';
   } else if (rows.length === 0) {
@@ -319,7 +419,7 @@ export function ReportsPage() {
     exportUnavailable['device-csv'] = `No device on ${narrowed} reported for this period. Choose All circuits to export every device.`;
   }
   // RM-098: the per-day file is phase42's bounded daily energy, so it waits for that and says so.
-  const daily = report.deviceDaily;
+  const daily = deviceDailySection;
   if (daily.status === 'error') {
     exportUnavailable['device-daily-csv'] = 'The daily figures per circuit could not be loaded. Retry them on the Circuits tab first.';
   } else if (daily.status !== 'ready' || !daily.data) {
@@ -329,6 +429,11 @@ export function ReportsPage() {
   }
 
   if (!SITE_BASELINE) exportUnavailable['baseline-csv'] = 'This site has no baseline yet — it is built once four weeks have been recorded.';
+  if (showBaseline) {
+    exportUnavailable['readings-csv'] = 'A baseline is projected from recorded days, so it has no readings of its own. Choose Recorded in the calendar to export them.';
+  }
+  /** RM-154: a baseline's files say so in their names, so they cannot overwrite the recorded period's. */
+  const fileScope = (part: string | null) => [part, showBaseline ? 'baseline' : null].filter(Boolean).join(' ') || null;
 
   if (!supabase) {
     return (
@@ -349,8 +454,7 @@ export function ReportsPage() {
   const chartsLoading = charts === null && dailySeries.status === 'loading';
   // RM-124: a day is read hour by hour; its "energy per day" would be one bar.
   const overviewCharts: readonly ReportChartKind[] = period === 'day' ? ['hourly', 'useShare'] : ['daily', 'useShare'];
-  // The Baseline tab draws from a committed file, so it never waits and holds no chart places.
-  const tabCharts = tab === 'patterns' ? USAGE_CHARTS : tab === 'circuits' ? CIRCUIT_CHARTS : tab === 'compare' || tab === 'baseline' ? [] : overviewCharts;
+  const tabCharts = tab === 'patterns' ? USAGE_CHARTS : tab === 'circuits' ? CIRCUIT_CHARTS : tab === 'compare' ? [] : overviewCharts;
   /**
    * Performs one export and says, in words, what was saved. Throws with the reason when it cannot —
    * `ExportDrawer` shows that beside its button. Names come from `reportFilename`, never from the
@@ -370,11 +474,11 @@ export function ReportsPage() {
     if (!selected) throw new Error('No report period is selected.');
 
     if (format === 'device-daily-csv') {
-      const data = report.deviceDaily.data;
+      const data = deviceDailySection.data;
       if (!data || !data.available) throw new Error('The daily figures per circuit are not available.');
       const dayRows = scopeRows(data.rows, scope);
       if (dayRows.length === 0) throw new Error(narrowed ? `No device on ${narrowed} has daily figures for this period.` : 'No device has daily figures for this period.');
-      const name = reportFilename(period, selected, 'devices-daily', 'csv', narrowed);
+      const name = reportFilename(period, selected, 'devices-daily', 'csv', fileScope(narrowed));
       downloadCsv(name, deviceDailyCsv({ rows: dayRows, nameOf, circuitOf: branchOf, useOf: loadLabelOf }));
       return `Saved ${name} · ${dayRows.length} device-days${narrowed ? ` on ${narrowed}` : ''}`;
     }
@@ -414,7 +518,7 @@ export function ReportsPage() {
     if (format === 'device-csv') {
       if (!rows || !scopedRows || scopedRows.length === 0) throw new Error('No per-device rows were stored for this period.');
       // RM-082c: the narrowed rows, with the whole period's beside them so each share is still of the building.
-      const name = reportFilename(period, selected, 'devices', 'csv', narrowed);
+      const name = reportFilename(period, selected, 'devices', 'csv', fileScope(narrowed));
       downloadCsv(
         name,
         deviceCsv({ period, start: selected, rows: scopedRows, buildingRows: rows, nameOf, branchOf, meterIds: BUILDING_METER_IDS as readonly string[] })
@@ -425,27 +529,18 @@ export function ReportsPage() {
     if (format === 'baseline-csv') {
       // RM-153: the committed baseline and this period against it, from the rows the page already holds.
       if (!SITE_BASELINE) throw new Error('This site has no baseline yet.');
-      const comparison = building
-        ? compareWithBaseline({
-            baseline: SITE_BASELINE,
-            period,
-            start: selected,
-            holidays: SITE_HOLIDAYS,
-            recordedKwh: building.energy_kwh,
-            recordedByLoad: Object.fromEntries(useSegments.map((s) => [s.id, s.kwh])),
-            coverage: buildingCoverage,
-          })
-        : null;
+      // RM-154: the recorded period against its projection on the same dates — what Compare shows.
+      const comparison = againstBaseline?.comparison ?? null;
       const name = reportFilename(period, selected, 'baseline', 'csv');
       downloadCsv(name, baselineCsv({ baseline: SITE_BASELINE, comparison, periodLabel }));
       return `Saved ${name} · the baseline, its ${SITE_BASELINE.recorded.days.length} recorded days, and ${periodLabel} against it`;
     }
 
     if (format === 'daily-csv') {
-      const days = dailySeries.data;
+      const days = dailyShown;
       if (!days) throw new Error('The daily figures have not loaded.');
-      const name = reportFilename(period, selected, 'daily', 'csv');
-      downloadCsv(name, dailyCsv({ daily: days, tariffs: pricing.data?.tariffs ?? [], factors: pricing.data?.factors ?? [] }));
+      const name = reportFilename(period, selected, 'daily', 'csv', fileScope(null));
+      downloadCsv(name, dailyCsv({ daily: days, tariffs: pricing.data?.tariffs ?? [], factors: pricing.data?.factors ?? [], projected: showBaseline }));
       return `Saved ${name} · ${days.length} days`;
     }
 
@@ -454,7 +549,7 @@ export function ReportsPage() {
     // RM-099: the circuit charts for the part of the building chosen, when their series are here. One that
     // is not is named in the document as left out, never drawn empty.
     const refs = circuitRefs(scope);
-    const dailyData = report.deviceDaily.data;
+    const dailyData = deviceDailySection.data;
     // RM-130: each estimate's own bars, from the same rows the Circuits tab scales them from.
     const apportionedSeries = apportionedEstimates(rows).map((e) => ({
       id: e.id,
@@ -466,7 +561,7 @@ export function ReportsPage() {
       days: dailyData && dailyData.available ? circuitDayPoints(dailyData.rows, refs) : null,
       // RM-124: a day's circuits, hour by hour, from the same rows the Circuits tab draws.
       hours: period === 'day' && hourEnergy.data ? circuitHourPoints(hourEnergy.data, refs) : null,
-      trend: report.trend.data ? trendChartInput(report.trend.data, refs, SITE.utc_offset_minutes) : null,
+      trend: trendSection.data ? trendChartInput(trendSection.data, refs, SITE.utc_offset_minutes) : null,
     };
     const pdf = buildPdfReport({
       period,
@@ -475,8 +570,8 @@ export function ReportsPage() {
       timezone: SITE.timezone,
       generatedAt: siteDateTime(Date.now()),
       buildId: bootedScript(),
-      building,
-      previous,
+      building: conserved,
+      previous: previousConserved,
       rows,
       scopedRows: scopedRows ?? rows,
       charts,
@@ -491,9 +586,14 @@ export function ReportsPage() {
       apportionedSeries,
       baseline: SITE_BASELINE,
       holidays: SITE_HOLIDAYS,
+      baselineComparison: againstBaseline?.comparison ?? null,
+      projectedFrom:
+        showBaseline && builtFrom
+          ? `Projected from ${builtFrom.days} recorded days, ${builtFrom.window}: each date is one recorded day of its kind, scaled once per kind so the kind averages the baseline. Nothing in it was recorded on these dates.`
+          : null,
     });
     const assembled = performance.now();
-    const name = reportFilename(period, selected, 'report', 'pdf', [narrowed, detail === 'simple' ? 'simple' : null].filter(Boolean).join(' '));
+    const name = reportFilename(period, selected, 'report', 'pdf', fileScope([narrowed, detail === 'simple' ? 'simple' : null].filter(Boolean).join(' ') || null));
     // pdfmake is still loaded only here, on the first export — never on a page load.
     const { downloadReportPdf } = await import('@/lib/reportPdf/download');
     await downloadReportPdf(pdf, name);
@@ -530,6 +630,8 @@ export function ReportsPage() {
         onSelect={(start) => withViewTransition(() => select(start))}
         pending={report.pending}
         periodsLoading={periods.status === 'loading'}
+        baseline={showBaseline}
+        onBaselineChange={hasBaseline ? (on) => withViewTransition(() => setBaselineMode(on)) : undefined}
         scopes={SCOPES}
         scope={encodeScope(scope)}
         onScopeChange={(value) => withViewTransition(() => setScope(decodeScope(value)))}
@@ -562,7 +664,7 @@ export function ReportsPage() {
 
       {/* RM-138: what comes next, in words — the calendar's dashed cell carries it too, but its title never
           shows on the kiosk. A report the quiet re-read found is offered; the page does not move under the reader. */}
-      {report.arrived ? (
+      {showBaseline ? null : report.arrived ? (
         <p className="reports-note" role="note">
           <FileText size={16} aria-hidden="true" /> The {formatPeriod(period, report.arrived)} report is ready.{' '}
           <button type="button" className="report-retry-btn" onClick={() => report.arrived && withViewTransition(() => select(report.arrived as string))}>
@@ -590,25 +692,51 @@ export function ReportsPage() {
           <ErrorBoundary scope="The headline figures" variant="inline" resetKey={building}>
             <header className="report-heading">
               <h2 className="report-heading__title">
-                {formatPeriod(period, building.period_start)} · {PERIOD_ADJECTIVE[period]} report
+                {formatPeriod(period, building.period_start)} · {PERIOD_ADJECTIVE[period]} {showBaseline ? 'baseline' : 'report'}
               </h2>
-              <CoverageTag coverage={buildingCoverage} period={period} />
-              {generatedLabel(building.generated_at) ? <p className="report-heading__meta">Made {generatedLabel(building.generated_at)}</p> : null}
-              {/* RM-073: a restated share says so beside the badge it changed, never silently. */}
-              {coverageRestatement(building) ? <p className="report-heading__meta">{coverageRestatement(building)?.text}</p> : null}
+              {showBaseline ? (
+                <>
+                  {/* RM-154: a projection carries no coverage to badge; it says what it is, and the way back. */}
+                  <span className="badge badge--accent">Projected</span>
+                  <p className="report-heading__meta">
+                    What this office would use with nothing managing it, laid on this {period}&apos;s own days.{' '}
+                    <button type="button" className="report-retry-btn" onClick={() => withViewTransition(() => setBaselineMode(false))}>
+                      Back to recorded
+                    </button>
+                  </p>
+                </>
+              ) : (
+                <>
+                  <CoverageTag coverage={buildingCoverage} period={period} />
+                  {generatedLabel(building.generated_at) ? <p className="report-heading__meta">Made {generatedLabel(building.generated_at)}</p> : null}
+                  {/* RM-073: a restated share says so beside the badge it changed, never silently. */}
+                  {coverageRestatement(building) ? <p className="report-heading__meta">{coverageRestatement(building)?.text}</p> : null}
+                </>
+              )}
             </header>
             <ReportKpis
               period={period}
-              building={building}
+              building={conserved ?? building}
               summary={summaryShown}
               notObserved={notObserved}
               cost={priced.cost}
               carbon={priced.carbon}
               pricing={pricing}
-              previous={previous}
+              previous={previousConserved}
+              energyPending={energyPending}
+              uncounted={(conserved?.uncounted ?? []).map(nameOf)}
+              projected={showBaseline ? builtFrom : null}
             />
+            {/* RM-154: the building counter, as the stated check beside the one figure — the same words the Circuits tab says. */}
+            {counterCheck ? (
+              <p className="reports-note report-counter-check" role="note">
+                {counterCheck}
+              </p>
+            ) : null}
             {/* What else the period recorded, as one line of small figures rather than a card. */}
-            <dl className="report-glance" aria-label={`Also recorded for ${formatPeriod(period, building.period_start)}`}>
+            <dl className="report-glance" aria-label={`Also ${showBaseline ? 'in the baseline' : 'recorded'} for ${formatPeriod(period, building.period_start)}`}>
+              {showBaseline ? null : (
+              <>
               <div>
                 <dt>Commands</dt>
                 <dd>
@@ -622,6 +750,8 @@ export function ReportsPage() {
                 <dt>Unusual readings</dt>
                 <dd>{building.anomaly_count}</dd>
               </div>
+              </>
+              )}
               <div>
                 <dt>Average voltage</dt>
                 <dd>
@@ -647,7 +777,8 @@ export function ReportsPage() {
           <>
             <ReportSectionNote section={dailySeries} what="the daily figures" quietWhileLoading />
             <ReportSectionNote section={summary} what="the demand summary" quietWhileLoading />
-            <ReportSectionNote section={report.devices} what="the per-device figures" quietWhileLoading />
+            <ReportSectionNote section={devicesSection} what="the per-device figures" quietWhileLoading />
+            <ReportSectionNote section={deviceDailySection} what="the daily figures per circuit" quietWhileLoading />
             {period === 'day' ? <ReportSectionNote section={hourEnergy} what="the hour by hour chart" quietWhileLoading /> : null}
             {charts ? (
               <ReportCharts
@@ -655,7 +786,7 @@ export function ReportsPage() {
                 start={selected}
                 {...charts}
                 only={overviewCharts}
-                loading={{ useShare: report.devices.status === 'loading', hourly: hourEnergy.status === 'loading' }}
+                loading={{ useShare: devicesSection.status === 'loading', hourly: hourEnergy.status === 'loading' }}
               />
             ) : chartsLoading ? (
               <ReportSkeleton label={periodLabel} period={period} parts={['charts']} kinds={overviewCharts} />
@@ -666,10 +797,17 @@ export function ReportsPage() {
                 start={selected}
                 {...withoutDaily}
                 only={overviewCharts.filter((k) => k === 'useShare')}
-                loading={{ useShare: report.devices.status === 'loading' }}
+                loading={{ useShare: devicesSection.status === 'loading' }}
               />
             ) : null}
-            {dailySeries.data && summary.status === 'ready' ? (
+            {showBaseline && SITE_BASELINE ? (
+              <ErrorBoundary scope="How this baseline was made" variant="inline" resetKey={scopeKey}>
+                <BaselineNotes
+                  baseline={SITE_BASELINE}
+                  scales={Object.fromEntries(Object.entries(projection.days?.types ?? {}).map(([t, x]) => [t, x.scale]))}
+                />
+              </ErrorBoundary>
+            ) : dailySeries.data && summary.status === 'ready' ? (
               <ErrorBoundary scope="How much was recorded" variant="inline" resetKey={dailySeries.data}>
                 <CoverageBanner
                   summary={summary.data ?? null}
@@ -686,8 +824,8 @@ export function ReportsPage() {
         {/* ---- Circuits ------------------------------------------------------------------------ */}
         {tab === 'circuits' && selected ? (
           <>
-            <ReportSectionNote section={report.devices} what="the per-device figures" />
-            {report.devices.status === 'loading' ? <ReportSkeleton label={periodLabel} period={period} parts={['kpis', 'table']} /> : null}
+            <ReportSectionNote section={devicesSection} what="the per-device figures" />
+            {devicesSection.status === 'loading' ? <ReportSkeleton label={periodLabel} period={period} parts={['kpis', 'table']} /> : null}
             {rows && rows.length > 0 ? (
               <ErrorBoundary scope="The circuit report" variant="inline" resetKey={rows}>
                 <CircuitDeepDive
@@ -696,10 +834,13 @@ export function ReportsPage() {
                   rows={rows}
                   scope={scope}
                   nameOf={nameOf}
-                  building={building}
-                  deviceDaily={report.deviceDaily}
+                  conserved={conserved}
+                  counterCheck={counterCheck}
+                  projected={showBaseline}
+                  dayNotes={dayNotes}
+                  deviceDaily={deviceDailySection}
                   hourEnergy={hourEnergy}
-                  trend={report.trend}
+                  trend={trendSection}
                 />
               </ErrorBoundary>
             ) : null}
@@ -733,20 +874,18 @@ export function ReportsPage() {
           </>
         ) : null}
 
-        {/* ---- Baseline — RM-153 ------------------------------------------------------------------ */}
-        {tab === 'baseline' && selected ? (
-          <>
-            <ReportSectionNote section={report.devices} what="the per-device figures" quietWhileLoading />
-            <ErrorBoundary scope="The baseline" variant="inline" resetKey={scopeKey}>
-              <BaselineReport period={period} start={selected} building={building} rows={rows} pricing={pricing} />
-            </ErrorBoundary>
-          </>
-        ) : null}
-
         {/* ---- Compare ---------------------------------------------------------------------------- */}
         {tab === 'compare' && months ? (
           <ErrorBoundary scope="The comparison" variant="inline" resetKey={scopeKey}>
-            <ComparisonReport period={period} periods={months} selected={selected} />
+            <ComparisonReport
+              key={showBaseline ? 'baseline' : 'recorded'}
+              period={period}
+              periods={months}
+              selected={selected}
+              reporting={recordedConserved}
+              againstBaseline={againstBaseline}
+              startOnBaseline={showBaseline}
+            />
           </ErrorBoundary>
         ) : null}
       </TabPanel>

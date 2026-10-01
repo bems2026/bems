@@ -99,6 +99,7 @@ nav:
       - ADR-0010 Predictive: adr/ADR-0010-defer-predictive.md
       - ADR-0011 Edge archive: adr/ADR-0011-edge-archive-hot-tier.md
       - ADR-0012 Projected baseline: adr/ADR-0012-projected-baseline.md
+      - ADR-0013 One energy figure: adr/ADR-0013-one-energy-figure.md
   - Reference:
       - Bridge contract: bridge-contract.md
       - Storage contract: storage-contract.md

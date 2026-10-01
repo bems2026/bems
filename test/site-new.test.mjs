@@ -44,7 +44,7 @@ test('it writes a site directory a deployment could actually use', async () => {
   try {
     const result = scaffoldSite({ root, slug: 'test-lab' });
     const dir = join(root, 'shared', 'sites', 'test-lab');
-    for (const f of ['site.mjs', 'devices.mjs', 'circuits.mjs', 'baseline.mjs']) {
+    for (const f of ['site.mjs', 'devices.mjs', 'circuits.mjs', 'baseline.mjs', 'baseline-days.mjs']) {
       assert.ok(existsSync(join(dir, f)), `expected ${f}`);
     }
     assert.equal(result.slug, 'test-lab');
@@ -69,6 +69,8 @@ test('it writes a site directory a deployment could actually use', async () => {
     assert.deepEqual(circuits.CIRCUITS, [], 'and no metered circuits until somebody wires them');
     const baseline = await import(pathToFileURL(join(dir, 'baseline.mjs')).href);
     assert.equal(baseline.BASELINE, null, 'and no baseline until four clean weeks have been recorded (RM-153)');
+    const days = await import(pathToFileURL(join(dir, 'baseline-days.mjs')).href);
+    assert.equal(days.BASELINE_DAYS, null, 'nor the recorded days behind one (RM-154)');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -121,6 +123,7 @@ test('it does not activate the site — that is a person\'s decision', () => {
     assert.match(result.nextStep, /siteConfig\.mjs/);
     assert.match(result.nextStep, /test-lab/);
     assert.match(result.nextStep, /BASELINE/, 'all four re-exports, or the pointer is left half on the old building');
+    assert.match(result.nextStep, /loadBaselineDays/, 'and the baseline days loader');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -131,7 +134,7 @@ test('the scaffolded files carry no reference to any other building', () => {
   try {
     scaffoldSite({ root, slug: 'test-lab' });
     const dir = join(root, 'shared', 'sites', 'test-lab');
-    for (const f of ['site.mjs', 'devices.mjs', 'circuits.mjs', 'baseline.mjs']) {
+    for (const f of ['site.mjs', 'devices.mjs', 'circuits.mjs', 'baseline.mjs', 'baseline-days.mjs']) {
       const text = readFileSync(join(dir, f), 'utf8');
       assert.equal(/mmsu|nberic|care\b/i.test(text), false, `${f} mentions the original site`);
     }

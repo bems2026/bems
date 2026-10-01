@@ -218,3 +218,42 @@ describe('this site’s baseline', () => {
     expect(items.find((i) => /^Built from/.test(i.lead))?.body).toMatch(/^11 working days, 4 Saturdays, 4 Sundays;/);
   });
 });
+
+describe('compareWithProjection — RM-154', () => {
+  const complete = { ratio: 1, band: 'complete' as const };
+  it('sets a period against its projection on the same dates, overall, by use and day by day', async () => {
+    const { compareWithProjection } = await import('./baselineCompare');
+    const { projectPeriod } = await import('./baselineProjection');
+    const { loadBaselineDays } = await import('@shared/siteConfig.mjs');
+    const b = SITE_BASELINE as ProjectedBaseline;
+    const { BASELINE_DAYS } = await loadBaselineDays();
+    const projected = projectPeriod(b, BASELINE_DAYS as never, 'month', '2026-08-01', { holidays: HOLIDAYS });
+    const recordedDaily = projected.daily.map((d) => ({ date: d.local_day, kwh: (d.energy_kwh as number) * 0.9 }));
+    const c = compareWithProjection({
+      baseline: b,
+      projected,
+      period: 'month',
+      recordedKwh: (projected.building.energy_kwh as number) * 0.9,
+      recordedByLoad: {},
+      recordedDaily,
+      coverage: complete,
+    });
+    expect(c.comparable).toBe(true);
+    if (!c.comparable) return;
+    expect(c.expectedKwh).toBeCloseTo(projected.building.energy_kwh as number, 6);
+    expect(c.avoidedKwh).toBeCloseTo((projected.building.energy_kwh as number) * 0.1, 6);
+    expect(c.holidays.map((h) => h.name)).toEqual(['Ninoy Aquino Day', 'National Heroes Day']);
+    expect(c.days).toHaveLength(31);
+    expect(c.days?.[0].recordedKwh).toBeCloseTo((c.days?.[0].expectedKwh as number) * 0.9, 6);
+    const aircon = c.byLoad.find((l) => l.load === 'aircon');
+    expect(aircon?.expectedKwh).toBeGreaterThan(0);
+  });
+
+  it('refuses under 95% recorded, and without a projection', async () => {
+    const { compareWithProjection } = await import('./baselineCompare');
+    const none = compareWithProjection({ baseline: FAKE, projected: null, period: 'month', recordedKwh: 1, recordedByLoad: {}, coverage: complete });
+    expect(none.comparable).toBe(false);
+    const thin = compareWithProjection({ baseline: FAKE, projected: null, period: 'month', recordedKwh: 1, recordedByLoad: {}, coverage: { ratio: 0.48, band: 'partial' } });
+    expect(thin.comparable === false && thin.reason).toMatch(/48% recorded/);
+  });
+});

@@ -477,3 +477,12 @@ describe('the baseline section — RM-153', () => {
     expect(text).not.toContain('A working day, hour by hour');
   });
 });
+
+describe('a projected baseline document — RM-154', () => {
+  it('says what it was built from instead of how much was recorded', () => {
+    const text = allText(buildDocDefinition(report({ projectedFrom: 'Projected from 19 recorded days, 25 Aug – 22 Sep 2026.' })).content).join(' ');
+    expect(text).toContain('What this baseline was built from');
+    expect(text).toContain('Projected from 19 recorded days, 25 Aug – 22 Sep 2026.');
+    expect(text).not.toContain('Minutes recorded');
+  });
+});

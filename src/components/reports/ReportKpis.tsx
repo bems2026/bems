@@ -34,6 +34,18 @@ interface Props {
   pricing: Pick<Section<unknown>, 'status' | 'error' | 'retry'>;
   /** The stored period immediately before this one in the list, if any. */
   previous: PeriodBuildingReport | null;
+  /**
+   * RM-154: the energy is the sum of the circuits (`src/lib/periodEnergy.ts`), so it waits for their rows —
+   * and the previous period's — rather than printing the counter's figure and replacing it a moment later.
+   */
+  energyPending?: boolean;
+  /** RM-154: circuits whose figure could not be counted, by name — the energy is then at least this much. */
+  uncounted?: readonly string[];
+  /**
+   * RM-154: a projected baseline, not a recorded period. "Recorded" would be a claim about minutes nobody
+   * recorded, so the tile says what the projection was built from instead.
+   */
+  projected?: { days: number; window: string } | null;
 }
 
 const pct = (part: number, whole: number) => Math.round((part / whole) * 100);
@@ -104,7 +116,7 @@ function ComparisonTile({ period, building, previous }: { period: ReportPeriod; 
   );
 }
 
-export function ReportKpis({ period, building, summary, notObserved, cost, carbon, pricing, previous }: Props) {
+export function ReportKpis({ period, building, summary, notObserved, cost, carbon, pricing, previous, energyPending = false, uncounted = [], projected = null }: Props) {
   const coverage = coverageOf(building.online_sample_count, building.expected_sample_count);
   const peakKw = building.peak_total_power_w === null ? null : building.peak_total_power_w / 1000;
 
@@ -113,7 +125,14 @@ export function ReportKpis({ period, building, summary, notObserved, cost, carbo
       <div className="report-kpi--hero">
         <dt>Energy</dt>
         <dd className="report-kpi__hero-value">
-          <ReportFigure value={building.energy_kwh} unit="kWh" digits={2} coverage={coverage} period={period} notObserved={notObserved} />
+          {energyPending ? (
+            <span className="reports-figure reports-figure--missing">Loading…</span>
+          ) : (
+            <ReportFigure value={building.energy_kwh} unit="kWh" digits={2} coverage={coverage} period={period} notObserved={notObserved} />
+          )}
+          {!energyPending && uncounted.length > 0 ? (
+            <span className="reports-figure__caveat report-kpi__sub">At least this much: {uncounted.join(' and ')} not counted</span>
+          ) : null}
         </dd>
       </div>
       <div>
@@ -123,8 +142,27 @@ export function ReportKpis({ period, building, summary, notObserved, cost, carbo
         </dd>
       </div>
       <CostCarbonLine cost={cost} carbon={carbon} coverage={coverage} pricing={pricing} />
-      <CoverageTile summary={summary} />
-      {previous ? <ComparisonTile period={period} building={building} previous={previous} /> : null}
+      {projected ? (
+        <div>
+          <dt>Built from</dt>
+          <dd>
+            <span className="reports-figure">{projected.days} recorded days</span>
+            <span className="reports-figure__caveat report-kpi__sub">{projected.window}; each date is one of them</span>
+          </dd>
+        </div>
+      ) : (
+        <CoverageTile summary={summary} />
+      )}
+      {previous && energyPending ? (
+        <div>
+          <dt>vs {formatPeriod(period, previous.period_start)}</dt>
+          <dd>
+            <span className="reports-figure reports-figure--missing">Loading…</span>
+          </dd>
+        </div>
+      ) : previous ? (
+        <ComparisonTile period={period} building={building} previous={previous} />
+      ) : null}
     </dl>
   );
 }

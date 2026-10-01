@@ -327,6 +327,109 @@ export function buildBaseline({ site, meterLoads, hourly, commands, buildingPeak
   };
 }
 
+/**
+ * The recorded days behind the baseline, hour by hour and circuit by circuit — RM-154.
+ *
+ * WHY. The profiles above are each hour's average across a day type, so every projected working day
+ * drew the same curve. The office's real days are not that: its eleven clean working days ran from
+ * 8.3 to 21.9 kWh, each with its own shape (E-233). A projected period is built from these days
+ * instead (`src/lib/baselineProjection.ts`), so a baseline week or month reads like a recorded one.
+ *
+ * WHAT EACH DAY HOLDS, per branch meter and hour: average W (`w`), highest W (`max`), current
+ * (`a`); per hour, the meters' mean voltage (`v`) and the building's highest minute (`max_w`, from
+ * `report_hour_matrix`). An hour that was dropped by rule, missing, or above the ceiling is filled
+ * with the same meter-hour's mean over the type's other days, and listed in `filled`.
+ *
+ * ONE SCALE PER TYPE. Each type's days are multiplied by one factor so they average the type's
+ * projected day (`day_types[type].kwh.total`, the trimmed profile). The spread between the days is
+ * kept; the central figures the baseline publishes (a working day, a week, a month) stay the same.
+ */
+export function buildDonorDays({ site, baseline, hourly, buildingHours, rules }) {
+  const offset = site.utc_offset_minutes;
+  const meters = baseline.loads.flatMap((l) => baseline.meters[l]);
+  const dropped = rules.dropped_hours ?? {};
+  const fields = ['w', 'max', 'a', 'v'];
+  const blank = () => Object.fromEntries(fields.map((f) => [f, Array(24).fill(null)]));
+  const usable = (x) => x !== null && x !== undefined && Number.isFinite(Number(x)) && Number(x) >= 0;
+
+  /** meter -> date -> { w, max, a, v } arrays of 24 */
+  const grid = new Map(meters.map((m) => [m, new Map()]));
+  for (const m of meters) {
+    for (const r of hourly[m] ?? []) {
+      const { date, hour } = localOf(r.ts, offset);
+      if (dropped[date]?.hours.includes(hour)) continue;
+      if (!(Number(r.online_count ?? 1) > 0) || !usable(r.power_w) || Number(r.power_w) > rules.ceiling_w) continue;
+      const days = grid.get(m);
+      if (!days.has(date)) days.set(date, blank());
+      const cell = days.get(date);
+      cell.w[hour] = Number(r.power_w);
+      cell.max[hour] = usable(r.power_w_max) && Number(r.power_w_max) <= rules.ceiling_w ? Number(r.power_w_max) : Number(r.power_w);
+      if (usable(r.current)) cell.a[hour] = Number(r.current);
+      if (usable(r.voltage) && Number(r.voltage) > 0) cell.v[hour] = Number(r.voltage);
+    }
+  }
+  const peaks = new Map();
+  for (const c of buildingHours) {
+    if (!usable(c.max_w)) continue;
+    if (!peaks.has(c.local_day)) peaks.set(c.local_day, Array(24).fill(null));
+    peaks.get(c.local_day)[c.local_hour] = Number(c.max_w);
+  }
+
+  const types = {};
+  for (const [type, t] of Object.entries(baseline.day_types)) {
+    const dates = t.days;
+    const at = (m, date) => grid.get(m).get(date) ?? blank();
+    /** The same meter-hour's mean over the type's other days; 0 when none of them has it. */
+    const fillValue = (m, f, h, date) => mean(dates.filter((d) => d !== date).map((d) => at(m, d)[f][h])) ?? 0;
+    const raw = dates.map((date) => {
+      const filled = [];
+      const perMeter = {};
+      for (const m of [...meters].sort()) {
+        const cell = at(m, date);
+        const hours = [];
+        const out = {};
+        for (const f of fields) {
+          out[f] = cell[f].map((x, h) => {
+            if (x !== null) return x;
+            if (f === 'w') hours.push(h);
+            return fillValue(m, f, h, date);
+          });
+        }
+        if (hours.length > 0) filled.push({ meter: m, hours });
+        perMeter[m] = out;
+      }
+      const peak = peaks.get(date) ?? Array(24).fill(null);
+      const max_w = peak.map((x, h) => x ?? (mean(dates.filter((d) => d !== date).map((d) => peaks.get(d)?.[h] ?? null)) ?? 0));
+      const kwh = meters.reduce((a, m) => a + perMeter[m].w.reduce((x, w) => x + w, 0), 0) / 1000;
+      return { date, filled, perMeter, max_w, kwh };
+    });
+    const plain = raw.reduce((a, x) => a + x.kwh, 0) / raw.length;
+    const scale = plain > 0 ? t.kwh.total / plain : 1;
+    types[type] = {
+      label: t.label,
+      scale: round(scale, 4),
+      days: raw.map((x) => ({
+        date: x.date,
+        weekday: weekdayOf(x.date),
+        meters: Object.fromEntries(
+          meters.map((m) => [
+            m,
+            {
+              w: x.perMeter[m].w.map((w) => round(w * scale, 1)),
+              max: x.perMeter[m].max.map((w) => round(w * scale, 1)),
+              a: x.perMeter[m].a.map((a) => round(a * scale, 3)),
+            },
+          ]),
+        ),
+        v: Array.from({ length: 24 }, (_, h) => round(mean(meters.map((m) => (x.perMeter[m].v[h] > 0 ? x.perMeter[m].v[h] : null))) ?? 0, 1)),
+        max_w: x.max_w.map((w) => round(w * scale, 1)),
+        filled: x.filled,
+      })),
+    };
+  }
+  return { version: 1, site_id: baseline.site_id, generated_at: baseline.generated_at, meters, types };
+}
+
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 const quote = (s) => `'${String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n')}'`;
 
@@ -345,6 +448,22 @@ function literal(value, depth) {
   }
   const entries = Object.entries(value).map(([k, v]) => `${pad}${IDENTIFIER.test(k) ? k : quote(k)}: ${literal(v, depth + 1)},`);
   return `Object.freeze({\n${entries.join('\n')}\n${close}})`;
+}
+
+/** The donor days as their own generated module — the page loads it only when a baseline is shown. */
+export function renderBaselineDaysModule(days) {
+  const count = Object.values(days.types).reduce((a, t) => a + t.days.length, 0);
+  return `/**
+ * The recorded days behind this site's projected baseline — GENERATED by \`npm run baseline:build -- --write\` (RM-154).
+ *
+ * Do not edit. ${count} recorded days, hour by hour and branch meter by branch meter, each type scaled once so its
+ * days average the baseline's projected day; see \`buildDonorDays\` in \`server/baselineModel.mjs\`. Read through
+ * \`loadBaselineDays\` in \`shared/siteConfig.mjs\`, so the browser fetches it only when a baseline is shown.
+ *
+ * Built ${days.generated_at}. Data only — no imports, no logic.
+ */
+export const BASELINE_DAYS = ${literal(days, 0)};
+`;
 }
 
 /** The baseline as the generated site module: data only, frozen at every level, like `site.mjs`. */

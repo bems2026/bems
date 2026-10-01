@@ -260,3 +260,14 @@ describe('baselineCsv — RM-153', () => {
     expect(against[0].join(',')).toMatch(/48% recorded/);
   });
 });
+
+describe('the daily CSV of a projected baseline — RM-154', () => {
+  it('says each day is projected, and claims no coverage for days nobody recorded', () => {
+    const row = {
+      local_day: '2026-09-21', energy_kwh: 12.28, peak_power_w: 1884, avg_power_w: 512, sample_count: 1440, usable_sample_count: 1440,
+      expected_samples: 1440, first_seen_minute: 0, last_seen_minute: 1439, resolution: 'hour',
+    };
+    const csv = dailyCsv({ daily: [row], tariffs: [], factors: [], projected: true });
+    expect(csv.split('\r\n')[1]).toBe('2026-09-21,12.28,1.884,,projected');
+  });
+});

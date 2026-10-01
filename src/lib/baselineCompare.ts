@@ -3,6 +3,7 @@ import { LOAD_LABELS, LOADS } from '@shared/circuits.mjs';
 import { baselineAssumptions, baselineNotCompared } from '@shared/reportProse.mjs';
 import type { CircuitDayPoint, CircuitSeriesDef } from '@/components/reports/charts/circuitDailyEnergyChart';
 import type { Coverage, ReportPeriod } from './supabaseReports';
+import type { ProjectedPeriod } from './baselineProjection';
 
 /**
  * The projected baseline, and a real period set against it — RM-153.
@@ -162,6 +163,8 @@ export type BaselineComparison =
       holidays: Holiday[];
       /** Days of the period inside the window the baseline was built from. */
       ownWindowDays: number;
+      /** RM-154: per date, the projection's day against the recorded one. */
+      days?: { date: string; expectedKwh: number; recordedKwh: number | null }[];
     };
 
 export function compareWithBaseline(input: {
@@ -194,6 +197,55 @@ export function compareWithBaseline(input: {
     byLoad: b.loads.map((load) => ({ load, label: loadLabel(load), expectedKwh: e.kwh[load], recordedKwh: recordedByLoad[load] ?? null })),
     holidays: e.holidays,
     ownWindowDays: dates.filter((d) => d >= b.window.from && d <= b.window.to).length,
+  };
+}
+
+/**
+ * A period against its projected baseline on the same dates — RM-154. The expectation is the projection itself
+ * (`src/lib/baselineProjection.ts`, holidays as closed days), so the figure the Compare tab sets a month against
+ * is the month the Baseline view shows, day for day. The refusals are `compareWithBaseline`'s.
+ */
+export function compareWithProjection(input: {
+  baseline: ProjectedBaseline | null;
+  projected: ProjectedPeriod | null;
+  period: ReportPeriod;
+  recordedKwh: number | null;
+  recordedByLoad: Readonly<Record<string, number | null>>;
+  /** Each recorded day's energy, for the day-by-day table; omitted, there is no table. */
+  recordedDaily?: readonly { date: string; kwh: number | null }[];
+  coverage: Coverage | null;
+}): BaselineComparison {
+  const { baseline: b, projected, period, recordedKwh, recordedByLoad, recordedDaily, coverage } = input;
+  if (!b) return { comparable: false, reason: 'This site has no baseline yet, so there is nothing to set the period against.' };
+  if (coverage?.band !== 'complete') {
+    return { comparable: false, reason: baselineNotCompared(period, coverage ? Math.round(coverage.ratio * 100) : 0) };
+  }
+  if (recordedKwh === null || !Number.isFinite(recordedKwh)) {
+    return { comparable: false, reason: `This ${period} reports no energy, so there is nothing to set against the baseline.` };
+  }
+  if (!projected) return { comparable: false, reason: 'The baseline for this period has not been worked out yet.' };
+  const expectedKwh = projected.building.energy_kwh ?? 0;
+  const differenceKwh = recordedKwh - expectedKwh;
+  const meterKwh = new Map(projected.devices.map((r) => [r.device_id, r.energy_kwh ?? 0]));
+  const recordedOf = new Map((recordedDaily ?? []).map((d) => [d.date, d.kwh]));
+  return {
+    comparable: true,
+    expectedKwh,
+    recordedKwh,
+    differenceKwh,
+    differencePct: expectedKwh === 0 ? null : (differenceKwh / expectedKwh) * 100,
+    avoidedKwh: -differenceKwh,
+    byLoad: b.loads.map((load) => ({
+      load,
+      label: loadLabel(load),
+      expectedKwh: (b.meters[load] ?? []).reduce((a, m) => a + (meterKwh.get(m) ?? 0), 0),
+      recordedKwh: recordedByLoad[load] ?? null,
+    })),
+    holidays: projected.days.filter((d) => d.holiday !== null).map((d) => ({ date: d.date, name: d.holiday as string })),
+    ownWindowDays: projected.days.filter((d) => d.date >= b.window.from && d.date <= b.window.to).length,
+    ...(recordedDaily
+      ? { days: projected.daily.map((d) => ({ date: d.local_day, expectedKwh: d.energy_kwh ?? 0, recordedKwh: recordedOf.get(d.local_day) ?? null })) }
+      : {}),
   };
 }
 

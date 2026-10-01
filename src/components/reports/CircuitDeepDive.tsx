@@ -1,13 +1,13 @@
 import { useMemo } from 'react';
 import { SITE } from '@shared/siteConfig.mjs';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
-import { coverageOf, formatPeriod, type PeriodBuildingReport, type PeriodDeviceReport, type ReportPeriod } from '@/lib/supabaseReports';
+import { coverageOf, formatPeriod, type PeriodDeviceReport, type ReportPeriod } from '@/lib/supabaseReports';
 import { buildBreakdown, scopeLabel, scopeMeterIds, scopeRows, type ReportScope } from '@/lib/circuitBreakdown';
 import { energyFlagOf, usableEnergy } from '@/lib/boundedEnergy';
-import { energyDisagreement } from '@/lib/energyDisagreement';
+import type { ConservedBuilding } from '@/lib/periodEnergy';
 import { circuitDayPoints, circuitHourPoints, circuitRefs, loadLabelOfCircuit, loadShareSegments, trendChartInput } from '@/lib/circuitCharts';
 import type { CircuitTrend, DeviceDaily } from '@/lib/circuitSeries';
-import { reportChartHeight } from '@/lib/reportChartSizes';
+import { reportChartHeight } from '@/lib/reportChartSizes';
 import { useChartWidth } from './chartWidth';
 import { ReportTable, type ReportColumn } from './ReportTable';
 import { CoverageTag, ReportFigure } from './ReportFigure';
@@ -50,11 +50,24 @@ interface Props {
   rows: readonly PeriodDeviceReport[];
   scope: ReportScope;
   nameOf: (id: string) => string;
-  building: PeriodBuildingReport | null;
   deviceDaily: Section<DeviceDaily>;
   /** RM-124: a day's hourly credits per device; idle for a week or a month. */
   hourEnergy?: Section<HourEnergyRow[]>;
   trend: Section<CircuitTrend>;
+  /**
+   * RM-154: the period's one energy figure (`src/lib/periodEnergy.ts`), which the Overview prints too — so
+   * "All circuits" here and "Energy" there are the same number by construction, not by luck.
+   */
+  conserved?: ConservedBuilding | null;
+  /** RM-154: the building counter's figure in words, when it differs — the same sentence the Overview says. */
+  counterCheck?: string | null;
+  /**
+   * RM-154: a projected baseline, not a stored report. Its circuits are the four branch meters only — the
+   * devices inside them are not modelled — so the devices table and its note are not drawn.
+   */
+  projected?: boolean;
+  /** RM-154: per day, said on hover — which recorded day a projected day is. */
+  dayNotes?: Readonly<Record<string, string>>;
 }
 
 const kwh = (v: number | null | undefined, digits = 2) => (v === null || v === undefined || !Number.isFinite(v) ? null : v.toFixed(digits));
@@ -75,7 +88,7 @@ function CircuitChart({ scope, build, table, summaryLabel }: { scope: string; bu
   );
 }
 
-export function CircuitDeepDive({ period, start, rows, scope, nameOf, building, deviceDaily, hourEnergy, trend }: Props) {
+export function CircuitDeepDive({ period, start, rows, scope, nameOf, deviceDaily, hourEnergy, trend, conserved = null, counterCheck = null, projected = false, dayNotes }: Props) {
   const label = formatPeriod(period, start);
   const narrowed = scopeLabel(scope);
   // RM-142: drawn at the width the page has.
@@ -100,9 +113,10 @@ export function CircuitDeepDive({ period, start, rows, scope, nameOf, building, 
   );
   const highest = meterRows.reduce<number | null>((a, r) => (r.peak_power_w === null ? a : a === null ? r.peak_power_w : Math.max(a, r.peak_power_w)), null);
 
-  // The circuits' sum against the building's own figure — RM-054's thresholds, one-sided, silent without both.
-  const buildingOwn = typeof building?.energy_kwh === 'number' ? building.energy_kwh : null;
-  const disagreement = !narrowed && buildingKwh !== null ? energyDisagreement(buildingKwh, buildingOwn) : null;
+  // RM-154: the whole building is the period's one figure, the Overview's; a narrower part is its own circuits.
+  const wholeKwh = conserved ? conserved.energy_kwh : buildingKwh;
+  const shownKwh = !narrowed && conserved ? conserved.energy_kwh : scopeKwh;
+  const uncountedNames = !narrowed && conserved ? conserved.uncounted.map(nameOf) : [];
 
   // --- share bar -------------------------------------------------------------------------------
   const shareSegments = useMemo((): CircuitSegment[] => {
@@ -136,7 +150,13 @@ export function CircuitDeepDive({ period, start, rows, scope, nameOf, building, 
 
   // --- energy per day ------------------------------------------------------------------------------
   const daily = deviceDaily.data;
-  const dayPoints = useMemo(() => (daily && daily.available ? circuitDayPoints(daily.rows, refs) : []), [daily, refs]);
+  const dayPoints = useMemo(
+    () =>
+      daily && daily.available
+        ? circuitDayPoints(daily.rows, refs).map((p) => (dayNotes?.[p.day] ? { ...p, notes: [...(p.notes ?? []), dayNotes[p.day]] } : p))
+        : [],
+    [daily, refs, dayNotes]
+  );
   const buildDaily = useMemo(
     () => () =>
       circuitDailyEnergyChart(dayPoints, refs, {
@@ -267,8 +287,18 @@ export function CircuitDeepDive({ period, start, rows, scope, nameOf, building, 
           <div className="report-kpi--hero">
             <dt>Energy</dt>
             <dd className="report-kpi__hero-value">
-              <ReportFigure value={scopeKwh} unit="kWh" digits={2} coverage={scopeCoverage} period={period} />
-              {uncounted > 0 ? (
+              {/* RM-154: the whole building is the Overview's card, qualified as the Overview qualifies it; a
+                  narrower part is qualified by its own meters' minutes. */}
+              <ReportFigure
+                value={shownKwh}
+                unit="kWh"
+                digits={2}
+                coverage={!narrowed && conserved ? coverageOf(conserved.online_sample_count, conserved.expected_sample_count) : scopeCoverage}
+                period={period}
+              />
+              {uncountedNames.length > 0 ? (
+                <span className="reports-figure__caveat report-kpi__sub">At least this much: {uncountedNames.join(' and ')} not counted</span>
+              ) : (narrowed || !conserved) && uncounted > 0 ? (
                 <span className="reports-figure__caveat report-kpi__sub">
                   {uncounted} of {refs.length} circuits not counted
                 </span>
@@ -279,10 +309,10 @@ export function CircuitDeepDive({ period, start, rows, scope, nameOf, building, 
             <div>
               <dt>Share of the building</dt>
               <dd>
-                {scopeKwh === null || buildingKwh === null || buildingKwh <= 0 || uncounted > 0 ? (
+                {scopeKwh === null || wholeKwh === null || wholeKwh <= 0 || uncounted > 0 ? (
                   <span className="reports-figure reports-figure--missing">—</span>
                 ) : (
-                  <span className="reports-figure">{((scopeKwh / buildingKwh) * 100).toFixed(1)}%</span>
+                  <span className="reports-figure">{((scopeKwh / wholeKwh) * 100).toFixed(1)}%</span>
                 )}
               </dd>
             </div>
@@ -301,20 +331,17 @@ export function CircuitDeepDive({ period, start, rows, scope, nameOf, building, 
           </div>
         </dl>
 
-        {!narrowed && buildingKwh !== null && buildingOwn !== null ? (
-          disagreement ? (
-            <p className="reports-note" role="note">
-              <span className="badge badge--warn">Check the meters</span> The circuits add up to {buildingKwh.toFixed(2)} kWh, more than
-              the building’s own {buildingOwn.toFixed(2)} kWh.
-            </p>
-          ) : (
-            <p className="reports-note">
-              <span className="badge badge--good">Adds up</span> The circuits add up to {buildingKwh.toFixed(2)} of the building’s{' '}
-              {buildingOwn.toFixed(2)} kWh.
-            </p>
-          )
+        {/* RM-154: the building counter as the stated check, in the Overview's words — both directions, with the days. */}
+        {!narrowed && counterCheck ? (
+          <p className="reports-note report-counter-check" role="note">
+            {counterCheck}
+          </p>
         ) : null}
-        <p className="reports-note">Devices sit inside their circuit — adding the two tables together would count the same energy twice.</p>
+        {projected ? (
+          <p className="reports-note">A baseline models the four branch circuits; the devices inside them are not modelled.</p>
+        ) : (
+          <p className="reports-note">Devices sit inside their circuit — adding the two tables together would count the same energy twice.</p>
+        )}
       </section>
 
       <section className="report-charts" aria-label={`Circuit charts for ${label}`}>
@@ -360,7 +387,7 @@ export function CircuitDeepDive({ period, start, rows, scope, nameOf, building, 
       ) : null}
       {/* RM-130: what a branch carries that nobody metered, as the estimate it is — only for branches on this page. */}
       <ApportionedLoads rows={rows} period={period} start={start} meterIds={refs.map((c) => c.meterId)} deviceDaily={deviceDaily} hourEnergy={hourEnergy} />
-      {deviceRows.length > 0 ? (
+      {!projected && deviceRows.length > 0 ? (
         <details className="report-table-card report-devices">
           <summary className="report-recorded__summary">
             Devices on {narrowed ?? 'these circuits'} ({deviceRows.length})

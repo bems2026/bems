@@ -385,3 +385,33 @@ describe('the baseline section — RM-153', () => {
     expect(report.charts.some((c) => c.section === 'projected')).toBe(false);
   });
 });
+
+describe('a projected baseline as a document — RM-154', () => {
+  it('is titled as the projection it is, and says what it was built from where coverage would be', () => {
+    const report = buildPdfReport(input({ projectedFrom: 'Projected from 19 recorded days, 25 Aug – 22 Sep 2026.' }));
+    expect(report.title).toBe('Projected baseline');
+    expect(report.projectedFrom).toBe('Projected from 19 recorded days, 25 Aug – 22 Sep 2026.');
+  });
+
+  it('sets the period against the comparison the page made, when it hands one over', () => {
+    const report = buildPdfReport(
+      input({
+        sections: ['projected'],
+        baseline: SITE_BASELINE as ProjectedBaseline,
+        baselineComparison: {
+          comparable: true,
+          expectedKwh: 320,
+          recordedKwh: 300,
+          differenceKwh: -20,
+          differencePct: -6.25,
+          avoidedKwh: 20,
+          byLoad: [],
+          holidays: [],
+          ownWindowDays: 0,
+        },
+      })
+    );
+    expect(report.projected?.against.lines).toContain('Expected 320.0 kWh; recorded 300.0 kWh.');
+    expect(report.projected?.against.lines).toContain('Energy avoided: 20.0 kWh.');
+  });
+});

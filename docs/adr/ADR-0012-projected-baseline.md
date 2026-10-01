@@ -2,13 +2,13 @@
 title: ADR-0012 — The baseline is a model built from four recorded weeks, committed as a site file
 status: Accepted
 date: 2026-09-30
-evidence: [E-125, E-157, E-206, E-231, E-232]
+evidence: [E-125, E-157, E-206, E-231, E-232, E-233, E-234]
 ---
 
 # ADR-0012 — The baseline is a model built from four recorded weeks, committed as a site file
 
-**Status:** Accepted · **Decided:** 2026-09-30 · **Decided by:** the operator, on the RM-153 plan. **Amends:**
-RM-097's word rule, for the Reports page's Baseline tab only.
+**Status:** Accepted · **Decided:** 2026-09-30, **amended** 2026-10-01 (RM-154, below) · **Decided by:** the operator,
+on the RM-153 and RM-154 plans. **Amends:** RM-097's word rule: "baseline" is an ordinary word on the Reports page.
 
 ## Context
 
@@ -54,15 +54,40 @@ recorded is not compared. The recorded days behind it ship in the same file, as 
 
 ## Consequences
 
-- **The Reports page says "baseline" on one tab.** RM-097 kept the word off the page. The operator named this tab,
-  so the word rule now exempts the Baseline panel alone. `ReportsPage.tabs.test.tsx` still holds the other four tabs
-  to it.
+- **The Reports page says "baseline".** RM-097 kept the word off the page. The operator asked for it by name, first
+  as a tab and then in the calendar (RM-154). The word rule now bans only the statistician's words, and
+  `ReportsPage.tabs.test.tsx` still holds every tab to that.
 - **A rule change needs a rebuild.** `test/site-baseline.test.mjs` fails when the committed file no longer matches its
   rules: the window, the exclusions, the dropped hours, the day types or the method.
 - **Every daemon loads the file**, through `shared/siteConfig.mjs`. It is in the restart map, and a new build takes
   effect on the page after `npm run build`.
 - **A holiday is expected to use what the quietest modelled day uses.** Here that is a Sunday.
 - **The comparison is a difference, not proof of a saving.** Its caveats say what it is not adjusted for.
+
+## Amendment, 2026-10-01 (RM-154)
+
+The operator rejected two things about RM-153's Baseline tab. The baseline belongs where a period is chosen. And
+a baseline whose every working day is the same averaged curve does not read like an energy report [E-233].
+
+- **The baseline is a way of reading a period, chosen in the calendar.** "Baseline" is a jump beside "Latest" and
+  "Same month last year". It lays the baseline on the period being read and shows it through the same Overview,
+  Circuits, Usage patterns and Compare tabs as a recorded report. The separate tab is gone.
+- **Each projected date is one recorded day of its kind.**
+  - The kinds are a working day, a Saturday and a Sunday, taken from `baseline-days.mjs`.
+  - Each kind's days are scaled once, so they average the profile above. The published day, week and month stay
+    the central figures, and the real spread is kept: working days 8.06–21.21 kWh [E-234].
+  - Which day a date gets is a pure function of the date. So a date reads the same alone, in its week and in its
+    month, and a week holds five different working days.
+- **The days module is loaded only when a baseline is shown.** The recorded days, per meter and hour, are a second
+  generated module, reached through `loadBaselineDays`. It is 12 kB compressed.
+- **The comparison moved to Compare.** A recorded period is set against its projection on the same dates, with
+  holidays as closed days, overall, by use and day by day.
+- **The recorded days stay on the page.** RM-153's backup view became "How this baseline was made" on the Overview
+  of a baseline.
+- **Rejected: a synthetic stochastic model.** A pasted brief asked for generated curves with random variation and
+  stated figures: 150–250 W standby, 180–220 W lighting, weekends with no use. The meters measured about 96 W
+  standby and about 30 W daytime lighting, and Saturdays with outlet use. Every figure would have been invented, and
+  real recorded days already carry the variation it asked for.
 
 ## What would change this answer
 

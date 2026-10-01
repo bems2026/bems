@@ -4,13 +4,13 @@
  * Do not edit. Change `baseline-rules.mjs` beside this file and rebuild; the method is described in
  * `server/baselineModel.mjs` and `docs/adr/ADR-0012-projected-baseline.md`.
  *
- * Built 2026-09-30T22:17:40.501Z from 2026-08-25 to 2026-09-22 (29 days).
+ * Built 2026-10-01T04:03:27.957Z from 2026-08-25 to 2026-09-22 (29 days).
  * Data only — no imports, no logic.
  */
 export const BASELINE = Object.freeze({
   version: 1,
   site_id: 'mmsu-nberic-care',
-  generated_at: '2026-09-30T22:17:40.501Z',
+  generated_at: '2026-10-01T04:03:27.957Z',
   window: Object.freeze({
     from: '2026-08-25',
     to: '2026-09-22',
@@ -39,15 +39,15 @@ export const BASELINE = Object.freeze({
       recorded_weekdays: Object.freeze([1, 2, 3, 4]),
       days: Object.freeze(['2026-08-25', '2026-08-26', '2026-08-27', '2026-09-02', '2026-09-08', '2026-09-09', '2026-09-10', '2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17']),
       profile_w: Object.freeze({
-        lighting: Object.freeze([42.9, 41.6, 41.8, 41.7, 41.6, 32.4, 37.1, 39.9, 70.3, 30.4, 29.4, 26.8, 26.1, 23.2, 26.7, 25.4, 34.7, 29.3, 41, 41.8, 41.7, 41.7, 41.8, 41.7]),
+        lighting: Object.freeze([42.9, 41.5, 41.8, 41.7, 41.6, 32.4, 37.1, 39.9, 70.3, 30.4, 29.4, 26.8, 26.1, 23.2, 26.7, 25.4, 34.7, 29.3, 41, 41.8, 41.7, 41.7, 41.8, 41.7]),
         aircon: Object.freeze([16.9, 16.9, 17.1, 17.1, 17, 16.7, 16.2, 30.6, 383.7, 378.7, 476.6, 535.1, 532.3, 590, 541.6, 517.6, 455.3, 322.1, 35.3, 16.2, 16.3, 16.5, 16.7, 16.7]),
-        other: Object.freeze([35.9, 40.3, 36.7, 37.5, 38.1, 39.6, 56.8, 159.8, 607.7, 732.1, 701.2, 791.2, 805.8, 814.2, 836.3, 878.7, 816.6, 268.4, 38.5, 41.9, 46.4, 38.7, 36, 41.1]),
+        other: Object.freeze([35.9, 40.3, 36.7, 37.5, 38.1, 39.6, 56.8, 159.8, 607.7, 732.1, 701.2, 791.2, 805.8, 814.2, 836.3, 878.7, 816.6, 268.4, 38.5, 41.9, 46.4, 38.8, 36, 41.1]),
       }),
       kwh: Object.freeze({
         lighting: 0.891,
         aircon: 4.999,
-        other: 7.939,
-        total: 13.829,
+        other: 7.94,
+        total: 13.83,
       }),
       standby_w: 96.3,
       working_hours_avg_w: 1298.6,
@@ -100,8 +100,8 @@ export const BASELINE = Object.freeze({
     kwh: Object.freeze({
       lighting: 5.349,
       aircon: 25.791,
-      other: 44.287,
-      total: 75.427,
+      other: 44.292,
+      total: 75.432,
     }),
   }),
   standard_month: Object.freeze({
@@ -115,8 +115,8 @@ export const BASELINE = Object.freeze({
     kwh: Object.freeze({
       lighting: 23.259,
       aircon: 112.145,
-      other: 192.569,
-      total: 327.973,
+      other: 192.591,
+      total: 327.995,
     }),
   }),
   peak_operating_draw: Object.freeze({
@@ -632,9 +632,9 @@ export const BASELINE = Object.freeze({
         weekday: 3,
         kwh: Object.freeze({
           lighting: 0.983,
-          aircon: 5.06,
+          aircon: 5.057,
           other: 6.652,
-          total: 12.695,
+          total: 12.692,
         }),
         hours_recorded: 24,
         highest_w: 1947,
@@ -647,8 +647,8 @@ export const BASELINE = Object.freeze({
         kwh: Object.freeze({
           lighting: 0.574,
           aircon: 5.339,
-          other: 10.292,
-          total: 16.205,
+          other: 10.291,
+          total: 16.204,
         }),
         hours_recorded: 24,
         highest_w: 2122.9,
@@ -827,12 +827,12 @@ export const BASELINE = Object.freeze({
         date: '2026-09-30',
         weekday: 3,
         kwh: Object.freeze({
-          lighting: 0.508,
-          aircon: 2.876,
-          other: 0.816,
-          total: 4.2,
+          lighting: 0.551,
+          aircon: 2.892,
+          other: 0.839,
+          total: 4.282,
         }),
-        hours_recorded: 23,
+        hours_recorded: 24,
         highest_w: 1079.7,
         used_as: null,
         reason: 'outside the baseline window (automation acted: 8 aircon loop commands)',
@@ -845,15 +845,15 @@ export const BASELINE = Object.freeze({
         weekdays: Object.freeze([1, 2, 3, 4]),
         days: Object.freeze(['2026-08-25', '2026-08-26', '2026-08-27', '2026-09-02', '2026-09-08', '2026-09-09', '2026-09-10', '2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17']),
         profile_w: Object.freeze({
-          lighting: Object.freeze([42.2, 42.1, 41.2, 41.1, 41.1, 34, 44.6, 48.4, 196.7, 31.1, 28.7, 26.6, 26.2, 31, 33.6, 26.9, 38.1, 33.4, 41.3, 41.7, 41.6, 41.6, 42.6, 42.7]),
-          aircon: Object.freeze([16.9, 16.9, 17.1, 17.1, 17, 33.4, 42.1, 49.1, 367.1, 438.8, 507.4, 546.5, 552.9, 618.7, 572.7, 534.7, 447.7, 317.9, 42.4, 16.2, 16.3, 16.5, 16.7, 16.8]),
-          other: Object.freeze([40.9, 42.8, 42.3, 40.9, 39.9, 38.8, 88.1, 159.8, 595.7, 762.5, 708.5, 780.2, 797.7, 820, 835.7, 877.4, 791.7, 269.3, 39.3, 48.6, 50.4, 42.4, 39.9, 45.5]),
+          lighting: Object.freeze([42.2, 42, 41.2, 41.1, 41.1, 34, 44.6, 48.4, 196.7, 31.1, 28.7, 26.6, 26.2, 31, 33.6, 26.9, 38.1, 33.4, 41.3, 41.7, 41.6, 41.6, 42.6, 42.7]),
+          aircon: Object.freeze([16.9, 16.9, 17.1, 17.1, 17, 33.4, 42.1, 49.1, 367.1, 438.8, 507.4, 546.5, 552.9, 618.7, 572.7, 534.7, 447.7, 317.9, 42.1, 16.2, 16.3, 16.5, 16.7, 16.8]),
+          other: Object.freeze([40.9, 42.8, 42.3, 40.9, 39.9, 38.7, 88.1, 159.8, 595.7, 762.5, 708.5, 780.2, 797.7, 820, 835.7, 877.4, 791.7, 269.3, 39.2, 48.6, 50.4, 42.4, 39.9, 45.6]),
         }),
         kwh: Object.freeze({
-          lighting: 1.059,
+          lighting: 1.058,
           aircon: 5.239,
           other: 7.998,
-          total: 14.296,
+          total: 14.295,
         }),
         standby_w: 100,
         working_hours_avg_w: 1332.8,

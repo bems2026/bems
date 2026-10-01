@@ -95,6 +95,11 @@ export interface PdfReport {
   detail?: ReportDetail;
   /** The category or circuit the document is narrowed to; absent or null for the whole building. */
   scopeLabel?: string | null;
+  /**
+   * RM-154: the document is a projected baseline, and this sentence says what it was built from. It stands where
+   * the coverage would: a projection has no minutes recorded, and printing "100% recorded" would be a claim.
+   */
+  projectedFrom?: string | null;
   /** Figures the document corrected or refused, one sentence each — RM-090. */
   corrections?: readonly string[];
   /** Loads nobody metered, as the estimates they are — RM-130. Every figure already carries its ≈. */
@@ -169,9 +174,16 @@ export function buildDocDefinition(r: PdfReport) {
   );
 
   // --- coverage, before anything it qualifies — always ------------------------------------------
-  content.push({ text: 'How much was recorded', style: 'h2' }, { text: 'Every figure in this report comes from these minutes.', style: 'note' });
+  if (r.projectedFrom) {
+    content.push({ text: 'What this baseline was built from', style: 'h2' }, { text: r.projectedFrom, style: 'note' });
+    if (r.summary?.resolution && RESOLUTION_NOTE[r.summary.resolution]) content.push({ text: RESOLUTION_NOTE[r.summary.resolution], style: 'note' });
+  } else {
+    content.push({ text: 'How much was recorded', style: 'h2' }, { text: 'Every figure in this report comes from these minutes.', style: 'note' });
+  }
 
-  if (r.summary && detail === 'simple') {
+  if (r.projectedFrom) {
+    // Said above, in place of the minutes.
+  } else if (r.summary && detail === 'simple') {
     const s = r.summary;
     const share = s.expected_minutes > 0 ? `${Math.round((s.usable_minutes / s.expected_minutes) * 100)}%` : EM_DASH;
     const gap = s.longest_gap_minutes === null ? `${EM_DASH} (not measurable)` : `${n(s.longest_gap_minutes)} min`;

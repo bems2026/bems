@@ -48,11 +48,18 @@ interface Props {
    * used to vanish while a new kind of period loaded, and the controls moved under the reader's finger.
    */
   loading?: boolean;
+  /**
+   * RM-154: the period's projected baseline is shown instead of its recorded report. Stepping and choosing a cell
+   * keep it, so the reader moves through periods' baselines; the jump under the calendar turns it on and off.
+   * Without `onBaselineChange` the site has no baseline, and the jump is not offered.
+   */
+  baseline?: boolean;
+  onBaselineChange?: (on: boolean) => void;
 }
 
 const NO_PENDING: readonly PendingPeriod[] = [];
 
-export function PeriodPicker({ period, starts, selected, onSelect, pending = NO_PENDING, loading = false }: Props) {
+export function PeriodPicker({ period, starts, selected, onSelect, pending = NO_PENDING, loading = false, baseline = false, onBaselineChange }: Props) {
   const [open, setOpen] = useState(false);
   const dismiss = useCallback(() => setOpen(false), []);
   const { anchorRef, popRef, style, placement } = useAnchoredPopover({
@@ -155,7 +162,7 @@ export function PeriodPicker({ period, starts, selected, onSelect, pending = NO_
         disabled={selected === null}
         onClick={toggle}
       >
-        {selected === null ? (loading ? 'Loading reports…' : '—') : formatPeriod(period, selected)}
+        {selected === null ? (loading ? 'Loading reports…' : '—') : `${baseline ? 'Baseline · ' : ''}${formatPeriod(period, selected)}`}
         <ChevronDown size={14} aria-hidden="true" />
       </button>
       <button
@@ -264,6 +271,20 @@ export function PeriodPicker({ period, starts, selected, onSelect, pending = NO_
                 <span id={reasonId} className="sr-only">
                   {lastYearReason}
                 </span>
+              ) : null}
+              {onBaselineChange ? (
+                // RM-154: the baseline is a way of reading the period, chosen where the period is chosen.
+                <button
+                  type="button"
+                  className="report-stepper__preset"
+                  onClick={() => {
+                    onBaselineChange(!baseline);
+                    setOpen(false);
+                    setChosen((n) => n + 1);
+                  }}
+                >
+                  {baseline ? 'Recorded' : 'Baseline'}
+                </button>
               ) : null}
             </div>
           </div>,

@@ -81,6 +81,7 @@ import { nextChangeAt, pendingPeriods, type PendingPeriod } from '@/lib/pendingP
 export type SectionName =
   | 'periods'
   | 'devices'
+  | 'previousDevices'
   | 'daily'
   | 'summary'
   | 'hours'
@@ -118,6 +119,8 @@ export interface ReportData {
   selected: string | null;
   select: (start: string) => void;
   devices: Section<PeriodDeviceReport[]>;
+  /** RM-154: the period before's device rows, so "vs the previous period" is the same figure as the tile beside it. */
+  previousDevices: Section<PeriodDeviceReport[]>;
   daily: Section<DailyRow[]>;
   summary: Section<DemandSummary | null>;
   /** Idle until Usage patterns or an export asks — RM-151. */
@@ -141,6 +144,8 @@ export interface ReportWants {
   circuits?: boolean;
   /** RM-151: the hour profile, the busy hours and the demand levels — Usage patterns and the PDF. */
   patterns?: boolean;
+  /** RM-154: the circuits' days for the Overview, whose energy per day is their sum. */
+  daily?: boolean;
 }
 
 export interface ReportDataOptions {
@@ -154,6 +159,7 @@ export interface ReportDataOptions {
 export const DEFAULT_TIMEOUTS: Record<SectionName, number> = {
   periods: 20_000,
   devices: 20_000,
+  previousDevices: 20_000,
   daily: 30_000,
   summary: 30_000,
   hours: 30_000,
@@ -170,6 +176,7 @@ export const DEFAULT_TIMEOUTS: Record<SectionName, number> = {
 const LABELS: Record<SectionName, string> = {
   periods: 'The list of reports',
   devices: 'The per-device figures',
+  previousDevices: 'The previous period’s per-device figures',
   daily: 'The daily figures',
   summary: 'The demand summary',
   hours: 'The typical day chart',
@@ -367,10 +374,17 @@ export function useReportData(period: ReportPeriod, options?: ReportDataOptions,
   }, [next, period]);
 
   const at = (section: string) => (selected === null ? null : `${section}:${period}:${selected}`);
+  // RM-154: the stored period before this one, whose own circuits make its figure.
+  const selectedIndex = list === null || selected === null ? -1 : list.findIndex((row) => startOf(row) === selected);
+  const previousStart = list !== null && selectedIndex >= 0 && list[selectedIndex + 1] ? startOf(list[selectedIndex + 1]) : null;
 
   const loadDevices = useCallback(
     (signal: AbortSignal) => getDevicePeriodReports(period, requireStart(selected), { signal }),
     [period, selected]
+  );
+  const loadPreviousDevices = useCallback(
+    (signal: AbortSignal) => getDevicePeriodReports(period, requireStart(previousStart), { signal }),
+    [period, previousStart]
   );
   const loadDaily = useCallback((signal: AbortSignal) => getDailySeries(period, requireStart(selected), { signal }), [period, selected]);
   const loadSummary = useCallback((signal: AbortSignal) => getDemandSummary(period, requireStart(selected), { signal }), [period, selected]);
@@ -413,6 +427,7 @@ export function useReportData(period: ReportPeriod, options?: ReportDataOptions,
     pending,
     arrived,
     devices: useSection('devices', at('devices'), loadDevices, cache, opts),
+    previousDevices: useSection('previousDevices', previousStart === null ? null : `previousDevices:${period}:${previousStart}`, loadPreviousDevices, cache, opts),
     daily: useSection('daily', at('daily'), loadDaily, cache, opts),
     summary: useSection('summary', at('summary'), loadSummary, cache, opts),
     hours: useSection('hours', forPatterns('hours'), loadHours, cache, opts),
@@ -421,7 +436,7 @@ export function useReportData(period: ReportPeriod, options?: ReportDataOptions,
     curve: useSection('curve', forPatterns('curve'), loadCurve, cache, opts),
     pricing: useSection('pricing', enabled ? 'pricing' : null, loadPricing, cache, opts),
     ceiling: useSection('ceiling', enabled ? 'ceiling' : null, loadCeiling, cache, opts),
-    deviceDaily: useSection('deviceDaily', onDemand('deviceDaily'), loadDeviceDaily, cache, opts),
+    deviceDaily: useSection('deviceDaily', want.circuits || want.daily ? at('deviceDaily') : null, loadDeviceDaily, cache, opts),
     trend: useSection('trend', onDemand('trend'), loadTrend, cache, opts),
   };
 }

@@ -21,7 +21,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { SITE, CIRCUITS } from '../shared/siteConfig.mjs';
 import { buildingMetersByLoad, LOAD_LABELS } from '../shared/circuits.mjs';
-import { buildBaseline, renderBaselineModule } from './baselineModel.mjs';
+import { buildBaseline, buildDonorDays, renderBaselineDaysModule, renderBaselineModule } from './baselineModel.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -94,6 +94,7 @@ async function fetchRows() {
   // The building's highest minute per hour, one calendar month a call (at most 744 cells, under
   // the function's own 900 cap).
   const buildingPeaks = [];
+  const buildingHours = [];
   const months = new Set();
   for (let t = Date.parse(`${rules.record.from}T00:00:00Z`); t <= Date.parse(`${rules.record.to}T00:00:00Z`); t += 86_400_000) {
     months.add(new Date(t).toISOString().slice(0, 7));
@@ -103,6 +104,7 @@ async function fetchRows() {
     const byDay = new Map();
     for (const c of cells) {
       if (c.max_power_w === null) continue;
+      buildingHours.push({ local_day: c.local_day, local_hour: c.local_hour, max_w: Number(c.max_power_w) });
       byDay.set(c.local_day, Math.max(byDay.get(c.local_day) ?? 0, Number(c.max_power_w)));
     }
     for (const [local_day, max_w] of byDay) buildingPeaks.push({ local_day, max_w });
@@ -124,7 +126,7 @@ async function fetchRows() {
     if (rows.length < 1000) break;
   }
   console.error(`  commands from ${rules.automation_sources.join(', ')}: ${commands.length}`);
-  return { hourly, buildingPeaks, commands };
+  return { hourly, buildingPeaks, buildingHours, commands };
 }
 
 const from = arg('from');
@@ -143,6 +145,10 @@ const baseline = buildBaseline({
   rules,
   generatedAt: new Date().toISOString(),
 });
+
+// RM-154: the recorded days behind it, hour by hour. Rows saved before RM-154 hold no hourly peaks.
+const hasHours = (rows.buildingHours ?? []).length > 0;
+const days = buildDonorDays({ site: SITE, baseline, hourly: rows.hourly, buildingHours: rows.buildingHours ?? [], rules });
 
 // --- print ----------------------------------------------------------------------------------------
 const label = (l) => LOAD_LABELS[l] ?? l;
@@ -169,12 +175,28 @@ for (const e of baseline.excluded) console.log(`  ${e.date}  ${e.reason}`);
 for (const d of baseline.dropped_hours) console.log(`  ${d.date}  hours ${d.hours.join(', ')} dropped: ${d.reason}`);
 console.log('\nCoverage of the window:');
 for (const [m, c] of Object.entries(baseline.coverage)) console.log(`  ${m.padEnd(16)} ${(c * 100).toFixed(1)}%`);
+console.log('\nRecorded days behind it (each type scaled once to average its projected day):');
+for (const t of Object.values(days.types)) {
+  const totals = t.days.map((d) => Object.values(d.meters).reduce((a, m) => a + m.w.reduce((x, w) => x + w, 0), 0) / 1000);
+  const filled = t.days.filter((d) => d.filled.length > 0).map((d) => `${d.date} (${d.filled.map((f) => `${f.meter} ${f.hours.join('/')}`).join('; ')})`);
+  console.log(
+    `  ${t.label.padEnd(12)} ${t.days.length} days, scale ${t.scale}, ${Math.min(...totals).toFixed(2)}–${Math.max(...totals).toFixed(2)} kWh` +
+      (filled.length > 0 ? `; filled: ${filled.join(', ')}` : ''),
+  );
+}
+if (!hasHours) console.log('  (these rows hold no hourly building peaks; fetch them again before --write)');
 for (const w of baseline.warnings) console.log(`\nWARNING: ${w}`);
 
 if (WRITE) {
+  if (!hasHours) {
+    console.error('\nRefusing --write: these rows hold no hourly building peaks, so the days would carry no highest minute. Fetch again.');
+    process.exit(2);
+  }
   const out = join(siteDir, 'baseline.mjs');
   writeFileSync(out, renderBaselineModule(baseline));
-  console.log(`\nwritten ${out}`);
+  const outDays = join(siteDir, 'baseline-days.mjs');
+  writeFileSync(outDays, renderBaselineDaysModule(days));
+  console.log(`\nwritten ${out}\nwritten ${outDays}`);
 } else {
-  console.log('\nDry run: nothing written. Add --write to replace the site\'s baseline.mjs.');
+  console.log("\nDry run: nothing written. Add --write to replace the site's baseline.mjs and baseline-days.mjs.");
 }

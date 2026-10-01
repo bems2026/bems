@@ -159,6 +159,15 @@ const baselineTemplate = (slug) => `/**
 export const BASELINE = null;
 `;
 
+const baselineDaysTemplate = (slug) => `/**
+ * The recorded days behind the ${slug} deployment's projected baseline — RM-154.
+ *
+ * NULL ON PURPOSE, for the reason baseline.mjs gives. \`npm run baseline:build -- --write\` writes both files.
+ */
+
+export const BASELINE_DAYS = null;
+`;
+
 /**
  * Writes the directory. Pure enough to test: `root` is the repository root, so a test can hand
  * it a temporary one and assert against real files without a fixture framework.
@@ -182,16 +191,18 @@ export function scaffoldSite({ root, slug }) {
   writeFileSync(join(dir, 'devices.mjs'), devicesTemplate(slug));
   writeFileSync(join(dir, 'circuits.mjs'), circuitsTemplate(slug));
   writeFileSync(join(dir, 'baseline.mjs'), baselineTemplate(slug));
+  writeFileSync(join(dir, 'baseline-days.mjs'), baselineDaysTemplate(slug));
 
   return {
     slug,
     dir,
     nextStep:
-      `Edit shared/siteConfig.mjs to point at the new site — four lines, all of them '${slug}':\n` +
+      `Edit shared/siteConfig.mjs to point at the new site — five lines, all of them '${slug}':\n` +
       `    export { SITE } from './sites/${slug}/site.mjs';\n` +
       `    export { CIRCUITS } from './sites/${slug}/circuits.mjs';\n` +
       `    export { BUILT_IN_DEVICES } from './sites/${slug}/devices.mjs';\n` +
-      `    export { BASELINE } from './sites/${slug}/baseline.mjs';`,
+      `    export { BASELINE } from './sites/${slug}/baseline.mjs';\n` +
+      `    export const loadBaselineDays = () => import('./sites/${slug}/baseline-days.mjs');`,
   };
 }
 

@@ -201,3 +201,38 @@ describe('while the list of reports loads — RM-140', () => {
     expect(screen.getByRole('button', { name: 'Next week' })).toBeDisabled();
   });
 });
+
+describe('the baseline, in the calendar — RM-154', () => {
+  it('offers Baseline beside the other jumps, and choosing it closes the calendar', () => {
+    const onBaseline = vi.fn();
+    render(<PeriodPicker period="month" starts={MONTHS} selected="2026-07-01" onSelect={() => {}} baseline={false} onBaselineChange={onBaseline} />);
+    openCalendar('July 2026');
+    fireEvent.click(screen.getByRole('button', { name: 'Baseline' }));
+    expect(onBaseline).toHaveBeenCalledWith(true);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('names the period as its baseline, and offers the way back to what was recorded', () => {
+    const onBaseline = vi.fn();
+    render(<PeriodPicker period="month" starts={MONTHS} selected="2026-07-01" onSelect={() => {}} baseline onBaselineChange={onBaseline} />);
+    const label = screen.getByRole('button', { name: 'Baseline · July 2026' });
+    fireEvent.click(label);
+    fireEvent.click(screen.getByRole('button', { name: 'Recorded' }));
+    expect(onBaseline).toHaveBeenCalledWith(false);
+  });
+
+  it('keeps the baseline while stepping, so the reader moves through periods\' baselines', () => {
+    const onSelect = vi.fn();
+    const onBaseline = vi.fn();
+    render(<PeriodPicker period="month" starts={MONTHS} selected="2026-07-01" onSelect={onSelect} baseline onBaselineChange={onBaseline} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Previous month' }));
+    expect(onSelect).toHaveBeenLastCalledWith('2026-06-01');
+    expect(onBaseline).not.toHaveBeenCalled();
+  });
+
+  it('offers no Baseline where the site has none', () => {
+    render(<PeriodPicker period="month" starts={MONTHS} selected="2026-07-01" onSelect={() => {}} />);
+    openCalendar('July 2026');
+    expect(screen.queryByRole('button', { name: 'Baseline' })).toBeNull();
+  });
+});

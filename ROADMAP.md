@@ -1,6 +1,14 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-10-01 — **RM-153 done: a projected baseline on the Reports page.**
+**Last audited:** 2026-10-01, later — **RM-154 done: the baseline is a period in the calendar, built from real days; one
+energy figure per period.**
+- **Baseline** is chosen in the Reports calendar and read through the same Overview, Circuits, Usage patterns and
+  Compare tabs as any report. Each projected date is one recorded day of its kind, so the days differ as real days do:
+  working days 8.06–21.21 kWh, and every day of a month has its bar (E-234, ADR-0012 amended).
+- **The Overview and Circuits print the same energy**, the sum of the circuits. The building counter is said beside
+  it when the two part: 80.53 kWh against 77.88 for the week of 21 Sep (F-039, E-233, ADR-0013).
+
+**Earlier, 2026-10-01 — RM-153 done: a projected baseline on the Reports page.**
 - **Reports → Baseline** shows what the office uses with nothing managing it, built from 25 Aug to 22 Sep: a working
   day 13.83 kWh, a week 75.4 kWh, a standard month 328 kWh (E-232). It sets any fully recorded period against it,
   and the recorded days behind it ship as its backup. The site now has a working calendar with the 2026 holidays
@@ -422,7 +430,26 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
-### 2026-09-30 — a projected baseline on the Reports page (RM-153): done
+### 2026-10-01 — the baseline in the calendar, and one energy figure (RM-154): done
+
+- **Baseline is chosen in the calendar.** It sits beside "Latest" and "Same month last year", and the label then
+  reads "Baseline · September 2026". The same four tabs show it, with the same charts.
+- **Each projected date is one recorded day of its kind,** scaled once per kind. A working Monday is not a working
+  Tuesday, Saturday shows its outlet use, and a month has a bar for every day.
+- **The page says how the baseline was made.** "How this baseline was made" replaces the coverage banner, and keeps
+  every recorded day with its fate.
+- **Compare** sets a recorded period against its baseline on the same dates: overall, by use and day by day.
+- **The Energy card is the sum of the circuits on every tab.** The building's own counter is the check, said in
+  words with the days the two part.
+
+**For the operator.** Nothing to apply. Rebuild with `npm run baseline:build -- --write` only when the office's
+routine or equipment changes; it now writes `baseline-days.mjs` too.
+
+**Noted for later, not done:** the SQL that rebuilds each circuit from hourly readings credits nothing around a
+counter that falls; the bridge's counter banks it (E-233). Fixing it would quiet the counter note and needs a
+migration plus a backfill.
+
+### 2026-09-30 — a projected baseline on the Reports page (RM-153): done, then reshaped by RM-154
 
 - **What it is.** What the office would use with nothing managing it: weekdays working 08:00 to 17:00, weekends as
   recorded, no holidays. It was built from 25 Aug to 22 Sep, the four weeks before automation first acted, recorded
@@ -4345,7 +4372,8 @@ rows as of 06:32, reproduced every figure below.
         - a working day 13.83 kWh, a Saturday 4.65, a Sunday 1.63;
         - a week 75.4 kWh, a standard month 328 kWh;
         - peak operating draw 2,893 W.
-- [x] **RM-153c** The **Baseline** tab, after Usage patterns (`src/components/reports/BaselineReport.tsx`,
+- [x] **RM-153c** ~~The **Baseline** tab~~ **Superseded by RM-154 (2026-10-01):** the tab and `BaselineReport.tsx` are gone;
+      the baseline is chosen in the calendar. What follows is the tab as it shipped. (`src/components/reports/BaselineReport.tsx`,
       `src/lib/baselineCompare.ts`). **Built, tested, and verified signed in on the dev server (2026-10-01).**
       - **Projected baseline | Recorded Aug–Sep**, at the page's Daily, Weekly and Monthly resolution:
         - Daily: a day type hour by hour, stacked by use, with the working hours shaded;
@@ -4374,6 +4402,68 @@ rows as of 06:32, reproduced every figure below.
       site. It was never installed (E-125), so the sentence now says no outdoor temperature is recorded.
 - [x] **RM-153f** Records: ADR-0012, `docs/90-replication.md` step 6, `docs/05-interface.md`, E-231 and E-232,
       and the restart map (`baseline.mjs` is loaded by every daemon through `siteConfig`).
+
+### The baseline as a period in the calendar, and one energy figure — RM-154 (2026-10-01)
+
+The operator rejected RM-153's Baseline tab on two counts. The baseline belongs where a period is chosen, read
+through the same tabs as any report. And its days were all the same averaged curve, nothing like a real report.
+They also asked why the Overview and Circuits printed different energy. Decisions are in ADR-0012 (amended) and
+ADR-0013; evidence is E-233 and E-234; the finding is F-039. The pasted brief's synthetic, stochastic model was
+rejected by the operator in favour of real recorded days: its stated figures contradicted the meters.
+
+- [x] **RM-154a** One energy figure per period (`src/lib/periodEnergy.ts`, ADR-0013). **Built, tested, verified.**
+      - A period's energy is the sum of its branch circuits' bounded energy, and a day's is the sum of its circuits'
+        days. This holds on the Overview, Circuits, "vs previous", Compare, the cost, the daily CSV and the PDF.
+      - The building counter is the stated check, in the same words on both tabs, with the days the two part.
+      - A missing circuit row keeps the counter; a refused circuit is named, and the figure is a floor.
+      - Tests: `periodEnergy` (10) and `ReportsPage.energy` (4). Neutered: the Overview on the counter fails all
+        four.
+- [x] **RM-154b** The recorded days behind the baseline (`buildDonorDays` in `server/baselineModel.mjs`). **Built,
+      tested, rebuilt on the edge.**
+      - Per meter and hour: average, highest and current; the voltage; and the building's highest minute.
+      - Gap-filled from the same type's other days, and listed.
+      - Scaled once per type, so the type averages its projected day.
+      - Written as `shared/sites/<site>/baseline-days.mjs` (12 kB compressed), loaded through `loadBaselineDays` only
+        when a baseline is shown. `site:new` scaffolds it as `null`.
+      - Tests: model (+6, two neutered), `site-baseline` (+4), `site-new` (+2).
+- [x] **RM-154c** A baseline period in the report's own shapes (`src/lib/baselineProjection.ts`). **Built and tested.**
+      - Each date is one recorded day of its kind, as a pure function of the date.
+      - Every section a report has: building, devices, days, summary, typical day, busy hours, levels, circuit
+        days, hours and trend. It all adds up: circuits to the building, hours to the day, days to the period.
+      - Tests (13): date-stable donors, no repeat inside a week, an even month, conservation, and September from the
+        real files. The turn rule and the holiday rule were each neutered.
+- [x] **RM-154d** Baseline in the calendar (`PeriodPicker`, `ReportControlBar`, `useBaselineReport`, `ReportsPage`).
+      **Built, tested, and verified signed in on the dev server (2026-10-01).**
+      - **In the browser:**
+        - Energy matched on both tabs: the week of 21 Sep 77.88 kWh, 23 Sep 19.59, August 90.92 (partial month).
+        - The counter note named 21, 22 and 23 Sep.
+        - Baseline · August 2026: 324.26 kWh over 31 bars. Weekdays 8.06–21.21 kWh using all 11 working days,
+          Saturdays 1.55–6.33, Sundays 1.27–2.20.
+        - Baseline · week of 21 Sep: five different working days (12.28–21.21 kWh) and 23 Sep reading 13.71 both as a day
+          and inside the week.
+        - Circuits and Usage patterns were fully drawn; no request of the report's own.
+        - Compare: the week of 21 Sep 7.5 kWh (8.8%) below its baseline, by use and over 7 days.
+        - The baseline PDF and daily CSV were generated (named "…-baseline"), with "Every reading" refused.
+      - **Fixed during the check:**
+        - The Circuits tab qualified the same figure by the meters' minutes ("partial week") and the Overview by the
+          building rows. The whole-building card is now qualified as the Overview's is.
+        - Baseline mode no longer fires the recorded pattern and circuit reads.
+        - The baseline's daily CSV says "projected" instead of claiming 100% coverage.
+      - A "Baseline" / "Recorded" jump sits under the calendar. Stepping keeps the mode.
+      - One switch feeds every tab, recorded or projected. In Baseline mode:
+        - a "Projected" heading with "Back to recorded";
+        - "Built from 19 recorded days" in place of "Recorded";
+        - no commands or unusual readings;
+        - "How this baseline was made" (`BaselineNotes`) in place of the coverage banner;
+        - no devices-inside-circuits table;
+        - each day's hover says which recorded day it is.
+      - Compare offers "The baseline for this {period}" (`AgainstBaseline`, `compareWithProjection`) and opens on it
+        in Baseline mode.
+      - The PDF is titled "Projected baseline" and says what it was built from where coverage would be. Its file
+        names carry "baseline", and "Every reading" is refused for a projection.
+      - Removed: the Baseline tab, `BaselineReport.tsx`, and RM-097's ban on the word "baseline".
+      - Tests: picker (+4), `ReportsPage.baseline` (6), tabs (four again), `baselineCompare` (+2), daily chart notes
+        (+1), PDF (+3).
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 

@@ -34,6 +34,8 @@ export interface DailyEnergyPoint {
   observed: boolean;
   /** Was it observed enough for its total to be a total rather than a floor? */
   complete: boolean;
+  /** RM-154: said on hover — for a projected baseline day, which recorded day it is. */
+  note?: string;
 }
 
 /** Roughly this many day labels, thinned evenly. A month of 31 at 9px overlaps below ~500px. */
@@ -228,7 +230,10 @@ export function dailyEnergyChart(points: readonly DailyEnergyPoint[], spec: Char
       h: box.h,
       label: p.day,
       value: measured ? `${estimate ? '≈ ' : ''}${(p.kwh as number).toFixed(2)} kWh` : 'No data',
-      ...(measured && !p.complete ? { note: 'Partly observed, so at least this much' } : {}),
+      ...((): { note?: string } => {
+        const notes = [...(measured && !p.complete ? ['Partly observed, so at least this much'] : []), ...(p.note ? [p.note] : [])];
+        return notes.length > 0 ? { note: notes.join(' · ') } : {};
+      })(),
     };
   });
 

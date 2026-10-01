@@ -247,3 +247,12 @@ describe('an estimate, drawn so it cannot be read as a measurement — RM-130', 
     expect(JSON.stringify(dailyEnergyChart([day(1)], SPEC))).toBe(JSON.stringify(dailyEnergyChart([day(1)], SPEC, {})));
   });
 });
+
+describe('a day that says where it came from — RM-154', () => {
+  it('carries a note into the day\'s hover, beside the partial-day note when there is one', () => {
+    const spec: ChartSpec = { width: 640, height: 230, palette: PRINT_PALETTE, idPrefix: 'de', title: 'T', desc: '' };
+    const scene = dailyEnergyChart([day(1, { note: 'From Tue 15 Sep, scaled × 0.97' }), day(2, { complete: false, kwh: 2, note: 'From Wed 16 Sep' })], spec);
+    expect(scene.hits?.[0].note).toBe('From Tue 15 Sep, scaled × 0.97');
+    expect(scene.hits?.[1].note).toBe('Partly observed, so at least this much · From Wed 16 Sep');
+  });
+});

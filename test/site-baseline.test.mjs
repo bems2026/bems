@@ -11,7 +11,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { SITE, CIRCUITS, BASELINE } from '../shared/siteConfig.mjs';
+import { SITE, CIRCUITS, BASELINE, loadBaselineDays } from '../shared/siteConfig.mjs';
 import { buildingMetersByLoad } from '../shared/circuits.mjs';
 import { checkSite } from '../scripts/site-check.mjs';
 
@@ -114,4 +114,46 @@ test('the peak operating draw comes from the working days, and is no lower than 
   const p = BASELINE.peak_operating_draw;
   assert.equal(p.days, BASELINE.day_types.working.days.length);
   assert.ok(p.w >= BASELINE.day_types.working.highest_hourly_w, 'a highest minute below the highest hourly average is not one');
+});
+
+// ---------------------------------------------------------------------------
+// RM-154 — the recorded days behind the baseline
+// ---------------------------------------------------------------------------
+
+const { BASELINE_DAYS: DAYS } = await loadBaselineDays();
+const dayKwh = (d) => Object.values(d.meters).reduce((a, m) => a + m.w.reduce((x, w) => x + w, 0), 0) / 1000;
+
+test('the days module is this baseline\'s: the same site, meters and days per type', () => {
+  assert.ok(DAYS, 'this site has its recorded days');
+  assert.equal(DAYS.site_id, BASELINE.site_id);
+  assert.deepEqual([...DAYS.meters].sort(), BASELINE.loads.flatMap((l) => BASELINE.meters[l]).sort());
+  for (const [type, t] of Object.entries(BASELINE.day_types)) {
+    assert.deepEqual(DAYS.types[type].days.map((d) => d.date), [...t.days], type);
+  }
+});
+
+test('each type\'s days average the baseline\'s projected day, so a projected month keeps its total', () => {
+  for (const [type, t] of Object.entries(DAYS.types)) {
+    const mean = t.days.reduce((a, d) => a + dayKwh(d), 0) / t.days.length;
+    near(mean, BASELINE.day_types[type].kwh.total, 0.02, `${type} mean`);
+  }
+});
+
+test('the days really differ: working days span more than a quarter of their mean', () => {
+  const totals = DAYS.types.working.days.map(dayKwh);
+  const mean = sum(totals) / totals.length;
+  assert.ok((Math.max(...totals) - Math.min(...totals)) / mean > 0.25, totals.join(', '));
+});
+
+test('every hour of every day holds a number, and every filled hour is listed', () => {
+  for (const t of Object.values(DAYS.types)) {
+    for (const d of t.days) {
+      for (const [meter, m] of Object.entries(d.meters)) {
+        for (const f of ['w', 'max', 'a']) assert.ok(m[f].length === 24 && m[f].every((x) => Number.isFinite(x) && x >= 0), `${d.date} ${meter} ${f}`);
+      }
+      assert.ok(d.v.every((x) => x > 0) && d.max_w.every((x) => Number.isFinite(x)), d.date);
+    }
+  }
+  const dropped = DAYS.types.working.days.find((d) => d.date === '2026-08-26');
+  for (const f of dropped.filled) assert.deepEqual([...f.hours], [8, 9, 10], f.meter);
 });

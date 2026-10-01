@@ -5,7 +5,7 @@ audience: [integrator, administrator, installer]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo 29403b5
-evidence: [E-063, E-065, E-088, E-122, E-130, E-134, E-137, E-149, E-157, E-176, E-196, E-205, E-206, E-232]
+evidence: [E-063, E-065, E-088, E-122, E-130, E-134, E-137, E-149, E-157, E-176, E-196, E-205, E-206, E-232, E-234]
 ---
 
 # Replication — step 1 to done
@@ -203,7 +203,8 @@ isolation first ([02](02-network.md#how-it-fails), [01](01-field-devices.md#how-
 5. Write the site's `baseline-rules.mjs` beside `site.mjs`: the window, and every day left out with its reason
    (tests, outages, holidays). Then run `npm run baseline:build` on the edge. It reads only, prints the day types,
    the typical week and the standard month, and says why each unused day was left out. Add `--write` to write the
-   site's `baseline.mjs`, and commit both files [E-232]. The Reports page's **Baseline** tab reads it
+   site's `baseline.mjs` and `baseline-days.mjs` (the recorded days behind it, hour by hour), and commit all three
+   files [E-232, E-234]. The Reports page reads them when *Baseline* is chosen in its calendar
    ([ADR-0012](adr/ADR-0012-projected-baseline.md)).
 
 **Expected result.** A baseline report with coverage stated, kept with the commissioning pack, and a committed

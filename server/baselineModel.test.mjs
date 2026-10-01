@@ -22,7 +22,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildBaseline, trimmedMean, quantile, STANDARD_MONTH_DAYS } from './baselineModel.mjs';
+import { buildBaseline, buildDonorDays, trimmedMean, quantile, STANDARD_MONTH_DAYS } from './baselineModel.mjs';
 
 const OFFSET = 480;
 const site = {
@@ -75,7 +75,7 @@ function fortnight() {
         let w = watts(meter, date, hour);
         if (date === '2026-08-08' && hour === 3 && meter === 'l1') w = 99_999;
         // 1 and 2 Aug are outside the window: recorded, never used.
-        hourly[meter].push({ ts, power_w: w, power_w_max: w, online_count: 60, sample_count: 60 });
+        hourly[meter].push({ ts, power_w: w, power_w_max: w * 1.5, voltage: 230, current: w / 230, online_count: 60, sample_count: 60 });
       }
     }
   }
@@ -289,4 +289,82 @@ test('the rendered module is data only, frozen at every level, and holds exactly
   };
   walk(mod.BASELINE, 'BASELINE');
   assert.deepEqual(unfrozen, []);
+});
+
+// ---------------------------------------------------------------------------
+// RM-154 — the recorded days behind the baseline, hour by hour and circuit by circuit
+// ---------------------------------------------------------------------------
+
+/** The building's highest minute in each hour: here, every meter's highest at once. */
+const buildingHours = dateList('2026-08-01', '2026-08-16').flatMap((date) =>
+  Array.from({ length: 24 }, (_, hour) => ({
+    local_day: date,
+    local_hour: hour,
+    max_w: ['l1', 'l2', 'ac', 'o'].reduce((a, m) => a + watts(m, date, hour) * 1.5, 0),
+  })),
+);
+const donors = (over = {}) => {
+  const baseline = build(over);
+  return { baseline, d: buildDonorDays({ site, baseline, hourly: fortnight(), buildingHours, rules, ...over }) };
+};
+const dayKwh = (day) => Object.values(day.meters).reduce((a, m) => a + m.w.reduce((x, w) => x + w, 0), 0) / 1000;
+
+test('the donor days are exactly the days each projected type was built from', () => {
+  const { baseline, d } = donors();
+  for (const [type, t] of Object.entries(baseline.day_types)) {
+    assert.deepEqual(d.types[type].days.map((x) => x.date), t.days, type);
+  }
+  assert.deepEqual(Object.keys(d.types.working.days[0].meters).sort(), ['ac', 'l1', 'l2', 'o']);
+});
+
+test('each type is scaled once so its days average the baseline\'s day, keeping their spread', () => {
+  const { baseline, d } = donors();
+  for (const [type, t] of Object.entries(d.types)) {
+    const mean = t.days.reduce((a, x) => a + dayKwh(x), 0) / t.days.length;
+    close(mean, baseline.day_types[type].kwh.total, 0.01);
+  }
+  // Tue 4 carried the 9000 W testing hour; it stays the biggest working day after scaling.
+  const totals = d.types.working.days.map((x) => [x.date, dayKwh(x)]);
+  assert.equal(totals.sort((a, b) => b[1] - a[1])[0][0], '2026-08-04');
+  assert.ok(d.types.working.scale < 1, 'the testing hour pulls the plain mean above the trimmed one');
+});
+
+test('a dropped or missing hour is filled from the same meter-hour of the other days, and listed', () => {
+  const { d } = donors();
+  const wed = d.types.working.days.find((x) => x.date === '2026-08-05');
+  // Hour 8 was dropped on the 5th and the 6th; the 3rd, 4th and 11th read 1000 W.
+  close(wed.meters.ac.w[8], 1000 * d.types.working.scale, 0.1);
+  assert.deepEqual(wed.filled, [{ meter: 'ac', hours: [8] }, { meter: 'l1', hours: [8] }, { meter: 'l2', hours: [8] }, { meter: 'o', hours: [8] }]);
+  const sun = d.types.sunday.days.find((x) => x.date === '2026-08-09');
+  close(sun.meters.o.w[5], 50 * d.types.sunday.scale, 0.1);
+  assert.deepEqual(sun.filled, [{ meter: 'o', hours: [5] }]);
+  for (const t of Object.values(d.types)) {
+    for (const x of t.days) for (const m of Object.values(x.meters)) assert.ok(m.w.every((w) => Number.isFinite(w)), x.date);
+  }
+});
+
+test('neutered: without the fill, the dropped hour reads as the frozen zero it was', () => {
+  const { d } = donors({ rules: { ...rules, dropped_hours: {} } });
+  const wed = d.types.working.days.find((x) => x.date === '2026-08-05');
+  close(wed.meters.ac.w[8], 0);
+});
+
+test('each day carries its highest power, current, voltage and the building\'s highest minute, per hour', () => {
+  const { d } = donors();
+  const mon = d.types.working.days.find((x) => x.date === '2026-08-03');
+  const k = d.types.working.scale;
+  close(mon.meters.ac.max[10], 1500 * k, 0.1);
+  close(mon.meters.ac.a[10], (1000 / 230) * k, 0.001);
+  close(mon.v[10], 230, 0.1);
+  close(mon.max_w[10], (1000 + 50 + 50 + 200) * 1.5 * k, 0.1);
+});
+
+test('the days module renders data only, frozen, and holds exactly the donor days', async () => {
+  const { renderBaselineDaysModule } = await import('./baselineModel.mjs');
+  const { d } = donors();
+  const text = renderBaselineDaysModule(d);
+  assert.doesNotMatch(text, /^import /m);
+  const mod = await import(`data:text/javascript,${encodeURIComponent(text)}`);
+  assert.deepEqual(JSON.parse(JSON.stringify(mod.BASELINE_DAYS)), JSON.parse(JSON.stringify(d)));
+  assert.ok(Object.isFrozen(mod.BASELINE_DAYS.types.working.days[0].meters.ac.w));
 });

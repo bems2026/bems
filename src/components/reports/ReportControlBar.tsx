@@ -48,6 +48,9 @@ interface Props {
   scope?: string;
   onScopeChange?: (value: string) => void;
   actions?: ReactNode;
+  /** RM-154: the period's projected baseline is shown; the calendar turns it on and off. */
+  baseline?: boolean;
+  onBaselineChange?: (on: boolean) => void;
 }
 
 export function ReportControlBar({
@@ -62,6 +65,8 @@ export function ReportControlBar({
   scope = 'all',
   onScopeChange,
   actions,
+  baseline = false,
+  onBaselineChange,
 }: Props) {
   return (
     <div className="report-controls">
@@ -82,7 +87,16 @@ export function ReportControlBar({
       </div>
 
       {starts.length > 0 || periodsLoading ? (
-        <PeriodPicker period={period} starts={starts} selected={selected} onSelect={onSelect} pending={pending} loading={periodsLoading} />
+        <PeriodPicker
+          period={period}
+          starts={starts}
+          selected={selected}
+          onSelect={onSelect}
+          pending={pending}
+          loading={periodsLoading}
+          baseline={baseline}
+          onBaselineChange={onBaselineChange}
+        />
       ) : null}
 
       {/* RM-102: one button, and behind it the uses as pills and the branches as a list. Offered only
