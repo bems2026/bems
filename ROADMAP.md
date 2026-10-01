@@ -457,7 +457,8 @@ other four and none needed changing.
   23, 26 and 29 Sep, and the week of 21 Sep, plus September if its month report was generated first.
 - **Why the date:** 23 Sep's minutes leave the cloud's 14-day window about then. After that, that fall can no longer be
   banked from the cloud.
-- **Nothing to restart.** The page needs `npm run build` on the edge for the Restated badge and the export rule.
+- **Nothing to restart.** The page's half is already deployed: built on the edge at 15:04 from `10c2bf0`, with CI and
+  Docs green. No server, shared or bridge file changed. Until phase53 is applied the page reads exactly as before.
 
 ### 2026-10-01 — the baseline in the calendar, and one energy figure (RM-154): done
 
