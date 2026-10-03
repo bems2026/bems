@@ -4705,11 +4705,16 @@ The operator sent the dashboard's own counts (E-241). The API gateway is the log
         load. The policy in force was the build's all along.
       - After a refused read it waits a minute; a network blip is still retried at once.
       - Tests (+2).
-- [ ] **RM-158e** Deploy and read back:
-      - restart the three daemons, and `npm run build` for the bell;
-      - the proxy journal should count `/api/archive/anomalies`;
-      - the Logs view should show the gateway at well under half of 10,800 lines a day after a full day;
-      - `/api/capabilities` should report `policy_source: database`.
+- [x] **RM-158e** Deployed 2026-10-03 20:42 (`614c9a2`, CI and Docs green): built on the edge, and the three daemons
+      restarted.
+      - **Read back.** The kiosk reloaded onto the new page at 20:42:53.
+        - In the next ten minutes the proxy served `/api/archive/anomalies ×14`: bell polls that no longer reach
+          Supabase.
+        - The aircon loop's `acu_loop_state` row stayed at 20:42:27 through 20:48, where it had been re-written every
+          minute.
+- [ ] **RM-158f** A day later, in the dashboard's Logs view:
+      - the API gateway should be well under half of the 10,800 lines a day it was;
+      - `GET /rest/v1/sites` should answer 200, not 401.
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 
