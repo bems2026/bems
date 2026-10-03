@@ -393,9 +393,24 @@ function capVerifyCache() {
 /** Returns `{ok, userId}` — `userId` is `auth.users.id`, needed by `handleCommand` to
  * attribute a command's audit row to a real user. Kept in the same cache entry as `ok`
  * rather than a second lookup, so a cached miss and a cached user id can never disagree. */
+/**
+ * One question per token at a time — RM-158. A page opening fetches several things at once, and each
+ * found the cache empty and asked Supabase itself: five identical `GET /auth/v1/user` in one second,
+ * every one a line in the project's log. The others now wait for the first answer.
+ */
+const supabaseVerifyInFlight = new Map(); // token -> Promise<result>
+
 async function verifySupabaseSession(token) {
   const cached = supabaseVerifyCache.get(token);
   if (cached && Date.now() < cached.validUntil) return cached;
+  const pending = supabaseVerifyInFlight.get(token);
+  if (pending) return pending;
+  const asking = askSupabaseAboutSession(token).finally(() => supabaseVerifyInFlight.delete(token));
+  supabaseVerifyInFlight.set(token, asking);
+  return asking;
+}
+
+async function askSupabaseAboutSession(token) {
   let result = { ok: false, userId: null };
   try {
     const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
@@ -512,6 +527,39 @@ function handleArchiveReadings(url, res) {
     return sendJson(res, 503, { error: 'archive_unavailable', detail: String(err?.message ?? err).split(' — ')[0] });
   }
   return sendJson(res, 200, { device_id: deviceId, rows });
+}
+
+/** A bell asks for minutes; a day is generous, and keeps one response small. */
+const ANOMALY_MAX_WINDOW_MS = 24 * 60 * 60 * 1000;
+const ANOMALY_COLUMNS = ['device_id', 'ts', 'metric', 'value', 'baseline_mean', 'baseline_stddev', 'z_score', 'iqr_lower', 'iqr_upper', 'method', 'sample_count'];
+
+/**
+ * `GET /api/archive/anomalies?since=<ISO>` — RM-158. The alert bell's recent anomalies, newest first,
+ * in the columns `src/lib/supabaseAnomalies.ts` asks the cloud for.
+ *
+ * Every open browser asked Supabase this once a minute, and a browser asking Supabase sends a CORS
+ * OPTIONS first: two lines in the project's log per minute per screen, about 2,880 a day for the
+ * kiosk alone, when log ingestion was over the Free plan's 1 GB. Ingest archives each anomaly on the
+ * edge the minute it finds it, before it uploads it, so the edge holds the same rows, sooner.
+ */
+function handleArchiveAnomalies(url, res) {
+  const sinceMs = Date.parse(url.searchParams.get('since') ?? '');
+  const nowMs = Date.now();
+  if (Number.isNaN(sinceMs) || sinceMs > nowMs) {
+    return sendJson(res, 400, { error: 'bad_window', detail: 'since (an ISO instant, not in the future) is required' });
+  }
+  if (nowMs - sinceMs > ANOMALY_MAX_WINDOW_MS) {
+    return sendJson(res, 400, { error: 'window_too_long', detail: 'at most one day of anomalies per request' });
+  }
+  let rows;
+  try {
+    // A minute past now, so a row stamped by a clock slightly ahead of this one is not missed.
+    rows = readArchive((a) => [...a.rowsBetween('anomalies', { sinceMs, untilMs: nowMs + 60_000 })]
+      .map((r) => Object.fromEntries(ANOMALY_COLUMNS.map((c) => [c, r[c] ?? null]))));
+  } catch (err) {
+    return sendJson(res, 503, { error: 'archive_unavailable', detail: String(err?.message ?? err).split(' — ')[0] });
+  }
+  return sendJson(res, 200, { rows: rows.reverse() });
 }
 
 async function readJsonBody(req) {
@@ -656,8 +704,8 @@ async function handleCommand(req, res, token) {
   // This building's own bounds — e.g. the minimum aircon setpoint the operator permits, which is
   // narrower than what the IR library can physically send. Read synchronously from the cache so a
   // command never waits on a round trip; `refresh()` runs in the background and, on failure,
-  // leaves the last known floor in force rather than none.
-  void livePolicy.refresh();
+  // leaves the last known floor in force rather than none. Read with this caller's session (RM-158).
+  void livePolicy.refresh(false, { token });
   const validated = validateCommand(body, DEVICE_REGISTRY, livePolicy.current());
   if (!validated.ok) {
     return sendJson(res, validated.status, { error: validated.error, code: validated.code });
@@ -973,7 +1021,8 @@ const server = http.createServer(async (req, res) => {
     // command accepted into the buffer is not the same fact as one recorded in the audit
     // table, and the operator must not have to guess which they just did — this project's
     // whole posture is that the UI never claims more than it can observe.
-    void livePolicy.refresh();
+    // RM-158: the policy is read with this caller's session; a break-glass one is not a database session.
+    void livePolicy.refresh(false, { token: isValidLocalSession(token) ? undefined : token });
     return sendJson(res, 200, {
       hardware_dispatch_enabled: HARDWARE_DISPATCH_ENABLED,
       dispatch_classes: HARDWARE_DISPATCH_ENABLED ? DISPATCH_CLASSES : [],
@@ -1012,6 +1061,9 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'GET' && url.pathname === '/api/archive/readings') {
     return handleArchiveReadings(url, res);
+  }
+  if (req.method === 'GET' && url.pathname === '/api/archive/anomalies') {
+    return handleArchiveAnomalies(url, res);
   }
   if (req.method === 'POST' && url.pathname === '/api/enroll') {
     // Authenticated like every other route above. Deliberately NOT behind

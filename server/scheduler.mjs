@@ -257,6 +257,10 @@ function applyAcuRules(rules, stateRows, commandRows) {
           last_step_at: row.last_step_at ?? null,
           last_direction: row.last_direction ?? null,
           alert_kind: row.alert_kind ?? null,
+          // Carried forward, RM-158. The snapshot does not carry the reason, so rebuilding without
+          // it made every refresh look like a new reason and re-wrote an unchanged one each minute:
+          // about 1,440 requests a day. This process wrote it; this process remembers it.
+          last_reason: acuState[rule.id]?.last_reason,
           // Carried forward: a write that failed earlier in this process must keep holding the
           // rule until one succeeds, and a config refresh is not evidence that it will.
           writable: acuState[rule.id]?.writable !== false,
@@ -267,6 +271,7 @@ function applyAcuRules(rules, stateRows, commandRows) {
           last_step_at: acuState[rule.id]?.last_step_at ?? PROCESS_STARTED_AT,
           last_direction: acuState[rule.id]?.last_direction ?? null,
           alert_kind: acuState[rule.id]?.alert_kind ?? null,
+          last_reason: acuState[rule.id]?.last_reason,
           writable: acuState[rule.id]?.writable !== false,
         };
   }

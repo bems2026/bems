@@ -5,7 +5,7 @@ audience: [integrator, administrator]
 status: Draft
 last_verified: 2026-09-30
 applies_to: repo fd6fadc
-evidence: [E-042, E-058, E-064, E-065, E-066, E-070, E-078, E-080, E-081, E-082, E-083, E-084, E-085, E-086, E-088, E-089, E-090, E-111, E-121, E-122, E-124, E-126, E-134, E-137, E-138, E-142, E-149, E-157, E-161, E-162, E-163, E-164, E-165, E-166, E-167, E-168, E-193, E-218, E-219, E-220, E-221, E-222, E-224, E-225, E-227, E-235]
+evidence: [E-042, E-058, E-064, E-065, E-066, E-070, E-078, E-080, E-081, E-082, E-083, E-084, E-085, E-086, E-088, E-089, E-090, E-111, E-121, E-122, E-124, E-126, E-134, E-137, E-138, E-142, E-149, E-157, E-161, E-162, E-163, E-164, E-165, E-166, E-167, E-168, E-193, E-218, E-219, E-220, E-221, E-222, E-224, E-225, E-227, E-235, E-241]
 ---
 
 # Data and storage
@@ -155,6 +155,13 @@ quota was the one near its limit (E-224). So the edge asks little, and asks in b
 - Ingest uploads what the archive holds every 5 minutes, and at once for an anomaly.
 - The scheduler reads its whole configuration with one call to `scheduler_snapshot`.
 - The device list goes up only when it changes.
+- The alert bell reads the edge's archive, not the cloud (RM-158). A browser asking the cloud sends a CORS `OPTIONS`
+  before each `GET`, so a once-a-minute poll was two lines a minute for every open screen.
+- The scheduler writes a rule's hold reason when it changes, not every minute; the proxy asks the sign-in service once
+  per token at a time, and does not retry a refused read inside a minute.
+
+Measured on 2026-10-03, before RM-158: about 10,800 gateway lines a day, which is the log (E-241). The dashboard's
+**Logs** view counts them by source over the last 24 hours. Its SQL Editor cannot see the logs.
 
 **Rollback.** Drop the project and start again. Nothing else depends on it until the daemons write.
 

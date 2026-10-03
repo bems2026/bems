@@ -1,7 +1,18 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-10-03 — **RM-157 built: a person's command is recorded on the edge first, so a click no longer
-waits on the database. Log ingestion over the Free plan's 1 GB is open (F-042).**
+**Last audited:** 2026-10-03, evening — **RM-158 built: the log's four biggest needless sources cut. RM-157 deployed and
+read back: a remote click is answered in 54–106 ms.**
+- **Where the 1 GB went (E-241).** The dashboard's Logs view: the API gateway, about 10,800 lines in 24 hours, twice
+  RM-149's estimate. The repeating lines were:
+  - the alert bell's poll from every open screen, each a GET after a CORS OPTIONS;
+  - an unchanged aircon hold reason re-written every minute;
+  - five sign-in checks per burst;
+  - a refused `sites` read at every command.
+- **RM-158** answers the bell from the edge's archive, keeps the hold reason, checks a sign-in once per burst, and reads
+  the policy with the caller's session (fixing the 401). Expected: well under half the gateway's lines.
+
+**Earlier, 2026-10-03 — RM-157 built: a person's command is recorded on the edge first, so a click no longer waits on the
+database.**
 - **Why remote clicks pulsed amber for seconds.** Since RM-147 a switch in flight pulses amber. A click waited on up to
   three requests to Supabase, about 0.43 s each from the edge and 1.5–3.2 s on 2026-10-02, before its relay was asked
   (F-041, E-240).
@@ -475,10 +486,8 @@ other four and none needed changing.
   - Checked: LIVE, every device, no badges.
   - The address-and-port form (port 5183) makes the page call port 8080 as well. Some browsers and extensions block a
     page from calling another port; the in-app browser did, and showed RECONNECTING.
-- **Log ingestion (F-042), open.** 1.06 GB of 1 GB on 2026-10-03, about 30 MB a day since 2026-09-30. That is twice
-  what RM-149's request count explains.
-  - The breakdown is only in the Supabase dashboard's Logs Explorer, which nothing on the edge can read.
-  - The operator's first attempt ran in the SQL Editor, which cannot see the logs.
+- **Log ingestion (F-042): source found and cut in RM-158.** 1.06 GB of 1 GB on 2026-10-03, about 30 MB a day since
+  2026-09-30. The dashboard's Logs view showed the API gateway at about 10,800 lines in 24 hours (E-241).
 
 **For the operator:**
 - **Deploy.** Restart `ibems-proxy`, `ibems-ingest` and `ibems-scheduler` on the edge: `server/auditQueue.mjs` is
@@ -4667,10 +4676,40 @@ and the fix are in E-240, F-041 and ADR-0014. The log-ingestion overrun reported
       - Tests:
         - proxy (+1): 402 and 503 from auth, with a forged token still refused;
         - scheduler (+1): 402 and 503 buffer a due schedule. Its refusal test now answers 403. Neutered.
-- [ ] **RM-157c** Deploy and read back. Restart the three daemons. The next remote clicks' journal lines should read a
-      few hundred ms, against 1–2 s before.
-- [ ] **F-042** Log ingestion over quota: find the source from the Logs Explorer's counts by source and by API path, then
-      cut it.
+- [x] **RM-157c** Deployed 2026-10-03 17:00 (`7da1045`, CI and Docs green); the three daemons restarted cleanly.
+      - **Read back.** The operator switched co5 off and on from the remote browser. The journal read `answered 202
+        dispatched via local in 106 ms` and `… in 54 ms`.
+      - Both rows reached `commands` as `dispatched`/`local` about 0.5 s later, and nothing was left on the edge.
+
+### The log back under the Free plan — RM-158 (2026-10-03)
+
+The operator sent the dashboard's own counts (E-241). The API gateway is the log: about 10,800 lines in 24 hours, 2xx
+11.6k, against Postgres 928 and Auth 347. This closes F-042 in code.
+
+- [x] **RM-158a** The alert bell reads the edge.
+      - `GET /api/archive/anomalies?since=` (`server/proxy.mjs`, at most a day) answers from the edge archive, which
+        ingest writes each anomaly into the minute it is found.
+      - `fetchRecentAnomalies` asks it first (`edgeRecentAnomalies`, `src/lib/edgeArchive.ts`) and falls back to the
+        cloud. An empty answer is an answer.
+      - About 2,880 gateway lines a day less for the kiosk, and as many again for each screen left open.
+      - Tests: proxy (+1), `supabaseAnomalies.test.ts` (4).
+- [x] **RM-158b** The scheduler keeps a rule's hold reason across a configuration refresh.
+      - The snapshot carries no `last_reason`, so every refresh re-wrote it: about 1,440 `acu_loop_state` POSTs a day
+        for a reason that never changed.
+      - Test (+1): 10 writes in 1.5 s before the fix, 1 after.
+- [x] **RM-158c** The proxy asks the sign-in service once per token at a time (`supabaseVerifyInFlight`).
+      - Five simultaneous requests had made five checks.
+      - Test (+1): 5 before, 1 after.
+- [x] **RM-158d** The live policy is read with the caller's session (`server/livePolicy.mjs`).
+      - The anon key has been refused `sites` since phase39: a 401 and a `42501` error line at every command and page
+        load. The policy in force was the build's all along.
+      - After a refused read it waits a minute; a network blip is still retried at once.
+      - Tests (+2).
+- [ ] **RM-158e** Deploy and read back:
+      - restart the three daemons, and `npm run build` for the bell;
+      - the proxy journal should count `/api/archive/anomalies`;
+      - the Logs view should show the gateway at well under half of 10,800 lines a day after a full day;
+      - `/api/capabilities` should report `policy_source: database`.
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 

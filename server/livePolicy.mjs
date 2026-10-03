@@ -51,10 +51,19 @@ export function createLivePolicy({ buildPolicy, siteId, supabaseUrl, supabaseKey
    * changed are overridden. */
   const merged = () => ({ ...buildPolicy, ...(fromDb ?? {}) });
 
-  async function readOnce() {
+  /** After a failure Supabase ANSWERED (any HTTP status), not before this instant. */
+  let answeredFailureUntil = 0;
+
+  async function readOnce(token) {
     const url = `${supabaseUrl}/rest/v1/sites?select=policy&id=eq.${encodeURIComponent(siteId)}`;
-    const res = await fetchImpl(url, { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } });
-    if (!res.ok) throw new Error(`sites read failed: HTTP ${res.status}`);
+    // RM-158: with the caller's own session when there is one. `sites` is granted to
+    // `authenticated` only since phase39, so the project key alone was refused on every read.
+    const res = await fetchImpl(url, { headers: { apikey: supabaseKey, Authorization: `Bearer ${token ?? supabaseKey}` } });
+    if (!res.ok) {
+      const err = new Error(`sites read failed: HTTP ${res.status}`);
+      err.answered = true;
+      throw err;
+    }
     const rows = await res.json();
     if (!Array.isArray(rows) || rows.length === 0) throw new Error(`no sites row for ${siteId}`);
     const policy = rows[0]?.policy;
@@ -71,21 +80,26 @@ export function createLivePolicy({ buildPolicy, siteId, supabaseUrl, supabaseKey
    * rejects: a failed read leaves the last good value in place, which is the whole design.
    * Concurrent callers share one request.
    */
-  async function refresh(force = false) {
+  async function refresh(force = false, { token } = {}) {
     if (!configured) return merged();
     if (!force && fromDb !== null && now() - readAt < POLICY_TTL_MS) return merged();
+    if (!force && now() < answeredFailureUntil) return merged();
     if (inFlight) return inFlight;
-    inFlight = readOnce()
+    inFlight = readOnce(token)
       .then((policy) => {
         fromDb = policy;
         readAt = now();
         lastError = null;
+        answeredFailureUntil = 0;
         return merged();
       })
       .catch((err) => {
         lastError = err instanceof Error ? err.message : String(err);
         // Deliberately NOT stamping `readAt`: a failed read must not buy another TTL of not
-        // trying again.
+        // trying again. But a failure Supabase ANSWERED is a line in its log each time it is
+        // asked, and asking again a second later will not change the answer — RM-158. A network
+        // failure reaches nobody's log, so it is retried at once, as before.
+        if (err?.answered) answeredFailureUntil = now() + POLICY_TTL_MS;
         return merged();
       })
       .finally(() => {

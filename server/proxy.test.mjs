@@ -62,9 +62,10 @@ const BREAK_GLASS_HASH = hashBreakGlassPassword(BREAK_GLASS_PASSWORD);
 function startFakeSupabaseAuth() {
   return new Promise((resolve) => {
     const port = nextPort++;
-    const state = { insertedCommands: [], rejectCommandInserts: false, insertStatus: 500, blockCommandUpdates: false, patches: 0 };
+    const state = { insertedCommands: [], rejectCommandInserts: false, insertStatus: 500, blockCommandUpdates: false, patches: 0, authCalls: 0 };
     const server = http.createServer(async (req, res) => {
       if (req.method === 'GET' && req.url === '/auth/v1/user') {
+        state.authCalls += 1;
         // A service that answers without judging the token: a restricted project, an outage.
         if (state.authStatus) {
           res.writeHead(state.authStatus, { 'Content-Type': 'application/json' });
@@ -1856,6 +1857,55 @@ test('an authorized read is counted, not logged line by line; a refusal is still
     assert.doesNotMatch(out, /OPTIONS/, 'a preflight is not a line of its own');
     assert.match(out, /GET \/api\/capabilities [^\n]*-> 401/, 'a refusal is logged when it happens');
     assert.match(out, /served 2 authorized read\(s\)[^\n]*\/api\/capabilities ×2/, 'reads are summarised');
+  } finally {
+    cleanup();
+  }
+});
+
+test('RM-158: simultaneous requests carrying one token make ONE sign-in check, not one each', async () => {
+  // A page opening fetches several things at once. Each found the minute-long cache empty and asked
+  // Supabase's auth service itself: five identical GET /auth/v1/user in one second, in the log.
+  const { proxyUrl, supabaseState, cleanup } = await setup();
+  try {
+    const responses = await Promise.all(
+      Array.from({ length: 5 }, () => fetch(`${proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } })),
+    );
+    assert.deepEqual(responses.map((r) => r.status), [200, 200, 200, 200, 200]);
+    assert.equal(supabaseState.authCalls, 1);
+  } finally {
+    cleanup();
+  }
+});
+
+test('RM-158: GET /api/archive/anomalies serves the recent anomalies from the edge, newest first, in the cloud\'s shape', async () => {
+  // The alert bell polled Supabase every minute from every open browser — a GET and a CORS
+  // OPTIONS each time, about 2,880 log lines a day for the kiosk alone. The edge archives every
+  // anomaly the minute it is found, so it can answer the same question without the cloud.
+  const { openArchive } = await import('./archiveDb.mjs');
+  const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-proxy-anoms-'));
+  const file = join(dir, 'archive', 'archive.sqlite');
+  const archive = openArchive(file);
+  const now = Date.now();
+  const anomaly = (device_id, agoMin, metric) => ({
+    device_id, ts: new Date(now - agoMin * 60_000).toISOString(), metric, value: 120, baseline_mean: 40, baseline_stddev: 10,
+    z_score: 8, iqr_lower: 20, iqr_upper: 60, method: 'both', sample_count: 60,
+  });
+  archive.insertRows('anomalies', [anomaly('co1', 40, 'power_w'), anomaly('co2', 10, 'power_w'), anomaly('l1', 2, 'current')], { origin: 2 });
+  archive.close();
+  const { proxyUrl, cleanup } = await setup({ ARCHIVE_DB_PATH: file });
+  try {
+    const since = new Date(now - 15 * 60_000).toISOString();
+    const res = await fetch(`${proxyUrl}/api/archive/anomalies?since=${encodeURIComponent(since)}`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
+    assert.equal(res.status, 200);
+    const { rows } = await res.json();
+    assert.deepEqual(rows.map((r) => r.device_id), ['l1', 'co2'], 'only the window, newest first');
+    assert.deepEqual(Object.keys(rows[0]).sort(), ['baseline_mean', 'baseline_stddev', 'device_id', 'iqr_lower', 'iqr_upper', 'method', 'metric', 'sample_count', 'ts', 'value', 'z_score']);
+    assert.equal(rows[0].metric, 'current');
+
+    const tooLong = await fetch(`${proxyUrl}/api/archive/anomalies?since=${encodeURIComponent(new Date(now - 3 * 86_400_000).toISOString())}`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
+    assert.equal(tooLong.status, 400, 'a bell asks for minutes, not days');
+    const unsigned = await fetch(`${proxyUrl}/api/archive/anomalies?since=${encodeURIComponent(since)}`);
+    assert.equal(unsigned.status, 401);
   } finally {
     cleanup();
   }

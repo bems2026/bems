@@ -136,3 +136,44 @@ test('asks for exactly one site, by id', async () => {
   await p.refresh();
   assert.match(f.calls[0], /sites\?select=policy&id=eq\.s1$/);
 });
+
+// ---------------------------------------------------------------------------------------------
+// RM-158: the proxy read this with the anon key, which phase39 stopped granting `sites` — so every
+// read was a 401 and a "permission denied" error line in the database's log, retried on every
+// command and every page load, and the policy in force was the build's all along.
+// ---------------------------------------------------------------------------------------------
+
+function recordingFetch(rows, status = 200) {
+  const calls = [];
+  const impl = async (url, init) => {
+    calls.push({ url, headers: init?.headers ?? {} });
+    return { ok: status >= 200 && status < 300, status, json: async () => rows };
+  };
+  impl.calls = calls;
+  return impl;
+}
+
+test('RM-158: reads with the caller\'s own session when one is given', async () => {
+  const f = recordingFetch([{ policy: { acu_min_setpoint_c: 24 } }]);
+  const p = make(f);
+  await p.refresh(false, { token: 'user-jwt' });
+  assert.equal(f.calls[0].headers.Authorization, 'Bearer user-jwt');
+  assert.equal(f.calls[0].headers.apikey, 'k', 'the project key still identifies the project');
+  assert.equal(p.status().source, 'database');
+});
+
+test('RM-158: an ANSWERED failure waits a minute before asking again; a network blip does not', async () => {
+  // A refusal reaches the database's logs every time it is asked. An outage reaches nobody.
+  let t = 1000;
+  const f = recordingFetch(null, 401);
+  const p = createLivePolicy({ buildPolicy: BUILD, siteId: 's1', supabaseUrl: 'u', supabaseKey: 'k', fetchImpl: f, now: () => t });
+  await p.refresh();
+  await p.refresh();
+  t += 30_000;
+  await p.refresh();
+  assert.equal(f.calls.length, 1, 'refused once, then left alone inside the minute');
+  t += POLICY_TTL_MS;
+  await p.refresh();
+  assert.equal(f.calls.length, 2, 'and asked again after it');
+  assert.deepEqual(p.current(), BUILD);
+});

@@ -916,6 +916,20 @@ test('an OFFLINE aircon holds — the branch this site actually reaches today', 
   assert.equal(r.acuStateWrites.find((w) => w.last_reason).last_reason, 'acu_offline');
 });
 
+test('RM-158: a held rule records its reason once, not again after every configuration refresh', async () => {
+  // The refresh rebuilt each rule's state from the snapshot, which carries no `last_reason`, so
+  // every refresh "forgot" the reason and the next tick wrote it again: on the live project a POST
+  // to acu_loop_state every minute, about 1,440 requests a day for a reason that never changed.
+  const r = await run({ ...OPEN, SCHEDULE_REFRESH_MS: '150', SCHEDULE_TICK_MS: '100' }, [], (s) => s.acuStateWrites.some((w) => w.last_reason), {
+    acuRules: [acuRule()],
+    acuState: [{ rule_id: 'acu-r1', commanded_c: 25 }],
+    latest: [{ ...acuHot(25, 30), online: false }],
+    settleMs: 1500,
+  });
+  const reasonWrites = r.acuStateWrites.filter((w) => w.last_reason === 'acu_offline');
+  assert.equal(reasonWrites.length, 1, `wrote the unchanged reason ${reasonWrites.length} times across about ten refreshes`);
+});
+
 test('a disabled rule does nothing at all', async () => {
   const r = await run({ ...OPEN }, [], CYCLE_DONE, {
     acuRules: [acuRule({ enabled: false })],

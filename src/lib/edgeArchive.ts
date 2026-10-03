@@ -1,5 +1,20 @@
 import { fetchJson } from './bridgeClient';
 import type { ExportReading, RawSource } from './readingsExport';
+import type { AnomalyRow } from './supabaseAnomalies';
+
+/**
+ * The anomalies since an instant, newest first, from the edge — RM-158. `null` when the edge cannot
+ * answer (an older proxy, no archive, a page not served from the edge), so the caller can ask the
+ * cloud instead. An empty list IS an answer: nothing recent happened.
+ */
+export async function edgeRecentAnomalies(sinceIso: string): Promise<AnomalyRow[] | null> {
+  try {
+    const body = await fetchJson<{ rows?: AnomalyRow[] }>(`/archive/anomalies?since=${encodeURIComponent(sinceIso)}`);
+    return Array.isArray(body?.rows) ? body.rows : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Minute readings from the edge's permanent archive — RM-148.
