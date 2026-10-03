@@ -54,18 +54,22 @@ const BREAK_GLASS_HASH = hashBreakGlassPassword(BREAK_GLASS_PASSWORD);
  * not just the HTTP response. `rejectCommandInserts` flips the REST endpoint to always
  * 500, for testing the "audit log unreachable" path.
  *
- * The recorded row is MUTATED by the daemon's follow-up PATCH: auditedDispatch writes the
- * row before dispatching (status 'dispatching') and attaches the outcome afterwards, so the
- * fake has to apply the patch for `.insertedCommands[0].status` to read the row's final
- * state. That makes these assertions stronger than they were — they now prove the whole
- * record -> dispatch -> record-outcome sequence, not just the opening insert.
+ * Since RM-157 the proxy records a person's command on the edge first and uploads ONE row, carrying
+ * the outcome, after it has answered — so `.insertedCommands` fills a moment after the response
+ * and tests wait for it with `recorded()`. `.patches` counts follow-up updates, which the proxy no
+ * longer makes; the PATCH route stays for the scheduler's shape of the same fake.
  */
 function startFakeSupabaseAuth() {
   return new Promise((resolve) => {
     const port = nextPort++;
-    const state = { insertedCommands: [], rejectCommandInserts: false, blockCommandUpdates: false };
+    const state = { insertedCommands: [], rejectCommandInserts: false, insertStatus: 500, blockCommandUpdates: false, patches: 0 };
     const server = http.createServer(async (req, res) => {
       if (req.method === 'GET' && req.url === '/auth/v1/user') {
+        // A service that answers without judging the token: a restricted project, an outage.
+        if (state.authStatus) {
+          res.writeHead(state.authStatus, { 'Content-Type': 'application/json' });
+          return res.end('{}');
+        }
         const auth = req.headers['authorization'];
         if (auth === `Bearer ${VALID_TOKEN}`) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -78,7 +82,7 @@ function startFakeSupabaseAuth() {
       }
       if (req.method === 'POST' && req.url === '/rest/v1/commands') {
         if (state.rejectCommandInserts) {
-          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.writeHead(state.insertStatus, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ error: 'simulated outage' }));
         }
         let raw = '';
@@ -92,6 +96,7 @@ function startFakeSupabaseAuth() {
         return res.end(JSON.stringify([row]));
       }
       if (req.method === 'PATCH' && req.url.startsWith('/rest/v1/commands')) {
+        state.patches += 1;
         let raw = '';
         for await (const chunk of req) raw += chunk;
         if (state.blockCommandUpdates) {
@@ -116,6 +121,19 @@ function startFakeSupabaseAuth() {
   });
 }
 
+/** Polls until `check()` holds, or fails after `timeoutMs`. */
+async function waitFor(check, what, timeoutMs = 3000) {
+  const until = Date.now() + timeoutMs;
+  while (!check()) {
+    if (Date.now() > until) assert.fail(`timed out waiting for ${what}`);
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+/** RM-157: the database is told after the answer, so a test waits for the row to arrive. */
+const recorded = (state, n) => waitFor(() => state.insertedCommands.length >= n, `${n} recorded command(s)`);
+/** Long enough for a background upload to have landed, had there been one. */
+const quietly = () => new Promise((r) => setTimeout(r, 300));
+
 /**
  * Stand-in for the live Node-RED flow's `POST /light/:id` (Phase 7) — `.requests` records
  * everything received so tests can assert on the real outbound call (method, path, headers,
@@ -128,7 +146,9 @@ function startFakeLightEndpoint() {
     // `offline` names devices this bridge should report as unreachable. Empty means every
     // device is online, which is what the dispatch tests below assume.
     // `channelMaps`: device id -> the `channel_map` its reading carries (RM-152). Absent means none.
-    const state = { requests: [], healthReads: 0, offline: new Set(), channelMaps: {}, failNext: false, statusCode: null };
+    // `inflightPath`: when set, each request notes which command records were on the edge as it
+    // arrived — RM-157's "recorded before the relay is asked", observed from the relay's side.
+    const state = { requests: [], healthReads: 0, offline: new Set(), channelMaps: {}, failNext: false, statusCode: null, inflightPath: null, recordsAtDispatch: [] };
     const server = http.createServer(async (req, res) => {
       let raw = '';
       for await (const chunk of req) raw += chunk;
@@ -147,6 +167,9 @@ function startFakeLightEndpoint() {
         return res.end(JSON.stringify(rows));
       }
 
+      if (state.inflightPath) {
+        state.recordsAtDispatch.push(fs.existsSync(state.inflightPath) ? readBuffer(state.inflightPath).map((e) => e.rows[0]) : []);
+      }
       state.requests.push({
         method: req.method,
         url: req.url,
@@ -200,6 +223,7 @@ function tempStatePaths() {
   const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-proxy-state-'));
   return {
     COMMAND_AUDIT_BUFFER_PATH: join(dir, 'command-audit-buffer.ndjson'),
+    COMMAND_AUDIT_INFLIGHT_PATH: join(dir, 'command-audit-inflight.ndjson'),
     SCHEDULER_AUDIT_BUFFER_PATH: join(dir, 'command-audit-buffer-scheduler.ndjson'),
     JWKS_CACHE_PATH: join(dir, 'jwks.json'),
     DEVICE_CREDENTIALS_PATH: join(dir, 'device-credentials.json'),
@@ -283,6 +307,7 @@ async function setupDispatch(proxyEnv = {}) {
   });
   return {
     proxyUrl: `http://localhost:${proxyPort}`,
+    supabaseUrl: fakeAuth.url,
     supabaseState: fakeAuth.state,
     lightState: fakeLight.state,
     cleanup: () => {
@@ -490,6 +515,7 @@ test('a command with the gate closed is accepted, dry_run, and audit-logged with
     assert.equal(ack.confirmed, false);
     assert.equal(ack.target, 'L1');
 
+    await recorded(supabaseState, 1);
     assert.equal(supabaseState.insertedCommands.length, 1);
     const row = supabaseState.insertedCommands[0];
     assert.equal(row.status, 'dry_run');
@@ -520,6 +546,7 @@ test('a capability write is audited with its capability and value; a relay comma
     assert.equal(ack.value, true);
     assert.equal(ack.confirmed, false, 'a setting is no more confirmed than a relay is');
 
+    await recorded(supabaseState, 1);
     const capRow = supabaseState.insertedCommands.at(-1);
     assert.equal(capRow.action, 'set');
     assert.equal(capRow.capability, 'child_lock');
@@ -532,6 +559,7 @@ test('a capability write is audited with its capability and value; a relay comma
       headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ device_id: 'l1', action: 'on' }),
     });
+    await recorded(supabaseState, 2);
     const relayRow = supabaseState.insertedCommands.at(-1);
     assert.equal(Object.hasOwn(relayRow, 'capability'), false);
     assert.equal(Object.hasOwn(relayRow, 'capability_value'), false);
@@ -552,6 +580,7 @@ test('a capability the catalogue refuses is rejected before anything is recorded
     });
     assert.equal(res.status, 400);
     assert.equal((await res.json()).code, 'capability_not_writable');
+    await quietly();
     assert.equal(supabaseState.insertedCommands.length, 0, 'nothing recorded');
   } finally {
     cleanup();
@@ -577,6 +606,7 @@ test('a setting on a demuxed meter is refused while its clamps are swapped, and 
     assert.equal(body.error, 'channels_not_direct');
     assert.equal(body.code, 'channels_not_direct', 'the code the browser turns into a sentence');
     assert.match(body.detail, /swapped/);
+    await quietly();
     assert.equal(supabaseState.insertedCommands.length, 0, 'nothing recorded');
     assert.equal(lightState.requests.length, 0, 'nothing sent');
 
@@ -620,6 +650,7 @@ test('a meter setting now lands over the LAN, and the vendor is never asked — 
     assert.deepEqual(attempt.body, { capability: 'warn_power1', value: 1500 });
     assert.equal(attempt.headers['x-auth-token'], 'test-light-token');
 
+    await recorded(supabaseState, 1);
     const row = supabaseState.insertedCommands.at(-1);
     assert.equal(row.status, 'dispatched');
     assert.equal(row.capability, 'warn_power1', 'resolved to this meter’s own channel');
@@ -655,6 +686,7 @@ test('an OUTLET setting still falls through to the vendor cloud — the scope is
     assert.equal(res.status, 502);
     assert.equal((await res.json()).code, 'capability_needs_cloud');
     assert.equal(lightState.requests.length, before, 'the LAN was not contacted for an outlet setting');
+    await recorded(supabaseState, 1);
     assert.notEqual(supabaseState.insertedCommands.at(-1).status, 'dry_run');
   } finally {
     cleanup();
@@ -673,6 +705,7 @@ test('the gate alone never claims success — a dispatch that fails is recorded 
       body: JSON.stringify({ device_id: 'co1', socket: 1, action: 'off' }),
     });
     assert.equal(res.status, 502, 'the caller must not be told it worked');
+    await recorded(supabaseState, 1);
     assert.equal(supabaseState.insertedCommands[0].status, 'failed');
   } finally {
     cleanup();
@@ -690,6 +723,7 @@ test('an invalid command is rejected with the same validation error shared/comma
     assert.equal(res.status, 400);
     const body = await res.json();
     assert.equal(body.code, 'invalid_action');
+    await quietly();
     assert.equal(supabaseState.insertedCommands.length, 0);
   } finally {
     cleanup();
@@ -714,6 +748,7 @@ test('a break-glass session cannot send a command — it has no real user id to 
     assert.equal(res.status, 403);
     const body = await res.json();
     assert.equal(body.error, 'break_glass_cannot_command');
+    await quietly();
     assert.equal(supabaseState.insertedCommands.length, 0);
   } finally {
     cleanup();
@@ -734,73 +769,130 @@ test('a command with no token at all is rejected with 401, same as every other r
   }
 });
 
-test('a command is refused, not silently un-logged, when the audit insert itself fails', async () => {
-  const { proxyUrl, supabaseState, cleanup } = await setup();
-  try {
-    supabaseState.rejectCommandInserts = true;
-    const res = await fetch(`${proxyUrl}/api/command`, {
+test('RM-157: a database that fails or restricts the insert neither refuses the command nor loses its record', async () => {
+  // Until RM-157 a 500 here refused the command (502 audit_log_unreachable), and a project
+  // restricted over a quota — which answers 402 to everything — would have refused every command
+  // in the building. The record is the edge's own now; the database is told after, and when it
+  // cannot take the row the outage queue does, for ingest to upload with the service key.
+  for (const status of [500, 402]) {
+    const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-lf-'));
+    const bufferPath = join(dir, 'command-audit-buffer.ndjson');
+    const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch({ COMMAND_AUDIT_BUFFER_PATH: bufferPath });
+    try {
+      supabaseState.rejectCommandInserts = true;
+      supabaseState.insertStatus = status;
+      const res = await fetch(`${proxyUrl}/api/command`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ device_id: 'l1', action: 'on' }),
+      body: JSON.stringify({ device_id: 'l1', action: 'on', command_id: 'c-edge' }),
     });
-    assert.equal(res.status, 502);
-    const body = await res.json();
-    assert.equal(body.error, 'audit_log_unreachable');
-  } finally {
-    cleanup();
+      assert.equal(res.status, 202, `${status}: the relay is still commanded`);
+      assert.equal(lightState.requests.length, 1);
+      await waitFor(() => readBuffer(bufferPath).length === 1, `${status}: the record in the outage queue`);
+      const row = readBuffer(bufferPath)[0].rows[0];
+      assert.equal(row.command_id, 'c-edge');
+      assert.equal(row.status, 'dispatched', 'queued with its outcome');
+      assert.equal(row.requested_by, 'user-1', 'attribution survives');
+    } finally {
+      cleanup();
+    }
   }
 });
-
-test('with the gate OPEN, a failed audit insert stops the command reaching hardware at all', async () => {
-  // Strengthens the test above. handleCommand used to dispatch FIRST and record after, so a
-  // failed insert could only be detected once the relay had already moved — the 502 was a
-  // report of an incomplete trail, not a prevention of one. auditedDispatch writes the row
-  // first, so "hardware moved with no audit row" is now unrepresentable. This is also the
-  // asymmetry scheduler.mjs was on the wrong side of; both go through the same helper now.
-  const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch();
-  try {
-    supabaseState.rejectCommandInserts = true;
-    const res = await fetch(`${proxyUrl}/api/command`, {
+test('RM-157: the record is on the edge before the light is asked, and a record that cannot be written stops the command', async () => {
+  // No record, no command — the contract record-then-act exists for, now kept on the edge's own
+  // card. Seen from the relay's side: when the light endpoint is asked, the record is already there.
+  const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-lf-'));
+  const inflightPath = join(dir, 'command-audit-inflight.ndjson');
+  {
+    const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch({ COMMAND_AUDIT_INFLIGHT_PATH: inflightPath });
+    try {
+      lightState.inflightPath = inflightPath;
+      const res = await fetch(`${proxyUrl}/api/command`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ device_id: 'l1', action: 'on' }),
+      body: JSON.stringify({ device_id: 'l1', action: 'on', command_id: 'c-edge' }),
     });
-    assert.equal(res.status, 502);
-    assert.equal((await res.json()).error, 'audit_log_unreachable');
-    assert.equal(lightState.requests.length, 0, 'no audit row means nothing may reach the light');
-  } finally {
-    cleanup();
+      assert.equal(res.status, 202);
+      assert.equal(lightState.recordsAtDispatch.length, 1);
+      const [atDispatch] = lightState.recordsAtDispatch;
+      assert.equal(atDispatch.length, 1, 'the record existed when the relay was asked');
+      assert.equal(atDispatch[0].command_id, 'c-edge');
+      assert.equal(atDispatch[0].status, 'dispatching', 'and said so honestly');
+      await recorded(supabaseState, 1);
+      await waitFor(() => !fs.existsSync(inflightPath), 'the record to leave the edge once uploaded');
+    } finally {
+      cleanup();
+    }
+  }
+  {
+    // A directory where the record should go: it cannot be written, so nothing may move.
+    const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch({ COMMAND_AUDIT_INFLIGHT_PATH: dir });
+    try {
+      const res = await fetch(`${proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l1', action: 'on', command_id: 'c-edge' }),
+    });
+      assert.equal(res.status, 502);
+      assert.equal((await res.json()).error, 'audit_log_unreachable');
+      assert.equal(lightState.requests.length, 0, 'no record means nothing may reach the light');
+      await quietly();
+      assert.equal(supabaseState.insertedCommands.length, 0);
+    } finally {
+      cleanup();
+    }
   }
 });
-
-test('an outcome update that silently affects no rows leaves the row honestly at "dispatching"', async () => {
-  // This is how RLS refuses an UPDATE through PostgREST: 200, no error, empty result — the
-  // same shape that let a schedule save report "saved" while writing nothing (2e4c0c2).
-  // `commands` grants authenticated select and insert but no update, so without
-  // supabase/phase9_command_outcome.sql applied every proxy-issued command would be
-  // stranded here. It must be visible when that happens, not assumed away.
+test('RM-157: the database is told once, with the outcome — never a dispatching row patched afterwards', async () => {
+  // One request per command instead of two, and none of them in the click's path.
   const { proxyUrl, supabaseState, lightState, cleanup } = await setupDispatch();
   try {
-    supabaseState.blockCommandUpdates = true;
     const res = await fetch(`${proxyUrl}/api/command`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ device_id: 'l1', action: 'on' }),
+      body: JSON.stringify({ device_id: 'l1', action: 'on', command_id: 'c-edge' }),
     });
-
-    // The dispatch itself succeeded, so the caller is told so — the command really did reach
-    // the light.
     assert.equal(res.status, 202);
     assert.equal(lightState.requests.length, 1);
-    // But the row keeps the only status we actually earned. 'dispatched' would be a claim
-    // the database never confirmed, and 'failed' would be a claim about hardware that is
-    // flatly untrue.
-    assert.equal(supabaseState.insertedCommands[0].status, 'dispatching');
+    await recorded(supabaseState, 1);
+    assert.equal(supabaseState.insertedCommands[0].status, 'dispatched');
+    assert.equal(supabaseState.insertedCommands[0].via, 'local');
+    await quietly();
+    assert.equal(supabaseState.insertedCommands.length, 1);
+    assert.equal(supabaseState.patches, 0, 'no follow-up update');
   } finally {
     cleanup();
   }
 });
 
+test('RM-157: an auth service that cannot judge the token (402, 503) is treated as unreachable, not as a sign-out', async () => {
+  // A project restricted over a quota answers 402 to everything. Read as a refusal, that signed
+  // every remote viewer out while the devices worked; now it takes the offline path, which still
+  // checks the token's signature against the cached keys.
+  for (const status of [402, 503]) {
+    const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-authdown-'));
+    const { jwk, privateKey } = makeSigningKey();
+    const jwksPath = join(dir, 'jwks.json');
+    fs.writeFileSync(jwksPath, JSON.stringify({ keys: [jwk] }));
+    const ctx = await setupDispatch({ JWKS_CACHE_PATH: jwksPath });
+    try {
+      ctx.supabaseState.authStatus = status;
+      const token = mintToken(privateKey, `${ctx.supabaseUrl}/auth/v1`);
+      const res = await fetch(`${ctx.proxyUrl}/api/command`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_id: 'l1', action: 'off' }),
+      });
+      assert.equal(res.status, 202, `${status}: a properly signed session still commands`);
+      const forged = await fetch(`${ctx.proxyUrl}/api/devices`, {
+        headers: { Authorization: `Bearer ${mintToken(makeSigningKey().privateKey, `${ctx.supabaseUrl}/auth/v1`)}` },
+      });
+      assert.equal(forged.status, 401, `${status}: a token signed by anyone else is still refused`);
+    } finally {
+      ctx.cleanup();
+    }
+  }
+});
 // ---------------------------------------------------------------------------
 // Phase 7 — real dispatch for lights (switch-class), via the live flow's POST /light/:id
 // ---------------------------------------------------------------------------
@@ -819,6 +911,7 @@ test('dispatch open + switch command: a real POST is made to /light/:id with cor
     assert.equal(lightState.requests[0].url, '/light/3');
     assert.equal(lightState.requests[0].headers['x-auth-token'], 'test-light-token');
     assert.deepEqual(lightState.requests[0].body, { state: true });
+    await recorded(supabaseState, 1);
     assert.equal(supabaseState.insertedCommands[0].status, 'dispatched');
   } finally {
     cleanup();
@@ -849,6 +942,7 @@ test('a device the bridge reports offline is never sent a local command, nor aud
     assert.equal(lightState.healthReads > 0, true, 'the proxy must ask before dispatching');
     assert.equal(lightState.requests.length, 0, 'nothing may be sent to a device known to be unreachable');
     assert.notEqual(res.status, 202, 'and the caller must not be told it was accepted');
+    await recorded(supabaseState, 1);
     assert.notEqual(supabaseState.insertedCommands[0].status, 'dispatched');
   } finally {
     cleanup();
@@ -931,6 +1025,7 @@ test('dispatch open + switch + downstream failure: 502 bridge_rejected, audit ro
     // remedies differ: this one is a token or a route, that one is Node-RED being down.
     assert.equal(body.error, 'bridge_rejected');
     assert.equal(body.code, 'bridge_rejected');
+    await recorded(supabaseState, 1);
     assert.equal(supabaseState.insertedCommands.length, 1);
     assert.equal(supabaseState.insertedCommands[0].status, 'failed');
   } finally {
@@ -979,6 +1074,7 @@ test('dispatch open + outlet command: routed to /outlet/<target> and audited as 
     assert.equal(lightState.requests.length, 1);
     assert.equal(lightState.requests[0].url, '/outlet/CO3_2');
     assert.deepEqual(lightState.requests[0].body, { state: true });
+    await recorded(supabaseState, 1);
     assert.equal(supabaseState.insertedCommands[0].status, 'dispatched');
   } finally {
     cleanup();
@@ -1005,6 +1101,7 @@ test('dispatch open + ACU command: routed to /acu as one full aircon state, not 
       { state: { power: 'on', mode: 'cool', setpoint_c: 26, fan: 'auto', swing: false } },
       'the setpoint travels inside one full aircon state',
     );
+    await recorded(supabaseState, 1);
     assert.equal(supabaseState.insertedCommands[0].status, 'dispatched');
   } finally {
     cleanup();
@@ -1036,6 +1133,7 @@ test('an ACU setpoint below the room-comfort policy is DISPATCHED, warned about,
     assert.equal(ack.warnings[0].floor, 24);
     assert.equal(lightState.requests.length, 1, 'it really is dispatched now');
     assert.equal(lightState.requests[0].body.state.setpoint_c, 18);
+    await recorded(supabaseState, 1);
     assert.equal(supabaseState.insertedCommands.length, 1);
     assert.match(supabaseState.insertedCommands[0].note, /below this building's 24°C room-comfort policy/);
   } finally {
@@ -1102,6 +1200,7 @@ test('an ACU mode, fan and swing reach the bridge inside the state, and the audi
     });
     assert.equal(res.status, 202);
     assert.deepEqual(lightState.requests[0].body, { state: { power: 'on', mode: 'dry', setpoint_c: 24, fan: 'high', swing: true } });
+    await recorded(supabaseState, 1);
     const row = supabaseState.insertedCommands[0];
     assert.match(row.note, /aircon: Dry · 24 °C · fan high · swing on/);
   } finally {
@@ -1120,6 +1219,7 @@ test('an unknown aircon mode is refused before anything is recorded or sent', as
     assert.equal(res.status, 400);
     assert.equal((await res.json()).code, 'invalid_mode');
     assert.equal(lightState.requests.length, 0);
+    await quietly();
     assert.equal(supabaseState.insertedCommands.length, 0);
   } finally {
     cleanup();
@@ -1564,6 +1664,7 @@ test('a real session still commands hardware while Supabase is unreachable', asy
     });
     assert.equal(res.status, 202, await res.text());
 
+    await waitFor(() => ctx.readBufferedRows().length === 1, 'the record handed to the outage queue');
     const rows = ctx.readBufferedRows();
     assert.equal(rows.length, 1, 'the command must be recorded durably, or it must not dispatch');
     assert.equal(rows[0].device_id, 'l1');

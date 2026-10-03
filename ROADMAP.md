@@ -1,6 +1,17 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-10-01, evening — **RM-156 done: the Daily view's circuit chart speaks of hours, not days.**
+**Last audited:** 2026-10-03 — **RM-157 built: a person's command is recorded on the edge first, so a click no longer
+waits on the database. Log ingestion over the Free plan's 1 GB is open (F-042).**
+- **Why remote clicks pulsed amber for seconds.** Since RM-147 a switch in flight pulses amber. A click waited on up to
+  three requests to Supabase, about 0.43 s each from the edge and 1.5–3.2 s on 2026-10-02, before its relay was asked
+  (F-041, E-240).
+- **Now:** the command is recorded and flushed on the edge, the relay is asked, the browser is answered, and one row
+  goes up afterwards. A restricted project's 402, a 429 or a 5xx is no longer read as a refusal, so commands and remote
+  sign-ins keep working through one (ADR-0014).
+- **Remote access:** the mesh's https address serves the page and its API from one address, and read LIVE with every
+  device. The address-and-port form makes the page call a second port, which some browsers block.
+
+**Earlier, 2026-10-01, evening — RM-156 done: the Daily view's circuit chart speaks of hours, not days.**
 - Reports → Daily → Circuits described its 24 hour columns as "Energy per day for 4 circuits, stacked. All 24 days were
   recorded." It now reads "Energy per hour, 00:00 to 23:59, for 4 circuits, stacked. All 24 hours were recorded.", as
   the building's own hourly chart does, and an outage is labelled in hours. The PDF's hourly circuit chart said the
@@ -447,6 +458,34 @@ other four and none needed changing.
 ---
 
 ## 0. Triage — what to do next
+
+### 2026-10-03 — remote control slow and yellow, and log ingestion over quota (RM-157): control fixed, log open
+
+- **The yellow on the Control page** is the "Switching" pulse RM-147 introduced: amber while a command is in flight. It
+  lasted as long as the click waited for Supabase.
+  - The sign-in check, the audit insert and the outcome update each took about 0.43 s from the edge.
+  - On 2026-10-02, four remote commands' inserts took 1.5–3.2 s, and one row never got its outcome (E-240).
+- **The fix (RM-157, ADR-0014).** The record is written to the edge's card before the relay moves. The proxy answers,
+  then uploads one row carrying the outcome. A failed upload goes to the outage queue that ingest drains every minute.
+  "No record, no command" holds; the record is the edge's.
+- **The same change keeps control alive if the project is restricted.** 402, 429 and 5xx used to read as refusals, in
+  the audit insert and in the sign-in check. They are now treated as no answer, so commands buffer and sessions fall
+  back to the cached-key check.
+- **Remote access.** Use the mesh's https address. It serves the page, the API and the live feed from one address.
+  - Checked: LIVE, every device, no badges.
+  - The address-and-port form (port 5183) makes the page call port 8080 as well. Some browsers and extensions block a
+    page from calling another port; the in-app browser did, and showed RECONNECTING.
+- **Log ingestion (F-042), open.** 1.06 GB of 1 GB on 2026-10-03, about 30 MB a day since 2026-09-30. That is twice
+  what RM-149's request count explains.
+  - The breakdown is only in the Supabase dashboard's Logs Explorer, which nothing on the edge can read.
+  - The operator's first attempt ran in the SQL Editor, which cannot see the logs.
+
+**For the operator:**
+- **Deploy.** Restart `ibems-proxy`, `ibems-ingest` and `ibems-scheduler` on the edge: `server/auditQueue.mjs` is
+  imported by all three.
+- **Remote access.** Open the mesh's https address rather than the address with `:5183`.
+- **For F-042.** In the dashboard, open **Logs → Logs Explorer**, not the SQL Editor, and run the three counts in the
+  session notes. Also note the billing cycle's dates from the organization's Usage page.
 
 ### 2026-10-01 — circuits banked across a meter reset (RM-155): done, phase53 applied
 
@@ -4598,6 +4637,40 @@ days were recorded."
       - **Expected live:** three L.O Yellow rows (E-238).
       - **Tests.** `test/phase54-removed-restated-schema.test.mjs` (7) and the rehearsal (two pastes). Neutered: the
         energy guard.
+
+### A person's command recorded on the edge first — RM-157 (2026-10-03)
+
+The operator reported that, opened remotely, the Control page showed yellow and switching was much slower. The cause
+and the fix are in E-240, F-041 and ADR-0014. The log-ingestion overrun reported with it is F-042, still open.
+
+- [x] **RM-157a** Local-first command record (`createLocalFirstAudit`, `recoverInflight` in `server/auditQueue.mjs`;
+      `server/proxy.mjs`). **Built and tested.**
+      - **The record.** It is appended to `server/data/command-audit-inflight.ndjson` and fsync'd before the relay is
+        asked. If it cannot be written, the command is refused with 502 `audit_log_unreachable`, and nothing moves.
+      - **The outcome** is written into the record. Then the proxy answers, and uploads one row with the caller's
+        session. Any failed upload goes to `command-audit-buffer.ndjson`, which ingest drains with the service key.
+      - **Start-up.** Leftover records go to the same queue, as they stood. A bad path never stops the proxy starting.
+      - **One journal line per command** with its answer time:
+        `command <id> <action> answered 202 dispatched via local in N ms`.
+      - **Tests.**
+        - `auditQueue.test.mjs` (+7).
+        - `proxy.test.mjs`: four tests replace the three that pinned the database-first order. They cover:
+          - the record existing when the relay is asked;
+          - an unwritable record stopping the command;
+          - one row with the outcome, and no update;
+          - a 500 or 402 on insert still commanding and queueing.
+        - Fifteen assertions now wait for the background upload.
+        - Neutered: all four fail on the previous proxy.
+- [x] **RM-157b** `isRefusal`: only a 4xx that judges the caller or the row refuses; 402, 408, 425, 429 and 5xx do not.
+      **Built and tested.**
+      - The proxy's sign-in check takes the cached-key path on them, and the scheduler's insert buffers.
+      - Tests:
+        - proxy (+1): 402 and 503 from auth, with a forged token still refused;
+        - scheduler (+1): 402 and 503 buffer a due schedule. Its refusal test now answers 403. Neutered.
+- [ ] **RM-157c** Deploy and read back. Restart the three daemons. The next remote clicks' journal lines should read a
+      few hundred ms, against 1–2 s before.
+- [ ] **F-042** Log ingestion over quota: find the source from the Logs Explorer's counts by source and by API path, then
+      cut it.
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 

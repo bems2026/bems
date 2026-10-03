@@ -33,7 +33,7 @@ import { createNotifier } from './notify.mjs';
 import { dispatchCommand, DISPATCH_CLASSES } from './dispatchLight.mjs';
 import { buildCloudDispatch } from './cloudDispatchConfig.mjs';
 import { auditedDispatch } from './auditedDispatch.mjs';
-import { createBufferedAudit } from './auditQueue.mjs';
+import { createBufferedAudit, isRefusal } from './auditQueue.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -351,7 +351,10 @@ async function insertAuditRemote(row) {
     // this daemon writes with the service-role key and RLS does not apply to it.
     return { ok: false, unreachable: true, detail: String(err) };
   }
-  if (!res.ok) return { ok: false, detail: `HTTP ${res.status} ${await res.text().catch(() => '')}` };
+  // RM-157: a status is an answer only when it judges this row. 402 (a project restricted over a
+  // quota), 429 and 5xx are the service unable to answer, and buffer like a dropped connection —
+  // otherwise one quota overrun would stop every schedule in the building. See `isRefusal`.
+  if (!res.ok) return { ok: false, unreachable: !isRefusal(res.status), detail: `HTTP ${res.status} ${await res.text().catch(() => '')}` };
   const body = await res.json().catch(() => null);
   return { ok: true, id: Array.isArray(body) ? body[0]?.id : body?.id };
 }

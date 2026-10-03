@@ -5,7 +5,7 @@ audience: [administrator, integrator, operator, installer]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo b8af936 · edge checkout fcb1ff6
-evidence: [E-010, E-011, E-017, E-018, E-021, E-023, E-026, E-041, E-051, E-056, E-058, E-060, E-062, E-063, E-064, E-065, E-066, E-070, E-076, E-078, E-080, E-082, E-083, E-084, E-086, E-087, E-110, E-111, E-113, E-115, E-120, E-122, E-123, E-125, E-126, E-127, E-128, E-129, E-134, E-135, E-137, E-138, E-161, E-183]
+evidence: [E-010, E-011, E-017, E-018, E-021, E-023, E-026, E-041, E-051, E-056, E-058, E-060, E-062, E-063, E-064, E-065, E-066, E-070, E-076, E-078, E-080, E-082, E-083, E-084, E-086, E-087, E-110, E-111, E-113, E-115, E-120, E-122, E-123, E-125, E-126, E-127, E-128, E-129, E-134, E-135, E-137, E-138, E-161, E-183, E-240]
 ---
 
 # Overview
@@ -215,8 +215,8 @@ Evidence for the hops: the scaling [E-135]; the poll cadences [E-056]; the onlin
 [E-110, E-111]; the scrub [E-138]; outage buffering [E-134]; retention [E-070]; access to history through database
 functions [E-126, E-161]; site-time display [E-137].
 
-**Figure 4 — one command, screen to device.** It shows the audit write before dispatch, the interlock, and where
-acknowledgement does and does not exist. Source: [`diagrams/command-path.mmd`](diagrams/command-path.mmd).
+**Figure 4 — one command, screen to device.** It shows the record on the edge before dispatch, the interlock, the
+upload after the answer (RM-157, ADR-0014), and where acknowledgement does and does not exist. Source: [`diagrams/command-path.mmd`](diagrams/command-path.mmd).
 
 ```mermaid
 sequenceDiagram
@@ -225,7 +225,8 @@ sequenceDiagram
   participant W as Browser
   participant X as Proxy
   participant A as auditedDispatch
-  participant P as Postgres<br/>(or local buffer)
+  participant E as Edge record<br/>(in-flight file)
+  participant P as Postgres
   participant N as Node-RED<br/>http-in
   participant D as Device
   O->>W: press a control (absolute state: on / off / setpoint, never "toggle")
@@ -233,12 +234,10 @@ sequenceDiagram
   Note over X: Verify the session: against Auth, or the cached signing key when offline.<br/>Break-glass sessions are view-only and refused here.
   Note over X: Validate: class is controllable · value inside the hardware range (else REFUSE) ·<br/>below site policy → accept, with a warning written into the note
   X->>A: device, command, attribution
-  A->>P: INSERT commands row: status dry_run (gate closed) or dispatching (gate open)
-  alt the row cannot be written, and Postgres answered 4xx
-    P-->>A: refusal (an answer)
+  A->>E: record on the edge, flushed: status dry_run (gate closed) or dispatching (gate open)
+  alt the record cannot be written
+    E-->>A: write failed
     A-->>X: refused, nothing moves
-  else transport failure
-    A->>P: row written to the local audit buffer instead (uploaded later)
   end
   Note over A: INTERLOCK: HARDWARE_DISPATCH_ENABLED and the device class in DISPATCH_CLASSES
   A->>N: POST /light/:id · /outlet/:target · /acu · /capability/:id (LIGHT_API_TOKEN)
@@ -247,13 +246,17 @@ sequenceDiagram
   opt local dispatch failed and a vendor fallback is configured
     A->>D: vendor cloud dispatch
   end
-  A->>P: UPDATE status dispatched / failed, via = local · cloud · none
+  A->>E: the outcome into the record: dispatched / failed, via = local · cloud · none
   X-->>W: 202 Accepted, confirmed: false
+  X->>P: INSERT one commands row carrying the outcome, with the caller's session
+  alt Postgres could not take it, for any reason
+    X->>E: the record moves to the outage queue, and ingest uploads it within a minute
+  end
   Note over W,D: Verification: the browser reconciles the pending command against the next readings.<br/>No new state → "The device did not report the new state." IR units never report, so the room sensor is the proof.
 ```
 
 Evidence for the steps: session verification and break-glass [E-066, E-128]; validation [E-120, E-138]; record-first
-with the gate's decision [E-065, E-122]; the interlock, observed **open** on this deployment [E-041]; the local buffer
+with the gate's decision [E-065, E-122], on the edge since RM-157 [E-240]; the interlock, observed **open** on this deployment [E-041]; the local buffer
 and the 4xx rule [E-078, E-128]; the `202` acknowledgement [E-138]; browser-side verification [E-115].
 
 !!! warning "Hardware dispatch is enabled on the pilot deployment"

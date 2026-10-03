@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { readBuffer } from './ingestBuffer.mjs';
-import { createBufferedAudit, takeBufferedCommands, restoreUndrained, BUFFERED_ID_PREFIX } from './auditQueue.mjs';
+import { createBufferedAudit, createLocalFirstAudit, isRefusal, recoverInflight, takeBufferedCommands, restoreUndrained, BUFFERED_ID_PREFIX, INFLIGHT_ID_PREFIX } from './auditQueue.mjs';
 
 const tmpPath = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ibems-audit-')), 'commands.ndjson');
 
@@ -178,4 +178,109 @@ test('restoreUndrained puts back what could not be uploaded, oldest first', asyn
 test('taking from an empty buffer is a no-op, not an error', async () => {
   const taken = takeBufferedCommands(tmpPath());
   assert.deepEqual(taken.entries, []);
+});
+
+// ---------------------------------------------------------------------------------------------
+// RM-157: a person's command is recorded on the edge first, and the database is told after.
+// ---------------------------------------------------------------------------------------------
+
+const twoPaths = () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ibems-audit-lf-'));
+  return { inflightPath: path.join(dir, 'inflight.ndjson'), bufferPath: path.join(dir, 'buffer.ndjson') };
+};
+
+test('isRefusal: only an answer about this caller or this row refuses; a server that cannot answer does not', () => {
+  for (const status of [400, 401, 403, 404, 409, 422]) assert.equal(isRefusal(status), true, `${status} is an answer`);
+  // 402 is how a restricted project answers (over a plan quota), 429 a rate limit, 5xx the
+  // service failing. None of them says anything about this caller or this row.
+  for (const status of [402, 408, 425, 429, 500, 502, 503, 504]) assert.equal(isRefusal(status), false, `${status} is not an answer`);
+});
+
+test('the record is on the edge, flushed, before insertAudit returns, and the database is not asked', async () => {
+  const { inflightPath, bufferPath } = twoPaths();
+  let uploads = 0;
+  const audit = createLocalFirstAudit({ inflightPath, bufferPath, upload: async () => { uploads++; return { ok: true }; } });
+  const res = await audit.insertAudit(row({ command_id: 'c-1' }));
+  assert.equal(res.ok, true);
+  assert.equal(res.id, `${INFLIGHT_ID_PREFIX}c-1`);
+  assert.equal(uploads, 0, 'the click must not wait on the database');
+  const entries = readBuffer(inflightPath);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].rows[0].status, 'dispatching');
+  assert.deepEqual(readBuffer(bufferPath), []);
+});
+
+test('a record that cannot be written refuses, so nothing is dispatched unrecorded', async () => {
+  const { bufferPath } = twoPaths();
+  // A directory where the file should be: the append throws.
+  const inflightPath = fs.mkdtempSync(path.join(os.tmpdir(), 'ibems-audit-dir-'));
+  const audit = createLocalFirstAudit({ inflightPath, bufferPath, upload: async () => ({ ok: true }) });
+  const res = await audit.insertAudit(row({ command_id: 'c-1' }));
+  assert.equal(res.ok, false);
+  assert.match(res.detail, /could not record/);
+});
+
+test('the outcome is written into the record, and settle uploads ONE row carrying it', async () => {
+  const { inflightPath, bufferPath } = twoPaths();
+  const uploaded = [];
+  const audit = createLocalFirstAudit({ inflightPath, bufferPath, upload: async (r) => { uploaded.push(r); return { ok: true }; } });
+  const { id } = await audit.insertAudit(row({ command_id: 'c-1' }));
+  assert.deepEqual(await audit.updateAudit(id, { status: 'dispatched', via: 'local' }), { ok: true });
+  const settled = await audit.settle(id);
+  assert.equal(settled.uploaded, true);
+  assert.equal(uploaded.length, 1);
+  assert.equal(uploaded[0].status, 'dispatched');
+  assert.equal(uploaded[0].via, 'local');
+  assert.equal(uploaded[0].command_id, 'c-1');
+  assert.deepEqual(readBuffer(inflightPath), [], 'an uploaded record leaves the edge');
+  assert.deepEqual(readBuffer(bufferPath), []);
+});
+
+test('an upload that fails for ANY reason hands the record to the outage queue, never drops it', async () => {
+  // The relay has already moved. A refusal now is not a reason to forget that it did: the queue
+  // is drained with the service key, which no row-level rule refuses.
+  for (const upload of [remoteUnreachable(), remoteRejected(), async () => { throw new Error('boom'); }]) {
+    const { inflightPath, bufferPath } = twoPaths();
+    const audit = createLocalFirstAudit({ inflightPath, bufferPath, upload });
+    const { id } = await audit.insertAudit(row({ command_id: 'c-9' }));
+    await audit.updateAudit(id, { status: 'dispatched' });
+    const settled = await audit.settle(id);
+    assert.equal(settled.uploaded, false);
+    assert.deepEqual(readBuffer(inflightPath), []);
+    const queued = readBuffer(bufferPath);
+    assert.equal(queued.length, 1);
+    assert.equal(queued[0].table, 'commands');
+    assert.equal(queued[0].rows[0].status, 'dispatched');
+  }
+});
+
+test('two commands in flight keep their own records', async () => {
+  const { inflightPath, bufferPath } = twoPaths();
+  const uploaded = [];
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const audit = createLocalFirstAudit({ inflightPath, bufferPath, upload: async (r) => { await gate; uploaded.push(r.command_id); return { ok: true }; } });
+  const a = await audit.insertAudit(row({ command_id: 'a' }));
+  const b = await audit.insertAudit(row({ command_id: 'b' }));
+  await audit.updateAudit(b.id, { status: 'failed' });
+  await audit.updateAudit(a.id, { status: 'dispatched' });
+  const settlingA = audit.settle(a.id);
+  // b's record is amended while a's upload is still out: the two must not overwrite each other.
+  await audit.updateAudit(b.id, { status: 'failed', note: 'amended mid-upload' });
+  release();
+  await settlingA;
+  assert.deepEqual(readBuffer(inflightPath).map((e) => e.rows[0].command_id), ['b'], 'b is untouched by a settling');
+  assert.equal(readBuffer(inflightPath)[0].rows[0].note, 'amended mid-upload');
+  assert.deepEqual(uploaded, ['a']);
+});
+
+test('a record left on the edge by a crash is handed to the outage queue at start-up, as it stood', () => {
+  const { inflightPath, bufferPath } = twoPaths();
+  fs.writeFileSync(inflightPath, JSON.stringify({ table: 'commands', rows: [row({ command_id: 'c-1' })], onConflict: null }) + '\n');
+  assert.equal(recoverInflight(inflightPath, bufferPath), 1);
+  assert.equal(fs.existsSync(inflightPath), false);
+  const queued = readBuffer(bufferPath);
+  assert.equal(queued.length, 1);
+  assert.equal(queued[0].rows[0].status, 'dispatching', 'a crash mid-dispatch is recorded as exactly that');
+  assert.equal(recoverInflight(inflightPath, bufferPath), 0, 'nothing to recover is a no-op');
 });

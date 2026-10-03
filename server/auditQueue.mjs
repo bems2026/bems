@@ -84,6 +84,140 @@ export function createBufferedAudit({ insert, update, bufferPath, now = () => ne
 }
 
 /**
+ * Whether an HTTP status from Supabase is an ANSWER about this caller or this row — the only kind
+ * of failure that must refuse. 402 is how a project over its plan's quota is restricted, 408/425/429
+ * are the service declining to answer yet, and 5xx is the service failing: none of them says the
+ * command may not be recorded, so each is treated like a connection that never got through.
+ *
+ * The line matters more since RM-157. Log ingestion went over the Free plan's 1 GB on 2026-10-03,
+ * and a restricted project answers every request 402: read as a refusal, that would have stopped
+ * every scheduled command in the building while the devices sat on the LAN, working.
+ */
+export function isRefusal(status) {
+  if (status === 402 || status === 408 || status === 425 || status === 429) return false;
+  return status >= 400 && status < 500;
+}
+
+/** Marks an id as a record still on the edge, not yet in Supabase. */
+export const INFLIGHT_ID_PREFIX = 'inflight:';
+
+/** Appends one line and flushes it to the card: this record has to survive a power cut. */
+function appendDurably(file, entry) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const fd = fs.openSync(file, 'a');
+  try {
+    fs.writeSync(fd, JSON.stringify(entry) + '\n');
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/** Rewrites the file whole, flushed. Removes it when nothing is left. */
+function rewriteDurably(file, entries) {
+  if (entries.length === 0) {
+    fs.rmSync(file, { force: true });
+    return;
+  }
+  const tmp = `${file}.tmp`;
+  const fd = fs.openSync(tmp, 'w');
+  try {
+    fs.writeSync(fd, entries.map((e) => JSON.stringify(e)).join('\n') + '\n');
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  fs.renameSync(tmp, file);
+}
+
+const commandIdOf = (id) => String(id).slice(INFLIGHT_ID_PREFIX.length);
+
+/**
+ * A person's command, recorded on the edge first and in Supabase after — RM-157.
+ *
+ * WHY. Record-then-act asked Supabase twice for every click: the row before the relay moved, and
+ * the outcome after. Measured from the edge on 2026-10-03, one request takes about 0.43 s (0.86 s on
+ * a cold connection, and a 5 s timeout on a bad evening — 2026-10-02, 1.5 to 3.2 s), so a switch sat
+ * in its amber "Switching" pulse for one to two seconds before the relay was even asked. And a
+ * project restricted for going over a quota answers 402, which `createBufferedAudit` read as a
+ * refusal: every command in the building refused while the devices worked.
+ *
+ * WHAT DOES NOT CHANGE. Nothing reaches hardware unrecorded: `insertAudit` returns only once the
+ * record is flushed to the edge's own card, and a record that cannot be written refuses the command.
+ * "Recorded" already meant "durably written somewhere we control" (see the top of this file); this
+ * makes the edge the first place rather than the fallback.
+ *
+ * WHO MAY COMMAND is not weakened. The row was written with the caller's own token, and the rule it
+ * met was `auth.role() = 'authenticated'`. The proxy has already asked Supabase's auth service about
+ * that token before it gets here — a stricter question, since it also sees a sign-out.
+ *
+ * AFTER THE ANSWER, `settle` uploads one row carrying the outcome. On any failure it hands the
+ * record to the outage queue (`bufferPath`), which `ingest.mjs` drains every minute with the
+ * service key. A relay that moved is never forgotten because the database said no afterwards.
+ *
+ * The in-flight file belongs to this one process, and every read-modify-write of it is synchronous,
+ * so two commands in flight cannot overwrite each other's record.
+ */
+export function createLocalFirstAudit({ inflightPath, bufferPath, upload, now = () => new Date().toISOString() }) {
+  const entriesOf = () => readBuffer(inflightPath);
+  const find = (entries, commandId) => entries.find((e) => e.rows?.[0]?.command_id === commandId);
+
+  return {
+    async insertAudit(row) {
+      const commandId = row.command_id || `local-${crypto.randomUUID()}`;
+      try {
+        appendDurably(inflightPath, { table: 'commands', rows: [{ ...row, command_id: commandId }], onConflict: null, recorded_at: now() });
+      } catch (err) {
+        return { ok: false, detail: `could not record the command on the edge: ${err.message}` };
+      }
+      return { ok: true, id: `${INFLIGHT_ID_PREFIX}${commandId}` };
+    },
+
+    async updateAudit(id, patch) {
+      const entries = entriesOf();
+      const hit = find(entries, commandIdOf(id));
+      if (!hit) return { ok: false, detail: 'no record on the edge for this command' };
+      hit.rows[0] = { ...hit.rows[0], ...patch };
+      rewriteDurably(inflightPath, entries);
+      return { ok: true };
+    },
+
+    /** Uploads the finished record, or hands it to the outage queue. Never throws. */
+    async settle(id) {
+      const commandId = commandIdOf(id);
+      const record = find(entriesOf(), commandId);
+      if (!record) return { uploaded: false, detail: 'no record on the edge for this command' };
+      let res;
+      try {
+        res = await upload(record.rows[0]);
+      } catch (err) {
+        res = { ok: false, detail: String(err?.message ?? err) };
+      }
+      // Re-read after the await: other commands may have written their records meanwhile.
+      const remaining = entriesOf().filter((e) => e.rows?.[0]?.command_id !== commandId);
+      if (!res?.ok) {
+        appendToBuffer(bufferPath, { table: 'commands', rows: record.rows, onConflict: null, buffered_at: now() });
+      }
+      rewriteDurably(inflightPath, remaining);
+      return res?.ok ? { uploaded: true } : { uploaded: false, detail: res?.detail ?? 'upload failed' };
+    },
+  };
+}
+
+/**
+ * Hands every record a previous run left on the edge to the outage queue, as it stood: a record
+ * still `dispatching` is a command whose outcome nobody saw, and is uploaded as exactly that.
+ * Returns how many were handed over. Called once, when the proxy starts.
+ */
+export function recoverInflight(inflightPath, bufferPath, now = () => new Date().toISOString()) {
+  if (!fs.existsSync(inflightPath)) return 0;
+  const entries = readBuffer(inflightPath);
+  for (const entry of entries) appendToBuffer(bufferPath, { ...entry, buffered_at: now() });
+  fs.rmSync(inflightPath, { force: true });
+  return entries.length;
+}
+
+/**
  * Atomically claims everything currently buffered. Returns `{entries, from}`; `from` is the
  * rotated path the caller must acknowledge through `restoreUndrained`.
  *

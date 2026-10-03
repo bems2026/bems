@@ -68,7 +68,7 @@ import { createAdminClient } from '../node-red-bridge/nodeRedAdmin.mjs';
 import { auditedDispatch } from './auditedDispatch.mjs';
 import { createJwksCache } from './jwksCache.mjs';
 import { verifyEs256Jwt } from './jwtVerify.mjs';
-import { createBufferedAudit } from './auditQueue.mjs';
+import { createLocalFirstAudit, isRefusal, recoverInflight } from './auditQueue.mjs';
 import { openArchive } from './archiveDb.mjs';
 import { RAW_RETENTION_DAYS } from '../shared/retention.mjs';
 import { bufferCount } from './ingestBuffer.mjs';
@@ -293,6 +293,25 @@ const COMMAND_BUFFER_PATH = process.env.COMMAND_AUDIT_BUFFER_PATH || join(dirnam
  * the system, and a scheduled command waiting to upload is exactly as behind as a manual one.
  */
 const SCHEDULER_BUFFER_PATH = process.env.SCHEDULER_AUDIT_BUFFER_PATH || join(dirname(fileURLToPath(import.meta.url)), 'data', 'command-audit-buffer-scheduler.ndjson');
+/**
+ * RM-157: where a person's command is recorded before its relay is asked to move. This process's
+ * alone — `ingest.mjs` drains COMMAND_BUFFER_PATH, never this — and normally empty again within a
+ * second, once the record has gone up. See `createLocalFirstAudit`.
+ */
+const COMMAND_INFLIGHT_PATH = process.env.COMMAND_AUDIT_INFLIGHT_PATH || join(dirname(fileURLToPath(import.meta.url)), 'data', 'command-audit-inflight.ndjson');
+{
+  // A record left behind by a run that stopped mid-command is not lost: it goes to the outage
+  // queue as it stood, `dispatching` if nobody saw how the command went.
+  //
+  // Never fatal. A proxy that will not start takes every READ down with it; one whose record file
+  // is unusable still serves the building, and refuses each command at the record instead.
+  try {
+    const recovered = recoverInflight(COMMAND_INFLIGHT_PATH, COMMAND_BUFFER_PATH);
+    if (recovered) console.error(`[ibems-proxy] ${recovered} command record(s) left on the edge by the last run, queued for upload`);
+  } catch (err) {
+    console.error(`[ibems-proxy] could not recover command records from ${COMMAND_INFLIGHT_PATH}: ${err.message}`);
+  }
+}
 
 const jwks = JWKS_URL ? createJwksCache({ url: JWKS_URL, cachePath: JWKS_CACHE_PATH }) : null;
 
@@ -386,6 +405,11 @@ async function verifySupabaseSession(token) {
     if (res.ok) {
       const body = await res.json();
       result = { ok: true, userId: typeof body?.id === 'string' ? body.id : null };
+    } else if (!isRefusal(res.status)) {
+      // RM-157. Only a 4xx about the token is an answer. A project restricted for a quota answers
+      // 402, a rate limit 429, an outage 5xx: none of them says this session is invalid, so they
+      // take the same path as no answer at all, below — not a refusal that signs everybody out.
+      throw new Error(`auth answered ${res.status} without judging the token`);
     }
   } catch {
     // Supabase unreachable — NOT the same fact as "invalid token", and the difference is now
@@ -614,6 +638,9 @@ function proxyHttp(req, res, url) {
  * need on top of that.
  */
 async function handleCommand(req, res, token) {
+  // RM-157: how long the person waited, journaled once per command — the number the amber
+  // "Switching" pulse makes visible, and the one the local-first record exists to shorten.
+  const startedMs = Date.now();
   const session = await verifySupabaseSession(token);
   if (!session.ok || !session.userId) {
     // isAuthorized() already accepted this token, so if it's not a real Supabase session
@@ -656,54 +683,24 @@ async function handleCommand(req, res, token) {
   // Which classes really reach hardware is declared once, in dispatchLight.mjs, next to the
   // routing that implements it — so what /api/capabilities advertises and what this function
   // will actually do cannot drift apart. The record-then-act ordering is shared with
-  // scheduler.mjs via auditedDispatch, so the two paths cannot disagree about what a failed
-  // audit insert means (they used to: this one refused, the scheduler carried on).
-  // The record-then-act contract is untouched: auditedDispatch still refuses to dispatch
-  // unless the command was recorded first. `createBufferedAudit` only changes where
-  // "recorded" is allowed to land when Supabase cannot be reached at all.
-  const remoteAudit = {
-    insert: async (row) => {
-      try {
-        const res = await sbCommands('', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(row) });
-        // A status code is Supabase ANSWERING. A 4xx means this caller may not write that row,
-        // which is a refusal and must stay one — see auditQueue.mjs on why laundering it into
-        // a local queue entry would be the dangerous mistake.
-        if (!res.ok) return { ok: false, detail: `HTTP ${res.status} ${await res.text().catch(() => '')}` };
-        const body = await res.json().catch(() => null);
-        return { ok: true, id: Array.isArray(body) ? body[0]?.id : body?.id };
-      } catch (err) {
-        // A throw is the transport failing: no answer was obtained. Only this may be buffered.
-        return { ok: false, unreachable: true, detail: String(err) };
-      }
-    },
-    update: async (id, patch) => {
-      try {
-        // `return=representation`, not `return=minimal`, so the affected-row count can be
-        // checked. PostgREST reports an RLS-blocked UPDATE as a success with an empty
-        // result — the exact trap 2e4c0c2 fixed on the schedule-save path, where a write
-        // that changed nothing reported "saved". An empty array here means the row was not
-        // updated, whatever the status code says.
-        const res = await sbCommands(`?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(patch) });
-        if (!res.ok) return { ok: false, detail: `HTTP ${res.status} ${await res.text().catch(() => '')}` };
-        const rows = await res.json().catch(() => null);
-        if (!Array.isArray(rows) || rows.length === 0) {
-          return { ok: false, detail: 'update affected no rows — check supabase/phase9_command_outcome.sql is applied' };
-        }
-        return { ok: true };
-      } catch (err) {
-        return { ok: false, unreachable: true, detail: String(err) };
-      }
-    },
+  // scheduler.mjs via auditedDispatch, so the two paths cannot disagree about what an
+  // unrecorded command means: it is never dispatched.
+  //
+  // RM-157: recorded on the EDGE first, then uploaded once, after the relay has been asked.
+  // The click used to wait for two Supabase round trips — the row before, the outcome after —
+  // about 0.43 s each from here, and up to the 5 s timeout on a bad evening. See
+  // `createLocalFirstAudit` and docs/adr/ADR-0014-commands-recorded-on-the-edge.md.
+  const uploadRow = async (row) => {
+    try {
+      // `return=minimal`: nothing is patched afterwards, so no id is needed back.
+      const res = await sbCommands('', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(row) });
+      if (!res.ok) return { ok: false, unreachable: !isRefusal(res.status), detail: `HTTP ${res.status} ${await res.text().catch(() => '')}` };
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, unreachable: true, detail: String(err) };
+    }
   };
-
-  // The record-then-act contract is untouched: auditedDispatch still refuses to dispatch
-  // unless the command was recorded first. This only changes where "recorded" is allowed to
-  // land when Supabase cannot be reached at all.
-  const audit = createBufferedAudit({
-    bufferPath: COMMAND_BUFFER_PATH,
-    insert: remoteAudit.insert,
-    update: remoteAudit.update,
-  });
+  const audit = createLocalFirstAudit({ inflightPath: COMMAND_INFLIGHT_PATH, bufferPath: COMMAND_BUFFER_PATH, upload: uploadRow });
 
   /**
    * A below-policy setpoint is RECORDED, not refused — RM-068.
@@ -772,10 +769,18 @@ async function handleCommand(req, res, token) {
     log: (msg) => console.error(`[ibems-proxy] ${msg}`),
   });
 
-  // Audit completeness is part of Phase 6's DoD: no row, no command. With record-first this
-  // is now a genuine refusal rather than a report of one — nothing has touched hardware.
+  // The record goes up now, and the answer below does not wait for it. A failed upload is handed
+  // to the outage queue inside `settle`, so this never rejects; it is only reported.
+  if (outcome.auditId) {
+    void audit.settle(outcome.auditId).then((settled) => {
+      if (!settled.uploaded) console.error(`[ibems-proxy] command record kept on the edge for upload: ${settled.detail}`);
+    });
+  }
+
+  // Audit completeness is part of Phase 6's DoD: no record, no command. A refusal here means the
+  // edge could not write the record at all — nothing has touched hardware.
   if (outcome.auditFailure) {
-    console.error(`[ibems-proxy] command audit insert failed: ${outcome.auditFailure}`);
+    console.error(`[ibems-proxy] command audit record failed: ${outcome.auditFailure}`);
     return sendJson(res, 502, { error: 'audit_log_unreachable', detail: 'Could not record this command — refusing to proceed without an audit trail.' });
   }
 
@@ -825,6 +830,7 @@ async function handleCommand(req, res, token) {
       code: 'hardware_dispatch_failed',
       detail: 'The command was validated and logged, but the device did not actually respond — refusing to report it as accepted.',
     };
+    console.log(`[ibems-proxy] command ${cmd.device_id} ${cmd.action} answered 502 ${mapped.code} in ${Date.now() - startedMs} ms`);
     return sendJson(res, 502, {
       error: mapped.code,
       code: mapped.code,
@@ -836,6 +842,7 @@ async function handleCommand(req, res, token) {
     });
   }
 
+  console.log(`[ibems-proxy] command ${cmd.device_id} ${cmd.action} answered ${ACCEPTED_STATUS} ${outcome.status} via ${outcome.via ?? '-'} in ${Date.now() - startedMs} ms`);
   res.writeHead(ACCEPTED_STATUS, { 'Content-Type': 'application/json', ...CORS_HEADERS });
   // `via` rides on the ack so the page can say HOW the command landed. A cloud-recovered
   // command is a success the operator would otherwise read as unremarkable, while it means the

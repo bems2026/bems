@@ -104,16 +104,19 @@ function startFakeSupabase(scheduleRows, dsm = { max_phase_current: null, max_to
       }
       if (req.url.startsWith('/rest/v1/commands')) {
         // An OUTAGE, not a refusal: hang up the socket so `fetch` throws with no status at
-        // all. Distinct from failCommandInsert's 503, which is Supabase answering, and the
-        // difference decides whether the command may be buffered or must be refused.
+        // all. Distinct from failCommandInsert's 403, which is Supabase answering about this row,
+        // and the difference decides whether the command may be buffered or must be refused.
         // Scoped to the commands routes so schedules and thresholds still load — a daemon
         // that never got its config would not reach the interesting code path.
         if (dropCommandWrites) return req.socket.destroy();
       }
       if (req.url.startsWith('/rest/v1/commands') && req.method === 'POST') {
         if (failCommandInsert) {
-          res.writeHead(503, { 'Content-Type': 'application/json' });
-          return res.end('{"message":"service unavailable"}');
+          // `true` is a refusal (403, a judgment about this row); a number answers with that
+          // status, for the ones that are not a judgment at all (RM-157: 402, 503).
+          const status = failCommandInsert === true ? 403 : failCommandInsert;
+          res.writeHead(status, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ message: status === 403 ? 'permission denied' : 'unavailable' }));
         }
         const row = { id: `cmd-${state.commands.length + 1}`, ...JSON.parse(raw) };
         state.commands.push(row);
@@ -506,6 +509,26 @@ test('the audit row is opened before dispatch, so an interrupted command still l
   assert.equal(r.lightRequests.length, 1);
 });
 
+test('RM-157: a restricted project (402) or a failing one (503) buffers a due schedule rather than refusing it', async () => {
+  // Neither status says anything about this row. Read as refusals, one quota overrun would have
+  // stopped every schedule in the building while the devices sat on the LAN, working.
+  for (const status of [402, 503]) {
+    const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-sched-'));
+    const bufferPath = join(dir, 'scheduler-audit.ndjson');
+    await waitForRoomInMinute();
+    const r = await run(
+      { HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-token', SCHEDULER_AUDIT_BUFFER_PATH: bufferPath },
+      dueNowRow(),
+      (st) => st.lightRequests.length >= 1,
+      { failCommandInsert: status },
+    );
+    assert.equal(r.lightRequests.length, 1, `${status}: the schedule still reaches the hardware`);
+    const rows = readBuffer(bufferPath).map((e) => e.rows[0]);
+    assert.equal(rows.length, 1, `${status}: recorded durably for upload`);
+    assert.equal(rows[0].status, 'dispatched');
+  }
+});
+
 test('a due schedule STILL fires when Supabase is unreachable, recorded to the local buffer', async () => {
   // The unattended half of EX-130. Schedules live in memory and are refreshed periodically, so
   // this daemon keeps evaluating right through an internet outage — it simply could not
@@ -514,8 +537,8 @@ test('a due schedule STILL fires when Supabase is unreachable, recorded to the l
   // auditedDispatch behaving differently in an outage, which is the asymmetry that helper's
   // own docblock exists to prevent.
   //
-  // Note the contrast with the test above: that one returns 503 and must still REFUSE, because
-  // a status code is Supabase answering. This one hangs up the socket, which is an outage.
+  // Note the contrast with the refusal test above: that one answers 403 and must still REFUSE,
+  // because it is Supabase judging this row. This one hangs up the socket, which is an outage.
   const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-sched-'));
   const bufferPath = join(dir, 'scheduler-audit.ndjson');
   await waitForRoomInMinute();
