@@ -53,6 +53,34 @@ export function planQuotas(env) {
   };
 }
 
+/**
+ * The edge's daily request budget — RM-159, ADR-0015. After RM-159 the edge's own requests are about
+ * 600 a day; a warning at 1,500 leaves room for commands and a second site, and an error at 3,000 is
+ * a quarter of the whole project's log quota spent by one edge.
+ */
+export const REQUEST_BUDGET = Object.freeze({ warn: 1500, error: 3000 });
+
+/**
+ * The daemons' meter files (server/requestMeter.mjs snapshots) -> the last full UTC day across them all,
+ * and today so far. A daemon without a file for that day simply adds nothing. Pure.
+ */
+export function requestMeterFrom(snapshots, todayUtc) {
+  if (!snapshots.length) return null;
+  const sum = (picks) => {
+    const total = { rest: 0, rpc: 0, auth: 0, storage: 0, other: 0, total: 0 };
+    for (const c of picks) for (const k of Object.keys(total)) total[k] += Number(c?.[k] ?? 0);
+    return total;
+  };
+  const days = snapshots.flatMap((s) => [s.day === todayUtc ? null : s.day, s.previous?.day]).filter((d) => d && d < todayUtc).sort();
+  const lastDay = days.length ? days[days.length - 1] : null;
+  const ofDay = (day) => snapshots.map((s) => (s.day === day ? s.counts : s.previous?.day === day ? s.previous.counts : null)).filter(Boolean);
+  const today = sum(snapshots.filter((s) => s.day === todayUtc).map((s) => s.counts)).total;
+  if (lastDay === null) return { lastFullDay: null, today };
+  const full = sum(ofDay(lastDay));
+  const detail = ['rest', 'rpc', 'auth', 'storage', 'other'].filter((k) => full[k] > 0).map((k) => `${k} ${full[k]}`).join(', ') || 'none';
+  return { lastFullDay: { day: lastDay, total: full.total, detail }, today };
+}
+
 /** Keys that must carry a real value before anything works. */
 const REQUIRED_SUPABASE = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
 const REQUIRED_TUYA = ['TUYA_ACCESS_ID', 'TUYA_ACCESS_SECRET'];
@@ -177,7 +205,7 @@ export function assessDeployment(obs) {
    * so the warning has to come while there is room to act. Read through `usage_bytes()` (phase50).
    */
   const usage = database.usage ?? null;
-  const sizeCheck = (id, title, bytes, quota, fix) => {
+  const sizeCheck = (id, title, bytes, quota, fix, extra = '') => {
     const pct = bytes / quota;
     const mb = (n) => Math.round(n / 1e6).toLocaleString('en-US');
     add(
@@ -190,7 +218,7 @@ export function assessDeployment(obs) {
       dbLevel !== LEVELS.OK ? 'not attempted — the database was not reached'
         : usage === null ? 'not checked'
           : usage.missing ? 'usage_bytes() is not in the database'
-            : `${mb(bytes)} of ${mb(quota)} MB (${Math.round(pct * 100)} %)`,
+            : `${mb(bytes)} of ${mb(quota)} MB (${Math.round(pct * 100)} %)${extra}`,
       usage?.missing
         ? 'Apply supabase/phase50_request_budget.sql in the SQL editor; it adds usage_bytes(), which this check reads.'
         : fix,
@@ -202,6 +230,7 @@ export function assessDeployment(obs) {
     usage?.databaseBytes,
     usage?.databaseQuotaBytes,
     'Above the cap the project turns read-only. Raw rows keep RAW_RETENTION_DAYS in the cloud (shared/retention.mjs) and the edge archive keeps them all, so the window can be shortened with INGEST_RETENTION_DAYS and the janitor frees the rest. Never VACUUM FULL near the cap: it builds a second copy of the table before it frees the first. See docs/storage-contract.md; the plan\'s cap is SUPABASE_DB_QUOTA_MB.',
+    usage?.tables?.length ? `; largest ${usage.tables.map((t) => `${t.name} ${Math.round(t.bytes / 1e6)} MB`).join(', ')}` : '',
   );
   sizeCheck(
     'storage_size',
@@ -506,6 +535,37 @@ export function assessDeployment(obs) {
     'The archive only grows, about 1.3 GB a year; every sealed day is also in the project\'s file storage. Free space by clearing old flows.json backups and ~/backups, or move to a larger card or a USB SSD (docs/03-edge.md). Never delete the archive to make room.',
   );
 
+  /**
+   * The project's log budget, counted where it is spent — RM-159. Every request to the hosted project
+   * is a line in its log, and the Free plan ingests 1 GB of log a month: at roughly 3 KB a line, about
+   * 11,000 lines a day for everything — the edge, every browser, Postgres and Auth together. The edge's
+   * daemons count their own requests (server/requestMeter.mjs), so the budget is read here, on the
+   * edge, without spending the project's log-query allowance. Judged on the last FULL day; until one
+   * has been counted it is not judged at all, unless today has already gone over.
+   */
+  const meter = host.requestMeter ?? null;
+  const fullDay = meter?.lastFullDay ?? null;
+  const judged = fullDay?.total ?? null;
+  const overToday = (meter?.today ?? 0) > REQUEST_BUDGET.warn;
+  const spent = judged ?? (overToday ? meter.today : null);
+  add(
+    'request_budget',
+    'Supabase requests from the edge within the log budget',
+    meter === null
+      ? LEVELS.UNCHECKED
+      : spent === null
+        ? LEVELS.SKIPPED
+        : spent > REQUEST_BUDGET.error ? LEVELS.ERROR : spent > REQUEST_BUDGET.warn ? LEVELS.WARN : LEVELS.OK,
+    meter === null
+      ? 'not checked — no request counts on this edge'
+      : judged !== null
+        ? `${judged.toLocaleString('en-US')} on ${fullDay.day} (${fullDay.detail}); ${meter.today.toLocaleString('en-US')} so far today`
+        : overToday
+          ? `${meter.today.toLocaleString('en-US')} so far today, already over ${REQUEST_BUDGET.warn.toLocaleString('en-US')}`
+          : `no full day counted yet — ${meter.today.toLocaleString('en-US')} so far today`,
+    `The edge's daemons together should stay under ${REQUEST_BUDGET.warn.toLocaleString('en-US')} requests a day (docs/adr/ADR-0015). Each logs a ten-minute line, "Supabase request(s) in the last 10 min", naming the kinds: journalctl -u ibems-ingest -u ibems-proxy -u ibems-scheduler | grep "Supabase request". A new loop that reads or writes the project on a timer is the usual cause; batch it, slow it, or serve it from the edge.`,
+  );
+
   const errors = checks.filter((c) => c.level === LEVELS.ERROR);
   const warnings = checks.filter((c) => c.level === LEVELS.WARN);
   const unchecked = checks.filter((c) => c.level === LEVELS.UNCHECKED);
@@ -651,6 +711,20 @@ if (process.argv[1] && process.argv[1].endsWith('preflight.mjs')) {
         }
       } catch {
         // unchecked
+      }
+      // RM-159: which tables hold it (phase55). Absent before phase55, and then simply not named.
+      if (database.usage && !database.usage.missing) {
+        try {
+          const res = await fetch(`${url}/rest/v1/rpc/usage_by_table`, {
+            method: 'POST',
+            headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ p_limit: 3 }),
+            signal: AbortSignal.timeout(10_000),
+          });
+          if (res.ok) database.usage.tables = (await res.json()).map((t) => ({ name: t.table_name, bytes: Number(t.total_bytes) }));
+        } catch {
+          // the sizes stand without the names
+        }
       }
     }
   }
@@ -893,6 +967,17 @@ if (process.argv[1] && process.argv[1].endsWith('preflight.mjs')) {
     host.disk = { freeBytes: Number(st.bavail) * Number(st.bsize) };
   } catch {
     host.disk = null;
+  }
+  // --- RM-159: the daemons' own counts of their Supabase requests ------------------------------------
+  try {
+    const { readdirSync } = await import('node:fs');
+    const dir = process.env.REQUEST_METER_DIR || valueOf('REQUEST_METER_DIR') || join(ROOT, 'server', 'data', 'request-meter');
+    const snapshots = readdirSync(dir).filter((f) => f.endsWith('.json'))
+      .map((f) => { try { return JSON.parse(readFileSync(join(dir, f), 'utf8')); } catch { return null; } })
+      .filter(Boolean);
+    host.requestMeter = requestMeterFrom(snapshots, new Date().toISOString().slice(0, 10));
+  } catch {
+    host.requestMeter = null;
   }
 
   const result = assessDeployment({ siteId: SITE.id, env, database, vendor, network, bridge, broker, services, host });

@@ -2629,6 +2629,84 @@ end $$;
 delete from period_reports where period = 'day' and period_start = date '2026-07-06' and device_id = 'mtr_jump';
 SQL
 
+# ---- phase55: one upload in one request, and the tables' sizes (RM-159) ----------------------------------
+#
+# ingest_upload must write what three PostgREST upserts wrote: the edge's columns on the edge's keys, an
+# update on a conflict, and the health row keeping the fields a payload leaves out. First paste as one
+# transaction, as the SQL editor runs it; the second statement by statement.
+echo "== phase55: re-applying twice, then one upload, the same upload again, and a quiet health write =="
+psql -1 < "$HERE/phase55_request_budget_edge.sql" >/dev/null
+psql < "$HERE/phase55_request_budget_edge.sql" >/dev/null
+psql <<'SQL'
+do $$
+declare
+  dev text := (select id from devices order by id limit 1);
+  site text := (select id from sites order by id limit 1);
+  t timestamptz := timestamptz '2026-07-20 01:02:00+00';
+  rd jsonb;
+  bt jsonb;
+  an jsonb;
+  res jsonb;
+  r record;
+begin
+  rd := jsonb_build_array(jsonb_build_object('device_id', dev, 'ts', t, 'voltage', 230.1, 'current', 0.5, 'power_w', 115,
+          'energy_kwh_today', 1.25, 'online', true, 'total_energy_kwh', null, 'warn_power_w', null, 'power_type', null,
+          'net_state', 'local_net', 'fault', 0, 'capabilities', jsonb_build_object('switch_1', true)));
+  bt := jsonb_build_array(jsonb_build_object('ts', t, 'site_id', site, 'energy_kwh_today', 3.5, 'energy_kwh_week', 20,
+          'energy_kwh_month', 80, 'energy_kwh_today_integrated', null, 'energy_kwh_week_integrated', null,
+          'energy_kwh_month_integrated', null, 'total_power_w', 900, 'avg_voltage', 229.5, 'phase_current_red', 2.1,
+          'phase_current_yellow', 1.4, 'phase_current_blue', null));
+  an := jsonb_build_array(jsonb_build_object('device_id', dev, 'ts', t, 'metric', 'power_w', 'value', 115, 'baseline_mean', 20,
+          'baseline_stddev', 10, 'z_score', 9.5, 'iqr_lower', 5, 'iqr_upper', 35, 'method', 'both', 'sample_count', 60));
+  res := ingest_upload(rd, bt, an, jsonb_build_object('id', 1, 'site_id', site, 'buffered_row_count', 0, 'last_error', null,
+          'last_success_at', t, 'scrub_rejected_count', 1, 'scrub_last_reason', 'held_reading', 'scrub_last_at', t));
+  assert res = jsonb_build_object('readings', 1, 'building_totals', 1, 'anomalies', 1, 'health', true),
+    format('phase55: one of each written, got %s', res);
+  select * into r from readings where device_id = dev and ts = t;
+  assert r.power_w = 115 and r.net_state = 'local_net' and r.capabilities = jsonb_build_object('switch_1', true) and r.online,
+    'phase55: the reading as sent';
+
+  -- The same minute again, changed: an update, not a second row and not an error.
+  rd := jsonb_set(rd, '{0,power_w}', '120');
+  res := ingest_upload(rd, '[]'::jsonb, '[]'::jsonb, null);
+  assert res->>'readings' = '1' and res->>'health' = 'false', format('phase55: a repeat is one upsert, got %s', res);
+  select * into r from readings where device_id = dev and ts = t;
+  assert r.power_w = 120, 'phase55: a repeated minute takes the newer values, as merge-duplicates did';
+
+  -- A quiet write: no success stamp, no scrub reason. Both stay as they were.
+  perform ingest_upload('[]'::jsonb, '[]'::jsonb, '[]'::jsonb,
+          jsonb_build_object('id', 1, 'site_id', site, 'buffered_row_count', 7, 'last_error', 'bridge timeout', 'scrub_rejected_count', 0));
+  select * into r from ingestion_health where id = 1;
+  assert r.buffered_row_count = 7 and r.last_error = 'bridge timeout' and r.scrub_rejected_count = 0,
+    'phase55: the fields sent are written';
+  assert r.last_success_at = t and r.scrub_last_reason = 'held_reading' and r.scrub_last_at = t,
+    'phase55: the fields left out keep their values';
+
+  -- A refused row refuses the whole upload: nothing half-written for the edge to repeat.
+  begin
+    perform ingest_upload(jsonb_build_array(jsonb_build_object('device_id', dev, 'ts', t + interval '1 minute', 'online', true),
+                                            jsonb_build_object('device_id', 'no-such-device', 'ts', t, 'online', true)),
+                          '[]'::jsonb, '[]'::jsonb, null);
+    assert false, 'phase55: a row for an unknown device should have been refused';
+  exception when foreign_key_violation then
+    null;
+  end;
+  assert not exists (select 1 from readings where device_id = dev and ts = t + interval '1 minute'),
+    'phase55: the good row of a refused upload is not written either';
+
+  assert (select count(*) from usage_by_table(5)) = 5, 'phase55: usage_by_table answers with the five asked for';
+  assert exists (select 1 from usage_by_table(50) where table_name = 'readings' and total_bytes > 0), 'phase55: readings is measured';
+  assert not has_function_privilege('anon', 'public.ingest_upload(jsonb, jsonb, jsonb, jsonb)', 'execute'), 'phase55: not anon';
+  assert not has_function_privilege('authenticated', 'public.ingest_upload(jsonb, jsonb, jsonb, jsonb)', 'execute'), 'phase55: not a signed-in user';
+  assert not has_function_privilege('authenticated', 'public.usage_by_table(int)', 'execute'), 'phase55: sizes are the service role''s';
+
+  delete from anomalies where device_id = dev and ts = t;
+  delete from readings where device_id = dev and ts = t;
+  delete from building_totals where ts = t;
+  raise notice 'phase55: one upload in one request — assertions passed';
+end $$;
+SQL
+
 echo
 echo "== REHEARSAL PASSED =="
 echo "Every migration applied in order against PostgreSQL 16, and every function behaved as"

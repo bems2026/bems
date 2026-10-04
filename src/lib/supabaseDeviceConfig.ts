@@ -14,6 +14,7 @@ import { parseFixtures } from './lightingGrid';
 import { coerceFunctions } from './deviceFunctions';
 import { coerceCategory, coerceLoadShedGroup, normalizeDeviceConfig, type DeviceConfig } from './deviceConfig';
 import { coercePlanCoord } from './planLayout';
+import { notifyConfigChanged } from './bridgeClient';
 
 interface DeviceConfigRow {
   device_id: string;
@@ -147,4 +148,5 @@ export async function writeDeviceConfig(config: DeviceConfig, actorUserId: strin
   if ((data?.length ?? 0) !== 1) {
     throw new Error(`Nothing was saved for ${config.deviceId} — you are signed in with a limited local sign-in, which cannot save. Sign in with your account to make changes.`);
   }
+  notifyConfigChanged();
 }

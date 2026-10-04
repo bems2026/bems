@@ -34,8 +34,14 @@ import { dispatchCommand, DISPATCH_CLASSES } from './dispatchLight.mjs';
 import { buildCloudDispatch } from './cloudDispatchConfig.mjs';
 import { auditedDispatch } from './auditedDispatch.mjs';
 import { createBufferedAudit, isRefusal } from './auditQueue.mjs';
+import { signalAt } from './configSignal.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { installRequestMeter } from './requestMeter.mjs';
+
+// RM-159: every request this process makes to Supabase is counted from here on, before the first is
+// made. See requestMeter.mjs.
+installRequestMeter({ daemon: 'ibems-scheduler' });
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -43,7 +49,18 @@ const BRIDGE_HOST = process.env.BRIDGE_HOST || '127.0.0.1';
 const BRIDGE_PORT = Number(process.env.BRIDGE_PORT) || 1880;
 const HARDWARE_DISPATCH_ENABLED = process.env.HARDWARE_DISPATCH_ENABLED === 'true';
 const LIGHT_API_TOKEN = process.env.LIGHT_API_TOKEN || null;
-const REFRESH_MS = Number(process.env.SCHEDULE_REFRESH_MS) || 60_000;
+/**
+ * The safety-net read of the configuration — RM-159. It was every minute: 1,440 requests a day, each a
+ * line in the project's log, to notice the handful of changes a week a person makes. Every such change
+ * now announces itself (see `configSignal.mjs`), so this read only catches what was changed some other
+ * way, such as in the SQL editor.
+ */
+const REFRESH_MS = Number(process.env.SCHEDULE_REFRESH_MS) || 15 * 60_000;
+/** How often the edge's "it changed" signal is looked at: a file's modification time, so free. */
+const SIGNAL_CHECK_MS = Number(process.env.SCHEDULE_SIGNAL_CHECK_MS) || 5_000;
+/** Reads caused by signals are at least this far apart, however often the signal is touched. */
+const SIGNAL_GAP_MS = Number(process.env.SCHEDULE_SIGNAL_GAP_MS) || 10_000;
+const CONFIG_SIGNAL_PATH = process.env.CONFIG_SIGNAL_PATH || join(dirname(fileURLToPath(import.meta.url)), 'data', 'config-changed.signal');
 // Tunable for the same reason REFRESH_MS is: a test that has to wait out a real 15s loop
 // either takes minutes or, far worse, asserts after a single iteration and quietly stops
 // testing the thing it is named after. `does not fire the same minute twice` did exactly
@@ -463,6 +480,12 @@ async function fire(cmd, reasonNote) {
     return false;
   }
   console.log(`[ibems-scheduler] ${cmd.device_id} -> ${cmd.action} (${result.status})`);
+  // RM-159: the aircon hold reads "the newest command for this unit" from the configuration, which is no
+  // longer re-read every minute. This process just recorded one, so it knows it without asking — the
+  // same shape `scheduler_snapshot`'s `acu_commands` gives, newest per device.
+  if (device.class === 'acu_ir') {
+    acuRecentCommands = { ...acuRecentCommands, [device.id]: { device_id: device.id, source: cmd.source, requested_at: new Date().toISOString() } };
+  }
   return true;
 }
 
@@ -633,11 +656,25 @@ async function acuTick() {
   }
 }
 
+/** When the configuration was last asked for (an attempt, not a success). */
+let lastRefreshAt = 0;
+
+async function readConfigAgain(reason) {
+  lastRefreshAt = Date.now();
+  try {
+    await refreshConfig();
+    if (reason) console.log(`[ibems-scheduler] configuration read again: ${reason}`);
+  } catch (err) {
+    console.error('[ibems-scheduler] configuration refresh failed:', String(err));
+  }
+}
+
 async function main() {
   console.log(
     `[ibems-scheduler] starting — dispatch=${HARDWARE_DISPATCH_ENABLED ? 'OPEN' : 'closed'} ` +
-      `schedulable=${DISPATCHABLE_DEVICE_IDS.length} device(s) refresh=${REFRESH_MS}ms tick=${TICK_MS}ms`,
+      `schedulable=${DISPATCHABLE_DEVICE_IDS.length} device(s) refresh=${REFRESH_MS}ms (and on the edge's signal) tick=${TICK_MS}ms`,
   );
+  lastRefreshAt = Date.now();
   try {
     await refreshConfig();
     const tiered = Object.values(shedGroups).filter((g) => g && g !== 'never').length;
@@ -649,9 +686,15 @@ async function main() {
     console.error('[ibems-scheduler] initial schedule load failed (will retry):', String(err));
   }
 
+  setInterval(() => { void readConfigAgain(null); }, REFRESH_MS);
+  // RM-159: read again soon after the edge says something changed — a setting saved in the app, or a
+  // person's command — rather than at the next safety-net read.
   setInterval(() => {
-    refreshConfig().catch((err) => console.error('[ibems-scheduler] configuration refresh failed:', String(err)));
-  }, REFRESH_MS);
+    const signalled = signalAt(CONFIG_SIGNAL_PATH);
+    if (signalled === null || signalled <= lastRefreshAt) return;
+    if (Date.now() - lastRefreshAt < SIGNAL_GAP_MS) return;
+    void readConfigAgain('the edge said it changed');
+  }, SIGNAL_CHECK_MS);
 
   // Checked every 15s rather than once a minute so a schedule is never missed because the
   // process started mid-minute or a tick ran long; `lastFiredMinute` keeps it to once each.

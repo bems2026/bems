@@ -323,3 +323,80 @@ test('stats report the file size and the time span held', (t) => {
   assert.equal(Date.parse(s.newest), AT_MS + 3_600_000);
   archive.close();
 });
+
+// ---------------------------------------------------------------------------------------------
+// RM-159 — what the kiosk read from the cloud every five minutes, answered from the edge
+// ---------------------------------------------------------------------------------------------
+
+const minute = (n) => new Date(AT_MS + n * 60_000).toISOString();
+
+test('RM-159: a reader still opens an archive one schema behind — version 3 adds only an index', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ibems-archive-reader-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'archive.sqlite');
+  const v2 = openArchive(file, { targetVersion: 2 });
+  v2.insertTick({ readings: [reading()] });
+  v2.close();
+  const reader = openArchive(file, { readOnly: true });
+  assert.equal(reader.schemaVersion(), 2);
+  assert.equal(reader.stats().readings, 1);
+  reader.close();
+  const writer = openArchive(file);
+  assert.equal(writer.schemaVersion(), ARCHIVE_SCHEMA_VERSION, 'the writer brings it up to date');
+  writer.close();
+});
+
+test('RM-159: troubleRows returns only the abnormal minutes, in the cloud query\'s columns and order', (t) => {
+  const { archive } = tempArchive(t);
+  archive.insertRows('readings', [
+    reading({ device_id: 'co2', ts: minute(1), fault: 4 }),
+    reading({ device_id: 'co1', ts: minute(1), fault: 0 }),
+    reading({ device_id: 'co1', ts: minute(2), fault: null }),
+    reading({ device_id: 'mtr', ts: minute(3), power_type: 'warn', power_w: 2983, warn_power_w: 2000 }),
+    reading({ device_id: 'mtr', ts: minute(4), power_type: 'normal' }),
+    reading({ device_id: 'co1', ts: minute(5), net_state: 'no_net' }),
+    reading({ device_id: 'co2', ts: minute(5), net_state: 'local_net' }),
+    reading({ device_id: 'co1', ts: minute(-5), fault: 9 }),
+  ], { origin: ORIGIN.ingest });
+  const got = archive.troubleRows({ sinceMs: AT_MS, untilMs: AT_MS + 3600_000, degradedNetStates: ['no_net'] });
+  assert.deepEqual(got.fault, [{ device_id: 'co2', ts: minute(1), fault: 4 }], 'zero, null and the minute before the window are not trouble');
+  assert.deepEqual(got.power_type, [{ device_id: 'mtr', ts: minute(3), power_type: 'warn', power_w: 2983, warn_power_w: 2000 }]);
+  assert.deepEqual(got.net_state, [{ device_id: 'co1', ts: minute(5), net_state: 'no_net' }], 'local_net is where this system wants a device');
+  archive.close();
+});
+
+test('RM-159: connectivity counts samples, online samples and changes as device_connectivity does', (t) => {
+  const { archive } = tempArchive(t);
+  // co1: up, down, down, up — two changes, the last at minute 3, online now.
+  // co2: down throughout — no changes, never online. The first sample is never a change.
+  const states = { co1: [true, false, false, true], co2: [false, false] };
+  const rows = Object.entries(states).flatMap(([device_id, s]) => s.map((online, i) => reading({ device_id, ts: minute(i), online })));
+  archive.insertRows('readings', rows, { origin: ORIGIN.ingest });
+  assert.deepEqual(archive.connectivity({ sinceMs: AT_MS }), [
+    { device_id: 'co1', samples: 4, online_samples: 2, transitions: 2, last_change: minute(3), currently_online: true },
+    { device_id: 'co2', samples: 2, online_samples: 0, transitions: 0, last_change: null, currently_online: false },
+  ]);
+  assert.deepEqual(archive.connectivity({ sinceMs: AT_MS + 2 * 60_000 }).find((r) => r.device_id === 'co1'),
+    { device_id: 'co1', samples: 2, online_samples: 1, transitions: 1, last_change: minute(3), currently_online: true },
+    'the window starts the count afresh');
+  archive.close();
+});
+
+test('RM-159: buckets average the online samples of each floored bucket, as readings_buckets does', (t) => {
+  const { archive } = tempArchive(t);
+  const base = Math.floor(AT_MS / 900_000) * 900_000; // a 15-minute boundary
+  const at = (min) => new Date(base + min * 60_000).toISOString();
+  archive.insertRows('readings', [
+    reading({ ts: at(0), power_w: 10, voltage: 220, current: 0.1 }),
+    reading({ ts: at(5), power_w: 30, voltage: 230, current: 0.3 }),
+    reading({ ts: at(10), power_w: 999, online: false }),
+    reading({ ts: at(15), power_w: 50, online: false }),
+    reading({ device_id: 'co2', ts: at(1), power_w: 700 }),
+  ], { origin: ORIGIN.ingest });
+  const got = archive.buckets({ deviceId: 'co1', sinceMs: base, untilMs: base + 3600_000, bucketSeconds: 900 });
+  assert.deepEqual(got, [
+    { ts: at(0), power_w: 20, voltage: 225, current: 0.2, sample_count: 3, online_count: 2 },
+    { ts: at(15), power_w: null, voltage: null, current: null, sample_count: 1, online_count: 0 },
+  ]);
+  archive.close();
+});

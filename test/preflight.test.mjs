@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { assessDeployment, LEVELS, pollCoverage } from '../scripts/preflight.mjs';
+import { assessDeployment, LEVELS, pollCoverage, requestMeterFrom, REQUEST_BUDGET } from '../scripts/preflight.mjs';
 
 /** A deployment where everything was checked and everything was fine. */
 const healthy = () => ({
@@ -32,6 +32,7 @@ const healthy = () => ({
     contextFlush: { module: 'localfilesystem', flushIntervalS: 300 },
     archive: { present: true, newestAgeMs: 60_000, pending: 0 },
     disk: { freeBytes: 50e9 },
+    requestMeter: { lastFullDay: { day: '2026-10-05', total: 600, detail: 'rest 60, rpc 500, auth 40' }, today: 250 },
   },
 });
 
@@ -501,4 +502,48 @@ test('the context flush is read from settings.js as Node-RED would, ignoring the
   const tuned = stock.replace('{ module: "localfilesystem" }', '{ module: "localfilesystem", config: { flushInterval: 300 } }');
   assert.deepEqual(contextFlushFrom(tuned), { module: 'localfilesystem', flushIntervalS: 300 });
   assert.deepEqual(contextFlushFrom('module.exports = {};'), { module: null, flushIntervalS: null });
+});
+
+// ---------------------------------------------------------------------------------------------
+// RM-159 — the project's log budget, counted on the edge
+// ---------------------------------------------------------------------------------------------
+
+test('RM-159: a day under budget passes and says what it was spent on', () => {
+  const c = find(assessDeployment(healthy()), 'request_budget');
+  assert.equal(c.level, LEVELS.OK);
+  assert.match(c.detail, /600 on 2026-10-05 \(rest 60, rpc 500, auth 40\); 250 so far today/);
+});
+
+test('RM-159: a day over budget warns, and far over it fails, naming where to look', () => {
+  const at = (total) => {
+    const obs = healthy();
+    obs.host.requestMeter = { lastFullDay: { day: '2026-10-05', total, detail: 'rpc 1440' }, today: 10 };
+    return find(assessDeployment(obs), 'request_budget');
+  };
+  assert.equal(at(REQUEST_BUDGET.warn + 1).level, LEVELS.WARN);
+  assert.equal(at(REQUEST_BUDGET.error + 1).level, LEVELS.ERROR);
+  assert.match(at(REQUEST_BUDGET.error + 1).fix, /Supabase request/);
+});
+
+test('RM-159: before a full day is counted it is not judged — unless today is already over', () => {
+  const obs = healthy();
+  obs.host.requestMeter = { lastFullDay: null, today: 120 };
+  assert.equal(find(assessDeployment(obs), 'request_budget').level, LEVELS.SKIPPED);
+  obs.host.requestMeter = { lastFullDay: null, today: REQUEST_BUDGET.warn + 100 };
+  assert.equal(find(assessDeployment(obs), 'request_budget').level, LEVELS.WARN);
+  obs.host.requestMeter = null;
+  assert.equal(find(assessDeployment(obs), 'request_budget').level, LEVELS.UNCHECKED, 'no counts at all is an open question');
+});
+
+test('RM-159: the daemons\' meter files add up to one day, and a restart\'s carried-over day still counts', () => {
+  const counts = (rpc, rest = 0) => ({ rest, rpc, auth: 0, storage: 0, other: 0, total: rpc + rest });
+  const meter = requestMeterFrom([
+    { daemon: 'ibems-ingest', day: '2026-10-06', counts: counts(10), previous: { day: '2026-10-05', counts: counts(288, 20) } },
+    { daemon: 'ibems-scheduler', day: '2026-10-06', counts: counts(2), previous: { day: '2026-10-05', counts: counts(100) } },
+    { daemon: 'ibems-proxy', day: '2026-10-05', counts: { ...counts(0), auth: 30, total: 30 }, previous: null },
+  ], '2026-10-06');
+  assert.deepEqual(meter.lastFullDay, { day: '2026-10-05', total: 438, detail: 'rest 20, rpc 388, auth 30' });
+  assert.equal(meter.today, 12);
+  assert.equal(requestMeterFrom([], '2026-10-06'), null);
+  assert.equal(requestMeterFrom([{ day: '2026-10-06', counts: counts(5), previous: null }], '2026-10-06').lastFullDay, null);
 });

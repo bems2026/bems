@@ -33,7 +33,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // would put fixture devices into the live Add Device list, with keys that fit no device.
 // ARCHIVE_DB_PATH (RM-148): the permanent raw archive. A test writing into the real one would put
 // fixture readings into the building's history — and on the Pi, into the copy that outlives the cloud's.
-const STATEFUL_ENV_VARS = ['COMMAND_AUDIT_BUFFER_PATH', 'COMMAND_AUDIT_INFLIGHT_PATH', 'SCHEDULER_AUDIT_BUFFER_PATH', 'JWKS_CACHE_PATH', 'DEVICE_CREDENTIALS_PATH', 'ARCHIVE_DB_PATH'];
+// CONFIG_SIGNAL_PATH (RM-159): touched after every command. A test touching the real one makes the live
+// scheduler re-read its configuration for nothing.
+// REQUEST_METER_DIR (RM-159): each daemon's count of its Supabase requests, which preflight reads as
+// the day's budget. A test's requests counted there would be fake spending on the live site's meter.
+const STATEFUL_ENV_VARS = ['COMMAND_AUDIT_BUFFER_PATH', 'COMMAND_AUDIT_INFLIGHT_PATH', 'SCHEDULER_AUDIT_BUFFER_PATH', 'JWKS_CACHE_PATH', 'DEVICE_CREDENTIALS_PATH', 'ARCHIVE_DB_PATH', 'CONFIG_SIGNAL_PATH', 'REQUEST_METER_DIR'];
 
 const TMPDIR_BUILT = /mkdtempSync\(\s*join\(\s*os\.tmpdir\(\)/;
 
@@ -107,6 +111,8 @@ test('every scheduler spawn redirects its audit buffer', () => {
       'the scheduler spawn does not override SCHEDULER_AUDIT_BUFFER_PATH, so a buffered command lands in the real outage queue',
     );
     assert.match(block, TMPDIR_BUILT, 'the scheduler spawn should build its buffer path under os.tmpdir()');
+    assert.ok(block.includes('CONFIG_SIGNAL_PATH'), 'the scheduler spawn does not override CONFIG_SIGNAL_PATH, so it would watch the live signal');
+    assert.ok(block.includes('REQUEST_METER_DIR'), 'the scheduler spawn does not override REQUEST_METER_DIR, so it would count into the live meter');
   }
 });
 
@@ -120,5 +126,7 @@ test('the production defaults really do live under server/, which is what makes 
   assert.match(proxy, /'data', 'command-audit-buffer\.ndjson'/);
   assert.match(proxy, /'data', 'command-audit-inflight\.ndjson'/);
   assert.match(proxy, /'data', 'jwks\.json'/);
+  assert.match(proxy, /'data', 'config-changed\.signal'/);
+  assert.match(readFileSync(join(HERE, 'requestMeter.mjs'), 'utf8'), /'data', 'request-meter'/);
   assert.match(scheduler, /'data', 'command-audit-buffer-scheduler\.ndjson'/);
 });

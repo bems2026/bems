@@ -22,6 +22,8 @@
 import { supabase } from '@/config/supabase';
 import { assertNotTruncated } from './supabaseHistory';
 import { foldEpisodes, EPISODE_GAP_MS, type CapabilityEpisode, type EpisodeSample } from './capabilityEpisodes';
+import { edgeTroubleRows } from './edgeArchive';
+import { DEGRADED_NET_STATES as SHARED_DEGRADED_NET_STATES } from '@shared/troubleStates.mjs';
 
 /** How far back trouble is worth reporting. A week covers a weekend plus a public holiday —
  * the same reasoning as `fleetAlarm`'s known-online window. */
@@ -57,7 +59,7 @@ const MAX_ROWS = PAGE_ROWS;
  * so the LAN is where this system wants its devices. `cloud_net` is normal for a device that also
  * talks to the vendor. Only `no_net` is trouble.
  */
-export const DEGRADED_NET_STATES = ['no_net'] as const;
+export const DEGRADED_NET_STATES: readonly string[] = SHARED_DEGRADED_NET_STATES; // one list with the edge's route (RM-159)
 
 function required() {
   if (!supabase) {
@@ -93,16 +95,14 @@ async function allPages(column: string, page: (from: number, to: number) => Page
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
-export async function fetchTroubleEpisodes(nowMs = Date.now()): Promise<CapabilityEpisode[]> {
+/** The three lists from the cloud: three paged queries. Only when the edge cannot answer — RM-159. */
+async function troubleRowsFromCloud(since: string): Promise<[Array<Record<string, unknown>>, Array<Record<string, unknown>>, Array<Record<string, unknown>>]> {
   const db = required();
-  const readFrom = nowMs - TROUBLE_FETCH_MS;
-  const since = new Date(readFrom).toISOString();
-
   // Written out three times rather than through a shared builder. The wrapper that would remove
   // the repetition has to be generic over PostgREST's filter types, and the version that
   // typechecked was harder to read than this is — three queries that each say plainly which
   // column they ask for and what counts as abnormal in it.
-  const [faultRows, warnRows, netRows] = await Promise.all([
+  return Promise.all([
     allPages('fault', (a, b) => db.from('readings').select('device_id,ts,fault')
       .gte('ts', since).neq('fault', 0).order('ts', { ascending: true }).order('device_id', { ascending: true }).range(a, b)),
     // RM-152: with what it drew and the limit it was set to, so the bell can say "2,983 W against 2,000 W".
@@ -111,6 +111,22 @@ export async function fetchTroubleEpisodes(nowMs = Date.now()): Promise<Capabili
     allPages('net_state', (a, b) => db.from('readings').select('device_id,ts,net_state')
       .gte('ts', since).in('net_state', [...DEGRADED_NET_STATES]).order('ts', { ascending: true }).order('device_id', { ascending: true }).range(a, b)),
   ]);
+}
+
+/**
+ * The edge first, the cloud as the fallback — RM-159. Every open screen asked the cloud these three
+ * questions every five minutes, each a GET and a CORS OPTIONS in the project's log: about 1,700 lines a
+ * day for the kiosk alone. The edge archives every minute before it uploads it, so it holds the same
+ * rows, sooner, and further back than the cloud's fourteen days.
+ */
+export async function fetchTroubleEpisodes(nowMs = Date.now()): Promise<CapabilityEpisode[]> {
+  const readFrom = nowMs - TROUBLE_FETCH_MS;
+  const since = new Date(readFrom).toISOString();
+
+  const fromEdge = await edgeTroubleRows(since);
+  const [faultRows, warnRows, netRows] = fromEdge
+    ? [fromEdge.fault, fromEdge.power_type, fromEdge.net_state]
+    : await troubleRowsFromCloud(since);
 
   const samples = (rows: Array<Record<string, unknown>>, column: string): EpisodeSample[] =>
     rows.map((r) => ({

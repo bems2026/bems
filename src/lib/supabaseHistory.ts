@@ -26,6 +26,7 @@
  */
 
 import { supabase } from '@/config/supabase';
+import { edgeBuckets } from './edgeArchive';
 import type { HistoryPoint } from './types';
 
 /**
@@ -119,10 +120,15 @@ export function mapReadingsRows(rows: BucketRow[]): HistoryPoint[] {
  * (e.g. hide the long-range options) rather than surfacing a raw error to the UI.
  */
 export async function getLongHistory(deviceId: string, range: LongRange): Promise<HistoryPoint[]> {
+  const sinceIso = new Date(Date.now() - RANGE_MS[range]).toISOString();
+  // RM-159: the edge first. Left open on the week, the page asked the cloud once per device every five
+  // minutes — about 6,300 lines a day in the project's log. The edge buckets its own minutes exactly as
+  // `readings_buckets` does (`server/archiveDb.mjs` `buckets`), under the same 900-bucket cap.
+  const fromEdge = await edgeBuckets(deviceId, sinceIso, BUCKET_SECONDS[range]);
+  if (fromEdge) return mapReadingsRows(assertNotTruncated(fromEdge, MAX_POINTS, `edge buckets(${deviceId}, ${range})`));
   if (!supabase) {
     throw new Error('Supabase is not configured (VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY unset)');
   }
-  const sinceIso = new Date(Date.now() - RANGE_MS[range]).toISOString();
   const { data, error } = await supabase.rpc('readings_buckets', {
     p_device_id: deviceId,
     p_since: sinceIso,
@@ -167,8 +173,10 @@ export const ARCHIVE_BUCKET_SECONDS: Record<ArchiveRange, number> = {
 };
 
 /** How often to re-poll an archive view. A year-wide chart moves even more slowly than a
- * month-wide one, and every point but the last is already immutable history. */
-export const ARCHIVE_REFRESH_MS = 30 * 60 * 1000;
+ * month-wide one, and every point but the last is already immutable history. An hour since RM-159:
+ * these still read the cloud (its rolled hours carry rules the edge's raw minutes do not), and each
+ * refresh is one request per device, with a CORS OPTIONS each. */
+export const ARCHIVE_REFRESH_MS = 60 * 60 * 1000;
 
 /** Pure — the window and bucket size for a range, split out so the two invariants above are
  * testable without a live Supabase project. */

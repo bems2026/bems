@@ -16,17 +16,25 @@ import { readFileSync } from 'node:fs';
 const ingest = readFileSync(new URL('./ingest.mjs', import.meta.url), 'utf8');
 const fn = (src, name) => src.slice(src.indexOf(`async function ${name}(`), src.indexOf('\n}\n', src.indexOf(`async function ${name}(`)));
 
-test('ingest uploads the archive on an interval, and at once for an anomaly', () => {
+test('ingest uploads the archive on an interval, and an anomaly waits for it (RM-159)', () => {
   const tick = fn(ingest, 'tick');
-  assert.match(tick, /uploadDue\(\{ nowMs: Date\.now\(\), lastUploadMs, intervalMs: UPLOAD_EVERY_MS, hasAnomalies: tickHadAnomalies \}\)/);
+  assert.match(tick, /uploadDue\(\{ nowMs: Date\.now\(\), lastUploadMs, intervalMs: UPLOAD_EVERY_MS \}\)/);
   assert.match(tick, /return \{ ok: true, error: null, deferred: true \};/, 'a waiting tick is healthy, not a failure');
-  assert.match(tick, /tickHadAnomalies = batch\.anomalies\.length > 0;/);
+  assert.doesNotMatch(ingest, /hasAnomalies|tickHadAnomalies/, 'nothing uploads early for an anomaly');
   assert.match(ingest, /const UPLOAD_EVERY_MS = uploadIntervalFrom\(process\.env\.INGEST_UPLOAD_MS\);/);
+});
+
+test('RM-159: one upload is one request — every stream and the health row in ingest_upload', () => {
+  const tick = fn(ingest, 'tick');
+  assert.match(tick, /drainArchive\(\{ archive, send: sendToCloud, \.\.\.batchUpload\(rejections\) \}\)/);
+  assert.match(ingest, /supabase\.rpc\('ingest_upload', \{/);
+  const health = fn(ingest, 'updateHealth');
+  assert.match(health, /if \(healthCarriedThisTick && ok\) return;/, 'not written twice');
 });
 
 test('the health row goes up with the uploads and on any change of health, carrying refused fields, and every tick only without an archive', () => {
   const health = fn(ingest, 'updateHealth');
-  assert.match(health, /healthCadence\.due\(rejections, \{ force: uploadedThisTick \|\| !archive, ok \}\)/);
+  assert.match(health, /healthCadence\.due\(rejectionsHeldThisTick \? \[\] : rejections, \{ force: uploadedThisTick \|\| !archive, ok \}\)/);
   assert.match(health, /if \(toWrite === null\) return;/);
   assert.match(health, /rejections: toWrite,/);
 });

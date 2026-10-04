@@ -116,5 +116,7 @@ export function verifyEs256Jwt(token, keys, { issuer, now = Math.floor(Date.now(
   // produce a row attributed to no one, which is worse than refusing the command.
   if (typeof payload.sub !== 'string' || !payload.sub) return fail(JWT_FAIL.SUBJECT);
 
-  return { ok: true, userId: payload.sub, reason: null };
+  // `exp` goes back with the verdict: since RM-159 an online answer about this token is kept until
+  // it expires (see sessionCheck.mjs), and this is where its expiry is known to be genuine.
+  return { ok: true, userId: payload.sub, reason: null, exp: payload.exp };
 }

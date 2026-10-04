@@ -1,6 +1,26 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-10-03, evening — **RM-158 built: the log's four biggest needless sources cut. RM-157 deployed and
+**Last audited:** 2026-10-04, evening — **RM-159 built: a data architecture around the request budget (ADR-0015).**
+- **What was left (E-242).** About 6,500 gateway lines a day after RM-158:
+  - the kiosk's timed cloud reads;
+  - a sign-in check per poll;
+  - the scheduler's per-minute configuration read;
+  - three or four requests per upload.
+
+  Log ingestion read 1.10 / 1 GB, and log query 30.4 / 100 GB from reading the Logs view. Neither is enforced before
+  2027.
+- **RM-159:**
+  - a session is asked about once per token;
+  - the edge answers the kiosk's timed reads;
+  - the scheduler reads on change;
+  - one request per upload (phase55);
+  - each daemon counts its requests, and preflight judges the day.
+
+  Expected: about 600 a day from the edge.
+- **For the operator:** paste `supabase/phase55_request_budget_edge.sql`, then deploy (RM-159g). Run the Stage 0
+  settings query for Postgres's own lines (RM-159h).
+
+**Earlier, 2026-10-03, evening — RM-158 built: the log's four biggest needless sources cut. RM-157 deployed and
 read back: a remote click is answered in 54–106 ms.**
 - **Where the 1 GB went (E-241).** The dashboard's Logs view: the API gateway, about 10,800 lines in 24 hours, twice
   RM-149's estimate. The repeating lines were:
@@ -486,8 +506,10 @@ other four and none needed changing.
   - Checked: LIVE, every device, no badges.
   - The address-and-port form (port 5183) makes the page call port 8080 as well. Some browsers and extensions block a
     page from calling another port; the in-app browser did, and showed RECONNECTING.
-- **Log ingestion (F-042): source found and cut in RM-158.** 1.06 GB of 1 GB on 2026-10-03, about 30 MB a day since
-  2026-09-30. The dashboard's Logs view showed the API gateway at about 10,800 lines in 24 hours (E-241).
+- **Log ingestion (F-042): cut in RM-158, and the rest in RM-159 (ADR-0015).** 1.10 GB of 1 GB on 2026-10-04. RM-158 cut
+  four sources. RM-159 takes the edge to about 600 requests a day and meters them (`request_budget` in preflight).
+  Enforcement starts in 2027 (E-242). Waiting on: the phase55 paste and the deploy (RM-159g), and the Stage 0
+  settings query (RM-159h).
 
 **For the operator:**
 - **Deploy.** Restart `ibems-proxy`, `ibems-ingest` and `ibems-scheduler` on the edge: `server/auditQueue.mjs` is
@@ -4681,6 +4703,87 @@ and the fix are in E-240, F-041 and ADR-0014. The log-ingestion overrun reported
         dispatched via local in 106 ms` and `… in 54 ms`.
       - Both rows reached `commands` as `dispatched`/`local` about 0.5 s later, and nothing was left on the edge.
 
+### A data architecture built around the request budget — RM-159 (2026-10-04)
+
+The usage page read log ingestion **1.10 / 1 GB** and log query **30.4 / 100 GB** on 2026-10-04. The operator asked
+for the database setup to be verified and improved, and for a design that lasts. The measurement (E-242) found about
+6,500 gateway lines a day left after RM-158:
+- the kiosk's timed cloud reads: about 2,300;
+- the proxy's per-minute sign-in check: 1,440 per open screen (F-043: RM-158's bell move made each poll cost a check);
+- the scheduler's per-minute configuration read: 1,440;
+- three or four requests per upload, plus 80 early uploads a day for anomalies: about 1,200.
+
+Supabase's documentation puts the Free plan at 1 GB of ingest and 100 GB of log query, **neither enforced before the
+start of 2027**. The decision is [ADR-0015](docs/adr/ADR-0015-data-architecture-and-request-budget.md):
+- the edge answers every repeated read;
+- the cloud takes batched writes and the reads a person asks for;
+- each daemon counts what it spends.
+
+The target is about 600 requests a day from the edge, roughly 0.1 GB of log a month.
+
+- [x] **RM-159a** A session is asked about once per token (`server/sessionCheck.mjs`), the operator's choice on
+      2026-10-04.
+      - Its ES256 signature and expiry are checked on every request. The sign-in service is asked the first time a
+        token is seen, and the answer stands until the token expires.
+      - A command still wants an answer under a minute old.
+      - A token the cached keys cannot judge keeps the old one-minute check, and an unknown key refetches the key set
+        at most every 10 min.
+      - About 1,440 checks a day per open screen become about 24.
+      - Tests: `sessionCheck.test.mjs` (10), `proxy.test.mjs` (+5).
+- [x] **RM-159b** The kiosk's timed reads come from the edge.
+      - Archive schema 3 adds an index on device and minute.
+      - Three new routes, each a port of the cloud query it replaces:
+        - `GET /api/archive/trouble` (the trouble episodes);
+        - `GET /api/archive/connectivity` (`device_connectivity`, phase15);
+        - `GET /api/archive/buckets` (`readings_buckets`, phase9, the Analytics week).
+      - `fetchTroubleEpisodes`, `fetchDeviceConnectivity` and `getLongHistory` ask the edge first and fall back to the
+        cloud. `DEGRADED_NET_STATES` moved to `shared/troubleStates.mjs`, so both sides use one list.
+      - The 30-day and year charts stay on the cloud, whose rolled hours carry rules the raw minutes do not. They now
+        refresh hourly, not every 30 min.
+      - Tests: archive (+4), proxy (+1), `edgeFirstReads.test.ts` (6), and the source pin `src/lib/requestBudget.test.ts`
+        (5).
+- [x] **RM-159c** The scheduler reads its configuration when it changes (`server/configSignal.mjs`).
+      - The proxy touches `server/data/config-changed.signal` after a command's row has gone up, and on
+        `POST /api/config/changed`. The app sends that after every saved setting (`notifyConfigChanged`).
+      - The scheduler looks at the signal every 5 s, and reads every 15 min regardless (`SCHEDULE_REFRESH_MS`).
+      - It notes its own aircon commands at once, so the manual hold no longer waits for a read.
+      - 1,440 reads a day become about 100.
+      - Tests: scheduler (+3), proxy (+2), `configNotify.test.ts` (4).
+      - Neutered: without the scheduler's own note, the loop stepped over a schedule.
+- [x] **RM-159d** One request per upload: `supabase/phase55_request_budget_edge.sql`.
+      - `ingest_upload` carries every stream and the health row. It upserts on the same keys and columns PostgREST did,
+        and keeps a health field the payload leaves out.
+      - A refusal sends that upload stream by stream, which isolates a bad row. While the function is absent, uploads
+        go the old way and it is asked for again hourly.
+      - Anomalies wait for the upload.
+      - `usage_by_table()` names the largest tables for preflight.
+      - Rehearsed twice on PostgreSQL 16. Neutered: a broken health merge fails it.
+      - Tests: `archiveUpload.test.mjs` (+6), the phase55 file-text test (7), health cadence (+1), request-budget pins.
+- [x] **RM-159e** A meter on the edge (`server/requestMeter.mjs`).
+      - Each daemon counts its Supabase requests by kind, logs a ten-minute line, and keeps the day's count in
+        `server/data/request-meter/`.
+      - `npm run preflight` gains `request_budget`, judging the last full day (warn above 1,500, fail above 3,000), and
+        names the largest tables in `db_size`.
+      - Tests: meter (5), proxy (+1), preflight (+4).
+- [x] **RM-159f** Records: [ADR-0015](docs/adr/ADR-0015-data-architecture-and-request-budget.md); E-242 to E-244; F-043
+      and F-044; F-042 updated; `docs/04-data.md`, `docs/storage-contract.md`, `docs/X1-security.md`, and the restart
+      map in `docs/pi-session-brief.md`.
+- [ ] **RM-159g** Deploy and read back.
+      - The operator pastes phase55 in the SQL Editor.
+      - On the edge: `npm run build`, then restart ingest first, the proxy and the scheduler.
+      - After an hour, the meter lines should show:
+        - proxy auth about once per token-hour;
+        - the scheduler about 4 an hour;
+        - ingest 12 an hour.
+      - A schedule saved in the app should be read within one signal check.
+      - After two days: preflight `request_budget` under 1,500, and the usage page's daily ingest well below the
+        ~40 MB of 3–4 Oct.
+- [ ] **RM-159h** Postgres's own lines (about 928 a day), once the operator has run the settings query (Stage 0).
+      - If pg_cron's watchdog runs dominate, run the watchdog every 15 min, and hand over `cron.log_statement=off`.
+      - Otherwise leave it.
+- Out of scope, proposed as **RM-160**: anomaly detection floods on cyclic loads (`co6` alone about 200 a day).
+  That is detection quality, not the budget.
+
 ### The log back under the Free plan — RM-158 (2026-10-03)
 
 The operator sent the dashboard's own counts (E-241). The API gateway is the log: about 10,800 lines in 24 hours, 2xx
@@ -4712,9 +4815,9 @@ The operator sent the dashboard's own counts (E-241). The API gateway is the log
           Supabase.
         - The aircon loop's `acu_loop_state` row stayed at 20:42:27 through 20:48, where it had been re-written every
           minute.
-- [ ] **RM-158f** A day later, in the dashboard's Logs view:
-      - the API gateway should be well under half of the 10,800 lines a day it was;
-      - `GET /rest/v1/sites` should answer 200, not 401.
+- [x] **RM-158f** Superseded by RM-159 (2026-10-04). The usage page a day later read 1.10 GB, and the measurement
+      behind RM-159 found what RM-158 had left (E-242). Its read-back is RM-159g's, from the edge's own meter rather
+      than the Logs view, which spends log query.
 
 ### The adoption and replication manual — RM-145 (2026-09-23)
 

@@ -238,6 +238,10 @@ async function run(env, scheduleRow, until = CYCLE_DONE, opts = {}) {
       // Supabase mid-command is enough to trigger it, because a socket dying mid-request is
       // exactly the outage condition that buffers.
       SCHEDULER_AUDIT_BUFFER_PATH: join(fs.mkdtempSync(join(os.tmpdir(), 'ibems-sched-buf-')), 'audit.ndjson'),
+      // RM-159: the edge's "configuration changed" signal. The real one is touched after every live
+      // command; a test must neither read it nor be confused by it.
+      CONFIG_SIGNAL_PATH: join(fs.mkdtempSync(join(os.tmpdir(), 'ibems-sched-signal-')), 'config-changed.signal'),
+      REQUEST_METER_DIR: join(fs.mkdtempSync(join(os.tmpdir(), 'ibems-sched-meter-')), 'request-meter'),
       ...env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -1028,4 +1032,52 @@ test('a raised alert reaches the notifier rather than throwing out of the tick',
     });
   assert.doesNotMatch(r.out, /tick error/);
   assert.match(r.out, /\[ibems-notify\] could not send/);
+});
+
+/* ===========================================================================
+ * RM-159 — the configuration is read when it changes, not every minute.
+ *
+ * 1,440 snapshot requests a day, each a line in the project's log, to notice a handful of changes a
+ * week. Every change a person makes passes the edge, which touches a signal file; the scheduler reads
+ * again when it sees it, and otherwise only at a slow safety-net interval.
+ * ======================================================================== */
+
+test('RM-159: left alone, the scheduler reads its configuration once, not every minute', async () => {
+  // Ticks every 100 ms for over a second: under the old one-minute refresh at this tick rate it
+  // still read only at start, so the assertion that matters is the default — no refresh is due.
+  const r = await run({ SCHEDULE_TICK_MS: '100', SCHEDULE_SIGNAL_CHECK_MS: '100' }, [], CYCLE_DONE, { serveSnapshot: true, settleMs: 1200 });
+  assert.equal(r.snapshotCalls.length, 1);
+  assert.match(r.out, /refresh=900000ms/, 'the safety net is fifteen minutes');
+});
+
+test('RM-159: a touched signal makes it read again within a check, and says why', async () => {
+  const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-sched-sig-'));
+  const signal = join(dir, 'config-changed.signal');
+  let touched = false;
+  const r = await run({ SCHEDULE_SIGNAL_CHECK_MS: '100', SCHEDULE_SIGNAL_GAP_MS: '100', CONFIG_SIGNAL_PATH: signal }, [], (s) => {
+    if (!touched && /first cycle complete/.test(s.out)) {
+      touched = true;
+      fs.writeFileSync(signal, 'now\n');
+    }
+    return s.snapshotCalls.length >= 2;
+  }, { serveSnapshot: true });
+  assert.equal(r.snapshotCalls.length, 2);
+  assert.match(r.out, /configuration read again: the edge said it changed/);
+});
+
+test('RM-159: an aircon command the scheduler sends holds the loop at once, without reading the database', async () => {
+  // The hold reads "the newest command for this unit". It came from the configuration, re-read every
+  // minute; the scheduler now notes its own command the moment it records it.
+  // Without that, the loop would step the room down to 24 in the same tick the schedule fired.
+  await waitForRoomInMinute();
+  const r = await run({ ...OPEN }, dueNowRow({ id: 'sched-acu', device_id: 'acu_main' }),
+    (s) => s.acuStateWrites.some((w) => w.last_reason === 'manual_override_recent'), {
+      acuRules: [acuRule()],
+      acuState: [{ rule_id: 'acu-r1', commanded_c: 25, last_step_at: null, last_direction: null, alert_kind: null }],
+      latest: [acuHot(25, 27)],
+      serveSnapshot: true,
+    });
+  assert.ok(r.commands.some((c) => c.device_id === 'acu_main' && c.source === 'schedule'), 'the schedule fired');
+  assert.ok(!r.commands.some((c) => c.source === 'acu_loop'), 'and the loop held rather than stepping over it');
+  assert.equal(r.snapshotCalls.length, 1, 'with no extra read of the configuration');
 });

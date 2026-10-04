@@ -89,6 +89,16 @@ export async function fetchJson<T>(path: string, opts: RequestOptions = {}): Pro
 }
 
 export const getDevices = (opts: { timeoutMs?: number } = {}): Promise<Device[]> => fetchJson('/devices', opts);
+
+/**
+ * RM-159: tells the edge a setting was saved, so the scheduler reads its configuration now rather than at
+ * its next safety-net read (fifteen minutes). It used to read every minute — 1,440 requests a day in the
+ * project's log. Fire-and-forget: a lost notice only delays the read, and the save itself already
+ * succeeded in Supabase.
+ */
+export function notifyConfigChanged(): void {
+  fetchJson('/config/changed', { method: 'POST', body: {} }).catch(() => {});
+}
 export const getLatestReadings = (): Promise<ReadingsLatestRow[]> => fetchJson('/readings/latest');
 export const getHistory = (deviceId: string, range: '1h' | '6h' | '24h' = '24h'): Promise<HistoryResponse> =>
   fetchJson(`/readings/history?device_id=${encodeURIComponent(deviceId)}&range=${range}`);

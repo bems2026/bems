@@ -23,6 +23,7 @@
 import { supabase } from '@/config/supabase';
 import type { ContextMap } from './types';
 import { SITE } from '@shared/siteConfig.mjs';
+import { notifyConfigChanged } from './bridgeClient';
 
 /** The one refusal an operator actually hits and can act on: a break-glass sign-in has no
  * account to attribute a write to, so row-level security rejects it — and PostgREST reports
@@ -131,4 +132,5 @@ export async function writeScheduleContext(pending: ContextMap, merged: ContextM
   if ((data?.length ?? 0) !== 1) {
     throw new Error(`The demand limits were not saved — ${BREAK_GLASS_HINT}`);
   }
+  notifyConfigChanged();
 }

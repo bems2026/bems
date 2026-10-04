@@ -21,6 +21,7 @@
 
 import { supabase } from '@/config/supabase';
 import type { SocketIndex } from './types';
+import { notifyConfigChanged } from './bridgeClient';
 
 /** One rule in a device's stack. `socket` is null for a switch or the aircon. */
 export interface Schedule {
@@ -161,6 +162,7 @@ export async function insertSchedule(draft: Omit<Schedule, 'id' | 'updatedBy' | 
   const { data, error } = await client.from('schedules').insert(scheduleToRow(draft, actorUserId)).select(SELECT);
   if (error) throw new Error(explainWriteError(error, 'add'));
   if ((data?.length ?? 0) !== 1) throw new Error(`The schedule was not added — ${NOT_SIGNED_IN}`);
+  notifyConfigChanged();
   return scheduleFromRow(data![0] as ScheduleRow);
 }
 
@@ -173,6 +175,7 @@ export async function updateSchedule(id: string, draft: Omit<Schedule, 'id' | 'u
   const { data, error } = await client.from('schedules').update(scheduleToRow(draft, actorUserId)).eq('id', id).select(SELECT);
   if (error) throw new Error(explainWriteError(error, 'save'));
   if ((data?.length ?? 0) !== 1) throw new Error(`The schedule was not saved — ${NOT_SIGNED_IN}`);
+  notifyConfigChanged();
   return scheduleFromRow(data![0] as ScheduleRow);
 }
 
@@ -196,4 +199,5 @@ export async function deleteSchedule(id: string): Promise<void> {
     // the rule keeps switching the building on its old timetable.
     throw new Error(`The schedule was not deleted — ${NOT_SIGNED_IN}`);
   }
+  notifyConfigChanged();
 }

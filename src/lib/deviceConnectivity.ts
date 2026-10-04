@@ -1,4 +1,5 @@
 import { supabase } from '@/config/supabase';
+import { edgeConnectivity } from './edgeArchive';
 
 
 /**
@@ -73,8 +74,14 @@ export function flapSeverity(row: ConnectivityRow): FlapSeverity {
   return 'steady';
 }
 
-/** Throws if Supabase is not configured — same contract as the other Supabase-backed modules. */
+/**
+ * The edge first, the cloud as the fallback — RM-159. Every open screen called the RPC every five
+ * minutes, a POST and a CORS OPTIONS in the project's log each time; the edge answers the same
+ * question from its own minutes. Throws only when neither can answer.
+ */
 export async function fetchDeviceConnectivity(windowHours = 24): Promise<Record<string, ConnectivityRow>> {
+  const fromEdge = await edgeConnectivity(windowHours);
+  if (fromEdge) return connectivityRowsToMap(fromEdge);
   if (!supabase) throw new Error('Connectivity history needs stored history, which this deployment has not configured.');
   const { data, error } = await supabase.rpc('device_connectivity', { p_window_hours: windowHours });
   if (error) throw new Error(`Connectivity fetch failed: ${error.message}`);

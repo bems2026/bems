@@ -36,12 +36,15 @@ export const UPLOAD_INTERVAL_MS = 5 * 60_000;
 const EARLY_SLACK_MS = 5_000;
 
 /**
- * Is an upload due this tick? On the first tick, once the interval has passed, and at once when this
- * tick found an anomaly — the kiosk shows the last fifteen minutes of those, and five minutes late
- * would be a third of that window.
+ * Is an upload due this tick? On the first tick, and once the interval has passed.
+ *
+ * An anomaly used to send an upload at once, because the kiosk's bell read the cloud's last fifteen
+ * minutes. Since RM-158 the bell reads the edge, which has every anomaly the minute it is found, so
+ * since RM-159 an anomaly waits for the scheduled upload: about 80 extra uploads a day, four requests
+ * each, all lines in the project's log, bought nothing.
  */
-export function uploadDue({ nowMs, lastUploadMs, intervalMs = UPLOAD_INTERVAL_MS, hasAnomalies = false }) {
-  if (hasAnomalies || lastUploadMs === null || lastUploadMs === undefined) return true;
+export function uploadDue({ nowMs, lastUploadMs, intervalMs = UPLOAD_INTERVAL_MS }) {
+  if (lastUploadMs === null || lastUploadMs === undefined) return true;
   return nowMs - lastUploadMs >= intervalMs - EARLY_SLACK_MS;
 }
 
@@ -74,15 +77,53 @@ class TableRefusal extends Error {
  * @param {{
  *   archive: ReturnType<import('./archiveDb.mjs').openArchive>,
  *   send: (stream: string, rows: object[], onConflict: string) => Promise<void>,
+ *   sendAll?: ((rows: Record<string, object[]>, health: object|null) => Promise<void>) | null,
+ *   health?: ((info: { sending: number }) => object) | null,
  *   batchSize?: number, budgetMs?: number, now?: () => number,
  * }} io
- * @returns {Promise<{ ok: boolean, error: string|null, uploaded: Record<string, number>, rejected: number }>}
+ *
+ * `sendAll` — RM-159: every stream's next batch and the health row in ONE request
+ * (`ingest_upload`, supabase/phase55), instead of one request per stream and another for health. The
+ * call is all or nothing, so on a refusal nothing has moved: this upload then goes stream by stream as
+ * before, which isolates and sets aside a refused row, and `batchRefused` carries the refusal (a 404
+ * means the function is not there yet). A failure that is not a refusal (the network, a 5xx) ends the
+ * drain like any other.
+ *
+ * @returns {Promise<{ ok: boolean, error: string|null, uploaded: Record<string, number>, rejected: number,
+ *   healthCarried: boolean, batchRefused: { status: number|null, message: string } | null }>}
  */
-export async function drainArchive({ archive, send, batchSize = UPLOAD_BATCH, budgetMs = UPLOAD_BUDGET_MS, now = Date.now }) {
+export async function drainArchive({ archive, send, sendAll = null, health = null, batchSize = UPLOAD_BATCH, budgetMs = UPLOAD_BUDGET_MS, now = Date.now }) {
   const start = now();
   const uploaded = Object.fromEntries(Object.keys(STREAMS).map((s) => [s, 0]));
   let rejected = 0;
   const errors = [];
+  let healthCarried = false;
+  let batchRefused = null;
+
+  while (sendAll) {
+    if (now() - start >= budgetMs) break;
+    const batches = Object.entries(STREAMS).map(([stream]) => [stream, archive.pending(stream, batchSize)]);
+    const sending = batches.reduce((n, [, b]) => n + b.length, 0);
+    // Nothing owed: one request still goes, once, if there is a health row to carry — it is the heartbeat
+    // the database's watchdog listens for (supabase/phase51).
+    if (sending === 0 && (healthCarried || !health)) break;
+    try {
+      await sendAll(Object.fromEntries(batches.map(([stream, b]) => [stream, b.map((x) => x.row)])), health ? health({ sending }) : null);
+    } catch (err) {
+      if (isTransientFailure(err)) {
+        return { ok: false, error: String(err?.message ?? err), uploaded, rejected, healthCarried, batchRefused };
+      }
+      batchRefused = { status: typeof err?.status === 'number' ? err.status : null, message: String(err?.message ?? err) };
+      break;
+    }
+    for (const [stream, b] of batches) {
+      if (b.length === 0) continue;
+      archive.advance(stream, b[b.length - 1].id);
+      uploaded[stream] += b.length;
+    }
+    healthCarried = true;
+    if (sending === 0) break;
+  }
 
   for (const [stream, { onConflict }] of Object.entries(STREAMS)) {
     for (;;) {
@@ -99,7 +140,7 @@ export async function drainArchive({ archive, send, batchSize = UPLOAD_BATCH, bu
       } catch (err) {
         if (isTransientFailure(err)) {
           // The network or the database is down: every stream would fail the same way.
-          return { ok: false, error: String(err?.message ?? err), uploaded, rejected };
+          return { ok: false, error: String(err?.message ?? err), uploaded, rejected, healthCarried, batchRefused };
         }
       }
 
@@ -112,7 +153,7 @@ export async function drainArchive({ archive, send, batchSize = UPLOAD_BATCH, bu
           errors.push(`${stream}: ${err.message}`);
           break; // this stream is stuck; the others may not be
         }
-        return { ok: false, error: String(err?.message ?? err), uploaded, rejected };
+        return { ok: false, error: String(err?.message ?? err), uploaded, rejected, healthCarried, batchRefused };
       }
       if (state.accepted === 0) {
         errors.push(`${stream}: ${String(state.failed[0]?.err?.message ?? 'refused')}`);
@@ -125,7 +166,7 @@ export async function drainArchive({ archive, send, batchSize = UPLOAD_BATCH, bu
     }
   }
 
-  return { ok: errors.length === 0, error: errors.length ? errors.join('; ') : null, uploaded, rejected };
+  return { ok: errors.length === 0, error: errors.length ? errors.join('; ') : null, uploaded, rejected, healthCarried, batchRefused };
 }
 
 /**

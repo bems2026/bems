@@ -15,6 +15,7 @@
 import { supabase } from '@/config/supabase';
 import { coerceLoadShedGroup, type LoadShedGroup } from './deviceConfig';
 import type { SocketIndex } from './types';
+import { notifyConfigChanged } from './bridgeClient';
 
 export interface SocketConfig {
   deviceId: string;
@@ -108,4 +109,5 @@ export async function writeSocketConfig(cfg: SocketConfig, actorUserId: string |
   if ((data?.length ?? 0) !== 1) {
     throw new Error(`The tier was not saved — you are signed in with a limited local sign-in, which cannot save. Sign in with your account to make changes.`);
   }
+  notifyConfigChanged();
 }

@@ -23,6 +23,7 @@
 
 import { supabase } from '@/config/supabase';
 import { SITE } from '@shared/siteConfig.mjs';
+import { notifyConfigChanged } from './bridgeClient';
 
 /** The whole degrees the IR library holds codes for. A room target outside them is not
  * reachable by any command, so it would be a rule that can never be satisfied. Mirrors
@@ -60,5 +61,6 @@ export async function setAcuMinRoomTarget(floorC: number | null): Promise<number
   const row = Array.isArray(data) ? data[0] : data;
   if (!row || typeof row !== 'object') throw new Error('set_acu_min_room_target returned nothing');
   const applied = (row as { acu_min_room_target_c?: unknown }).acu_min_room_target_c;
+  notifyConfigChanged();
   return typeof applied === 'number' ? applied : null;
 }

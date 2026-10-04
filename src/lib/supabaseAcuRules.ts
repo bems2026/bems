@@ -14,6 +14,7 @@
 
 import { supabase } from '@/config/supabase';
 import { SITE } from '@shared/siteConfig.mjs';
+import { notifyConfigChanged } from './bridgeClient';
 
 export interface AcuRule {
   id: string;
@@ -149,6 +150,7 @@ export async function saveAcuRule(draft: AcuRuleDraft): Promise<AcuRule> {
   if (error) throw new Error(error.message);
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) throw new Error('The rule was not saved — aircon rules are not set up on this deployment yet (supabase/phase36_acu_rules.sql has not been applied).');
+  notifyConfigChanged();
   return acuRuleFromRow(row);
 }
 
@@ -158,6 +160,7 @@ export async function setAcuRuleEnabled(id: string, enabled: boolean): Promise<A
   if (error) throw new Error(error.message);
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) throw new Error('The rule was not armed — nothing came back from the store.');
+  notifyConfigChanged();
   return acuRuleFromRow(row);
 }
 
@@ -170,4 +173,5 @@ export async function deleteAcuRule(id: string): Promise<void> {
   if ((data?.length ?? 0) !== 1) {
     throw new Error(`The rule was not deleted — you are signed in with a limited local sign-in, which cannot save. Sign in with your account to make changes.`);
   }
+  notifyConfigChanged();
 }

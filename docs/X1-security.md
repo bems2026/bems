@@ -3,9 +3,9 @@ title: Security and access
 purpose: Know every credential, boundary and account, and keep them safe (plane X1)
 audience: [administrator, integrator]
 status: Draft
-last_verified: 2026-09-24
-applies_to: repo 04b213f
-evidence: [E-019, E-025, E-026, E-027, E-028, E-033, E-041, E-042, E-043, E-065, E-066, E-079, E-100, E-101, E-122, E-131, E-154, E-160, E-161, E-163, E-164, E-169, E-170, E-171, E-172, E-176, E-177, E-184, E-186, E-187, E-188, E-189, E-190, E-191, E-192, E-193, E-214, E-240]
+last_verified: 2026-10-04
+applies_to: repo dfe41a0 + RM-159
+evidence: [E-019, E-025, E-026, E-027, E-028, E-033, E-041, E-042, E-043, E-065, E-066, E-079, E-100, E-101, E-122, E-131, E-154, E-160, E-161, E-163, E-164, E-169, E-170, E-171, E-172, E-176, E-177, E-184, E-186, E-187, E-188, E-189, E-190, E-191, E-192, E-193, E-214, E-240, E-243]
 ---
 
 # Security and access
@@ -123,7 +123,7 @@ no account.
 |---|---|---|---|
 | Browser → sign-in service | Email and password. Accounts exist only by invitation. | Get a session (a signed token) | E-066, E-176 |
 | Browser → database | The public key plus the session | What the `authenticated` policies allow, which is **everything the app can do: there are no roles** | E-163, E-170 |
-| Browser → proxy | The session, verified by the proxy | Read the bridge; send a command. The proxy records the command **on the edge** before dispatch, then uploads the row **with the caller's own session** (RM-157, ADR-0014). | E-065, E-189, E-240 |
+| Browser → proxy | The session, verified by the proxy: its signature and expiry on every request, and the sign-in service asked **once per token**, and again before a command if that answer is over a minute old (RM-159, ADR-0015). A session signed out elsewhere stops reading within its token's life (an hour), and commanding within a minute. | Read the bridge and the edge's archive; send a command. The proxy records the command **on the edge** before dispatch, then uploads the row **with the caller's own session** (RM-157, ADR-0014). | E-065, E-189, E-240, E-243 |
 | Browser → proxy, break-glass | A local password, checked against a hash | Read only: commands are refused with `break_glass_cannot_command`. 12 h, in memory. | E-172 |
 | Scheduler → database | The service-role key | Read rules; write audit rows attributed to the rule's owner | E-164, E-189 |
 | Proxy or scheduler → Node-RED | `LIGHT_API_TOKEN` | Move a relay | E-189 |

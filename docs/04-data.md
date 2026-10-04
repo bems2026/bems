@@ -3,16 +3,21 @@ title: Data and storage
 purpose: Understand, size and query the relational store, its ingestion and retention (L4)
 audience: [integrator, administrator]
 status: Draft
-last_verified: 2026-09-30
-applies_to: repo fd6fadc
-evidence: [E-042, E-058, E-064, E-065, E-066, E-070, E-078, E-080, E-081, E-082, E-083, E-084, E-085, E-086, E-088, E-089, E-090, E-111, E-121, E-122, E-124, E-126, E-134, E-137, E-138, E-142, E-149, E-157, E-161, E-162, E-163, E-164, E-165, E-166, E-167, E-168, E-193, E-218, E-219, E-220, E-221, E-222, E-224, E-225, E-227, E-235, E-241]
+last_verified: 2026-10-04
+applies_to: repo dfe41a0 + RM-159
+evidence: [E-042, E-058, E-064, E-065, E-066, E-070, E-078, E-080, E-081, E-082, E-083, E-084, E-085, E-086, E-088, E-089, E-090, E-111, E-121, E-122, E-124, E-126, E-134, E-137, E-138, E-142, E-149, E-157, E-161, E-162, E-163, E-164, E-165, E-166, E-167, E-168, E-193, E-218, E-219, E-220, E-221, E-222, E-224, E-225, E-227, E-235, E-241, E-242, E-243, E-244]
 ---
 
 # Data and storage
 
-The hosted database is the **system of record**: every reading, every total, every command and who asked for it. The
-edge server writes it; the browser reads it. Nothing else is authoritative. The spreadsheet mirror is a convenience,
-not a record.
+The record lives in two places, by design ([ADR-0011](adr/ADR-0011-edge-archive-hot-tier.md),
+[ADR-0015](adr/ADR-0015-data-architecture-and-request-budget.md)):
+
+- **The edge's archive** keeps every raw reading, for good, and answers every screen's repeated reads.
+- **The hosted database** keeps 14 days of raw readings, the permanent hourly history, every report, every command and
+  who asked for it, and every setting a person makes. The reports and settings pages read it.
+
+Nothing else is authoritative. The spreadsheet mirror is a convenience, not a record.
 
 Two contracts define it in detail, and this chapter does not repeat them:
 
@@ -25,8 +30,8 @@ Two contracts define it in detail, and this chapter does not repeat them:
 ### The store
 
 **Supabase:** hosted PostgreSQL, with its Auth service for sign-in and row-level security on every table. The schema
-is `supabase/schema.sql` plus 47 `phase*.sql` migrations, applied in filename order, and it defines **23 tables**
-[E-064]. **All timestamps are stored as `timestamptz` in UTC** and shown in the site's time zone [E-088, E-137].
+is `supabase/schema.sql` plus 55 `phase*.sql` migrations, applied in filename order. It defined **23 tables** when
+counted [E-064]. **All timestamps are stored as `timestamptz` in UTC** and shown in the site's time zone [E-088, E-137].
 
 ### The tables
 
@@ -35,7 +40,7 @@ Celsius. Row counts are from the pilot on 2026-09-23 [E-080].
 
 | Table | One row is | Key columns (units) | Written by | Why it exists |
 |---|---|---|---|---|
-| `readings` | one device, one minute | `device_id`, `ts` (PK); `power_w`, `voltage`, `current`, `energy_kwh_today`, `total_energy_kwh`, `online`, `capabilities` (jsonb) | ingest, every 60 s | The per-minute record, kept 30 days (858,691 rows) |
+| `readings` | one device, one minute | `device_id`, `ts` (PK); `power_w`, `voltage`, `current`, `energy_kwh_today`, `total_energy_kwh`, `online`, `capabilities` (jsonb) | ingest, uploaded from the edge every 5 min | The per-minute record: 14 days in the cloud (374,876 rows on 2026-10-04 [E-244]), every minute on the edge |
 | `readings_hourly` | one device, one hour | `device_id`, `hour` (PK); `power_w_avg`, `power_w_max`, `energy_kwh_today_max`, `energy_kwh_today_first`, `energy_kwh_today_last`, `energy_kwh_gain`, `sample_count`, `online_sample_count` | the retention rollup | The permanent history, once minutes are pruned |
 | `building_totals` | the building, one minute | `ts` (PK); `total_power_w`, `avg_voltage`, `phase_current_{red,yellow,blue}`, `energy_kwh_{today,week,month}`, plus `*_integrated` | ingest | The building as the **sum of its branch meters** [E-168] |
 | `building_totals_hourly` | the building, one hour | `hour` (PK); averages, maxima, `sample_count` | the retention rollup | Permanent building history |
@@ -66,7 +71,7 @@ Celsius. Row counts are from the pilot on 2026-09-23 [E-080].
 | Who | Key | What it can do |
 |---|---|---|
 | The edge server's daemons | The **service-role key**, in `server/.env` only | Everything, bypassing row-level security. It never reaches a browser. [E-042] |
-| A browser | The **public (anon) key**, plus the user's own session | Whatever the `authenticated` policies allow. Raw telemetry tables are revoked, so history comes through database functions [E-126, E-161]. |
+| A browser | The **public (anon) key**, plus the user's own session | Whatever the `authenticated` policies allow: telemetry and reports can be read, not written, and long-range history comes through database functions [E-126, E-161]. |
 | Anyone without a session | The public key alone | **Nothing.** No policy grants the `anon` role anything [E-161]. |
 
 **The role model is flat.** Every signed-in account may do everything the policies allow. No admin or operator role
@@ -76,16 +81,16 @@ exists [E-163]. Control who can sign in, therefore, and see [X1](X1-security.md)
 
 | Property | As built | Evidence |
 |---|---|---|
-| Interval | One cycle per 60 s: every device's reading, the building total, and any anomalies | E-086 |
+| Interval | One cycle per 60 s, committed to the edge's archive first: every device's reading, the building total, and any anomalies. The archive is uploaded every 5 min, all streams and the health row in one request (`ingest_upload`, phase55). | E-086, E-243 |
 | Idempotency | Upserts on `(device_id, ts)`, `ts`, and `(device_id, ts, metric)`. A re-sent row replaces its twin. | E-162 |
 | Validation | Bad values stored as NULL and counted. Rows more than 5 min ahead or 7 days behind are dropped. | E-138, E-142 |
-| Outage buffering | Rows go to a local file and flush on reconnect. Observed: a 7-minute outage, 8 rows, no loss. Replayed rows bypass validation, because they were validated when first shaped. | E-134, E-142 |
-| Health | `ingestion_health`, updated every cycle: last success, rows buffered, rejections | E-085 |
+| Outage buffering | Since RM-148 the archive is the buffer: a row stays owed until the cloud has taken it, and a row the cloud refuses for good is set aside on the edge (`upload_rejects`). Before that, a local file did this: a 7-minute outage, 8 rows, no loss. | E-134, E-142, E-219 |
+| Health | `ingestion_health`, written with each upload (every 5 min) and at once when health changes: last success, rows owed, rejections | E-085, E-225 |
 
 ### Sizing and retention
 
-**Retention.** Raw minutes are kept 30 days, then rolled into permanent hourly buckets **in the same transaction as the
-prune**, because a delete that commits without its rollup destroys data. Anomalies are kept 365 days. Commands are kept
+**Retention.** Raw minutes are kept 14 days in the cloud (30 before RM-148), then rolled into permanent hourly buckets
+**in the same transaction as the prune**, because a delete that commits without its rollup destroys data. Anomalies are kept 365 days. Commands are kept
 for ever [E-070]. **Queries that span both resolutions** go through `readings_archive`, which reads across the
 boundary [E-165].
 
@@ -149,19 +154,35 @@ spreadsheet ([ADR index](adr/README.md)).
 **Done when.** `npm run preflight` passes `db_reachable` and `db_site_row`, and `db_size` and `storage_size` read under 70 % of the
 plan's caps. Those two need `phase50`'s `usage_bytes()`; the defaults are the Free plan's 500 MB and 1 GB (E-224).
 
-**The request budget (RM-149).** Every request to the hosted database is a line in its log, and on the Free plan the log's
-quota was the one near its limit (E-224). So the edge asks little, and asks in bulk:
+**The request budget ([ADR-0015](adr/ADR-0015-data-architecture-and-request-budget.md)).** Every request to the hosted
+project is a line of roughly 3 KB in its log, whatever it carries. The Free plan ingests 1 GB of log a month, and
+reading the log is metered as well (log query, 100 GB). Neither is enforced before the start of 2027 [E-242]. The log,
+not the 500 MB database, is the quota this project keeps meeting (E-224, E-241, E-242). So the design rule is:
 
-- Ingest uploads what the archive holds every 5 minutes, and at once for an anomaly.
-- The scheduler reads its whole configuration with one call to `scheduler_snapshot`.
-- The device list goes up only when it changes.
-- The alert bell reads the edge's archive, not the cloud (RM-158). A browser asking the cloud sends a CORS `OPTIONS`
-  before each `GET`, so a once-a-minute poll was two lines a minute for every open screen.
-- The scheduler writes a rule's hold reason when it changes, not every minute; the proxy asks the sign-in service once
-  per token at a time, and does not retry a refused read inside a minute.
+- **The edge answers every repeated read.** The alert bell, the trouble episodes, the flapping badge and the Analytics
+  week read the edge's archive. They fall back to the cloud only when the edge cannot answer. A browser asking the
+  cloud sends a CORS `OPTIONS` before each request, so one five-minute poll costs 576 lines a day per open screen.
+- **The cloud gets batched writes.** One upload every 5 minutes is one request: `ingest_upload` (phase55) carries every
+  stream and the health row. An anomaly waits for it.
+- **A change announces itself.** The scheduler reads its configuration when the edge signals a change: a setting saved
+  in the app, or a person's command. Otherwise it reads every 15 minutes.
+- **A session is asked about once per token.** The proxy checks a session's signature and expiry on every request. It
+  asks the auth service once per token (about an hour), and again before a command if the last answer is over a minute
+  old.
+- **Each daemon counts what it spends.** It writes a ten-minute journal line, "Supabase request(s) in the last 10 min",
+  and keeps a day's count in `server/data/request-meter/`. `npm run preflight` judges the last full day
+  (`request_budget`: warn above 1,500, fail above 3,000).
 
-Measured on 2026-10-03, before RM-158: about 10,800 gateway lines a day, which is the log (E-241). The dashboard's
-**Logs** view counts them by source over the last 24 hours. Its SQL Editor cannot see the logs.
+| Source | Requests a day before RM-159 | After |
+|---|---|---|
+| The kiosk's timed reads | about 2,300 | 0 while the edge answers |
+| Sign-in checks | about 1,440 per open screen | about 24 per open screen |
+| The scheduler's configuration | 1,440 | about 100, plus one per change |
+| Uploads | about 1,200 | 288 |
+| Maintenance, reports, backup | about 80 | about 80 |
+
+Measured on 2026-10-03, before RM-158: about 10,800 gateway lines a day (E-241). The meter, not the dashboard's Logs
+view, is how to size it now: reading the log spends log query.
 
 **Rollback.** Drop the project and start again. Nothing else depends on it until the daemons write.
 
@@ -172,7 +193,9 @@ new project has not been built from this list.
 
 | Setting | Where | Default |
 |---|---|---|
-| Raw retention | `INGEST_RETENTION_DAYS` in `server/.env` | 30 days |
+| Raw retention | `INGEST_RETENTION_DAYS` in `server/.env` | 14 days with the hot tier on (`ARCHIVE_HOT_TIER=1`), else 30 |
+| Upload interval | `INGEST_UPLOAD_MS` | 300000 (5 min) |
+| Scheduler safety-net read | `SCHEDULE_REFRESH_MS` | 900000 (15 min); it also reads on the edge's signal |
 | Tariffs, emission factors | The app's Settings page (the tariff section) → `energy_tariffs`, `emission_factors`, each with a source | None. Reports show no cost until one is set. |
 | Demand limits, schedules, comfort rules | The app | Owned by the operator |
 
@@ -216,7 +239,7 @@ where r.online and r.power_w is not null and r.ts >= now() - interval '7 days'
        or (r.ts at time zone s.timezone)::time not between time '08:00' and time '17:00')
 group by r.device_id order by kwh_out_of_hours desc;
 
--- 3. Peak demand, and when (site time). building_totals holds the last 30 days.
+-- 3. Peak demand, and when (site time). building_totals holds the last 14 days.
 select b.ts at time zone s.timezone as local_time, b.total_power_w
 from building_totals b cross join (select timezone from sites limit 1) s
 where b.total_power_w is not null

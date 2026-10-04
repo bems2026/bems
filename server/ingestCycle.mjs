@@ -115,7 +115,7 @@ export async function runIngestCycle(io) {
   let uploaded = true;
   if (archived) {
     try {
-      const synced = await io.sync();
+      const synced = await io.sync({ rejections });
       if (!synced.ok) record(synced.error);
       if (synced.deferred) uploaded = false;
     } catch (err) {

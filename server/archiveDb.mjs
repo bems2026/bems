@@ -31,7 +31,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-export const ARCHIVE_SCHEMA_VERSION = 2;
+export const ARCHIVE_SCHEMA_VERSION = 3;
+/**
+ * The oldest schema a READER can serve from. Version 3 adds only an index, so a proxy restarted before
+ * ingest has migrated the file still answers — slower, not wrong.
+ */
+const READER_MIN_SCHEMA_VERSION = 2;
 
 /** Where a row came from. Stored as a small integer; the names are the contract. */
 export const ORIGIN = Object.freeze({ ingest: 0, buffer: 1, cloud: 2, import: 3 });
@@ -98,6 +103,9 @@ const MIGRATIONS = [
      day TEXT NOT NULL, stream TEXT NOT NULL, rows INTEGER NOT NULL, sha256 TEXT NOT NULL, bytes INTEGER NOT NULL,
      path TEXT NOT NULL, sealed_at INTEGER NOT NULL, uploaded_at INTEGER, storage_path TEXT,
      PRIMARY KEY (day, stream)) STRICT;`,
+  // 3 — RM-159: one device's minutes over days, read by the edge's history route. The unique key leads
+  // with `ts`, so a per-device window walked every device's rows in it.
+  `CREATE INDEX readings_device_ts ON readings (device_id, ts);`,
 ];
 
 function toStored(kind, value, col) {
@@ -146,9 +154,9 @@ export function openArchive(file, { readOnly = false, targetVersion = ARCHIVE_SC
     db.exec('PRAGMA journal_size_limit = 67108864');
     db.exec('PRAGMA foreign_keys = ON');
     migrate(db, targetVersion);
-  } else if (userVersion(db) < ARCHIVE_SCHEMA_VERSION) {
+  } else if (userVersion(db) < READER_MIN_SCHEMA_VERSION) {
     db.close();
-    throw new Error(`archive at ${file} is not initialised (schema ${ARCHIVE_SCHEMA_VERSION} expected) — the ingest daemon creates it`);
+    throw new Error(`archive at ${file} is not initialised (schema ${READER_MIN_SCHEMA_VERSION} or later expected) — the ingest daemon creates it`);
   }
 
   const statements = new Map();
@@ -346,6 +354,79 @@ export function openArchive(file, { readOnly = false, targetVersion = ARCHIVE_SC
 
   const rejects = () => prepare('SELECT stream, row_id, reason, at FROM upload_rejects ORDER BY at').all();
 
+  /**
+   * RM-159: every abnormal minute since `sinceMs`, the three lists `src/lib/supabaseCapabilityHistory.ts`
+   * reads from the cloud — `fault <> 0`, `power_type = 'warn'`, `net_state` in `degradedNetStates` — in its
+   * columns and its order (ts, then device). The kiosk asked the cloud for these every five minutes.
+   */
+  function troubleRows({ sinceMs, untilMs, degradedNetStates }) {
+    const iso = (ms) => new Date(ms).toISOString();
+    const q = (cols, where, args = []) => prepare(`SELECT device_id, ts, ${cols} FROM readings
+                                                     WHERE ts >= ? AND ts < ? AND ${where} ORDER BY ts, device_id`)
+      .all(sinceMs, untilMs, ...args).map((r) => ({ ...r, ts: iso(r.ts) }));
+    const states = [...degradedNetStates];
+    return {
+      fault: q('fault', 'fault IS NOT NULL AND fault <> 0'),
+      power_type: q('power_type, power_w, warn_power_w', "power_type = 'warn'"),
+      net_state: states.length ? q('net_state', `net_state IN (${states.map(() => '?').join(', ')})`, states) : [],
+    };
+  }
+
+  /**
+   * RM-159: `device_connectivity` (supabase/phase15) over the edge's own minutes since `sinceMs` — per
+   * device, its samples, the online ones, how often `online` changed and when it last did, and whether
+   * its newest sample was online. A device's first sample in the window has no predecessor and is
+   * never a change, as `is distinct from` against a NULL `lag` is not counted there.
+   */
+  function connectivity({ sinceMs }) {
+    return prepare(`WITH w AS (
+                      SELECT device_id, ts, online,
+                             lag(online) OVER (PARTITION BY device_id ORDER BY ts) AS prev,
+                             first_value(online) OVER (PARTITION BY device_id ORDER BY ts DESC) AS newest
+                        FROM readings WHERE ts >= ?)
+                    SELECT device_id,
+                           count(*) AS samples,
+                           sum(online) AS online_samples,
+                           sum(prev IS NOT NULL AND online IS NOT prev) AS transitions,
+                           max(CASE WHEN prev IS NOT NULL AND online IS NOT prev THEN ts END) AS last_change,
+                           max(newest) AS currently_online
+                      FROM w GROUP BY device_id ORDER BY device_id`).all(sinceMs)
+      .map((r) => ({
+        device_id: r.device_id,
+        samples: r.samples,
+        online_samples: r.online_samples,
+        transitions: r.transitions,
+        last_change: r.last_change === null ? null : new Date(r.last_change).toISOString(),
+        currently_online: r.currently_online === 1,
+      }));
+  }
+
+  /**
+   * RM-159: `readings_buckets` (supabase/phase9) for one device — each `bucketSeconds` bucket from
+   * `sinceMs`: the averages of its ONLINE samples (null when it had none), its samples and its online
+   * ones. Bucket starts are floored on the epoch, as `to_timestamp(floor(epoch / s) * s)` does.
+   */
+  function buckets({ deviceId, sinceMs, untilMs, bucketSeconds }) {
+    const width = bucketSeconds * 1000;
+    // CAST: a JS number may be bound as REAL, and REAL division would not floor.
+    return prepare(`SELECT (ts / CAST(? AS INTEGER)) * CAST(? AS INTEGER) AS b,
+                           avg(CASE WHEN online THEN power_w END) AS power_w,
+                           avg(CASE WHEN online THEN voltage END) AS voltage,
+                           avg(CASE WHEN online THEN current END) AS current,
+                           count(*) AS sample_count,
+                           sum(online) AS online_count
+                      FROM readings WHERE device_id = ? AND ts >= ? AND ts < ?
+                     GROUP BY b ORDER BY b`).all(width, width, deviceId, sinceMs, untilMs)
+      .map((r) => ({
+        ts: new Date(r.b).toISOString(),
+        power_w: r.power_w,
+        voltage: r.voltage,
+        current: r.current,
+        sample_count: r.sample_count,
+        online_count: r.online_count,
+      }));
+  }
+
   function stats() {
     const count = (table) => prepare(`SELECT count(*) AS n FROM ${table}`).get().n;
     const span = prepare('SELECT min(ts) AS oldest, max(ts) AS newest FROM readings').get();
@@ -369,6 +450,9 @@ export function openArchive(file, { readOnly = false, targetVersion = ARCHIVE_SC
     pendingBefore,
     countsByDeviceHour,
     rowsBetween,
+    troubleRows,
+    connectivity,
+    buckets,
     recordSeal,
     markUploaded,
     sealOf,

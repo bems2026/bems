@@ -100,5 +100,21 @@ export function createHealthCadence({ intervalMs, now = Date.now }) {
       if (ok !== null) lastOk = ok;
       return out;
     },
+
+    /**
+     * RM-159: the health row now travels inside the upload itself (`ingest_upload`), which can fail.
+     * `hold` takes this tick's rejections in and returns everything held, WITHOUT counting it as
+     * written; `written` counts it once the upload is in. A failed upload therefore loses nothing:
+     * the rejections stay held for the next write.
+     */
+    hold(rejections = []) {
+      held.push(...rejections);
+      return [...held];
+    },
+    written({ ok = null } = {}) {
+      held = [];
+      lastWriteMs = now();
+      if (ok !== null) lastOk = ok;
+    },
   };
 }

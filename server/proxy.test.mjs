@@ -62,7 +62,7 @@ const BREAK_GLASS_HASH = hashBreakGlassPassword(BREAK_GLASS_PASSWORD);
 function startFakeSupabaseAuth() {
   return new Promise((resolve) => {
     const port = nextPort++;
-    const state = { insertedCommands: [], rejectCommandInserts: false, insertStatus: 500, blockCommandUpdates: false, patches: 0, authCalls: 0 };
+    const state = { insertedCommands: [], rejectCommandInserts: false, insertStatus: 500, blockCommandUpdates: false, patches: 0, authCalls: 0, validTokens: new Set([VALID_TOKEN]) };
     const server = http.createServer(async (req, res) => {
       if (req.method === 'GET' && req.url === '/auth/v1/user') {
         state.authCalls += 1;
@@ -72,7 +72,7 @@ function startFakeSupabaseAuth() {
           return res.end('{}');
         }
         const auth = req.headers['authorization'];
-        if (auth === `Bearer ${VALID_TOKEN}`) {
+        if (state.validTokens.has(String(auth ?? '').replace(/^Bearer /, ''))) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ id: 'user-1', email: 'test@example.com' }));
         } else {
@@ -229,6 +229,8 @@ function tempStatePaths() {
     JWKS_CACHE_PATH: join(dir, 'jwks.json'),
     DEVICE_CREDENTIALS_PATH: join(dir, 'device-credentials.json'),
     ARCHIVE_DB_PATH: join(dir, 'archive', 'archive.sqlite'),
+    CONFIG_SIGNAL_PATH: join(dir, 'config-changed.signal'),
+    REQUEST_METER_DIR: join(dir, 'request-meter'),
     // Not a path, but the same kind of leak: a test proxy must not sit on the device-discovery ports.
     LAN_PRESENCE: 'off',
   };
@@ -270,6 +272,7 @@ async function setup(proxyEnv = {}) {
 
   return {
     proxyUrl: `http://localhost:${proxyPort}`,
+    supabaseUrl: fakeAuth.url,
     supabaseState: fakeAuth.state,
     /** What the proxy has written to stdout since it started listening — its journal, on the Pi. */
     log: () => output,
@@ -1906,6 +1909,214 @@ test('RM-158: GET /api/archive/anomalies serves the recent anomalies from the ed
     assert.equal(tooLong.status, 400, 'a bell asks for minutes, not days');
     const unsigned = await fetch(`${proxyUrl}/api/archive/anomalies?since=${encodeURIComponent(since)}`);
     assert.equal(unsigned.status, 401);
+  } finally {
+    cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// RM-159 — a session this project signed is asked about once per token, not once a minute
+// ---------------------------------------------------------------------------------------------
+
+/** A proxy whose key cache already holds the project's signing key, as on the Pi. */
+async function setupSigned(extraEnv = {}) {
+  const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-signed-'));
+  const { jwk, privateKey } = makeSigningKey();
+  const jwksPath = join(dir, 'jwks.json');
+  fs.writeFileSync(jwksPath, JSON.stringify({ keys: [jwk] }));
+  // A recheck window of 300 ms stands in for the real minute.
+  const ctx = await setup({ JWKS_CACHE_PATH: jwksPath, PROXY_SESSION_RECHECK_MS: '300', ...extraEnv });
+  const token = mintToken(privateKey, `${ctx.supabaseUrl}/auth/v1`, { sub: 'user-1' });
+  ctx.supabaseState.validTokens.add(token);
+  return { ...ctx, token, privateKey };
+}
+
+test('RM-159: reads with a signed session ask Supabase once, however long the screen stays open', async () => {
+  // The kiosk calls the edge every minute and the answer was kept a minute: about 1,440 questions a
+  // day for one open screen, each a line in the project's log.
+  const ctx = await setupSigned();
+  try {
+    for (let i = 0; i < 4; i++) {
+      const res = await fetch(`${ctx.proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${ctx.token}` } });
+      assert.equal(res.status, 200);
+      await new Promise((r) => setTimeout(r, 400)); // each read past the recheck window
+    }
+    assert.equal(ctx.supabaseState.authCalls, 1);
+  } finally {
+    ctx.cleanup();
+  }
+});
+
+test('RM-159: a token the signing keys cannot judge still asks again once its minute is up', async () => {
+  const ctx = await setupSigned();
+  try {
+    await fetch(`${ctx.proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
+    await new Promise((r) => setTimeout(r, 400));
+    await fetch(`${ctx.proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
+    assert.equal(ctx.supabaseState.authCalls, 2);
+  } finally {
+    ctx.cleanup();
+  }
+});
+
+test('RM-159: an expired signed token is refused on the edge without asking Supabase', async () => {
+  const ctx = await setupSigned();
+  try {
+    const expired = mintToken(ctx.privateKey, `${ctx.supabaseUrl}/auth/v1`, { expIn: -10 });
+    const res = await fetch(`${ctx.proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${expired}` } });
+    assert.equal(res.status, 401);
+    assert.equal(ctx.supabaseState.authCalls, 0);
+  } finally {
+    ctx.cleanup();
+  }
+});
+
+test('RM-159: a session signed out elsewhere stops reading once Supabase refuses it', async () => {
+  const ctx = await setupSigned();
+  const other = mintToken(ctx.privateKey, `${ctx.supabaseUrl}/auth/v1`, { sub: 'user-2' });
+  try {
+    // Never accepted by the fake: Supabase says no, and the edge keeps that answer.
+    const first = await fetch(`${ctx.proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${other}` } });
+    assert.equal(first.status, 401);
+    await new Promise((r) => setTimeout(r, 400));
+    const second = await fetch(`${ctx.proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${other}` } });
+    assert.equal(second.status, 401);
+    assert.equal(ctx.supabaseState.authCalls, 1, "a refusal is kept for the token's life too");
+  } finally {
+    ctx.cleanup();
+  }
+});
+
+test('RM-159: a command asks Supabase again once the last answer is more than a minute old', async () => {
+  // Reads may rest on one answer per token; a command may not. A session signed out elsewhere must
+  // stop switching the building within a minute, as it always has.
+  const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-signed-cmd-'));
+  const { jwk, privateKey } = makeSigningKey();
+  const jwksPath = join(dir, 'jwks.json');
+  fs.writeFileSync(jwksPath, JSON.stringify({ keys: [jwk] }));
+  const ctx = await setupDispatch({ JWKS_CACHE_PATH: jwksPath, PROXY_SESSION_RECHECK_MS: '300' });
+  const token = mintToken(privateKey, `${ctx.supabaseUrl}/auth/v1`, { sub: 'user-1' });
+  ctx.supabaseState.validTokens.add(token);
+  const command = () => fetch(`${ctx.proxyUrl}/api/command`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ device_id: 'l1', action: 'off' }),
+  });
+  try {
+    assert.equal((await command()).status, 202);
+    assert.equal(ctx.supabaseState.authCalls, 1, 'one answer serves the gate and the command');
+    assert.equal((await command()).status, 202);
+    assert.equal(ctx.supabaseState.authCalls, 1, 'an answer moments old is fresh enough');
+    await new Promise((r) => setTimeout(r, 400));
+    assert.equal((await command()).status, 202);
+    assert.equal(ctx.supabaseState.authCalls, 2, 'past the window, the command asks again');
+  } finally {
+    ctx.cleanup();
+  }
+});
+
+test('RM-159: the trouble, connectivity and week routes answer from the edge archive in the cloud functions\' shapes', async () => {
+  const { openArchive } = await import('./archiveDb.mjs');
+  const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-proxy-rm159-'));
+  const file = join(dir, 'archive', 'archive.sqlite');
+  const archive = openArchive(file);
+  const now = Date.now();
+  const ago = (min) => new Date(now - min * 60_000).toISOString();
+  const reading = (device_id, min, over = {}) => ({
+    device_id, ts: ago(min), voltage: 230, current: 0.1, power_w: 20, energy_kwh_today: 1, online: true,
+    total_energy_kwh: null, warn_power_w: null, power_type: null, net_state: null, fault: 0, capabilities: null, ...over,
+  });
+  archive.insertRows('readings', [
+    reading('co1', 30, { fault: 3 }),
+    reading('co1', 20, { online: false }),
+    reading('co1', 10),
+    reading('mtr', 25, { power_type: 'warn', power_w: 2500, warn_power_w: 2000 }),
+    reading('co2', 15, { net_state: 'no_net' }),
+  ], { origin: 0 });
+  archive.close();
+  const { proxyUrl, cleanup } = await setup({ ARCHIVE_DB_PATH: file });
+  const auth = { headers: { Authorization: `Bearer ${VALID_TOKEN}` } };
+  try {
+    const trouble = await fetch(`${proxyUrl}/api/archive/trouble?since=${encodeURIComponent(ago(60))}`, auth);
+    assert.equal(trouble.status, 200);
+    const t = await trouble.json();
+    assert.deepEqual(t.fault.map((r) => r.device_id), ['co1']);
+    assert.deepEqual(Object.keys(t.power_type[0]).sort(), ['device_id', 'power_type', 'power_w', 'ts', 'warn_power_w']);
+    assert.deepEqual(t.net_state.map((r) => r.net_state), ['no_net']);
+    const tooLong = await fetch(`${proxyUrl}/api/archive/trouble?since=${encodeURIComponent(ago(10 * 24 * 60))}`, auth);
+    assert.equal(tooLong.status, 400);
+
+    const conn = await fetch(`${proxyUrl}/api/archive/connectivity?hours=24`, auth);
+    assert.equal(conn.status, 200);
+    const co1 = (await conn.json()).rows.find((r) => r.device_id === 'co1');
+    assert.deepEqual(co1, { device_id: 'co1', samples: 3, online_samples: 2, transitions: 2, last_change: ago(10), currently_online: true, expected_samples: 1440 });
+
+    const week = await fetch(`${proxyUrl}/api/archive/buckets?device_id=co1&bucket_s=900&since=${encodeURIComponent(ago(7 * 24 * 60))}`, auth);
+    assert.equal(week.status, 200);
+    const { rows } = await week.json();
+    assert.equal(rows.reduce((n, r) => n + r.sample_count, 0), 3);
+    assert.deepEqual(Object.keys(rows[0]).sort(), ['current', 'online_count', 'power_w', 'sample_count', 'ts', 'voltage']);
+    const tooMany = await fetch(`${proxyUrl}/api/archive/buckets?device_id=co1&bucket_s=60&since=${encodeURIComponent(ago(7 * 24 * 60))}`, auth);
+    assert.equal(tooMany.status, 400, 'the cloud function\'s 900-bucket cap holds here too');
+
+    for (const path of ['trouble', 'connectivity', 'buckets']) {
+      assert.equal((await fetch(`${proxyUrl}/api/archive/${path}?since=${encodeURIComponent(ago(60))}`)).status, 401, `${path} needs a session`);
+    }
+  } finally {
+    cleanup();
+  }
+});
+
+test('RM-159: POST /api/config/changed tells the scheduler, and only for a signed-in caller', async () => {
+  const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-proxy-signal-'));
+  const signal = join(dir, 'config-changed.signal');
+  const { proxyUrl, cleanup } = await setup({ CONFIG_SIGNAL_PATH: signal });
+  try {
+    assert.equal((await fetch(`${proxyUrl}/api/config/changed`, { method: 'POST' })).status, 401);
+    assert.equal(fs.existsSync(signal), false);
+    const before = Date.now();
+    const res = await fetch(`${proxyUrl}/api/config/changed`, { method: 'POST', headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
+    assert.equal(res.status, 200);
+    assert.ok(fs.statSync(signal).mtimeMs >= before - 1000);
+  } finally {
+    cleanup();
+  }
+});
+
+test('RM-159: a command that reached the database tells the scheduler', async () => {
+  const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-proxy-cmdsignal-'));
+  const signal = join(dir, 'config-changed.signal');
+  const ctx = await setupDispatch({ CONFIG_SIGNAL_PATH: signal });
+  try {
+    const res = await fetch(`${ctx.proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${VALID_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l1', action: 'off' }),
+    });
+    assert.equal(res.status, 202);
+    await waitFor(() => fs.existsSync(signal), 'the signal touched after the record went up');
+    assert.equal(ctx.supabaseState.insertedCommands.length, 1, 'only once the row is there');
+  } finally {
+    ctx.cleanup();
+  }
+});
+
+test('RM-159: the proxy counts its own Supabase requests and keeps the day\'s count on the edge', async () => {
+  const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-proxy-meter-'));
+  const meterDir = join(dir, 'request-meter');
+  const { proxyUrl, cleanup, log } = await setup({ REQUEST_METER_DIR: meterDir, REQUEST_METER_SUMMARY_MS: '300' });
+  try {
+    await fetch(`${proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
+    // The sign-in check and the start-up fetch of the signing keys are both auth; the capabilities
+    // read asks for the site's policy, a REST read. Summaries may split them across windows.
+    await waitFor(() => /\(today 3\)/.test(log()), 'a summary line counting all three');
+    assert.match(log(), /\[ibems-proxy\] \d+ Supabase request\(s\) in the last \d+ min: [^\n]*auth ×\d/);
+    const file = join(meterDir, 'ibems-proxy.json');
+    await waitFor(() => fs.existsSync(file) && JSON.parse(fs.readFileSync(file, 'utf8')).counts.total === 3, 'the day\'s count on disk');
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert.equal(saved.daemon, 'ibems-proxy');
+    assert.equal(saved.counts.rest, 1);
+    assert.equal(saved.counts.auth, 2);
   } finally {
     cleanup();
   }

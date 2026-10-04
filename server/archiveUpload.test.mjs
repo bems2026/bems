@@ -163,17 +163,19 @@ test('the drain stops starting new batches once its time budget is spent', async
   assert.equal(archive.lag().readings, 2);
 });
 
-test('an upload is due every interval, at once for an anomaly, and not in between', () => {
+test('an upload is due every interval, and not in between — an anomaly waits too', () => {
   // RM-149: every request to the cloud is a line in its log, and the Free plan's log quota is the
-  // tight one. The archive holds every minute already, so the cloud can take them five at a time;
-  // an anomaly still goes up at once, because the kiosk shows the last fifteen minutes of them.
+  // tight one. The archive holds every minute already, so the cloud can take them five at a time.
+  // RM-159: an anomaly used to go up at once because the kiosk's bell read the cloud; it reads the edge
+  // since RM-158, so the early upload (about 80 a day, four requests each) bought nothing.
   const every = 5 * 60_000;
-  assert.equal(uploadDue({ nowMs: 1_000_000, lastUploadMs: null, intervalMs: every, hasAnomalies: false }), true, 'the first tick uploads');
-  assert.equal(uploadDue({ nowMs: 1_000_000 + 60_000, lastUploadMs: 1_000_000, intervalMs: every, hasAnomalies: false }), false);
-  assert.equal(uploadDue({ nowMs: 1_000_000 + 60_000, lastUploadMs: 1_000_000, intervalMs: every, hasAnomalies: true }), true);
-  assert.equal(uploadDue({ nowMs: 1_000_000 + every - 2_000, lastUploadMs: 1_000_000, intervalMs: every, hasAnomalies: false }), true,
+  assert.equal(uploadDue({ nowMs: 1_000_000, lastUploadMs: null, intervalMs: every }), true, 'the first tick uploads');
+  assert.equal(uploadDue({ nowMs: 1_000_000 + 60_000, lastUploadMs: 1_000_000, intervalMs: every }), false);
+  assert.equal(uploadDue({ nowMs: 1_000_000 + 60_000, lastUploadMs: 1_000_000, intervalMs: every, hasAnomalies: true }), false,
+    'an anomaly is no reason to upload early');
+  assert.equal(uploadDue({ nowMs: 1_000_000 + every - 2_000, lastUploadMs: 1_000_000, intervalMs: every }), true,
     'a tick a moment early still counts: ticks are a minute apart, and waiting for the next one would make the interval six');
-  assert.equal(uploadDue({ nowMs: 1_000_000 + 60_000, lastUploadMs: 1_000_000, intervalMs: 0, hasAnomalies: false }), true, 'an interval of 0 uploads every tick');
+  assert.equal(uploadDue({ nowMs: 1_000_000 + 60_000, lastUploadMs: 1_000_000, intervalMs: 0 }), true, 'an interval of 0 uploads every tick');
 });
 
 test('the upload interval from the environment: 0 is kept, nonsense is not', () => {
@@ -192,4 +194,83 @@ test('which failures are worth retrying and which are the row', () => {
   assert.equal(isTransientFailure(Object.assign(new Error('aborted'), { name: 'AbortError' })), true);
   for (const status of [408, 425, 429, 500, 502, 503, 504]) assert.equal(isTransientFailure(refused(status)), true, String(status));
   for (const status of [400, 404, 409, 413, 422]) assert.equal(isTransientFailure(refused(status)), false, String(status));
+});
+
+// ---------------------------------------------------------------------------------------------
+// RM-159 — one upload in one request (`ingest_upload`, supabase/phase55)
+// ---------------------------------------------------------------------------------------------
+
+/** A `sendAll` that records each call's row counts and health, answering through `decide`. */
+function batchRecorder(decide = () => {}) {
+  const calls = [];
+  const sendAll = async (rows, health) => {
+    calls.push({ counts: Object.fromEntries(Object.entries(rows).map(([s, r]) => [s, r.length])), health });
+    await decide(rows, health);
+  };
+  return { calls, sendAll };
+}
+
+test('RM-159: every stream and the health row go up in one request', async (t) => {
+  const archive = tempArchive(t);
+  fill(archive, 3);
+  const perStream = recorder();
+  const batch = batchRecorder();
+  const result = await drainArchive({ archive, send: perStream.send, sendAll: batch.sendAll, health: ({ sending }) => ({ id: 1, sending }) });
+  assert.equal(result.ok, true);
+  assert.equal(result.healthCarried, true);
+  assert.deepEqual(batch.calls, [{ counts: { readings: 3, building_totals: 0, anomalies: 0 }, health: { id: 1, sending: 3 } }]);
+  assert.equal(perStream.calls.length, 0, 'nothing went the old way');
+  assert.deepEqual(archive.lag(), { readings: 0, building_totals: 0, anomalies: 0 });
+});
+
+test('RM-159: with nothing owed the health row still goes, once — it is the watchdog\'s heartbeat', async (t) => {
+  const archive = tempArchive(t);
+  const batch = batchRecorder();
+  const result = await drainArchive({ archive, send: recorder().send, sendAll: batch.sendAll, health: () => ({ id: 1 }) });
+  assert.equal(result.healthCarried, true);
+  assert.equal(batch.calls.length, 1);
+});
+
+test('RM-159: a backlog drains in batches, each carrying the health row', async (t) => {
+  const archive = tempArchive(t);
+  fill(archive, 5);
+  const batch = batchRecorder();
+  await drainArchive({ archive, send: recorder().send, sendAll: batch.sendAll, health: ({ sending }) => ({ sending }), batchSize: 2 });
+  assert.deepEqual(batch.calls.map((c) => c.counts.readings), [2, 2, 1]);
+  assert.ok(batch.calls.every((c) => c.health), 'the row always says how much is still owed');
+});
+
+test('RM-159: a refused upload moves nothing, then goes stream by stream and sets the bad row aside', async (t) => {
+  const archive = tempArchive(t);
+  fill(archive, 4, (i) => (i === 2 ? { power_w: -1 } : {}));
+  const batch = batchRecorder(() => { throw refused(400, 'violates check constraint'); });
+  const perStream = recorder((stream, rows) => { if (rows.some((r) => r.power_w === -1)) throw refused(400, 'violates check constraint'); });
+  const result = await drainArchive({ archive, send: perStream.send, sendAll: batch.sendAll, health: () => ({ id: 1 }) });
+  assert.equal(batch.calls.length, 1);
+  assert.equal(result.batchRefused.status, 400);
+  assert.equal(result.healthCarried, false, 'the health row did not go: the caller writes it');
+  assert.equal(result.rejected, 1);
+  assert.deepEqual(archive.lag(), { readings: 0, building_totals: 0, anomalies: 0 });
+});
+
+test('RM-159: without the function (404) the upload goes the old way, and says so', async (t) => {
+  const archive = tempArchive(t);
+  fill(archive, 2);
+  const batch = batchRecorder(() => { throw refused(404, 'Could not find the function public.ingest_upload'); });
+  const perStream = recorder();
+  const result = await drainArchive({ archive, send: perStream.send, sendAll: batch.sendAll, health: () => ({ id: 1 }) });
+  assert.equal(result.ok, true);
+  assert.equal(result.batchRefused.status, 404);
+  assert.deepEqual(perStream.calls.map((c) => c.stream), ['readings']);
+});
+
+test('RM-159: an outage during the one request ends the drain, with nothing moved', async (t) => {
+  const archive = tempArchive(t);
+  fill(archive, 2);
+  const batch = batchRecorder(() => { throw new TypeError('fetch failed'); });
+  const perStream = recorder();
+  const result = await drainArchive({ archive, send: perStream.send, sendAll: batch.sendAll, health: () => ({ id: 1 }) });
+  assert.equal(result.ok, false);
+  assert.equal(perStream.calls.length, 0);
+  assert.equal(archive.lag().readings, 2);
 });

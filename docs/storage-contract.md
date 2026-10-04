@@ -22,14 +22,21 @@ directly via `@supabase/supabase-js` + RLS, once Phase 5's auth lands).
 | Table | Populated from | Cadence |
 |---|---|---|
 | `devices` | `GET /api/devices` | Read at ingest startup, then every `INGEST_DEVICE_SYNC_MS` (default 5 min); sent only when the list has changed (RM-149) |
-| `readings` | `GET /api/readings/latest`, per-device entries | Sampled and archived on the edge every `INGEST_POLL_MS` (default `TIMING.HISTORY_SAMPLE_MS` = 60s, matching the bridge's own ring-buffer sample rate). Uploaded from the archive every `INGEST_UPLOAD_MS` (default 5 min), and at once on a tick that found an anomaly (RM-149) |
+| `readings` | `GET /api/readings/latest`, per-device entries | Sampled and archived on the edge every `INGEST_POLL_MS` (default `TIMING.HISTORY_SAMPLE_MS` = 60s, matching the bridge's own ring-buffer sample rate). Uploaded from the archive every `INGEST_UPLOAD_MS` (default 5 min), every stream and the health row in ONE request, `rpc/ingest_upload` (phase55, RM-159), falling back to one upsert per stream when it is refused or absent. An anomaly waits for the upload (RM-159; it went at once from RM-149 until the bell read the edge) |
 | `building_totals` | `GET /api/readings/latest`'s `_totals` pseudo-entry | Same as `readings` |
 | `commands` | App-originated command attempts (Phase 6+) | On write |
 | `schedules` | App-originated schedule edits (Phase 6+) | On write |
 | `dsm_thresholds` | App-originated threshold edits (Phase 6+) | On write |
-| `ingestion_health` | `server/ingest.mjs` | With each upload, at once when health changes either way, and at least every `INGEST_UPLOAD_MS`; every tick on an edge with no archive. Best-effort (not buffered on outage). Fields the scrub refused between writes are carried into the next one (RM-149) |
+| `ingestion_health` | `server/ingest.mjs` | With each upload, inside `ingest_upload` itself since RM-159; at once when health changes either way; and at least every `INGEST_UPLOAD_MS`; every tick on an edge with no archive. Best-effort (not buffered on outage). Fields the scrub refused between writes are carried into the next one, and kept if an upload fails (RM-149, RM-159) |
 | `readings_hourly` | `readings` rows aged past the retention window, aggregated in Postgres | Whenever a retention pass finds something older than `INGEST_RETENTION_DAYS` (checked every 6h) |
-| `anomalies` | `server/anomalyStats.mjs`, on a flagged tick | Only when a reading is flagged |
+| `anomalies` | `server/anomalyStats.mjs`, on a flagged tick | Archived on the edge the minute a reading is flagged; uploaded with the next upload |
+
+**Read back from the edge, not the cloud (RM-158, RM-159).** The proxy answers a screen's repeated reads from the
+archive, in the shapes of the cloud queries they replace: `GET /api/archive/anomalies?since=` (the alert bell, at most
+a day), `GET /api/archive/trouble?since=` (fault, power-warning and no-network minutes, at most nine days),
+`GET /api/archive/connectivity?hours=` (`device_connectivity`, 1–168 h) and
+`GET /api/archive/buckets?device_id=&since=&bucket_s=` (`readings_buckets`, at most 32 days and 900 buckets). The
+browser asks the cloud only when the edge cannot answer. See ADR-0015.
 
 ## Retention — Phase 9
 

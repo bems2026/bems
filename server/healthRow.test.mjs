@@ -153,3 +153,18 @@ test('createHealthCadence: a change of health is written at once, both ways', as
   t = 240_000;
   assert.deepEqual(cadence.due([], { ok: true }), [], 'recovered: written at once');
 });
+
+test('RM-159: rejections held for an upload are kept if the upload fails, and cleared once it is in', async () => {
+  const { createHealthCadence } = await import('./healthRow.mjs');
+  let t = 1_000_000;
+  const cadence = createHealthCadence({ intervalMs: 300_000, now: () => t });
+  assert.deepEqual(cadence.hold(['a']), ['a']);
+  // The upload failed: the next ordinary write still carries what was held.
+  t += 60_000;
+  assert.deepEqual(cadence.due([], { force: true, ok: false }), ['a']);
+  assert.deepEqual(cadence.hold(['b']), ['b']);
+  cadence.written({ ok: true });
+  assert.equal(cadence.due([], { ok: true }), null, 'written just now, so nothing is due');
+  t += 300_000;
+  assert.deepEqual(cadence.due([], { ok: true }), [], 'b went up with the upload; nothing is carried twice');
+});

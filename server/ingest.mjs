@@ -49,6 +49,11 @@ import { runReportGeneration, REPORT_CHECK_MS, retryingPass } from './reports.mj
 import { monthlyReportNotices } from './reportNotice.mjs';
 import { createFleetAlarm, loadKnownOnline, KNOWN_ONLINE_DAYS } from './fleetAlarm.mjs';
 import { createNotifier, fleetMessage } from './notify.mjs';
+import { installRequestMeter } from './requestMeter.mjs';
+
+// RM-159: every request this process makes to Supabase is counted from here on, before the first is
+// made. See requestMeter.mjs.
+installRequestMeter({ daemon: 'ibems-ingest' });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -102,13 +107,26 @@ const paused = () => fs.existsSync(PAUSE_PATH);
 /**
  * RM-149: how often the archive is drained to the cloud (and the health row written with it).
  * Every request is a line in the hosted database's log, whose Free-plan quota was the tight one.
- * The archive holds every minute meanwhile; an anomaly still goes up the tick it is found.
+ * The archive holds every minute meanwhile. Since RM-159 an anomaly waits for the upload too: the
+ * kiosk's bell reads the edge (RM-158).
  */
 const UPLOAD_EVERY_MS = uploadIntervalFrom(process.env.INGEST_UPLOAD_MS);
 let lastUploadMs = null;
 let uploadedThisTick = false;
-let tickHadAnomalies = false;
 const healthCadence = createHealthCadence({ intervalMs: UPLOAD_EVERY_MS });
+/**
+ * RM-159: whether this tick's upload carried the health row inside `ingest_upload` (so `updateHealth`
+ * has nothing left to write), and whether this tick's refused fields are already held for it.
+ */
+let healthCarriedThisTick = false;
+let rejectionsHeldThisTick = false;
+/**
+ * RM-159: when `ingest_upload` (supabase/phase55) was last found missing. Until it is pasted the
+ * uploads go stream by stream, as before, and the function is asked for again an hour later — the
+ * same shape as the scheduler's `scheduler_snapshot`, so pasting the migration needs no restart.
+ */
+const BATCH_UPLOAD_RETRY_MS = 60 * 60_000;
+let batchUploadMissingAt = null;
 /** The device list as last sent; it changes only when a device is enrolled or removed. */
 let lastDevicesSnapshot = null;
 
@@ -296,6 +314,51 @@ async function sendToCloud(table, rows, onConflict) {
   }
 }
 
+/**
+ * RM-159: the whole upload — every stream's batch and the health row — in ONE request, `ingest_upload`
+ * (supabase/phase55), where it was three or four. Only against a database that has every column the
+ * function names: one missing phase28's or phase30's columns uploads the old way, which tolerates them.
+ */
+function batchUpload(rejections) {
+  const available = batchUploadMissingAt === null || Date.now() - batchUploadMissingAt >= BATCH_UPLOAD_RETRY_MS;
+  if (!available || !capabilityColumnsPresent || !scrubColumnsPresent) return {};
+  const held = healthCadence.hold(rejections);
+  rejectionsHeldThisTick = true;
+  return {
+    sendAll: (rows, health) => supabase.rpc('ingest_upload', {
+      p_readings: readingsForCloud(rows.readings),
+      p_building_totals: rows.building_totals,
+      p_anomalies: rows.anomalies,
+      p_health: health,
+    }),
+    // `sending` rows are going up with it; whatever else is owed is still owed.
+    health: ({ sending }) => buildHealthRow({
+      ok: true,
+      lastError: null,
+      rejections: held,
+      bufferedRowCount: Math.max(0, pendingCount() - sending),
+      siteId: SITE.id,
+      nowIso: new Date().toISOString(),
+      withScrubColumns: true,
+    }),
+  };
+}
+
+/** What the batched upload's outcome says about the database, said once each way. */
+function noteBatchUpload(synced) {
+  if (synced.healthCarried) {
+    healthCarriedThisTick = true;
+    healthCadence.written({ ok: true });
+    if (batchUploadMissingAt !== null) console.log('[ibems-ingest] ingest_upload is available — one request per upload');
+    batchUploadMissingAt = null;
+  } else if (synced.batchRefused?.status === 404) {
+    if (batchUploadMissingAt === null) console.warn('[ibems-ingest] ingest_upload not found (supabase/phase55 not applied) — uploading stream by stream, and asking again in an hour');
+    batchUploadMissingAt = Date.now();
+  } else if (synced.batchRefused) {
+    console.error(`[ibems-ingest] ingest_upload refused this upload, sent stream by stream instead: ${synced.batchRefused.message}`);
+  }
+}
+
 /** The direct path's write: straight to Supabase, buffered to NDJSON when that fails. */
 async function writeOrBuffer(table, rows, onConflict) {
   if (rows.length === 0) return;
@@ -369,9 +432,11 @@ function pendingCount() {
 let scrubColumnsPresent = true;
 
 async function updateHealth(ok, lastError = null, rejections = []) {
+  // RM-159: already written, inside this tick's upload. A tick that ended badly is still written below.
+  if (healthCarriedThisTick && ok) return;
   // RM-149: with the archive's uploads, not every tick; refused fields in between are carried
   // forward, never dropped. Without an archive every tick writes, as before.
-  const toWrite = healthCadence.due(rejections, { force: uploadedThisTick || !archive, ok });
+  const toWrite = healthCadence.due(rejectionsHeldThisTick ? [] : rejections, { force: uploadedThisTick || !archive, ok });
   if (toWrite === null) return;
   const row = buildHealthRow({
     ok,
@@ -403,7 +468,8 @@ async function updateHealth(ok, lastError = null, rejections = []) {
 async function tick() {
   let synced = null;
   uploadedThisTick = false;
-  tickHadAnomalies = false;
+  healthCarriedThisTick = false;
+  rejectionsHeldThisTick = false;
   const result = await runIngestCycle({
     fetchLatest: () => fetchJson(`${BRIDGE_URL}/readings/latest`, TIMING.FETCH_TIMEOUT_MS),
     flushBuffer,
@@ -413,19 +479,20 @@ async function tick() {
     ...(archive ? {
       // Archiving never waits and never pauses: it is the record.
       archive: (batch) => {
-        tickHadAnomalies = batch.anomalies.length > 0;
+        // RM-159: an anomaly no longer brings the upload forward, so nothing here looks at the batch.
         return archive.insertTick(batch);
       },
-      sync: async () => {
+      sync: async ({ rejections = [] } = {}) => {
         if (paused()) return { ok: false, error: `cloud upload paused by the operator (${PAUSE_PATH}); archiving continues` };
-        if (!uploadDue({ nowMs: Date.now(), lastUploadMs, intervalMs: UPLOAD_EVERY_MS, hasAnomalies: tickHadAnomalies })) {
+        if (!uploadDue({ nowMs: Date.now(), lastUploadMs, intervalMs: UPLOAD_EVERY_MS })) {
           return { ok: true, error: null, deferred: true };
         }
         // An attempt, not a success, starts the next interval: during an outage the retry then comes
         // every interval rather than every minute, and each failed attempt is a line in the log too.
         lastUploadMs = Date.now();
         uploadedThisTick = true;
-        synced = await drainArchive({ archive, send: sendToCloud });
+        synced = await drainArchive({ archive, send: sendToCloud, ...batchUpload(rejections) });
+        noteBatchUpload(synced);
         return synced;
       },
     } : {}),
