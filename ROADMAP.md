@@ -17,9 +17,10 @@
   - each daemon counts its requests, and preflight judges the day.
 
   Expected: about 600 a day from the edge.
-- **Deployed and read back 2026-10-05 (RM-159g).** phase55 is pasted, and ingest found it by itself at 08:21. The
-  edge's meter reads about 4 requests per 10 min, about 600 a day. Postgres's own logging is left as it is
-  (RM-159h). Two days on: `request_budget` and the usage page (RM-159i).
+- **Deployed and read back 2026-10-05 (RM-159g, RM-159j).** phase55 is pasted, and ingest found it by itself at 08:21.
+  The edge's meter reads about 4 requests per 10 min, about 600 a day. The edge's reads no longer stall the proxy
+  (trouble 0 ms, connectivity about 130 ms). Postgres's own logging is left as it is (RM-159h). Left: two days on,
+  `request_budget` and the usage page (RM-159i).
 
 **Earlier, 2026-10-03, evening — RM-158 built: the log's four biggest needless sources cut. RM-157 deployed and
 read back: a remote click is answered in 54–106 ms.**
@@ -4777,12 +4778,26 @@ The target is about 600 requests a day from the edge, roughly 0.1 GB of log a mo
       - At 08:21:01 ingest found `ingest_upload` by itself, with no restart.
       - **The meter, 08:20–08:30:** ingest 2, scheduler 1, proxy 1. That is about 600 requests a day from the edge,
         against about 6,500 on 2026-10-04.
-- [ ] **RM-159i** Two days on:
+- [x] **RM-159j** Verifying on the edge found two things to fix (2026-10-05, `7f3ca93`, `f31512a`, E-246).
+      - **The edge's reads stalled the proxy,** which reads the archive on its one thread, so a slow read holds up a
+        command.
+        - Connectivity took 450 ms for a day: SQLite walked the whole archive by device. It is now one `.all()`
+          read folded in JavaScript, 128–141 ms live. It is cached a minute, and a request above 48 h goes to the
+          cloud.
+        - The trouble queries took about 125 ms each. Archive schema 4 adds partial indexes and `ANALYZE`, and they
+          now take 0 ms.
+        - Each choice was measured on copies of the archive first. A covering index was tried and rejected
+          (340 → 290 ms).
+      - **Preflight judged a partial day as a full one** ("71 on 2026-10-04 — ok", metered from the 23:20 UTC
+        deploy). Each meter now records when its day's counting began, and only a day counted from midnight by
+        every daemon is judged. The meter also saves on a clean stop.
+      - **The configuration signal, live:** touched at 09:08:04, and the scheduler read again at 09:08:05.
+      - Tests: archive (+2), proxy (+1 assertion), meter (+2), preflight (+1).
+- [ ] **RM-159i** Two days on (from 2026-10-07; the first day preflight can judge is 2026-10-06 UTC, because the
+      meter files written before `7f3ca93` did not say when their day began):
       - preflight `request_budget` should judge a full day under 1,500;
       - the usage page's daily log-ingest increment should be well below the ~40 MB a day of 3–4 Oct (read the usage
-        page, not the Logs view);
-      - a schedule saved in the app should show `configuration read again: the edge said it changed` in the scheduler's
-        journal.
+        page, not the Logs view).
 - [x] **RM-159h** Postgres's own lines: **left as they are** (2026-10-05, E-245).
       - The operator's settings query shows statement and connection logging already off (`log_statement` ddl,
         `log_min_duration_statement` -1, `log_connections` and `log_disconnections` off, `log_min_messages`
