@@ -394,10 +394,11 @@ export function openArchive(file, { readOnly = false, targetVersion = ARCHIVE_SC
    */
   function connectivity({ sinceMs }) {
     // One read of the window in time order, folded here. The same answer as window functions in SQL, which
-    // SQLite planned as a walk of the whole archive by device: 450 ms on the Pi for a day, against 140 ms
-    // for this (measured 2026-10-05), on the proxy's one thread.
+    // SQLite planned as a walk of the whole archive by device: 450 ms on the Pi for a day. Read with `.all()`,
+    // not `.iterate()`, which crosses into JavaScript once per row: 112 ms against 290–340 ms on the live
+    // archive (measured 2026-10-05), on the proxy's one thread. A day is about 29,000 small rows.
     const byDevice = new Map();
-    for (const r of prepare('SELECT device_id, ts, online FROM readings WHERE ts >= ? ORDER BY ts, device_id').iterate(sinceMs)) {
+    for (const r of prepare('SELECT device_id, ts, online FROM readings WHERE ts >= ? ORDER BY ts, device_id').all(sinceMs)) {
       let d = byDevice.get(r.device_id);
       if (!d) {
         d = { device_id: r.device_id, samples: 0, online_samples: 0, transitions: 0, last_change: null, prev: null };
