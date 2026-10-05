@@ -7,7 +7,8 @@
 - **RM-160:** both tests still agree; then the level must be unfamiliar (under 5 minutes within ±15 % in the last
   7 days, asked of the edge archive), and one run is one row. Replayed on the same week: 1,551 rows become 25. The
   reports count unusual events, with a caveat on earlier periods.
-- **Left:** the deploy and its read-back (RM-160f).
+- **Deployed and read back 2026-10-05 (RM-160f, E-248).** From 10:03 to 11:09 ingest recorded 0 anomalies and
+  passed over 19 at a familiar level; the old rule, replayed on the same readings, gives 19. Left: a day on (RM-160g).
 
 **Earlier, 2026-10-04, evening — RM-159 built: a data architecture around the request budget (ADR-0015).**
 - **What was left (E-242).** About 6,500 gateway lines a day after RM-158:
@@ -501,14 +502,14 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
-### 2026-10-05 — the alerts bell flooded by cycling loads (RM-160): built, deploy pending
+### 2026-10-05 — the alerts bell flooded by cycling loads (RM-160): built and deployed
 
 - **What it was (F-045).** About 220 anomaly rows a day, all passing both tests, nearly all the first two minutes of a
   load's usual level. Measured read-only on the edge archive (E-247).
 - **The fix (ADR-0009, amended)**, chosen with the operator from replayed alternatives: a level the device has held for
   5 minutes in the last 7 days is passed over, and one run is one row. Replayed: 1,551 rows a week become 25.
-- **Deploy (RM-160f).** On the edge: `npm run build`, then
-  `sudo systemctl restart ibems-ingest ibems-proxy ibems-scheduler`.
+- **Deployed** at 09:43 and read back (RM-160f, E-248): in the first full hour, 0 rows where the old rule gives 19.
+  Left: a day on (RM-160g).
 
 ### 2026-10-03 — remote control slow and yellow, and log ingestion over quota (RM-157): control fixed, log open
 
@@ -4860,8 +4861,13 @@ Replayed: 1,551 rows become 25. Rows recorded before the change are left as they
 - [x] **RM-160e** Records: ADR-0009 amended; F-045; E-247; `docs/00-overview.md`, `04-data.md`, `05-interface.md`,
       `X3-operations.md` and `storage-contract.md`.
 - Neutered thirteen ways, each failing a test: the gate 6, the archive and the lookup 5, the report caveat 2.
-- [ ] **RM-160f** Deploy: build on the edge, restart `ibems-ingest ibems-proxy ibems-scheduler`, and read back the
-      journal's passed-over notes and the archive's anomaly rate (expected about 4 a day).
+- [x] **RM-160f** Deployed 2026-10-05 09:43 (`b2f789b`, CI and Docs green), and read back (E-248).
+      - Built on the edge; ingest, the proxy and the scheduler restarted. The kiosk serves the bundle with
+        "Unusual events".
+      - 10:03–11:09, the windows full: ingest recorded **0** anomalies and passed over 19 at a familiar level.
+        Replayed on the same readings, the old rule gives 19 rows and the new rule 0, with the journal's 19.
+- [ ] **RM-160g** A day on: the archive's anomaly rows for 2026-10-06 should be a handful (the replay expects about
+      4), and the Reports page should show "Unusual events", with the caveat on September's report.
 - Given up, by the operator's choice: a familiar level at an unusual hour, and a cycling load stuck on. Use out of
   hours is the reports' working-hours baseline's question (RM-153). The sharpest case is a **tripped breaker in the
   day**: 0 W is familiar to every device, which rests there overnight. In the measured week 185 falls to zero were
