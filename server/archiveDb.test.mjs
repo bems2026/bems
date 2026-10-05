@@ -14,7 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { DatabaseSync } from 'node:sqlite';
-import { openArchive, ARCHIVE_SCHEMA_VERSION, ORIGIN } from './archiveDb.mjs';
+import { openArchive, ARCHIVE_SCHEMA_VERSION, ORIGIN, READINGS_AT_LEVEL_SQL } from './archiveDb.mjs';
 import { splitLatestPayload, shapeAnomalyRows } from './shapeRows.mjs';
 
 const AT = '2026-08-16T09:00:00+08:00';
@@ -428,4 +428,36 @@ test('RM-159: a net state that is not a plain word never reaches the statement',
   const { archive } = tempArchive(t);
   assert.throws(() => archive.troubleRows({ sinceMs: 0, untilMs: 1, degradedNetStates: ["no_net') OR 1=1 --"] }), /plain word/);
   archive.close();
+});
+
+test('RM-160: readings at a level count one device\'s online minutes in a band, half-open in time, and stop at the limit', (t) => {
+  const { archive } = tempArchive(t);
+  archive.insertRows('readings', [
+    reading({ ts: minute(0), power_w: 80 }),
+    reading({ ts: minute(1), power_w: 68 }), // the band's lower edge counts
+    reading({ ts: minute(2), power_w: 92 }), // and its upper edge
+    reading({ ts: minute(3), power_w: 92.1 }), // just outside
+    reading({ ts: minute(4), power_w: 80, online: false }), // a held value, not a measurement
+    reading({ ts: minute(5), power_w: null }),
+    reading({ ts: minute(6), power_w: 80, device_id: 'co2' }), // another device
+    reading({ ts: minute(7), power_w: 80 }), // at untilMs: not before it
+  ], { origin: ORIGIN.ingest });
+  const ask = (over = {}) => archive.readingsAtLevel('co1', { sinceMs: AT_MS, untilMs: AT_MS + 7 * 60_000, lo: 68, hi: 92, limit: 10, ...over });
+  assert.equal(ask(), 3);
+  assert.equal(ask({ sinceMs: AT_MS + 60_000 }), 2, 'from sinceMs on');
+  assert.equal(ask({ limit: 2 }), 2, 'no further than the limit');
+  assert.equal(archive.readingsAtLevel('co9', { sinceMs: AT_MS, untilMs: AT_MS + 7 * 60_000, lo: 68, hi: 92, limit: 10 }), 0);
+  archive.close();
+});
+
+test('RM-160: the level count walks one device\'s minutes on the (device_id, ts) index', (t) => {
+  // Asked by ingest on a flagged sample: a familiar level stops after five rows, an unfamiliar one walks the
+  // device's week. On the ts-first unique key it would walk every device's week instead.
+  const { archive, file } = tempArchive(t);
+  archive.insertRows('readings', Array.from({ length: 50 }, (_, i) => reading({ ts: minute(i), power_w: i })), { origin: ORIGIN.ingest });
+  archive.close();
+  const db = new DatabaseSync(file, { readOnly: true });
+  const plan = db.prepare(`EXPLAIN QUERY PLAN ${READINGS_AT_LEVEL_SQL}`).all('co1', 0, 1, 0, 1, 5).map((r) => r.detail).join(' | ');
+  db.close();
+  assert.match(plan, /readings_device_ts/);
 });

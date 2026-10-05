@@ -24,6 +24,7 @@ import type { DailyEnergyPoint } from '@/components/reports/charts/dailyEnergyCh
 import { LOAD_LABELS } from '@shared/circuits.mjs';
 import { BASELINE_LEDE, BASELINE_OWN_WINDOW, BASELINE_TITLE } from '@shared/reportProse.mjs';
 import { loadShareSegments } from '@/lib/circuitCharts';
+import { unusualEventsCaveat } from '@/lib/anomalies';
 import {
   baselineAssumptionItems,
   chartDesc,
@@ -110,6 +111,7 @@ export interface PdfReportInput {
 
 const f = (v: number | null | undefined, digits = 2) => (v === null || v === undefined || !Number.isFinite(v) ? null : v.toFixed(digits));
 const kw = (w: number | null | undefined) => (w === null || w === undefined || !Number.isFinite(w) ? '—' : `${(w / 1000).toFixed(2)} kW`);
+const withCaveat = (value: string, caveat: string | null) => (caveat ? `${value} (${caveat})` : value);
 
 const spec = (idPrefix: string, height: number, title: string) => ({
   width: CONTENT_WIDTH,
@@ -506,7 +508,8 @@ export function buildPdfReport(input: PdfReportInput): PdfReport {
             label: 'Commands',
             value: `${building.command_count} (${building.command_count_manual} by hand, ${building.command_count_schedule} scheduled, ${building.command_count_autoshed} auto-shed)`,
           },
-          { label: 'Unusual readings', value: String(building.anomaly_count) },
+          // RM-160: before the change every switch of a cycling load was counted, and the figure says so.
+          { label: 'Unusual events', value: withCaveat(String(building.anomaly_count), unusualEventsCaveat(building.period_start)) },
         ]
       : [],
     // The same qualifier the energy carries. A figure qualified on screen and bare in the document is

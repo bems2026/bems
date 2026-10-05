@@ -21,6 +21,7 @@ import { BUILDING_METER_IDS } from '@shared/registry.mjs';
 import { SITE } from '@shared/siteConfig.mjs';
 import { coverageOf, coverageRestatement, formatPeriod, isQuotable, PERIOD_ADJECTIVE, type ReportPeriod } from '@/lib/supabaseReports';
 import { siteDateTime } from '@/lib/siteTime';
+import { unusualEventsCaveat } from '@/lib/anomalies';
 import { withViewTransition } from '@/lib/viewTransition';
 import { ChartWidthContext, useMeasuredChartWidth } from './chartWidth';
 import { ReportControlBar } from './ReportControlBar';
@@ -747,8 +748,17 @@ export function ReportsPage() {
                 </dd>
               </div>
               <div>
-                <dt>Unusual readings</dt>
-                <dd>{building.anomaly_count}</dd>
+                <dt>Unusual events</dt>
+                <dd>
+                  {building.anomaly_count}
+                  {/* RM-160: before the change every switch of a cycling load was counted. */}
+                  {unusualEventsCaveat(building.period_start) ? (
+                    <>
+                      {' '}
+                      <span className="reports-figure__caveat">({unusualEventsCaveat(building.period_start)})</span>
+                    </>
+                  ) : null}
+                </dd>
               </div>
               </>
               )}

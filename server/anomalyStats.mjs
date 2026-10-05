@@ -42,6 +42,29 @@
  * `method` is still computed and returned when only one check fires, and is still written to
  * the `anomalies` table. That column is what makes this decision auditable afterwards — every
  * row recorded from now on reads `both`, and a run of `iqr` rows would mean this was reverted.
+ *
+ * A LEVEL THE DEVICE HAS HELD THIS WEEK IS NOT AN ANOMALY, AND ONE RUN IS ONE ROW — RM-160.
+ * Agreement moved the flood rather than ending it. Over the seven days to 2026-10-05 this still
+ * recorded 1,524 anomalies, every one `both`: 502 from co6, a load that runs about five minutes in
+ * every twenty-four, and 538 from C.O Yellow stepping between its levels. With a level held for k
+ * of the 20 window samples among zeros, z = sqrt((20 - k) / k): it clears 3.5 only for k <= 1, and
+ * the fence stays at +-3 W for k <= 4. So every new level is flagged on its first and second minute
+ * and absorbed by the third — a cycling load raises two alarms a cycle, by arithmetic.
+ *
+ * detectTick() therefore asks two more questions once both tests agree:
+ *   - is the level unfamiliar? Fewer than KNOWN_LEVEL_MIN_SAMPLES of the device's own online
+ *     samples in the previous KNOWN_LEVEL_HORIZON_MS lie within knownLevelBand(value). The count
+ *     comes from the edge archive (levelLookup), so a restart forgets nothing;
+ *   - does it start a run? The device's previous sample was not itself unusual. The second minute
+ *     of a new level is the same event, by the arithmetic above.
+ * Replayed over the same week: 1,551 -> 35 rows -> 25 runs. What stayed: a lighting circuit at
+ * 1,132 W, the ACU at 1,002 W after hours, the ACU dropping out at midday.
+ *
+ * WHAT THIS GIVES UP, stated in ADR-0009 too: a familiar level at an unusual hour (the ACU at 03:00
+ * at its usual draw), and a cycling load stuck on. The sharpest case of the first is a tripped breaker
+ * in the day: every metered device rests at 0 W overnight, so 0 W is always familiar. In the same week
+ * 185 falls to zero were flagged, 37 of them in office hours, each reading like a load switched off. And an archive that cannot answer counts as an
+ * unfamiliar level — it costs noise, never silence.
  */
 
 export const ANOMALY_WINDOW_SIZE = 20; // ~20 min of history at the default 60s poll
@@ -50,6 +73,13 @@ export const ANOMALY_Z_THRESHOLD = 3.5; // conservative — first pass, not a tu
 export const ANOMALY_IQR_MULTIPLIER = 3.0; // Tukey's "far out" fence, not the usual 1.5
 export const ANOMALY_MIN_STDDEV_W = 1; // noise floor substituted for stddev when it's smaller
 export const ANOMALY_MIN_IQR_W = 1; // noise floor substituted for iqr when it's smaller
+
+// RM-160 — what makes a level "familiar". Chosen with the operator from a replay of the week to
+// 2026-10-05: a 24 h memory left 116 rows, seven days 35.
+export const KNOWN_LEVEL_HORIZON_MS = 7 * 24 * 60 * 60 * 1000;
+export const KNOWN_LEVEL_MIN_SAMPLES = 5; // five minutes at the default 60s poll
+export const KNOWN_LEVEL_TOLERANCE = 0.15; // within +-15 % of the value ...
+export const KNOWN_LEVEL_MIN_TOLERANCE_W = 5; // ... and never narrower than +-5 W
 
 function mean(values) {
   return values.reduce((a, b) => a + b, 0) / values.length;
@@ -147,4 +177,71 @@ export function selectAnomalyCandidates(readings, meteredIds) {
   return readings.filter(
     (r) => meteredIds.has(r.device_id) && r.online !== false && typeof r.power_w === 'number',
   );
+}
+
+/** The range of power that counts as "the same level" as `value` — RM-160. Inclusive at both ends. */
+export function knownLevelBand(value) {
+  const half = Math.max(KNOWN_LEVEL_TOLERANCE * Math.abs(value), KNOWN_LEVEL_MIN_TOLERANCE_W);
+  return { lo: value - half, hi: value + half };
+}
+
+/**
+ * detectTick's `levelSamples`, answered by the edge archive (archiveDb.mjs's readingsAtLevel) — RM-160.
+ * Null — "cannot say", which records the anomaly — without an archive, when the archive throws, or for a
+ * sample whose time does not parse. The archive is read here, never written.
+ */
+export function levelLookup(archive) {
+  if (!archive) return () => null;
+  return (deviceId, tsMs, { lo, hi }) => {
+    if (!Number.isFinite(tsMs)) return null;
+    try {
+      return archive.readingsAtLevel(deviceId, {
+        sinceMs: tsMs - KNOWN_LEVEL_HORIZON_MS, untilMs: tsMs, lo, hi, limit: KNOWN_LEVEL_MIN_SAMPLES,
+      });
+    } catch {
+      return null;
+    }
+  };
+}
+
+/** The daemon's anomaly state: each device's rolling window, and whether its last sample was unusual. */
+export function createAnomalyState() {
+  return { windows: new Map(), unusual: new Map() };
+}
+
+/**
+ * One tick's anomaly decisions — RM-160. `candidates` come from selectAnomalyCandidates; `state` is
+ * createAnomalyState()'s, updated in place; `levelSamples(deviceId, tsMs, band)` answers how many of
+ * the device's online samples in the horizon before `tsMs` lie in `band`, or null when it cannot say.
+ * It is asked only when both tests agree. Returns the entries to record, shaped for shapeAnomalyRows,
+ * and how many flags were passed over and why.
+ */
+export function detectTick(candidates, state, levelSamples) {
+  const entries = [];
+  const passedOver = { knownLevel: 0, sameRun: 0 };
+  for (const r of candidates) {
+    const window = state.windows.get(r.device_id) ?? [];
+    const detection = detectAnomaly(window, r.power_w);
+    let unusual = false;
+    if (detection?.isAnomaly) {
+      const held = levelSamples(r.device_id, Date.parse(r.ts), knownLevelBand(r.power_w));
+      if (held !== null && held >= KNOWN_LEVEL_MIN_SAMPLES) passedOver.knownLevel += 1;
+      else unusual = true;
+    }
+    if (unusual && state.unusual.get(r.device_id)) passedOver.sameRun += 1;
+    else if (unusual) entries.push({ deviceId: r.device_id, ts: r.ts, value: r.power_w, detection });
+    state.unusual.set(r.device_id, unusual);
+    state.windows.set(r.device_id, pushSample(window, r.power_w));
+  }
+  return { entries, passedOver };
+}
+
+/** The tick's journal fragment: what was recorded and what was passed over, or '' when neither. */
+export function describeTickAnomalies(recorded, { knownLevel = 0, sameRun = 0 } = {}) {
+  const head = recorded ? ` + ${recorded} anomal${recorded === 1 ? 'y' : 'ies'}` : '';
+  const why = [
+    knownLevel ? `${knownLevel} at a familiar level` : null,
+    sameRun ? `${sameRun} in a run already recorded` : null,
+  ].filter(Boolean);
+  return why.length ? `${head} (passed over: ${why.join(', ')})` : head;
 }

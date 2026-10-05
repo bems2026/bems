@@ -5,7 +5,7 @@ audience: [operator, administrator]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo 537f956
-evidence: [E-017, E-018, E-027, E-038, E-039, E-065, E-076, E-110, E-111, E-124, E-131, E-157, E-183, E-186, E-188, E-200, E-201, E-213, E-216, E-225, E-228]
+evidence: [E-017, E-018, E-027, E-038, E-039, E-065, E-076, E-110, E-111, E-124, E-131, E-157, E-183, E-186, E-188, E-200, E-201, E-213, E-216, E-225, E-228, E-247]
 ---
 
 # Operations and lifecycle
@@ -29,7 +29,7 @@ rather than retyped.
 |---|---|---|
 | **Point list** | Every data point, one row each: device, point name, unit, scale, valid range, and source (local network, or vendor cloud) | The site's devices (`shared/sites/<site>/`), the capability catalogue (`shared/deviceCapabilities.mjs`), and the units in [04](04-data.md#the-tables). Checked against the vendor with `npm run tuya:spec`. |
 | **Sequence of operations, as built** | What runs unattended, when, and why | [X2](X2-control-logic.md), plus the site's armed rules as the Automation page's Summary lists them |
-| **Alarm and threshold register** | Every limit that makes the system act or warn | The demand limits and shed tiers; the aircon rules and the room floor; the staleness windows [E-110, E-111]; the anomaly rule [E-076]; the fleet notice [E-200] |
+| **Alarm and threshold register** | Every limit that makes the system act or warn | The demand limits and shed tiers; the aircon rules and the room floor; the staleness windows [E-110, E-111]; the anomaly rule [E-076, E-247]; the fleet notice [E-200] |
 | **Test record** | X2a §8's tests, each with a result, a date and a name | [X2a § Test manual](X2a-control-strategy.md#8-test-manual) |
 | **Network and access record** | Addressing, the SSIDs by role, the mesh network, who holds each account | [02](02-network.md), [X1](X1-security.md). Kept off the public repository. |
 | **As-built record** | What is installed, with dates | See [The as-built record](#the-as-built-record) |

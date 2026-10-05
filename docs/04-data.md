@@ -4,8 +4,8 @@ purpose: Understand, size and query the relational store, its ingestion and rete
 audience: [integrator, administrator]
 status: Draft
 last_verified: 2026-10-04
-applies_to: repo dfe41a0 + RM-159
-evidence: [E-042, E-058, E-064, E-065, E-066, E-070, E-078, E-080, E-081, E-082, E-083, E-084, E-085, E-086, E-088, E-089, E-090, E-111, E-121, E-122, E-124, E-126, E-134, E-137, E-138, E-142, E-149, E-157, E-161, E-162, E-163, E-164, E-165, E-166, E-167, E-168, E-193, E-218, E-219, E-220, E-221, E-222, E-224, E-225, E-227, E-235, E-241, E-242, E-243, E-244, E-245]
+applies_to: repo dfe41a0 + RM-159, RM-160
+evidence: [E-042, E-058, E-064, E-065, E-066, E-070, E-078, E-080, E-081, E-082, E-083, E-084, E-085, E-086, E-088, E-089, E-090, E-111, E-121, E-122, E-124, E-126, E-134, E-137, E-138, E-142, E-149, E-157, E-161, E-162, E-163, E-164, E-165, E-166, E-167, E-168, E-193, E-218, E-219, E-220, E-221, E-222, E-224, E-225, E-227, E-235, E-241, E-242, E-243, E-244, E-245, E-247]
 ---
 
 # Data and storage
@@ -44,7 +44,7 @@ Celsius. Row counts are from the pilot on 2026-09-23 [E-080].
 | `readings_hourly` | one device, one hour | `device_id`, `hour` (PK); `power_w_avg`, `power_w_max`, `energy_kwh_today_max`, `energy_kwh_today_first`, `energy_kwh_today_last`, `energy_kwh_gain`, `sample_count`, `online_sample_count` | the retention rollup | The permanent history, once minutes are pruned |
 | `building_totals` | the building, one minute | `ts` (PK); `total_power_w`, `avg_voltage`, `phase_current_{red,yellow,blue}`, `energy_kwh_{today,week,month}`, plus `*_integrated` | ingest | The building as the **sum of its branch meters** [E-168] |
 | `building_totals_hourly` | the building, one hour | `hour` (PK); averages, maxima, `sample_count` | the retention rollup | Permanent building history |
-| `anomalies` | one flagged reading | `device_id`, `ts`, `metric`; `value`, `z_score`, IQR bounds, `method` | ingest (only when both tests agree) | Unusual-use alerts, kept 365 days |
+| `anomalies` | the first reading of an unusual run | `device_id`, `ts`, `metric`; `value`, `z_score`, IQR bounds, `method` | ingest, only when both tests agree at a level the device has not held for 5 minutes in 7 days (RM-160) | Unusual-use alerts, about 4 a day, kept 365 days [E-247] |
 | `commands` | one command attempt | `id`; `device_id`, `socket`, `action`, `target_c`, `requested_by` (NOT NULL), `requested_at`, `status`, `via`, `source`, `note` | proxy and scheduler, **before** dispatch | The audit trail, never pruned [E-065, E-122, E-193] |
 | `schedules` | one scheduled switch | `device_id`, `socket`, `rule` (jsonb: on, off, days), `enabled`, `updated_by` (must be set) | the app | Time-based control, fired by the scheduler [E-121] |
 | `dsm_thresholds` | the site's demand limits | `max_total_kw`, `max_phase_current`, `auto_shed`, `updated_by` | the app | Demand-side management |

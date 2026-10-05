@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { latestAnomalyPerDevice, isAnomalyCurrent, ANOMALY_RECENT_MS } from './anomalies';
+import { latestAnomalyPerDevice, isAnomalyCurrent, ANOMALY_RECENT_MS, unusualEventsCaveat, UNUSUAL_EVENTS_FROM } from './anomalies';
 import type { AnomalyRow } from './supabaseAnomalies';
 
 const row = (overrides: Partial<AnomalyRow>): AnomalyRow => ({
@@ -45,5 +45,26 @@ describe('isAnomalyCurrent', () => {
   it('is not current once the recency window has elapsed', () => {
     const r = row({ ts: new Date(now - (ANOMALY_RECENT_MS + 1000)).toISOString() });
     expect(isAnomalyCurrent(r, now)).toBe(false);
+  });
+});
+
+describe('unusualEventsCaveat — RM-160', () => {
+  // Before the change, every switch of a cycling load was a row or two: about 220 a day, against about 4 after.
+  // The date is spelled in the reader's locale; what must hold is the sentence and the day it names.
+  const isCaveat = (text: string | null) => /^every switch of a cycling load was counted before \S.*2026$/.test(text ?? '') && /6/.test(text ?? '');
+
+  it('qualifies a period that began before the change, whether or not it ended before it', () => {
+    expect(isCaveat(unusualEventsCaveat('2026-07-01'))).toBe(true);
+    expect(isCaveat(unusualEventsCaveat('2026-10-05'))).toBe(true);
+  });
+
+  it('says nothing for a period that began on or after the change', () => {
+    expect(unusualEventsCaveat(UNUSUAL_EVENTS_FROM)).toBeNull();
+    expect(unusualEventsCaveat('2026-11-01')).toBeNull();
+  });
+
+  it('reads only the date of a start that carries a time', () => {
+    expect(unusualEventsCaveat(`${UNUSUAL_EVENTS_FROM}T00:00:00Z`)).toBeNull();
+    expect(isCaveat(unusualEventsCaveat('2026-10-05T23:59:59Z'))).toBe(true);
   });
 });

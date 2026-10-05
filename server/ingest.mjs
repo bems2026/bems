@@ -30,7 +30,9 @@ import { isMissingCapabilityColumnError, withoutCapabilityColumns } from './read
 import { makeSupabaseClient } from './supabaseRest.mjs';
 import { appendToBuffer, readBuffer, writeBuffer, bufferCount } from './ingestBuffer.mjs';
 import { takeBufferedCommands, restoreUndrained } from './auditQueue.mjs';
-import { selectAnomalyCandidates, detectAnomaly, pushSample } from './anomalyStats.mjs';
+import {
+  selectAnomalyCandidates, createAnomalyState, detectTick, levelLookup, describeTickAnomalies,
+} from './anomalyStats.mjs';
 import { runIngestCycle, msUntilNextTick } from './ingestCycle.mjs';
 import { openArchive } from './archiveDb.mjs';
 import { drainArchive, uploadDue, uploadIntervalFrom } from './archiveUpload.mjs';
@@ -175,26 +177,25 @@ let stopping = false;
 // hand-listed, so it can never drift from shared/registry.mjs.
 const ANOMALY_METERED_IDS = new Set(METERED.map((d) => d.id));
 
-// The daemon's only in-memory history — device_id -> its most recent power_w samples
-// (anomalyStats.mjs's ANOMALY_WINDOW_SIZE, capped). Warm-up-from-empty on every process
-// start: this daemon has never read from Supabase (see docs/storage-contract.md), and
-// seeding this from a startup query would make ticking depend on Supabase being reachable
-// at boot — exactly what the outage-buffer design exists to avoid. The cost is a bounded
-// ANOMALY_MIN_SAMPLES-tick blind spot after every restart, not indefinite silence.
-const anomalyWindows = new Map();
+// The daemon's only in-memory anomaly state — each device's most recent power_w samples
+// (anomalyStats.mjs's ANOMALY_WINDOW_SIZE, capped) and whether its last sample was unusual.
+// Warm-up-from-empty on every process start: this daemon has never read from Supabase (see
+// docs/storage-contract.md), and seeding this from a startup query would make ticking depend
+// on Supabase being reachable at boot — exactly what the outage-buffer design exists to avoid.
+// The cost is a bounded ANOMALY_MIN_SAMPLES-tick blind spot after every restart, not indefinite
+// silence. The longer memory RM-160 needs — which levels a device has held this week — is
+// asked of the edge archive instead, so a restart forgets none of it.
+const anomalyState = createAnomalyState();
+/** What this tick's anomaly gate passed over, for its journal line — RM-160. */
+let anomaliesPassedOver = { knownLevel: 0, sameRun: 0 };
 
-/** Runs anomaly detection for this tick's readings, updating anomalyWindows in place, and
- * returns only the flagged rows, shaped for the `anomalies` table. */
+/** Runs anomaly detection for this tick's readings, updating anomalyState in place, and
+ * returns only the rows to record, shaped for the `anomalies` table. Since RM-160 a flag at a
+ * level the device has held this week, or one in a run already recorded, is passed over. */
 function detectAnomalies(readings) {
-  const entries = [];
-  for (const r of selectAnomalyCandidates(readings, ANOMALY_METERED_IDS)) {
-    const window = anomalyWindows.get(r.device_id) ?? [];
-    const detection = detectAnomaly(window, r.power_w);
-    if (detection?.isAnomaly) {
-      entries.push({ deviceId: r.device_id, ts: r.ts, value: r.power_w, detection });
-    }
-    anomalyWindows.set(r.device_id, pushSample(window, r.power_w));
-  }
+  const candidates = selectAnomalyCandidates(readings, ANOMALY_METERED_IDS);
+  const { entries, passedOver } = detectTick(candidates, anomalyState, levelLookup(archive));
+  anomaliesPassedOver = passedOver;
   return shapeAnomalyRows(entries);
 }
 
@@ -470,6 +471,7 @@ async function tick() {
   uploadedThisTick = false;
   healthCarriedThisTick = false;
   rejectionsHeldThisTick = false;
+  anomaliesPassedOver = { knownLevel: 0, sameRun: 0 };
   const result = await runIngestCycle({
     fetchLatest: () => fetchJson(`${BRIDGE_URL}/readings/latest`, TIMING.FETCH_TIMEOUT_MS),
     flushBuffer,
@@ -531,14 +533,14 @@ async function tick() {
     console.error(`[ibems-ingest] ${stamp} scrub refused ${result.rejectionCount} field(s): ${result.rejections.map(String).join('; ')}`);
   }
   if (result.ok && result.uploaded === false) {
-    console.log(`[ibems-ingest] ${stamp} archived ${result.readingCount} readings${result.hasTotals ? ' + totals' : ''}; uploads every ${UPLOAD_EVERY_MS / 60_000} min, ${pendingCount()} row(s) waiting`);
+    console.log(`[ibems-ingest] ${stamp} archived ${result.readingCount} readings${result.hasTotals ? ' + totals' : ''}${describeTickAnomalies(result.anomalyCount, anomaliesPassedOver)}; uploads every ${UPLOAD_EVERY_MS / 60_000} min, ${pendingCount()} row(s) waiting`);
   } else if (result.ok && synced) {
     // Since RM-149 an upload carries every minute archived since the last one, so it is reported as
     // what went up, not as this tick plus a "backlog": an outage's recovery is the large figure here.
     const up = synced.uploaded;
-    console.log(`[ibems-ingest] ${stamp} archived ${result.readingCount} readings${result.hasTotals ? ' + totals' : ''}${result.anomalyCount ? ` + ${result.anomalyCount} anomalies` : ''}; uploaded ${up.readings} reading(s), ${up.building_totals} total(s), ${up.anomalies} anomal${up.anomalies === 1 ? 'y' : 'ies'} from the archive`);
+    console.log(`[ibems-ingest] ${stamp} archived ${result.readingCount} readings${result.hasTotals ? ' + totals' : ''}${describeTickAnomalies(result.anomalyCount, anomaliesPassedOver)}; uploaded ${up.readings} reading(s), ${up.building_totals} total(s), ${up.anomalies} anomal${up.anomalies === 1 ? 'y' : 'ies'} from the archive`);
   } else if (result.ok) {
-    console.log(`[ibems-ingest] ${stamp} wrote ${result.readingCount} readings${result.hasTotals ? ' + totals' : ''}${result.anomalyCount ? ` + ${result.anomalyCount} anomalies` : ''}`);
+    console.log(`[ibems-ingest] ${stamp} wrote ${result.readingCount} readings${result.hasTotals ? ' + totals' : ''}${describeTickAnomalies(result.anomalyCount, anomaliesPassedOver)}`);
   } else if (result.stage === 'payload') {
     console.error(`[ibems-ingest] ${stamp} bridge answered with an unusable payload, nothing to write: ${result.error}`);
   } else if (result.stage === 'bridge') {

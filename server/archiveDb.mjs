@@ -89,6 +89,14 @@ function createTableSql(stream, unique) {
   ) STRICT;`;
 }
 
+/**
+ * RM-160: how many of one device's ONLINE readings in `[since, until)` lie within `[lo, hi]`, counting no
+ * further than the limit. Exported so a test can ask the planner about this exact statement.
+ * Arguments, in order: device_id, sinceMs, untilMs, lo, hi, limit.
+ */
+export const READINGS_AT_LEVEL_SQL = `SELECT count(*) AS n FROM (SELECT 1 FROM readings
+   WHERE device_id = ? AND ts >= ? AND ts < ? AND online = 1 AND power_w BETWEEN ? AND ? LIMIT ?)`;
+
 /** Ordered migrations; index + 1 is the schema version each one produces. */
 const MIGRATIONS = [
   `CREATE TABLE capability_sets (id INTEGER PRIMARY KEY, json TEXT NOT NULL UNIQUE) STRICT;
@@ -450,6 +458,15 @@ export function openArchive(file, { readOnly = false, targetVersion = ARCHIVE_SC
       }));
   }
 
+  /**
+   * RM-160: the anomaly gate's question — has this device held this level this week? It stops at `limit`
+   * (five), so a familiar level answers after a few rows; an unfamiliar one walks the device's week on the
+   * `(device_id, ts)` index. Asked by ingest on a flagged sample only, a few hundred times a day.
+   */
+  function readingsAtLevel(deviceId, { sinceMs, untilMs, lo, hi, limit }) {
+    return prepare(READINGS_AT_LEVEL_SQL).get(deviceId, sinceMs, untilMs, lo, hi, limit).n;
+  }
+
   function stats() {
     const count = (table) => prepare(`SELECT count(*) AS n FROM ${table}`).get().n;
     const span = prepare('SELECT min(ts) AS oldest, max(ts) AS newest FROM readings').get();
@@ -476,6 +493,7 @@ export function openArchive(file, { readOnly = false, targetVersion = ARCHIVE_SC
     troubleRows,
     connectivity,
     buckets,
+    readingsAtLevel,
     recordSeal,
     markUploaded,
     sealOf,

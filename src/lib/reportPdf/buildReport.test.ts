@@ -417,3 +417,16 @@ describe('a projected baseline as a document — RM-154', () => {
     expect(report.projected?.against.lines).toContain('Energy avoided: 20.0 kWh.');
   });
 });
+
+describe('unusual events — RM-160', () => {
+  const figure = (report: ReturnType<typeof buildPdfReport>) => report.keyFigures?.find((k) => k.label === 'Unusual events')?.value;
+
+  it('counts unusual events, and says a period that began before the change counted every switch of a cycling load', () => {
+    expect(figure(buildPdfReport(input()))).toMatch(/^1 \(every switch of a cycling load was counted before \S.*2026\)$/);
+    expect(buildPdfReport(input()).keyFigures?.some((k) => k.label === 'Unusual readings')).toBe(false);
+  });
+
+  it('gives the bare count for a period that began after it', () => {
+    expect(figure(buildPdfReport(input({ building: building({ period_start: '2026-11-01' }) })))).toBe('1');
+  });
+});

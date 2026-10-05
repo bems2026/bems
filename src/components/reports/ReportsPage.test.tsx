@@ -74,6 +74,21 @@ afterEach(() => {
 });
 
 describe('ReportsPage', () => {
+  it('counts unusual events, and says a period that began before the change counted every switch of a cycling load — RM-160', async () => {
+    render(<ReportsPage />);
+    expect(await screen.findByText('Unusual events')).toBeInTheDocument();
+    expect(screen.getByText(/every switch of a cycling load was counted before \S.*2026/)).toBeInTheDocument();
+    expect(screen.queryByText('Unusual readings')).not.toBeInTheDocument();
+  });
+
+  it('gives a period that began after the change its bare count — RM-160', async () => {
+    vi.mocked(reports.getReportPeriods).mockResolvedValue([buildingRow({ period_start: '2026-11-01' })]);
+    vi.mocked(reports.getDevicePeriodReports).mockResolvedValue([deviceRow({ period_start: '2026-11-01' })]);
+    render(<ReportsPage />);
+    expect(await screen.findByText('Unusual events')).toBeInTheDocument();
+    expect(screen.queryByText(/every switch of a cycling load/)).not.toBeInTheDocument();
+  });
+
   it('lists a generated month and its building summary', async () => {
     render(<ReportsPage />);
     expect(await screen.findByRole('button', { name: 'July 2026' })).toBeInTheDocument();

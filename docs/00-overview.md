@@ -5,7 +5,7 @@ audience: [administrator, integrator, operator, installer]
 status: Draft
 last_verified: 2026-09-24
 applies_to: repo b8af936 · edge checkout fcb1ff6
-evidence: [E-010, E-011, E-017, E-018, E-021, E-023, E-026, E-041, E-051, E-056, E-058, E-060, E-062, E-063, E-064, E-065, E-066, E-070, E-076, E-078, E-080, E-082, E-083, E-084, E-086, E-087, E-110, E-111, E-113, E-115, E-120, E-122, E-123, E-125, E-126, E-127, E-128, E-129, E-134, E-135, E-137, E-138, E-161, E-183, E-240]
+evidence: [E-010, E-011, E-017, E-018, E-021, E-023, E-026, E-041, E-051, E-056, E-058, E-060, E-062, E-063, E-064, E-065, E-066, E-070, E-076, E-078, E-080, E-082, E-083, E-084, E-086, E-087, E-110, E-111, E-113, E-115, E-120, E-122, E-123, E-125, E-126, E-127, E-128, E-129, E-134, E-135, E-137, E-138, E-161, E-183, E-240, E-247]
 ---
 
 # Overview
@@ -28,7 +28,7 @@ explains them.
 | Runs schedules | Stored in the database and fired by the edge server's scheduler | Field-validated [E-084] |
 | Keeps demand under a limit | Automatic shedding, one group at a time, never restoring by itself | Field-validated [E-084, E-087, E-123] |
 | Holds a room at a comfort target | An infrared commander, stepped by a room-temperature loop | Field-validated [E-084, E-113] |
-| Flags unusual consumption | Rolling statistics: two tests must agree | Field-validated [E-076, E-080] |
+| Flags unusual consumption | Rolling statistics: two tests must agree, at a level the device has not held this week | Field-validated [E-076, E-080]; the familiar-level gate implemented, not validated [E-247] |
 | Produces reports | Daily, weekly and monthly figures with their coverage, exportable as CSV | Field-validated [E-080; ROADMAP EX-033] |
 | Keeps control through an internet outage | A local audit buffer and offline session checks | Field-validated for ingestion [E-134]; implemented, not validated, for commands [E-078] |
 | Reaches the building from off site | Over a private mesh network, never exposed to the internet | Field-validated: in use from off site [E-026, E-183] |

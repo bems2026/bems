@@ -29,7 +29,7 @@ directly via `@supabase/supabase-js` + RLS, once Phase 5's auth lands).
 | `dsm_thresholds` | App-originated threshold edits (Phase 6+) | On write |
 | `ingestion_health` | `server/ingest.mjs` | With each upload, inside `ingest_upload` itself since RM-159; at once when health changes either way; and at least every `INGEST_UPLOAD_MS`; every tick on an edge with no archive. Best-effort (not buffered on outage). Fields the scrub refused between writes are carried into the next one, and kept if an upload fails (RM-149, RM-159) |
 | `readings_hourly` | `readings` rows aged past the retention window, aggregated in Postgres | Whenever a retention pass finds something older than `INGEST_RETENTION_DAYS` (checked every 6h) |
-| `anomalies` | `server/anomalyStats.mjs`, on a flagged tick | Archived on the edge the minute a reading is flagged; uploaded with the next upload |
+| `anomalies` | `server/anomalyStats.mjs`, on the first tick of an unusual run: both tests agree, at a level the device has not held for 5 minutes in 7 days (RM-160) | Archived on the edge the minute it is found; uploaded with the next upload |
 
 **Read back from the edge, not the cloud (RM-158, RM-159).** The proxy answers a screen's repeated reads from the
 archive, in the shapes of the cloud queries they replace: `GET /api/archive/anomalies?since=` (the alert bell, at most

@@ -1,6 +1,15 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-10-04, evening — **RM-159 built: a data architecture around the request budget (ADR-0015).**
+**Last audited:** 2026-10-05 — **RM-160 built: an anomaly is a level the device has not held this week, once per run
+(ADR-0009 amended).**
+- **The flood (F-045, E-247).** About 220 anomalies a day, every one passing both tests. Each new level of a cycling
+  load was flagged on its first and second minute: co6, on for five minutes in every twenty-four, raised 502 in a week.
+- **RM-160:** both tests still agree; then the level must be unfamiliar (under 5 minutes within ±15 % in the last
+  7 days, asked of the edge archive), and one run is one row. Replayed on the same week: 1,551 rows become 25. The
+  reports count unusual events, with a caveat on earlier periods.
+- **Left:** the deploy and its read-back (RM-160f).
+
+**Earlier, 2026-10-04, evening — RM-159 built: a data architecture around the request budget (ADR-0015).**
 - **What was left (E-242).** About 6,500 gateway lines a day after RM-158:
   - the kiosk's timed cloud reads;
   - a sign-in check per poll;
@@ -491,6 +500,15 @@ other four and none needed changing.
 ---
 
 ## 0. Triage — what to do next
+
+### 2026-10-05 — the alerts bell flooded by cycling loads (RM-160): built, deploy pending
+
+- **What it was (F-045).** About 220 anomaly rows a day, all passing both tests, nearly all the first two minutes of a
+  load's usual level. Measured read-only on the edge archive (E-247).
+- **The fix (ADR-0009, amended)**, chosen with the operator from replayed alternatives: a level the device has held for
+  5 minutes in the last 7 days is passed over, and one run is one row. Replayed: 1,551 rows a week become 25.
+- **Deploy (RM-160f).** On the edge: `npm run build`, then
+  `sudo systemctl restart ibems-ingest ibems-proxy ibems-scheduler`.
 
 ### 2026-10-03 — remote control slow and yellow, and log ingestion over quota (RM-157): control fixed, log open
 
@@ -2846,7 +2864,7 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 - [x] **EX-041** Authenticated proxy: the only process besides Node-RED allowed to reach the bridge; validates a session before forwarding — `server/proxy.mjs`
 - [x] **EX-042** Break-glass local login for when Supabase Auth is unreachable; view-only, cannot issue commands — `server/breakGlass.mjs`, `server/hashBreakGlassPassword.mjs`
 - [x] **EX-043** Command audit path: validate, dispatch, then record — a failed dispatch is logged as `failed`, never silently omitted — `server/proxy.mjs`
-- [x] **EX-044** Rolling z-score/IQR anomaly detection with a noise floor substituted into the denominator rather than used as a skip-gate — `server/anomalyStats.mjs`
+- [x] **EX-044** Rolling z-score/IQR anomaly detection with a noise floor substituted into the denominator rather than used as a skip-gate; since RM-160 recorded only at a level the device has not held this week, once per run — `server/anomalyStats.mjs` (`detectTick`), `server/archiveDb.mjs` (`readingsAtLevel`)
 - [x] **EX-045** Systemd units for ingest, proxy, and the office kiosk display — `server/ibems-ingest.service`, `server/ibems-proxy.service`, `server/ibems-kiosk.service`
 - [x] **EX-047** Scheduler daemon firing the Automation page's schedules through the same gate and audit trail as a manual click, attributed to whoever saved the schedule — `server/scheduler.mjs`, `server/schedulePlan.mjs`, `server/ibems-scheduler.service`
 - [x] **EX-051** Outlet and aircon control endpoints on the flow, mirroring the light chain — `node-red-bridge/addDeviceEndpoints.mjs`
@@ -4808,8 +4826,46 @@ The target is about 600 requests a day from the edge, roughly 0.1 GB of log a mo
         this size. Revisit only if the meter and the usage page disagree.
       - The same read gave the table sizes: `readings` 101 MB for the 14-day window, and about 36 MB a year of
         permanent growth, so 500 MB in about nine years (ADR-0015).
-- Out of scope, proposed as **RM-160**: anomaly detection floods on cyclic loads (`co6` alone about 200 a day).
-  That is detection quality, not the budget.
+- Out of scope, and since built as **RM-160** (below): anomaly detection flooded on cyclic loads (`co6` alone about
+  200 a day). That is detection quality, not the budget.
+
+### Anomalies at a familiar level, once per run — RM-160 (2026-10-05)
+
+The detector recorded about 220 anomalies a day, every one passing both tests (F-045). Measured read-only on the edge
+archive over the seven days to 2026-10-05 (E-247):
+- 1,524 rows: C.O Yellow 538, co6 502, co5 240, the other eight 244;
+- co6 runs about 5 min in every 24, and 496 of its rows are the first or second minute of "on";
+- the window explains it: a level held for one prior sample still reaches z = 4.36, so every new level is flagged
+  twice, however often the device returns to it.
+
+The operator chose the fix from replayed alternatives (ADR-0009, amended). Both tests still agree; then the level must
+be one the device has not held for 5 minutes in the last 7 days, at any hour; and only a run's first sample is kept.
+Replayed: 1,551 rows become 25. Rows recorded before the change are left as they were.
+
+- [x] **RM-160a** The gate (`server/anomalyStats.mjs`): `detectTick`, `knownLevelBand`, `levelLookup`,
+      `describeTickAnomalies`, and the `KNOWN_LEVEL_*` constants (7 days, 5 samples, ±15 %, never under ±5 W).
+      - An archive that cannot answer counts as unfamiliar, so the reading is recorded.
+      - The lookup is asked only when both tests agree.
+      - Tests: `anomalyKnownLevel.test.mjs` (17, one of them pinning the trade-off below); the existing anomaly
+        tests unchanged.
+- [x] **RM-160b** The archive's answer: `readingsAtLevel` and `READINGS_AT_LEVEL_SQL` (`server/archiveDb.mjs`), on
+      the existing `(device_id, ts)` index, with no migration. On the live archive: under 1 ms for a familiar level,
+      about 21 ms for an unfamiliar one. Tests: archive (+2).
+- [x] **RM-160c** Ingest (`server/ingest.mjs`) asks the archive through `levelLookup(archive)`, and its journal line
+      says what it passed over, for example `(passed over: 2 at a familiar level)`. Pinned from source.
+- [x] **RM-160d** The reports: "Unusual readings" is now **Unusual events** on the page and in the PDF. Any period that
+      began before 6 Oct 2026 carries "every switch of a cycling load was counted before" that date, in the reader's
+      locale (`unusualEventsCaveat`, `src/lib/anomalies.ts`). The bell and `GET /api/archive/anomalies` are
+      unchanged: the same rows, fewer of them. Tests: `anomalies` (+3), `ReportsPage` (+2), `buildReport` (+2).
+- [x] **RM-160e** Records: ADR-0009 amended; F-045; E-247; `docs/00-overview.md`, `04-data.md`, `05-interface.md`,
+      `X3-operations.md` and `storage-contract.md`.
+- Neutered thirteen ways, each failing a test: the gate 6, the archive and the lookup 5, the report caveat 2.
+- [ ] **RM-160f** Deploy: build on the edge, restart `ibems-ingest ibems-proxy ibems-scheduler`, and read back the
+      journal's passed-over notes and the archive's anomaly rate (expected about 4 a day).
+- Given up, by the operator's choice: a familiar level at an unusual hour, and a cycling load stuck on. Use out of
+  hours is the reports' working-hours baseline's question (RM-153). The sharpest case is a **tripped breaker in the
+  day**: 0 W is familiar to every device, which rests there overnight. In the measured week 185 falls to zero were
+  flagged, 37 in office hours, each reading like a load switched off (E-247).
 
 ### The log back under the Free plan — RM-158 (2026-10-03)
 
