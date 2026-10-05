@@ -537,13 +537,33 @@ test('RM-159: before a full day is counted it is not judged — unless today is 
 
 test('RM-159: the daemons\' meter files add up to one day, and a restart\'s carried-over day still counts', () => {
   const counts = (rpc, rest = 0) => ({ rest, rpc, auth: 0, storage: 0, other: 0, total: rpc + rest });
+  const midnight = '2026-10-05T00:00:00.000Z';
   const meter = requestMeterFrom([
-    { daemon: 'ibems-ingest', day: '2026-10-06', counts: counts(10), previous: { day: '2026-10-05', counts: counts(288, 20) } },
-    { daemon: 'ibems-scheduler', day: '2026-10-06', counts: counts(2), previous: { day: '2026-10-05', counts: counts(100) } },
-    { daemon: 'ibems-proxy', day: '2026-10-05', counts: { ...counts(0), auth: 30, total: 30 }, previous: null },
+    { daemon: 'ibems-ingest', day: '2026-10-06', counts: counts(10), previous: { day: '2026-10-05', from: midnight, counts: counts(288, 20) } },
+    { daemon: 'ibems-scheduler', day: '2026-10-06', counts: counts(2), previous: { day: '2026-10-05', from: midnight, counts: counts(100) } },
+    { daemon: 'ibems-proxy', day: '2026-10-05', from: midnight, counts: { ...counts(0), auth: 30, total: 30 }, previous: null },
   ], '2026-10-06');
   assert.deepEqual(meter.lastFullDay, { day: '2026-10-05', total: 438, detail: 'rest 20, rpc 388, auth 30' });
   assert.equal(meter.today, 12);
   assert.equal(requestMeterFrom([], '2026-10-06'), null);
   assert.equal(requestMeterFrom([{ day: '2026-10-06', counts: counts(5), previous: null }], '2026-10-06').lastFullDay, null);
+});
+
+test('RM-159: a day counted from part-way through is not judged as a day — the first deploy\'s 40 minutes', () => {
+  // Found on the edge 2026-10-05: preflight read "71 on 2026-10-04 — ok" for a day metered from 23:20 UTC.
+  const counts = (rpc) => ({ rest: 0, rpc, auth: 0, storage: 0, other: 0, total: rpc });
+  const meter = requestMeterFrom([
+    { daemon: 'ibems-ingest', day: '2026-10-05', from: '2026-10-05T00:00:00.000Z', counts: counts(19), previous: { day: '2026-10-04', from: '2026-10-04T23:20:24.000Z', counts: counts(61) } },
+    { daemon: 'ibems-proxy', day: '2026-10-05', from: '2026-10-05T00:00:00.000Z', counts: counts(2), previous: { day: '2026-10-04', from: '2026-10-04T23:20:41.000Z', counts: counts(6) } },
+  ], '2026-10-05');
+  assert.equal(meter.lastFullDay, null);
+  assert.deepEqual(meter.partialDay, { day: '2026-10-04', total: 67, from: '2026-10-04T23:20:41.000Z' });
+  const obs = healthy();
+  obs.host.requestMeter = meter;
+  const c = find(assessDeployment(obs), 'request_budget');
+  assert.equal(c.level, LEVELS.SKIPPED, 'not judged, and not passed');
+  assert.match(c.detail, /2026-10-04 was counted only from 23:20 UTC \(67\); 21 so far today/);
+  // A file from before RM-159's fix says nothing about when it began: not a full day either.
+  const old = requestMeterFrom([{ day: '2026-10-05', counts: counts(1), previous: { day: '2026-10-04', counts: counts(61) } }], '2026-10-05');
+  assert.equal(old.lastFullDay, null);
 });

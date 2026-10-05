@@ -2050,6 +2050,8 @@ test('RM-159: the trouble, connectivity and week routes answer from the edge arc
     assert.equal(conn.status, 200);
     const co1 = (await conn.json()).rows.find((r) => r.device_id === 'co1');
     assert.deepEqual(co1, { device_id: 'co1', samples: 3, online_samples: 2, transitions: 2, last_change: ago(10), currently_online: true, expected_samples: 1440 });
+    // A week is about 1.2 s on the Pi's one thread: refused here, so the browser asks the cloud instead.
+    assert.equal((await fetch(`${proxyUrl}/api/archive/connectivity?hours=168`, auth)).status, 400);
 
     const week = await fetch(`${proxyUrl}/api/archive/buckets?device_id=co1&bucket_s=900&since=${encodeURIComponent(ago(7 * 24 * 60))}`, auth);
     assert.equal(week.status, 200);

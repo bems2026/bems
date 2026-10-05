@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { DatabaseSync } from 'node:sqlite';
 import { openArchive, ARCHIVE_SCHEMA_VERSION, ORIGIN } from './archiveDb.mjs';
 import { splitLatestPayload, shapeAnomalyRows } from './shapeRows.mjs';
 
@@ -398,5 +399,33 @@ test('RM-159: buckets average the online samples of each floored bucket, as read
     { ts: at(0), power_w: 20, voltage: 225, current: 0.2, sample_count: 3, online_count: 2 },
     { ts: at(15), power_w: null, voltage: null, current: null, sample_count: 1, online_count: 0 },
   ]);
+  archive.close();
+});
+
+test('RM-159: schema 4 gives the trouble questions partial indexes, and the planner uses them', (t) => {
+  // Each of the three walked eight days of every device on the proxy's one thread: about 125 ms each on the Pi.
+  const { archive, file } = tempArchive(t);
+  archive.insertRows('readings', Array.from({ length: 200 }, (_, i) => reading({ ts: minute(i), fault: i === 7 ? 3 : 0, net_state: 'local_net' })), { origin: ORIGIN.ingest });
+  archive.close();
+  // Opened again by a writer, as ingest's restart does.
+  openArchive(file).close();
+  // Closed here, not in t.after: the temp directory's removal is registered first and runs first, and
+  // Windows will not remove a file that is still open.
+  const db = new DatabaseSync(file, { readOnly: true });
+  try {
+    const names = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'readings'").all().map((r) => r.name);
+    for (const index of ['readings_device_ts', 'readings_fault', 'readings_power_warn', 'readings_no_net']) assert.ok(names.includes(index), index);
+    const plan = (sql) => db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(0, 1).map((r) => r.detail).join(' | ');
+    assert.match(plan('SELECT device_id FROM readings WHERE ts >= ? AND ts < ? AND fault IS NOT NULL AND fault <> 0'), /readings_fault/);
+    assert.match(plan("SELECT device_id FROM readings WHERE ts >= ? AND ts < ? AND power_type = 'warn'"), /readings_power_warn/);
+    assert.match(plan("SELECT device_id FROM readings WHERE ts >= ? AND ts < ? AND net_state IN ('no_net')"), /readings_no_net/);
+  } finally {
+    db.close();
+  }
+});
+
+test('RM-159: a net state that is not a plain word never reaches the statement', (t) => {
+  const { archive } = tempArchive(t);
+  assert.throws(() => archive.troubleRows({ sinceMs: 0, untilMs: 1, degradedNetStates: ["no_net') OR 1=1 --"] }), /plain word/);
   archive.close();
 });

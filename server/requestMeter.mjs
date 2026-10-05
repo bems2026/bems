@@ -44,14 +44,24 @@ export function createRequestMeter({ daemon, file, now = Date.now }) {
   let counts = zero();
   let previous = null;
   let window = zero();
+  /**
+   * When counting began for `day` — its midnight if this process was counting then, else the moment it
+   * started (or null when an older file did not say). A day is a FULL day only if this is its midnight:
+   * a day counted from 23:20 is not a day's budget, and preflight must not judge it as one.
+   */
+  let from = new Date(now()).toISOString();
 
   // A restart keeps the day's count: a daemon restarted at 15:00 has not made no requests today.
   if (file) {
     try {
       const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
-      if (saved?.day === day && saved.counts) counts = { ...zero(), ...saved.counts };
-      else if (saved?.day && saved.counts) previous = { day: saved.day, counts: { ...zero(), ...saved.counts } };
-      if (saved?.previous && saved.previous.day !== day && !previous) previous = saved.previous;
+      if (saved?.day === day && saved.counts) {
+        counts = { ...zero(), ...saved.counts };
+        from = saved.from ?? null;
+      } else if (saved?.day && saved.counts) {
+        previous = { day: saved.day, from: saved.from ?? null, counts: { ...zero(), ...saved.counts } };
+      }
+      if (saved?.previous && saved.previous.day !== day && !previous) previous = { from: null, ...saved.previous };
     } catch {
       // No file yet, or a torn write: start the day at zero, which only undercounts.
     }
@@ -60,8 +70,10 @@ export function createRequestMeter({ daemon, file, now = Date.now }) {
   function rollOver() {
     const today = utcDay(now());
     if (today === day) return;
-    previous = { day, counts };
+    previous = { day, from, counts };
     day = today;
+    // This process was counting across midnight, so the new day is counted from its start.
+    from = `${today}T00:00:00.000Z`;
     counts = zero();
   }
 
@@ -82,7 +94,7 @@ export function createRequestMeter({ daemon, file, now = Date.now }) {
     },
     snapshot() {
       rollOver();
-      return { daemon, day, counts: { ...counts }, previous, updated_at: new Date(now()).toISOString() };
+      return { daemon, day, from, counts: { ...counts }, previous, updated_at: new Date(now()).toISOString() };
     },
     /** Writes the snapshot whole (temp file, then rename), so a reader never sees half of one. */
     save() {
@@ -131,5 +143,8 @@ export function installRequestMeter({
     }
     meter.save();
   }, summaryMs).unref();
+  // A clean stop (each daemon's SIGTERM handler calls process.exit) keeps the minutes since the last save;
+  // without this a restart lost up to ten minutes of the day's count.
+  process.once('exit', () => meter.save());
   return meter;
 }

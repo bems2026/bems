@@ -44,7 +44,8 @@ test('the day\'s count survives a restart, and a new day starts at zero with yes
   const snap = again.snapshot();
   assert.equal(snap.day, '2026-10-06');
   assert.equal(snap.counts.total, 1);
-  assert.deepEqual(snap.previous, { day: '2026-10-05', counts: { rest: 1, rpc: 1, auth: 1, storage: 0, other: 0, total: 3 } });
+  assert.deepEqual(snap.previous, { day: '2026-10-05', from: '2026-10-05T10:00:00.000Z', counts: { rest: 1, rpc: 1, auth: 1, storage: 0, other: 0, total: 3 } });
+  assert.equal(snap.from, '2026-10-06T00:00:00.000Z', 'counting across midnight makes the new day a full one');
 
   again.save();
   const tomorrow = createRequestMeter({ daemon: 'ibems-test', file, now: () => ms });
@@ -85,4 +86,35 @@ test('installed, it counts only requests to the project, and still makes them', 
   await fetch('http://127.0.0.1:1880/api/readings/latest');
   assert.equal(seen.length, 3, 'every request still goes out');
   assert.deepEqual(meter.snapshot().counts, { rest: 0, rpc: 1, auth: 1, storage: 0, other: 0, total: 2 });
+});
+
+test('a day is a full day only when counting began at its midnight', (t) => {
+  // Deployed at 23:20 UTC, the first "previous day" held 40 minutes, and preflight judged it as a day.
+  const file = tempFile(t);
+  let ms = Date.parse('2026-10-04T23:20:00Z');
+  const m = createRequestMeter({ daemon: 'ibems-test', file, now: () => ms });
+  assert.equal(m.snapshot().from, '2026-10-04T23:20:00.000Z', 'started part-way: a partial day');
+  m.count('rpc');
+  m.save();
+
+  const again = createRequestMeter({ daemon: 'ibems-test', file, now: () => ms });
+  assert.equal(again.snapshot().from, '2026-10-04T23:20:00.000Z', 'a restart the same day keeps when counting began');
+
+  fs.writeFileSync(file, JSON.stringify({ daemon: 'ibems-test', day: '2026-10-04', counts: { rpc: 9, total: 9 }, previous: null }));
+  assert.equal(createRequestMeter({ daemon: 'ibems-test', file, now: () => ms }).snapshot().from, null,
+    'a file that does not say when it began is not a full day');
+});
+
+test('a clean stop saves the minutes since the last save', (t) => {
+  const dir = path.dirname(tempFile(t));
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response('{}');
+  t.after(() => { globalThis.fetch = original; });
+  installRequestMeter({ daemon: 'ibems-stop', supabaseUrl: BASE, dir, summaryMs: 3_600_000, log: () => {} });
+  return fetch(`${BASE}/rest/v1/rpc/ingest_upload`, { method: 'POST' }).then(() => {
+    const file = path.join(dir, 'ibems-stop.json');
+    assert.equal(fs.existsSync(file), false, 'not saved yet: the interval is an hour away');
+    process.emit('exit', 0); // what process.exit runs, without exiting the test
+    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).counts.rpc, 1);
+  });
 });

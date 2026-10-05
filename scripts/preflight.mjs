@@ -73,12 +73,21 @@ export function requestMeterFrom(snapshots, todayUtc) {
   };
   const days = snapshots.flatMap((s) => [s.day === todayUtc ? null : s.day, s.previous?.day]).filter((d) => d && d < todayUtc).sort();
   const lastDay = days.length ? days[days.length - 1] : null;
-  const ofDay = (day) => snapshots.map((s) => (s.day === day ? s.counts : s.previous?.day === day ? s.previous.counts : null)).filter(Boolean);
+  const ofDay = (day) => snapshots.map((s) => (s.day === day ? s : s.previous?.day === day ? s.previous : null)).filter(Boolean);
   const today = sum(snapshots.filter((s) => s.day === todayUtc).map((s) => s.counts)).total;
-  if (lastDay === null) return { lastFullDay: null, today };
-  const full = sum(ofDay(lastDay));
-  const detail = ['rest', 'rpc', 'auth', 'storage', 'other'].filter((k) => full[k] > 0).map((k) => `${k} ${full[k]}`).join(', ') || 'none';
-  return { lastFullDay: { day: lastDay, total: full.total, detail }, today };
+  if (lastDay === null) return { lastFullDay: null, partialDay: null, today };
+  const entries = ofDay(lastDay);
+  const total = sum(entries.map((e) => e.counts));
+  // A full day only if every daemon that counted it was counting from its midnight (RM-159): the day of a
+  // deploy, or a file that does not say, is a lower bound, not a day's budget.
+  const midnight = Date.parse(`${lastDay}T00:00:00Z`);
+  const complete = entries.every((e) => typeof e.from === 'string' && Date.parse(e.from) <= midnight);
+  if (!complete) {
+    const starts = entries.map((e) => e.from).filter((f) => typeof f === 'string').sort();
+    return { lastFullDay: null, partialDay: { day: lastDay, total: total.total, from: starts.length ? starts[starts.length - 1] : null }, today };
+  }
+  const detail = ['rest', 'rpc', 'auth', 'storage', 'other'].filter((k) => total[k] > 0).map((k) => `${k} ${total[k]}`).join(', ') || 'none';
+  return { lastFullDay: { day: lastDay, total: total.total, detail }, partialDay: null, today };
 }
 
 /** Keys that must carry a real value before anything works. */
@@ -562,7 +571,9 @@ export function assessDeployment(obs) {
         ? `${judged.toLocaleString('en-US')} on ${fullDay.day} (${fullDay.detail}); ${meter.today.toLocaleString('en-US')} so far today`
         : overToday
           ? `${meter.today.toLocaleString('en-US')} so far today, already over ${REQUEST_BUDGET.warn.toLocaleString('en-US')}`
-          : `no full day counted yet — ${meter.today.toLocaleString('en-US')} so far today`,
+          : meter.partialDay
+            ? `no full day counted yet — ${meter.partialDay.day} was counted only from ${meter.partialDay.from ? `${meter.partialDay.from.slice(11, 16)} UTC` : 'an unknown time'} (${meter.partialDay.total.toLocaleString('en-US')}); ${meter.today.toLocaleString('en-US')} so far today`
+            : `no full day counted yet — ${meter.today.toLocaleString('en-US')} so far today`,
     `The edge's daemons together should stay under ${REQUEST_BUDGET.warn.toLocaleString('en-US')} requests a day (docs/adr/ADR-0015). Each logs a ten-minute line, "Supabase request(s) in the last 10 min", naming the kinds: journalctl -u ibems-ingest -u ibems-proxy -u ibems-scheduler | grep "Supabase request". A new loop that reads or writes the project on a timer is the usual cause; batch it, slow it, or serve it from the edge.`,
   );
 

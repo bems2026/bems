@@ -31,9 +31,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-export const ARCHIVE_SCHEMA_VERSION = 3;
+export const ARCHIVE_SCHEMA_VERSION = 4;
 /**
- * The oldest schema a READER can serve from. Version 3 adds only an index, so a proxy restarted before
+ * The oldest schema a READER can serve from. Versions 3 and 4 add only indexes, so a proxy restarted before
  * ingest has migrated the file still answers — slower, not wrong.
  */
 const READER_MIN_SCHEMA_VERSION = 2;
@@ -106,6 +106,13 @@ const MIGRATIONS = [
   // 3 — RM-159: one device's minutes over days, read by the edge's history route. The unique key leads
   // with `ts`, so a per-device window walked every device's rows in it.
   `CREATE INDEX readings_device_ts ON readings (device_id, ts);`,
+  // 4 — RM-159: the trouble route's three questions read only abnormal minutes, which are rare. Without these
+  // each walked eight days of every device (about 125 ms each on the Pi, measured 2026-10-05), on the proxy's
+  // one thread, every five minutes per screen. ANALYZE gives the planner the statistics to choose them.
+  `CREATE INDEX readings_fault ON readings (ts) WHERE fault IS NOT NULL AND fault <> 0;
+   CREATE INDEX readings_power_warn ON readings (ts) WHERE power_type = 'warn';
+   CREATE INDEX readings_no_net ON readings (ts) WHERE net_state IN ('no_net');
+   ANALYZE;`,
 ];
 
 function toStored(kind, value, col) {
@@ -154,6 +161,10 @@ export function openArchive(file, { readOnly = false, targetVersion = ARCHIVE_SC
     db.exec('PRAGMA journal_size_limit = 67108864');
     db.exec('PRAGMA foreign_keys = ON');
     migrate(db, targetVersion);
+    // RM-159: keep the planner's statistics current as the archive grows (schema 4 analysed it once), as
+    // SQLite advises for a long-lived connection. A precaution: the partial indexes were chosen even on an
+    // archive analysed while empty. Cheap when nothing is stale.
+    db.exec('PRAGMA optimize=0x10002');
   } else if (userVersion(db) < READER_MIN_SCHEMA_VERSION) {
     db.close();
     throw new Error(`archive at ${file} is not initialised (schema ${READER_MIN_SCHEMA_VERSION} or later expected) — the ingest daemon creates it`);
@@ -364,11 +375,14 @@ export function openArchive(file, { readOnly = false, targetVersion = ARCHIVE_SC
     const q = (cols, where, args = []) => prepare(`SELECT device_id, ts, ${cols} FROM readings
                                                      WHERE ts >= ? AND ts < ? AND ${where} ORDER BY ts, device_id`)
       .all(sinceMs, untilMs, ...args).map((r) => ({ ...r, ts: iso(r.ts) }));
+    // Written into the statement rather than bound: a partial index (schema 4) can serve only a condition the
+    // planner can see. They come from shared/troubleStates.mjs, never a request, and must be plain words.
     const states = [...degradedNetStates];
+    if (!states.every((s) => /^[a-z_]+$/.test(s))) throw new Error('troubleRows: a net state must be a plain word');
     return {
       fault: q('fault', 'fault IS NOT NULL AND fault <> 0'),
       power_type: q('power_type, power_w, warn_power_w', "power_type = 'warn'"),
-      net_state: states.length ? q('net_state', `net_state IN (${states.map(() => '?').join(', ')})`, states) : [],
+      net_state: states.length ? q('net_state', `net_state IN (${states.map((s) => `'${s}'`).join(', ')})`) : [],
     };
   }
 
@@ -379,25 +393,33 @@ export function openArchive(file, { readOnly = false, targetVersion = ARCHIVE_SC
    * never a change, as `is distinct from` against a NULL `lag` is not counted there.
    */
   function connectivity({ sinceMs }) {
-    return prepare(`WITH w AS (
-                      SELECT device_id, ts, online,
-                             lag(online) OVER (PARTITION BY device_id ORDER BY ts) AS prev,
-                             first_value(online) OVER (PARTITION BY device_id ORDER BY ts DESC) AS newest
-                        FROM readings WHERE ts >= ?)
-                    SELECT device_id,
-                           count(*) AS samples,
-                           sum(online) AS online_samples,
-                           sum(prev IS NOT NULL AND online IS NOT prev) AS transitions,
-                           max(CASE WHEN prev IS NOT NULL AND online IS NOT prev THEN ts END) AS last_change,
-                           max(newest) AS currently_online
-                      FROM w GROUP BY device_id ORDER BY device_id`).all(sinceMs)
-      .map((r) => ({
-        device_id: r.device_id,
-        samples: r.samples,
-        online_samples: r.online_samples,
-        transitions: r.transitions,
-        last_change: r.last_change === null ? null : new Date(r.last_change).toISOString(),
-        currently_online: r.currently_online === 1,
+    // One read of the window in time order, folded here. The same answer as window functions in SQL, which
+    // SQLite planned as a walk of the whole archive by device: 450 ms on the Pi for a day, against 140 ms
+    // for this (measured 2026-10-05), on the proxy's one thread.
+    const byDevice = new Map();
+    for (const r of prepare('SELECT device_id, ts, online FROM readings WHERE ts >= ? ORDER BY ts, device_id').iterate(sinceMs)) {
+      let d = byDevice.get(r.device_id);
+      if (!d) {
+        d = { device_id: r.device_id, samples: 0, online_samples: 0, transitions: 0, last_change: null, prev: null };
+        byDevice.set(r.device_id, d);
+      }
+      d.samples += 1;
+      if (r.online === 1) d.online_samples += 1;
+      if (d.prev !== null && r.online !== d.prev) {
+        d.transitions += 1;
+        d.last_change = r.ts;
+      }
+      d.prev = r.online;
+    }
+    return [...byDevice.values()]
+      .sort((a, b) => (a.device_id < b.device_id ? -1 : a.device_id > b.device_id ? 1 : 0))
+      .map((d) => ({
+        device_id: d.device_id,
+        samples: d.samples,
+        online_samples: d.online_samples,
+        transitions: d.transitions,
+        last_change: d.last_change === null ? null : new Date(d.last_change).toISOString(),
+        currently_online: d.prev === 1,
       }));
   }
 

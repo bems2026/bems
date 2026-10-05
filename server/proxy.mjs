@@ -585,14 +585,30 @@ function handleArchiveTrouble(url, res) {
  */
 function handleArchiveConnectivity(url, res) {
   const asked = Number(url.searchParams.get('hours') ?? 24);
-  const hours = Math.max(1, Math.min(168, Number.isFinite(asked) ? Math.trunc(asked) : 24));
-  try {
-    const rows = readArchive((a) => a.connectivity({ sinceMs: Date.now() - hours * 3600_000 }));
-    return sendJson(res, 200, { rows: rows.map((r) => ({ ...r, expected_samples: hours * 60 })) });
-  } catch (err) {
-    return archiveUnavailable(res, err);
+  const hours = Math.max(1, Number.isFinite(asked) ? Math.trunc(asked) : 24);
+  // The archive is read on this process's one thread. A day takes about 140 ms on the Pi and a week about
+  // 1.2 s (measured 2026-10-05), long enough to hold up a command. The app asks for a day; a longer window
+  // is refused here, and the browser asks the cloud's `device_connectivity` instead.
+  if (hours > CONNECTIVITY_MAX_HOURS) {
+    return sendJson(res, 400, { error: 'window_too_long', detail: `at most ${CONNECTIVITY_MAX_HOURS} hours from the edge; ask the cloud for longer` });
   }
+  const now = Date.now();
+  // One answer a minute is shared: the bell and the Devices page, and every open screen, ask the same thing
+  // every five minutes, and a day's figure does not move in a minute.
+  if (!connectivityCache || connectivityCache.hours !== hours || now - connectivityCache.at >= CONNECTIVITY_CACHE_MS) {
+    try {
+      const rows = readArchive((a) => a.connectivity({ sinceMs: now - hours * 3600_000 }));
+      connectivityCache = { hours, at: now, rows: rows.map((r) => ({ ...r, expected_samples: hours * 60 })) };
+    } catch (err) {
+      return archiveUnavailable(res, err);
+    }
+  }
+  return sendJson(res, 200, { rows: connectivityCache.rows });
 }
+
+const CONNECTIVITY_MAX_HOURS = 48;
+const CONNECTIVITY_CACHE_MS = 60_000;
+let connectivityCache = null;
 
 /** `readings_buckets`' own cap (supabase/phase9), so the edge refuses what the cloud would. */
 const BUCKETS_MAX = 900;
