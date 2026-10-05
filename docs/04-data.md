@@ -5,7 +5,7 @@ audience: [integrator, administrator]
 status: Draft
 last_verified: 2026-10-04
 applies_to: repo dfe41a0 + RM-159
-evidence: [E-042, E-058, E-064, E-065, E-066, E-070, E-078, E-080, E-081, E-082, E-083, E-084, E-085, E-086, E-088, E-089, E-090, E-111, E-121, E-122, E-124, E-126, E-134, E-137, E-138, E-142, E-149, E-157, E-161, E-162, E-163, E-164, E-165, E-166, E-167, E-168, E-193, E-218, E-219, E-220, E-221, E-222, E-224, E-225, E-227, E-235, E-241, E-242, E-243, E-244]
+evidence: [E-042, E-058, E-064, E-065, E-066, E-070, E-078, E-080, E-081, E-082, E-083, E-084, E-085, E-086, E-088, E-089, E-090, E-111, E-121, E-122, E-124, E-126, E-134, E-137, E-138, E-142, E-149, E-157, E-161, E-162, E-163, E-164, E-165, E-166, E-167, E-168, E-193, E-218, E-219, E-220, E-221, E-222, E-224, E-225, E-227, E-235, E-241, E-242, E-243, E-244, E-245]
 ---
 
 # Data and storage
@@ -110,7 +110,8 @@ device-hour both ways [E-222]. Minute exports of older periods are read from the
 | Raw rows at steady state | rows/day × 30 | ≈ 860 000; measured 858 691 [E-080] |
 | Hourly rows per year | devices × 24 × 365 | ≈ 175 000, permanent |
 | **Bytes per row** | **measure it:** `pg_total_relation_size(table) ÷ rows`, indexes included | **435** for `readings`, of which the `capabilities` jsonb is 271 of an average 320 bytes of data [E-218] |
-| Raw storage | steady rows × bytes/row | 833 171 × 435 ≈ **346 MB** of a 392 MB database [E-218] |
+| Raw storage | steady rows × bytes/row | 833 171 × 435 ≈ **346 MB** of a 392 MB database [E-218]. Since RM-148: 374 360 × 269 ≈ **101 MB** for the 14-day window, of a 142 MB database [E-245] |
+| Permanent growth | hourly rows/year × bytes/row, plus commands and reports | 175 000 × 143 ≈ 25 MB, + about 11 MB: **about 36 MB a year**, so 500 MB in about nine years [E-245] |
 
 **The plan's cap.** On the Supabase Free plan, the database turns **read-only above 500 MB** and ingest stops writing.
 The plan also pauses after a week of inactivity and has no automatic backups [E-089]. The pilot is on the Free plan at

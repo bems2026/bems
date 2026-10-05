@@ -2,7 +2,7 @@
 title: ADR-0015 — The data architecture is built around a request budget
 status: Accepted
 date: 2026-10-04
-evidence: [E-224, E-241, E-242, E-243, E-244]
+evidence: [E-224, E-241, E-242, E-243, E-244, E-245]
 ---
 
 # ADR-0015 — The data architecture is built around a request budget
@@ -120,9 +120,13 @@ second site on the same project, which the replication framework needs.
   stops commanding within a minute, as before.
 - **A setting saved in the app reaches the scheduler within seconds** instead of within a minute. One changed in the
   SQL editor takes up to 15 minutes.
-- **The capacity lasts [E-244].**
-  - **Cloud:** raw windows are bounded, and the permanent tables grow by about 175,000 hourly rows a year. That is
-    roughly 35 MB a year, against 358 MB of headroom.
+- **The capacity lasts [E-244, E-245].**
+  - **Cloud: 142 of 500 MB.** The raw windows are bounded: `readings` holds about 100 MB for 14 days of twenty
+    devices, at 269 bytes a row.
+  - **What grows, a year:** about 25 MB of hourly rows (143 bytes each), 6 MB of commands, and 5 MB of reports and
+    building hours. Anomalies fill once to about 21 MB at their 365-day limit.
+  - **So the database reaches 500 MB in about nine years** at this site's size. A second site's raw window would add
+    about 100 MB at once.
   - **Edge:** about 1 GB a year against 90 GB free.
   - **Bucket:** about 0.2 MB a day of sealed days.
 

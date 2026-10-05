@@ -17,8 +17,9 @@
   - each daemon counts its requests, and preflight judges the day.
 
   Expected: about 600 a day from the edge.
-- **For the operator:** paste `supabase/phase55_request_budget_edge.sql`, then deploy (RM-159g). Run the Stage 0
-  settings query for Postgres's own lines (RM-159h).
+- **Deployed and read back 2026-10-05 (RM-159g).** phase55 is pasted, and ingest found it by itself at 08:21. The
+  edge's meter reads about 4 requests per 10 min, about 600 a day. Postgres's own logging is left as it is
+  (RM-159h). Two days on: `request_budget` and the usage page (RM-159i).
 
 **Earlier, 2026-10-03, evening — RM-158 built: the log's four biggest needless sources cut. RM-157 deployed and
 read back: a remote click is answered in 54–106 ms.**
@@ -4768,19 +4769,30 @@ The target is about 600 requests a day from the edge, roughly 0.1 GB of log a mo
 - [x] **RM-159f** Records: [ADR-0015](docs/adr/ADR-0015-data-architecture-and-request-budget.md); E-242 to E-244; F-043
       and F-044; F-042 updated; `docs/04-data.md`, `docs/storage-contract.md`, `docs/X1-security.md`, and the restart
       map in `docs/pi-session-brief.md`.
-- [ ] **RM-159g** Deploy and read back.
-      - The operator pastes phase55 in the SQL Editor.
-      - On the edge: `npm run build`, then restart ingest first, the proxy and the scheduler.
-      - After an hour, the meter lines should show:
-        - proxy auth about once per token-hour;
-        - the scheduler about 4 an hour;
-        - ingest 12 an hour.
-      - A schedule saved in the app should be read within one signal check.
-      - After two days: preflight `request_budget` under 1,500, and the usage page's daily ingest well below the
-        ~40 MB of 3–4 Oct.
-- [ ] **RM-159h** Postgres's own lines (about 928 a day), once the operator has run the settings query (Stage 0).
-      - If pg_cron's watchdog runs dominate, run the watchdog every 15 min, and hand over `cron.log_statement=off`.
-      - Otherwise leave it.
+- [x] **RM-159g** Deployed 2026-10-05 07:20 (`24f3d9e`, CI and Docs green), and read back (E-245).
+      - Built on the edge; ingest restarted first (the archive migrated to schema 3), then the proxy and the scheduler.
+      - The kiosk reloaded onto the new page. In 07:30–07:40 the proxy served it `/api/archive/connectivity ×7`,
+        `/api/archive/trouble ×4` and `/api/archive/anomalies ×19`, and made **no** Supabase request.
+      - The operator pasted phase55. The anon key is refused both functions.
+      - At 08:21:01 ingest found `ingest_upload` by itself, with no restart.
+      - **The meter, 08:20–08:30:** ingest 2, scheduler 1, proxy 1. That is about 600 requests a day from the edge,
+        against about 6,500 on 2026-10-04.
+- [ ] **RM-159i** Two days on:
+      - preflight `request_budget` should judge a full day under 1,500;
+      - the usage page's daily log-ingest increment should be well below the ~40 MB a day of 3–4 Oct (read the usage
+        page, not the Logs view);
+      - a schedule saved in the app should show `configuration read again: the edge said it changed` in the scheduler's
+        journal.
+- [x] **RM-159h** Postgres's own lines: **left as they are** (2026-10-05, E-245).
+      - The operator's settings query shows statement and connection logging already off (`log_statement` ddl,
+        `log_min_duration_statement` -1, `log_connections` and `log_disconnections` off, `log_min_messages`
+        warning).
+      - Only pg_cron logs: `cron.log_statement` is on, for 145 runs a day. That is at most about 290 short lines,
+        roughly 1% of the quota.
+      - Turning it off is a Supabase CLI setting (`cron.log_statement`), not SQL, and is not worth a CLI login at
+        this size. Revisit only if the meter and the usage page disagree.
+      - The same read gave the table sizes: `readings` 101 MB for the 14-day window, and about 36 MB a year of
+        permanent growth, so 500 MB in about nine years (ADR-0015).
 - Out of scope, proposed as **RM-160**: anomaly detection floods on cyclic loads (`co6` alone about 200 a day).
   That is detection quality, not the budget.
 
