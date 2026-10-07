@@ -1,6 +1,16 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-10-05 — **RM-160 built: an anomaly is a level the device has not held this week, once per run
+**Last audited:** 2026-10-07 — **RM-159's two-day check: 496 requests on 2026-10-06, and the aircon loop now rides out
+a database outage (RM-159i, RM-159k).**
+- **The budget.** Preflight judged the first full metered day: 496 Supabase requests from the edge (ingest 354,
+  scheduler 102, proxy 40), against about 6,500 a day before RM-159. The usage-page screenshot is still to come.
+- **An outage, 12:04–12:35.** Ingest and the kiosk rode it out by design. The aircon loop retried its state save every
+  tick, and an alert raised in an outage would have notified the phone every tick. That is fixed and deployed
+  (`e4f1dcc`).
+- **The dual-channel meter:** 17 single-minute swaps slipped past the demux in 130 hours. The data stays as it is, and
+  the hardware is the operator's plan (§0, item 3).
+
+**Earlier, 2026-10-05 — RM-160 built: an anomaly is a level the device has not held this week, once per run
 (ADR-0009 amended).**
 - **The flood (F-045, E-247).** About 220 anomalies a day, every one passing both tests. Each new level of a cycling
   load was flagged on its first and second minute: co6, on for five minutes in every twenty-four, raised 502 in a week.
@@ -29,8 +39,8 @@
   Expected: about 600 a day from the edge.
 - **Deployed and read back 2026-10-05 (RM-159g, RM-159j).** phase55 is pasted, and ingest found it by itself at 08:21.
   The edge's meter reads about 4 requests per 10 min, about 600 a day. The edge's reads no longer stall the proxy
-  (trouble 0 ms, connectivity about 130 ms). Postgres's own logging is left as it is (RM-159h). Left: two days on,
-  `request_budget` and the usage page (RM-159i).
+  (trouble 0 ms, connectivity about 130 ms). Postgres's own logging is left as it is (RM-159h). Two days on (RM-159i),
+  preflight judged 496 for 2026-10-06; the usage page is still to come.
 
 **Earlier, 2026-10-03, evening — RM-158 built: the log's four biggest needless sources cut. RM-157 deployed and
 read back: a remote click is answered in 54–106 ms.**
@@ -732,6 +742,9 @@ browser against the live bridge. `npm run preflight` reads `Ready` with every no
    network.
 3. **The dual meter:** check Smart Life for a firmware update (free), then decide on two single-channel CT
    meters. The demux corrects the trade; only hardware ends it (RM-122).
+   - **2026-10-07, the operator:** leave the data and plan the hardware.
+   - The device now flips faster than the demux confirms: 17 single minutes slipped through in 130 hours (E-249). The
+     reports' jump caveats protect each day's energy.
 4. ~~RM-120, the aircon's on-site acceptance~~ — **passed** (2026-09-22 15:08 → 09-23 08:24, the operator's
    notes read against the audit log and the aircon circuit's meter). RM-144 applied 21:06 and read back.
    **The aircon's operating settings are the operator's, and intended (2026-09-23):** the schedule turns
@@ -4812,11 +4825,38 @@ The target is about 600 requests a day from the edge, roughly 0.1 GB of log a mo
         every daemon is judged. The meter also saves on a clean stop.
       - **The configuration signal, live:** touched at 09:08:04, and the scheduler read again at 09:08:05.
       - Tests: archive (+2), proxy (+1 assertion), meter (+2), preflight (+1).
-- [ ] **RM-159i** Two days on (from 2026-10-07; the first day preflight can judge is 2026-10-06 UTC, because the
-      meter files written before `7f3ca93` did not say when their day began):
-      - preflight `request_budget` should judge a full day under 1,500;
-      - the usage page's daily log-ingest increment should be well below the ~40 MB a day of 3–4 Oct (read the usage
-        page, not the Logs view).
+- [ ] **RM-159i** Two days on (E-249).
+      - **Preflight, done 2026-10-07:** `request_budget` ok, **496 requests on 2026-10-06**, the first day every
+        daemon counted from midnight. That breaks down as ingest 354, scheduler 102, proxy 40, against about 6,500
+        lines a day on 2026-10-04.
+      - **Still open:** the operator's screenshot of the usage page. Its daily log-ingest increment should be well
+        below the ~40 MB a day of 3–4 Oct. Read the usage page, not the Logs view.
+- [x] **RM-159k** The aircon loop rides out a database outage (`e4f1dcc`, deployed 2026-10-07 13:58, E-249).
+      - On 2026-10-07 the database was unreachable from 12:04 to 12:35. The loop's state write failed at every tick:
+        88 error lines, about 90 requests, and "floor_reached cleared" 44 times.
+      - **Two causes:**
+        - a failed write left memory unchanged, so the same transition repeated;
+        - a rule held for `state_unwritable` read as "alert cleared".
+
+        A RAISED alert would have notified the phone at every tick, and again after the outage.
+      - **The fix:**
+        - memory follows what the loop decided;
+        - a failed write waits and is retried at most once a minute (`ACU_STATE_RETRY_MS`), with later changes
+          merged in;
+        - a refresh keeps the waiting state;
+        - an unsaveable state neither raises nor clears an alert.
+
+        The rule still holds until a save succeeds.
+      - Tests: `acuLoopPlan` (+1, neutered), scheduler (+2; the previous code made 15 attempts in 1.5 s).
+      - **Also in that outage, by design:** ingest archived locally and sent the 30-minute backlog in one upload at
+        12:29. The kiosk's expired session recovered by itself at about 12:30.
+- **The dual-channel meter, 2026-10-07 (E-249).**
+  - The flow's demux (RM-122) was deciding throughout, yet 17 single-minute channel interchanges reached the stored
+    rows in 130 hours (8 on 2 Oct).
+  - The device flips faster than the demux's two-sample confirmation.
+  - The daily reports' jump caveats kept each circuit's day from absorbing the other's counter (2 Oct: 4.21 and
+    4.19 kWh removed).
+  - **The operator's decision:** leave the data, and plan the hardware (§0, item 3).
 - [x] **RM-159h** Postgres's own lines: **left as they are** (2026-10-05, E-245).
       - The operator's settings query shows statement and connection logging already off (`log_statement` ddl,
         `log_min_duration_statement` -1, `log_connections` and `log_disconnections` off, `log_min_messages`
