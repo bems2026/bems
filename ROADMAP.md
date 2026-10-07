@@ -5092,8 +5092,8 @@ and it cites this file's IDs for feature state rather than copying it.
       checked to have all five columns); the glossary; governance and compliance (RA 11285, AO 15 s. 2024, RA 7920 and
       RA 10173, read from LawPhil's copies because the official sites were unreachable, and marked so); the roadmap
       index; and the worked example. Q-20 asks the institution four facts only it can give. Figures are numbered 1 to 7
-      across the manual. RM-006c looks done: auto-shed was armed on 2026-09-23 (E-087). It is left open for the
-      operator to reconcile.
+      across the manual. RM-006c looks done: auto-shed was armed on 2026-09-23 (E-087). **Reconciled 2026-10-07:** auto-shed is
+      now off, by the operator's decision, and RM-006c is closed on that.
 - [ ] **RM-145e** Phases D and E: the site and PDF build, docs CI, conventions, and the three-reader verification (FINAL GATE).
       **Phase D is built, 2026-09-24:**
       - `mkdocs.yml` builds the manual with `mkdocs build --strict` (Material, Mermaid, pinned in `docs/requirements.txt`).
@@ -10480,7 +10480,12 @@ fall back to it).
       still never been performed.** RM-075 also found that for the tables whose user columns ARE
       foreign keys (`acu_rules`, `energy_tariffs`, `emission_factors`, `space_nodes`,
       `socket_config`, `site_ui_prefs`), a missing user is not lost attribution but a refused row.
-- [ ] **RM-006c** Arm auto-shed. **Thresholds done 2026-08-24; tiers assigned 2026-08-31; what is left is one save from the Automation page — see below, the flag alone is not enough.**
+- [x] **RM-006c** Arm auto-shed. **Closed 2026-10-07: auto-shed is OFF, and that is the operator's decision.** The
+      scheduler has read "auto-shed off" at every start the journal holds, 2026-10-01 to 10-07. The operator
+      confirmed OFF is intended. The thresholds and the 14 shed tiers stay in place, so arming it is one save on the
+      Automation page whenever the operator chooses. Like the schedules and the aircon rule, this is the operator's
+      call, not a gap (E-253).
+      **Before 2026-10-07:** thresholds done 2026-08-24; tiers assigned 2026-08-31; armed 2026-09-23 (E-087).
       *Acceptance:* at least one device has a shed group, a threshold is set, and auto-shed is on.
       **Limits written, `auto_shed` deliberately left OFF:** `max_total_kw 2.21`,
       `max_phase_current 15.4` — 25% above a measured peak of 1,767.8 W / 12.30 A over 1,877

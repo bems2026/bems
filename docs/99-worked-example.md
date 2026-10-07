@@ -3,9 +3,9 @@ title: Worked example: the pilot site
 purpose: The pilot installation mapped onto the manual — the only chapter where site specifics live
 audience: [integrator, administrator]
 status: Draft
-last_verified: 2026-09-24
-applies_to: repo 2e79005
-evidence: [E-010, E-011, E-012, E-015, E-017, E-018, E-021, E-023, E-026, E-041, E-051, E-080, E-081, E-084, E-087, E-125, E-156, E-157, E-158, E-166, E-168, E-175, E-214]
+last_verified: 2026-10-07
+applies_to: repo c02f1aa
+evidence: [E-010, E-011, E-012, E-015, E-017, E-018, E-021, E-023, E-026, E-041, E-051, E-080, E-081, E-084, E-087, E-125, E-156, E-157, E-158, E-166, E-168, E-175, E-214, E-253]
 ---
 
 # Worked example: the pilot site
@@ -90,7 +90,7 @@ Faults and chores specific to this site, tracked in [`ROADMAP.md`](../ROADMAP.md
 
 | ROADMAP | About |
 |---|---|
-| RM-006c | Arming auto-shed. **ROADMAP still lists it as open, but the database showed auto-shed armed on 2026-09-23** [E-087]. Reconcile. |
+| RM-006c | Arming auto-shed. It was armed on 2026-09-23 [E-087]. **Since at least 2026-10-01 it is off, and the operator confirmed that is intended** [E-253]. The thresholds and tiers stand, so arming it is one save on the Automation page. |
 | RM-012, RM-013, RM-018, RM-020, RM-021 | Individual devices dropping, hanging or needing a power cycle |
 | RM-016 | Flow nodes for devices that are not in the vendor's cloud project |
 | RM-121 | The vendor cloud's subscription, which expired on 2026-09-17. The cloud is optional since then. |
