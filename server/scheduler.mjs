@@ -281,6 +281,9 @@ function applyAcuRules(rules, stateRows, commandRows) {
           // Carried forward: a write that failed earlier in this process must keep holding the
           // rule until one succeeds, and a config refresh is not evidence that it will.
           writable: acuState[rule.id]?.writable !== false,
+          // RM-159: what is waiting to be saved is newer than the database's copy of it. Without this a
+          // refresh during an outage would bring back an alert the loop has already acted on.
+          ...(acuPending[rule.id]?.patch ?? {}),
         }
       : {
           commanded_c: acuState[rule.id]?.commanded_c ?? null,
@@ -301,11 +304,34 @@ function applyAcuRules(rules, stateRows, commandRows) {
   }
 }
 
+/**
+ * RM-159: a state write the database refused, waiting to be retried — per rule, the patches merged in
+ * order, and when it was last tried. While one waits, a new write joins it rather than going on its own,
+ * and the whole is tried at most once per `ACU_STATE_RETRY_MS`.
+ *
+ * Found in a 30-minute outage on 2026-10-07: a failed write left memory as it was, so the planner saw the
+ * same alert transition at every tick and wrote again, every 15 s — 90 requests and 88 error lines, and a
+ * RAISED alert would have notified the phone at every tick. Memory now follows what the loop decided;
+ * only the database waits.
+ */
+const ACU_STATE_RETRY_MS = Number(process.env.ACU_STATE_RETRY_MS) || 60_000;
+const acuPending = {};
+
 /** Persists one rule's controller state. Best-effort, but a FAILURE IS REMEMBERED: a step that
  * was not recorded is a step that would be repeated after the next restart, so the rule holds on
  * `state_unwritable` until a write succeeds. */
 async function writeAcuState(ruleId, patch) {
-  const body = { rule_id: ruleId, ...patch, updated_at: new Date().toISOString() };
+  const pending = acuPending[ruleId];
+  const merged = { ...(pending?.patch ?? {}), ...patch };
+  // What the loop decided holds in memory whether or not the database took it, so a transition is acted
+  // on once. `writable` stays false until a write succeeds, and the rule holds meanwhile, as before.
+  acuState[ruleId] = { ...acuState[ruleId], ...patch };
+  if (pending && Date.now() - pending.triedAt < ACU_STATE_RETRY_MS) {
+    acuPending[ruleId] = { ...pending, patch: merged };
+    acuState[ruleId].writable = false;
+    return false;
+  }
+  const body = { rule_id: ruleId, ...merged, updated_at: new Date().toISOString() };
   try {
     const res = await sb('acu_loop_state?on_conflict=rule_id', {
       method: 'POST',
@@ -313,12 +339,23 @@ async function writeAcuState(ruleId, patch) {
       body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    acuState[ruleId] = { ...acuState[ruleId], ...patch, writable: true };
+    if (pending) console.log(`[ibems-scheduler] acu loop state recorded again for ${ruleId} after ${pending.attempts} failed attempt(s)`);
+    delete acuPending[ruleId];
+    acuState[ruleId] = { ...acuState[ruleId], writable: true };
     return true;
   } catch (err) {
-    console.error(`[ibems-scheduler] could not record acu loop state for ${ruleId}: ${String(err)}`);
+    // Said once per outage, not at every retry.
+    if (!pending) console.error(`[ibems-scheduler] could not record acu loop state for ${ruleId}: ${String(err)} — holding the rule, and retrying at most every ${Math.round(ACU_STATE_RETRY_MS / 1000)} s`);
+    acuPending[ruleId] = { patch: merged, triedAt: Date.now(), attempts: (pending?.attempts ?? 0) + 1 };
     acuState[ruleId] = { ...acuState[ruleId], writable: false };
     return false;
+  }
+}
+
+/** Retries the writes that are waiting, each when its interval is up. Called at every loop tick. */
+async function retryAcuState() {
+  for (const ruleId of Object.keys(acuPending)) {
+    if (Date.now() - acuPending[ruleId].triedAt >= ACU_STATE_RETRY_MS) await writeAcuState(ruleId, {});
   }
 }
 
@@ -585,6 +622,7 @@ async function shedTick() {
  */
 async function acuTick() {
   if (acuRules.length === 0) return;
+  await retryAcuState();
 
   let latest;
   try {

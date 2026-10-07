@@ -94,6 +94,11 @@ export function planSetpoint({ rules, readings, now, state, policy, deviceById, 
     if (decision.action) actions.push(decision.action);
     else holds.push(hold(rule, decision.reason, decision.detail));
 
+    // RM-159: a rule whose state cannot be saved holds before reaching the checks that judge an alert, so
+    // "no alert" here means "not looked at", not "resolved". The alert stands until the loop can look
+    // again. Treated as cleared, a database outage cleared it, and the phone was told again when it ended.
+    if (decision.reason === 'state_unwritable') continue;
+
     // EDGE-TRIGGERED, by comparing the computed kind against the stored one. A level-triggered
     // condition would re-notify every tick until somebody muted it, which is how alerting gets
     // switched off entirely. Same state machine `server/fleetAlarm.mjs` uses.

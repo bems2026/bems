@@ -236,6 +236,22 @@ test('an unwritable state holds, so a step cannot be silently repeated after a r
   assert.equal(reasonOf(p), 'state_unwritable');
 });
 
+test('RM-159: an unwritable state neither clears nor raises an alert — the condition was not looked at', () => {
+  // A database outage on 2026-10-07 read as "floor_reached cleared" at every tick, and the alert would be
+  // raised, and the phone told, again once the outage ended.
+  const held = plan({
+    readings: { acu_main: acuOn(16), sens_room: roomAt(30) },
+    state: { r1: { commanded_c: 16, alert_kind: 'floor_reached', writable: false } },
+  });
+  assert.equal(reasonOf(held), 'state_unwritable');
+  assert.deepEqual(held.alerts, []);
+  const recovered = plan({
+    readings: { acu_main: acuOn(16), sens_room: roomAt(30) },
+    state: { r1: { commanded_c: 16, alert_kind: 'floor_reached' } },
+  });
+  assert.deepEqual(recovered.alerts, [], 'still at the floor: nothing new to say when saving works again');
+});
+
 /* --------------------------------------------------------------------------
  * Bounds and alerts
  * ----------------------------------------------------------------------- */

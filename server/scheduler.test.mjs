@@ -26,7 +26,8 @@ function startFakeSupabase(scheduleRows, dsm = { max_phase_current: null, max_to
   return new Promise((resolve) => {
     const port = nextPort++;
     // `tableReads` and `snapshotCalls` are RM-149's: what the configuration cost in requests.
-    const state = { commands: [], acuStateWrites: [], tableReads: [], snapshotCalls: [] };
+    // `acuStateAttempts` counts every state write, refused or not; `failAcuStateUntil` is an outage (RM-159).
+    const state = { commands: [], acuStateWrites: [], acuStateAttempts: 0, failAcuStateUntil: 0, tableReads: [], snapshotCalls: [] };
     const server = http.createServer(async (req, res) => {
       let raw = '';
       for await (const chunk of req) raw += chunk;
@@ -84,6 +85,11 @@ function startFakeSupabase(scheduleRows, dsm = { max_phase_current: null, max_to
       }
       if (req.url.startsWith('/rest/v1/acu_loop_state')) {
         if (req.method === 'POST') {
+          state.acuStateAttempts += 1;
+          if (Date.now() < state.failAcuStateUntil) {
+            res.writeHead(503, { 'Content-Type': 'application/json' });
+            return res.end('{"message":"simulated outage"}');
+          }
           state.acuStateWrites.push(JSON.parse(raw));
           res.writeHead(201, { 'Content-Type': 'application/json' });
           return res.end('[]');
@@ -223,6 +229,7 @@ const CYCLE_DONE = /first cycle complete/;
 
 async function run(env, scheduleRow, until = CYCLE_DONE, opts = {}) {
   const sb = await startFakeSupabase(scheduleRow, opts.dsm, opts.deviceConfig, opts.failCommandInsert, opts.dropCommandWrites, opts.socketConfig ?? null, opts.acuRules ?? null, opts.acuState ?? [], opts.serveSnapshot ?? false);
+  if (opts.failAcuStateWritesForMs) sb.state.failAcuStateUntil = Date.now() + opts.failAcuStateWritesForMs;
   const light = await startFakeLight(opts.latest);
   const child = spawn(process.execPath, [SCHEDULER], {
     env: {
@@ -250,7 +257,7 @@ async function run(env, scheduleRow, until = CYCLE_DONE, opts = {}) {
   child.stdout.on('data', (c) => { out += c.toString(); });
   child.stderr.on('data', (c) => { out += c.toString(); });
 
-  const snapshot = () => ({ commands: sb.state.commands, lightRequests: light.state.requests, acuStateWrites: sb.state.acuStateWrites, tableReads: sb.state.tableReads, snapshotCalls: sb.state.snapshotCalls, out });
+  const snapshot = () => ({ commands: sb.state.commands, lightRequests: light.state.requests, acuStateWrites: sb.state.acuStateWrites, acuStateAttempts: sb.state.acuStateAttempts, tableReads: sb.state.tableReads, snapshotCalls: sb.state.snapshotCalls, out });
   const holds = () => {
     const s = snapshot();
     return until instanceof RegExp ? until.test(s.out) : until(s);
@@ -1080,4 +1087,40 @@ test('RM-159: an aircon command the scheduler sends holds the loop at once, with
   assert.ok(r.commands.some((c) => c.device_id === 'acu_main' && c.source === 'schedule'), 'the schedule fired');
   assert.ok(!r.commands.some((c) => c.source === 'acu_loop'), 'and the loop held rather than stepping over it');
   assert.equal(r.snapshotCalls.length, 1, 'with no extra read of the configuration');
+});
+
+/* ===========================================================================
+ * RM-159 — the aircon loop through a database outage.
+ *
+ * Found 2026-10-07, in a 30-minute outage (12:04-12:35): a state write that failed left the loop's memory
+ * as it was, so the planner saw the same alert transition every tick and wrote again, every 15 s: about
+ * 90 requests and 88 error lines. A RAISED alert would also have notified the phone at every tick.
+ * ======================================================================== */
+
+test('RM-159: in an outage the loop alerts once, and retries saving its state at most once a minute', async () => {
+  const r = await run({ ...OPEN, SCHEDULE_TICK_MS: '100' }, [], /acu loop alert/, {
+    acuRules: [acuRule()],
+    acuState: [{ rule_id: 'acu-r1', commanded_c: 16, alert_kind: null }],
+    latest: [acuHot(16, 30)],
+    failAcuStateWritesForMs: 60_000,
+    settleMs: 1500, // fifteen ticks
+  });
+  assert.equal(r.out.match(/acu loop alert:/g)?.length, 1, 'raised once, not at every tick');
+  assert.doesNotMatch(r.out, /acu loop alert cleared/, 'an outage does not clear it');
+  assert.equal(r.acuStateAttempts, 1, 'one attempt; the next waits a minute');
+  assert.equal(r.out.match(/could not record acu loop state/g)?.length, 1, 'said once');
+  assert.equal(r.lightRequests.length, 0, 'and it still holds');
+});
+
+test('RM-159: when the database answers again, the state that waited is saved, and the loop says so', async () => {
+  const r = await run({ ...OPEN, SCHEDULE_TICK_MS: '100', ACU_STATE_RETRY_MS: '300' }, [],
+    (s) => s.acuStateWrites.some((w) => w.alert_kind === 'floor_reached'), {
+      acuRules: [acuRule()],
+      acuState: [{ rule_id: 'acu-r1', commanded_c: 16, alert_kind: null }],
+      latest: [acuHot(16, 30)],
+      failAcuStateWritesForMs: 700,
+    });
+  assert.ok(r.acuStateAttempts <= 5, `retried on the interval, not every tick (${r.acuStateAttempts} attempts)`);
+  assert.match(r.out, /acu loop state recorded again/);
+  assert.equal(r.out.match(/acu loop alert:/g)?.length, 1);
 });
