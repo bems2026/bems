@@ -1,9 +1,11 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-10-07 — **RM-159's two-day check: 496 requests on 2026-10-06, and the aircon loop now rides out
-a database outage (RM-159i, RM-159k).**
+**Last audited:** 2026-10-07 — **RM-159 done: log ingest down from about 30–40 MB a day to at most about 6, and the
+aircon loop now rides out a database outage (RM-159i, RM-159k, EX-173).**
 - **The budget.** Preflight judged the first full metered day: 496 Supabase requests from the edge (ingest 354,
-  scheduler 102, proxy 40), against about 6,500 a day before RM-159. The usage-page screenshot is still to come.
+  scheduler 102, proxy 40), against about 6,500 a day before RM-159. The usage page agrees: 1.10 → 1.12 GB in
+  66 hours, most of it before the deploy (E-252). This cycle stays over 1 GB until it resets, and that is not
+  enforced before 2027.
 - **An outage, 12:04–12:35.** Ingest and the kiosk rode it out by design. The aircon loop retried its state save every
   tick, and an alert raised in an outage would have notified the phone every tick. That is fixed and deployed
   (`e4f1dcc`).
@@ -3551,7 +3553,10 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
 
 ### Auth & security
 
-- [x] **EX-108** Supabase Auth with a login screen; the proxy verifies the caller's own token — `src/components/auth/LoginPage.tsx`, `server/proxy.mjs`
+- [x] **EX-108** Supabase Auth with a login screen; the proxy verifies the caller's own token. Since RM-159 it
+      checks the token's ES256 signature and expiry on every request, and asks the sign-in service once per token,
+      and again before a command if that answer is over a minute old — `src/components/auth/LoginPage.tsx`,
+      `server/proxy.mjs`, `server/sessionCheck.mjs`
 - [x] **EX-109** Command audit rows attributed to the real signed-in user, inserted with the caller's token so RLS grants it — `server/proxy.mjs`
 - [x] **EX-110** Remote access over the tailnet, verified working from off-site
 - [x] **EX-111** Anon key only in the browser bundle; the service-role key is read solely by the ingestion daemon — `src/config/supabase.ts`, `server/.env.example`
@@ -4109,6 +4114,23 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       `reports.mjs`; `ibems-wifi-prefer` stopping being a oneshot; and the scanner made line-based.
       The unmutated copy passed. — `test/service-restart-map.test.mjs`, `docs/pi-session-brief.md`,
       `CLAUDE.md`
+- [x] **EX-173** *(2026-10-05, RM-159, ADR-0015)* The data architecture is built around a request budget, and the
+      edge counts what it spends. Verified: 496 requests on the first full metered day, and the usage page's log
+      ingest down from about 30–40 MB a day to at most about 6 (E-249, E-252).
+      - **The edge answers every repeated read:**
+        - the alert bell, trouble episodes, the flapping badge and the Analytics week come from the archive;
+        - archive schema 4 adds partial indexes, and connectivity is cached a minute and limited to 48 h;
+        - the cloud is the fallback.
+      - **One request per upload:** `ingest_upload`, phase55.
+      - **The scheduler reads its configuration on the edge's signal,** plus every 15 min, and its aircon state save
+        backs off in an outage.
+      - **A sign-in is asked about once per token.**
+      - **Each daemon meters its Supabase requests,** and preflight's `request_budget` judges the last full day.
+
+      Evidence paths: `server/sessionCheck.mjs`, `server/configSignal.mjs`, `server/requestMeter.mjs`,
+      `server/archiveDb.mjs`, `server/archiveUpload.mjs`, `server/proxy.mjs`, `server/scheduler.mjs`,
+      `src/lib/edgeArchive.ts`, `supabase/phase55_request_budget_edge.sql`, `scripts/preflight.mjs`,
+      `src/lib/requestBudget.test.ts`, `docs/adr/ADR-0015-data-architecture-and-request-budget.md`
 
 ---
 
@@ -4828,12 +4850,16 @@ The target is about 600 requests a day from the edge, roughly 0.1 GB of log a mo
         every daemon is judged. The meter also saves on a clean stop.
       - **The configuration signal, live:** touched at 09:08:04, and the scheduler read again at 09:08:05.
       - Tests: archive (+2), proxy (+1 assertion), meter (+2), preflight (+1).
-- [ ] **RM-159i** Two days on (E-249).
-      - **Preflight, done 2026-10-07:** `request_budget` ok, **496 requests on 2026-10-06**, the first day every
-        daemon counted from midnight. That breaks down as ingest 354, scheduler 102, proxy 40, against about 6,500
-        lines a day on 2026-10-04.
-      - **Still open:** the operator's screenshot of the usage page. Its daily log-ingest increment should be well
-        below the ~40 MB a day of 3–4 Oct. Read the usage page, not the Logs view.
+- [x] **RM-159i** Two days on (E-249, E-252). **RM-159 is done.**
+      - **Preflight, 2026-10-07:** `request_budget` ok, **496 requests on 2026-10-06**, the first day every daemon
+        counted from midnight. That breaks down as ingest 354, scheduler 102, proxy 40, against about 6,500 lines a
+        day on 2026-10-04.
+      - **The usage page, 2026-10-07 (the operator's screenshot):** log ingestion 1.12 GB, up 0.02 in about
+        66 hours. About 15 MB of that came from the 12 hours before the deploy, which leaves **at most about 6 MB a
+        day since**, at the page's rounding. Before RM-159 it was about 30–40 MB a day; the quota allows about
+        33 MB a day.
+      - Log query is unchanged at 30.4 GB, because nobody has read the logs since.
+      - This cycle stays over 1 GB until it resets. That is not enforced before 2027.
 - [x] **RM-159k** The aircon loop rides out a database outage (`e4f1dcc`, deployed 2026-10-07 13:58, E-249).
       - On 2026-10-07 the database was unreachable from 12:04 to 12:35. The loop's state write failed at every tick:
         88 error lines, about 90 requests, and "floor_reached cleared" 44 times.
