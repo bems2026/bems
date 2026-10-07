@@ -526,7 +526,7 @@ other four and none needed changing.
   A day on (RM-160g, E-250): 3 rows on 6 Oct, where the old rule gives 234. The Reports page confirmed by the operator
   (RM-160h, E-251). Done.
 
-### 2026-10-03 — remote control slow and yellow, and log ingestion over quota (RM-157): control fixed, log open
+### 2026-10-03 — remote control slow and yellow, and log ingestion over quota (RM-157): both done (RM-158, RM-159)
 
 - **The yellow on the Control page** is the "Switching" pulse RM-147 introduced: amber while a command is in flight. It
   lasted as long as the click waited for Supabase.
@@ -542,17 +542,18 @@ other four and none needed changing.
   - Checked: LIVE, every device, no badges.
   - The address-and-port form (port 5183) makes the page call port 8080 as well. Some browsers and extensions block a
     page from calling another port; the in-app browser did, and showed RECONNECTING.
-- **Log ingestion (F-042): cut in RM-158, and the rest in RM-159 (ADR-0015).** 1.10 GB of 1 GB on 2026-10-04. RM-158 cut
-  four sources. RM-159 takes the edge to about 600 requests a day and meters them (`request_budget` in preflight).
-  Enforcement starts in 2027 (E-242). Waiting on: the phase55 paste and the deploy (RM-159g), and the Stage 0
-  settings query (RM-159h).
+- **Log ingestion (F-042): cut in RM-158, and the rest in RM-159 (ADR-0015). Done 2026-10-07.**
+  - The edge makes about 500 requests a day (496 on 2026-10-06).
+  - The usage page's log ingest is down from about 30–40 MB a day to at most about 6 (E-249, E-252).
+  - This cycle stays over 1 GB until it resets; that is not enforced before 2027 (E-242).
 
 **For the operator:**
-- **Deploy.** Restart `ibems-proxy`, `ibems-ingest` and `ibems-scheduler` on the edge: `server/auditQueue.mjs` is
-  imported by all three.
 - **Remote access.** Open the mesh's https address rather than the address with `:5183`.
-- **For F-042.** In the dashboard, open **Logs → Logs Explorer**, not the SQL Editor, and run the three counts in the
-  session notes. Also note the billing cycle's dates from the organization's Usage page.
+- **To size the log, read the edge's meter, not the Logs view.** Reading logs spends the log-query allowance, which
+  went from 2 to 30.4 GB during RM-158's checks.
+  - Run `npm run preflight` and read `request_budget`.
+  - Or: `journalctl -u ibems-ingest -u ibems-proxy -u ibems-scheduler | grep "Supabase request"`.
+  - The usage page is fine to read.
 
 ### 2026-10-01 — circuits banked across a meter reset (RM-155): done, phase53 applied
 
