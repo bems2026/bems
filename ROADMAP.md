@@ -19,7 +19,8 @@ a database outage (RM-159i, RM-159k).**
   reports count unusual events, with a caveat on earlier periods.
 - **Deployed and read back 2026-10-05 (RM-160f, E-248).** From 10:03 to 11:09 ingest recorded 0 anomalies and
   passed over 19 at a familiar level; the old rule, replayed on the same readings, gives 19. A day on (RM-160g,
-  E-250): 3 anomalies on 6 Oct, where the old rule gives 234.
+  E-250): 3 anomalies on 6 Oct, where the old rule gives 234. The operator confirmed the Reports page, signed in
+  (RM-160h, E-251). RM-160 is done.
 
 **Earlier, 2026-10-04, evening — RM-159 built: a data architecture around the request budget (ADR-0015).**
 - **What was left (E-242).** About 6,500 gateway lines a day after RM-158:
@@ -513,14 +514,15 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
-### 2026-10-05 — the alerts bell flooded by cycling loads (RM-160): built and deployed
+### 2026-10-05 — the alerts bell flooded by cycling loads (RM-160): done
 
 - **What it was (F-045).** About 220 anomaly rows a day, all passing both tests, nearly all the first two minutes of a
   load's usual level. Measured read-only on the edge archive (E-247).
 - **The fix (ADR-0009, amended)**, chosen with the operator from replayed alternatives: a level the device has held for
   5 minutes in the last 7 days is passed over, and one run is one row. Replayed: 1,551 rows a week become 25.
 - **Deployed** at 09:43 and read back (RM-160f, E-248): in the first full hour, 0 rows where the old rule gives 19.
-  A day on (RM-160g, E-250): 3 rows on 6 Oct, where the old rule gives 234. Left for the operator: RM-160h.
+  A day on (RM-160g, E-250): 3 rows on 6 Oct, where the old rule gives 234. The Reports page confirmed by the operator
+  (RM-160h, E-251). Done.
 
 ### 2026-10-03 — remote control slow and yellow, and log ingestion over quota (RM-157): control fixed, log open
 
@@ -4912,9 +4914,9 @@ Replayed: 1,551 rows become 25. Rows recorded before the change are left as they
       - **7 Oct, to 13:50: 11.** The new rule replayed gives the same 11, row for row, and the old rule gives 177.
         Each is a level the device had not held that week, among them L.O Yellow at 264–308 W. The replay's
         "about 4 a day" was an average; a day of new loads records more.
-- [ ] **RM-160h** The operator, signed in: the Reports page reads "Unusual events", and September's report carries
-      the caveat. Not checked here: the page reads the cloud and needs a sign-in. The kiosk's bundle carries the
-      label (E-248).
+- [x] **RM-160h** Confirmed by the operator, signed in, 2026-10-07 (E-251): the Reports page reads "Unusual events",
+      and September's report carries the caveat. Not inspected in this session, which cannot sign in; the kiosk's
+      bundle carries the label (E-248).
 - Given up, by the operator's choice: a familiar level at an unusual hour, and a cycling load stuck on. Use out of
   hours is the reports' working-hours baseline's question (RM-153). The sharpest case is a **tripped breaker in the
   day**: 0 W is familiar to every device, which rests there overnight. In the measured week 185 falls to zero were
