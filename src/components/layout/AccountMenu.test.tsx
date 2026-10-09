@@ -94,6 +94,14 @@ describe('AccountMenu', () => {
       openMenu();
       expect(screen.getByText(/LAN only/i)).toBeInTheDocument();
     });
+
+    it('says when a local session CAN switch devices (local control set up on the Pi)', () => {
+      useAuthStore.setState({ localControl: true });
+      render(<AccountMenu activeId="overview" />);
+      openMenu();
+      expect(screen.getByText(/can switch devices/i)).toBeInTheDocument();
+      expect(screen.queryByText(/cannot issue commands/i)).not.toBeInTheDocument();
+    });
   });
 
   describe('with no session at all', () => {

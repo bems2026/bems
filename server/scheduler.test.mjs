@@ -249,6 +249,9 @@ async function run(env, scheduleRow, until = CYCLE_DONE, opts = {}) {
       // command; a test must neither read it nor be confused by it.
       CONFIG_SIGNAL_PATH: join(fs.mkdtempSync(join(os.tmpdir(), 'ibems-sched-signal-')), 'config-changed.signal'),
       REQUEST_METER_DIR: join(fs.mkdtempSync(join(os.tmpdir(), 'ibems-sched-meter-')), 'request-meter'),
+      // 2026-10-09: the configuration kept on the edge for a restart without internet. The real one
+      // would start a test's scheduler on the live building's schedules.
+      SCHEDULER_CONFIG_CACHE_PATH: join(fs.mkdtempSync(join(os.tmpdir(), 'ibems-sched-cache-')), 'config.json'),
       ...env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -1123,4 +1126,50 @@ test('RM-159: when the database answers again, the state that waited is saved, a
   assert.ok(r.acuStateAttempts <= 5, `retried on the interval, not every tick (${r.acuStateAttempts} attempts)`);
   assert.match(r.out, /acu loop state recorded again/);
   assert.equal(r.out.match(/acu loop alert:/g)?.length, 1);
+});
+
+/* ===========================================================================
+ * 2026-10-09: the office network lost its internet. A running scheduler keeps the configuration it
+ * last read, so schedules carried on; a scheduler that RESTARTED in the outage (a power blip, a
+ * reboot) would have come up with none at all, and the building's schedules would simply stop. It
+ * now keeps the last configuration it read on the edge, and starts from that when the database
+ * cannot be reached.
+ * ======================================================================== */
+
+test('offline: the configuration it reads is kept on the edge', async () => {
+  const cachePath = join(fs.mkdtempSync(join(os.tmpdir(), 'ibems-sched-cache-')), 'config.json');
+  await run({ SCHEDULER_CONFIG_CACHE_PATH: cachePath }, [dueNowRow({ id: 'kept-1', rule: { on: '07:40', off: '17:00', days: '1111100' } })], CYCLE_DONE, { serveSnapshot: true });
+  const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+  assert.equal(cached.site_id, SITE.id);
+  assert.ok(cached.saved_at, 'says when it was read');
+  assert.deepEqual(cached.snapshot.schedules.map((s) => s.id), ['kept-1']);
+});
+
+test('offline: restarted with no way to reach the database, it fires from the kept configuration and queues the record', async () => {
+  await waitForRoomInMinute();
+  const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-sched-offline-'));
+  const cachePath = join(dir, 'config.json');
+  const bufferPath = join(dir, 'audit.ndjson');
+  fs.writeFileSync(cachePath, JSON.stringify({
+    saved_at: new Date(Date.now() - 3_600_000).toISOString(),
+    site_id: SITE.id,
+    snapshot: { schedules: [dueNowRow()], dsm: { auto_shed: false }, device_config: [], socket_config: [], acu_rules: [] },
+  }));
+  // Nothing listens on port 1: every request to the database is refused, as with no internet.
+  const r = await run({ SUPABASE_URL: 'http://127.0.0.1:1', SCHEDULER_CONFIG_CACHE_PATH: cachePath, SCHEDULER_AUDIT_BUFFER_PATH: bufferPath }, [],
+    () => fs.existsSync(bufferPath) && readBuffer(bufferPath).length >= 1);
+  assert.match(r.out, /configuration kept on the edge/);
+  const [row] = readBuffer(bufferPath).map((e) => e.rows[0]);
+  assert.equal(row.device_id, 'l1');
+  assert.equal(row.source, 'schedule');
+  assert.equal(row.requested_by, '11111111-1111-1111-1111-111111111111');
+});
+
+test('offline: a kept configuration from another site is not used', async () => {
+  const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-sched-offline-'));
+  const cachePath = join(dir, 'config.json');
+  fs.writeFileSync(cachePath, JSON.stringify({ saved_at: new Date().toISOString(), site_id: 'some-other-site', snapshot: { schedules: [dueNowRow()] } }));
+  const r = await run({ SUPABASE_URL: 'http://127.0.0.1:1', SCHEDULER_CONFIG_CACHE_PATH: cachePath }, [], CYCLE_DONE);
+  assert.doesNotMatch(r.out, /configuration kept on the edge/);
+  assert.match(r.out, /initial schedule load failed/);
 });

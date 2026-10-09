@@ -8,9 +8,11 @@ import { useAuthStore } from '@/stores/authStore';
  *
  * THE SESSION TYPE IS THE POINT, not the email. This app has two ways in: a real Supabase
  * session, and a break-glass local one issued by `server/proxy.mjs` for when Supabase Auth is
- * unreachable. **A break-glass session is view-only** — `handleCommand` refuses it outright,
- * because there is no real user id to attribute an audit row to. Someone who does not know which
- * kind they hold will read a refused command as a broken system.
+ * unreachable. **A break-glass session is view-only unless the Pi names an account for it** —
+ * `handleCommand` refuses it without one, because there is no real user id to attribute an audit row
+ * to. Since 2026-10-09, `BREAK_GLASS_USER_ID` names one, and a local sign-in then commands under it
+ * (`localControl`). Someone who does not know which kind they hold will read a refused command as a
+ * broken system.
  *
  * NO PASSWORD FORM, deliberately. Supabase's own hosted flow already handles a reset by email,
  * and this dashboard runs unattended on a screen in a shared office — a credential field there is
@@ -24,6 +26,7 @@ import { useAuthStore } from '@/stores/authStore';
 export function AccountSection() {
   const mode = useAuthStore((s) => s.mode);
   const email = useAuthStore((s) => s.email);
+  const localControl = useAuthStore((s) => s.localControl);
   const signOut = useAuthStore((s) => s.signOut);
 
   return (
@@ -60,20 +63,35 @@ export function AccountSection() {
 
       {mode === 'local' && (
         <>
-          <p className="settings-warn" role="status">
-            <ShieldAlert size={15} aria-hidden="true" />
-            <span>
-              <strong>Break-glass session — view only.</strong> This sign-in exists for when the account service cannot be reached.
-              It can read everything and switch nothing: there is no account to record a command against, and this system will not
-              move a relay it cannot attribute. Sign in normally once the connection is back.
-            </span>
-          </p>
+          {localControl ? (
+            <p className="settings-warn" role="status">
+              <ShieldAlert size={15} aria-hidden="true" />
+              <span>
+                <strong>Local session — can switch devices.</strong> This sign-in exists for when the account service cannot be
+                reached. Its commands are recorded on the Pi under this site’s local-control account, and reach the audit trail
+                once the internet is back. Sign in normally when the connection returns.
+              </span>
+            </p>
+          ) : (
+            <p className="settings-warn" role="status">
+              <ShieldAlert size={15} aria-hidden="true" />
+              <span>
+                <strong>Break-glass session — view only.</strong> This sign-in exists for when the account service cannot be reached.
+                It can read everything and switch nothing: no account has been set up on this Pi for local commands, and this system
+                will not move a relay it cannot attribute. Sign in normally once the connection is back.
+              </span>
+            </p>
+          )}
           <dl className="settings-facts">
             <div className="settings-facts__row">
               <dt>Session</dt>
               <dd>
                 <WifiOff size={13} aria-hidden="true" /> Local, LAN only
               </dd>
+            </div>
+            <div className="settings-facts__row">
+              <dt>Commands</dt>
+              <dd>{localControl ? 'Allowed — recorded under the local-control account' : 'Not allowed'}</dd>
             </div>
           </dl>
         </>

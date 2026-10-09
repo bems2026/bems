@@ -457,7 +457,7 @@ test('GET /api/capabilities reflects HARDWARE_DISPATCH_ENABLED — false by defa
     assert.equal(res.status, 200);
     // deepEqual, not a subset match: this endpoint tells the UI what it is allowed to claim
     // about hardware, so a field appearing unnoticed is exactly what should fail a test.
-    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: false, dispatch_classes: [], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_room_target_c: BUILD_FLOOR, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build', acu_cloud_route: 'unconfigured', acu_local_ir_verified: true, acu_local_ir_protocol: 'tcl112' });
+    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: false, dispatch_classes: [], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_room_target_c: BUILD_FLOOR, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build', local_login_configured: true, local_control: false, acu_cloud_route: 'unconfigured', acu_local_ir_verified: true, acu_local_ir_protocol: 'tcl112' });
   } finally {
     cleanup();
   }
@@ -467,7 +467,7 @@ test('GET /api/capabilities reports true once the gate is explicitly opened', as
   const { proxyUrl, cleanup } = await setup({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-light-token' });
   try {
     const res = await fetch(`${proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
-    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: true, dispatch_classes: ['switch', 'outlet_dual', 'acu_ir'], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_room_target_c: BUILD_FLOOR, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build', acu_cloud_route: 'unconfigured', acu_local_ir_verified: true, acu_local_ir_protocol: 'tcl112' });
+    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: true, dispatch_classes: ['switch', 'outlet_dual', 'acu_ir'], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_room_target_c: BUILD_FLOOR, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build', local_login_configured: true, local_control: false, acu_cloud_route: 'unconfigured', acu_local_ir_verified: true, acu_local_ir_protocol: 'tcl112' });
   } finally {
     cleanup();
   }
@@ -2119,6 +2119,89 @@ test('RM-159: the proxy counts its own Supabase requests and keeps the day\'s co
     assert.equal(saved.daemon, 'ibems-proxy');
     assert.equal(saved.counts.rest, 1);
     assert.equal(saved.counts.auth, 2);
+  } finally {
+    cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// Local control without internet (2026-10-09). The office's dedicated network lost its mobile data,
+// the kiosk's account session could not renew, and nothing on the Pi's own screen could switch the
+// building. A local sign-in now commands when BREAK_GLASS_USER_ID names the account it acts for.
+// ---------------------------------------------------------------------------------------------
+
+const LOCAL_OPERATOR_ID = '11111111-2222-3333-4444-555555555555';
+
+async function localToken(proxyUrl) {
+  const res = await fetch(`${proxyUrl}/api/local-login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: BREAK_GLASS_PASSWORD }),
+  });
+  assert.equal(res.status, 200);
+  return (await res.json()).token;
+}
+
+test('offline: a local sign-in commands, attributed to the configured account, recorded on the edge for ingest to upload', async () => {
+  const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-local-cmd-'));
+  const bufferPath = join(dir, 'command-audit-buffer.ndjson');
+  const ctx = await setupDispatch({ BREAK_GLASS_USER_ID: LOCAL_OPERATOR_ID, COMMAND_AUDIT_BUFFER_PATH: bufferPath });
+  try {
+    const token = await localToken(ctx.proxyUrl);
+    const caps = await (await fetch(`${ctx.proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${token}` } })).json();
+    assert.equal(caps.local_control, true, 'the page can say a local sign-in may switch');
+    const res = await fetch(`${ctx.proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l1', action: 'off' }),
+    });
+    assert.equal(res.status, 202, await res.text());
+    await waitFor(() => readBuffer(bufferPath).length === 1, 'the record queued on the edge');
+    const row = readBuffer(bufferPath)[0].rows[0];
+    assert.equal(row.requested_by, LOCAL_OPERATOR_ID);
+    assert.equal(row.status, 'dispatched');
+    assert.match(row.note, /local sign-in/);
+    assert.equal(ctx.supabaseState.insertedCommands.length, 0, 'a local sign-in has no account token to upload with; ingest does it');
+  } finally {
+    ctx.cleanup();
+  }
+});
+
+test('offline: without BREAK_GLASS_USER_ID a local sign-in stays view-only, and says why', async () => {
+  const ctx = await setupDispatch({ BREAK_GLASS_USER_ID: 'not-a-uuid' });
+  try {
+    const token = await localToken(ctx.proxyUrl);
+    const caps = await (await fetch(`${ctx.proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${token}` } })).json();
+    assert.equal(caps.local_control, false);
+    const res = await fetch(`${ctx.proxyUrl}/api/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'l1', action: 'off' }),
+    });
+    assert.equal(res.status, 403);
+    const body = await res.json();
+    assert.equal(body.error, 'break_glass_cannot_command');
+    assert.match(body.detail, /BREAK_GLASS_USER_ID/);
+  } finally {
+    ctx.cleanup();
+  }
+});
+
+test('the local password cannot be guessed: five wrong tries lock the address out for a while', async () => {
+  // F-027: nothing limited repeated tries, and a local sign-in can now switch the building.
+  const { proxyUrl, cleanup } = await setup({ LOCAL_LOGIN_LOCKOUT_MS: '60000' });
+  try {
+    const attempt = (password) => fetch(`${proxyUrl}/api/local-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    for (let i = 0; i < 5; i++) assert.equal((await attempt('wrong')).status, 401);
+    const locked = await attempt(BREAK_GLASS_PASSWORD);
+    assert.equal(locked.status, 429, 'locked even with the right password, until the lockout ends');
+    const body = await locked.json();
+    assert.equal(body.error, 'too_many_attempts');
+    assert.ok(body.retry_after_s > 0);
   } finally {
     cleanup();
   }

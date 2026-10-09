@@ -3,9 +3,9 @@ title: Security and access
 purpose: Know every credential, boundary and account, and keep them safe (plane X1)
 audience: [administrator, integrator]
 status: Draft
-last_verified: 2026-10-04
+last_verified: 2026-10-09
 applies_to: repo dfe41a0 + RM-159
-evidence: [E-019, E-025, E-026, E-027, E-028, E-033, E-041, E-042, E-043, E-065, E-066, E-079, E-100, E-101, E-122, E-131, E-154, E-160, E-161, E-163, E-164, E-169, E-170, E-171, E-172, E-176, E-177, E-184, E-186, E-187, E-188, E-189, E-190, E-191, E-192, E-193, E-214, E-240, E-243]
+evidence: [E-019, E-025, E-026, E-027, E-028, E-033, E-041, E-042, E-043, E-065, E-066, E-079, E-100, E-101, E-122, E-131, E-154, E-160, E-161, E-163, E-164, E-169, E-170, E-171, E-172, E-176, E-177, E-184, E-186, E-187, E-188, E-189, E-190, E-191, E-192, E-193, E-214, E-240, E-243, E-254]
 ---
 
 # Security and access
@@ -94,7 +94,7 @@ is listed [E-042].
 | **`credentialSecret`** | `flows_cred.json`, the flow's stored credentials | `~/.node-red/settings.js`, as a literal [E-019] | Node-RED | **Never change it.** Node-RED cannot then decrypt the stored credentials, "and they will be lost" [E-186]. Keep a copy off the card (F-002). |
 | **`NODE_RED_ADMIN_USER`, `NODE_RED_ADMIN_PASS`** | The Node-RED editor and admin API: full control of the flow | The hash in `settings.js` (`adminAuth`); the plain values in `server/.env` and the checkout's root `.env` | The proxy's admin client, the deploy scripts, `preflight` [E-189] | Hash a new password (`node-red admin hash-pw`), put the hash in `settings.js`, the value in both env files, then restart `nodered` and the proxy. `[UNVERIFIED]` on this site. |
 | **`LIGHT_API_TOKEN`** | The flow's relay-write endpoint | `server/.env`; Node-RED's environment file, read by the flow's auth node | The proxy and the scheduler; the flow [E-189] | The live flow reads it with `env.get('LIGHT_API_TOKEN')` in four places [E-192], so a rotation changes no flow. Set the same new value in Node-RED's environment file and in `server/.env`. Restart `nodered`, then the three daemons. Until both match, every command is refused. (`npm run rotate-light-token:pi` was the one-time move from a hard-coded token to this.) |
-| **`BREAK_GLASS_PASSWORD_HASH`** | The view-only local sign-in | `server/.env` (a scrypt hash, never the password) | The proxy | `node server/hashBreakGlassPassword.mjs`, paste the output into `server/.env`, restart the proxy. Rotate when anyone who knows it leaves. |
+| **`BREAK_GLASS_PASSWORD_HASH`** | The local sign-in, for when the account service cannot be reached; it can command when `BREAK_GLASS_USER_ID` names an account (ADR-0016) | `server/.env` (a scrypt hash, never the password) | The proxy | `node server/hashBreakGlassPassword.mjs`, paste the output into `server/.env`, restart the proxy. Rotate when anyone who knows it leaves. |
 | **`NTFY_TOPIC`** | The out-of-dashboard notices. Knowing it lets someone read them, not act. | `server/.env` | Ingest [E-189] | Choose a new random topic, update `server/.env` and every subscriber, restart ingest |
 | **`VITE_SUPABASE_ANON_KEY`** | Nothing by itself: it is public by design | The browser bundle; `server/.env` for the proxy | Every browser; the proxy | With the provider's keys (above). Then rebuild the frontend and restart the proxy. |
 | **The service account's password** | VNC (through PAM) and local login; sudo does not ask for it [E-160] | The edge's system accounts | The operating system | `passwd` on the edge. Record who holds it. |
@@ -124,16 +124,16 @@ no account.
 | Browser → sign-in service | Email and password. Accounts exist only by invitation. | Get a session (a signed token) | E-066, E-176 |
 | Browser → database | The public key plus the session | What the `authenticated` policies allow, which is **everything the app can do: there are no roles** | E-163, E-170 |
 | Browser → proxy | The session, verified by the proxy: its signature and expiry on every request, and the sign-in service asked **once per token**, and again before a command if that answer is over a minute old (RM-159, ADR-0015). A session signed out elsewhere stops reading within its token's life (an hour), and commanding within a minute. | Read the bridge and the edge's archive; send a command. The proxy records the command **on the edge** before dispatch, then uploads the row **with the caller's own session** (RM-157, ADR-0014). | E-065, E-189, E-240, E-243 |
-| Browser → proxy, break-glass | A local password, checked against a hash | Read only: commands are refused with `break_glass_cannot_command`. 12 h, in memory. | E-172 |
+| Browser → proxy, break-glass | A local password, checked against a hash. Five wrong from one address in 15 min lock it out for 10. | Read, and with `BREAK_GLASS_USER_ID` set, command **as that account**: recorded on the edge with "local sign-in" in the note, uploaded by ingest. Without it, read only (`break_glass_cannot_command`). 12 h, in memory (ADR-0016). | E-172, E-254 |
 | Scheduler → database | The service-role key | Read rules; write audit rows attributed to the rule's owner | E-164, E-189 |
 | Proxy or scheduler → Node-RED | `LIGHT_API_TOKEN` | Move a relay | E-189 |
 | Node-RED → device | The device's local key | Everything the device can do | [01](01-field-devices.md) |
 | A person → Node-RED editor | An SSH tunnel, then the admin login | Change the flow | E-019, [03](03-edge.md) |
 | A person → the edge's shell | Mesh SSH with a browser re-check | The service account, then root without a password | E-154, E-160 |
 
-**Break-glass is recorded only as an attempt.** The proxy's journal logs each `POST /api/local-login` with its origin,
-not its outcome, and nothing limits repeated tries (F-027). A successful break-glass session cannot command, so it
-leaves no `commands` row.
+**Break-glass is recorded with its outcome** (since 2026-10-09, F-027). The proxy's journal logs each
+`POST /api/local-login` with its origin, then `local sign-in: accepted` or `wrong password … (n of 5)`, and a lockout.
+A local command leaves a `commands` row under the `BREAK_GLASS_USER_ID` account, marked "local sign-in" in its note.
 
 ### Repository hygiene
 
@@ -198,7 +198,7 @@ The legal basis and the institution's obligations are in [93](93-governance-comp
 | **The SD card taken** | Every secret, and the system with it | Locked location; an off-card copy of the credentials (F-002) | The edge goes silent |
 | **The Node-RED editor exposed** | Full control of the flow | Loopback only; admin login; tunnel for access | `preflight`'s `bridge_not_exposed` |
 | **`credentialSecret` lost or changed** | The flow's stored credentials become unreadable | Never change it; keep a copy off the card | Nodes that need a stored credential fail after a deploy |
-| **Break-glass guessed** | A read-only view of the building | A long password; the fix under F-027 | `POST /api/local-login` in the proxy's journal |
+| **Break-glass guessed** | A view of the building, and control of it when `BREAK_GLASS_USER_ID` is set | A long password; five wrong tries lock an address out for 10 min (F-027) | `POST /api/local-login` in the proxy's journal |
 
 ## What you need
 

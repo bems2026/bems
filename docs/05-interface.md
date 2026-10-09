@@ -3,9 +3,9 @@ title: User interface
 purpose: Use, administer and troubleshoot the web application and its kiosk (L5)
 audience: [operator, administrator, integrator]
 status: Draft
-last_verified: 2026-09-24
+last_verified: 2026-10-09
 applies_to: repo f0c7267
-evidence: [E-004, E-023, E-025, E-026, E-060, E-061, E-065, E-066, E-071, E-076, E-082, E-110, E-111, E-115, E-152, E-163, E-165, E-168, E-169, E-170, E-172, E-173, E-174, E-175, E-176, E-177, E-179, E-180, E-181, E-182, E-183, E-184, E-185, E-217, E-230, E-232, E-233, E-234, E-247]
+evidence: [E-004, E-023, E-025, E-026, E-060, E-061, E-065, E-066, E-071, E-076, E-082, E-110, E-111, E-115, E-152, E-163, E-165, E-168, E-169, E-170, E-172, E-173, E-174, E-175, E-176, E-177, E-179, E-180, E-181, E-182, E-183, E-184, E-185, E-217, E-230, E-232, E-233, E-234, E-247, E-254]
 ---
 
 # User interface
@@ -100,7 +100,7 @@ The refusal messages, by the proxy's code [E-115]:
 | `bridge_rejected` | The bridge refused the command: check the bridge token and the flow. |
 | `no_dispatch_route` | This deployment cannot command a device of this kind. |
 | `audit_log_unreachable` | Nothing was sent: the audit trail could not be written. |
-| `break_glass_cannot_command` | Local sign-in is view-only. |
+| `break_glass_cannot_command` | Local sign-in is view-only on this Pi (no local-control account is set up). |
 
 ### Access modes
 
@@ -112,8 +112,10 @@ The refusal messages, by the proxy's code [E-115]:
 | **No database** | Development only: a build without the database variables | **None** | Pages render from the bridge alone, and only on the edge itself, because Node-RED listens on loopback. Never deploy it: see [How to configure](#how-to-configure) [E-180]. |
 
 **Sign-in** is email and password against the database's sign-in service [E-066]. **Break-glass** is a local
-password, checked by the proxy, for when that service cannot be reached. The login page offers it only after a network
-error. It gives a 12-hour session that can **read but not command**, and that ends if the proxy restarts [E-172].
+password, checked by the proxy, for when that service cannot be reached. The login page always offers it, and leads
+with it when the service cannot be reached [E-254]. It gives a 12-hour session that ends if the proxy restarts
+[E-172]. It can **read**, and it can **command** when `BREAK_GLASS_USER_ID` names the account it acts for
+([ADR-0016](adr/ADR-0016-local-control-without-internet.md)).
 
 **There are no roles.** Every signed-in account may do everything the database allows: arm schedules, set demand
 limits, change device configuration, and switch any load [E-163, E-170]. Who holds an account is therefore the whole
@@ -276,12 +278,20 @@ nothing** [E-182]:
 5. To remove it entirely: the *Remove* tab, for a device added through the app, which previews the flow nodes it will
    delete ([01](01-field-devices.md)). A built-in device is removed from `shared/registry.mjs` in code.
 
-**Break-glass sign-in.** For when the sign-in service is unreachable and someone must see the building. On the sign-in
-page, after a failed attempt that reports a network error, choose *try local sign-in instead* and enter the
-break-glass password. The session reads but cannot command, lasts up to 12 h, and ends if the proxy restarts [E-172].
-The password is hashed into `BREAK_GLASS_PASSWORD_HASH` in `server/.env` with `server/hashBreakGlassPassword.mjs`.
-Store the password with the other credentials ([X3](X3-operations.md)), and rotate it when someone who knows it leaves.
-The proxy logs each attempt but not its outcome, and nothing limits repeated attempts (F-027, Q-18).
+**Break-glass sign-in.** For when the sign-in service is unreachable (the internet is down) and someone at the site
+must see or switch the building. On the sign-in page choose *No internet? Sign in locally*, or nothing at all when the
+page already says the internet is down, and enter the local password [E-254].
+
+- **What it can do.** It reads everything the edge serves. With `BREAK_GLASS_USER_ID` set in `server/.env` to the
+  operator's account id, it also switches devices: each command is recorded on the edge under that account, with
+  "local sign-in" in its note, and uploaded when the internet returns. Without it, it is view-only. The account menu
+  says which (*can switch devices* or *cannot issue commands*).
+- **How long.** Up to 12 h. It survives a kiosk reload and ends if the proxy restarts [E-172].
+- **Back to the account.** The kiosk retries the account session each minute and returns to it by itself when the
+  internet is back.
+- **The password.** It is hashed into `BREAK_GLASS_PASSWORD_HASH` with `server/hashBreakGlassPassword.mjs`. Store it
+  with the other credentials ([X3](X3-operations.md)) and rotate it when someone who knows it leaves. Five wrong tries
+  from one address lock that address out for 10 minutes, and the proxy's journal records each outcome (F-027, Q-18).
 
 ### Accessibility
 

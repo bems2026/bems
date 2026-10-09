@@ -1,6 +1,22 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-10-07 — **RM-159 done: log ingest down from about 30–40 MB a day to at most about 6, and the
+**Last audited:** 2026-10-09 — **RM-161 built: the building can be signed into and switched from its own screen
+without internet (ADR-0016). Not deployed: the edge has no internet to pull it with.**
+- **What happened (E-254).** The device network's uplink ran out of mobile data. The edge dropped off the mesh, and
+  the kiosk was signed out. Every account sign-in answered "Failed to fetch", and the local sign-in never appeared:
+  `supabase-js` returns a network failure, and the page looked for one thrown. The local sign-in could only look
+  anyway.
+- **RM-161:**
+  - the page always offers the local sign-in, and leads with it offline;
+  - a local sign-in survives a kiosk reload;
+  - the account session resumes by itself when the internet returns;
+  - with `BREAK_GLASS_USER_ID` set, a local sign-in commands as that account, recorded on the edge for ingest to
+    upload;
+  - five wrong local passwords lock an address out (F-027);
+  - the scheduler keeps its last configuration on the edge, so a restart offline still runs the schedules.
+- **Waiting on:** the internet back on the device network, then the deploy and one setting (§0).
+
+**Earlier, 2026-10-07 — RM-159 done: log ingest down from about 30–40 MB a day to at most about 6, and the
 aircon loop now rides out a database outage (RM-159i, RM-159k, EX-173).**
 - **The budget.** Preflight judged the first full metered day: 496 Supabase requests from the edge (ingest 354,
   scheduler 102, proxy 40), against about 6,500 a day before RM-159. The usage page agrees: 1.10 → 1.12 GB in
@@ -515,6 +531,18 @@ other four and none needed changing.
 ---
 
 ## 0. Triage — what to do next
+
+### 2026-10-09 — the device network lost its internet; local sign-in and control (RM-161): built, deploy waits
+
+- **Now, on site (the operator).** Restore the device network's internet: top up its uplink's data. Nothing on the
+  edge needs touching, and **its Wi-Fi must not be changed** (CLAUDE.md). The mesh, the kiosk's account session and
+  the uploads all recover by themselves; the outage queues drain into `commands`.
+- **Then the deploy (RM-161d):** `git pull`, `npm run build`, and
+  `sudo systemctl restart ibems-ingest ibems-proxy ibems-scheduler`.
+- **Then one setting, asked first (RM-161e):** `BREAK_GLASS_USER_ID` in `server/.env`, the operator's account id;
+  restart the proxy. Without it a local sign-in still works offline, but view-only.
+- **Read back (RM-161f):** a local sign-in at the kiosk; one light switched from it; its row in `commands` with
+  "local sign-in" in the note; `server/data/scheduler-config-cache.json` present.
 
 ### 2026-10-05 — the alerts bell flooded by cycling loads (RM-160): done
 
@@ -4949,6 +4977,41 @@ Replayed: 1,551 rows become 25. Rows recorded before the change are left as they
   day**: 0 W is familiar to every device, which rests there overnight. In the measured week 185 falls to zero were
   flagged, 37 in office hours, each reading like a load switched off (E-247). **Kept, the operator's decision of
   2026-10-07.**
+
+### Signing in and switching without internet — RM-161 (2026-10-09)
+
+The device network's uplink ran out of mobile data on 2026-10-09. The edge dropped off the mesh, and the kiosk was
+signed out, at a sign-in page that answered "Failed to fetch" and never offered the local sign-in (E-254). The
+operator asked that the dashboard can be signed into, and the building switched, without internet (ADR-0016).
+
+- [x] **RM-161a** *Server.* With `BREAK_GLASS_USER_ID` set (a uuid), a local sign-in's command is validated, gated
+      and dispatched like any other. It is recorded on the edge under that account with "local sign-in" in the note,
+      and goes straight to the outage queue for ingest to upload. Unset or not a uuid: view-only, with a 403 that names
+      the setting. `/api/capabilities` and the local-login reply carry `local_control`. Five wrong passwords from one
+      address in 15 min lock it out for 10 (`LOCAL_LOGIN_LOCKOUT_MS`, 429 `too_many_attempts`), and the journal
+      records each outcome (F-027). — `server/proxy.mjs`; three tests in `server/proxy.test.mjs`
+- [x] **RM-161b** *Browser.*
+      - A network failure is recognised in every shape `supabase-js` gives it (`isNetworkAuthError`), and an account
+        sign-in that hangs for 15 s counts as one.
+      - The page always offers the local sign-in, and leads with it, saying why, when the account service cannot be
+        reached.
+      - A local sign-in is kept in the kiosk's storage until it expires, so a reload keeps it.
+      - An account session that cannot refresh offline is not thrown away. It is retried each minute, and the kiosk
+        returns to it when the internet does; meanwhile a local sign-in it holds takes over.
+      - The account menu and Settings say whether the local session can switch devices.
+
+      — `src/stores/authStore.ts`, `src/components/auth/LoginPage.tsx`; 8 store tests, 5 page tests, 2 label
+      tests. The 8 store tests fail on the previous store.
+- [x] **RM-161c** *Scheduler.* Every configuration it reads is kept in `server/data/scheduler-config-cache.json`,
+      written only when it changes. A start that cannot reach the database runs from it, and says so. The aircon loop
+      starts without its remembered state, so it waits one interval, as it does whenever that state cannot be read.
+      — `server/scheduler.mjs`; three tests in `server/scheduler.test.mjs`
+- [ ] **RM-161d** Deploy, once the device network has internet again: `git pull`, `npm run build`, restart the three
+      daemons.
+- [ ] **RM-161e** *Operator, asked first.* Set `BREAK_GLASS_USER_ID` in `server/.env` to the operator's own account
+      id, and restart the proxy.
+- [ ] **RM-161f** Read back on site: a local sign-in, one light switched from it, its `commands` row marked "local
+      sign-in", and the scheduler's kept configuration on the edge.
 
 ### The log back under the Free plan — RM-158 (2026-10-03)
 

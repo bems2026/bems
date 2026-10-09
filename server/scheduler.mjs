@@ -37,6 +37,7 @@ import { createBufferedAudit, isRefusal } from './auditQueue.mjs';
 import { signalAt } from './configSignal.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { installRequestMeter } from './requestMeter.mjs';
 
 // RM-159: every request this process makes to Supabase is counted from here on, before the first is
@@ -140,6 +141,64 @@ let lastFiredMinute = null;
 const SNAPSHOT_RETRY_MS = 60 * 60_000;
 let snapshotMissingAt = null;
 
+/**
+ * The last configuration read, kept on the edge — 2026-10-09.
+ *
+ * The office network lost its internet. A running scheduler keeps what it last read, so schedules
+ * carried on; but one that restarted in the outage (a power blip, a reboot) came up with no
+ * schedules at all and would have stayed that way until the internet returned. So every snapshot
+ * read is kept here, and a start that cannot reach the database begins from it instead of from
+ * nothing. Written only when it changes, so a quiet week costs the SD card nothing.
+ *
+ * The aircon loop's remembered state and its recent commands are NOT kept: both move between reads,
+ * and a loop started without them waits one full interval before its first step — the same safe
+ * start it makes whenever the state cannot be read (see `applyAcuRules`).
+ */
+const CONFIG_CACHE_PATH =
+  process.env.SCHEDULER_CONFIG_CACHE_PATH || join(dirname(fileURLToPath(import.meta.url)), 'data', 'scheduler-config-cache.json');
+let lastKeptConfig = null;
+
+function keepConfig(snap) {
+  const kept = JSON.stringify({
+    schedules: snap.schedules ?? [],
+    dsm: snap.dsm ?? {},
+    device_config: snap.device_config ?? [],
+    socket_config: snap.socket_config ?? [],
+    acu_rules: snap.acu_rules ?? [],
+  });
+  if (kept === lastKeptConfig) return;
+  try {
+    mkdirSync(dirname(CONFIG_CACHE_PATH), { recursive: true });
+    const tmp = `${CONFIG_CACHE_PATH}.tmp`;
+    writeFileSync(tmp, `{"saved_at":${JSON.stringify(new Date().toISOString())},"site_id":${JSON.stringify(SITE.id)},"snapshot":${kept}}\n`);
+    renameSync(tmp, CONFIG_CACHE_PATH);
+    lastKeptConfig = kept;
+  } catch (err) {
+    console.warn(`[ibems-scheduler] could not keep the configuration on the edge: ${String(err)}`);
+  }
+}
+
+/** Starts from the kept configuration. True when there was one for this site. */
+function startFromKeptConfig() {
+  let kept;
+  try {
+    kept = JSON.parse(readFileSync(CONFIG_CACHE_PATH, 'utf8'));
+  } catch {
+    return false;
+  }
+  if (kept?.site_id !== SITE.id || !kept.snapshot) return false;
+  const snap = kept.snapshot;
+  applySchedules(snap.schedules ?? []);
+  applyDsmConfig(snap.dsm ?? {}, snap.device_config ?? [], snap.socket_config ?? []);
+  applyAcuRules(snap.acu_rules ?? [], [], null);
+  lastKeptConfig = JSON.stringify(snap);
+  console.warn(
+    `[ibems-scheduler] the database cannot be reached — running the configuration kept on the edge ` +
+      `(read ${kept.saved_at}, ${schedules.length} schedule row(s), ${acuRules.length} aircon rule(s)) until it answers`,
+  );
+  return true;
+}
+
 async function refreshConfig() {
   if (snapshotMissingAt === null || Date.now() - snapshotMissingAt >= SNAPSHOT_RETRY_MS) {
     const res = await sb('rpc/scheduler_snapshot', { method: 'POST', body: JSON.stringify({ p_site_id: SITE.id }) });
@@ -147,6 +206,7 @@ async function refreshConfig() {
       if (snapshotMissingAt !== null) console.log('[ibems-scheduler] scheduler_snapshot is available — configuration now in one request');
       snapshotMissingAt = null;
       const snap = await res.json();
+      keepConfig(snap);
       applySchedules(snap.schedules ?? []);
       applyDsmConfig(snap.dsm ?? {}, snap.device_config ?? [], snap.socket_config ?? []);
       applyAcuRules(snap.acu_rules ?? [], snap.acu_loop_state ?? [], snap.acu_commands ?? []);
@@ -722,6 +782,7 @@ async function main() {
     );
   } catch (err) {
     console.error('[ibems-scheduler] initial schedule load failed (will retry):', String(err));
+    startFromKeptConfig();
   }
 
   setInterval(() => { void readConfigAgain(null); }, REFRESH_MS);

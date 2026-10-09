@@ -102,6 +102,7 @@ nav:
       - ADR-0013 One energy figure: adr/ADR-0013-one-energy-figure.md
       - ADR-0014 Commands on the edge: adr/ADR-0014-commands-recorded-on-the-edge.md
       - ADR-0015 The request budget: adr/ADR-0015-data-architecture-and-request-budget.md
+      - ADR-0016 Local control without internet: adr/ADR-0016-local-control-without-internet.md
   - Reference:
       - Bridge contract: bridge-contract.md
       - Storage contract: storage-contract.md

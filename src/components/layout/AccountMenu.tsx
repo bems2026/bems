@@ -15,8 +15,9 @@ import { useAnchoredPopover } from '@/components/ui/useAnchoredPopover';
  *
  * TWO PROPERTIES THAT ARE NOT COSMETIC:
  *
- * 1. **The LOCAL badge stays outside the menu.** A break-glass session is LAN-only and
- *    cannot issue commands (`server/breakGlass.mjs`, `authStore.ts`). Hiding that behind a
+ * 1. **The LOCAL badge stays outside the menu.** A break-glass session is LAN-only, and
+ *    cannot issue commands unless the Pi names an account for it (`BREAK_GLASS_USER_ID`,
+ *    2026-10-09; `server/breakGlass.mjs`, `authStore.ts`). Hiding that behind a
  *    click would let a degraded session read as an ordinary one at a glance, which is
  *    exactly what the session code insists must never happen. It is rendered next to the
  *    trigger, not inside the panel.
@@ -34,6 +35,7 @@ import { useAnchoredPopover } from '@/components/ui/useAnchoredPopover';
 export function AccountMenu({ activeId }: { activeId: string }) {
   const mode = useAuthStore((s) => s.mode);
   const email = useAuthStore((s) => s.email);
+  const localControl = useAuthStore((s) => s.localControl);
   const signOut = useAuthStore((s) => s.signOut);
   const [open, setOpen] = useState(false);
   const dismiss = useCallback(() => setOpen(false), []);
@@ -79,7 +81,7 @@ export function AccountMenu({ activeId }: { activeId: string }) {
                 {mode === 'local' ? (
                   <>
                     <span className="account-menu__mode">Local session</span>
-                    <span className="account-menu__note">LAN only — cannot issue commands</span>
+                    <span className="account-menu__note">{localControl ? 'LAN only — can switch devices' : 'LAN only — cannot issue commands'}</span>
                   </>
                 ) : (
                   <>

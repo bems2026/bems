@@ -3,9 +3,9 @@ title: Edge computing
 purpose: Build, configure and operate the local server that runs the control logic (L3)
 audience: [integrator, installer]
 status: Draft
-last_verified: 2026-09-30
+last_verified: 2026-10-09
 applies_to: repo b8af936 · edge checkout fcb1ff6
-evidence: [E-010, E-011, E-012, E-013, E-014, E-015, E-016, E-017, E-018, E-019, E-020, E-021, E-022, E-023, E-024, E-025, E-026, E-027, E-028, E-029, E-030, E-035, E-036, E-038, E-042, E-044, E-046, E-047, E-050, E-051, E-052, E-056, E-062, E-066, E-067, E-078, E-079, E-082, E-085, E-086, E-110, E-111, E-118, E-119, E-124, E-128, E-129, E-130, E-131, E-132, E-133, E-134, E-135, E-136, E-138, E-139, E-140, E-141, E-142, E-143, E-144, E-145, E-214, E-215, E-218, E-225, E-226]
+evidence: [E-010, E-011, E-012, E-013, E-014, E-015, E-016, E-017, E-018, E-019, E-020, E-021, E-022, E-023, E-024, E-025, E-026, E-027, E-028, E-029, E-030, E-035, E-036, E-038, E-042, E-044, E-046, E-047, E-050, E-051, E-052, E-056, E-062, E-066, E-067, E-078, E-079, E-082, E-085, E-086, E-110, E-111, E-118, E-119, E-124, E-128, E-129, E-130, E-131, E-132, E-133, E-134, E-135, E-136, E-138, E-139, E-140, E-141, E-142, E-143, E-144, E-145, E-214, E-215, E-218, E-225, E-226, E-254]
 ---
 
 # Edge computing
@@ -306,7 +306,8 @@ document** (G1) [E-042, E-067].
 | `HARDWARE_DISPATCH_ENABLED` | The interlock. Unset means closed. Opening it is a signed-off commissioning step ([X2](X2-control-logic.md)). | Only when dispatch is signed off |
 | `LIGHT_API_TOKEN` | Authenticates the proxy to the flow's command endpoints. The proxy **refuses to start** if dispatch is enabled without it [E-141]. | With dispatch |
 | `NODE_RED_ADMIN_USER`, `NODE_RED_ADMIN_PASS` | For the scripts that read or write the flow | Deploying and maintaining the flow |
-| `BREAK_GLASS_PASSWORD_HASH` | An optional local login for when the sign-in service is unreachable. It is view-only. | Optional |
+| `BREAK_GLASS_PASSWORD_HASH` | An optional local login for when the sign-in service is unreachable | Optional |
+| `BREAK_GLASS_USER_ID` | The account a local login commands as (ADR-0016). Unset, the local login is view-only. | With local control |
 | `TUYA_ACCESS_ID`, `TUYA_ACCESS_SECRET`, `TUYA_REGION` | The optional vendor cloud: fallback dispatch and device facts. **The most sensitive credential here**, because it reaches hardware directly. | Optional |
 | `NTFY_TOPIC` | Push alerts | Optional |
 | `PROXY_PORT` | The proxy's port | Optional |

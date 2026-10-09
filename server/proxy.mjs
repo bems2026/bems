@@ -24,9 +24,11 @@
  *      Supabase Auth itself is unreachable. Issues an opaque, server-only session token —
  *      NOT a Supabase JWT, and not accepted by anything Supabase-side. The frontend must
  *      render this distinctly ("local session — LAN only, remote access unavailable"),
- *      never as an equivalent to a normal login — see src/stores/authStore.ts. It also
- *      cannot issue device commands (see `handleCommand` below) — there is no
- *      `auth.users` row to attribute a command to, and command audit rows require one.
+ *      never as an equivalent to a normal login — see src/stores/authStore.ts. It cannot
+ *      issue device commands unless `BREAK_GLASS_USER_ID` names the account it acts for
+ *      (2026-10-09, ADR-0016): command audit rows need a real `auth.users` row. With one, its
+ *      commands are recorded on the edge and ingest uploads them with the service key.
+ *      Five wrong passwords from one address lock that address out for ten minutes.
  *
  * `POST /api/command` (Phase 6): validates via `shared/commands.mjs` (the same pure
  * contract the mock bridge uses), writes an audit row to Supabase's `commands` table using
@@ -275,6 +277,29 @@ const livePolicy = createLivePolicy({
   supabaseKey: SUPABASE_ANON_KEY,
 });
 const BREAK_GLASS_PASSWORD_HASH = process.env.BREAK_GLASS_PASSWORD_HASH;
+/**
+ * The account a local (break-glass) sign-in commands as — 2026-10-09.
+ *
+ * The local sign-in was view-only, on the reasoning that a command needs a real user to be
+ * attributed to. Then the office network lost its internet: the kiosk was signed out, the account
+ * service could not be reached, and the building could not be switched from its own screen. A
+ * command does need a real user, so this names one — the operator's own account id — and a local
+ * sign-in acts for it. Unset (or not a uuid), the local sign-in stays view-only, as before.
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const BREAK_GLASS_USER_ID = UUID_RE.test(process.env.BREAK_GLASS_USER_ID ?? '') ? process.env.BREAK_GLASS_USER_ID.toLowerCase() : null;
+if (process.env.BREAK_GLASS_USER_ID && !BREAK_GLASS_USER_ID) {
+  console.warn('[ibems-proxy] BREAK_GLASS_USER_ID is not an account id (a uuid) — local sign-in stays view-only.');
+}
+/**
+ * Five wrong local passwords from one address in LOCAL_LOGIN_WINDOW_MS lock that address out for
+ * LOCAL_LOGIN_LOCKOUT_MS. The local password now unlocks device control, so it must not be
+ * guessable at network speed by anything else on the device network.
+ */
+const LOCAL_LOGIN_MAX_FAILURES = 5;
+const LOCAL_LOGIN_WINDOW_MS = 15 * 60_000;
+const LOCAL_LOGIN_LOCKOUT_MS = Number(process.env.LOCAL_LOGIN_LOCKOUT_MS) > 0 ? Number(process.env.LOCAL_LOGIN_LOCKOUT_MS) : 10 * 60_000;
+const localLoginFailures = new Map(); // address -> { count, firstMs, lockedUntilMs }
 /**
  * How old an online answer about a session may be before a COMMAND asks again, and how long the
  * old path keeps one for a token the signing keys cannot judge. Tunable only so a test need not
@@ -690,13 +715,31 @@ async function handleCredentialImport(req, res) {
 
 async function handleLocalLogin(req, res) {
   if (!BREAK_GLASS_PASSWORD_HASH) return sendJson(res, 501, { error: 'break_glass_not_configured' });
+  // The socket's own address, never a forwarded header: anything on the device network could set one.
+  const address = req.socket.remoteAddress ?? 'unknown';
+  const nowMs = Date.now();
+  const record = localLoginFailures.get(address);
+  if (record?.lockedUntilMs > nowMs) {
+    return sendJson(res, 429, { error: 'too_many_attempts', retry_after_s: Math.ceil((record.lockedUntilMs - nowMs) / 1000) });
+  }
   const body = await readJsonBody(req);
   const password = body?.password;
   if (!verifyBreakGlassPassword(password, BREAK_GLASS_PASSWORD_HASH)) {
+    const fresh = !record || nowMs - record.firstMs > LOCAL_LOGIN_WINDOW_MS || record.lockedUntilMs;
+    const next = fresh ? { count: 1, firstMs: nowMs, lockedUntilMs: 0 } : { ...record, count: record.count + 1 };
+    // F-027: the outcome is recorded, not only the attempt.
+    console.warn(`[ibems-proxy] local sign-in: wrong password from ${address} (${next.count} of ${LOCAL_LOGIN_MAX_FAILURES})`);
+    if (next.count >= LOCAL_LOGIN_MAX_FAILURES) {
+      next.lockedUntilMs = nowMs + LOCAL_LOGIN_LOCKOUT_MS;
+      console.warn(`[ibems-proxy] local sign-in: ${next.count} wrong passwords from ${address} — locked out for ${Math.round(LOCAL_LOGIN_LOCKOUT_MS / 60_000)} min`);
+    }
+    localLoginFailures.set(address, next);
     return sendJson(res, 401, { error: 'invalid_password' });
   }
+  localLoginFailures.delete(address);
+  console.log(`[ibems-proxy] local sign-in: accepted from ${address} (${BREAK_GLASS_USER_ID ? 'may command' : 'view only'})`);
   const token = issueLocalSession();
-  sendJson(res, 200, { token, expires_in: LOCAL_SESSION_TTL_MS / 1000, mode: 'local' });
+  sendJson(res, 200, { token, expires_in: LOCAL_SESSION_TTL_MS / 1000, mode: 'local', local_control: Boolean(BREAK_GLASS_USER_ID) });
 }
 
 /** Forwards to the real bridge, stripping the proxy-only `token` query param first — the
@@ -763,14 +806,20 @@ async function handleCommand(req, res, token) {
   // RM-157: how long the person waited, journaled once per command — the number the amber
   // "Switching" pulse makes visible, and the one the local-first record exists to shorten.
   const startedMs = Date.now();
-  const session = await verifySupabaseSession(token, { fresh: true });
+  // A local (break-glass) sign-in acts for the account BREAK_GLASS_USER_ID names, so its command is
+  // attributed to a real user like any other (2026-10-09: the office network lost its internet, and the
+  // building could not be switched from its own screen). Without that setting it stays view-only.
+  const local = isValidLocalSession(token);
+  const session = local
+    ? (BREAK_GLASS_USER_ID ? { ok: true, userId: BREAK_GLASS_USER_ID, local: true } : { ok: false, userId: null })
+    : await verifySupabaseSession(token, { fresh: true });
   if (!session.ok || !session.userId) {
     // isAuthorized() already accepted this token, so if it's not a real Supabase session
     // it must be a valid break-glass one — reject with a reason the frontend can render
     // distinctly from "not logged in at all" (401).
     return sendJson(res, 403, {
       error: 'break_glass_cannot_command',
-      detail: 'Local/break-glass sessions are view-only — device commands require a real Supabase-authenticated session.',
+      detail: 'This local sign-in is view-only: set BREAK_GLASS_USER_ID in server/.env to the account local commands act for, then restart the proxy. A normal sign-in commands as before.',
     });
   }
 
@@ -778,8 +827,9 @@ async function handleCommand(req, res, token) {
   // This building's own bounds — e.g. the minimum aircon setpoint the operator permits, which is
   // narrower than what the IR library can physically send. Read synchronously from the cache so a
   // command never waits on a round trip; `refresh()` runs in the background and, on failure,
-  // leaves the last known floor in force rather than none. Read with this caller's session (RM-158).
-  void livePolicy.refresh(false, { token });
+  // leaves the last known floor in force rather than none. Read with this caller's session (RM-158);
+  // a local sign-in has no account session, so the last known policy stands.
+  void livePolicy.refresh(false, { token: local ? undefined : token });
   const validated = validateCommand(body, DEVICE_REGISTRY, livePolicy.current());
   if (!validated.ok) {
     return sendJson(res, validated.status, { error: validated.error, code: validated.code });
@@ -822,7 +872,10 @@ async function handleCommand(req, res, token) {
       return { ok: false, unreachable: true, detail: String(err) };
     }
   };
-  const audit = createLocalFirstAudit({ inflightPath: COMMAND_INFLIGHT_PATH, bufferPath: COMMAND_BUFFER_PATH, upload: uploadRow });
+  // A local sign-in has no account token to insert with, so its record goes straight to the outage
+  // queue, which ingest uploads with the service key — the same path as any command recorded offline.
+  const queueForIngest = async () => ({ ok: false, unreachable: true, detail: 'local sign-in: queued for ingest to upload' });
+  const audit = createLocalFirstAudit({ inflightPath: COMMAND_INFLIGHT_PATH, bufferPath: COMMAND_BUFFER_PATH, upload: local ? queueForIngest : uploadRow });
 
   /**
    * A below-policy setpoint is RECORDED, not refused — RM-068.
@@ -838,7 +891,7 @@ async function handleCommand(req, res, token) {
   const outcome = await auditedDispatch({
     device,
     cmd,
-    note: warningNote ? `${ack.note} — ${warningNote}` : ack.note,
+    note: `${warningNote ? `${ack.note} — ${warningNote}` : ack.note}${local ? ' — local sign-in' : ''}`,
     auditRow: {
       command_id: cmd.command_id ?? null,
       device_id: cmd.device_id,
@@ -1122,6 +1175,11 @@ const server = http.createServer(async (req, res) => {
       // Where that number came from. A page reporting a floor it got from the build during a
       // database outage should be able to say so rather than presenting it as current.
       policy_source: livePolicy.status().source,
+      // 2026-10-09: whether a local sign-in may command (BREAK_GLASS_USER_ID names the account it acts
+      // for), so the sign-in page can say before anyone needs it whether the building can be switched
+      // from its own screen while the internet is down.
+      local_login_configured: Boolean(BREAK_GLASS_PASSWORD_HASH),
+      local_control: Boolean(BREAK_GLASS_PASSWORD_HASH && BREAK_GLASS_USER_ID),
       // The aircon's two paths (2026-09-17). `acu_cloud_route` is whether a state the local IR
       // library cannot express (any mode but its own, any fan, swing) has anywhere to go:
       // ready | unconfigured | unresolved | local-only, or null with no aircon. The second is whether

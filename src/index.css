@@ -6312,6 +6312,17 @@ body::before {
   color: var(--bad);
   margin: 0;
 }
+/* 2026-10-09: the offline notice. Same recipe as .settings-warn, so it reads in both themes. */
+.login-page__notice {
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-3);
+  border-radius: var(--r-inner);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  text-align: left;
+}
 .login-page__submit {
   font: inherit;
   font-weight: 600;

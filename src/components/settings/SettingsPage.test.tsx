@@ -70,10 +70,19 @@ describe('SettingsPage', () => {
  */
 describe('AccountSection', () => {
   it('says a break-glass session cannot switch anything, and why', () => {
-    useAuthStore.setState({ mode: 'local', email: null });
+    useAuthStore.setState({ mode: 'local', email: null, localControl: false });
     render(<AccountSection />);
     expect(screen.getByText(/view only/i)).toBeInTheDocument();
     expect(screen.getByText(/cannot be reached/i)).toBeInTheDocument();
+  });
+
+  // 2026-10-09: with BREAK_GLASS_USER_ID set, a local sign-in commands for that account.
+  it('says a local sign-in with local control can switch devices, and whose name the commands go under', () => {
+    useAuthStore.setState({ mode: 'local', email: null, localControl: true });
+    render(<AccountSection />);
+    expect(screen.queryByText(/view only/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/can switch devices/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/local-control account/i).length).toBeGreaterThan(0);
   });
 
   it('shows the account a full session is attributed to', () => {
