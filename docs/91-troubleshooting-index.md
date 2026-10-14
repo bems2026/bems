@@ -28,13 +28,14 @@ For a power cut, go straight to [`outage-recovery.md`](outage-recovery.md).
 
 <!-- GENERATED from each chapter's fault table by scripts/docs-troubleshooting.mjs. Edit the chapter, then regenerate; never edit rows here. -->
 
-75 symptoms from 10 chapters. Find what you see, then follow the link: the chapter's row holds
+77 symptoms from 10 chapters. Find what you see, then follow the link: the chapter's row holds
 the likely cause, the check that tells the causes apart, the fix, and how to confirm it held.
 
 | Symptom | Layer or plane | Its five columns |
 |---|---|---|
 | The device never appears | L1 Field devices | [01 · How it fails](01-field-devices.md#how-it-fails) |
 | It appears, then goes silent | L1 Field devices | [01 · How it fails](01-field-devices.md#how-it-fails) |
+| A CT meter repeats one reading for hours, idle or not, while online | L1 Field devices | [01 · How it fails](01-field-devices.md#how-it-fails) |
 | Implausible values | L1 Field devices | [01 · How it fails](01-field-devices.md#how-it-fails) |
 | Zero with load present | L1 Field devices | [01 · How it fails](01-field-devices.md#how-it-fails) |
 | Switches from the kiosk, not from off site | L1 Field devices | [01 · How it fails](01-field-devices.md#how-it-fails) |
@@ -73,6 +74,7 @@ the likely cause, the check that tells the causes apart, the fix, and how to con
 | A negative or doubled day | L4 Data | [04 · How it fails](04-data.md#how-it-fails) |
 | A circuit's day short of its integrated power | L4 Data | [04 · How it fails](04-data.md#how-it-fails) |
 | Totals do not match the meter on the incomer | L4 Data | [04 · How it fails](04-data.md#how-it-fails) |
+| Days after an outage read empty, or a report is short | L4 Data | [04 · How it fails](04-data.md#how-it-fails) |
 | Storage outruns the plan | L4 Data | [04 · How it fails](04-data.md#how-it-fails) |
 | The project was paused by the host | L4 Data | [04 · How it fails](04-data.md#how-it-fails) |
 | The UI is empty, but rows exist | L4 Data | [04 · How it fails](04-data.md#how-it-fails) |

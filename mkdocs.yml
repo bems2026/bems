@@ -103,6 +103,7 @@ nav:
       - ADR-0014 Commands on the edge: adr/ADR-0014-commands-recorded-on-the-edge.md
       - ADR-0015 The request budget: adr/ADR-0015-data-architecture-and-request-budget.md
       - ADR-0016 Local control without internet: adr/ADR-0016-local-control-without-internet.md
+      - ADR-0017 Logging without internet: adr/ADR-0017-logging-local-first-and-checked.md
   - Reference:
       - Bridge contract: bridge-contract.md
       - Storage contract: storage-contract.md

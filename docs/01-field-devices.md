@@ -3,9 +3,9 @@ title: Field devices
 purpose: Select, size, install, pair, calibrate and maintain the field devices (L1)
 audience: [installer, integrator]
 status: Draft
-last_verified: 2026-09-24
+last_verified: 2026-10-14
 applies_to: repo 8e398f8 · edge checkout fcb1ff6
-evidence: [E-022, E-043, E-051, E-056, E-083, E-110, E-111, E-112, E-115, E-117, E-118, E-119, E-125, E-132, E-135, E-138, E-145, E-146, E-147, E-148, E-149, E-150, E-151, E-152, E-179]
+evidence: [E-022, E-043, E-051, E-056, E-083, E-110, E-111, E-112, E-115, E-117, E-118, E-119, E-125, E-132, E-135, E-138, E-145, E-146, E-147, E-148, E-149, E-150, E-151, E-152, E-179, E-256, E-257]
 ---
 
 # Field devices
@@ -202,6 +202,7 @@ institution].
 |---|---|---|---|---|
 | The device never appears | It is not on the device network (a 5 GHz SSID, or not paired), or client isolation blocks discovery | Is it online in the vendor app? Does Add Device hear its announcement within ~5 s [E-146]? | Pair it on the 2.4 GHz device network; remove client isolation ([02](02-network.md)) | It appears in Add Device and stays |
 | It appears, then goes silent | A connection that gave up, or the device lost power or network | Is it still in the neighbour table (ARP, not ping) [E-117]? Does the vendor app see it? | Restart Node-RED first [E-118]; then the ladder in [01a §7](01a-device-roles.md#7-troubleshooting) | It reports past the offline threshold (600 s) |
+| A CT meter repeats one reading for hours, idle or not, while online | The meter stalled inside the device after a long loss of the vendor cloud [E-256] | The reading is flagged frozen (the still rule, [ADR-0017](adr/ADR-0017-logging-local-first-and-checked.md)) and an alert names it; its voltage holds still too. A refresh request and a Node-RED restart do not move it [E-257] | Power-cycle the meter's supply | Its voltage moves within minutes and the flag clears |
 | Implausible values | The wrong product mapping, a scale error, or a frozen clamp | Compare against a clamp meter. Is the reading flagged frozen [E-152]? | Fix the catalogue entry for that product [E-135], or the clamp | Readings match the reference |
 | Zero with load present | A CT on the wrong conductor or reversed, or a channel swap on a dual-channel meter | Does its twin channel read the missing load [E-147]? Which way is the arrow? | Refit the clamp, arrow to the load, or state the channel facts | The reading follows the load on and off |
 | Switches from the kiosk, not from off site | The remote path, not the device | Does the same command work from a LAN browser? Is the mesh network up? | See [02](02-network.md) remote access and [05](05-interface.md) | The command works on both paths |
@@ -220,6 +221,7 @@ Site specifics are in [99](99-worked-example.md).
 | 2026-09-15 | A branch mislabelled for years | The circuit map was transcribed from an old comment | The operator confirmed the map on site | physical-install §2 | Check a branch against what its meter reads |
 | 2026-09-19 | One dual-channel meter reported two circuits under swapped channels | The device itself swapped channel attribution (Confirmed) | A demux decided from stated physical facts | E-147 | The logical meter is the identity, never the vendor device |
 | 2026-09-22 | A circuit held a stale reading for hours | Nothing polled the meters (Confirmed) | A 60 s poll on every device | E-119 | A value nobody asked for again is a memory |
+| 2026-10-08 | All four CT meters repeated one reading for 2.5 to 6 days, two of them at 0 W, unflagged | The meters stalled inside the device during a week without internet (Confirmed: only a power cycle revived them) | A power cycle; the still rule, marking and an alert ([ADR-0017](adr/ADR-0017-logging-local-first-and-checked.md)) | E-256, E-257 | A meter that answers is not a meter that measures |
 
 ## What to keep on the shelf
 

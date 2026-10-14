@@ -1,7 +1,16 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-10-14 — **RM-163 under way: the CT meters froze offline because only the vendor cloud asked
-them to re-measure; the meter poll now does (RM-163b). Upload paused while the backlog is corrected.**
+**Last audited:** 2026-10-14, evening — **RM-163 built (ADR-0017): logging stays live and true without internet. The
+edge is off the mesh again, so the last pieces wait to be deployed (§0).**
+- **What froze (E-256, E-257).** The edge logged every minute of the outage; the four CT meters' values froze inside
+  the devices for 2.5 to 6 days. A REFRESH poll and a Node-RED restart did not revive them; the operator's power
+  cycle at 11:33 did.
+- **Done and running:** 17,338 stuck rows marked frozen before upload; the upload catching up every minute in batches
+  that fit the link; reports waiting for their data and rebuilding on late rows.
+- **Built, not deployed:** the still rule and freeze alerts (RM-163d), the kiosk's cloud note (RM-163g), the clock
+  timer and re-timing (RM-163h).
+
+**Earlier the same day — the CT meters froze offline; RM-163 begun. Upload paused while the backlog is corrected.**
 
 **Earlier the same day — RM-161 deployed; RM-162 built: ingest's backlog drains over a slow uplink.**
 - **Back online, slowly (E-255).** The operator reseated the router's SIM and the edge rejoined the mesh, on its own
@@ -542,6 +551,20 @@ other four and none needed changing.
 ---
 
 ## 0. Triage — what to do next
+
+### 2026-10-14 — logging without internet (RM-163): built; deploy when the edge is back on the mesh
+
+The edge left the mesh again on the evening of 14 Oct, after RM-163f was deployed and the upload resumed. Ingest keeps
+archiving and catching up on its own. When the edge is reachable:
+
+1. `git pull` (to `a9863f4` or later), `npm run build` (the kiosk's cloud note).
+2. `npm run build:flow`, back up `~/.node-red/flows.json`, `npm run deploy:pi` (dry run, then apply): the still
+   rule (RM-163d). Then `sudo systemctl restart ibems-ingest ibems-proxy ibems-scheduler`.
+3. Install the clock-save timer (RM-163h1): see `server/ibems-clock-save.service`'s header.
+4. Read back: the journal's "catching up" lines and `row(s) waiting` falling; 7 to 13 Oct rebuilt once their rows are
+   up (RM-163g); no meter flagged frozen while they read live.
+5. **Operator's decisions:** a battery RTC module (DS3231) for the Pi; a UPS for the router and the Pi; and whether to
+   put the meters' supply on a relay the edge could power-cycle (ADR-0017).
 
 ### 2026-10-09 — the device network lost its internet; local sign-in and control (RM-161): deployed 2026-10-14
 
@@ -3701,7 +3724,8 @@ Every entry below was confirmed by opening the cited path. Grouped by domain.
       not the same fact as one recorded in the audit table, and this project does not let the
       UI claim the stronger one.
       *Break-glass remains view-only* — the operator's decision, and a test pins it, because an
-      outage is exactly the circumstance that could quietly promote it.
+      outage is exactly the circumstance that could quietly promote it. *(Superseded 2026-10-09 by ADR-0016:
+      with `BREAK_GLASS_USER_ID` set, a local sign-in commands as that account; without it, still view-only.)*
       **BOTH CALLERS, NOT ONE.** The first version of this covered only the proxy, which left
       `scheduler.mjs` — schedules and auto-shed — still unable to record and therefore skipping
       every command during an outage. It failed *closed*, so nothing unsafe happened, but a

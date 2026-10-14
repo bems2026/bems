@@ -101,6 +101,14 @@ mock, because it once stopped the live bridge.
   every device going offline, which reads as a network fault. Back up `~/.node-red/flows.json`
   before any flow write, and see `node-red-bridge/live-flow-baseline.json` for what the values
   should be.
+- **A CT meter that answers is not necessarily measuring — and only a power cycle revives a stuck one.**
+  During the week without internet (2026-10-07 to 14) all four CT meters went on answering every poll,
+  online and holding sessions, with one cached reading each for 2.5 to 6 days, voltage included; two sat at
+  0 W, which the older freeze rules exempt. A `REFRESH` (DP_REFRESH) poll did not move them, nor did a
+  Node-RED restart; power-cycling the meters' supply did (E-256, E-257). The still rule now flags a meter
+  holding every value for 12 h at any power, ingest marks the archive back to the freeze's start and alerts
+  once (ADR-0017). Do not diagnose a frozen meter as a network or Node-RED fault, and do not trust the
+  Google Sheets log as a second opinion: it reads the same flow context.
 - **A device that looks physically unreachable may just be a stuck Node-RED node. Restart
   Node-RED before suspecting hardware.** On 2026-08-24 `l6` was diagnosed as an RF/range or
   stale-address problem — `EHOSTUNREACH …:6668` at every protocol version, ARP `FAILED`, and a

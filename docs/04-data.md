@@ -3,9 +3,9 @@ title: Data and storage
 purpose: Understand, size and query the relational store, its ingestion and retention (L4)
 audience: [integrator, administrator]
 status: Draft
-last_verified: 2026-10-04
+last_verified: 2026-10-14
 applies_to: repo dfe41a0 + RM-159, RM-160
-evidence: [E-042, E-058, E-064, E-065, E-066, E-070, E-078, E-080, E-081, E-082, E-083, E-084, E-085, E-086, E-088, E-089, E-090, E-111, E-121, E-122, E-124, E-126, E-134, E-137, E-138, E-142, E-149, E-157, E-161, E-162, E-163, E-164, E-165, E-166, E-167, E-168, E-193, E-218, E-219, E-220, E-221, E-222, E-224, E-225, E-227, E-235, E-241, E-242, E-243, E-244, E-245, E-247]
+evidence: [E-042, E-058, E-064, E-065, E-066, E-070, E-078, E-080, E-081, E-082, E-083, E-084, E-085, E-086, E-088, E-089, E-090, E-111, E-121, E-122, E-124, E-126, E-134, E-137, E-138, E-142, E-149, E-157, E-161, E-162, E-163, E-164, E-165, E-166, E-167, E-168, E-193, E-218, E-219, E-220, E-221, E-222, E-224, E-225, E-227, E-235, E-241, E-242, E-243, E-244, E-245, E-247, E-255, E-256, E-257]
 ---
 
 # Data and storage
@@ -84,6 +84,8 @@ exists [E-163]. Control who can sign in, therefore, and see [X1](X1-security.md)
 | Interval | One cycle per 60 s, committed to the edge's archive first: every device's reading, the building total, and any anomalies. The archive is uploaded every 5 min, all streams and the health row in one request (`ingest_upload`, phase55). | E-086, E-243 |
 | Idempotency | Upserts on `(device_id, ts)`, `ts`, and `(device_id, ts, metric)`. A re-sent row replaces its twin. | E-162 |
 | Validation | Bad values stored as NULL and counted. Rows more than 5 min ahead or 7 days behind are dropped. | E-138, E-142 |
+| Catching up | While the edge owes the cloud more than an hour of rows it uploads every minute, without the health row; a timeout halves the batch and only a quick upload doubles it ([ADR-0017](adr/ADR-0017-logging-local-first-and-checked.md)). After the October outage, 203,000 rows on an 11 KB/s uplink. | E-255, E-257 |
+| Frozen readings | A reading the bridge flags `measurement_frozen` is kept and marked; when a freeze is first seen the archive is marked back to its start and the cloud sent the marked minutes again. A circuit meter holding every value for 12 h is frozen at any power. | E-256, E-257 |
 | Outage buffering | Since RM-148 the archive is the buffer: a row stays owed until the cloud has taken it, and a row the cloud refuses for good is set aside on the edge (`upload_rejects`). Before that, a local file did this: a 7-minute outage, 8 rows, no loss. | E-134, E-142, E-219 |
 | Health | `ingestion_health`, written with each upload (every 5 min) and at once when health changes: last success, rows owed, rejections | E-085, E-225 |
 
@@ -316,6 +318,7 @@ RM-140). That export is what government energy reporting draws on ([93](93-gover
 | A negative or doubled day | A counter rolled over, or a register jumped | Compare that day's `energy_kwh` with its integrated power (`*_integrated`). Is `energy_removed_kwh` set on the report row? | Report generation restates such days and records the restatement (`energy_removed_kwh`, `energy_restated_at`) | The day's energy agrees with its integrated power |
 | A circuit's day short of its integrated power | Its register fell inside the day (a restart, a channel swap), and the reduction was not banking it | Compare `energy_kwh` with the circuit's power over the day. Is phase53 applied (`readings_hourly.energy_kwh_gain` exists)? | Apply phase53: it banks the register across a fall and restates stored rows, keeping `energy_kwh_before` [E-235] | The day within a few percent of its integrated power |
 | Totals do not match the meter on the incomer | A branch unmetered, a CT wrong, or silent branches excluded | Query 5; coverage; a clamp meter on each branch | Fix the CT or add the branch meter ([01](01-field-devices.md)) | Within the institution's tolerance |
+| Days after an outage read empty, or a report is short | The cloud has not caught up: the edge still owes those rows | The Control page's cloud note; ingest's journal lines "catching up" and "waits until the edge has uploaded its rows" | None: reports for those days wait, and any built before late rows arrived are rebuilt once they are up (`server/data/report-late.json`) | The note clears; the period's report shows its full coverage |
 | Storage outruns the plan | Raw rows × bytes/row above the cap | `select pg_size_pretty(pg_database_size(current_database()))` | Upgrade the plan, or shorten raw retention | Size flat week on week |
 | The project was paused by the host | Free plan inactivity | The Supabase dashboard; ingest's `last_error` | Restore the project. Pick a plan that never pauses. | `last_success_at` advancing |
 | The UI is empty, but rows exist | Row-level security: not signed in, or the query selects a revoked raw table | Does the same page work signed in? Does the call use a database function? | Sign in, or read through the function [E-161, E-165] | The page shows the rows |
@@ -328,6 +331,7 @@ Site specifics are in [99](99-worked-example.md).
 |---|---|---|---|---|---|
 | 2026-08-21 | The raw table grew without bound | Nothing had ever deleted a row | 30-day retention, rolling up and pruning in one transaction | E-070 | A delete without its rollup destroys data |
 | 2026-09-08 | Two pages showed two different building totals | Two derivations of the same circuits, never compared | The total became the sum of the branch meters | E-168 | One quantity, one derivation |
+| 2026-10-14 | Day reports for a week of outage built from almost no data, and counted current | The report pass ran as soon as the link answered, while the edge still owed 200,000 rows | Reports wait for the edge's rows and rebuild on late data | E-256 | A report built early looks finished |
 | 2026-09-22 | Recorded minutes overstated for a held meter | A held value counted as a recorded minute | Held minutes counted separately (phase47) | ROADMAP FI-027 | A held value is not a measurement |
 
 ## What to keep on the shelf

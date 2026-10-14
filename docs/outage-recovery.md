@@ -76,6 +76,30 @@ away, associate to a settled AP, get their reserved addresses, and the nodes rec
 The flapping hour and the silent fleet both come from the AP's cold boot; a UPS makes that boot not
 happen. A 600 VA unit runs both for well over an hour.
 
+## When the internet drops but the power does not (2026-10-07 to 14, RM-163)
+
+The device network's mobile uplink ran out of data for a week. What the system does about it now, on its own
+(ADR-0017):
+
+- **It keeps logging.** The Pi archives every minute whatever the internet does. Uploads stop and resume; when it is
+  more than an hour behind it uploads every minute, in batches that shrink to fit a slow link. The Control page says
+  how far behind the cloud is.
+- **Reports wait.** A day, week or month is not built while the Pi still owes rows from it, and one built before
+  late rows arrived is built again once they are up.
+- **Local sign-in and control still work** (ADR-0016), and the schedules keep running from the configuration the
+  scheduler keeps on the Pi.
+- **A frozen meter is flagged and announced.** The CT meters may stall during a long loss of the vendor cloud: they
+  keep answering with one reading, voltage included. After 12 hours (sooner while drawing power) the reading is
+  flagged frozen, the minutes since it stuck are marked, and an alert names the meter.
+
+What a person does:
+
+1. Top up the uplink. Nothing on the Pi needs touching, and its Wi-Fi must not be changed.
+2. If an alert names a frozen meter: **power-cycle the meter's supply.** A refresh request and a Node-RED restart do
+   not revive it; a power cycle did, on 2026-10-14.
+3. If the Pi restarted during the outage, it resumed within a minute of the cut (the clock-save timer, if installed)
+   and re-times what it logged once the internet returns. A battery RTC module removes even that minute.
+
 ## After the next outage, in order
 
 1. Wait 5 minutes. Check `curl -s http://127.0.0.1:1880/api/readings/latest` — how many `online`.

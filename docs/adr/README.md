@@ -34,6 +34,7 @@ files, and moving it would change code, which this documentation work does not d
 | [ADR-0014](ADR-0014-commands-recorded-on-the-edge.md) | A person's command is recorded on the edge first, and the database is told after; 402, 429 and 5xx are no answer, not a refusal. | Accepted | 2026-10-03 |
 | [ADR-0015](ADR-0015-data-architecture-and-request-budget.md) | The data architecture is built around a request budget: the edge answers every repeated read, the cloud takes batched writes and the reads a person asks for, and each daemon counts what it spends. Amends ADR-0011. | Accepted | 2026-10-04 |
 | [ADR-0016](ADR-0016-local-control-without-internet.md) | Without internet, a local sign-in can switch the building, under the account `BREAK_GLASS_USER_ID` names; the page always offers it, and the scheduler runs from its last configuration. Amends X1's break-glass row. | Accepted | 2026-10-09 |
+| [ADR-0017](ADR-0017-logging-local-first-and-checked.md) | Logging is the edge's: it keeps every minute, marks what it cannot trust (a meter frozen at any power, marked from the start and announced), and the cloud and reports follow it (catch-up uploads; reports wait for, and rebuild on, late data). | Accepted | 2026-10-14 |
 
 ## How these were dated and checked
 
