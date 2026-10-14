@@ -283,7 +283,9 @@ must see or switch the building. On the sign-in page choose *No internet? Sign i
 page already says the internet is down, and enter the local password [E-254].
 
 - **What it can do.** It reads everything the edge serves. With `BREAK_GLASS_USER_ID` set in `server/.env` to the
-  operator's account id, it also switches devices: each command is recorded on the edge under that account, with
+  operator's account id, it also switches devices. Set it with `npm run local-control:account -- --write` while the
+  edge is online; it looks the id up rather than having it typed, because a mistyped id would leave every local
+  command's record refused by the database: each command is recorded on the edge under that account, with
   "local sign-in" in its note, and uploaded when the internet returns. Without it, it is view-only. The account menu
   says which (*can switch devices* or *cannot issue commands*).
 - **How long.** Up to 12 h. It survives a kiosk reload and ends if the proxy restarts [E-172].

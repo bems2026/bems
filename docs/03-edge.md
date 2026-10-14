@@ -307,7 +307,7 @@ document** (G1) [E-042, E-067].
 | `LIGHT_API_TOKEN` | Authenticates the proxy to the flow's command endpoints. The proxy **refuses to start** if dispatch is enabled without it [E-141]. | With dispatch |
 | `NODE_RED_ADMIN_USER`, `NODE_RED_ADMIN_PASS` | For the scripts that read or write the flow | Deploying and maintaining the flow |
 | `BREAK_GLASS_PASSWORD_HASH` | An optional local login for when the sign-in service is unreachable | Optional |
-| `BREAK_GLASS_USER_ID` | The account a local login commands as (ADR-0016). Unset, the local login is view-only. | With local control |
+| `BREAK_GLASS_USER_ID` | The account a local login commands as (ADR-0016). Unset, the local login is view-only. Written by `npm run local-control:account -- --write`, never typed. | With local control |
 | `TUYA_ACCESS_ID`, `TUYA_ACCESS_SECRET`, `TUYA_REGION` | The optional vendor cloud: fallback dispatch and device facts. **The most sensitive credential here**, because it reaches hardware directly. | Optional |
 | `NTFY_TOPIC` | Push alerts | Optional |
 | `PROXY_PORT` | The proxy's port | Optional |

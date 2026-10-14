@@ -5008,8 +5008,10 @@ operator asked that the dashboard can be signed into, and the building switched,
       — `server/scheduler.mjs`; three tests in `server/scheduler.test.mjs`
 - [ ] **RM-161d** Deploy, once the device network has internet again: `git pull`, `npm run build`, restart the three
       daemons.
-- [ ] **RM-161e** *Operator, asked first.* Set `BREAK_GLASS_USER_ID` in `server/.env` to the operator's own account
-      id, and restart the proxy.
+- [ ] **RM-161e** *Operator, asked first.* Set `BREAK_GLASS_USER_ID` with `npm run local-control:account -- --write`
+      while the edge is online (it lists the accounts that have sent commands, with their email, and writes the newest),
+      then restart the proxy. Never typed: a mistyped id still looks valid, and every local command's record would be
+      refused and block the outage queue behind it (2026-10-14; `server/local-control-account.mjs`, 5 tests).
 - [ ] **RM-161f** Read back on site: a local sign-in, one light switched from it, its `commands` row marked "local
       sign-in", and the scheduler's kept configuration on the edge.
 
