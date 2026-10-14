@@ -92,3 +92,28 @@ export function decideWifiMove({
     reason: `preferred network ${preferred.ssid} (priority ${preferred.priority}) is available at signal ${signal}`,
   };
 }
+
+/**
+ * RM-163, 2026-10-14: did a move to the target network work? It used to need the internet. Then the device
+ * network's mobile uplink ran out of data: at 13:23 its AP dropped, the Pi fell back to the office SSID, and
+ * at 13:32 this timer moved it back, found no internet, called that a failure and reverted, leaving every
+ * device dark and backing off for two hours. The devices need no internet, and logging is the edge's job
+ * whatever the internet does (ADR-0017). So a move succeeds when the Pi is on the target and either the
+ * internet or the devices there answer. Remote access waits for the target's internet; the readings do not.
+ */
+export function moveSucceeded({ onTarget, internet, devicesAnswering }) {
+  return Boolean(onTarget) && (Boolean(internet) || Boolean(devicesAnswering));
+}
+
+/** The addresses to ping to ask "are the devices here?": enabled tuya nodes' own, deduplicated, `max` at most. */
+export function deviceProbeAddresses(flows, { max = 5 } = {}) {
+  const out = [];
+  for (const n of Array.isArray(flows) ? flows : []) {
+    if (n?.type !== 'tuya-smart-device' || n.disableAutoStart) continue;
+    const ip = String(n.deviceIp ?? '').trim();
+    if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip) || out.includes(ip)) continue;
+    out.push(ip);
+    if (out.length >= max) break;
+  }
+  return out;
+}

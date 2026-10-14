@@ -552,17 +552,18 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
-### 2026-10-14 — logging without internet (RM-163): built; deploy when the edge is back on the mesh
+### 2026-10-14 — logging without internet (RM-163): deployed; the Wi-Fi rule waits for the device network's internet
 
-The edge left the mesh again on the evening of 14 Oct, after RM-163f was deployed and the upload resumed. Ingest keeps
-archiving and catching up on its own. When the edge is reachable:
+At 13:23 the device AP dropped the edge; it fell back to the office SSID (internet, every device dark), and the
+preference timer would not return it because the device network had no internet (E-258). In the hour the edge was
+reachable that way, RM-163d (the flow, `8fedde9`), the kiosk build and the clock-save timer were deployed; at 13:56,
+with the operator's approval, the edge was switched back to the device network and left the mesh, as expected.
 
-1. `git pull` (to `a9863f4` or later), `npm run build` (the kiosk's cloud note).
-2. `npm run build:flow`, back up `~/.node-red/flows.json`, `npm run deploy:pi` (dry run, then apply): the still
-   rule (RM-163d). Then `sudo systemctl restart ibems-ingest ibems-proxy ibems-scheduler`.
-3. Install the clock-save timer (RM-163h1): see `server/ibems-clock-save.service`'s header.
-4. Read back: the journal's "catching up" lines and `row(s) waiting` falling; 7 to 13 Oct rebuilt once their rows are
-   up (RM-163g); no meter flagged frozen while they read live.
+**When the device network has internet again** (the operator tops up its uplink), the edge rejoins the mesh. Then:
+
+1. `git pull`. That is all RM-163i needs: `ibems-wifi-prefer` is a oneshot and runs the new code at its next tick.
+2. Read back: "catching up" lines and `row(s) waiting` falling; 7 to 13 Oct rebuilt once their rows are up
+   (RM-163g); no meter flagged frozen while they read live; the clock-save timer firing.
 5. **Operator's decisions:** a battery RTC module (DS3231) for the Pi; a UPS for the router and the Pi; and whether to
    put the meters' supply on a relay the edge could power-cycle (ADR-0017).
 
@@ -5125,7 +5126,12 @@ rule never flagged them. The day reports for 7 to 13 Oct were generated at 09:50
       re-times every row it archived since (`archive.shiftTimes`: newest first, uploaded rows left, seals cleared).
       A battery RTC module (DS3231, `dtoverlay=i2c-rtc,ds3231`) is the hardware fix: the operator's decision. —
       4 + 2 tests.
-- [ ] **RM-163h1** On the edge: install and enable the clock-save timer (sudo).
+- [x] **RM-163h1** Installed and enabled on the edge 2026-10-14 13:56 (E-258).
+- [x] **RM-163i** *Built, not deployed.* The Wi-Fi preference timer, logging first: a move back to the device network
+      succeeds when the internet OR the devices there answer (`moveSucceeded`; a few of the flow's own device
+      addresses pinged, `deviceProbeAddresses`). On 14 Oct it reverted to the office SSID for want of internet and
+      backed off two hours with every device dark (E-258). The revert to the previous network still requires the
+      internet. — 3 tests in `server/wifiPreference.test.mjs`. Deploys with a `git pull` (a oneshot).
 
 ### The log back under the Free plan — RM-158 (2026-10-03)
 

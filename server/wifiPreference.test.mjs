@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decideWifiMove, ACTION, DEFAULT_BACKOFF_MS } from './wifiPreference.mjs';
+import { decideWifiMove, ACTION, DEFAULT_BACKOFF_MS, moveSucceeded, deviceProbeAddresses } from './wifiPreference.mjs';
 
 const DEVICE = { name: 'device-ap', ssid: 'device-ap', autoconnect: true, priority: 30 };
 const OFFICE = { name: 'office', ssid: 'office', autoconnect: true, priority: 10 };
@@ -101,4 +101,43 @@ test('refuses when no autoconnect profiles exist, rather than guessing', () => {
 test('accepts a Map of visible networks as well as an object', () => {
   const d = decideWifiMove({ savedWifi: SAVED, visible: new Map([['device-ap', 90]]), currentSsid: 'office' });
   assert.equal(d.action, ACTION.SWITCH);
+});
+
+/* RM-163 (2026-10-14): logging first. The device network's uplink ran out of data; at 13:23 the device AP
+ * dropped, the Pi fell back to the office SSID, and at 13:32 this timer moved it back, found no internet on
+ * the device network, called that a failure and reverted — leaving every device dark, and backing off for two
+ * hours. The devices need no internet. A move now succeeds when the Pi is on the target and either the
+ * internet or the devices there answer. */
+
+test('a move succeeds on the target network when the internet OR the devices answer', () => {
+  assert.equal(moveSucceeded({ onTarget: true, internet: true, devicesAnswering: false }), true);
+  assert.equal(moveSucceeded({ onTarget: true, internet: false, devicesAnswering: true }), true, 'the device network without internet is still the right network');
+  assert.equal(moveSucceeded({ onTarget: true, internet: false, devicesAnswering: false }), false, 'neither: revert, as before');
+  assert.equal(moveSucceeded({ onTarget: false, internet: true, devicesAnswering: true }), false, 'not associated to the target');
+});
+
+test('the devices to probe are the enabled tuya nodes\' own addresses, deduplicated, a handful at most', () => {
+  const flows = [
+    { type: 'tuya-smart-device', deviceIp: '192.0.2.10' },
+    { type: 'tuya-smart-device', deviceIp: '192.0.2.10' },
+    { type: 'tuya-smart-device', deviceIp: '192.0.2.11', disableAutoStart: true },
+    { type: 'tuya-smart-device', deviceIp: 'not-an-address' },
+    { type: 'tuya-smart-device' },
+    { type: 'function', deviceIp: '192.0.2.99' },
+    ...Array.from({ length: 8 }, (_, i) => ({ type: 'tuya-smart-device', deviceIp: `192.0.2.${20 + i}` })),
+  ];
+  const probes = deviceProbeAddresses(flows);
+  assert.equal(probes[0], '192.0.2.10');
+  assert.ok(!probes.includes('192.0.2.11'), 'a disabled node is not a device we expect to answer');
+  assert.ok(!probes.includes('192.0.2.99'));
+  assert.equal(new Set(probes).size, probes.length);
+  assert.equal(probes.length, 5);
+  assert.deepEqual(deviceProbeAddresses(null), []);
+});
+
+test('the timer\'s success test is moveSucceeded, with the devices probed only when the internet does not answer', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('./wifi-prefer.mjs', import.meta.url), 'utf8');
+  assert.match(src, /const devices = onTarget && !internet && devicesAnswering\(\);\s*if \(moveSucceeded\(\{ onTarget, internet, devicesAnswering: devices \}\)\)/);
+  assert.match(src, /for \(const ip of deviceProbeAddresses\(flows\)\)/);
 });

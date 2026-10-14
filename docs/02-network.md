@@ -3,9 +3,9 @@ title: Network and communication
 purpose: Build and operate the isolated device network, the uplink and remote access (L2)
 audience: [integrator, administrator]
 status: Draft
-last_verified: 2026-09-24
+last_verified: 2026-10-14
 applies_to: repo 8e398f8 · edge checkout fcb1ff6
-evidence: [E-002, E-014, E-019, E-022, E-025, E-026, E-027, E-028, E-033, E-042, E-066, E-078, E-117, E-118, E-132, E-133, E-134, E-145, E-146, E-154, E-155, E-156, E-157, E-158, E-159, E-160, E-214]
+evidence: [E-002, E-014, E-019, E-022, E-025, E-026, E-027, E-028, E-033, E-042, E-066, E-078, E-117, E-118, E-132, E-133, E-134, E-145, E-146, E-154, E-155, E-156, E-157, E-158, E-159, E-160, E-214, E-258]
 ---
 
 # Network and communication
@@ -239,7 +239,7 @@ place there (F-025).
 | Setting | Where | Value |
 |---|---|---|
 | Device SSID autoconnect priority | the edge (`nmcli`) | Highest [E-158] |
-| Wi-Fi preference timer | `ibems-wifi-prefer.timer` | Every 5 min, first at 90 s after boot [E-022] |
+| Wi-Fi preference timer | `ibems-wifi-prefer.timer` | Every 5 min, first at 90 s after boot [E-022]. A move back to the device network succeeds when the internet OR the devices answer there, so an uplink outage no longer keeps the edge on the office SSID with every device dark [E-258] |
 | Per-node address | the device nodes (`set-device-ip:pi`) | From the LAN map |
 | AP reservations | the access point | From `--reservations` |
 | Discovery timeout | the device nodes | 10,000 ms, well above the 5 s broadcast interval [E-132] |
@@ -267,7 +267,7 @@ place there (F-025).
 |---|---|---|---|---|
 | Device unreachable but powered | Isolation on the SSID, or a node that has given up | Does the edge's `ip neigh` resolve its MAC [E-117]? Is the device announcing [E-146]? | Isolation off; restart Node-RED [E-118] | Online for an hour |
 | Devices drop at particular times of day | Channel interference, or too many clients at busy hours | `rf:survey` at that time; the AP's client count | Pin a clean channel; raise the client limit, or add an AP | A full day with no drops |
-| The whole segment is down | The AP is down, or the edge is on the wrong SSID | `nmcli con show --active` on the edge: which SSID? | Restore the AP. The preference timer returns the edge within 5 min [E-022]. | Devices return in order |
+| The whole segment is down | The AP is down, or the edge is on the wrong SSID | `nmcli con show --active` on the edge: which SSID? | Restore the AP. The preference timer returns the edge within 5 min, whether or not the device network has internet [E-022, E-258]. | Devices return in order |
 | Control works, telemetry does not | The uplink (ingest cannot write) or ingest itself | `journalctl -u ibems-ingest`: "wrote" lines, or buffering? | Restore the uplink. The buffer flushes itself [E-134]. | `buffered_row_count` returns to 0 |
 | Latency degrades | Interference, or a relayed mesh path | `rf:survey`; `tailscale ping` shows relayed or direct [E-002] | A clean channel; allow the mesh network's UDP outbound | Direct path, commands in seconds |
 | Address conflict | No reservation, or a manual address overlapping the DHCP pool | `set-device-ip:pi --reservations` against the AP's table | Reserve every device | No `ADDRESS DRIFT` in the fleet-recovery journal |

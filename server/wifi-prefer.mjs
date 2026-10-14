@@ -11,8 +11,10 @@
  * THE SAFETY CONTRACT, which matters more than the feature:
  *   - it only ever moves TOWARDS the highest-priority saved profile, never away from it;
  *   - it will not leave a working connection for one that is out of range or weak;
- *   - a move counts as successful only if the Pi ends up associated to the target AND can
- *     reach the internet. Anything less is reverted to whatever it was on before;
+ *   - a move counts as successful only if the Pi ends up associated to the target AND either
+ *     reaches the internet or reaches the devices there (RM-163: the devices need no internet,
+ *     and logging must not stop for an internet outage). Anything less is reverted to whatever
+ *     it was on before;
  *   - if the revert also fails, it tries every other saved profile before giving up, because
  *     the operator is usually remote and a Pi with no uplink cannot be recovered from here;
  *   - a failed attempt starts a backoff, so a half-broken AP cannot cause endless churn.
@@ -23,7 +25,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { decideWifiMove, ACTION } from './wifiPreference.mjs';
+import { decideWifiMove, ACTION, moveSucceeded, deviceProbeAddresses } from './wifiPreference.mjs';
 
 const DRY = process.argv.includes('--dry-run');
 const VERBOSE = process.argv.includes('--verbose');
@@ -32,6 +34,8 @@ const VERBOSE = process.argv.includes('--verbose');
 const DISABLE_FLAG = '/home/bems/.ibems-wifi-prefer.disabled';
 const STATE_PATH = '/home/bems/.ibems-wifi-prefer.state';
 const CONNECT_CHECK = 'https://api.ipify.org';
+/** RM-163: the live flow, for the devices' own addresses (read-only). */
+const FLOWS_PATH = process.env.NODE_RED_FLOWS_PATH || '/home/bems/.node-red/flows.json';
 
 const log = (...a) => console.log(`[wifi-prefer] ${a.join(' ')}`);
 const sh = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', timeout: 60_000 });
@@ -88,13 +92,26 @@ function internetReachable() {
 
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
-/** Associated to `ssid` AND able to reach the internet. Both, or it is not a success. */
-function settled(ssid, tries = 12, gapMs = 5000) {
-  for (let i = 0; i < tries; i++) {
-    if (currentSsid() === ssid && internetReachable()) return true;
-    sleep(gapMs);
+/** RM-163: does any device on this network answer? Pings a few of the flow's own device addresses. */
+function devicesAnswering() {
+  let flows;
+  try { flows = JSON.parse(readFileSync(FLOWS_PATH, 'utf8')); } catch { return false; }
+  for (const ip of deviceProbeAddresses(flows)) {
+    try { sh('ping', ['-c', '1', '-W', '2', ip]); return true; } catch { /* the next one */ }
   }
   return false;
+}
+
+/** Associated to `ssid`, and the internet or the devices answer there (`moveSucceeded`). Returns what answered. */
+function settled(ssid, tries = 12, gapMs = 5000) {
+  for (let i = 0; i < tries; i++) {
+    const onTarget = currentSsid() === ssid;
+    const internet = onTarget && internetReachable();
+    const devices = onTarget && !internet && devicesAnswering();
+    if (moveSucceeded({ onTarget, internet, devicesAnswering: devices })) return internet ? 'internet reachable' : 'devices answering, no internet';
+    sleep(gapMs);
+  }
+  return null;
 }
 
 function bringUp(profileName) {
@@ -138,8 +155,9 @@ log(`switching to "${decision.target.name}" (was "${previousProfile ?? 'none'}")
 
 bringUp(decision.target.name);
 
-if (settled(decision.target.ssid)) {
-  log(`SUCCESS: on ${currentSsid()}, internet reachable`);
+const how = settled(decision.target.ssid);
+if (how) {
+  log(`SUCCESS: on ${currentSsid()}, ${how}`);
   writeState({ ...state, lastFailureAt: null, lastSuccessAt: Date.now() });
   process.exit(0);
 }
