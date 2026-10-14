@@ -7,6 +7,7 @@ import { useDevicesFor } from '@/hooks/useDevicesFor';
 import { useCapabilitiesStore } from '@/stores/capabilitiesStore';
 import { useSiteUiStore } from '@/stores/siteUiStore';
 import { AuditBacklogNote } from './AuditBacklogNote';
+import { CloudBacklogNote } from './CloudBacklogNote';
 import { DispatchPathNote } from './DispatchPathNote';
 import { ConfirmModal, type ConfirmTone } from '@/components/ui/ConfirmModal';
 import { InfoHint } from '@/components/ui/InfoHint';
@@ -141,6 +142,7 @@ export function ControlPage() {
       />
 
       <AuditBacklogNote />
+      <CloudBacklogNote />
       <DispatchPathNote />
 
       <div className="control-grid">

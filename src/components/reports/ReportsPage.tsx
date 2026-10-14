@@ -48,6 +48,7 @@ import { BaselineNotes } from './BaselineNotes';
 import { CircuitDeepDive } from './CircuitDeepDive';
 import { ComparisonReport } from './ComparisonReport';
 import { CoverageBanner } from './CoverageBanner';
+import { CloudBacklogNote } from '@/components/control/CloudBacklogNote';
 import { ExportDrawer, type ExportFormat } from './ExportDrawer';
 import { ReportSectionNote } from './ReportSectionNote';
 import { ReportKpis } from './ReportKpis';
@@ -715,6 +716,8 @@ export function ReportsPage() {
                 </>
               )}
             </header>
+            {/* RM-163: days the Pi has logged but not yet uploaded read as gaps here until it catches up. */}
+            <CloudBacklogNote />
             <ReportKpis
               period={period}
               building={conserved ?? building}

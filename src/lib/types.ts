@@ -342,6 +342,13 @@ export interface Capabilities {
    */
   audit_buffer_pending?: number;
   /**
+   * RM-163: the oldest reading the Pi's archive has not uploaded yet (ISO), or null when the cloud has
+   * them all. Null too when the proxy could not read its archive, which `cloud_owed_rows: null` marks.
+   */
+  cloud_owed_since?: string | null;
+  /** RM-163: rows the Pi still owes the cloud, or null when its archive could not be read. */
+  cloud_owed_rows?: number | null;
+  /**
    * Which dispatch paths this site permits — `local-first` or `local-only`. Declared in
    * `shared/sites/<id>/site.mjs`. Optional: a proxy predating the field says nothing, which is
    * not the same as saying `local-first`.

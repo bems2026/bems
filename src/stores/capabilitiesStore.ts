@@ -21,6 +21,12 @@ interface CapabilitiesState {
    */
   auditBufferPending: number | null;
   /**
+   * RM-163: how far behind the cloud is. `since` is the oldest reading the Pi has not uploaded (null when
+   * it has uploaded them all); the whole value is null until a proxy that reports it answers, and when the
+   * proxy could not read its archive. Unknown is never shown as "caught up".
+   */
+  cloudBacklog: { since: string | null; rows: number; checkedAtMs: number } | null;
+  /**
    * Which dispatch paths this site permits (`local-first` / `local-only`), and whether a
    * vendor-cloud fallback is actually configured on this deployment.
    *
@@ -68,6 +74,7 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
   hardwareDispatchEnabled: null,
   dispatchClasses: null,
   auditBufferPending: null,
+  cloudBacklog: null,
   dispatchPolicy: null,
   cloudFallbackConfigured: null,
   acuMinRoomTargetC: null,
@@ -83,7 +90,7 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
     retry.cancel();
     const attempt = async (): Promise<void> => {
       try {
-        const { hardware_dispatch_enabled, dispatch_classes, audit_buffer_pending, dispatch_policy, cloud_fallback_configured, acu_min_room_target_c, acu_min_setpoint_c, policy_source, acu_cloud_route, acu_local_ir_verified, acu_local_ir_protocol } = await getCapabilities();
+        const { hardware_dispatch_enabled, dispatch_classes, audit_buffer_pending, cloud_owed_since, cloud_owed_rows, dispatch_policy, cloud_fallback_configured, acu_min_room_target_c, acu_min_setpoint_c, policy_source, acu_cloud_route, acu_local_ir_verified, acu_local_ir_protocol } = await getCapabilities();
         retry.succeeded();
         set({
           hardwareDispatchEnabled: hardware_dispatch_enabled,
@@ -92,6 +99,9 @@ export const useCapabilitiesStore = create<CapabilitiesState>((set) => ({
           // not the same as an answer of "nothing".
           dispatchClasses: Array.isArray(dispatch_classes) ? dispatch_classes : null,
           auditBufferPending: typeof audit_buffer_pending === 'number' ? audit_buffer_pending : null,
+          cloudBacklog: typeof cloud_owed_rows === 'number'
+            ? { since: typeof cloud_owed_since === 'string' ? cloud_owed_since : null, rows: cloud_owed_rows, checkedAtMs: Date.now() }
+            : null,
           dispatchPolicy: typeof dispatch_policy === 'string' ? dispatch_policy : null,
           cloudFallbackConfigured: typeof cloud_fallback_configured === 'boolean' ? cloud_fallback_configured : null,
           // New key preferred, old key as the fallback, for the length of the RM-068 rename
