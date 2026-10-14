@@ -1,0 +1,16 @@
+# Fires server/ibems-clock-save.service every minute. See that file for why and how to install.
+#
+# OnBootSec is two minutes so the first save comes after timesyncd has had its chance to synchronise; a
+# save before then would only record the restored time again, which is harmless.
+
+[Unit]
+Description=Save the clock every minute (iBEMS, RM-163h)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=10s
+Unit=ibems-clock-save.service
+
+[Install]
+WantedBy=timers.target

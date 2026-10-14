@@ -1,0 +1,27 @@
+# systemd unit: saves the clock every minute, so a restart without internet resumes at the right time.
+# RM-163h, 2026-10-14.
+#
+#     sudo cp server/ibems-clock-save.service /etc/systemd/system/
+#     sudo cp server/ibems-clock-save.timer   /etc/systemd/system/
+#     sudo systemctl daemon-reload
+#     sudo systemctl enable --now ibems-clock-save.timer
+#
+# WHY. The Pi 4 has no battery-backed clock. It takes its time from the internet (systemd-timesyncd), and
+# at boot timesyncd sets the clock no earlier than the modification time of
+# /var/lib/systemd/timesync/clock — which it updates only when it synchronises. After a week without
+# internet, a power cut would restart the Pi a week in the past, and every minute logged until the
+# internet returned would carry that date. Touching the file every minute keeps a restart within a minute
+# of the cut; ingest re-times what it logged before the clock synchronises (server/clockWatch.mjs).
+#
+# A battery RTC module (DS3231 on the I2C pins, `dtoverlay=i2c-rtc,ds3231`) removes the gap entirely and
+# is the recommended hardware fix; this unit is harmless beside it.
+#
+# A oneshot fired by the timer, as root: the file belongs to the timesync account.
+
+[Unit]
+Description=iBEMS: save the clock so a restart without internet resumes at the right time
+After=systemd-timesyncd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/touch /var/lib/systemd/timesync/clock

@@ -554,3 +554,32 @@ test('owedSince is the oldest row the cloud does not have yet, across the stream
   assert.equal(archive.owedSince(), null);
   archive.close();
 });
+
+/* RM-163h: re-timing minutes logged against a wrong clock. After a power cut with no internet the Pi restarts
+ * at a saved time and stamps its minutes from there; when the internet returns the clock steps forward, and
+ * the minutes before the step are off by exactly that much. */
+
+test('shiftTimes moves the rows after a mark by the step, newest first so none collide, and skips uploaded ones', (t) => {
+  const { archive } = tempArchive(t);
+  archive.insertTick({ readings: [reading({ ts: minuteIso(-5) })] }); // before this process: untouched
+  const start = archive.maxIds();
+  for (let i = 0; i < 4; i++) archive.insertTick({ readings: [reading({ ts: minuteIso(i) })], totals: totals({ ts: minuteIso(i) }) });
+  const res = archive.shiftTimes({ afterIds: start, throughIds: archive.maxIds(), deltaMs: 2 * 60_000 });
+  assert.deepEqual(res.shifted, { readings: 4, building_totals: 4, anomalies: 0 }, 'a 2-minute step over 4 minutes overlaps itself, and still lands');
+  assert.equal(res.skippedUploaded, 0);
+  const ts = archive.pending('readings', 10).map((p) => p.row.ts);
+  assert.deepEqual(ts, [minuteIso(-5), minuteIso(2), minuteIso(3), minuteIso(4), minuteIso(5)]);
+  archive.close();
+});
+
+test('shiftTimes leaves rows the cloud already has, and says how many', (t) => {
+  const { archive } = tempArchive(t);
+  const start = archive.maxIds();
+  archive.insertTick({ readings: [reading({ ts: minuteIso(0) })] });
+  archive.insertTick({ readings: [reading({ ts: minuteIso(1) })] });
+  archive.advance('readings', archive.pending('readings', 1)[0].id);
+  const res = archive.shiftTimes({ afterIds: start, throughIds: archive.maxIds(), deltaMs: 3_600_000 });
+  assert.equal(res.shifted.readings, 1);
+  assert.equal(res.skippedUploaded, 1);
+  archive.close();
+});

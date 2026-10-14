@@ -5093,7 +5093,15 @@ rule never flagged them. The day reports for 7 to 13 Oct were generated at 09:50
 - [ ] **RM-163g** Upload resumed 2026-10-14 11:53. Left: read 7 to 13 Oct rebuilt once their rows are up, frozen
       meter-days read as unmeasured; deploy the kiosk note (`npm run build`) and RM-163d (`deploy:pi`, ingest restart)
       when the edge is reachable again.
-- [ ] **RM-163h** The clock without internet: the clock-save timer and step re-timing; an RTC module recommended.
+- [x] **RM-163h** *Built, not deployed.* The clock without internet. The Pi 4 has no battery clock; at boot timesyncd
+      restores the time no earlier than `/var/lib/systemd/timesync/clock`, which it touches only on a sync, so a power
+      cut after a week offline would restart the Pi a week in the past. `server/ibems-clock-save.timer` touches it
+      every minute (install by hand, as root; see its header). Ingest notes at start whether the clock has
+      synchronised; if not, the first step it measures (wall clock against the monotonic one, `server/clockWatch.mjs`)
+      re-times every row it archived since (`archive.shiftTimes`: newest first, uploaded rows left, seals cleared).
+      A battery RTC module (DS3231, `dtoverlay=i2c-rtc,ds3231`) is the hardware fix: the operator's decision. —
+      4 + 2 tests.
+- [ ] **RM-163h1** On the edge: install and enable the clock-save timer (sudo).
 
 ### The log back under the Free plan — RM-158 (2026-10-03)
 

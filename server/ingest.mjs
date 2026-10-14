@@ -38,6 +38,8 @@ import { openArchive } from './archiveDb.mjs';
 import { drainArchive, uploadDue, uploadIntervalFrom, nextUploadBatch, UPLOAD_BATCH } from './archiveUpload.mjs';
 import { noteLateUpload, readLate, writeLate } from './lateData.mjs';
 import { createFreezeWatch, freezeMessage } from './freezeWatch.mjs';
+import { createClockWatch } from './clockWatch.mjs';
+import { execFileSync } from 'node:child_process';
 import { readingsForCloud } from './cloudCapabilities.mjs';
 import { runHotTierPass } from './hotTier.mjs';
 import { makeStorageClient } from './supabaseStorage.mjs';
@@ -474,12 +476,50 @@ let archive = null;
 /** Edge-triggered, like the fleet alarm: one notice when the archive starts failing, one when it recovers. */
 let archiveFailing = false;
 
+/**
+ * RM-163h: the clock. The Pi 4 has no battery-backed clock and takes its time from the internet; after a
+ * power cut with no internet it restarts at a saved time (server/ibems-clock-save.timer keeps that within a
+ * minute of the cut) and stamps every minute against it until the internet returns and the clock steps. If
+ * the clock had not synchronised when this process started, the first step it measures is the error of every
+ * minute it has archived, and those minutes are moved by it before they upload (`archive.shiftTimes`).
+ */
+const clockWatch = createClockWatch();
+let clockUnsyncedAtStart = false;
+let clockMarkIds = null;
+function ntpSynchronized() {
+  try {
+    return execFileSync('timedatectl', ['show', '-p', 'NTPSynchronized', '--value'], { encoding: 'utf8', timeout: 5000 }).trim() === 'yes';
+  } catch {
+    return null; // no timedatectl (a workstation, a container): unknown, and nothing is re-timed
+  }
+}
+function noteClock() {
+  const step = clockWatch.observe({ wallMs: Date.now(), monoMs: performance.now() });
+  if (step === null) return;
+  if (!clockUnsyncedAtStart || !archive || !clockMarkIds) {
+    console.warn(`[ibems-ingest] the clock stepped by ${Math.round(step / 1000)} s; minutes already archived keep their stamps`);
+    return;
+  }
+  clockUnsyncedAtStart = false;
+  try {
+    const r = archive.shiftTimes({ afterIds: clockMarkIds, throughIds: archive.maxIds(), deltaMs: step });
+    console.warn(`[ibems-ingest] the clock synchronised and stepped by ${Math.round(step / 1000)} s; re-timed ${r.shifted.readings} reading(s), ${r.shifted.building_totals} total(s) and ${r.shifted.anomalies} anomaly row(s) archived since the restart${r.skippedUploaded ? `; ${r.skippedUploaded} already in the cloud keep the old stamps` : ''}`);
+  } catch (err) {
+    console.error(`[ibems-ingest] the clock stepped by ${Math.round(step / 1000)} s and the minutes before it could not be re-timed: ${String(err)}`);
+  }
+}
+
 function openArchiveOrFallBack() {
   try {
     archive = openArchive(ARCHIVE_PATH);
   } catch (err) {
     console.error(`[ibems-ingest] ARCHIVE UNAVAILABLE at ${ARCHIVE_PATH} — writing straight to Supabase instead: ${String(err)}`);
     return;
+  }
+  clockMarkIds = archive.maxIds();
+  clockUnsyncedAtStart = ntpSynchronized() === false;
+  if (clockUnsyncedAtStart) {
+    console.warn('[ibems-ingest] the clock has not synchronised since boot (no internet): minutes are stamped against the saved time, and will be re-timed when it synchronises');
   }
   // The old NDJSON buffer's rows never reached the cloud. Take them into the archive, which now
   // owes them to the cloud, and set the file aside rather than deleting it.
@@ -561,6 +601,7 @@ async function updateHealth(ok, lastError = null, rejections = []) {
 
 async function tick() {
   let synced = null;
+  noteClock();
   uploadedThisTick = false;
   healthCarriedThisTick = false;
   rejectionsHeldThisTick = false;

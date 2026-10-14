@@ -427,6 +427,51 @@ export function openArchive(file, { readOnly = false, targetVersion = ARCHIVE_SC
     return out;
   }
 
+  /** RM-163h: the newest id per stream, to mark where this process's rows begin. */
+  function maxIds() {
+    const out = {};
+    for (const stream of Object.keys(STREAMS)) out[stream] = prepare(`SELECT max(id) AS m FROM ${stream}`).get().m ?? 0;
+    return out;
+  }
+
+  /**
+   * RM-163h: moves the rows with ids in `(afterIds, throughIds]` by `deltaMs` — minutes stamped against a clock
+   * that later stepped by that much (`server/clockWatch.mjs`). Rows the cloud already has are left alone and
+   * counted. Each row moves on its own, newest first for a forward step (oldest first for a backward one), so
+   * none lands on a row not yet moved: the uniqueness of (device, ts) holds throughout. Every UTC day the rows
+   * left or entered is unsealed, to be sealed again.
+   */
+  function shiftTimes({ afterIds, throughIds, deltaMs }) {
+    const shifted = Object.fromEntries(Object.keys(STREAMS).map((s) => [s, 0]));
+    let skippedUploaded = 0;
+    const days = new Set();
+    const day = (ms) => new Date(ms).toISOString().slice(0, 10);
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const stream of Object.keys(STREAMS)) {
+        const cursor = cursorOf(stream);
+        const rows = prepare(`SELECT id, ts FROM ${stream} WHERE id > ? AND id <= ? ORDER BY ts ${deltaMs > 0 ? 'DESC' : 'ASC'}, id`)
+          .all(afterIds?.[stream] ?? 0, throughIds?.[stream] ?? 0);
+        for (const r of rows) {
+          if (r.id <= cursor) { skippedUploaded += 1; continue; }
+          prepare(`UPDATE ${stream} SET ts = ? WHERE id = ?`).run(r.ts + deltaMs, r.id);
+          shifted[stream] += 1;
+          days.add(`${day(r.ts)}|${stream}`);
+          days.add(`${day(r.ts + deltaMs)}|${stream}`);
+        }
+      }
+      for (const key of days) {
+        const [d, stream] = key.split('|');
+        prepare('DELETE FROM sealed_days WHERE day = ? AND stream = ?').run(d, stream);
+      }
+      db.exec('COMMIT');
+    } catch (err) {
+      try { db.exec('ROLLBACK'); } catch { /* reported below */ }
+      throw err;
+    }
+    return { shifted, skippedUploaded };
+  }
+
   /** Forgets a day's seal, so the next sealing pass writes and copies it again — after its rows changed in place. */
   function forgetSeal(day, stream) {
     prepare('DELETE FROM sealed_days WHERE day = ? AND stream = ?').run(day, stream);
@@ -584,6 +629,8 @@ export function openArchive(file, { readOnly = false, targetVersion = ARCHIVE_SC
     readingsByIds,
     forgetSeal,
     backupTo,
+    maxIds,
+    shiftTimes,
     stats,
     schemaVersion: () => userVersion(db),
     journalMode: () => prepare('PRAGMA journal_mode').get().journal_mode,
