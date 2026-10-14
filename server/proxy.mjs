@@ -501,6 +501,30 @@ function readArchive(fn) {
   }
 }
 
+/**
+ * RM-163 (2026-10-14): how far behind the cloud is — the oldest row the edge has not uploaded yet, and how
+ * many are waiting. After a week offline 200,000 rows sat on the Pi while the Reports page showed those days
+ * empty, with nothing on screen saying the data was on its way. Counting the owed rows walks them, so the
+ * answer is kept a minute; `null`s when the archive cannot be read (unknown, not "caught up").
+ */
+const CLOUD_BACKLOG_TTL_MS = 60_000;
+let cloudBacklogCache = { atMs: 0, value: null };
+function cloudBacklog() {
+  const nowMs = Date.now();
+  if (cloudBacklogCache.value && nowMs - cloudBacklogCache.atMs < CLOUD_BACKLOG_TTL_MS) return cloudBacklogCache.value;
+  let value;
+  try {
+    value = readArchive((a) => {
+      const since = a.owedSince();
+      return { owedSince: since === null ? null : new Date(since).toISOString(), owedRows: Object.values(a.lag()).reduce((n, v) => n + v, 0) };
+    });
+  } catch {
+    value = { owedSince: null, owedRows: null };
+  }
+  cloudBacklogCache = { atMs: nowMs, value };
+  return value;
+}
+
 function handleArchiveStatus(res) {
   try {
     const s = readArchive((a) => a.stats());
@@ -1180,6 +1204,9 @@ const server = http.createServer(async (req, res) => {
       // from its own screen while the internet is down.
       local_login_configured: Boolean(BREAK_GLASS_PASSWORD_HASH),
       local_control: Boolean(BREAK_GLASS_PASSWORD_HASH && BREAK_GLASS_USER_ID),
+      // RM-163: the cloud's lag behind the edge archive. The page says so while it is far behind.
+      cloud_owed_since: cloudBacklog().owedSince,
+      cloud_owed_rows: cloudBacklog().owedRows,
       // The aircon's two paths (2026-09-17). `acu_cloud_route` is whether a state the local IR
       // library cannot express (any mode but its own, any fan, swing) has anywhere to go:
       // ready | unconfigured | unresolved | local-only, or null with no aircon. The second is whether

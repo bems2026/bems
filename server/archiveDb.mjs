@@ -356,6 +356,20 @@ export function openArchive(file, { readOnly = false, targetVersion = ARCHIVE_SC
       .run(stream, throughId, Date.now());
   }
 
+  /**
+   * RM-163: the `ts` of the oldest row the cloud does not have yet, across the streams, or null when it has
+   * them all. Every row older than this is up, so a report of a period ending before it reads complete data.
+   * The first owed row by id is the oldest by time: rows are archived in time order.
+   */
+  function owedSince() {
+    let oldest = null;
+    for (const stream of Object.keys(STREAMS)) {
+      const r = prepare(`SELECT ts FROM ${stream} WHERE id > ? AND ${uploadable} ORDER BY id LIMIT 1`).get(cursorOf(stream));
+      if (r && (oldest === null || r.ts < oldest)) oldest = r.ts;
+    }
+    return oldest;
+  }
+
   /** Rows still waiting to reach the cloud, per stream. */
   function lag() {
     const out = {};
@@ -563,6 +577,7 @@ export function openArchive(file, { readOnly = false, targetVersion = ARCHIVE_SC
     pending,
     advance,
     lag,
+    owedSince,
     reject,
     rejects,
     flagFrozen,

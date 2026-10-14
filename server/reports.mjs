@@ -54,6 +54,23 @@ export const MAX_WEEKS_PER_PASS = 12;
 /** Days per pass. The backlog since the archive's first day fills over a few six-hourly passes. */
 export const MAX_DAYS_PER_PASS = 14;
 
+/**
+ * RM-163, 2026-10-14: two rules every period scheduler applies, beside "built before it settled".
+ *
+ * The site was offline from 7 to 14 October. The moment the link answered, ingest built the day reports for
+ * 7 to 13 October and the week of 5 October from a cloud that held rows only to 7 Oct 15:29, while the edge
+ * still owed it 200,000 rows. Those reports counted as current and would never have been rebuilt.
+ *
+ * - `completeBeforeMs`: the cloud holds every row older than this (the edge's oldest owed row), or `null` when
+ *   the edge owes nothing. A period ending after it is not built yet, and neither is anything later.
+ * - `late`: `{ fromMs, untilMs, arrivedAtMs }`, rows from that span that reached the cloud at `arrivedAtMs`,
+ *   after their period may already have been reported (`server/lateData.mjs`). A report of an overlapping
+ *   period built before they arrived is built again.
+ */
+const incomplete = (completeBeforeMs, endMs) => typeof completeBeforeMs === 'number' && endMs > completeBeforeMs;
+const builtBeforeLateData = (late, startMs, endMs, builtAtMs) =>
+  Boolean(late) && late.fromMs < endMs && late.untilMs >= startMs && Number.isFinite(builtAtMs) && builtAtMs < late.arrivedAtMs;
+
 /** `YYYY-MM-DD` of the Monday on or before a UTC instant. `getUTCDay()` is 0 for Sunday, so
  * Sunday steps back six days rather than one — the off-by-one that makes a week start on the
  * wrong day is exactly this expression. */
@@ -76,7 +93,7 @@ function weekKey(date) {
  *           earliestDataTs: string|null, nowMs: number, graceDays?: number }} args
  * @returns {string[]} `YYYY-MM-DD` Mondays, oldest first, at most MAX_WEEKS_PER_PASS of them.
  */
-export function weeksNeedingReport({ generatedWeeks, earliestDataTs, nowMs, graceDays = REPORT_GRACE_DAYS }) {
+export function weeksNeedingReport({ generatedWeeks, earliestDataTs, nowMs, graceDays = REPORT_GRACE_DAYS, completeBeforeMs = null, late = null }) {
   if (earliestDataTs === null || earliestDataTs === undefined) return [];
   const earliestMs = Date.parse(earliestDataTs);
   if (Number.isNaN(earliestMs)) return [];
@@ -93,13 +110,14 @@ export function weeksNeedingReport({ generatedWeeks, earliestDataTs, nowMs, grac
     const nextWeek = cursor + 7 * DAY_MS;
     const settledAt = nextWeek + graceDays * DAY_MS;
     if (settledAt > nowMs) break;
+    if (incomplete(completeBeforeMs, nextWeek)) break;
 
     const key = weekKey(new Date(cursor));
     if (!generatedAt.has(key)) {
       weeks.push(key);
     } else {
       const at = Date.parse(generatedAt.get(key) ?? '');
-      if (!Number.isFinite(at) || at < settledAt) weeks.push(key);
+      if (!Number.isFinite(at) || at < settledAt || builtBeforeLateData(late, cursor, nextWeek, at)) weeks.push(key);
     }
     cursor = nextWeek;
   }
@@ -118,7 +136,7 @@ export function weeksNeedingReport({ generatedWeeks, earliestDataTs, nowMs, grac
  *           earliestDataTs: string|null, nowMs: number, offsetMinutes: number, graceHours?: number }} args
  * @returns {string[]} `YYYY-MM-DD` local days, oldest first, at most MAX_DAYS_PER_PASS of them.
  */
-export function daysNeedingReport({ generatedDays, earliestDataTs, nowMs, offsetMinutes, graceHours = DAY_GRACE_HOURS }) {
+export function daysNeedingReport({ generatedDays, earliestDataTs, nowMs, offsetMinutes, graceHours = DAY_GRACE_HOURS, completeBeforeMs = null, late = null }) {
   if (earliestDataTs === null || earliestDataTs === undefined) return [];
   const earliestMs = Date.parse(earliestDataTs);
   if (Number.isNaN(earliestMs)) return [];
@@ -138,13 +156,15 @@ export function daysNeedingReport({ generatedDays, earliestDataTs, nowMs, offset
     // The local day ends at its next local midnight, which is `nextDay - offset` in UTC.
     const settledAt = nextDay - offsetMs + graceHours * 60 * 60 * 1000;
     if (settledAt > nowMs) break;
+    // The local day is [cursor - offset, nextDay - offset) in UTC.
+    if (incomplete(completeBeforeMs, nextDay - offsetMs)) break;
 
     const key = new Date(cursor).toISOString().slice(0, 10);
     if (!generatedAt.has(key)) {
       days.push(key);
     } else {
       const at = Date.parse(generatedAt.get(key) ?? '');
-      if (!Number.isFinite(at) || at < settledAt) days.push(key);
+      if (!Number.isFinite(at) || at < settledAt || builtBeforeLateData(late, cursor - offsetMs, nextDay - offsetMs, at)) days.push(key);
     }
     cursor = nextDay;
   }
@@ -212,7 +232,7 @@ function monthKey(date) {
  *           earliestDataTs: string|null, nowMs: number, graceDays?: number }} args
  * @returns {string[]} `YYYY-MM-01` keys, oldest first, at most MAX_MONTHS_PER_PASS of them.
  */
-export function monthsNeedingReport({ generatedMonths, earliestDataTs, nowMs, graceDays = REPORT_GRACE_DAYS }) {
+export function monthsNeedingReport({ generatedMonths, earliestDataTs, nowMs, graceDays = REPORT_GRACE_DAYS, completeBeforeMs = null, late = null }) {
   if (earliestDataTs === null || earliestDataTs === undefined) return [];
   const earliestMs = Date.parse(earliestDataTs);
   // An unparseable timestamp is a reason to do nothing and say so, not a reason to guess —
@@ -236,6 +256,7 @@ export function monthsNeedingReport({ generatedMonths, earliestDataTs, nowMs, gr
     const settledAt = nextMonth + graceDays * DAY_MS;
     // Not settled yet — and since months only get newer from here, neither is anything after.
     if (settledAt > nowMs) break;
+    if (incomplete(completeBeforeMs, nextMonth)) break;
 
     const key = monthKey(cursor);
     if (!generatedAt.has(key)) {
@@ -247,7 +268,7 @@ export function monthsNeedingReport({ generatedMonths, earliestDataTs, nowMs, gr
       // regenerating, which is idempotent and cheap, rather than toward leaving a wrong
       // number in place. That is the opposite direction from shouldRunRetention, whose only
       // destructive branch is a DELETE — there, ambiguity has to resolve to "do nothing".
-      if (!Number.isFinite(at) || at < settledAt) months.push(key);
+      if (!Number.isFinite(at) || at < settledAt || builtBeforeLateData(late, cursor.getTime(), nextMonth, at)) months.push(key);
     }
     cursor.setUTCMonth(cursor.getUTCMonth() + 1);
   }
@@ -272,7 +293,7 @@ async function oldestStamp(client, table, column) {
  * @returns {Promise<{ generated: string[], failed: Array<{month: string, error: string}>,
  *                     reason: string }>} `reason` is set only when nothing was generated.
  */
-export async function runReportGeneration({ client, nowMs = Date.now(), tz, offsetMinutes = SITE.utc_offset_minutes }) {
+export async function runReportGeneration({ client, nowMs = Date.now(), tz, offsetMinutes = SITE.utc_offset_minutes, completeBeforeMs = null, late = null }) {
   // The archive is consulted as well as the raw table, and the EARLIER of the two wins.
   // `readings` is pruned at 30 days, so its oldest row is newer than the archive's — trusting
   // it alone would silently skip every month that had already been rolled up.
@@ -293,19 +314,21 @@ export async function runReportGeneration({ client, nowMs = Date.now(), tz, offs
     'select=period_start,generated_at&period=eq.month&order=period_start.asc&limit=1000'
   );
   const generatedMonths = (generatedRows ?? []).map((r) => ({ month: r.period_start, generated_at: r.generated_at }));
-  const missing = monthsNeedingReport({ generatedMonths, earliestDataTs, nowMs });
+  // RM-163: periods the edge still owes rows for wait; periods reported before late rows arrived are rebuilt.
+  const gate = { completeBeforeMs, late };
+  const missing = monthsNeedingReport({ generatedMonths, earliestDataTs, nowMs, ...gate });
 
   const generatedWeekRows = await client.select(
     'period_building_reports',
     'select=period_start,generated_at&period=eq.week&order=period_start.asc&limit=1000'
   );
-  const missingWeeks = weeksNeedingReport({ generatedWeeks: generatedWeekRows, earliestDataTs, nowMs });
+  const missingWeeks = weeksNeedingReport({ generatedWeeks: generatedWeekRows, earliestDataTs, nowMs, ...gate });
 
   const generatedDayRows = await client.select(
     'period_building_reports',
     'select=period_start,generated_at&period=eq.day&order=period_start.asc&limit=1000'
   );
-  const missingDays = daysNeedingReport({ generatedDays: generatedDayRows, earliestDataTs, nowMs, offsetMinutes });
+  const missingDays = daysNeedingReport({ generatedDays: generatedDayRows, earliestDataTs, nowMs, offsetMinutes, ...gate });
 
   // Said precisely, because "nothing to do" covers three different situations and the log
   // line used to claim the most reassuring one. "Every complete month already has one" is
@@ -324,6 +347,9 @@ export async function runReportGeneration({ client, nowMs = Date.now(), tz, offs
     reason = anyExist
       ? 'every settled month, week and day already has a current report'
       : 'no period has finished settling yet';
+    if (typeof completeBeforeMs === 'number') {
+      reason += `; anything ending after ${new Date(completeBeforeMs).toISOString()} waits until the edge has uploaded its rows`;
+    }
   }
 
   const generated = [];

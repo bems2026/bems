@@ -457,7 +457,7 @@ test('GET /api/capabilities reflects HARDWARE_DISPATCH_ENABLED — false by defa
     assert.equal(res.status, 200);
     // deepEqual, not a subset match: this endpoint tells the UI what it is allowed to claim
     // about hardware, so a field appearing unnoticed is exactly what should fail a test.
-    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: false, dispatch_classes: [], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_room_target_c: BUILD_FLOOR, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build', local_login_configured: true, local_control: false, acu_cloud_route: 'unconfigured', acu_local_ir_verified: true, acu_local_ir_protocol: 'tcl112' });
+    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: false, dispatch_classes: [], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_room_target_c: BUILD_FLOOR, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build', local_login_configured: true, local_control: false, cloud_owed_since: null, cloud_owed_rows: null, acu_cloud_route: 'unconfigured', acu_local_ir_verified: true, acu_local_ir_protocol: 'tcl112' });
   } finally {
     cleanup();
   }
@@ -467,7 +467,7 @@ test('GET /api/capabilities reports true once the gate is explicitly opened', as
   const { proxyUrl, cleanup } = await setup({ HARDWARE_DISPATCH_ENABLED: 'true', LIGHT_API_TOKEN: 'test-light-token' });
   try {
     const res = await fetch(`${proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } });
-    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: true, dispatch_classes: ['switch', 'outlet_dual', 'acu_ir'], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_room_target_c: BUILD_FLOOR, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build', local_login_configured: true, local_control: false, acu_cloud_route: 'unconfigured', acu_local_ir_verified: true, acu_local_ir_protocol: 'tcl112' });
+    assert.deepEqual(await res.json(), { hardware_dispatch_enabled: true, dispatch_classes: ['switch', 'outlet_dual', 'acu_ir'], audit_buffer_pending: 0, dispatch_policy: 'local-first', cloud_fallback_configured: false, acu_min_room_target_c: BUILD_FLOOR, acu_min_setpoint_c: BUILD_FLOOR, policy_source: 'build', local_login_configured: true, local_control: false, cloud_owed_since: null, cloud_owed_rows: null, acu_cloud_route: 'unconfigured', acu_local_ir_verified: true, acu_local_ir_protocol: 'tcl112' });
   } finally {
     cleanup();
   }
@@ -2204,5 +2204,37 @@ test('the local password cannot be guessed: five wrong tries lock the address ou
     assert.ok(body.retry_after_s > 0);
   } finally {
     cleanup();
+  }
+});
+
+// RM-163 (2026-10-14): the kiosk says when the cloud is behind the edge. A week offline left 200,000 rows on
+// the Pi; the Reports page then showed days as empty with nothing on screen saying the data was on its way.
+test('GET /api/capabilities says how far behind the cloud is, from the edge archive', async () => {
+  const { openArchive } = await import('./archiveDb.mjs');
+  const dir = fs.mkdtempSync(join(os.tmpdir(), 'ibems-proxy-owed-'));
+  const file = join(dir, 'archive', 'archive.sqlite');
+  const archive = openArchive(file);
+  for (const ts of ['2026-10-07T07:29:00.000Z', '2026-10-07T07:30:00.000Z']) {
+    archive.insertTick({ readings: [{ device_id: 'co1', ts, voltage: 230, current: 0.1, power_w: 10, energy_kwh_today: 0.5, online: true,
+      total_energy_kwh: null, warn_power_w: null, power_type: null, net_state: null, fault: null, capabilities: null }] });
+  }
+  archive.close();
+  const { proxyUrl, cleanup } = await setup({ ARCHIVE_DB_PATH: file });
+  try {
+    const caps = await (await fetch(`${proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } })).json();
+    assert.equal(caps.cloud_owed_since, '2026-10-07T07:29:00.000Z');
+    assert.equal(caps.cloud_owed_rows, 2);
+  } finally {
+    cleanup();
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+
+  const without = await setup();
+  try {
+    const caps = await (await fetch(`${without.proxyUrl}/api/capabilities`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } })).json();
+    assert.equal(caps.cloud_owed_since, null, 'no archive: unknown, said as null');
+    assert.equal(caps.cloud_owed_rows, null);
+  } finally {
+    without.cleanup();
   }
 });

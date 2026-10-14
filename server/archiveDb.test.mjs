@@ -536,3 +536,21 @@ test('backupTo writes a consistent copy that opens as an archive', (t) => {
     restored.close();
   }
 });
+
+test('owedSince is the oldest row the cloud does not have yet, across the streams, or null', (t) => {
+  // RM-163: reports wait for their data, and the kiosk says how far behind the cloud is.
+  const { archive } = tempArchive(t);
+  assert.equal(archive.owedSince(), null);
+  archive.insertTick({ readings: [reading({ ts: minuteIso(0) })], totals: totals({ ts: minuteIso(0) }) });
+  archive.insertTick({ readings: [reading({ ts: minuteIso(1) })], totals: totals({ ts: minuteIso(1) }) });
+  assert.equal(archive.owedSince(), AT_MS);
+  const all = archive.pending('readings', 10);
+  archive.advance('readings', all[0].id);
+  assert.equal(archive.owedSince(), AT_MS, 'the totals still owe the first minute');
+  archive.advance('building_totals', archive.pending('building_totals', 10)[0].id);
+  assert.equal(archive.owedSince(), AT_MS + 60_000);
+  archive.advance('readings', all[1].id);
+  archive.advance('building_totals', archive.pending('building_totals', 10)[0].id);
+  assert.equal(archive.owedSince(), null);
+  archive.close();
+});

@@ -47,13 +47,19 @@ export function isTimeout(err) {
  * The batch size for the next upload, from how this one went. Only a TIMEOUT shrinks it: an outage
  * ("fetch failed") is not helped by sending less, and a refusal is about the rows, not their number.
  * Only an upload that actually moved rows grows it back.
+ *
+ * RM-163: and only one that was QUICK, when the caller says what the timeout is. RM-162 doubled after any
+ * upload that went through: at 62 rows per stream the upload fitted, at 124 it timed out again, and every
+ * other attempt on the slow link was wasted. A batch grows now only when its slowest request took under a
+ * third of the timeout, so doubling it still fits.
  */
-export function nextUploadBatch(current, outcome, { max = UPLOAD_BATCH, min = MIN_UPLOAD_BATCH } = {}) {
+export function nextUploadBatch(current, outcome, { max = UPLOAD_BATCH, min = MIN_UPLOAD_BATCH, timeoutMs } = {}) {
   if (!outcome) return current;
   if (outcome.ok === false && outcome.timedOut) return Math.max(min, Math.floor(current / 2));
   const moved = Object.values(outcome.uploaded ?? {}).reduce((n, v) => n + (Number(v) || 0), 0);
-  if (outcome.ok && moved > 0) return Math.min(max, current * 2);
-  return current;
+  if (!outcome.ok || moved === 0) return current;
+  const quick = !(typeof timeoutMs === 'number' && typeof outcome.slowestMs === 'number') || outcome.slowestMs < timeoutMs / 3;
+  return quick ? Math.min(max, current * 2) : current;
 }
 
 /**
@@ -121,8 +127,11 @@ class TableRefusal extends Error {
  * drain like any other.
  *
  * @returns {Promise<{ ok: boolean, error: string|null, timedOut?: boolean, uploaded: Record<string, number>, rejected: number,
- *   healthCarried: boolean, batchRefused: { status: number|null, message: string } | null }>}
+ *   healthCarried: boolean, batchRefused: { status: number|null, message: string } | null,
+ *   slowestMs: number|null, uploadedSpan: { fromMs: number, toMs: number } | null }>}
  *   `timedOut` is set on a transient failure: true when the request was cut off by its own timeout.
+ *   `slowestMs` is the longest single request (RM-163, for `nextUploadBatch`); `uploadedSpan` the oldest and
+ *   newest `ts` among the rows moved (RM-163, for `server/lateData.mjs`), or null when none moved.
  */
 export async function drainArchive({ archive, send, sendAll = null, health = null, batchSize = UPLOAD_BATCH, budgetMs = UPLOAD_BUDGET_MS, now = Date.now }) {
   const start = now();
@@ -131,6 +140,26 @@ export async function drainArchive({ archive, send, sendAll = null, health = nul
   const errors = [];
   let healthCarried = false;
   let batchRefused = null;
+  let slowestMs = null;
+  let uploadedSpan = null;
+  const timed = async (call) => {
+    const t = now();
+    try {
+      return await call();
+    } finally {
+      slowestMs = Math.max(slowestMs ?? 0, now() - t);
+    }
+  };
+  const moved = (rows) => {
+    for (const r of rows) {
+      const ms = Date.parse(r?.ts ?? '');
+      if (Number.isNaN(ms)) continue;
+      uploadedSpan = uploadedSpan
+        ? { fromMs: Math.min(uploadedSpan.fromMs, ms), toMs: Math.max(uploadedSpan.toMs, ms) }
+        : { fromMs: ms, toMs: ms };
+    }
+  };
+  const result = (fields) => ({ uploaded, rejected, healthCarried, batchRefused, slowestMs, uploadedSpan, ...fields });
 
   while (sendAll) {
     if (now() - start >= budgetMs) break;
@@ -140,10 +169,10 @@ export async function drainArchive({ archive, send, sendAll = null, health = nul
     // the database's watchdog listens for (supabase/phase51).
     if (sending === 0 && (healthCarried || !health)) break;
     try {
-      await sendAll(Object.fromEntries(batches.map(([stream, b]) => [stream, b.map((x) => x.row)])), health ? health({ sending }) : null);
+      await timed(() => sendAll(Object.fromEntries(batches.map(([stream, b]) => [stream, b.map((x) => x.row)])), health ? health({ sending }) : null));
     } catch (err) {
       if (isTransientFailure(err)) {
-        return { ok: false, error: String(err?.message ?? err), timedOut: isTimeout(err), uploaded, rejected, healthCarried, batchRefused };
+        return result({ ok: false, error: String(err?.message ?? err), timedOut: isTimeout(err) });
       }
       batchRefused = { status: typeof err?.status === 'number' ? err.status : null, message: String(err?.message ?? err) };
       break;
@@ -152,8 +181,11 @@ export async function drainArchive({ archive, send, sendAll = null, health = nul
       if (b.length === 0) continue;
       archive.advance(stream, b[b.length - 1].id);
       uploaded[stream] += b.length;
+      moved(b.map((x) => x.row));
     }
-    healthCarried = true;
+    // Only when there was a health row to carry. RM-163's catch-up uploads go without one, and saying it
+    // went would tell ingest the heartbeat was written (supabase/phase51 listens for it) when it was not.
+    if (health) healthCarried = true;
     if (sending === 0) break;
   }
 
@@ -165,14 +197,15 @@ export async function drainArchive({ archive, send, sendAll = null, health = nul
       const lastId = batch[batch.length - 1].id;
 
       try {
-        await send(stream, batch.map((b) => b.row), onConflict);
+        await timed(() => send(stream, batch.map((b) => b.row), onConflict));
         archive.advance(stream, lastId);
         uploaded[stream] += batch.length;
+        moved(batch.map((b) => b.row));
         continue;
       } catch (err) {
         if (isTransientFailure(err)) {
           // The network or the database is down: every stream would fail the same way.
-          return { ok: false, error: String(err?.message ?? err), timedOut: isTimeout(err), uploaded, rejected, healthCarried, batchRefused };
+          return result({ ok: false, error: String(err?.message ?? err), timedOut: isTimeout(err) });
         }
       }
 
@@ -185,7 +218,7 @@ export async function drainArchive({ archive, send, sendAll = null, health = nul
           errors.push(`${stream}: ${err.message}`);
           break; // this stream is stuck; the others may not be
         }
-        return { ok: false, error: String(err?.message ?? err), uploaded, rejected, healthCarried, batchRefused };
+        return result({ ok: false, error: String(err?.message ?? err) });
       }
       if (state.accepted === 0) {
         errors.push(`${stream}: ${String(state.failed[0]?.err?.message ?? 'refused')}`);
@@ -195,10 +228,11 @@ export async function drainArchive({ archive, send, sendAll = null, health = nul
       archive.advance(stream, lastId);
       uploaded[stream] += state.accepted;
       rejected += state.failed.length;
+      moved(batch.map((b) => b.row));
     }
   }
 
-  return { ok: errors.length === 0, error: errors.length ? errors.join('; ') : null, uploaded, rejected, healthCarried, batchRefused };
+  return result({ ok: errors.length === 0, error: errors.length ? errors.join('; ') : null });
 }
 
 /**

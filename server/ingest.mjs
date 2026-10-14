@@ -36,6 +36,7 @@ import {
 import { runIngestCycle, msUntilNextTick } from './ingestCycle.mjs';
 import { openArchive } from './archiveDb.mjs';
 import { drainArchive, uploadDue, uploadIntervalFrom, nextUploadBatch, UPLOAD_BATCH } from './archiveUpload.mjs';
+import { noteLateUpload, readLate, writeLate } from './lateData.mjs';
 import { readingsForCloud } from './cloudCapabilities.mjs';
 import { runHotTierPass } from './hotTier.mjs';
 import { makeStorageClient } from './supabaseStorage.mjs';
@@ -115,8 +116,21 @@ const paused = () => fs.existsSync(PAUSE_PATH);
 const UPLOAD_EVERY_MS = uploadIntervalFrom(process.env.INGEST_UPLOAD_MS);
 let lastUploadMs = null;
 /** 2026-10-14: halved after an upload that timed out on a slow link, doubled back after one that went
- * through. See `nextUploadBatch` in archiveUpload.mjs. */
+ * through quickly. See `nextUploadBatch` in archiveUpload.mjs. */
 let uploadBatch = UPLOAD_BATCH;
+/**
+ * RM-163: while the edge owes the cloud rows older than this, it uploads every tick instead of every
+ * UPLOAD_EVERY_MS, so a week offline catches up in hours rather than days. The same rows go up either way;
+ * only the pace changes. The health row keeps its own cadence: catch-up uploads go without it.
+ */
+const CATCH_UP_AFTER_MS = 60 * 60_000;
+let catchingUp = false;
+/**
+ * RM-163: uploads of rows older than an hour, so the report pass rebuilds periods reported before they
+ * arrived (server/lateData.mjs, server/reports.mjs). Kept on the edge across restarts.
+ */
+const LATE_PATH = process.env.REPORT_LATE_PATH || path.join(__dirname, 'data', 'report-late.json');
+let lateData = readLate(LATE_PATH);
 let uploadedThisTick = false;
 const healthCadence = createHealthCadence({ intervalMs: UPLOAD_EVERY_MS });
 /**
@@ -323,18 +337,21 @@ async function sendToCloud(table, rows, onConflict) {
  * (supabase/phase55), where it was three or four. Only against a database that has every column the
  * function names: one missing phase28's or phase30's columns uploads the old way, which tolerates them.
  */
-function batchUpload(rejections) {
+function batchUpload(rejections, { withHealth = true } = {}) {
   const available = batchUploadMissingAt === null || Date.now() - batchUploadMissingAt >= BATCH_UPLOAD_RETRY_MS;
   if (!available || !capabilityColumnsPresent || !scrubColumnsPresent) return {};
+  const sendAll = (rows, health) => supabase.rpc('ingest_upload', {
+    p_readings: readingsForCloud(rows.readings),
+    p_building_totals: rows.building_totals,
+    p_anomalies: rows.anomalies,
+    p_health: health,
+  });
+  // RM-163: a catch-up upload carries no health row; the regular one, on its own cadence, does.
+  if (!withHealth) return { sendAll, health: null };
   const held = healthCadence.hold(rejections);
   rejectionsHeldThisTick = true;
   return {
-    sendAll: (rows, health) => supabase.rpc('ingest_upload', {
-      p_readings: readingsForCloud(rows.readings),
-      p_building_totals: rows.building_totals,
-      p_anomalies: rows.anomalies,
-      p_health: health,
-    }),
+    sendAll,
     // `sending` rows are going up with it; whatever else is owed is still owed.
     health: ({ sending }) => buildHealthRow({
       ok: true,
@@ -350,12 +367,24 @@ function batchUpload(rejections) {
 
 /** The batch size after this upload, said when it changes: a shrinking batch is a slow link, not a fault. */
 function noteUploadBatch(synced) {
-  const next = nextUploadBatch(uploadBatch, synced);
+  const next = nextUploadBatch(uploadBatch, synced, { timeoutMs: TIMING.FETCH_TIMEOUT_MS });
   if (next === uploadBatch) return;
   console.log(next < uploadBatch
     ? `[ibems-ingest] upload timed out on a slow link: next batch ${next} row(s) per stream (was ${uploadBatch})`
     : `[ibems-ingest] upload went through: next batch ${next} row(s) per stream (was ${uploadBatch})`);
   uploadBatch = next;
+}
+
+/** RM-163: an upload of rows older than an hour is recorded, so the reports they belong to are rebuilt. */
+function noteLate(synced) {
+  const next = noteLateUpload(lateData, synced?.uploadedSpan ?? null, Date.now());
+  if (next === lateData) return;
+  lateData = next;
+  try {
+    writeLate(LATE_PATH, next);
+  } catch (err) {
+    console.warn(`[ibems-ingest] could not keep the late-data record (${LATE_PATH}): ${String(err)}; the reports it names are rebuilt only while this process runs`);
+  }
 }
 
 /** What the batched upload's outcome says about the database, said once each way. */
@@ -499,8 +528,25 @@ async function tick() {
       },
       sync: async ({ rejections = [] } = {}) => {
         if (paused()) return { ok: false, error: `cloud upload paused by the operator (${PAUSE_PATH}); archiving continues` };
-        if (!uploadDue({ nowMs: Date.now(), lastUploadMs, intervalMs: UPLOAD_EVERY_MS })) {
+        const nowMs = Date.now();
+        const regular = uploadDue({ nowMs, lastUploadMs, intervalMs: UPLOAD_EVERY_MS });
+        // RM-163: far behind, every tick uploads; only the regular upload carries the health row.
+        const owed = archive.owedSince();
+        const behind = owed !== null && nowMs - owed > CATCH_UP_AFTER_MS;
+        if (behind !== catchingUp) {
+          catchingUp = behind;
+          console.log(behind
+            ? `[ibems-ingest] catching up: the cloud lacks rows since ${new Date(owed).toISOString()}; uploading every minute until it is within an hour`
+            : '[ibems-ingest] caught up: back to uploading every ' + (UPLOAD_EVERY_MS / 60_000) + ' min');
+        }
+        if (!regular && !behind) {
           return { ok: true, error: null, deferred: true };
+        }
+        if (!regular) {
+          synced = await drainArchive({ archive, send: sendToCloud, batchSize: uploadBatch, ...batchUpload(rejections, { withHealth: false }) });
+          noteUploadBatch(synced);
+          noteLate(synced);
+          return synced;
         }
         // An attempt, not a success, starts the next interval: during an outage the retry then comes
         // every interval rather than every minute, and each failed attempt is a line in the log too.
@@ -509,6 +555,7 @@ async function tick() {
         synced = await drainArchive({ archive, send: sendToCloud, batchSize: uploadBatch, ...batchUpload(rejections) });
         noteBatchUpload(synced);
         noteUploadBatch(synced);
+        noteLate(synced);
         return synced;
       },
     } : {}),
@@ -658,7 +705,10 @@ async function reportPass() {
     return true;
   }
   try {
-    const { generated, generatedWeeks = [], generatedDays = [], failed, reason } = await runReportGeneration({ client: supabase });
+    // RM-163: a period the edge still owes rows for waits; one reported before its late rows arrived is rebuilt.
+    let completeBeforeMs = null;
+    try { completeBeforeMs = archive ? archive.owedSince() : null; } catch { /* no archive answer: no gate, as before */ }
+    const { generated, generatedWeeks = [], generatedDays = [], failed, reason } = await runReportGeneration({ client: supabase, completeBeforeMs, late: lateData });
     if (generated.length > 0) {
       console.log(`[ibems-ingest] reports: generated months ${generated.join(', ')}`);
       // FI-011: the month goes to the alert channel, for the reader who will never open the

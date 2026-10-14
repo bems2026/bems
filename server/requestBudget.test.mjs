@@ -18,7 +18,13 @@ const fn = (src, name) => src.slice(src.indexOf(`async function ${name}(`), src.
 
 test('ingest uploads the archive on an interval, and an anomaly waits for it (RM-159)', () => {
   const tick = fn(ingest, 'tick');
-  assert.match(tick, /uploadDue\(\{ nowMs: Date\.now\(\), lastUploadMs, intervalMs: UPLOAD_EVERY_MS \}\)/);
+  assert.match(tick, /uploadDue\(\{ nowMs, lastUploadMs, intervalMs: UPLOAD_EVERY_MS \}\)/);
+  // RM-163: the one exception is catching up — far behind, every tick uploads, without the health row, so
+  // the health row and its request keep the interval whatever the backlog.
+  assert.match(tick, /const behind = owed !== null && nowMs - owed > CATCH_UP_AFTER_MS;/);
+  assert.match(tick, /if \(!regular && !behind\) \{\s*return \{ ok: true, error: null, deferred: true \};/);
+  assert.match(tick, /batchUpload\(rejections, \{ withHealth: false \}\)/);
+  assert.match(ingest, /const CATCH_UP_AFTER_MS = 60 \* 60_000;/);
   assert.match(tick, /return \{ ok: true, error: null, deferred: true \};/, 'a waiting tick is healthy, not a failure');
   assert.doesNotMatch(ingest, /hasAnomalies|tickHadAnomalies/, 'nothing uploads early for an anomaly');
   assert.match(ingest, /const UPLOAD_EVERY_MS = uploadIntervalFrom\(process\.env\.INGEST_UPLOAD_MS\);/);

@@ -319,3 +319,41 @@ test('slow link: an outage, a refusal, or nothing to send leaves the batch as it
   assert.equal(nextUploadBatch(500, { ok: true, uploaded: { readings: 0, building_totals: 0, anomalies: 0 } }), 500);
   assert.equal(nextUploadBatch(500, null), 500);
 });
+
+/* RM-163 (2026-10-14): RM-162 shrank the batch until an upload went through at 62 rows per stream, then
+ * doubled it straight back to 124, which timed out again — every other upload wasted on a slow link. A
+ * batch now grows only after an upload whose slowest request took under a third of the timeout. */
+
+test('slow link: an upload that only just fitted holds its size; a quick one grows it', () => {
+  const went = (slowestMs) => ({ ok: true, slowestMs, uploaded: { readings: 62, building_totals: 62, anomalies: 0 } });
+  assert.equal(nextUploadBatch(62, went(8_500), { timeoutMs: 10_000 }), 62, 'near the timeout: doubling would time out');
+  assert.equal(nextUploadBatch(62, went(2_000), { timeoutMs: 10_000 }), 124);
+  assert.equal(nextUploadBatch(62, went(8_500)), 124, 'without a timeout to judge against, the RM-162 rule stands');
+});
+
+test('the drain reports its slowest request and the time span of the rows it moved', async (t) => {
+  const archive = tempArchive(t);
+  fill(archive, 3);
+  let clock = 1_000;
+  const now = () => clock;
+  const batch = batchRecorder(() => { clock += 700; });
+  const result = await drainArchive({ archive, send: recorder().send, sendAll: batch.sendAll, health: () => ({ id: 1 }), now });
+  assert.equal(result.ok, true);
+  assert.equal(result.slowestMs, 700);
+  assert.deepEqual(result.uploadedSpan, { fromMs: AT_MS, toMs: AT_MS + 2 * 60_000 });
+
+  const empty = tempArchive(t);
+  const none = await drainArchive({ archive: empty, send: recorder().send });
+  assert.equal(none.uploadedSpan, null);
+});
+
+test('RM-163: a catch-up upload without a health row says none was carried, and does not send an empty request', async (t) => {
+  const archive = tempArchive(t);
+  fill(archive, 2);
+  const batch = batchRecorder();
+  const result = await drainArchive({ archive, send: recorder().send, sendAll: batch.sendAll, health: null });
+  assert.equal(result.ok, true);
+  assert.equal(result.healthCarried, false, 'the heartbeat was not written, so ingest must still write it on its own cadence');
+  assert.equal(batch.calls.length, 1, 'the rows, then nothing: no request just for a health row that is not there');
+  assert.equal(batch.calls[0].health, null);
+});

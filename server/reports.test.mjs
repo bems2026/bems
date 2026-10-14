@@ -579,3 +579,55 @@ test('success starts the retry schedule over', async () => {
   await pass(); // fails again, later
   assert.deepEqual(timers.map((t) => t.ms), [REPORT_RETRY_MS[0]]);
 });
+
+// --- RM-163: reports wait for their data, and late data rebuilds them ---------------------
+// 2026-10-14. The site was offline from 7 to 14 October. The moment the link answered, ingest built the day
+// reports for 7 to 13 October and the week of 5 October from a cloud that held rows only to 7 Oct 15:29,
+// while 200,000 rows still waited on the edge. Those reports counted as current and were never rebuilt.
+
+const OCT_NOW = Date.parse('2026-10-14T03:00:00Z'); // 11:00 site time on the 14th
+const OCT_EARLIEST = '2026-10-01T00:00:00Z';
+const reportedAt = (day, at) => ({ period_start: day, generated_at: at });
+
+test('days: a day whose rows are not all in the cloud yet is not reported, nor any day after it', () => {
+  const days = daysNeedingReport({ generatedDays: [], earliestDataTs: OCT_EARLIEST, nowMs: OCT_NOW, offsetMinutes: 480,
+    completeBeforeMs: Date.parse('2026-10-07T07:29:00Z') });
+  assert.deepEqual(days, ['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05', '2026-10-06'],
+    'the 7th ends after the oldest row the edge still owes');
+});
+
+test('days: with nothing owed, the gate is open', () => {
+  const open = daysNeedingReport({ generatedDays: [], earliestDataTs: '2026-10-12T00:00:00Z', nowMs: OCT_NOW, offsetMinutes: 480, completeBeforeMs: null });
+  assert.deepEqual(open, ['2026-10-12', '2026-10-13']);
+});
+
+test('days: a day reported before its late rows arrived is rebuilt once they are all up, and only then', () => {
+  const generatedDays = ['07', '08', '09', '10', '11', '12', '13'].map((d) => reportedAt(`2026-10-${d}`, '2026-10-14T01:50:47Z'));
+  const late = { fromMs: Date.parse('2026-10-07T07:29:00Z'), untilMs: Date.parse('2026-10-14T02:00:00Z'), arrivedAtMs: Date.parse('2026-10-14T05:00:00Z') };
+  const later = Date.parse('2026-10-14T06:00:00Z');
+  assert.deepEqual(
+    daysNeedingReport({ generatedDays, earliestDataTs: '2026-10-07T00:00:00Z', nowMs: later, offsetMinutes: 480, completeBeforeMs: Date.parse('2026-10-10T00:00:00Z'), late }),
+    ['2026-10-07', '2026-10-08', '2026-10-09'],
+    'the days whose data is complete are rebuilt; the rest wait');
+  assert.deepEqual(
+    daysNeedingReport({ generatedDays, earliestDataTs: '2026-10-07T00:00:00Z', nowMs: later, offsetMinutes: 480, completeBeforeMs: null, late }),
+    ['2026-10-07', '2026-10-08', '2026-10-09', '2026-10-10', '2026-10-11', '2026-10-12', '2026-10-13']);
+  const rebuilt = generatedDays.map((d) => ({ ...d, generated_at: '2026-10-14T05:30:00Z' }));
+  assert.deepEqual(
+    daysNeedingReport({ generatedDays: rebuilt, earliestDataTs: '2026-10-07T00:00:00Z', nowMs: later, offsetMinutes: 480, completeBeforeMs: null, late }),
+    [], 'rebuilt after the late rows arrived: current');
+});
+
+test('weeks and months follow the same two rules', () => {
+  const late = { fromMs: Date.parse('2026-10-07T07:29:00Z'), untilMs: Date.parse('2026-10-14T02:00:00Z'), arrivedAtMs: Date.parse('2026-10-14T05:00:00Z') };
+  const nowMs = Date.parse('2026-11-04T00:00:00Z');
+  const weeks = [{ period_start: '2026-10-05', generated_at: '2026-10-14T01:50:47Z' }, { period_start: '2026-10-12', generated_at: '2026-10-21T00:00:00Z' }];
+  assert.deepEqual(weeksNeedingReport({ generatedWeeks: weeks, earliestDataTs: '2026-10-05T00:00:00Z', nowMs, completeBeforeMs: null, late }).slice(0, 2),
+    ['2026-10-05', '2026-10-19'], 'the week reported before its late rows is rebuilt; the next one, reported after, is not');
+  assert.deepEqual(weeksNeedingReport({ generatedWeeks: weeks, earliestDataTs: '2026-10-05T00:00:00Z', nowMs, completeBeforeMs: Date.parse('2026-10-08T00:00:00Z'), late }),
+    [], 'nothing from the week the edge still owes rows for');
+  assert.deepEqual(monthsNeedingReport({ generatedMonths: [{ month: '2026-10-01', generated_at: '2026-11-03T12:00:00Z' }], earliestDataTs: '2026-10-01T00:00:00Z',
+    nowMs: Date.parse('2026-11-04T00:00:00Z'), completeBeforeMs: Date.parse('2026-10-20T00:00:00Z') }), [], 'nor the month');
+  assert.deepEqual(monthsNeedingReport({ generatedMonths: [{ month: '2026-10-01', generated_at: '2026-11-03T12:00:00Z' }], earliestDataTs: '2026-10-01T00:00:00Z',
+    nowMs: Date.parse('2026-11-04T00:00:00Z'), late: { ...late, arrivedAtMs: Date.parse('2026-11-03T13:00:00Z') } }), ['2026-10-01']);
+});
