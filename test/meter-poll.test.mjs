@@ -42,10 +42,10 @@ const flow = () => [
 
 const registry = () => [
   { id: 'co1', class: 'outlet_dual', ctx: 'co1' },
-  { id: 'mtr_co_yellow', class: 'meter', ctx: 'co_yel', channel: 1 },
-  { id: 'mtr_lo_red', class: 'meter', ctx: 'lo_red' },
-  { id: 'mtr_arec_acu', class: 'meter', ctx: 'arec' },
-  { id: 'mtr_lo_yellow', class: 'meter', ctx: 'lo_yel2', channel: 2 },
+  { id: 'mtr_co_yellow', class: 'meter', ctx: 'co_yel', channel: 1, capability_profile: 'cz_ct_double' },
+  { id: 'mtr_lo_red', class: 'meter', ctx: 'lo_red', capability_profile: 'cz_ct_single' },
+  { id: 'mtr_arec_acu', class: 'meter', ctx: 'arec', capability_profile: 'cz_ct_single' },
+  { id: 'mtr_lo_yellow', class: 'meter', ctx: 'lo_yel2', channel: 2, capability_profile: 'cz_ct_double' },
   { id: 'l1', class: 'switch' },
 ];
 
@@ -78,6 +78,7 @@ test('adds exactly two nodes, one output per session, on the meters\' own tab', 
 test('sends the operation the tuya node accepts, at the ingestion cadence, soon after a deploy', () => {
   const { flows } = plan();
   assert.match(fnOf(flows).func, /operation:\s*'GET'/);
+  assert.match(fnOf(flows).func, /operation:\s*'REFRESH'/, 'preflight\'s flow_polls reads these literals');
   const inject = flows.find((n) => n.id === POLL_INJECT_ID);
   assert.equal(POLL_INTERVAL_S, 60);
   assert.equal(inject.repeat, '60');
@@ -85,12 +86,45 @@ test('sends the operation the tuya node accepts, at the ingestion cadence, soon 
   assert.deepEqual(inject.wires, [[POLL_FN_ID]]);
 });
 
+const SINGLE = [105, 106, 107, 108, 109];
+const DOUBLE = [105, 106, 107, 108, 109, 115, 116, 117, 118, 119, 123];
+const refreshThenGet = (dps) => [{ payload: { operation: 'REFRESH', requestedDPS: dps } }, { payload: { operation: 'GET' } }];
+
 test('a disconnected session is skipped, and an unknown one is still polled', () => {
   const fn = fnOf(plan().flows);
   const out = run(fn, { co_yel_health: false, lo_red_health: true });
   assert.equal(out[0], null, 'a session the parser has flagged down must not be polled');
-  assert.deepEqual(out[1], { payload: { operation: 'GET' } });
-  assert.deepEqual(out[2], { payload: { operation: 'GET' } }, 'no health key yet must still poll — refusing would keep it silent');
+  assert.deepEqual(out[1], refreshThenGet(SINGLE));
+  assert.deepEqual(out[2], refreshThenGet(SINGLE), 'no health key yet must still poll — refusing would keep it silent');
+});
+
+/* 2026-10-14, RM-163. With the site offline for a week the meters kept answering GET with the same cached
+ * figures (CO Yellow at 261.3 W, one voltage, for 130 hours) while the outlets stayed live. These meters
+ * re-read their measurements only on a DP_REFRESH (tuyapi refresh, command 18), which the vendor cloud had
+ * been sending. Each session is now asked to refresh exactly its profile's measured dps, then read. */
+test('each session is asked to REFRESH its measured dps, then to GET — the dual meter both channels at once', () => {
+  const out = run(fnOf(plan().flows), {});
+  assert.deepEqual(out[0], refreshThenGet(DOUBLE), 'the dual meter: both channels and the combined register');
+  assert.deepEqual(out[1], refreshThenGet(SINGLE));
+  assert.deepEqual(out[2], refreshThenGet(SINGLE));
+});
+
+test('every message is a fresh object — the tuya node deletes `operation` from the payload it is handed', () => {
+  const out = run(fnOf(plan().flows), {});
+  delete out[0][0].payload.operation;
+  delete out[0][1].payload.operation;
+  assert.equal(out[1][0].payload.operation, 'REFRESH', 'one session consuming its message must not empty another\'s');
+  assert.equal(out[1][1].payload.operation, 'GET');
+  const again = run(fnOf(plan().flows), {});
+  assert.notEqual(again[0][0].payload.requestedDPS, out[0][0].payload.requestedDPS, 'nor a later tick\'s');
+});
+
+test('a meter with no capability profile is still read, with GET alone', () => {
+  const bare = registry().map((d) => (d.id === 'mtr_arec_acu' ? { ...d, capability_profile: undefined } : d));
+  const res = plan(flow(), bare);
+  const out = run(fnOf(res.flows), {});
+  assert.deepEqual(out[2], { payload: { operation: 'GET' } });
+  assert.deepEqual(res.refreshing, ['C.O yellow', 'L.O red'], 'the plan says which sessions are refreshed');
 });
 
 test('is idempotent — an already-current poller is left completely alone', () => {

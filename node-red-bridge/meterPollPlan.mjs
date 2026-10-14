@@ -29,6 +29,7 @@
  * logical meters of the dual-channel device share one session and get ONE poll.
  */
 import { findParserNodes } from './dpParserPlan.mjs';
+import { measurementDpsFor } from '../shared/deviceCapabilities.mjs';
 
 /** Deterministic ids, so re-running produces the same plan rather than a growing pile of nodes. */
 export const POLL_INJECT_ID = 'bems_meter_poll_tick';
@@ -42,24 +43,51 @@ export const POLL_INTERVAL_S = 60;
  * a message it cannot answer — the outlet poller's reasoning (it once produced 180 "Device not
  * connected" lines every thirty minutes). `!== false`: a wiped context or a meter that has never
  * reported has no health key, and refusing to poll it is the one thing that could keep it silent.
+ *
+ * REFRESH, THEN GET — RM-163, 2026-10-14. With the site offline for a week the meters kept answering
+ * the GET with the same cached figures (CO Yellow at 261.3 W and one voltage for 130 hours) while the
+ * outlets stayed live. These meters re-read their measurements only on a DP_REFRESH request (tuyapi
+ * `refresh`, command 18), and the vendor cloud had been the one sending those. Each session is now
+ * asked to refresh its profile's measured dps (`measurementDpsFor`), then read. The refresh reply comes
+ * back on the same output as any report, so the demux and the parsers need to know nothing.
+ *
+ * Every message is built fresh: the tuya node DELETES `operation` from the payload it is handed, so a
+ * payload object shared between sessions would reach the second one emptied.
  */
-const POLL_FN = `// Ask each CT meter session for its full state — RM-134. The tuya node never reads
-// state on connect, so without this a meter is push-only: a change it pushed while the
-// bridge was down is never seen, and a channel then at 0 W has nothing new to push. The
-// reply goes through the channel demux and the parsers exactly like a spontaneous
-// report. See node-red-bridge/meterPollPlan.mjs.
+const POLL_FN = `// Ask each CT meter session to re-measure, then for its full state — RM-134, RM-163.
+// The tuya node never reads state on connect, and these meters answer a GET from a
+// cache that only a DP_REFRESH renews (the vendor cloud used to send those; without
+// internet nothing did, and the readings froze). The replies go through the channel
+// demux and the parsers exactly like a spontaneous report.
+// See node-red-bridge/meterPollPlan.mjs.
 //
 // One output per session. A session its parser has flagged disconnected is skipped;
-// unknown (no health key yet) is polled.
-const ctxs = CTXS;
-const poll = { operation: 'GET' };
-return ctxs.map(function (c) {
-  return flow.get(c + '_health') === false ? null : { payload: poll };
+// unknown (no health key yet) is polled. Messages are built fresh every time: the
+// tuya node deletes \`operation\` from the payload it receives.
+const sessions = SESSIONS;
+return sessions.map(function (s) {
+  if (flow.get(s.ctx + '_health') === false) return null;
+  const get = { payload: { operation: 'GET' } };
+  if (!s.dps.length) return get;
+  return [{ payload: { operation: 'REFRESH', requestedDPS: s.dps.slice() } }, get];
 });`;
 
-/** The poll function body for an ordered list of health-key prefixes, one per session. */
-export function pollFnFor(ctxs) {
-  return POLL_FN.replace('CTXS', JSON.stringify(ctxs));
+/**
+ * The poll function body for an ordered list of sessions, `{ ctx, dps }` each: the health-key prefix
+ * the poll consults, and the measured dps to refresh (empty: GET alone).
+ */
+export function pollFnFor(sessions) {
+  return POLL_FN.replace('SESSIONS', JSON.stringify(sessions.map((s) => ({ ctx: s.ctx, dps: s.dps ?? [] }))));
+}
+
+/** The measured dps of every device a session serves, merged and in order. */
+function refreshDpsFor(session, registry) {
+  const dps = new Set();
+  for (const id of session.devices) {
+    const device = (registry ?? []).find((d) => d.id === id);
+    for (const dp of measurementDpsFor(device?.capability_profile)) dps.add(dp);
+  }
+  return [...dps].sort((a, b) => a - b);
 }
 
 /** The tuya node whose data output reaches `parserId` directly or through one function node. */
@@ -107,7 +135,7 @@ function resolveMeterSessions(flows, registry) {
 }
 
 export function planMeterPoll(flows, { registry } = {}) {
-  const none = (reason) => ({ flows, added: [], upgraded: [], targets: [], unchanged: true, reason });
+  const none = (reason) => ({ flows, added: [], upgraded: [], targets: [], refreshing: [], unchanged: true, reason });
   const { sessions, unresolved } = resolveMeterSessions(flows, registry);
   if (unresolved.length) return none(`cannot locate every meter — ${unresolved.join('; ')}`);
   if (!sessions.length) return none('no meter sessions found');
@@ -116,9 +144,11 @@ export function planMeterPoll(flows, { registry } = {}) {
   if (tabs.size !== 1) return none('the meter sessions are on more than one tab; one poll function reads one tab\'s context');
   const [z] = tabs;
 
-  const wantedFunc = pollFnFor(sessions.map((s) => s.ctx));
+  const withDps = sessions.map((s) => ({ ...s, dps: refreshDpsFor(s, registry) }));
+  const wantedFunc = pollFnFor(withDps);
   const wantedWires = sessions.map((s) => [s.node.id]);
   const targets = sessions.map((s) => s.node.deviceName ?? s.node.id);
+  const refreshing = withDps.filter((s) => s.dps.length).map((s) => s.node.deviceName ?? s.node.id);
 
   const existingFn = flows.find((n) => n.id === POLL_FN_ID);
   if (existingFn) {
@@ -130,6 +160,7 @@ export function planMeterPoll(flows, { registry } = {}) {
       added: [],
       upgraded: [POLL_FN_ID],
       targets,
+      refreshing,
       unchanged: false,
       reason: 'poller upgraded to the current set of meter sessions',
     };
@@ -170,7 +201,7 @@ export function planMeterPoll(flows, { registry } = {}) {
     y,
     wires: wantedWires,
   };
-  return { flows: [...flows, inject, fn], added: [inject, fn], upgraded: [], targets, unchanged: false, reason: null };
+  return { flows: [...flows, inject, fn], added: [inject, fn], upgraded: [], targets, refreshing, unchanged: false, reason: null };
 }
 
 /**

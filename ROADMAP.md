@@ -1,6 +1,9 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-10-14 — **RM-161 deployed; RM-162 built: ingest's backlog drains over a slow uplink.**
+**Last audited:** 2026-10-14 — **RM-163 under way: the CT meters froze offline because only the vendor cloud asked
+them to re-measure; the meter poll now does (RM-163b). Upload paused while the backlog is corrected.**
+
+**Earlier the same day — RM-161 deployed; RM-162 built: ingest's backlog drains over a slow uplink.**
 - **Back online, slowly (E-255).** The operator reseated the router's SIM and the edge rejoined the mesh, on its own
   device network throughout. Upload measured at about 12.7 KB/s. RM-161 is deployed (`63dc9cb`), and
   `BREAK_GLASS_USER_ID` is set from the one account that has sent commands. The on-site read-back (RM-161f) remains.
@@ -5033,7 +5036,36 @@ operator asked that the dashboard can be signed into, and the building switched,
       rows doubles it back to 2,000. An outage ("fetch failed") and a refusal leave it alone: sending less fixes
       neither. Ingest logs each change. — `server/archiveUpload.mjs`, `server/ingest.mjs`; 4 tests in
       `server/archiveUpload.test.mjs`, the RM-159 pin in `server/requestBudget.test.mjs` updated.
-- [ ] **RM-162a** Deploy (restart `ibems-ingest`), and read the backlog falling in the journal.
+- [x] **RM-162a** Deployed 2026-10-14 10:33 (`c0c3ab0`). The batch fell 2,000 → 1,000 → 500 → 250 → 125 → 62 rows
+      per stream; at 62 the 10:59 upload went through (372 readings, 372 totals, 23 anomalies) and two outage command
+      rows were uploaded. It then doubled straight back to 124: the bounce RM-163's step 3a removes.
+
+### Logging that stays live and true without internet — RM-163 (2026-10-14)
+
+The operator: logging froze while the internet was down; it must keep logging on the 2.4 GHz network alone and fill
+the cloud in afterwards. Read-only on the edge (E-256): the archive never stopped (about 1,440 rows a device a day
+throughout; the cloud stopped at 7 Oct 15:29). What froze were the four CT meters' **values**: they answered the 60 s
+GET with identical figures for 2.5 to 6 days (CO Yellow 261.3 W and one voltage for 130 h), the outlets stayed live,
+and each meter gave one fresh value when the router rebooted at 09:49 on 14 Oct. Two of them sat at 0 W, so the freeze
+rule never flagged them. The day reports for 7 to 13 Oct were generated at 09:50 from a cloud that ends on 7 Oct.
+
+- [x] **RM-163a** *Step 0.* Cloud upload paused (`server/data/ingest.pause`, 11:05) while the backlog is corrected;
+      archiving continues.
+- [x] **RM-163b** *The meters re-measure without the cloud.* These meters re-read their measurements only on a
+      DP_REFRESH request (tuyapi `refresh`, command 18), which the vendor cloud had been sending; a GET reads their
+      cache. The meter poll now sends each session REFRESH for its profile's measured dps
+      (`measurementDpsFor`: 105–109 single; 105–109, 115–119 and 123 dual), then GET, through Node-RED's own session.
+      Every message is built fresh: the tuya node deletes `operation` from the payload it is handed. —
+      `shared/deviceCapabilities.mjs`, `node-red-bridge/meterPollPlan.mjs`, `poll-meters.mjs`; 4 new tests in
+      `test/meter-poll.test.mjs`, 2 in `test/device-capabilities.test.mjs`. Preflight's `flow_polls` already reads
+      `REFRESH`.
+- [ ] **RM-163c** Deploy RM-163b (`poll-meters:pi --apply`, flows backed up) and read it back on the frozen meters.
+- [ ] **RM-163d** The still-meter freeze rule (frozen at 0 W too), back-flagging from `frozen_since`.
+- [ ] **RM-163e** `archive:flag-frozen`: the backlog's frozen stretches flagged before they upload.
+- [ ] **RM-163f** Upload without the bounce, catch-up cadence, reports that wait for their data and rebuild on late
+      data, the cloud backlog shown on the kiosk.
+- [ ] **RM-163g** Resume the upload; 7 to 13 Oct rebuilt; frozen meter-days read as unmeasured.
+- [ ] **RM-163h** The clock without internet: the clock-save timer and step re-timing; an RTC module recommended.
 
 ### The log back under the Free plan — RM-158 (2026-10-03)
 

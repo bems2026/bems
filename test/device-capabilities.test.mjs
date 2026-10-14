@@ -18,6 +18,7 @@ import {
   writableCapabilities,
   decodeDps,
   channelCodesFor,
+  measurementDpsFor,
 } from '../shared/deviceCapabilities.mjs';
 import { DEVICE_REGISTRY } from '../shared/registry.mjs';
 
@@ -251,5 +252,21 @@ test('every writable numeric capability is already in raw wire units', () => {
       if (cap.kind !== 'value') continue;
       assert.equal(divisorFor(cap), 1, `${id}.${cap.code} is writable and scaled — see the note here`);
     }
+  }
+});
+
+/* 2026-10-14, RM-163. The CT meters answered the flow's GET from a cache for days once the vendor cloud
+ * was out of reach: their measurement dps refresh only on a DP_REFRESH request. The meter poll now asks
+ * for exactly these, so the list is derived from the profile's semantics rather than typed twice. */
+test('measurementDpsFor lists a meter profile\'s measured dps — instant, cumulative and daily — and nothing else', () => {
+  assert.deepEqual(measurementDpsFor('cz_ct_single'), [105, 106, 107, 108, 109]);
+  assert.deepEqual(measurementDpsFor('cz_ct_double'), [105, 106, 107, 108, 109, 115, 116, 117, 118, 119, 123]);
+  assert.deepEqual(measurementDpsFor('no_such_profile'), []);
+  assert.deepEqual(measurementDpsFor(undefined), []);
+});
+
+test('every registry meter has measured dps to refresh', () => {
+  for (const d of DEVICE_REGISTRY.filter((x) => x.class === 'meter')) {
+    assert.ok(measurementDpsFor(d.capability_profile).length > 0, `${d.id} (${d.capability_profile})`);
   }
 });

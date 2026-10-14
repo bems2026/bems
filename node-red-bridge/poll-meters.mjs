@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 /**
- * Gives the CT meter sessions a periodic GET, in the live Node-RED flow — RM-134.
+ * Gives the CT meter sessions a periodic REFRESH + GET, in the live Node-RED flow — RM-134, RM-163.
+ *
+ * RM-163 (2026-10-14): a GET alone read the meters' cache, which froze for a week once the vendor
+ * cloud was out of reach. Each session is now asked to REFRESH its measured dps first.
  *
  *     node node-red-bridge/poll-meters.mjs --host=<pi>            # dry run
  *     node node-red-bridge/poll-meters.mjs --host=<pi> --apply    # write it
@@ -51,8 +54,9 @@ if (plan.unchanged) {
 const isUpgrade = plan.upgraded.length > 0;
 console.log('=== PLAN ===');
 if (isUpgrade) console.log('  upgrade the existing meter poll function to the current sessions. Adds no nodes.');
-else console.log(`  add 2 nodes: an inject every ${POLL_INTERVAL_S}s and a function sending { operation: 'GET' }`);
+else console.log(`  add 2 nodes: an inject every ${POLL_INTERVAL_S}s and a function sending REFRESH, then GET`);
 console.log(`  polling ${plan.targets.length} meter session(s): ${plan.targets.join(', ')}`);
+console.log(`  refreshing their measured dps first: ${plan.refreshing.join(', ') || 'none (no capability profile)'}`);
 console.log(`\nResulting flow size: ${flows.length} -> ${plan.flows.length} nodes.\n`);
 
 console.log('=== INVARIANTS ===');
@@ -85,5 +89,5 @@ if (!res.ok) {
   console.error(await res.text().catch(() => ''));
   process.exit(1);
 }
-console.log('Applied. The first GET goes out 10 s after the deploy, then every minute.');
-console.log('Verify: the demux raw record gains dp 103/113, and every meter reading moves or reads 0 W.');
+console.log(isUpgrade ? 'Applied. The next tick sends REFRESH then GET, and every minute after.' : 'Applied. The first REFRESH + GET goes out 10 s after the deploy, then every minute.');
+console.log("Verify: each meter's voltage moves within a few minutes, and the bridge's measurement_frozen clears.");

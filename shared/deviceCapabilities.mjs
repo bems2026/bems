@@ -488,6 +488,24 @@ export function dailyEnergyCodeFor(device) {
 }
 
 /**
+ * The dps a profile MEASURES — instant readings and both kinds of energy register — in dp order. RM-163.
+ *
+ * WHY. With the site offline for a week (2026-10-07 to 14) the CT meters kept answering the flow's GET
+ * with the same cached figures: CO Yellow read 261.3 W and one voltage for 130 hours while the outlets
+ * stayed live. These meters re-read their measurements only on a DP_REFRESH request (tuyapi `refresh`,
+ * command 18, whose own source notes that power dps need it), and it was the vendor cloud that had been
+ * sending those. The meter poll now asks for exactly these dps itself, so the list is derived from the
+ * declared semantics rather than typed a second time beside them.
+ *
+ * An unknown profile measures nothing: `[]`.
+ */
+const MEASURED_SEMANTICS = new Set(['instant', 'cumulative_total', 'cumulative_daily']);
+export function measurementDpsFor(profileId) {
+  const caps = profile(profileId)?.capabilities ?? [];
+  return [...new Set(caps.filter((c) => MEASURED_SEMANTICS.has(c.semantic)).map((c) => c.dp))].sort((a, b) => a - b);
+}
+
+/**
  * Is this a value this capability will accept? Returns `null` when it is, or `{code, error}`.
  *
  * Every bound comes from the vendor's own declaration — nothing here invents a range. Values
