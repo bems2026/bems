@@ -26,6 +26,37 @@ export const UPLOAD_BATCH = 2000;
 export const UPLOAD_BUDGET_MS = 20_000;
 
 /**
+ * The smallest batch a slow link shrinks to — 2026-10-14.
+ *
+ * The device network's mobile router came back from running out of data with about 12.7 KB/s of
+ * upload. A full batch (up to 2,000 rows per stream, about 1.3 MB) cannot cross that before the
+ * client's 10 s timeout, so every upload was cut off, a backlog of 202,000 rows never moved, and each
+ * attempt spent about 127 KB of mobile data for nothing. `nextUploadBatch` halves the batch after a
+ * timeout and doubles it after an upload that went through. 25 rows per stream is about 17 KB: it
+ * crosses a link of 2 KB/s, and below that nothing useful is uploading anyway.
+ */
+export const MIN_UPLOAD_BATCH = 25;
+
+/** The request was cut off by its own timeout: it reached the network, and the network was too slow. */
+export function isTimeout(err) {
+  if (typeof err?.status === 'number') return false;
+  return err?.name === 'AbortError' || err?.name === 'TimeoutError' || /aborted|timed? ?out/i.test(String(err?.message ?? ''));
+}
+
+/**
+ * The batch size for the next upload, from how this one went. Only a TIMEOUT shrinks it: an outage
+ * ("fetch failed") is not helped by sending less, and a refusal is about the rows, not their number.
+ * Only an upload that actually moved rows grows it back.
+ */
+export function nextUploadBatch(current, outcome, { max = UPLOAD_BATCH, min = MIN_UPLOAD_BATCH } = {}) {
+  if (!outcome) return current;
+  if (outcome.ok === false && outcome.timedOut) return Math.max(min, Math.floor(current / 2));
+  const moved = Object.values(outcome.uploaded ?? {}).reduce((n, v) => n + (Number(v) || 0), 0);
+  if (outcome.ok && moved > 0) return Math.min(max, current * 2);
+  return current;
+}
+
+/**
  * How often the archive is drained to the cloud — RM-149. Every request to the hosted database is
  * a line in its log, and the Free plan's log quota was the tight one (0.97 of 1 GB, 2026-09-30).
  * The archive already holds every minute, so the cloud takes them five at a time. Nothing that acts
@@ -89,8 +120,9 @@ class TableRefusal extends Error {
  * means the function is not there yet). A failure that is not a refusal (the network, a 5xx) ends the
  * drain like any other.
  *
- * @returns {Promise<{ ok: boolean, error: string|null, uploaded: Record<string, number>, rejected: number,
+ * @returns {Promise<{ ok: boolean, error: string|null, timedOut?: boolean, uploaded: Record<string, number>, rejected: number,
  *   healthCarried: boolean, batchRefused: { status: number|null, message: string } | null }>}
+ *   `timedOut` is set on a transient failure: true when the request was cut off by its own timeout.
  */
 export async function drainArchive({ archive, send, sendAll = null, health = null, batchSize = UPLOAD_BATCH, budgetMs = UPLOAD_BUDGET_MS, now = Date.now }) {
   const start = now();
@@ -111,7 +143,7 @@ export async function drainArchive({ archive, send, sendAll = null, health = nul
       await sendAll(Object.fromEntries(batches.map(([stream, b]) => [stream, b.map((x) => x.row)])), health ? health({ sending }) : null);
     } catch (err) {
       if (isTransientFailure(err)) {
-        return { ok: false, error: String(err?.message ?? err), uploaded, rejected, healthCarried, batchRefused };
+        return { ok: false, error: String(err?.message ?? err), timedOut: isTimeout(err), uploaded, rejected, healthCarried, batchRefused };
       }
       batchRefused = { status: typeof err?.status === 'number' ? err.status : null, message: String(err?.message ?? err) };
       break;
@@ -140,7 +172,7 @@ export async function drainArchive({ archive, send, sendAll = null, health = nul
       } catch (err) {
         if (isTransientFailure(err)) {
           // The network or the database is down: every stream would fail the same way.
-          return { ok: false, error: String(err?.message ?? err), uploaded, rejected, healthCarried, batchRefused };
+          return { ok: false, error: String(err?.message ?? err), timedOut: isTimeout(err), uploaded, rejected, healthCarried, batchRefused };
         }
       }
 

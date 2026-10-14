@@ -26,7 +26,9 @@ test('ingest uploads the archive on an interval, and an anomaly waits for it (RM
 
 test('RM-159: one upload is one request — every stream and the health row in ingest_upload', () => {
   const tick = fn(ingest, 'tick');
-  assert.match(tick, /drainArchive\(\{ archive, send: sendToCloud, \.\.\.batchUpload\(rejections\) \}\)/);
+  // 2026-10-14: the batch size adapts to a slow link (`nextUploadBatch`); the one request stands.
+  assert.match(tick, /drainArchive\(\{ archive, send: sendToCloud, batchSize: uploadBatch, \.\.\.batchUpload\(rejections\) \}\)/);
+  assert.match(tick, /noteUploadBatch\(synced\);/);
   assert.match(ingest, /supabase\.rpc\('ingest_upload', \{/);
   const health = fn(ingest, 'updateHealth');
   assert.match(health, /if \(healthCarriedThisTick && ok\) return;/, 'not written twice');

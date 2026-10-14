@@ -1,6 +1,14 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-10-09 — **RM-161 built: the building can be signed into and switched from its own screen
+**Last audited:** 2026-10-14 — **RM-161 deployed; RM-162 built: ingest's backlog drains over a slow uplink.**
+- **Back online, slowly (E-255).** The operator reseated the router's SIM and the edge rejoined the mesh, on its own
+  device network throughout. Upload measured at about 12.7 KB/s. RM-161 is deployed (`63dc9cb`), and
+  `BREAK_GLASS_USER_ID` is set from the one account that has sent commands. The on-site read-back (RM-161f) remains.
+- **RM-162.** Every upload timed out on that link: up to 2,000 rows per stream is about 1.3 MB, against a 10 s timeout.
+  The backlog stood at 202,700 rows and growing, and each attempt spent about 127 KB of mobile data. A timeout now
+  halves the batch (to 25 rows per stream at least) and an upload that goes through doubles it back.
+
+**Earlier, 2026-10-09 — RM-161 built: the building can be signed into and switched from its own screen
 without internet (ADR-0016). Not deployed: the edge has no internet to pull it with.**
 - **What happened (E-254).** The device network's uplink ran out of mobile data. The edge dropped off the mesh, and
   the kiosk was signed out. Every account sign-in answered "Failed to fetch", and the local sign-in never appeared:
@@ -532,17 +540,15 @@ other four and none needed changing.
 
 ## 0. Triage — what to do next
 
-### 2026-10-09 — the device network lost its internet; local sign-in and control (RM-161): built, deploy waits
+### 2026-10-09 — the device network lost its internet; local sign-in and control (RM-161): deployed 2026-10-14
 
-- **Now, on site (the operator).** Restore the device network's internet: top up its uplink's data. Nothing on the
-  edge needs touching, and **its Wi-Fi must not be changed** (CLAUDE.md). The mesh, the kiosk's account session and
-  the uploads all recover by themselves; the outage queues drain into `commands`.
-- **Then the deploy (RM-161d):** `git pull`, `npm run build`, and
-  `sudo systemctl restart ibems-ingest ibems-proxy ibems-scheduler`.
-- **Then one setting, asked first (RM-161e):** `BREAK_GLASS_USER_ID` in `server/.env`, the operator's account id;
-  restart the proxy. Without it a local sign-in still works offline, but view-only.
-- **Read back (RM-161f):** a local sign-in at the kiosk; one light switched from it; its row in `commands` with
-  "local sign-in" in the note; `server/data/scheduler-config-cache.json` present.
+- **Back online 2026-10-14, on a slow uplink (E-255).** The operator reseated the router's SIM. Upload runs at about
+  12.7 KB/s; a top-up should restore it. Until then RM-162 lets the backlog drain in small batches.
+- **Deployed (RM-161d, RM-161e, done).** `63dc9cb` built and running; `BREAK_GLASS_USER_ID` set; the scheduler's kept
+  configuration is on the edge.
+- **Left: the read-back on site (RM-161f).** At the kiosk: sign out, *No internet? Sign in locally*, the local
+  password; the account menu reads "LAN only — can switch devices"; switch one light. Its row reaches `commands` with
+  "local sign-in" in the note. Then sign out and back in with the account.
 
 ### 2026-10-05 — the alerts bell flooded by cycling loads (RM-160): done
 
@@ -5006,14 +5012,28 @@ operator asked that the dashboard can be signed into, and the building switched,
       written only when it changes. A start that cannot reach the database runs from it, and says so. The aircon loop
       starts without its remembered state, so it waits one interval, as it does whenever that state cannot be read.
       — `server/scheduler.mjs`; three tests in `server/scheduler.test.mjs`
-- [ ] **RM-161d** Deploy, once the device network has internet again: `git pull`, `npm run build`, restart the three
-      daemons.
-- [ ] **RM-161e** *Operator, asked first.* Set `BREAK_GLASS_USER_ID` with `npm run local-control:account -- --write`
+- [x] **RM-161d** Deployed 2026-10-14 (E-255): `git pull` to `63dc9cb`, `npm run build`, the three daemons restarted,
+      the kiosk restarted onto the new build. The scheduler loaded 23 rows and wrote its kept configuration (6,917 bytes).
+- [x] **RM-161e** *Operator, asked first.* Set `BREAK_GLASS_USER_ID` with `npm run local-control:account -- --write`
       while the edge is online (it lists the accounts that have sent commands, with their email, and writes the newest),
       then restart the proxy. Never typed: a mistyped id still looks valid, and every local command's record would be
       refused and block the outage queue behind it (2026-10-14; `server/local-control-account.mjs`, 5 tests).
+      **Done 2026-10-14** (E-255): one account had sent commands (500, the last on 2026-10-07); written, `server/.env`
+      backed up first, the proxy restarted with no warning.
 - [ ] **RM-161f** Read back on site: a local sign-in, one light switched from it, its `commands` row marked "local
-      sign-in", and the scheduler's kept configuration on the edge.
+      sign-in", and the scheduler's kept configuration on the edge (present since RM-161d).
+
+### The backlog drains over a slow uplink — RM-162 (2026-10-14)
+
+- [x] **RM-162** Back from running out of data, the device network's router uploads at about 12.7 KB/s (E-255). Every
+      5-minute upload ended "This operation was aborted": up to 2,000 rows per stream is about 1.3 MB, about 100 s on
+      that link, against the client's 10 s timeout. The backlog stood at 202,700 rows and grew by 21 a minute, and each
+      attempt spent about 127 KB of mobile data for nothing. Now a drain that is cut off by its own timeout says so
+      (`timedOut`), and `nextUploadBatch` halves the next batch, to 25 rows per stream at least; an upload that moves
+      rows doubles it back to 2,000. An outage ("fetch failed") and a refusal leave it alone: sending less fixes
+      neither. Ingest logs each change. — `server/archiveUpload.mjs`, `server/ingest.mjs`; 4 tests in
+      `server/archiveUpload.test.mjs`, the RM-159 pin in `server/requestBudget.test.mjs` updated.
+- [ ] **RM-162a** Deploy (restart `ibems-ingest`), and read the backlog falling in the journal.
 
 ### The log back under the Free plan — RM-158 (2026-10-03)
 

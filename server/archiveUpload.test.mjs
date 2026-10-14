@@ -14,7 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { openArchive } from './archiveDb.mjs';
-import { drainArchive, isTransientFailure, uploadDue, uploadIntervalFrom } from './archiveUpload.mjs';
+import { drainArchive, isTransientFailure, uploadDue, uploadIntervalFrom, nextUploadBatch, MIN_UPLOAD_BATCH, UPLOAD_BATCH } from './archiveUpload.mjs';
 
 const AT_MS = Date.parse('2026-08-16T09:00:00+08:00');
 
@@ -273,4 +273,49 @@ test('RM-159: an outage during the one request ends the drain, with nothing move
   assert.equal(result.ok, false);
   assert.equal(perStream.calls.length, 0);
   assert.equal(archive.lag().readings, 2);
+});
+
+/* ===========================================================================
+ * 2026-10-14: a slow uplink. The device network's mobile router came back after the data ran out
+ * with about 12.7 KB/s of upload. An upload of up to 2,000 rows per stream is about 1.3 MB, and the
+ * client gives up after 10 s, so every upload timed out ("This operation was aborted"), the backlog of
+ * 202,000 rows never moved, and each attempt spent about 127 KB of mobile data for nothing. A timeout
+ * now halves the batch until one fits, and success grows it back.
+ * ======================================================================== */
+
+const aborted = () => Object.assign(new Error('This operation was aborted'), { name: 'AbortError' });
+
+test('slow link: a drain that timed out says so; an outage does not', async (t) => {
+  const archive = tempArchive(t);
+  fill(archive, 2);
+  const timedOut = await drainArchive({ archive, send: recorder().send, sendAll: batchRecorder(() => { throw aborted(); }).sendAll, health: () => ({ id: 1 }) });
+  assert.equal(timedOut.ok, false);
+  assert.equal(timedOut.timedOut, true);
+
+  const outage = await drainArchive({ archive, send: recorder().send, sendAll: batchRecorder(() => { throw new TypeError('fetch failed'); }).sendAll, health: () => ({ id: 1 }) });
+  assert.equal(outage.timedOut, false, 'a link that is down is not made faster by a smaller batch');
+
+  const perStreamTimeout = await drainArchive({ archive, send: recorder(() => { throw aborted(); }).send });
+  assert.equal(perStreamTimeout.timedOut, true);
+});
+
+test('slow link: a timeout halves the batch, down to a floor', () => {
+  assert.equal(nextUploadBatch(2000, { ok: false, timedOut: true }), 1000);
+  assert.equal(nextUploadBatch(1000, { ok: false, timedOut: true }), 500);
+  assert.equal(nextUploadBatch(MIN_UPLOAD_BATCH, { ok: false, timedOut: true }), MIN_UPLOAD_BATCH);
+  assert.equal(nextUploadBatch(MIN_UPLOAD_BATCH + 1, { ok: false, timedOut: true }), MIN_UPLOAD_BATCH);
+});
+
+test('slow link: an upload that went through grows the batch back, up to the full size', () => {
+  const uploaded = (n) => ({ ok: true, uploaded: { readings: n, building_totals: 0, anomalies: 0 } });
+  assert.equal(nextUploadBatch(125, uploaded(500)), 250);
+  assert.equal(nextUploadBatch(1500, uploaded(1)), UPLOAD_BATCH);
+  assert.equal(nextUploadBatch(UPLOAD_BATCH, uploaded(1)), UPLOAD_BATCH);
+});
+
+test('slow link: an outage, a refusal, or nothing to send leaves the batch as it was', () => {
+  assert.equal(nextUploadBatch(500, { ok: false, timedOut: false, error: 'fetch failed' }), 500);
+  assert.equal(nextUploadBatch(500, { ok: true, deferred: true }), 500);
+  assert.equal(nextUploadBatch(500, { ok: true, uploaded: { readings: 0, building_totals: 0, anomalies: 0 } }), 500);
+  assert.equal(nextUploadBatch(500, null), 500);
 });

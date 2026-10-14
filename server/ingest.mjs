@@ -35,7 +35,7 @@ import {
 } from './anomalyStats.mjs';
 import { runIngestCycle, msUntilNextTick } from './ingestCycle.mjs';
 import { openArchive } from './archiveDb.mjs';
-import { drainArchive, uploadDue, uploadIntervalFrom } from './archiveUpload.mjs';
+import { drainArchive, uploadDue, uploadIntervalFrom, nextUploadBatch, UPLOAD_BATCH } from './archiveUpload.mjs';
 import { readingsForCloud } from './cloudCapabilities.mjs';
 import { runHotTierPass } from './hotTier.mjs';
 import { makeStorageClient } from './supabaseStorage.mjs';
@@ -114,6 +114,9 @@ const paused = () => fs.existsSync(PAUSE_PATH);
  */
 const UPLOAD_EVERY_MS = uploadIntervalFrom(process.env.INGEST_UPLOAD_MS);
 let lastUploadMs = null;
+/** 2026-10-14: halved after an upload that timed out on a slow link, doubled back after one that went
+ * through. See `nextUploadBatch` in archiveUpload.mjs. */
+let uploadBatch = UPLOAD_BATCH;
 let uploadedThisTick = false;
 const healthCadence = createHealthCadence({ intervalMs: UPLOAD_EVERY_MS });
 /**
@@ -345,6 +348,16 @@ function batchUpload(rejections) {
   };
 }
 
+/** The batch size after this upload, said when it changes: a shrinking batch is a slow link, not a fault. */
+function noteUploadBatch(synced) {
+  const next = nextUploadBatch(uploadBatch, synced);
+  if (next === uploadBatch) return;
+  console.log(next < uploadBatch
+    ? `[ibems-ingest] upload timed out on a slow link: next batch ${next} row(s) per stream (was ${uploadBatch})`
+    : `[ibems-ingest] upload went through: next batch ${next} row(s) per stream (was ${uploadBatch})`);
+  uploadBatch = next;
+}
+
 /** What the batched upload's outcome says about the database, said once each way. */
 function noteBatchUpload(synced) {
   if (synced.healthCarried) {
@@ -493,8 +506,9 @@ async function tick() {
         // every interval rather than every minute, and each failed attempt is a line in the log too.
         lastUploadMs = Date.now();
         uploadedThisTick = true;
-        synced = await drainArchive({ archive, send: sendToCloud, ...batchUpload(rejections) });
+        synced = await drainArchive({ archive, send: sendToCloud, batchSize: uploadBatch, ...batchUpload(rejections) });
         noteBatchUpload(synced);
+        noteUploadBatch(synced);
         return synced;
       },
     } : {}),
