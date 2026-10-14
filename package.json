@@ -36,6 +36,7 @@
     "archive:backfill": "node server/archive-backfill.mjs",
     "archive:storage": "node server/archive-storage.mjs",
     "archive:reset": "node server/archive-reset.mjs",
+    "archive:flag-frozen": "node server/archive-flag-frozen.mjs",
     "archive:restore": "node server/archive-restore.mjs",
     "restore:rehearse": "bash supabase/restore-rehearse.sh",
     "tuya:devices": "node server/tuya-devices.mjs",

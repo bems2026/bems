@@ -5061,7 +5061,14 @@ rule never flagged them. The day reports for 7 to 13 Oct were generated at 09:50
       `REFRESH`.
 - [ ] **RM-163c** Deploy RM-163b (`poll-meters:pi --apply`, flows backed up) and read it back on the frozen meters.
 - [ ] **RM-163d** The still-meter freeze rule (frozen at 0 W too), back-flagging from `frozen_since`.
-- [ ] **RM-163e** `archive:flag-frozen`: the backlog's frozen stretches flagged before they upload.
+- [x] **RM-163e** *Built.* `npm run archive:flag-frozen` (dry run by default): a meter's online readings repeating
+      voltage, current, power and both registers for 12 h or more (above the longest healthy stillness, 535 min) are
+      marked frozen from the first repeat (`server/frozenStretches.mjs`). `--apply` refuses without the pause file,
+      backs the archive up with `VACUUM INTO`, marks through `archive.flagFrozen` (other capabilities kept; an earlier
+      `frozen_since` wins), forgets the touched days' seals so they are sealed and copied again, and re-sends any marked
+      row the cloud already has. — 6 + 4 + 3 tests; `server/testStatePaths.test.mjs` now pins the tool's and the
+      scheduler cache's redirects. Run on the edge: see RM-163e1.
+- [ ] **RM-163e1** Run it on the edge: dry run, compare with E-256, then `--apply`.
 - [ ] **RM-163f** Upload without the bounce, catch-up cadence, reports that wait for their data and rebuild on late
       data, the cloud backlog shown on the kiosk.
 - [ ] **RM-163g** Resume the upload; 7 to 13 Oct rebuilt; frozen meter-days read as unmeasured.

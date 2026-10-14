@@ -461,3 +461,78 @@ test('RM-160: the level count walks one device\'s minutes on the (device_id, ts)
   db.close();
   assert.match(plan, /readings_device_ts/);
 });
+
+/* ===========================================================================
+ * RM-163 (2026-10-14): marking a stretch of readings frozen after the fact. The CT meters repeated cached
+ * figures for days while the site was offline; two at 0 W were never flagged live. `flagFrozen` points those
+ * rows at a capability set carrying `measurement_frozen` and `frozen_since`, keeping every other capability,
+ * so the uploader sends them flagged and the reports leave them out of measured minutes.
+ * ======================================================================== */
+
+const minuteIso = (i) => new Date(AT_MS + i * 60_000).toISOString();
+
+test('flagFrozen marks one device\'s rows in a range, keeps their other capabilities, and leaves the rest alone', (t) => {
+  const { archive } = tempArchive(t);
+  for (let i = 0; i < 5; i++) {
+    archive.insertTick({ readings: [reading({ device_id: 'mtr_lo_red', ts: minuteIso(i) }), reading({ device_id: 'co1', ts: minuteIso(i) })] });
+  }
+  const res = archive.flagFrozen('mtr_lo_red', { fromMs: AT_MS + 60_000, toMs: AT_MS + 3 * 60_000, frozenSince: minuteIso(0) });
+  assert.equal(res.flagged, 3);
+  assert.equal(res.alreadyUploaded, 0);
+
+  const rows = archive.pending('readings', 100).map((p) => p.row);
+  const red = rows.filter((r) => r.device_id === 'mtr_lo_red');
+  assert.deepEqual(red.map((r) => r.capabilities.measurement_frozen === true), [false, true, true, true, false]);
+  assert.equal(red[1].capabilities.frozen_since, minuteIso(0));
+  assert.equal(red[1].capabilities.relay_status, 'memory', 'other capabilities are kept');
+  assert.ok(rows.filter((r) => r.device_id === 'co1').every((r) => !r.capabilities.measurement_frozen), 'another device is untouched');
+
+  const again = archive.flagFrozen('mtr_lo_red', { fromMs: AT_MS + 60_000, toMs: AT_MS + 3 * 60_000, frozenSince: minuteIso(0) });
+  assert.equal(again.flagged, 0, 'idempotent');
+  archive.close();
+});
+
+test('flagFrozen keeps an earlier frozen_since the bridge already recorded, and counts rows the cloud already has', (t) => {
+  const { archive } = tempArchive(t);
+  archive.insertTick({ readings: [reading({ device_id: 'mtr_co_yellow', ts: minuteIso(0), capabilities: { measurement_frozen: true, frozen_since: minuteIso(-30) } })] });
+  archive.insertTick({ readings: [reading({ device_id: 'mtr_co_yellow', ts: minuteIso(1), capabilities: null })] });
+  const [first] = archive.pending('readings', 1);
+  archive.advance('readings', first.id);
+
+  const res = archive.flagFrozen('mtr_co_yellow', { fromMs: AT_MS, toMs: AT_MS + 60_000, frozenSince: minuteIso(-10) });
+  assert.equal(res.flagged, 1, 'the row with no capabilities is flagged; the one already flagged earlier is not rewritten');
+  assert.equal(res.alreadyUploaded, 0);
+  assert.deepEqual(res.uploadedIds, []);
+  const [second] = archive.pending('readings', 10).map((p) => p.row);
+  assert.deepEqual(second.capabilities, { measurement_frozen: true, frozen_since: minuteIso(-10) });
+
+  const later = archive.flagFrozen('mtr_co_yellow', { fromMs: AT_MS - 60_000, toMs: AT_MS + 60_000, frozenSince: minuteIso(-60) });
+  assert.equal(later.flagged, 2, 'an earlier start replaces a later one');
+  assert.equal(later.alreadyUploaded, 1, 'the first row was uploaded already, and must be sent again');
+  assert.equal(later.uploadedIds.length, 1);
+  archive.close();
+});
+
+test('forgetSeal makes a changed day due for sealing again', (t) => {
+  const { archive } = tempArchive(t);
+  archive.recordSeal({ day: '2026-08-16', stream: 'readings', rows: 5, sha256: 'x', bytes: 1, path: 'a' });
+  assert.ok(archive.sealOf('2026-08-16', 'readings'));
+  archive.forgetSeal('2026-08-16', 'readings');
+  assert.equal(archive.sealOf('2026-08-16', 'readings'), null);
+  archive.close();
+});
+
+test('backupTo writes a consistent copy that opens as an archive', (t) => {
+  const { dir, archive } = tempArchive(t);
+  archive.insertTick({ readings: [reading()] });
+  const copy = path.join(dir, 'backup.sqlite');
+  archive.backupTo(copy);
+  archive.close();
+  const restored = openArchive(copy, { readOnly: true });
+  assert.equal(restored.stats().readings, 1);
+  try {
+    assert.throws(() => restored.backupTo(copy), /exists/, 'never overwrites a backup');
+  } finally {
+    restored.close();
+  }
+});

@@ -365,6 +365,66 @@ export function openArchive(file, { readOnly = false, targetVersion = ARCHIVE_SC
     return out;
   }
 
+  /**
+   * RM-163 (2026-10-14): marks one device's readings in `[fromMs, toMs]` frozen, after the fact. The CT
+   * meters repeated cached figures for days while the site was offline, and the two at 0 W were never
+   * flagged live (the rule exempts idle channels), so their minutes were stored as measurements. Each row is
+   * pointed at a capability set carrying `measurement_frozen` and `frozen_since`, every other capability
+   * kept. A row already flagged from an earlier or equal instant is left as it is; an earlier `frozenSince`
+   * replaces a later one. Returns the ids the cloud already has, which must be sent again to carry the flag.
+   */
+  function flagFrozen(deviceId, { fromMs, toMs, frozenSince }) {
+    const since = new Date(Date.parse(frozenSince)).toISOString();
+    const sinceMs = Date.parse(since);
+    if (Number.isNaN(sinceMs)) throw new Error(`flagFrozen: unparseable frozenSince ${JSON.stringify(frozenSince)}`);
+    const cursor = cursorOf('readings');
+    const uploadedIds = [];
+    let flagged = 0;
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const rows = prepare(`SELECT r.id, c.json FROM readings r LEFT JOIN capability_sets c ON c.id = r.cap_id
+                             WHERE r.device_id = ? AND r.ts >= ? AND r.ts <= ?`).all(deviceId, fromMs, toMs);
+      for (const r of rows) {
+        const caps = r.json ? JSON.parse(r.json) : {};
+        const held = caps.measurement_frozen === true && typeof caps.frozen_since === 'string' ? Date.parse(caps.frozen_since) : NaN;
+        if (held <= sinceMs) continue;
+        prepare('UPDATE readings SET cap_id = ? WHERE id = ?').run(capabilityId({ ...caps, measurement_frozen: true, frozen_since: since }), r.id);
+        flagged += 1;
+        if (r.id <= cursor) uploadedIds.push(r.id);
+      }
+      db.exec('COMMIT');
+    } catch (err) {
+      try { db.exec('ROLLBACK'); } catch { /* reported below */ }
+      throw err;
+    }
+    return { flagged, alreadyUploaded: uploadedIds.length, uploadedIds };
+  }
+
+  /** Readings by archive id, in the cloud's shape — to send again rows whose stored copy has changed. */
+  function readingsByIds(ids) {
+    if (!ids.length) return [];
+    const { entries, select, join } = cloudSelect('readings');
+    const out = [];
+    for (let i = 0; i < ids.length; i += 500) {
+      const chunk = ids.slice(i, i + 500);
+      const rows = prepare(`SELECT ${select} FROM readings t ${join} WHERE t.id IN (${chunk.map(() => '?').join(', ')}) ORDER BY t.id`).all(...chunk);
+      for (const r of rows) out.push(toCloudRow(entries, r));
+    }
+    return out;
+  }
+
+  /** Forgets a day's seal, so the next sealing pass writes and copies it again — after its rows changed in place. */
+  function forgetSeal(day, stream) {
+    prepare('DELETE FROM sealed_days WHERE day = ? AND stream = ?').run(day, stream);
+  }
+
+  /** A consistent copy of the whole archive at `file`, which must not exist yet. Safe while ingest writes. */
+  function backupTo(target) {
+    if (fs.existsSync(target)) throw new Error(`backupTo: ${target} exists — a backup is never overwritten`);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    db.exec(`VACUUM INTO '${String(target).replace(/'/g, "''")}'`);
+  }
+
   /** Quarantines one row the cloud refused for good, so it cannot block the rows behind it. */
   function reject(stream, rowId, reason) {
     prepare('INSERT OR REPLACE INTO upload_rejects (stream, row_id, reason, at) VALUES (?, ?, ?, ?)')
@@ -505,6 +565,10 @@ export function openArchive(file, { readOnly = false, targetVersion = ARCHIVE_SC
     lag,
     reject,
     rejects,
+    flagFrozen,
+    readingsByIds,
+    forgetSeal,
+    backupTo,
     stats,
     schemaVersion: () => userVersion(db),
     journalMode: () => prepare('PRAGMA journal_mode').get().journal_mode,

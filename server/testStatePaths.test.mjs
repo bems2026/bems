@@ -113,7 +113,21 @@ test('every scheduler spawn redirects its audit buffer', () => {
     assert.match(block, TMPDIR_BUILT, 'the scheduler spawn should build its buffer path under os.tmpdir()');
     assert.ok(block.includes('CONFIG_SIGNAL_PATH'), 'the scheduler spawn does not override CONFIG_SIGNAL_PATH, so it would watch the live signal');
     assert.ok(block.includes('REQUEST_METER_DIR'), 'the scheduler spawn does not override REQUEST_METER_DIR, so it would count into the live meter');
+    // RM-161 (2026-10-09): the configuration the scheduler keeps for a restart without internet. A test
+    // writing the real one would start the live scheduler on fixture schedules after its next offline boot.
+    assert.ok(block.includes('SCHEDULER_CONFIG_CACHE_PATH'), 'the scheduler spawn does not override SCHEDULER_CONFIG_CACHE_PATH, so it would overwrite the live kept configuration');
   }
+});
+
+test('the frozen-stretch correction is run only against a temp archive, pause file and backup folder', () => {
+  // RM-163 (2026-10-14). The tool rewrites rows of the archive in place and backs it up beside it; a test
+  // pointed at the defaults would mark the building's own history and leave fixture backups in server/data.
+  const src = readFileSync(join(HERE, 'archive-flag-frozen.test.mjs'), 'utf8');
+  const env = src.slice(src.indexOf('function fixture()'), src.indexOf('const run ='));
+  assert.ok(env.length > 0, 'fixture() has gone; the redirects it applied need a new home');
+  assert.match(env, TMPDIR_BUILT, 'fixture() should build under os.tmpdir()');
+  for (const name of ['ARCHIVE_DB_PATH', 'INGEST_PAUSE_PATH', 'ARCHIVE_BACKUP_DIR']) assert.ok(env.includes(name), `fixture() does not set ${name}`);
+  assert.match(src, /spawnSync\(process\.execPath, \[TOOL[^\]]*\], \{ env,/, 'every run of the tool takes the fixture env');
 });
 
 test('the production defaults really do live under server/, which is what makes this matter', () => {
@@ -129,4 +143,6 @@ test('the production defaults really do live under server/, which is what makes 
   assert.match(proxy, /'data', 'config-changed\.signal'/);
   assert.match(readFileSync(join(HERE, 'requestMeter.mjs'), 'utf8'), /'data', 'request-meter'/);
   assert.match(scheduler, /'data', 'command-audit-buffer-scheduler\.ndjson'/);
+  assert.match(scheduler, /'data', 'scheduler-config-cache\.json'/);
+  assert.match(readFileSync(join(HERE, 'archive-flag-frozen.mjs'), 'utf8'), /process\.env\.ARCHIVE_DB_PATH \|\| path\.join\(HERE, 'data', 'archive', 'archive\.sqlite'\)/);
 });
