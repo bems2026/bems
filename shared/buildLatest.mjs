@@ -88,9 +88,11 @@ export const STALE_READING_MS = 600000;
  *        `measurement_frozen` — `shared/measurementFreeze.mjs`'s `FROZEN_AFTER_MS`, threaded in for
  *        the same reason as the parameters above. Omitted means nothing is flagged, which reproduces
  *        the pre-RM-079 behaviour for an older deployed flow.
+ * @param {number} [stillAfterMs] RM-163: how long a circuit METER may hold every value, at any power,
+ *        before it is flagged — `shared/measurementFreeze.mjs`'s `STILL_AFTER_MS`. Omitted applies none.
  * @returns {Array} one entry per device, plus a trailing `_totals` entry
  */
-export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, staleAfterMsByClass = {}, maxDailyKwh = undefined, dailyEnergyCodeByDevice = {}, buildingMeterIds = [], frozenAfterMs = undefined, registerStall = undefined) {
+export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, staleAfterMsByClass = {}, maxDailyKwh = undefined, dailyEnergyCodeByDevice = {}, buildingMeterIds = [], frozenAfterMs = undefined, registerStall = undefined, stillAfterMs = undefined) {
   const energy = snap.energy || { meters: {}, totals: {} };
   const outlet = snap.outlet || { meters: {}, state: {} };
   const lights = (snap.switch || {}).state || {};
@@ -317,9 +319,14 @@ export function buildLatest(snap, REG, PHASE_MAP, nowMs, offsetMinutes = 480, st
       const valuesFrozen = frozenAfterMs !== undefined && heldSince !== undefined && live && nowMs - heldSince >= frozenAfterMs;
       const registerFrozen = registerStall !== undefined && regSince !== undefined && live
         && nowMs - regSince >= registerStall.afterMs && (p * (nowMs - regSince)) / 3.6e9 >= registerStall.minKwh;
-      if (valuesFrozen || registerFrozen) {
+      // AND THE STILL RULE (RM-163). A circuit meter holding every value, voltage too, for `stillAfterMs` is
+      // reading a cache, idle or not: L.O Red and L.O Yellow repeated one 0 W reading for 141 hours while
+      // the site was offline, which the two rules above exempt. Meters only; see measurementFreeze.mjs.
+      const stillFrozen = stillAfterMs !== undefined && d.class === 'meter' && heldSince !== undefined
+        && r.online !== false && nowMs - heldSince >= stillAfterMs;
+      if (valuesFrozen || registerFrozen || stillFrozen) {
         r.measurement_frozen = true;
-        const since = Math.min(...[valuesFrozen ? heldSince : Infinity, registerFrozen ? regSince : Infinity]);
+        const since = Math.min(...[valuesFrozen || stillFrozen ? heldSince : Infinity, registerFrozen ? regSince : Infinity]);
         r.frozen_since = iso8(since, offsetMinutes);
         delete r.energy_kwh_today_integrated;
       }

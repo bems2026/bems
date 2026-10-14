@@ -37,6 +37,7 @@ import { runIngestCycle, msUntilNextTick } from './ingestCycle.mjs';
 import { openArchive } from './archiveDb.mjs';
 import { drainArchive, uploadDue, uploadIntervalFrom, nextUploadBatch, UPLOAD_BATCH } from './archiveUpload.mjs';
 import { noteLateUpload, readLate, writeLate } from './lateData.mjs';
+import { createFreezeWatch, freezeMessage } from './freezeWatch.mjs';
 import { readingsForCloud } from './cloudCapabilities.mjs';
 import { runHotTierPass } from './hotTier.mjs';
 import { makeStorageClient } from './supabaseStorage.mjs';
@@ -387,6 +388,56 @@ function noteLate(synced) {
   }
 }
 
+/**
+ * RM-163: a frozen measurement, acted on. The bridge flags a reading only after its rule's wait (up to twelve
+ * hours for a meter at 0 W), so each freeze first seen marks the archive back to where it started, sends the
+ * cloud again any of those minutes it already has, and tells the operator once. With the site offline from
+ * 7 to 14 October the four CT meters sat frozen for days; nobody was told, and only a power cycle cured them.
+ */
+const freezeWatch = createFreezeWatch();
+let resendIds = [];
+async function noteFreezes(readings) {
+  let events;
+  try {
+    events = freezeWatch.observe(readings);
+  } catch {
+    return;
+  }
+  for (const s of events.started) {
+    const sinceMs = Date.parse(s.frozenSince);
+    const toMs = Date.parse(s.ts);
+    if (archive && !Number.isNaN(sinceMs) && !Number.isNaN(toMs)) {
+      try {
+        // The minute the held value first appeared was a real measurement; the repeats after it were not.
+        const r = archive.flagFrozen(s.deviceId, { fromMs: sinceMs + 60_000, toMs, frozenSince: s.frozenSince });
+        resendIds.push(...r.uploadedIds);
+        console.warn(`[ibems-ingest] ${s.deviceId}: readings frozen since ${s.frozenSince}; ${r.flagged} archived minute(s) marked back to then${r.uploadedIds.length ? `, ${r.uploadedIds.length} to send the cloud again` : ''}`);
+      } catch (err) {
+        console.error(`[ibems-ingest] ${s.deviceId}: could not mark its frozen minutes: ${String(err)}`);
+      }
+    }
+    const device = DEVICE_REGISTRY.find((d) => d.id === s.deviceId);
+    const msg = freezeMessage({ name: device?.display_name ?? s.deviceId, frozenSince: s.frozenSince, isMeter: device?.class === 'meter' });
+    try { await notifier.notify(msg.title, msg.body, msg.priority); } catch { /* offline: the journal line stands */ }
+  }
+  for (const id of events.cleared) {
+    console.log(`[ibems-ingest] ${id}: readings moving again`);
+    const device = DEVICE_REGISTRY.find((d) => d.id === id);
+    try { await notifier.notify(`${device?.display_name ?? id}: readings moving again`, 'Its readings change again; minutes from here are counted as measured.', 'default'); } catch { /* as above */ }
+  }
+}
+
+/** RM-163: minutes the cloud already had when they were marked frozen go up again, flag included (an upsert). */
+async function resendFlagged() {
+  if (!archive || resendIds.length === 0) return;
+  const ids = resendIds.splice(0, 500);
+  try {
+    await sendToCloud('readings', archive.readingsByIds(ids), 'device_id,ts');
+  } catch {
+    resendIds = [...ids, ...resendIds];
+  }
+}
+
 /** What the batched upload's outcome says about the database, said once each way. */
 function noteBatchUpload(synced) {
   if (synced.healthCarried) {
@@ -524,6 +575,8 @@ async function tick() {
       // Archiving never waits and never pauses: it is the record.
       archive: (batch) => {
         // RM-159: an anomaly no longer brings the upload forward, so nothing here looks at the batch.
+        // RM-163: a freeze first seen in this tick marks the archive back to its start, and says so.
+        void noteFreezes(batch.readings);
         return archive.insertTick(batch);
       },
       sync: async ({ rejections = [] } = {}) => {
@@ -546,6 +599,7 @@ async function tick() {
           synced = await drainArchive({ archive, send: sendToCloud, batchSize: uploadBatch, ...batchUpload(rejections, { withHealth: false }) });
           noteUploadBatch(synced);
           noteLate(synced);
+          if (synced.ok) await resendFlagged();
           return synced;
         }
         // An attempt, not a success, starts the next interval: during an outage the retry then comes
@@ -556,6 +610,7 @@ async function tick() {
         noteBatchUpload(synced);
         noteUploadBatch(synced);
         noteLate(synced);
+        if (synced.ok) await resendFlagged();
         return synced;
       },
     } : {}),

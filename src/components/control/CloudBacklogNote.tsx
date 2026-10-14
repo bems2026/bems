@@ -38,7 +38,7 @@ export function CloudBacklogNote() {
 
   return (
     <p className="devices-watchdog-note">
-      Logging on the Pi is live. The cloud is {behindBy(lagMs)} behind ({backlog.rows.toLocaleString('en-US')} readings waiting); reports
+      Logging on the Pi is live. The cloud is {behindBy(lagMs)} behind ({backlog.rows.toLocaleString()} readings waiting); reports
       for those days wait until it catches up.
       <InfoHint label="Why the cloud is behind">
         The Pi keeps every minute in its own archive whether or not the internet is up, and uploads it to the cloud when it can. After

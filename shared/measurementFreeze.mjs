@@ -48,6 +48,23 @@ export const FROZEN_AFTER_MS = 3 * 60 * 60 * 1000;
  */
 export const REGISTER_STALL = Object.freeze({ afterMs: 30 * 60 * 1000, minKwh: 0.005 });
 
+/**
+ * RM-163 — the third rule: a circuit METER that holds every value, voltage included, at any power.
+ *
+ * WHY. With the site offline from 7 to 14 October the four CT meters went on answering the poll with
+ * identical figures for days. L.O Red and L.O Yellow sat at 0 W for 141 hours, and both rules above
+ * exempt an idle channel by design, so five days of stuck readings were stored as measurements. A live
+ * circuit's voltage moves by tenths of a volt from minute to minute whatever the load; a meter repeating
+ * its voltage, current and power for this long is reading a cache. The meters recovered only when
+ * power-cycled.
+ *
+ * WHY TWELVE HOURS. Before the outage the longest a healthy meter held one reading was 535 minutes
+ * (L.O Red, at 0 W); the outage's stretches were 23 to 141 hours. Meters only: an idle outlet refreshes
+ * once an hour and is not the device class this happened to. The archive correction for the outage
+ * (`server/frozenStretches.mjs`) uses the same threshold.
+ */
+export const STILL_AFTER_MS = 12 * 60 * 60 * 1000;
+
 /** Pure. Has this channel's register been still for long enough, at this power, to be a freeze? */
 export function registerStalled({ powerW, stalledMs }, rule = REGISTER_STALL) {
   if (!(powerW > 0) || !(stalledMs >= rule.afterMs)) return false;

@@ -19,7 +19,10 @@
  * An offline reading neither breaks nor extends a stretch; a reading missing any value breaks it.
  */
 
-export const STILL_AFTER_MS = 12 * 60 * 60 * 1000;
+// One threshold for the live rule (shared/buildLatest.mjs) and this correction.
+import { STILL_AFTER_MS } from '../shared/measurementFreeze.mjs';
+
+export { STILL_AFTER_MS };
 
 const MEASURED = ['voltage', 'current', 'power_w', 'energy_kwh_today', 'total_energy_kwh'];
 

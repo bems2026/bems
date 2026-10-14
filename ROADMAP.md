@@ -5059,8 +5059,20 @@ rule never flagged them. The day reports for 7 to 13 Oct were generated at 09:50
       `shared/deviceCapabilities.mjs`, `node-red-bridge/meterPollPlan.mjs`, `poll-meters.mjs`; 4 new tests in
       `test/meter-poll.test.mjs`, 2 in `test/device-capabilities.test.mjs`. Preflight's `flow_polls` already reads
       `REFRESH`.
-- [ ] **RM-163c** Deploy RM-163b (`poll-meters:pi --apply`, flows backed up) and read it back on the frozen meters.
-- [ ] **RM-163d** The still-meter freeze rule (frozen at 0 W too), back-flagging from `frozen_since`.
+- [x] **RM-163c** Deployed 2026-10-14 11:12 (flows backed up): an in-place upgrade of the poll function, all three
+      sessions refreshed. **Read back: it did not revive the frozen meters.** Five minutes of identical values; a
+      Node-RED restart (fresh sessions, refresh, GET) did not either. All four answered pings and held sessions; their
+      `sync_request`/`sync_response` read `request`/`idle` throughout, healthy days included, so the handshake is not
+      it. **The operator power-cycled them at 11:33, and they report live again** (3 to 9 distinct readings each in the
+      next four minutes). The meters stall inside the device; the cure is a power cycle. The REFRESH poll stays: it is
+      harmless and costs one small message a minute per meter.
+- [x] **RM-163d** *Built, not deployed.* The still rule: a circuit meter holding every value, voltage included, for
+      `STILL_AFTER_MS` (12 h, `shared/measurementFreeze.mjs`, shared with the archive correction) is
+      `measurement_frozen` at any power; meters only. `server/freezeWatch.mjs` turns each tick's flags into events:
+      ingest marks the archive back to the freeze's start (from the minute after the held value appeared), re-sends any
+      of those minutes the cloud has, and notifies the operator once per freeze with the cure ("power-cycle the meter's
+      supply") and once when it clears. — 5 + 5 tests, the ingest wiring pinned; `npm run build:flow` regenerates the
+      bridge tab, which needs `deploy:pi` (a flow write) as well as an ingest restart.
 - [x] **RM-163e** *Built.* `npm run archive:flag-frozen` (dry run by default): a meter's online readings repeating
       voltage, current, power and both registers for 12 h or more (above the longest healthy stillness, 535 min) are
       marked frozen from the first repeat (`server/frozenStretches.mjs`). `--apply` refuses without the pause file,
@@ -5068,10 +5080,19 @@ rule never flagged them. The day reports for 7 to 13 Oct were generated at 09:50
       `frozen_since` wins), forgets the touched days' seals so they are sealed and copied again, and re-sends any marked
       row the cloud already has. — 6 + 4 + 3 tests; `server/testStatePaths.test.mjs` now pins the tool's and the
       scheduler cache's redirects. Run on the edge: see RM-163e1.
-- [ ] **RM-163e1** Run it on the edge: dry run, compare with E-256, then `--apply`.
-- [ ] **RM-163f** Upload without the bounce, catch-up cadence, reports that wait for their data and rebuild on late
-      data, the cloud backlog shown on the kiosk.
-- [ ] **RM-163g** Resume the upload; 7 to 13 Oct rebuilt; frozen meter-days read as unmeasured.
+- [x] **RM-163e1** Run on the edge 2026-10-14 11:44: the dry run matched E-256 (L.O Red 141.5 h, L.O Yellow 141.4 h,
+      CO Yellow 129.8 h, the aircon meter 23.0 h and 57.8 h); `--apply` backed the archive up and marked 17,148 rows; a
+      second run with `--since=2026-10-14 --min-hours=1.5` marked the 09:51–11:33 window the power cycle proved frozen
+      (190 rows). Two backups beside the archive.
+- [x] **RM-163f** Deployed 2026-10-14 11:53 (`a94535c`; CI's restart-map failure fixed in `967f996`). The batch
+      grows only after a quick upload; while the edge owes more than an hour it uploads every minute without the health
+      row; `archive.owedSince()` gates the report pass and `server/lateData.mjs` records late uploads so their periods
+      are rebuilt. Read back: "catching up … since 2026-10-07T08:06:16Z" and "reports: … anything ending after … waits".
+      The proxy reports `cloud_owed_since`/`cloud_owed_rows`; `CloudBacklogNote` (Control page, Reports overview)
+      says so on the kiosk (RM-163g, `19b637b`, not deployed).
+- [ ] **RM-163g** Upload resumed 2026-10-14 11:53. Left: read 7 to 13 Oct rebuilt once their rows are up, frozen
+      meter-days read as unmeasured; deploy the kiosk note (`npm run build`) and RM-163d (`deploy:pi`, ingest restart)
+      when the edge is reachable again.
 - [ ] **RM-163h** The clock without internet: the clock-save timer and step re-timing; an RTC module recommended.
 
 ### The log back under the Free plan — RM-158 (2026-10-03)

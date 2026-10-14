@@ -12,7 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildLatest, iso8 } from '../shared/buildLatest.mjs';
 import { DEVICE_REGISTRY, PHASE_MAP, DAILY_ENERGY_CODE_BY_DEVICE } from '../shared/registry.mjs';
-import { FROZEN_AFTER_MS, REGISTER_STALL, registerStalled } from '../shared/measurementFreeze.mjs';
+import { FROZEN_AFTER_MS, REGISTER_STALL, registerStalled, STILL_AFTER_MS } from '../shared/measurementFreeze.mjs';
 
 const NOW = 1789347000000;
 const meter = (over = {}) => ({ v: '228.2', c: '0.576', p: '19.1', e: '0.3000', h: true, ...over });
@@ -127,4 +127,41 @@ test('the register rule needs a register clock — a flow or a device without on
   assert.equal('measurement_frozen' in r, false);
   const older = buildLatest(snap({ valueSince: { lo_red: NOW - 40 * 60_000 }, registerSince: { lo_red: NOW - 40 * 60_000 } }), DEVICE_REGISTRY, PHASE_MAP, NOW, 480, {}, undefined, DAILY_ENERGY_CODE_BY_DEVICE, [], FROZEN_AFTER_MS);
   assert.equal('measurement_frozen' in row(older, 'mtr_lo_red'), false, 'a flow that passes no stall rule applies none');
+});
+
+/* ===========================================================================
+ * RM-163 (2026-10-14): the still-meter rule. With the site offline for a week, L.O Red and L.O Yellow
+ * repeated one reading at 0 W for 141 hours: voltage, current, power and registers all unchanged. The
+ * idle exemption above meant neither was ever flagged, and their five days were stored as measurements.
+ * A circuit meter that holds EVERY value, voltage included, for STILL_AFTER_MS is frozen at 0 W too;
+ * healthy meters held at most 535 minutes before the outage.
+ * ======================================================================== */
+
+const buildStill = (s) => buildLatest(s, DEVICE_REGISTRY, PHASE_MAP, NOW, 480, {}, undefined, DAILY_ENERGY_CODE_BY_DEVICE, [], FROZEN_AFTER_MS, REGISTER_STALL, STILL_AFTER_MS);
+
+test('the still rule is twelve hours, above the longest healthy stillness (535 min)', () => {
+  assert.equal(STILL_AFTER_MS, 12 * 60 * 60 * 1000);
+  assert.ok(STILL_AFTER_MS > 535 * 60_000);
+});
+
+test('a circuit meter at 0 W holding every value for twelve hours is frozen, from when it last moved', () => {
+  const since = NOW - STILL_AFTER_MS - 1_000;
+  const r = row(buildStill(snap({ valueSince: { lo_red: since }, loRed: { p: '0.0', c: '0.000' } })), 'mtr_lo_red');
+  assert.equal(r.measurement_frozen, true);
+  assert.equal(r.frozen_since, iso8(since, 480));
+});
+
+test('an idle meter still for less than twelve hours is not', () => {
+  const r = row(buildStill(snap({ valueSince: { lo_red: NOW - STILL_AFTER_MS + 60_000 }, loRed: { p: '0.0', c: '0.000' } })), 'mtr_lo_red');
+  assert.equal('measurement_frozen' in r, false);
+});
+
+test('the still rule is the meters\' alone — an idle outlet is not judged by it', () => {
+  const r = row(buildStill(snap({ valueSince: { co1: NOW - STILL_AFTER_MS - 1_000 }, outlet: { p: '0.0', c: '0.000' } })), 'co1');
+  assert.equal('measurement_frozen' in r, false);
+});
+
+test('an older flow without the threshold applies no still rule', () => {
+  const r = row(build(snap({ valueSince: { lo_red: NOW - STILL_AFTER_MS - 1_000 }, loRed: { p: '0.0', c: '0.000' } })), 'mtr_lo_red');
+  assert.equal('measurement_frozen' in r, false);
 });
