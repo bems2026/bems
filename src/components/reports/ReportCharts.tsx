@@ -236,8 +236,8 @@ export function ReportCharts({
   const useTable = useCallback((): ChartTable => {
     const total = useSegments.reduce((a, x) => a + (x.kwh ?? 0), 0);
     return {
-      headers: ['Use', 'Energy (kWh)', 'Share'],
-      rows: useSegments.map((s) => [s.label, num(s.kwh, 2), s.kwh === null || total <= 0 ? null : `${((s.kwh / total) * 100).toFixed(1)}%`]),
+      headers: ['Use', 'Energy (kWh)', 'Share', 'Note'],
+      rows: useSegments.map((s) => [s.label, num(s.kwh, 2), s.kwh === null || total <= 0 ? null : `${((s.kwh / total) * 100).toFixed(1)}%`, s.estimateNote ?? null]),
     };
   }, [useSegments]);
 
@@ -297,7 +297,15 @@ export function ReportCharts({
         loading.useShare ? (
           placeholder('useShare')
         ) : (
-          <ChartSlot scope="Energy by use" build={useScene} table={useTable} summaryLabel="Show the uses" />
+          <>
+            <ChartSlot scope="Energy by use" build={useScene} table={useTable} summaryLabel="Show the uses" />
+            {/* RM-164: a use that includes a declared share of a branch says so beside the chart. */}
+            {useSegments.filter((s) => s.estimateNote && s.kwh !== null).map((s) => (
+              <p key={s.label} className="reports-note report-use-estimate">
+                {s.label} {s.estimateNote}.
+              </p>
+            ))}
+          </>
         )
       ) : null}
       {shows('breakdown') ? (

@@ -38,6 +38,7 @@ losing the rollups costs the entire history.
 | `monthly_reports`, `monthly_building_reports` | Stored precisely because they cannot be recomputed once their source rows are pruned. |
 | `period_reports`, `period_building_reports` | What the Reports page reads, and the record of what was reported. A report regenerated later reflects the data as it stands later, which can differ — RM-047b's outlet correction is exactly such a case. |
 | `energy_tariffs`, `emission_factors` | An operator-entered rate and the source it cites. The provenance behind every peso and kilogram in a report exists nowhere else. |
+| `report_notes` | What people wrote about a day or a report. Typed by hand; nothing can regenerate it. |
 | `sites`, `site_ui_prefs`, `socket_config`, `space_nodes`, `acu_rules` | Hand-entered site configuration: the building's identity and policy, what each socket feeds, the space tree, and the aircon rules. |
 
 **The two lists are checked, not maintained.** `server/backupCoverage.test.mjs` reads every
@@ -156,7 +157,7 @@ Stated plainly, because discovering these mid-incident is the worst time to lear
   setpoint, which its planner is built to refuse rather than act on.
 - **Rows that name a user are refused until that user exists.** `updated_by`, `set_by` and
   `override_by` on `acu_rules`, `energy_tariffs`, `emission_factors`, `space_nodes`,
-  `socket_config` and `site_ui_prefs` are foreign keys to `auth.users` — and on `acu_rules`,
+  `socket_config`, `site_ui_prefs` and `report_notes` are foreign keys to `auth.users` — and on `acu_rules`,
   `updated_by` is NOT NULL. Recreate the accounts first, or clear those columns while loading;
   for a tariff that loses who entered it, though the email snapshot phase38 stores beside it
   survives.

@@ -291,12 +291,12 @@ describe('estimated loads — RM-130', () => {
     const [ac] = report.apportioned ?? [];
     expect(ac.label).toMatch(/director/i);
     expect(ac.branchLabel).toBe('C.O Yellow');
-    expect(ac.share).toBe('about two thirds');
-    expect(ac.estimated).toBe('≈ 27.47 kWh');
-    expect(ac.remainder).toBe('≈ 13.73 kWh');
+    expect(ac.share).toBe('about half');
+    expect(ac.estimated).toBe('≈ 20.60 kWh');
+    expect(ac.remainder).toBe('≈ 20.60 kWh');
     expect(ac.branch).toBe('41.20 kWh');
-    expect(ac.basis).toMatch(/2026-09-22/);
-    expect(ac.note).toMatch(/would move ≈ 27\.47 kWh/);
+    expect(ac.basis).toMatch(/2026-10-27/);
+    expect(ac.note).toMatch(/counts ≈ 20\.60 kWh of C\.O Yellow as Aircon/);
   });
 
   it('is left out for a document narrowed to circuits that carry no estimate', () => {
@@ -315,7 +315,7 @@ describe('estimated loads — RM-130', () => {
   it('qualifies a partly recorded branch\'s estimate the way the page does', () => {
     const report = buildPdfReport(input({ sections: ['apportioned'], rows: [{ ...coYellow, online_sample_count: Math.round(31 * 24 * 60 * 0.6) }], scopedRows: [{ ...coYellow, online_sample_count: Math.round(31 * 24 * 60 * 0.6) }] }));
     const [ac] = report.apportioned ?? [];
-    expect(ac.estimated).toMatch(/≈ 27\.47 kWh \(partial/);
+    expect(ac.estimated).toMatch(/≈ 20\.60 kWh \(partial/);
   });
 });
 
@@ -331,7 +331,7 @@ describe('the estimate, charted in the document — RM-130', () => {
     const chart = report.charts.find((c) => c.section === 'apportioned');
     expect(chart?.title).toMatch(/Director's office aircon, per day/);
     expect(chart?.svg).toMatch(/-estimate\)/);
-    expect(chart?.desc).toMatch(/Estimated, not metered: about two thirds of C\.O Yellow/);
+    expect(chart?.desc).toMatch(/Estimated, not metered: about half of C\.O Yellow/);
     expect(chart?.table.rows[0][1]).toBe('≈ 2.00');
     expect(report.omitted).toEqual([]);
   });
@@ -428,5 +428,37 @@ describe('unusual events — RM-160', () => {
 
   it('gives the bare count for a period that began after it', () => {
     expect(figure(buildPdfReport(input({ building: building({ period_start: '2026-11-01' }) })))).toBe('1');
+  });
+});
+
+describe('Energy by use in the document — RM-164', () => {
+  it('prints a note on a use that includes a declared share of a branch', () => {
+    const useSegments = [
+      { label: 'Lighting', kwh: 20.89 },
+      { label: 'Aircon', kwh: 164.48, estimateNote: "includes about half of C.O Yellow (Director's office aircon), an estimate" },
+      { label: 'Others', kwh: 78.79, estimateNote: 'about half of C.O Yellow; the rest is counted as Aircon (an estimate)' },
+    ];
+    const report = buildPdfReport(input({ sections: ['useShare'], charts: { ...input().charts, useSegments } }));
+    const chart = report.charts.find((c) => c.section === 'useShare');
+    expect(chart?.table.headers).toEqual(['Use', 'Energy (kWh)', 'Note']);
+    expect(chart?.table.rows[1][2]).toMatch(/half of C\.O Yellow/);
+    expect(chart?.table.rows[0][2]).toBeNull();
+  });
+});
+
+describe('notes in the document — RM-164', () => {
+  const daily = Array.from({ length: 3 }, (_, i) => dailyRow(i));
+  const noted = daily[1].local_day.slice(0, 10);
+
+  it('carries the report\'s notes, and each noted day with its energy, in date order', () => {
+    const r = buildPdfReport(input({ charts: { ...input().charts, daily }, notes: { report: 'Remarks', days: { [noted]: 'Seminar', '2026-01-01': 'not this period' } } }));
+    expect(r.reportNote).toBe('Remarks');
+    expect(r.dayNotes).toEqual([{ day: noted, energyKwh: expect.any(String), note: 'Seminar' }]);
+  });
+
+  it('a projected baseline carries no notes: nothing happened on its days', () => {
+    const r = buildPdfReport(input({ charts: { ...input().charts, daily }, notes: { report: 'Remarks', days: { [noted]: 'Seminar' } }, projectedFrom: 'Projected from 30 days.' }));
+    expect(r.reportNote).toBeNull();
+    expect(r.dayNotes).toEqual([]);
   });
 });

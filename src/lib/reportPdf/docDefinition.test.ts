@@ -486,3 +486,45 @@ describe('a projected baseline document — RM-154', () => {
     expect(text).not.toContain('Minutes recorded');
   });
 });
+
+describe('notes — RM-164', () => {
+  const dayChart = {
+    section: 'dailyEnergy' as const,
+    title: 'Energy per day',
+    svg: '<svg xmlns="http://www.w3.org/2000/svg"/>',
+    desc: 'Two days.',
+    table: { headers: ['Day', 'Energy (kWh)'], rows: [['2026-09-22', '12.00'], ['2026-09-23', '30.10']] },
+  };
+  const dayNotes = [{ day: '2026-09-23', energyKwh: '30.10', note: 'Seminar: both aircons all day' }];
+
+  it('prints the report\'s notes under their own heading, after the key figures', () => {
+    const def = buildDocDefinition(report({ reportNote: 'September: two seminars and a power cut on the 15th.' }));
+    expect(index(def, 'Notes for this report')).toBeGreaterThan(index(def, 'How much was recorded'));
+    expect(allText(def.content).join(' ')).toMatch(/two seminars/);
+  });
+
+  it('prints no notes heading when nobody wrote any, or the section is left out', () => {
+    expect(index(buildDocDefinition(report({ reportNote: '  ' })), 'Notes for this report')).toBe(-1);
+    const off = REPORT_SECTIONS.map((s) => s.id).filter((id) => id !== 'reportNotes');
+    expect(index(buildDocDefinition(report({ reportNote: 'Remarks', sections: off })), 'Notes for this report')).toBe(-1);
+  });
+
+  it('a Detailed document gives the day table a Notes column', () => {
+    const def = buildDocDefinition(report({ charts: [dayChart], dayNotes, detail: 'detailed' }));
+    const table = def.content.find((n) => allText(n).includes('Seminar: both aircons all day')) as { table: { body: unknown[][] } };
+    expect((table.table.body[0] as { text: string }[]).map((h) => h.text)).toEqual(['Day', 'Energy (kWh)', 'Notes']);
+    expect(table.table.body[2]).toContain('Seminar: both aircons all day');
+  });
+
+  it('a Simple document, which has no number tables, lists the days that carry a note', () => {
+    const def = buildDocDefinition(report({ charts: [dayChart], dayNotes, detail: 'simple' }));
+    expect(index(def, 'Notes for each day')).toBeGreaterThan(index(def, 'Two days.'));
+    expect(allText(def.content).join(' ')).toMatch(/Seminar/);
+  });
+
+  it('leaves the day notes out when that section is unticked', () => {
+    const off = REPORT_SECTIONS.map((s) => s.id).filter((id) => id !== 'dayNotes');
+    const def = buildDocDefinition(report({ charts: [dayChart], dayNotes, sections: off }));
+    expect(allText(def.content).join(' ')).not.toMatch(/Seminar/);
+  });
+});

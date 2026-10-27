@@ -172,3 +172,19 @@ describe('one energy figure per period — RM-154', () => {
     expect(await screen.findByText(/^\+6\.45 kWh$/)).toBeInTheDocument();
   });
 });
+
+describe('notes on the Overview — RM-164', () => {
+  it('lists every day of the week with a notes field, and a box for the report\'s own notes', async () => {
+    await openWeek();
+    const table = await screen.findByRole('table', { name: /Energy and notes per day/ });
+    // The circuits' days, one row each — the same days the chart above draws.
+    expect(within(table).getAllByRole('row')).toHaveLength(DAYS.length + 1);
+    expect(screen.getByLabelText('Note for 2026-09-23')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /Notes for this report/ })).toBeInTheDocument();
+  });
+
+  it('cannot be typed in without an account', async () => {
+    await openWeek();
+    expect(await screen.findByLabelText('Note for 2026-09-21')).toHaveAttribute('readonly');
+  });
+});

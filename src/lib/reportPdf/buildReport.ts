@@ -107,6 +107,8 @@ export interface PdfReportInput {
   baselineComparison?: BaselineComparison | null;
   /** RM-154: this document is a projected baseline; the sentence says what it was built from. */
   projectedFrom?: string | null;
+  /** RM-164: the operator's notes — the report's remarks, and each day's note keyed by its date. A projection has none. */
+  notes?: { report: string | null; days: Readonly<Record<string, string>> } | null;
 }
 
 const f = (v: number | null | undefined, digits = 2) => (v === null || v === undefined || !Number.isFinite(v) ? null : v.toFixed(digits));
@@ -178,7 +180,8 @@ const CHARTS: readonly {
     has: ({ charts: c }) => (c.useSegments ?? []).length > 0,
     build: ({ charts: c, building }) => ({
       scene: circuitBreakdownChart(c.useSegments ?? [], spec('pdf-us', 100, `Energy by use${building}`), { of: 'uses' }),
-      table: { headers: ['Use', 'Energy (kWh)'], rows: (c.useSegments ?? []).map((s) => [s.label, f(s.kwh)]) },
+      // RM-164: a use carrying a declared share of a branch says so on its row.
+      table: { headers: ['Use', 'Energy (kWh)', 'Note'], rows: (c.useSegments ?? []).map((s) => [s.label, f(s.kwh), s.estimateNote ?? null]) },
     }),
   },
   {
@@ -370,9 +373,9 @@ export function buildPdfReport(input: PdfReportInput): PdfReport {
             estimated: refused ? 'Not possible: the branch figure is refused, so its share is too' : kwh(e.estimatedKwh),
             remainder: refused ? 'Not possible, as above' : kwh(e.remainderKwh),
             branch: refused ? 'Not possible' : e.branchKwh === null ? '—' : `${e.branchKwh.toFixed(2)} kWh${partial}`,
-            note: `“Energy by use” counts all of ${e.branchLabel} as ${LOAD_LABELS[e.branchLoad]}; this estimate would move ${
-              refused || e.estimatedKwh === null ? 'its share' : `≈ ${e.estimatedKwh.toFixed(2)} kWh`
-            } of it to ${LOAD_LABELS[e.load]}. It is not moved, because a chart of measurements should not carry an estimate.`,
+            note: `“Energy by use” counts ${
+              refused || e.estimatedKwh === null ? 'this share' : `≈ ${e.estimatedKwh.toFixed(2)} kWh`
+            } of ${e.branchLabel} as ${LOAD_LABELS[e.load]} and the rest as ${LOAD_LABELS[e.branchLoad]}, and marks both as including an estimate. The charts by circuit show the branch whole.`,
           };
         })
     : [];
@@ -452,7 +455,7 @@ export function buildPdfReport(input: PdfReportInput): PdfReport {
             start: building.period_start,
             holidays: input.holidays ?? [],
             recordedKwh: building.energy_kwh,
-            recordedByLoad: Object.fromEntries(loadShareSegments(rows).map((x) => [x.id, x.kwh])),
+            recordedByLoad: Object.fromEntries(loadShareSegments(rows, { apportion: false }).map((x) => [x.id, x.kwh])),
             coverage: buildingCoverage,
           })
         : null;
@@ -482,6 +485,12 @@ export function buildPdfReport(input: PdfReportInput): PdfReport {
   return {
     title: input.projectedFrom ? 'Projected baseline' : 'Energy report',
     projectedFrom: input.projectedFrom ?? null,
+    reportNote: input.projectedFrom ? null : (input.notes?.report ?? null),
+    dayNotes: input.projectedFrom
+      ? []
+      : input.charts.daily
+          .map((d) => ({ day: d.local_day.slice(0, 10), energyKwh: d.usable_sample_count > 0 ? f(d.energy_kwh) : null, note: (input.notes?.days[d.local_day.slice(0, 10)] ?? '').trim() }))
+          .filter((d) => d.note !== ''),
     siteName: input.siteName,
     timezone: input.timezone,
     generatedAt: input.generatedAt,

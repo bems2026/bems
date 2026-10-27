@@ -57,6 +57,8 @@ export const BACKUP_TABLES = [
   { table: 'device_config', order: 'device_id' },
   { table: 'socket_config', order: 'device_id,socket' },
   { table: 'site_ui_prefs', order: 'site_id' },
+  // RM-164: the operator's notes on days and reports — typed by people, so nothing can regenerate them.
+  { table: 'report_notes', order: 'site_id,kind,start' },
   { table: 'schedules', order: 'id' },
   { table: 'dsm_thresholds', order: 'id' },
   { table: 'acu_rules', order: 'id' },

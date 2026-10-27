@@ -30,7 +30,7 @@ describe('apportionedEstimates', () => {
     expect(ac.label).toMatch(/director/i);
     expect(ac.branchLabel).toBe('C.O Yellow');
     expect(ac.meterId).toBe('mtr_co_yellow');
-    expect(ac.share).toBeCloseTo(2 / 3, 9);
+    expect(ac.share).toBeCloseTo(1 / 2, 9); // RM-164: the operator revised two thirds to half, 2026-10-27
     expect(ac.basis).toMatch(/operator/i);
     expect(ac.load).toBe('aircon');
   });
@@ -38,8 +38,8 @@ describe('apportionedEstimates', () => {
   it('is the branch\'s measured energy times the share, with the remainder for the outlets', () => {
     const [ac] = apportionedEstimates([row({ energy_kwh: 9 })]);
     expect(ac.branchKwh).toBe(9);
-    expect(ac.estimatedKwh).toBeCloseTo(6, 9);
-    expect(ac.remainderKwh).toBeCloseTo(3, 9);
+    expect(ac.estimatedKwh).toBeCloseTo(4.5, 9);
+    expect(ac.remainderKwh).toBeCloseTo(4.5, 9);
   });
 
   it('carries the branch\'s coverage, so a partly recorded branch gives a partly recorded estimate', () => {
@@ -88,9 +88,9 @@ describe('the estimate, charted — RM-130', () => {
   it('scales each of the branch\'s days by the share, and carries observed and complete', () => {
     const pts = estimateDayPoints([dayRow('2026-08-01', 3), dayRow('2026-08-02', null, 0), dayRow('2026-08-03', 6, 700), { ...dayRow('2026-08-04', 1), device_id: 'mtr_lo_red' }], ac);
     expect(pts.map((p) => p.day)).toEqual(['2026-08-01', '2026-08-02', '2026-08-03']);
-    expect(pts[0]).toMatchObject({ label: '1', kwh: 2, observed: true, complete: true });
+    expect(pts[0]).toMatchObject({ label: '1', kwh: 1.5, observed: true, complete: true });
     expect(pts[1]).toMatchObject({ kwh: null, observed: false });
-    expect(pts[2].kwh).toBeCloseTo(4, 9);
+    expect(pts[2].kwh).toBeCloseTo(3, 9);
     expect(pts[2].complete).toBe(false);
   });
 
@@ -101,9 +101,9 @@ describe('the estimate, charted — RM-130', () => {
     });
     const pts = estimateHourPoints([hour(9, 0.6), hour(10, null), { ...hour(10, 0.3), device_id: 'mtr_lo_red' }], ac);
     expect(pts).toHaveLength(24);
-    expect(pts[9].kwh).toBeCloseTo(0.4, 9);
-    expect(pts[9].avgW).toBeCloseTo(400, 6);
-    expect(pts[9].maxW).toBeCloseTo(600, 6);
+    expect(pts[9].kwh).toBeCloseTo(0.3, 9);
+    expect(pts[9].avgW).toBeCloseTo(300, 6);
+    expect(pts[9].maxW).toBeCloseTo(450, 6);
     expect(pts[10]).toMatchObject({ kwh: null, observed: false });
   });
 });

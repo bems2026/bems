@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Download, FileText } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { InfoHint } from '@/components/ui/InfoHint';
@@ -52,6 +52,10 @@ import { CloudBacklogNote } from '@/components/control/CloudBacklogNote';
 import { ExportDrawer, type ExportFormat } from './ExportDrawer';
 import { ReportSectionNote } from './ReportSectionNote';
 import { ReportKpis } from './ReportKpis';
+import { DayNotesTable } from './DayNotesTable';
+import { ReportNotesBox } from './ReportNotesBox';
+import { noteKey, useReportNotesStore } from '@/stores/reportNotesStore';
+import { useAuthStore } from '@/stores/authStore';
 import { CoverageTag, ReportFigure } from './ReportFigure';
 import { useReportData, type Section } from './useReportData';
 import { readySection, useBaselineReport } from './useBaselineReport';
@@ -205,6 +209,17 @@ export function ReportsPage() {
   /** The summary as `ReportKpis` reads it: `undefined` while it loads, `null` when there is none or it failed. */
   const summaryShown = summary.status === 'ready' ? (summary.data ?? null) : summary.status === 'error' ? null : undefined;
   const months = periods.data;
+
+  /**
+   * RM-164: the operator's notes — one per day, and one for the report — read once per period, and only for a
+   * recorded report: a baseline is a projection, and nothing happened on its days to note.
+   */
+  const notesReadOnly = useAuthStore((s) => s.mode !== 'supabase');
+  const loadNotes = useReportNotesStore((s) => s.load);
+  const notesTo = recordedDaily && recordedDaily.length > 0 ? recordedDaily[recordedDaily.length - 1].local_day.slice(0, 10) : selected;
+  useEffect(() => {
+    if (!showBaseline && selected && notesTo) void loadNotes(selected, notesTo);
+  }, [showBaseline, selected, notesTo, loadNotes]);
   const rows = devicesSection.data;
 
   /**
@@ -331,7 +346,7 @@ export function ReportsPage() {
             projected: compareProjection.projected,
             period,
             recordedKwh: recordedConserved.energy_kwh,
-            recordedByLoad: Object.fromEntries(loadShareSegments(report.devices.data ?? []).map((x) => [x.id, x.kwh])),
+            recordedByLoad: Object.fromEntries(loadShareSegments(report.devices.data ?? [], { apportion: false }).map((x) => [x.id, x.kwh])),
             recordedDaily: (recordedDaily ?? []).map((d) => ({ date: d.local_day.slice(0, 10), kwh: d.usable_sample_count > 0 ? d.energy_kwh : null })),
             coverage: coverageOf(recordedBuilding.online_sample_count, recordedBuilding.expected_sample_count),
           })
@@ -466,12 +481,21 @@ export function ReportsPage() {
     const load = loadOfDevice(id);
     return load ? (LOAD_LABELS[load] as string) : null;
   };
+  /** RM-164: the notes the page holds for this period, as the exports print them. */
+  const notesForExport = (kind: ReportPeriod, start: string) => {
+    const all = useReportNotesStore.getState().notes;
+    const days: Record<string, string> = {};
+    for (const [key, note] of Object.entries(all)) if (key.startsWith('day|') && note.trim() !== '') days[key.slice(4)] = note;
+    return { report: all[noteKey(kind, start)] ?? null, days };
+  };
+
   const runExport = async (
     format: ExportFormat,
     sections: ReportSectionId[],
     progress: (text: string) => void,
     signal: AbortSignal,
-    detail: ReportDetail = 'detailed'
+    detail: ReportDetail = 'detailed',
+    preview?: Window | null
   ): Promise<string> => {
     if (!selected) throw new Error('No report period is selected.');
 
@@ -542,7 +566,7 @@ export function ReportsPage() {
       const days = dailyShown;
       if (!days) throw new Error('The daily figures have not loaded.');
       const name = reportFilename(period, selected, 'daily', 'csv', fileScope(null));
-      downloadCsv(name, dailyCsv({ daily: days, tariffs: pricing.data?.tariffs ?? [], factors: pricing.data?.factors ?? [], projected: showBaseline }));
+      downloadCsv(name, dailyCsv({ daily: days, tariffs: pricing.data?.tariffs ?? [], factors: pricing.data?.factors ?? [], projected: showBaseline, notes: showBaseline ? undefined : notesForExport(period, selected).days }));
       return `Saved ${name} · ${days.length} days`;
     }
 
@@ -589,6 +613,7 @@ export function ReportsPage() {
       baseline: SITE_BASELINE,
       holidays: SITE_HOLIDAYS,
       baselineComparison: againstBaseline?.comparison ?? null,
+      notes: showBaseline ? null : notesForExport(period, selected),
       projectedFrom:
         showBaseline && builtFrom
           ? `Projected from ${builtFrom.days} recorded days, ${builtFrom.window}: each date is one recorded day of its kind, scaled once per kind so the kind averages the baseline. Nothing in it was recorded on these dates.`
@@ -597,6 +622,12 @@ export function ReportsPage() {
     const assembled = performance.now();
     const name = reportFilename(period, selected, 'report', 'pdf', fileScope([narrowed, detail === 'simple' ? 'simple' : null].filter(Boolean).join(' ') || null));
     // pdfmake is still loaded only here, on the first export — never on a page load.
+    if (preview !== undefined) {
+      // RM-164: shown in the tab the press opened, and nothing saved.
+      const { previewReportPdf } = await import('@/lib/reportPdf/download');
+      if (!(await previewReportPdf(pdf, preview))) throw new Error('The preview tab was blocked or closed. Allow pop-ups for this page, or use Generate PDF.');
+      return `Preview opened in a new tab · ${detail === 'simple' ? 'Simple' : 'Detailed'}, ${pdf.sections?.length ?? 0} sections — nothing was saved`;
+    }
     const { downloadReportPdf } = await import('@/lib/reportPdf/download');
     await downloadReportPdf(pdf, name);
     // Measured, not assumed: generation on the kiosk's Pi has never been timed (RM-072a), and RM-083c
@@ -731,6 +762,9 @@ export function ReportsPage() {
               uncounted={(conserved?.uncounted ?? []).map(nameOf)}
               projected={showBaseline ? builtFrom : null}
             />
+            {showBaseline || !selected ? null : (
+              <ReportNotesBox kind={period} start={selected} label={periodLabel} readOnly={notesReadOnly} />
+            )}
             {/* RM-154: the building counter, as the stated check beside the one figure — the same words the Circuits tab says. */}
             {counterCheck ? (
               <p className="reports-note report-counter-check" role="note">
@@ -812,6 +846,11 @@ export function ReportsPage() {
                 only={overviewCharts.filter((k) => k === 'useShare')}
                 loading={{ useShare: devicesSection.status === 'loading' }}
               />
+            ) : null}
+            {!showBaseline && period !== 'day' && recordedDaily && recordedDaily.length > 0 ? (
+              <ErrorBoundary scope="The notes for each day" variant="inline" resetKey={recordedDaily}>
+                <DayNotesTable days={recordedDaily} label={periodLabel} readOnly={notesReadOnly} />
+              </ErrorBoundary>
             ) : null}
             {showBaseline && SITE_BASELINE ? (
               <ErrorBoundary scope="How this baseline was made" variant="inline" resetKey={scopeKey}>

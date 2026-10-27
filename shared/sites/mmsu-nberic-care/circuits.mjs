@@ -85,11 +85,11 @@ export const CIRCUITS = [
     /**
      * WHAT THIS BRANCH CARRIES THAT NOBODY METERED — FI-035, the operator's statement of 2026-09-22.
      * The outlets are in the CARE office; the aircon in the director's office, another room, is on
-     * this same branch and draws about two thirds of it. There is no meter on that aircon, so its
+     * this same branch and draws about half of it (the operator's revision of 2026-10-27; two thirds before). There is no meter on that aircon, so its
      * figure is an APPORTIONMENT of the branch's measured energy by a declared share — an estimate,
      * and every place it appears says so (`src/lib/apportionment.ts`). The measured charts stay
-     * measured: `load: 'other'` above still groups the whole branch as Others, and the report
-     * section that shows the aircon's share says how much of Others it would move to Aircon.
+     * measured: Energy by circuit shows the whole branch. Since RM-164 (2026-10-27, the operator's
+     * request) Energy by use moves this share to Aircon and says it is an estimate (`loadShareSegments`).
      * Change the share here, with its basis, never in code.
      */
     apportionment: [
@@ -97,8 +97,8 @@ export const CIRCUITS = [
         id: 'directors_aircon',
         label: "Director's office aircon",
         load: 'aircon',
-        share: 2 / 3,
-        basis: "operator's estimate, 2026-09-22 — no meter on it",
+        share: 1 / 2,
+        basis: "operator's revision, 2026-10-27 (was two thirds, 2026-09-22) — no meter on it",
       },
     ],
   },

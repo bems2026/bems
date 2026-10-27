@@ -113,6 +113,10 @@ export interface PdfReport {
     branch: string;
     note: string;
   }[];
+  /** RM-164: the operator's remarks on the period, as typed on the Reports page; absent or empty prints nothing. */
+  reportNote?: string | null;
+  /** RM-164: the days that carry a note, in date order, each with its energy as the day table prints it. */
+  dayNotes?: readonly { day: string; energyKwh: string | null; note: string }[];
 }
 
 /** A4 minus 40pt margins each side. Charts are generated at exactly this width. */
@@ -286,6 +290,13 @@ export function buildDocDefinition(r: PdfReport) {
     }
   }
 
+  // RM-164: what the people running the building said about the period, in their words, before the charts.
+  if (has('reportNotes') && r.reportNote && r.reportNote.trim() !== '') {
+    content.push({ text: 'Notes for this report', style: 'h2' }, { text: r.reportNote.trim(), margin: [0, 2, 0, 8] });
+  }
+  const dayNotes = has('dayNotes') ? (r.dayNotes ?? []) : [];
+  const noteOf = new Map(dayNotes.map((d) => [d.day, d.note]));
+
   // --- charts, each with the numbers behind it ----------------------------------------------
   if (r.omitted && r.omitted.length > 0) {
     // Said before the charts, where a reader would look for the missing one.
@@ -297,11 +308,33 @@ export function buildDocDefinition(r: PdfReport) {
   // RM-130: an estimate's chart is drawn inside its own section below, beside its figures.
   const drawn = r.charts.filter((chart) => (chart.section === undefined || has(chart.section)) && chart.section !== 'apportioned' && chart.section !== 'projected');
   for (const chart of drawn) {
+    // RM-164: the day table carries each day's note in a column of its own (Detailed); a Simple document has no
+    // number tables, so it lists only the days that carry a note, under the chart they explain.
+    const withDayNotes = chart.section === 'dailyEnergy' && dayNotes.length > 0;
     if (detail === 'simple') {
       // Simple: the picture and what it shows, and no number table under it.
       content.push({ text: chart.title, style: 'h2' }, { svg: chart.svg, width: CONTENT_WIDTH }, { text: chart.desc, style: 'note' });
+      if (withDayNotes) {
+        content.push(
+          { text: 'Notes for each day', style: 'h3' },
+          {
+            table: {
+              headerRows: 1,
+              widths: ['auto', 'auto', '*'],
+              body: [
+                ['Day', 'Energy (kWh)', 'Note'].map((h) => ({ text: h, style: 'th' })),
+                ...dayNotes.map((d) => [d.day, d.energyKwh ?? EM_DASH, d.note]),
+              ],
+            },
+            layout: 'lightHorizontalLines',
+            margin: [0, 4, 0, 10],
+          }
+        );
+      }
       continue;
     }
+    const headers = withDayNotes ? [...chart.table.headers, 'Notes'] : chart.table.headers;
+    const rows = withDayNotes ? chart.table.rows.map((row) => [...row, noteOf.get((row[0] ?? '').slice(0, 10)) ?? '']) : chart.table.rows;
     content.push(
       { text: chart.title, style: 'h2' },
       { svg: chart.svg, width: CONTENT_WIDTH },
@@ -312,10 +345,11 @@ export function buildDocDefinition(r: PdfReport) {
         table: {
           headerRows: 1,
           dontBreakRows: true,
-          widths: chart.table.headers.map((_, i) => (i === 0 ? '*' : 'auto')),
+          // A Notes column takes the spare width, so a long note wraps rather than squeezing the figures.
+          widths: headers.map((_, i) => (withDayNotes ? (i === headers.length - 1 ? '*' : 'auto') : i === 0 ? '*' : 'auto')),
           body: [
-            chart.table.headers.map((h) => ({ text: h, style: 'th' })),
-            ...chart.table.rows.map((row) => row.map((cell) => cell ?? EM_DASH)),
+            headers.map((h) => ({ text: h, style: 'th' })),
+            ...rows.map((row) => row.map((cell) => cell ?? EM_DASH)),
           ],
         },
         layout: 'lightHorizontalLines',

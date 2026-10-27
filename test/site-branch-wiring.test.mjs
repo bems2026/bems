@@ -91,7 +91,7 @@ test('each branch carries the load category the operator gave it — RM-092', as
 
 // --- FI-035 / RM-130: what C.O Yellow carries that nobody metered ----------------------------
 
-test('C.O Yellow declares the director\'s office aircon as an apportioned, unmetered share — the operator\'s 2026-09-22 statement', () => {
+test('C.O Yellow declares the director\'s office aircon as an apportioned, unmetered share — half, by the operator\'s revision of 2026-10-27', () => {
   const co = CIRCUITS.find((c) => c.meter_device_id === 'mtr_co_yellow');
   assert.ok(Array.isArray(co.apportionment), 'C.O Yellow carries an apportionment');
   assert.equal(co.apportionment.length, 1);
@@ -99,9 +99,9 @@ test('C.O Yellow declares the director\'s office aircon as an apportioned, unmet
   assert.equal(ac.id, 'directors_aircon');
   assert.match(ac.label, /director/i);
   assert.equal(ac.load, 'aircon');
-  assert.ok(Math.abs(ac.share - 2 / 3) < 1e-9, 'about two thirds of the branch');
+  assert.ok(Math.abs(ac.share - 1 / 2) < 1e-9, 'about half of the branch (RM-164; two thirds before 2026-10-27)');
   assert.match(ac.basis, /operator/i);
-  assert.match(ac.basis, /2026-09-22/);
+  assert.match(ac.basis, /2026-10-27/);
   assert.match(co.description, /director/i, 'the branch description names it');
   assert.match(co.description, /outlet/i, 'and still names the outlets');
 });

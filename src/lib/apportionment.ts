@@ -11,16 +11,15 @@ import type { HourlyEnergyPoint } from '@/components/reports/charts/hourlyEnergy
  * A load nobody metered, as the estimate it is — RM-130 / FI-035.
  *
  * C.O Yellow feeds the CARE office's outlets and, in another room, the director's office aircon,
- * which the operator puts at about two thirds of the branch (2026-09-22). No meter sits on that
+ * which the operator puts at about half of the branch (2026-10-27; two thirds before). No meter sits on that
  * aircon. Its figure here is the branch's MEASURED energy times a share DECLARED in the site file
  * with its basis — an apportionment, which is a different kind of number from everything else on
  * the Reports page, and is rendered as such: "≈", the word "estimate", the basis, and every caveat
  * the branch's own figure carries. A refused branch figure (RM-090) refuses its share too; a partly
  * recorded branch gives a partly recorded estimate; a branch that recorded nothing gives nothing.
  *
- * The measured charts are not touched. `load: 'other'` on the branch still groups all of it as
- * Others in "Energy by use"; the section that shows this estimate says how much it would move.
- * Mixing an estimate into a measured split would make the split unauditable.
+ * The charts by circuit are not touched. Since RM-164 (the operator's request, 2026-10-27) "Energy by use"
+ * counts the share under the use it names and says it includes an estimate (`loadShareSegments`).
  *
  * Pure, and naming no device: the branch, the share and its basis come from `CIRCUITS`.
  */

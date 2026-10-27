@@ -25,6 +25,8 @@ export interface CircuitSegment {
   excluded?: string;
   /** RM-095: the palette index this segment's circuit or category always takes. Position when absent. */
   colourIndex?: number;
+  /** RM-164: this use includes a declared share of a branch — an estimate, said wherever the figure is. */
+  estimateNote?: string;
 }
 
 export interface BreakdownOptions {

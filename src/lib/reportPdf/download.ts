@@ -55,3 +55,23 @@ export async function downloadReportPdf(report: PdfReport, filename: string): Pr
 
   return inFlight;
 }
+
+/**
+ * RM-164: the same document, shown rather than saved — in `tab`, which the press opened before the build began
+ * (a tab opened after an await is a pop-up, and browsers block it). Resolves false when there is no tab to show
+ * it in, so the caller can say so instead of appearing to do nothing.
+ */
+export async function previewReportPdf(report: PdfReport, tab: Window | null): Promise<boolean> {
+  if (!tab || tab.closed) return false;
+  const [{ default: pdfMake }, { default: roboto }] = await Promise.all([
+    import('pdfmake/build/pdfmake'),
+    import('pdfmake/build/fonts/Roboto.js'),
+  ]);
+  pdfMake.addFontContainer(roboto);
+  const blob = await pdfMake.createPdf(buildDocDefinition(report)).getBlob();
+  const url = URL.createObjectURL(blob);
+  // Not revoked: the browser's PDF viewer reads it again for its own Download and Print, at any later time.
+  // One document per preview press, freed with the page.
+  tab.location.href = url;
+  return true;
+}

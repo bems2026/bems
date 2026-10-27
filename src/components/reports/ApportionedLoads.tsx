@@ -19,12 +19,12 @@ import type { Section } from './useReportData';
 /**
  * Loads nobody metered, shown as the estimates they are — RM-130 / FI-035.
  *
- * The director's office aircon is on C.O Yellow with the CARE office's outlets, at about two thirds of
- * the branch by the operator's word. Its figure is the branch's measured energy split by that share,
+ * The director's office aircon is on C.O Yellow with the CARE office's outlets, at about half of the
+ * branch by the operator's word (revised from two thirds on 2026-10-27). Its figure is the branch's measured energy split by that share,
  * and this section is the one place on the page that number appears — with "≈" before it, the share
  * in words, its basis, what it leaves for the outlets, and the branch's own caveats. The measured
- * charts are untouched: "Energy by use" still counts all of C.O Yellow as Others, and this section
- * says how much the estimate would move, rather than moving it.
+ * charts by circuit are untouched. Since RM-164 (the operator's request, 2026-10-27) "Energy by use" counts
+ * this share as Aircon and says so; this section is where its basis and caveats are shown.
  *
  * Renders nothing when the site declares no apportionment, and nothing for a branch the page is not
  * showing — an estimate for a circuit the reader has narrowed away from would be an answer to a
@@ -150,9 +150,9 @@ function Estimate({ e, period, start, deviceDaily, hourEnergy }: { e: Apportione
         </div>
       </dl>
       <p className="report-apportioned__note">
-        “Energy by use” counts all of {e.branchLabel} as {LOAD_LABELS[e.branchLoad]}; this estimate would move{' '}
-        {refused || e.estimatedKwh === null ? 'its share' : `≈ ${e.estimatedKwh.toFixed(2)} kWh`} of it to {LOAD_LABELS[e.load]}. It is not
-        moved, because a chart of measurements should not carry an estimate.
+        “Energy by use” counts{' '}
+        {refused || e.estimatedKwh === null ? 'this share' : `≈ ${e.estimatedKwh.toFixed(2)} kWh`} of {e.branchLabel} as {LOAD_LABELS[e.load]} and the rest
+        as {LOAD_LABELS[e.branchLoad]}, and marks both as including an estimate. The charts by circuit show the branch whole.
       </p>
       {refused ? null : <EstimateChart e={e} period={period} start={start} deviceDaily={deviceDaily} hourEnergy={hourEnergy} />}
     </div>

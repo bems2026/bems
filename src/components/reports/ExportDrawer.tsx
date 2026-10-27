@@ -1,5 +1,5 @@
 import { Check } from 'lucide-react';
-import { useCallback, useId, useState } from 'react';
+import { useCallback, useId, useRef, useState } from 'react';
 import { OverlayPanel } from '@/components/ui/OverlayPanel';
 import { REPORT_SECTIONS, normaliseSections, sectionsFor, type ReportDetail, type ReportSectionId } from '@/lib/reportSections';
 import type { ReportPeriod } from '@/lib/supabaseReports';
@@ -23,6 +23,10 @@ import { useExportAction } from '@/lib/useExportAction';
  * A NARROWED PAGE NARROWS ONE EXPORT — RM-082c. The per-device CSV follows the circuit scope; the PDF
  * and the simple CSV are the building's series and cannot. Both are said here, before anything is
  * generated, so nobody files a whole-building PDF believing it is one branch's.
+ *
+ * RM-164: the sections are grouped — the summary, the energy, the circuits — each group with "All" and "None",
+ * so a document is shaped in a few presses rather than twenty; and "Preview" opens the same PDF in a new tab
+ * before anything is saved. Sections added since a reader's choice was remembered start ticked.
  */
 
 export type ExportFormat = 'pdf' | 'daily-csv' | 'device-csv' | 'device-daily-csv' | 'readings-csv' | 'baseline-csv';
@@ -71,17 +75,34 @@ interface Choice {
 
 const ALL_SECTIONS = REPORT_SECTIONS.map((s) => s.id);
 
+/** RM-164: the checklist's groups, by what a reader is choosing. The document's own order is fixed elsewhere. */
+const GROUPS: readonly { label: string; ids: readonly ReportSectionId[] }[] = [
+  { label: 'Summary and notes', ids: ['coverage', 'keyFigures', 'costCarbon', 'reportNotes', 'notSaid'] },
+  {
+    label: 'Energy',
+    ids: ['dailyEnergy', 'dayNotes', 'hourlyEnergy', 'useShare', 'hourProfile', 'heatmap', 'durationCurve', 'baseline', 'projected', 'comparison'],
+  },
+  { label: 'Circuits', ids: ['circuitEnergy', 'circuitHourly', 'circuitTrend', 'apportioned', 'breakdown', 'devices', 'circuits'] },
+];
+const GROUPED = new Set<ReportSectionId>(GROUPS.flatMap((g) => g.ids));
+
+/** Sections that came after a remembered choice saved without a `known` list: the RM-164 notes. */
+const ADDED_IN_RM164: readonly ReportSectionId[] = ['reportNotes', 'dayNotes'];
+
 function loadChoice(): Choice {
   // A first export is the Simple one: the operator asked for a report most people can read at a glance.
   const fallback: Choice = { format: 'pdf', sections: ALL_SECTIONS, detail: 'simple' };
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return fallback;
-    const parsed = JSON.parse(raw) as { format?: unknown; sections?: unknown; detail?: unknown };
+    const parsed = JSON.parse(raw) as { format?: unknown; sections?: unknown; detail?: unknown; known?: unknown };
     const format = FORMATS.find((f) => f.id === parsed.format)?.id ?? 'pdf';
     // A remembered choice from an older build may name sections this one does not have.
+    // A section this build added since the choice was made starts ticked: unticking is a choice, never a default.
+    const known = Array.isArray(parsed.known) ? new Set<unknown>(parsed.known) : null;
+    const added = known ? ALL_SECTIONS.filter((id) => !known.has(id)) : ADDED_IN_RM164;
     const sections = Array.isArray(parsed.sections)
-      ? normaliseSections(parsed.sections.filter((s): s is string => typeof s === 'string'))
+      ? normaliseSections([...parsed.sections.filter((s): s is string => typeof s === 'string'), ...added])
       : ALL_SECTIONS;
     // A choice remembered from before RM-099 made the full document, which is what Detailed is.
     const detail: ReportDetail = parsed.detail === 'simple' || parsed.detail === 'detailed' ? parsed.detail : 'detailed';
@@ -93,7 +114,7 @@ function loadChoice(): Choice {
 
 function saveChoice(choice: Choice) {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(choice));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...choice, known: ALL_SECTIONS }));
   } catch {
     // A per-viewer convenience. Losing it costs one re-tick next time, and nothing else.
   }
@@ -110,7 +131,9 @@ interface Props {
     sections: ReportSectionId[],
     report: (progress: string) => void,
     signal: AbortSignal,
-    detail: ReportDetail
+    detail: ReportDetail,
+    /** RM-164: a tab opened for the PDF preview — the document goes there instead of being saved. */
+    preview?: Window | null
   ) => Promise<string>;
   /** Formats that cannot run for this period, each with the reason. */
   unavailable?: Partial<Record<ExportFormat, string>>;
@@ -134,12 +157,28 @@ export function ExportDrawer({ periodLabel, period = 'month', onClose, onExport,
   const chosen = new Set<ReportSectionId>(choice.sections);
   const blockedReason = unavailable[format];
 
+  /** The preview's tab, opened in the press itself — a tab opened after the PDF is built would be blocked. */
+  const previewTab = useRef<Window | null | undefined>(undefined);
   const run = useCallback(
-    (report: (progress: string) => void, signal: AbortSignal) =>
-      onExport(format, normaliseSections(choice.sections, choice.detail, period), report, signal, choice.detail),
+    (report: (progress: string) => void, signal: AbortSignal) => {
+      const preview = previewTab.current;
+      previewTab.current = undefined;
+      const done = onExport(format, normaliseSections(choice.sections, choice.detail, period), report, signal, choice.detail, preview);
+      // A preview that failed leaves no empty tab behind it.
+      return preview === undefined
+        ? done
+        : done.catch((err: unknown) => {
+            preview?.close();
+            throw err;
+          });
+    },
     [onExport, format, choice.sections, choice.detail, period]
   );
   const { state, start, cancel } = useExportAction(run);
+  const startPreview = () => {
+    previewTab.current = window.open('', '_blank');
+    start();
+  };
   const working = state.status === 'working';
 
   const toggle = (id: ReportSectionId) =>
@@ -148,6 +187,15 @@ export function ExportDrawer({ periodLabel, period = 'month', onClose, onExport,
       // Kept across both depths, so a section ticked for Detailed is still ticked when a reader comes back to it.
       sections: chosen.has(id) ? choice.sections.filter((s) => s !== id) : [...new Set([...choice.sections, id])],
     });
+
+  const setGroup = (ids: readonly ReportSectionId[], on: boolean) =>
+    update({ ...choice, sections: on ? [...new Set([...choice.sections, ...ids])] : choice.sections.filter((s) => !ids.includes(s)) });
+
+  const available = sectionsFor(choice.detail, period);
+  const groups = [
+    ...GROUPS.map((g) => ({ label: g.label, sections: available.filter((s) => g.ids.includes(s.id)) })),
+    { label: 'Other', sections: available.filter((s) => !GROUPED.has(s.id)) },
+  ].filter((g) => g.sections.length > 0);
 
   const hint = FORMATS.find((f) => f.id === format)?.hint;
 
@@ -224,33 +272,53 @@ export function ExportDrawer({ periodLabel, period = 'month', onClose, onExport,
 
       {format === 'pdf' ? (
         <fieldset className="report-export__group">
-          <legend className="report-export__legend">Sections</legend>
-          <ul className="report-export__sections">
-            {sectionsFor(choice.detail, period).map((s) => {
-              // Why a section is locked, or what will happen to it — read to a screen reader with it.
-              const note = s.locked ?? sectionNotes[s.id];
-              const noteId = `${baseId}-${s.id}-note`;
-              return (
-                <li key={s.id} className="report-export__item">
-                  <label className="report-export__option">
-                    <input
-                      type="checkbox"
-                      checked={s.locked !== undefined || chosen.has(s.id)}
-                      disabled={s.locked !== undefined || working}
-                      aria-describedby={note ? noteId : undefined}
-                      onChange={() => toggle(s.id)}
-                    />
-                    <span>{s.label}</span>
-                  </label>
-                  {note ? (
-                    <span id={noteId} className="report-export__reason">
-                      {note}
+          <legend className="report-export__legend">In the document</legend>
+          {groups.map((g) => {
+            const choosable = g.sections.filter((s) => s.locked === undefined).map((s) => s.id);
+            return (
+              <div key={g.label} className="report-export__section-group" role="group" aria-label={g.label}>
+                <div className="report-export__group-head">
+                  <span className="report-export__group-label">{g.label}</span>
+                  {choosable.length > 1 ? (
+                    <span className="report-export__group-actions">
+                      <button type="button" className="report-retry-btn" disabled={working} onClick={() => setGroup(choosable, true)} aria-label={`Include all of ${g.label}`}>
+                        All
+                      </button>
+                      <button type="button" className="report-retry-btn" disabled={working} onClick={() => setGroup(choosable, false)} aria-label={`Include none of ${g.label}`}>
+                        None
+                      </button>
                     </span>
                   ) : null}
-                </li>
-              );
-            })}
-          </ul>
+                </div>
+                <ul className="report-export__sections">
+                  {g.sections.map((s) => {
+                    // Why a section is locked, or what will happen to it — read to a screen reader with it.
+                    const note = s.locked ?? sectionNotes[s.id];
+                    const noteId = `${baseId}-${s.id}-note`;
+                    return (
+                      <li key={s.id} className="report-export__item">
+                        <label className="report-export__option">
+                          <input
+                            type="checkbox"
+                            checked={s.locked !== undefined || chosen.has(s.id)}
+                            disabled={s.locked !== undefined || working}
+                            aria-describedby={note ? noteId : undefined}
+                            onChange={() => toggle(s.id)}
+                          />
+                          <span>{s.label}</span>
+                        </label>
+                        {note ? (
+                          <span id={noteId} className="report-export__reason">
+                            {note}
+                          </span>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
         </fieldset>
       ) : null}
 
@@ -262,6 +330,11 @@ export function ExportDrawer({ periodLabel, period = 'month', onClose, onExport,
             : FORMATS.find((f) => f.id === format)?.label}
           {FOLLOWS_SCOPE.includes(format) && scopeLabel ? ` · ${scopeLabel}` : ''}
         </p>
+        {format === 'pdf' ? (
+          <button type="button" className="report-secondary-btn" onClick={startPreview} disabled={working || blockedReason !== undefined}>
+            Preview
+          </button>
+        ) : null}
         <button
           type="button"
           className="report-primary-btn"

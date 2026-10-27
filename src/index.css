@@ -2006,7 +2006,7 @@ body::before {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--sp-2);
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-4);
   text-align: center;
 }
 .live-demand-stat-label {
@@ -3548,7 +3548,7 @@ body::before {
 .control-plan-panel__actions {
   display: flex;
   gap: var(--sp-2);
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-4);
 }
 /*
  * "All … on" and "All … off" — peers, so styled alike. "Off" used to be the one filled button,
@@ -3936,7 +3936,7 @@ body::before {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--sp-3);
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-4);
 }
 .control-ir-unit__temp {
   font: 700 var(--fs-lg) 'IBM Plex Mono', monospace;
@@ -3983,7 +3983,7 @@ body::before {
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-2);
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-4);
 }
 /* The card's two commands at a size that matches what they do — they were `.quick-btn`'s 10.5px
    Overview-row size. Equal width, so OFF is as easy to find as ON. Declared after `.quick-btn`,
@@ -4023,7 +4023,7 @@ body::before {
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-4);
 }
 .control-ir-state .control-ir-setpoint {
   margin-top: 0;
@@ -4554,7 +4554,7 @@ body::before {
    as `.analytics-chart-card`'s "Power · 24 h" chart — see the `.chart-frame` rules above. */
 .analytics-source-card__chart {
   aspect-ratio: 2 / 1;
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-4);
 }
 /* Branch cards reuse `.analytics-stat-grid`/`.analytics-stat-tile` (same tiles the
    "selected source" panel above uses) but at a narrower card width, so the tiles get
@@ -4640,7 +4640,7 @@ body::before {
 }
 
 .analytics-energy-split {
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-4);
 }
 .analytics-energy-split__head {
   display: flex;
@@ -4777,7 +4777,7 @@ body::before {
 .analytics-untracked-legend {
   display: flex;
   gap: var(--sp-4);
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-4);
   font-size: var(--fs-xs);
   color: var(--muted-2);
 }
@@ -5947,7 +5947,7 @@ body::before {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-2);
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-4);
   padding-top: var(--sp-3);
   border-top: 1px solid var(--border-faint);
 }
@@ -5962,7 +5962,7 @@ body::before {
 /* The written reason that unlocks a sub-policy target. Deliberately prominent: the reason IS
    the audit, and a field that looked optional would be treated as optional. */
 .acu-rule__override {
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-4);
   padding: var(--sp-2);
   border: 1px solid var(--warn);
   border-radius: var(--r-inner);
@@ -6350,7 +6350,7 @@ body::before {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-4);
   font: inherit;
   font-size: 0.78rem;
   color: var(--muted-2);
@@ -8507,7 +8507,7 @@ fieldset.device-meta-editor__field > legend {
   cursor: not-allowed;
 }
 .space-tree-panel__actions {
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-4);
 }
 .space-tree-panel__add-root,
 .space-tree-panel__form button {
@@ -8529,7 +8529,7 @@ fieldset.device-meta-editor__field > legend {
   flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--sp-3);
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-4);
   padding-top: var(--sp-3);
   border-top: 1px solid var(--border);
 }
@@ -8864,7 +8864,7 @@ button.space-plan__pin {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-2);
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-4);
   padding: var(--sp-3);
   border: 1px solid var(--border);
   border-radius: var(--r-inner);
@@ -9161,7 +9161,7 @@ button.space-plan__pin {
 }
 .shed-panel__note,
 .shed-panel__excluded {
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-4);
   font-size: var(--fs-sm);
   color: var(--muted-2);
   line-height: 1.5;
@@ -9430,7 +9430,7 @@ button.space-plan__pin {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-2);
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-4);
 }
 .lamp-editor__hint {
   flex: 1 1 12rem;
@@ -9517,7 +9517,7 @@ button.space-plan__pin {
 
 /* ---- Building policy — RM-038 ------------------------------------------------------------ */
 .policy-field {
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-4);
 }
 .policy-field__label {
   display: block;
@@ -9660,7 +9660,7 @@ button.space-plan__pin {
 /* Applying a preset overwrites positions and lamps for every device it names. That is a large,
    mostly-irreversible edit, so it gets a warning tone rather than a quiet button. */
 .plan-preset__confirm {
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-4);
   padding: var(--sp-3);
   border: 1px solid var(--warn);
   border-radius: var(--r-inner);
@@ -9741,7 +9741,7 @@ button.space-plan__pin {
   flex-wrap: wrap;
 }
 .device-card__tab {
-  padding: var(--sp-1) var(--sp-2);
+  padding: 0 var(--sp-2);
   border: 1px solid var(--border);
   border-radius: var(--r-inner);
   background: var(--bg-inset);
@@ -10373,4 +10373,115 @@ button.space-plan__pin {
   color: var(--warn);
   font: 600 var(--fs-2xs) 'IBM Plex Mono', monospace;
   white-space: nowrap;
+}
+
+/* RM-164 — notes on the Reports page, and the export checklist's groups. Tokens only; the fields sit on the
+   card surface, where --border-strong and --muted are measured in both themes. */
+.report-notes-box,
+.report-day-notes {
+  margin: var(--sp-4) 0;
+}
+
+.report-day-notes__title {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--txt);
+}
+
+.report-note-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+  min-width: 12rem;
+}
+
+.report-note-field__input {
+  flex: 1 1 12rem;
+  min-height: 32px;
+  padding: 0 var(--sp-2);
+  background: var(--bg-surface);
+  color: var(--txt);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+
+.report-note-field__input--multi {
+  width: 100%;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.report-note-field__input:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 1px;
+}
+
+.report-note-field__input[readonly] {
+  background: transparent;
+  border-color: transparent;
+}
+
+.report-note-field__state {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.report-note-field__state--failed {
+  color: var(--txt);
+}
+
+.report-export__section-group + .report-export__section-group {
+  margin-top: var(--sp-4);
+}
+
+.report-export__group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.report-export__group-label {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--txt);
+}
+
+.report-export__group-actions {
+  display: inline-flex;
+  gap: var(--sp-1);
+}
+
+.report-export__group-actions .report-retry-btn {
+  min-height: 28px;
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-xs);
+}
+
+/* The preview sits beside Generate, quieter than it: the one primary action stays the one. */
+.report-secondary-btn {
+  min-height: 40px;
+  margin-left: auto;
+  padding: 0 var(--sp-4);
+  background: var(--bg-surface);
+  color: var(--txt);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-inner);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.report-secondary-btn:not(:disabled):hover {
+  border-color: var(--txt);
+}
+
+.report-secondary-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

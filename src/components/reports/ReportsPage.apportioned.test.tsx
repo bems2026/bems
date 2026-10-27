@@ -106,31 +106,28 @@ const openCircuits = async () => fireEvent.click(await screen.findByRole('tab', 
 
 /**
  * RM-130 / FI-035 — the director's office aircon, on C.O Yellow with the CARE office's outlets, at
- * about two thirds of the branch by the operator's estimate. No meter sits on it; the section says so
+ * about half of the branch (two thirds before 2026-10-27) by the operator's estimate. No meter sits on it; the section says so
  * in every line, and the measured charts are left alone.
  */
 describe('the estimated loads section', () => {
-  it('shows the director\'s aircon as about two thirds of C.O Yellow, marked as an estimate with its basis', async () => {
+  it('shows the director\'s aircon as about half of C.O Yellow, marked as an estimate with its basis', async () => {
     render(<ReportsPage />);
     await openCircuits();
     const section = await screen.findByRole('region', { name: /estimated, not metered/i });
     expect(within(section).getAllByText(/director.s office aircon/i).length).toBeGreaterThanOrEqual(1);
     // Said on the figure's line and again in the chart's caption — both must carry it.
-    expect(within(section).getAllByText(/about two thirds of C\.O Yellow/i).length).toBeGreaterThanOrEqual(2);
-    expect(within(section).getAllByText(/operator.s estimate, 2026-09-22/i).length).toBeGreaterThanOrEqual(2);
-    // 41.2 × 2/3 (in the figure and again in the note about Energy by use) and the rest, each
-    // preceded by ≈ — never a bare figure.
-    expect(within(section).getAllByText(/27\.47/).length).toBeGreaterThanOrEqual(1);
-    expect(within(section).getByText(/13\.73/)).toBeInTheDocument();
+    expect(within(section).getAllByText(/about half of C\.O Yellow/i).length).toBeGreaterThanOrEqual(2);
+    expect(within(section).getAllByText(/operator.s revision, 2026-10-27/i).length).toBeGreaterThanOrEqual(2);
+    // 41.2 × 1/2 (RM-164's revision): the estimate and the remainder are equal, each preceded by ≈.
+    expect(within(section).getAllByText(/20\.60/).length).toBeGreaterThanOrEqual(2);
     expect(within(section).getAllByText(/≈/).length).toBeGreaterThanOrEqual(2);
   });
 
-  it('says what the estimate would do to Energy by use, rather than doing it', async () => {
+  it('says Energy by use counts the share as Aircon, and the rest as Others (RM-164)', async () => {
     render(<ReportsPage />);
     await openCircuits();
     const section = await screen.findByRole('region', { name: /estimated, not metered/i });
-    expect(within(section).getByText(/counts all of C\.O Yellow as Others/i)).toBeInTheDocument();
-    expect(within(section).getByText(/would move/i)).toBeInTheDocument();
+    expect(within(section).getByText(/of C\.O Yellow as Aircon and the rest\s+as Others/i)).toBeInTheDocument();
   });
 
   it('refuses the estimate when the branch\'s own figure is refused — RM-090', async () => {
@@ -160,8 +157,8 @@ describe('the estimated loads section', () => {
     expect(bars).toHaveLength(2);
     expect([...svg.querySelectorAll('rect')].some((r) => (r.getAttribute('fill') ?? '').includes('-gap)'))).toBe(true);
     fireEvent.click(within(section).getByText(/show each day/i));
-    expect(await within(section).findByText('≈ 2.00')).toBeInTheDocument();
-    expect(within(section).getByText('≈ 4.00')).toBeInTheDocument();
+    expect(await within(section).findByText('≈ 1.50')).toBeInTheDocument();
+    expect(within(section).getByText('≈ 3.00')).toBeInTheDocument();
   });
 });
 
@@ -200,7 +197,7 @@ describe('the estimate reads as a card — RM-142', () => {
       'C.O Yellow, measured',
     ]);
     tiles.forEach((t) => expect(t.querySelector('.report-apportioned__value')).not.toBeNull());
-    expect(tiles[0].querySelector('.report-apportioned__basis')).toHaveTextContent(/about two thirds of C\.O Yellow/i);
+    expect(tiles[0].querySelector('.report-apportioned__basis')).toHaveTextContent(/about half of C\.O Yellow/i);
     expect(tiles[1].querySelector('.report-apportioned__basis')).toHaveTextContent(/the outlets/i);
   });
 });

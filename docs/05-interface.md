@@ -3,9 +3,9 @@ title: User interface
 purpose: Use, administer and troubleshoot the web application and its kiosk (L5)
 audience: [operator, administrator, integrator]
 status: Draft
-last_verified: 2026-10-09
+last_verified: 2026-10-27
 applies_to: repo f0c7267
-evidence: [E-004, E-023, E-025, E-026, E-060, E-061, E-065, E-066, E-071, E-076, E-082, E-110, E-111, E-115, E-152, E-163, E-165, E-168, E-169, E-170, E-172, E-173, E-174, E-175, E-176, E-177, E-179, E-180, E-181, E-182, E-183, E-184, E-185, E-217, E-230, E-232, E-233, E-234, E-247, E-254]
+evidence: [E-004, E-023, E-025, E-026, E-060, E-061, E-065, E-066, E-071, E-076, E-082, E-110, E-111, E-115, E-152, E-163, E-165, E-168, E-169, E-170, E-172, E-173, E-174, E-175, E-176, E-177, E-179, E-180, E-181, E-182, E-183, E-184, E-185, E-217, E-230, E-232, E-233, E-234, E-247, E-254, E-259]
 ---
 
 # User interface
@@ -68,7 +68,7 @@ menu, because they are read at other times, by other people [E-060].
 | **Control** (`#control`) | Manual overrides | Bulk actions (lights off, outlets off, aircon off), each behind a confirmation. The lighting and outlet plan, if one is drawn for the site, with a legend, and a count of how many relays each panel has on [E-217]. Every switch, every outlet socket, and the IR aircon with mode, setpoint, fan and swing. How commands reach the devices. A command log for this session. | Switch any relay; send an aircon state | Each relay is marked `NOT DISPATCHED` when dispatch is closed [E-174] |
 | **Devices** (`#devices`) | The fleet | One row per device: class, voltage, current, power, last seen, communication, state | *Add device* (enrol, import keys); *Manage* per device: its capabilities, its metadata, and Remove for devices added through the app [E-179] | A skeleton while the list loads; the list is retried until it arrives [E-183] |
 | **Automation** (`#automation/summary`, `/time`, `/state`, `/events`) | Rules that act unattended | **Summary:** what is armed, what fires next, what automation did in the last 24 h. **Time-Driven:** schedules per relay, on a week timeline. **State-Driven:** demand thresholds and load-shed tiers. **Event-Driven:** aircon room-temperature rules. Cards for what is not installed, each naming its blocker. | Add, arm, disarm and delete rules, then *Save changes* | A banner says when saved rules cannot reach hardware on this deployment [E-174] |
-| **Reports** (account menu, `#reports`) | Finished days, weeks and months | Overview, Circuits, Usage patterns and Compare tabs. A coverage banner: how much of the period was recorded. Cost and emissions once a rate is set. A period's **Energy** is the sum of its branch circuits on every tab, and the building's own counter is said beside it when the two differ [E-233]. **Baseline**, chosen in the period picker's calendar, lays the projected baseline on the period through the same tabs: each date is one recorded day of its kind [E-234]. Compare sets a period against its baseline (energy avoided) once at least 95% of it was recorded | Period picker, with *Baseline* / *Recorded* in its calendar; *Export*: a PDF, or one of five CSVs (building by day, devices for the period, devices by day, every reading, the baseline) | Without the database it says reports need stored history, "rather than an empty table that would look like a month with no consumption" [E-174] |
+| **Reports** (account menu, `#reports`) | Finished days, weeks and months | Overview, Circuits, Usage patterns and Compare tabs. A coverage banner: how much of the period was recorded. Cost and emissions once a rate is set. A period's **Energy** is the sum of its branch circuits on every tab, and the building's own counter is said beside it when the two differ [E-233]. **Baseline**, chosen in the period picker's calendar, lays the projected baseline on the period through the same tabs: each date is one recorded day of its kind [E-234]. Compare sets a period against its baseline (energy avoided) once at least 95% of it was recorded. **Notes**: a week or month lists its days with a note field each, days well off the usual marked *High* or *Low*; *Notes for this report* holds the period's remarks. Both save as the field is left, need an account, and print in the exports. Energy by use applies each branch's declared share, marked as an estimate [E-259] | Period picker, with *Baseline* / *Recorded* in its calendar; *Export*: a PDF, or one of five CSVs (building by day, devices for the period, devices by day, every reading, the baseline) | Without the database it says reports need stored history, "rather than an empty table that would look like a month with no consumption" [E-174] |
 | **Settings** (account menu, `#settings`) | How this deployment is described | Account, Spaces, Floor plan, Page cards, Building policy, Tariff & emissions | Edit each section | — |
 
 **Settings does not switch hardware**, and says so. *Building policy* holds one rule today: the coldest room
@@ -244,6 +244,7 @@ undone for a few seconds from the line at the top of the list.
 **Export data.** *Reports → Export*. Choose the PDF, or a CSV: the building by day; each device for the period; each
 device by day; or every reading. Older hours in the last one are hourly averages, and a month of it is a large file.
 Cost appears in the exports once a rate is entered, and emissions once a factor is.
+For the PDF, *In the document* groups the sections (summary and notes, energy, circuits), each with *All* and *None*; *Preview* opens the same PDF in a new tab and saves nothing. The day notes become a Notes column on the day table (a short list of the noted days in a Simple PDF), and a column in the building-by-day CSV [E-259].
 
 ### Administration guide
 

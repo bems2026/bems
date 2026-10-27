@@ -33,12 +33,15 @@ export function dailyCsv({
   tariffs,
   factors,
   projected = false,
+  notes,
 }: {
   daily: readonly DailyRow[];
   tariffs: readonly Rate[];
   factors: readonly Factor[];
   /** RM-154: the days of a projected baseline — no coverage to state, and each is said to be projected. */
   projected?: boolean;
+  /** RM-164: each day's note, keyed by its date. Absent leaves the column out; a day without one is blank. */
+  notes?: Readonly<Record<string, string>>;
 }): string {
   // Energy only from days whose rows held a real reading — the rule `toDailyPoints` and the page's
   // pricing already apply, so the file cannot price or sum a day the page calls unobserved.
@@ -58,6 +61,7 @@ export function dailyCsv({
       status: projected ? 'projected' : !observed ? 'no data' : coverage?.band === 'complete' ? 'complete' : 'partial',
       cost: priced ? round(priced[i].amount, 2) : null,
       emissions: emitted ? round(emitted[i].kg, 3) : null,
+      notes: notes?.[days[i].day]?.trim() || null,
     };
   });
 
@@ -70,6 +74,7 @@ export function dailyCsv({
     { key: 'status', header: 'Day status' },
     ...(priced ? [{ key: 'cost' as const, header: `Cost (${[...currencies][0]})` }] : []),
     ...(emitted ? [{ key: 'emissions' as const, header: 'Emissions (kgCO2e)' }] : []),
+    ...(notes ? [{ key: 'notes' as const, header: 'Notes' }] : []),
   ];
   return toCsv(rows, columns);
 }

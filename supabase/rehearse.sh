@@ -2707,6 +2707,39 @@ begin
 end $$;
 SQL
 
+# ---- phase56: notes on the Reports page (RM-164) -------------------------------------------------------
+echo "== phase56: re-applying twice, then a day note, a report note, an over-long note and the grants =="
+psql -1 < "$HERE/phase56_report_notes.sql" >/dev/null
+psql -1 < "$HERE/phase56_report_notes.sql" >/dev/null
+psql -v ON_ERROR_STOP=1 <<'SQL'
+do $$
+declare site text := (select id from sites limit 1);
+begin
+  insert into report_notes (site_id, kind, start, note) values (site, 'day', '2026-09-23', 'Seminar: both aircons all day');
+  insert into report_notes (site_id, kind, start, note) values (site, 'month', '2026-09-01', 'September remarks');
+  insert into report_notes (site_id, kind, start, note) values (site, 'day', '2026-09-23', 'edited')
+    on conflict (site_id, kind, start) do update set note = excluded.note;
+  assert (select note from report_notes where site_id = site and kind = 'day' and start = '2026-09-23') = 'edited',
+    'phase56: an upsert on (site_id, kind, start) edits the note';
+  begin
+    insert into report_notes (site_id, kind, start, note) values (site, 'day', '2026-09-24', repeat('x', 2001));
+    assert false, 'phase56: a note over 2,000 characters should have been refused';
+  exception when check_violation then
+    null;
+  end;
+  begin
+    insert into report_notes (site_id, kind, start, note) values (site, 'decade', '2026-01-01', 'no');
+    assert false, 'phase56: an unknown kind should have been refused';
+  exception when check_violation then
+    null;
+  end;
+  assert has_table_privilege('authenticated', 'report_notes', 'update'), 'phase56: a signed-in user writes';
+  assert not has_table_privilege('authenticated', 'report_notes', 'delete'), 'phase56: nobody deletes';
+  assert not has_table_privilege('anon', 'report_notes', 'select'), 'phase56: not anon';
+  delete from report_notes where site_id = site;
+end $$;
+SQL
+
 echo
 echo "== REHEARSAL PASSED =="
 echo "Every migration applied in order against PostgreSQL 16, and every function behaved as"

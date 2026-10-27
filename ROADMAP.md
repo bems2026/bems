@@ -1,556 +1,26 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-10-14, evening — **RM-163 built (ADR-0017): logging stays live and true without internet. The
-edge is off the mesh again, so the last pieces wait to be deployed (§0).**
-- **What froze (E-256, E-257).** The edge logged every minute of the outage; the four CT meters' values froze inside
-  the devices for 2.5 to 6 days. A REFRESH poll and a Node-RED restart did not revive them; the operator's power
-  cycle at 11:33 did.
-- **Done and running:** 17,338 stuck rows marked frozen before upload; the upload catching up every minute in batches
-  that fit the link; reports waiting for their data and rebuilding on late rows.
-- **Built, not deployed:** the still rule and freeze alerts (RM-163d), the kiosk's cloud note (RM-163g), the clock
-  timer and re-timing (RM-163h).
-
-**Earlier the same day — the CT meters froze offline; RM-163 begun. Upload paused while the backlog is corrected.**
-
-**Earlier the same day — RM-161 deployed; RM-162 built: ingest's backlog drains over a slow uplink.**
-- **Back online, slowly (E-255).** The operator reseated the router's SIM and the edge rejoined the mesh, on its own
-  device network throughout. Upload measured at about 12.7 KB/s. RM-161 is deployed (`63dc9cb`), and
-  `BREAK_GLASS_USER_ID` is set from the one account that has sent commands. The on-site read-back (RM-161f) remains.
-- **RM-162.** Every upload timed out on that link: up to 2,000 rows per stream is about 1.3 MB, against a 10 s timeout.
-  The backlog stood at 202,700 rows and growing, and each attempt spent about 127 KB of mobile data. A timeout now
-  halves the batch (to 25 rows per stream at least) and an upload that goes through doubles it back.
-
-**Earlier, 2026-10-09 — RM-161 built: the building can be signed into and switched from its own screen
-without internet (ADR-0016). Not deployed: the edge has no internet to pull it with.**
-- **What happened (E-254).** The device network's uplink ran out of mobile data. The edge dropped off the mesh, and
-  the kiosk was signed out. Every account sign-in answered "Failed to fetch", and the local sign-in never appeared:
-  `supabase-js` returns a network failure, and the page looked for one thrown. The local sign-in could only look
-  anyway.
-- **RM-161:**
-  - the page always offers the local sign-in, and leads with it offline;
-  - a local sign-in survives a kiosk reload;
-  - the account session resumes by itself when the internet returns;
-  - with `BREAK_GLASS_USER_ID` set, a local sign-in commands as that account, recorded on the edge for ingest to
-    upload;
-  - five wrong local passwords lock an address out (F-027);
-  - the scheduler keeps its last configuration on the edge, so a restart offline still runs the schedules.
-- **Waiting on:** the internet back on the device network, then the deploy and one setting (§0).
-
-**Earlier, 2026-10-07 — RM-159 done: log ingest down from about 30–40 MB a day to at most about 6, and the
-aircon loop now rides out a database outage (RM-159i, RM-159k, EX-173).**
-- **The budget.** Preflight judged the first full metered day: 496 Supabase requests from the edge (ingest 354,
-  scheduler 102, proxy 40), against about 6,500 a day before RM-159. The usage page agrees: 1.10 → 1.12 GB in
-  66 hours, most of it before the deploy (E-252). This cycle stays over 1 GB until it resets, and that is not
-  enforced before 2027.
-- **An outage, 12:04–12:35.** Ingest and the kiosk rode it out by design. The aircon loop retried its state save every
-  tick, and an alert raised in an outage would have notified the phone every tick. That is fixed and deployed
-  (`e4f1dcc`).
-- **The dual-channel meter:** 17 single-minute swaps slipped past the demux in 130 hours. The data stays as it is, and
-  the hardware is the operator's plan (§0, item 3).
-
-**Earlier, 2026-10-05 — RM-160 built: an anomaly is a level the device has not held this week, once per run
-(ADR-0009 amended).**
-- **The flood (F-045, E-247).** About 220 anomalies a day, every one passing both tests. Each new level of a cycling
-  load was flagged on its first and second minute: co6, on for five minutes in every twenty-four, raised 502 in a week.
-- **RM-160:** both tests still agree; then the level must be unfamiliar (under 5 minutes within ±15 % in the last
-  7 days, asked of the edge archive), and one run is one row. Replayed on the same week: 1,551 rows become 25. The
-  reports count unusual events, with a caveat on earlier periods.
-- **Deployed and read back 2026-10-05 (RM-160f, E-248).** From 10:03 to 11:09 ingest recorded 0 anomalies and
-  passed over 19 at a familiar level; the old rule, replayed on the same readings, gives 19. A day on (RM-160g,
-  E-250): 3 anomalies on 6 Oct, where the old rule gives 234. The operator confirmed the Reports page, signed in
-  (RM-160h, E-251). RM-160 is done.
-
-**Earlier, 2026-10-04, evening — RM-159 built: a data architecture around the request budget (ADR-0015).**
-- **What was left (E-242).** About 6,500 gateway lines a day after RM-158:
-  - the kiosk's timed cloud reads;
-  - a sign-in check per poll;
-  - the scheduler's per-minute configuration read;
-  - three or four requests per upload.
-
-  Log ingestion read 1.10 / 1 GB, and log query 30.4 / 100 GB from reading the Logs view. Neither is enforced before
-  2027.
-- **RM-159:**
-  - a session is asked about once per token;
-  - the edge answers the kiosk's timed reads;
-  - the scheduler reads on change;
-  - one request per upload (phase55);
-  - each daemon counts its requests, and preflight judges the day.
-
-  Expected: about 600 a day from the edge.
-- **Deployed and read back 2026-10-05 (RM-159g, RM-159j).** phase55 is pasted, and ingest found it by itself at 08:21.
-  The edge's meter reads about 4 requests per 10 min, about 600 a day. The edge's reads no longer stall the proxy
-  (trouble 0 ms, connectivity about 130 ms). Postgres's own logging is left as it is (RM-159h). Two days on (RM-159i),
-  preflight judged 496 for 2026-10-06; the usage page is still to come.
-
-**Earlier, 2026-10-03, evening — RM-158 built: the log's four biggest needless sources cut. RM-157 deployed and
-read back: a remote click is answered in 54–106 ms.**
-- **Where the 1 GB went (E-241).** The dashboard's Logs view: the API gateway, about 10,800 lines in 24 hours, twice
-  RM-149's estimate. The repeating lines were:
-  - the alert bell's poll from every open screen, each a GET after a CORS OPTIONS;
-  - an unchanged aircon hold reason re-written every minute;
-  - five sign-in checks per burst;
-  - a refused `sites` read at every command.
-- **RM-158** answers the bell from the edge's archive, keeps the hold reason, checks a sign-in once per burst, and reads
-  the policy with the caller's session (fixing the 401). Expected: well under half the gateway's lines.
-
-**Earlier, 2026-10-03 — RM-157 built: a person's command is recorded on the edge first, so a click no longer waits on the
-database.**
-- **Why remote clicks pulsed amber for seconds.** Since RM-147 a switch in flight pulses amber. A click waited on up to
-  three requests to Supabase, about 0.43 s each from the edge and 1.5–3.2 s on 2026-10-02, before its relay was asked
-  (F-041, E-240).
-- **Now:** the command is recorded and flushed on the edge, the relay is asked, the browser is answered, and one row
-  goes up afterwards. A restricted project's 402, a 429 or a 5xx is no longer read as a refusal, so commands and remote
-  sign-ins keep working through one (ADR-0014).
-- **Remote access:** the mesh's https address serves the page and its API from one address, and read LIVE with every
-  device. The address-and-port form makes the page call a second port, which some browsers block.
-
-**Earlier, 2026-10-01, evening — RM-156 done: the Daily view's circuit chart speaks of hours, not days.**
-- Reports → Daily → Circuits described its 24 hour columns as "Energy per day for 4 circuits, stacked. All 24 days were
-  recorded." It now reads "Energy per hour, 00:00 to 23:59, for 4 circuits, stacked. All 24 hours were recorded.", as
-  the building's own hourly chart does, and an outage is labelled in hours. The PDF's hourly circuit chart said the
-  same and is fixed with it. Built on the edge at 16:47 (`index-DgWBFWtR.js`), and the served bundle carries it.
-
-**Earlier, 2026-10-01 — RM-155 done: each circuit's energy is banked across a meter reset.
-phase53 is applied (15:56) and read back.**
-- **What was wrong.** A meter's register that fell inside a day lost everything the circuit used until it climbed back
-  past its old top. C.O Yellow on 23 Sep: 11.21 kWh stored, 13.91 banked, 14.22 from its own power (F-040, E-235).
-- **phase53** banks the register minute by minute, as the bridge does, and the rollup now keeps what banking needs. It
-  restates the stored rows the old rule built and keeps what they said. It was rehearsed on the edge, and neutered twice
-  (E-236).
-- **Read back live (E-237).** The week of 21 Sep reads 80.60 kWh on both tabs against the counter's 80.53, and 23 Sep
-  reads 22.29. C.O Yellow carries a Restated badge ("was 11.21").
-- **phase54** then rewrote the three "jump removed" caveats still measured the old way, all L.O Yellow. 23 Sep now
-  says 5.03 kWh, as its week does (E-238, E-239). Both migrations are applied.
-
-**Earlier, 2026-10-01 — RM-154 done: the baseline is a period in the calendar, built from real days; one energy figure
-per period.**
-- **Baseline** is chosen in the Reports calendar and read through the same Overview, Circuits, Usage patterns and
-  Compare tabs as any report. Each projected date is one recorded day of its kind, so the days differ as real days do:
-  working days 8.06–21.21 kWh, and every day of a month has its bar (E-234, ADR-0012 amended).
-- **The Overview and Circuits print the same energy**, the sum of the circuits. The building counter is said beside
-  it when the two part: 80.53 kWh against 77.88 for the week of 21 Sep (F-039, E-233, ADR-0013).
-
-**Earlier, 2026-10-01 — RM-153 done: a projected baseline on the Reports page.**
-- **Reports → Baseline** shows what the office uses with nothing managing it, built from 25 Aug to 22 Sep: a working
-  day 13.83 kWh, a week 75.4 kWh, a standard month 328 kWh (E-232). It sets any fully recorded period against it,
-  and the recorded days behind it ship as its backup. The site now has a working calendar with the 2026 holidays
-  (ADR-0012, E-231).
-
-**Earlier, 2026-09-30, evening — RM-151 and RM-152 done.**
-- **Reports → Month → August** loads signed in with no timeouts. The cause was row security meeting an hour-by-hour
-  probe (F-037). phase52 is applied and took each function from 3.6-5.4 s to 0.26-0.92 s. The page now loads only what
-  the open tab shows (E-229).
-- **The alerts bell** shows one incident per device, with current problems apart from past ones. "Mark as seen" is
-  remembered, and C.O Yellow's week-old, genuine power warning no longer repeats (E-230).
-- **A setting can no longer reach the wrong clamp** of the shared meter (F-036).
-
-**Earlier, 13:15 — RM-150 done: the database now watches the edge, and posts to the phone after
-15 minutes without an upload (F-034 closed, E-228).** The test notice went through the database and ntfy took it; the
-first scheduled check ran at 13:10.
-**Earlier, 12:15 — phase50 applied and read back (E-227): the scheduler reads one snapshot, and
-preflight reads 120 of 500 MB and 9 of 1,000 MB.**
-**Earlier, 11:30 — RM-149 done: the edge asks the database about a quarter as often, the unused
-file storage holds a weekly backup, and a sealed day is restored every week as a drill.**
-- The database stood at 129 MB after the reset (E-224). The quota still near its limit was log ingestion, 0.97 of 1 GB,
-  and every request is a line in that log.
-- Ingest uploads every 5 minutes, and at once for an anomaly. The scheduler's seven reads a minute become one call once
-  phase50 is applied. Together that is about 16,000 requests a day down to about 4,000.
-- The first weekly backup: 19 tables, 0.70 MB, every copy read back, drill passed (E-226).
-- Found and fixed on the way: aircon-loop alerts never reached the phone (F-035).
-
-Evidence E-224 to E-226. §0's first entry says what is left: paste phase50.
-**Earlier, 2026-09-30, 06:45 — RM-148 done: the cloud keeps 14 days of raw rows, the edge keeps every raw
-minute since 16 Aug, and each sealed day is copied off the edge.**
-- The hot tier was switched on at 06:17. Its first verified pass pruned 464,092 readings in 17 steps.
-- The raw tables were then reset from the edge: the cloud and the archive match per device-hour both ways over the whole
-  window.
-- Queries that timed out now answer in 0.5–1.7 s.
-- The SD card's writes went from 18.9 to 6.9 GB a day.
-
-Evidence E-218 to E-223. §0's first entry says what is left.
-**Earlier, 2026-09-30 — Stages 0–3 read back, 4–6 built; ADR-0011.**
-**Earlier, 2026-09-29, 20:30 — RM-148 Stage 0: Q-01 closed (392 MB, E-218); Stage 1 deployed at 20:01.**
-**Earlier, 14:51 — RM-147: the Control page has one rule for on and off (solid green on, hollow
-off, pulsing while switching, hatched when unavailable), neutral bulk buttons, per-panel counts, a legend, and a lamp
-click that no longer gets lost on press.**
-**Earlier, 2026-09-29, 08:50 — RM-146: fifteen devices dark since the weekend (an access-point drop on Saturday
-13:47 left switches and outlets hung or off the Wi-Fi; the IR hub died on Friday). Recovered on 29 September by the
-operator's power cycle of the office at about 07:55: 19 of 20 online, read back at 08:43.
-The fleet alarm now settles, escalates and reminds (RM-146a). The broker is back on loopback (F-001 closed, RM-146b).**
-**Earlier, 2026-09-29 — RM-145: Phases D and E done; the FINAL GATE awaits the operator.**
-**Earlier, 2026-09-24, 13:03 — **RM-145: public sign-up was open, and any signed-in account can arm a
-schedule that switches real loads (F-026, Critical). The operator turned sign-up off, read back at 13:03. Reviewing
-the existing accounts is still open (Q-17, §0 first entry).**
-**Earlier, 06:10 — RM-145: GATE A passed. The broker is still open at 05:56 today, and the
-operator chose to restore loopback-only (§4 #6, F-001). F-002 is Medium: a complete off-card credential copy exists.**
-**Earlier, 2026-09-23, 23:40 — RM-145: the manual's Phase A audit (read-only) found the MQTT broker listening on every
-interface with anonymous access since 2026-09-17, so EX-131 no longer holds on the host (§4 #6, `docs/audit/findings.md` F-001).**
-**Earlier, 20:50 — RM-120 passed: local IR is verified on the unit, and ON states now
-go over the LAN first. RM-144: an IR send no longer drops the hub's session.** Applied by the operator
-at 21:06 and the daemons restarted at 21:07; read back at 21:10 (§2, RM-144). **Earlier, 14:10 — RM-143: the week of 14 Sept was not made — the 10:54 pass failed on a Supabase outage, and a failed pass waited six hours; now minutes.** **06:20 — RM-142: the Reports page polished — charts drawn at the page's width, one legend, the estimate as a card.** **2026-09-22, 23:10 — FI-039 and FI-041 done; a transition never waits on a frame.** **22:45 — RM-137 to RM-141 pushed, CI green, deployed: the dashboard built on the Pi and `ibems-ingest` restarted 22:53 (read back).** **22:21 — RM-141: pop-ups that fit, measured signed in at 360, 768 and 800×480 — every surface 0 px over.** **21:47 — RM-140: the PDF waits for the circuit charts; the controls stay put; changes crossfade.** **21:40 — RM-139: no circuit told apart by colour alone; the status hues stay, measured.** **21:25 — RM-138: a report not made yet is said, not silent; the week of
-14 Sept was not late** (settles 08:00 Wed 23 Sept). **21:13 — RM-137: a statement timeout is asked
-again by itself** (the operator's Reports brief; §2's first section). **Earlier, 17:10 — the end-of-day list, by owner, is §0's first entry.** RM-136 was run
-at 16:31 and read back: both notices are gone and checked in a browser. **Earlier, 17:00 — phase47 (FI-027)
-applied at 16:19 and read back** — L.O Yellow's 22 Sept
-records 527 minutes, not 895; the restatement also touched 8 August rows by rollup drift (energy and peak
-unchanged). **Earlier, 16:40 — RM-136: a false "frozen" flag at every lights-on, the morning's hold
-still in Node-RED's own copies, and a notice worded against the meter.** Built; one operator command left.
-**Earlier, 16:00 — FI-027: a held minute is not a recorded minute.** `phase47`, built and
-rehearsed (applied 16:19).
-**Earlier, 15:20 — RM-135: the page accused L.O Yellow of losing 47% of its energy; it
-was the morning's held watts in the integrator, and the page's freeze detection could not see the hold.**
-Fixed in `detectFrozenRuns` and verified against the live bridge.
-**Earlier, 15:00 — L.O Yellow was not frozen. The meters were never re-read:
-RM-134.** Applied ~14:20 and read back at 14:21: 0 W / 0 A / `monitor`, nothing flagged frozen. The 396
-held rows were scrubbed at ~14:50 and read back, and preflight reads `Ready` with every node polled. The lights went off while the Pi was rebooting, the meter's push of "0 W" reached nobody, and
-unlike every outlet, switch and the IR hub, the three meters had no GET poll. The tuya node reads nothing
-on connect, so a Node-RED restart could not help. RM-134 adds a registry-driven meter poll (dry-run clean
-against the live flow, 301 → 303 nodes). It grounds the demux's idle rule in 0 A rather than the device's
-`monitor` label, which the poll would start delivering every minute, and makes `npm run preflight` fail
-when any tuya node is unpolled (`flow_polls`). **The panel power cycle in §0 is withdrawn** pending the
-poll's result. RM-133's "full dp read" is corrected, and RM-077's L.O Red freezes are re-read.
-**Earlier, 12:00 — RM-133:** a register clock the shared voltage cannot reset, deployed 11:27, flagging
-the channel at 11:57, the flag stored with the row (FI-027's storage half). Earlier: the walkthrough: what is left, by who can do it (§0); the
-preflight checks what lives only on the host and no longer fails on the optional cloud: RM-132; a
-restore has been performed: RM-006d closed; the kiosk survived a cold boot signed in: RM-007 closed.**
-`npm run preflight` now says `Ready` on this deployment with two warnings (the lapsed vendor trial,
-19 of 20 devices), and three new checks cover what a rebuild loses with no diff — the persistent
-journal, the three recovery timers, a static address on every tuya node. `npm run restore:rehearse`
-took the day's export (19 tables, 12,960 rows) into a throwaway PostgreSQL 16, every count matched
-the manifest and every row read back equal to what was exported; it found that the migrations seed
-two rows and that `space_nodes` needs parents-first, both now in `docs/backup-policy.md`.
-
-**Earlier the same morning — What an outage does to the field network, and what now
-recovers it: RM-131; the director's aircon estimate charted: RM-130.** The operator's outage test of
-the 21st was read back from the persistent journal: the Pi booted before the access point and joined
-the office SSID; the devices flapped for an hour while the AP settled; then every switch, outlet and
-the IR hub went silent to `find()` — while still associated, answering ARP and accepting TCP on 6668.
-Discovery is the single point of failure. Deployed: a LAN map learned from the devices' own
-announcements (`ibems-lan-map.timer`), `set-device-ip:pi --from-lan-map` and `--reservations`, a
-recovery watchdog that restarts Node-RED only for reachable-but-offline devices
-(`ibems-fleet-recover.timer`), the Wi-Fi watchdog at 90 s / 5 min, and `docs/outage-recovery.md`.
-**Two operator actions remain:** make the devices announce once (power-cycle, or renew IoT Core) so
-the map fills and the addresses can be set; then reserve them on the AP.
-
-**Earlier the same day — Onboarding without IoT Core, and the aircon's own IR protocol: RM-126 to
-RM-129.** The operator decided on 2026-09-17 that Tuya IoT Core is only for
-extracting ids and local keys, not a dependency, and it had just lapsed — taking Add Device, rebind and
-the aircon's mode/fan/swing with it. **Deployed by the operator 2026-09-22 (Aircon tab 06:49, build and
-restart; the Pi then rebooted at 07:44) and read back at 07:55** — see §0. **Keys imported 08:51**: 17
-devices, every key identical to its flow node's.
-- **RM-126:** device facts come from three sources: keys imported from a key tool's export, what the
-  device network announces (a passive listener in the proxy), and the vendor cloud only while it
-  answers. `/api/tuya/devices` no longer fails with the cloud. Orphans for Rebind now need network
-  silence AND a complete list without the device.
-- **RM-127:** Add Device shows which sources answered, where each device's key comes from, and an
-  **Import keys** panel. A device heard with no key says "Needs its key".
-- **RM-128:** the sixteen captured IR codes decode as **TCL112AC** — cool / fan auto / swing off at
-  16..30 °C, every checksum verified. The flow now builds any other state from one captured frame,
-  so mode, fan and swing no longer need the cloud. Recommended over learning codes one at a time.
-- **RM-129:** Home Assistant assessed and not adopted, with the reasons; the cloud-connection policy.
-
-**Earlier on 2026-09-22 — The shared dual-channel meter trades its own channels, and the
-reports gain a Daily period: RM-122 to RM-125, and RM-130.** The operator reported L.O Yellow, a lighting branch,
-logging the outlets' daytime load since Saturday 19 September. Measured read-only against the stored
-rows: the device reports its two CT clamps under each other's dp ranges for hours at a time — its own
-`device_state<n>` goes to `monitor` on the channel reading 0 A, its own registers freeze on that side and
-jump by thousands of kWh at each flip — while one tuya session feeds two parsers keyed on dp number, so
-nothing here could have traded them. RM-019's session collapse removed a possible cause, not this one.
-- **RM-122:** a demux node in front of the parsers, deciding from two facts the operator confirmed (the
-  lighting branch cannot exceed 150 W; the outlet branch is never at 0 A) and renumbering the dps before
-  anything reads them. Every stored row now says how its clamp was attributed. **Applied 2026-09-22
-  04:26 and read back** — the demux node is live, the bridge tab redeployed, `channel_map` on both meters.
-- **RM-123:** `npm run scrub:meters` corrects the stored rows with the same classifier and re-integrates
-  the affected days' energy. **Applied 2026-09-22 04:33:** 5,748 rows rewritten (1,800 traded), verified by
-  invariants — every affected row stamped, each day's high-water mark exactly the restated figure, and a
-  re-run finds nothing to do. The bridge's `enacc_*` bases were corrected by hand at 05:14 (C.O week
-  9.503 / month 112.055; L.O 0.758 / 13.958) and read back live.
-- **RM-124:** applied by the operator at ~05:05; the daemon generated every settled day (08-16 → 09-21)
-  and the page was read back at 800×480 in both themes.
-- **RM-125:** done — `/etc/systemd/journald.conf.d/50-ibems-persistent.conf`, 200 MB bounded.
-- **RM-124:** a Daily period beside Weekly and Monthly — `phase46`, the daemon, and the page's twenty-four
-  hourly bars, whose sum is the day's headline by construction.
-- **RM-125:** the journal was volatile and the Pi was rebooted twice on the 21st; nothing from the 19th
-  survived.
-- **RM-130 (FI-035 answered):** C.O Yellow also feeds the director's office aircon, in another room, at
-  about two thirds of the branch — unmetered. Declared as an apportionment in the site file and reported
-  as the estimate it is, on the Circuits tab and in the PDF; the measured charts are untouched.
-
-**Before that, 2026-09-17 (evening) — The aircon's IR blaster was re-paired, and the system now knows
-what it is: RM-114 to RM-121.** The operator re-paired it in Smart Life as a Lasco "Smart IR" hub and
-pasted its new id and key into the `NBRIC IR Blaster` node by hand. Measured read-only the same day:
-the node's key matches the vendor cloud's, the hub announces **v3.3** on the LAN (the flow's
-declaration, now verified), and it carries only two sensors (dp 101 `temp_current`, dp 102
-`humidity_value`) and an IR send/learn pair. The aircon's state (`switch_power`, `mode`,
-`temperature`, `fan`, `swing`) lives on **"Air", a virtual remote in the vendor cloud** with no
-network presence.
-- **RM-114:** `buildLatest` would have shown the uninstalled Outside Temp ONLINE, carrying the indoor
-  hub's humidity, the moment the hub reported. Fixed before the hub is woken.
-- **RM-115:** every aircon command is one absolute state. It goes local-first, with the cloud for
-  states the local IR library cannot express. Until the on-site test verifies the library, ON states
-  go cloud-first.
-- **RM-116:** `npm run aircon:pi` refactors the live Aircon tab, planned against the real flow and
-  clean. **Not applied.**
-- **RM-117:** `phase45` records the state sent. Rehearsed. **Not applied.**
-- **RM-118:** Add Device could never have enrolled anything, because the cloud reports no protocol
-  version. It now reads the version from the device's own broadcast, recognises IR hubs and virtual
-  remotes, and gains **Rebind**.
-- **RM-119:** the Control page's aircon panel.
-- **RM-120:** the on-site acceptance test.
-- **RM-121: the Tuya IoT Core subscription expired this afternoon.** Every cloud business call now
-  answers `28841002`. Local control is unaffected; the cloud fallback, mode/fan/swing, Add Device and
-  presence are not. **Renewing it is the first operator action.** See §0.
-
-**Earlier the same day:** **The Reports page is rebuilt around the operator's report of 2026-09-16,
-RM-090 to RM-099.** The week of 7 September gave L.O Yellow, a lighting circuit, 81.41 kWh: stored
-readings kept the 2026-09-08 counter jump RM-052 fixed in the bridge, and a report sums each day's
-high-water mark.
-- **RM-090:** the page refuses any stored figure its circuit could not have drawn.
-- **RM-091:** `phase42` bounds each hour's counter rise by the circuit's own power, in the generators and
-  per day. **Applied by the operator on 2026-09-17 and read back**: the week of 7 September's L.O Yellow
-  row is 4.617 kWh with 76.789 removed, the only row restated anywhere, and the building row is untouched.
-  **RM-091a**'s `phase43` (the readings policies' role check, once per statement) was applied the same day:
-  a signed-in month read went from 5.2 s to 3.3 s. **RM-091b** splits the page's daily-energy read into
-  groups of four devices, each about a third of that statement.
-- **RM-092/093:** branch circuits carry Lighting / Aircon / Others, and a report narrows to one.
-- **RM-094/095:** each circuit's energy per day and power through the week or month, charted.
-- **RM-096/097:** four tabs (Overview, Circuits, Usage patterns, Compare) with no statistician's words.
-- **RM-098:** CSVs of devices by day and of every reading.
-- **RM-099:** a Simple or Detailed PDF following the scope.
-
-**RM-100 to RM-108, the same day, from a UI/UX audit of the page against the kiosk it actually has —
-800×480, not the 1024×600 this file had been measuring against.** The control bar is one line at 800px
-(58px, was ~117): the tabs are a strip of their own, the circuit select and the Circuits-tab chips are
-one **Circuit** button with the uses as pills and the branches as a list (RM-102), and the period list is
-a calendar of stored reports with the two jumps under it (RM-103). The hero KPI is the one lifted surface
-(RM-104), a month's table keeps its column headers (RM-107), Export is the page's one primary action
-(RM-108), and the building-level breakdown colours a circuit by its place in the panel rather than its
-rank, so a refused meter no longer repaints its neighbours between weeks (RM-106). Measured in Firefox at
-800×480, 375 and 800×1100 in both themes; every static guard and 1,959 + 1,107 tests green. What the
-audit found already shipped and guarded — the 8-point grid, hairline tables, value-first tooltips,
-shape-matched skeletons, 44px targets — it left alone; what the operator's brief asked for that this file
-had already decided against (Tailwind, toasts, arbitrary date ranges, a gradient hero) was put to the
-operator and kept decided.
-
-**FI-028, the same day:** the dark theme's chart series are re-stepped into the dataviz lightness band.
-Green, red and Analytics' sky blue keep their hue a step darker. Purple also moves toward magenta,
-because dropping it to blue's lightness would have made the two indistinguishable for a deuteranope.
-The light theme and the print palette already have that blue/purple collapse, recorded as **FI-029**.
-
-**Later the same day, the Reports page was read signed in, and it holds.** The corrected L.O Yellow week,
-the Circuits tab, the Lighting scope, the plain words, both new CSVs and both PDFs were checked against
-the live project, with no statement timeouts, at 800×480 and 375 px in both themes. The read-back found
-four defects, **RM-109 to RM-112**:
-- at phone width the right third of every report chart was cut off;
-- "Energy by use" counted three uses as "3 circuits";
-- a week showed "10,082 of 10,080 minutes", because every ingest restart writes a second row into one
-  minute;
-- four charts said "observed" where the page says "recorded".
-
-**FI-029** gives the light theme and the print palette a purple darker than their blue. All four fixes and
-FI-029 are live and were read back on the kiosk's build. **RM-073 is done: phase44 was applied by the
-operator and read back the same day.** Every stored report now counts distinct minutes that hold a
-reading. The week of 2026-08-17 went from "Complete · 98%" to 16%, beside a note saying what the report
-used to say.
-
-**RM-113, the same afternoon: every PDF export on the kiosk failed** with "File 'Roboto-Medium.ttf' not
-found in virtual file system". pdfmake's font file registered itself only if pdfmake had already
-evaluated, and a rebuild changed which one evaluated first. The export now registers the fonts itself.
-
-**Also 2026-09-17 — RM-089 closed.** In the 36.9 hours since the 2026-09-15 restart, ingest has logged
-one "Supabase unreachable" and one failed device sync, 11 seconds apart, both aborted by the request's
-own timeout rather than failing to connect, and no "fetch failed" at all. The week before logged 26–100 a
-day, which would have given 40 to 150 in the same time.
-
-**Also 2026-09-17 — EX-172:** the Windows workstation's intermittent `proxy.test.mjs` ECONNRESET was
-Node 24.15.0 itself crashing the spawned proxy (libuv#5107). `server/nodeRuntime.test.mjs` now fails
-the server suite on an affected runtime, so the workstation needs Node 24.16.0 or later.
-
-**2026-09-16 — RM-090: the weekly report for 7 September said L.O Yellow, a lighting
-circuit, used 81.41 kWh, and the page now refuses that figure.** The stored readings still carry the
-2026-09-08 counter jump RM-052 fixed in the bridge, and a report sums each day's high-water mark. The
-page checks every stored figure against the most its circuit could draw in the period, prints an
-impossible one as "Not possible" and leaves it out of every total, share, chart, CSV and PDF, and says
-"Corrected" beside a figure phase42 has repaired.
-
-**Earlier, 2026-09-15 — RM-080: CO6 and CO7 were drawn in each other's places.** The
-three code copies of the office layout are swapped and pinned; the two live `device_config` rows
-still hold the old positions and need the statement in RM-080 run by the operator, so until then
-the Control page and Settings → Floor plan disagree with the Overview. **RM-081 landed the same day:
-the Reports page loads as six independent sections**, so a failed tariff read no longer hides five
-charts that loaded, a hung query becomes a timeout with a Retry instead of an empty page, and a
-period stored as 0 kWh from ten rows that held no reading says "not observed". RM-082 to RM-084
-(layout, exports, charts) are planned in the same §2 section; **RM-082a has since landed** — a
-headline row led by energy, tables built for reading, and the Reports CSS on a guarded 8-point grid —
-and **RM-082b**, which puts every control in one sticky bar around a period stepper and draws loading
-as the shape of what is coming. **RM-083a** builds the export's parts: sections a reader can choose (coverage and
-the closing refusals locked on), a PDF assembled from them that now carries the key figures and never
-prints a zero nobody measured, a simple one-row-per-day CSV, and filenames that do not depend on the
-reader's locale. The drawer that offers them is RM-083b. **Read back signed in on live data the same
-day:** the page, both themes' contrast and the kiosk and phone widths hold; the duration curve's query
-times out for signed-in readers, which RM-081b contains to one chart and phase40 (RM-086) fixes —
-**applied and read back: 448 ms where it was 3.5 s, and all five charts drawing signed in.**
-**RM-084** closes the planned set: every report chart reads out its values under the pointer and from
-the keyboard at one tab stop, with the PDF's drawings unchanged, and the Summary tab gains weekday
-against weekend energy, the load factor and the overnight base load — each an em dash with its reason
-when the period's data cannot carry it. **RM-082c** adds a Circuit select that narrows the device table,
-the Circuits tab and the per-device CSV to one branch, read from the circuit tree; a share stays a share
-of the whole building, and the page says the headline figures, findings and charts cannot be narrowed.
-**RM-087** came out of checking the first real retention pass before it ran: the hourly totals rollup
-never filled phase32's integrated columns, so from 2026-10-08 every pruned hour would lose the only
-independent cross-check on the building total. `phase41_totals_rollup_integrated.sql` fixes it and is
-rehearsed, and **applied and read back on 2026-09-16: 1.6 / 2.6 / 3.6 where the old function left
-NULLs.** Nothing has been lost, and the
-rows the first passes prune were exported and copied off the Pi beforehand. **RM-088** corrects the
-branch wiring from the operator's own account: light switches L1–L4 are on L.O Red and L5–L7 on L.O
-Yellow — which the site file had called the outdoor aircon unit — and the aircon is CARE ACU's only
-load. **RM-089** gives every daemon's connections time for a lost packet to be retried, which the
-Supabase dropouts ingest has logged all week point to. **FI-011** closes the last unblocked item in
-the build order: a generated monthly report is now pushed through the alert channel EX-103 already
-built, in wording that keeps the page's rules — a partial month's total is a floor, a stored zero
-from nothing observed is not a measurement, and the stored share is never called readings coverage.
-**FI-009 is closed the same day**, not done: of the three selectors it named, one no longer exists and
-two read every device by design, so no unblocked coding item is left anywhere in this file.
-
-**Previously audited:** 2026-09-14 — **RM-076 to RM-078, Analytics data quality**, from three operator
-reports: L.O Red "reporting less than it measured", L.O Red reading differently on Overview and
-Analytics, and blank strips in the branch and outlet charts. **The first was a false alarm** — the
-meter froze, repeating one reading for up to fifteen hours while its own registers stood still, and the
-legacy integrator counted the held watts; the bridge had published exactly what the meter said. The
-second was two copies of one derivation. The third was real Node-RED restarts and one-sample health
-flickers drawn as unexplained blanks, on top of charts that paired devices by array position rather
-than by time. See the 2026-09-14 entry in §0. **Stage 2, RM-079 (the bridge side), is deployed to the live flow and
-read back (2026-09-15)** — the bridge now stamps each sample's tick and flags a reading that has stopped
-moving — and the three daemons that load `shared/buildLatest.mjs` were restarted onto it and read
-back.
-
-**Previously audited:** 2026-09-13 — **RM-072**, the Reports overhaul, in progress. The primitives have
-landed: charts are a scene with two serializers rather than an SVG string, because putting a string
-into the DOM would mean this codebase's first `dangerouslySetInnerHTML` and the first thing through
-it would be operator-editable device names. The pdfmake spike is the part worth reading — three
-findings that each cost an afternoon and none of which are in anybody's documentation. The print
-palette's new on-white assertion rejected `--accent` on its first run, and two of that test's own
-first assertions turned out to be measuring the wrong thing and passing. **§5 Q9 is answered by
-measurement and struck**, which also unblocks **RM-042**. `phase37_report_series.sql` is applied, and **reading it back against the live project found four defects, every one of which made the building look better observed than it was** — see RM-072f and RM-072g. The one worth leading with is not in the new code at all: **the Reports page has been overstating its own coverage.** August 2026 reads 48%, and only **26.9%** of its expected minutes carry a real reading — 9,415 of the 21,421 "observed" samples are rows the meters wrote while observing nothing. Correcting the stored figure is **RM-073**, and it is a decision about restating published history rather than a task. Applying the fixes then turned up **RM-072h**: `create or replace` cannot change a function's OUT parameters, and `rehearse.sh` had only ever proved each migration against an EMPTY database — the one case a hand-applied migration never meets twice. **phase37 is applied and every check is green (RM-072i)**, and all five charts are drawing from it (RM-072j, RM-072k) — where looking at real data, rather than asserting on fixtures, rewrote a decision in nearly every one of them. The breakdown chart also turned up a fact about the building: **49.3 of the 51.1 kWh on the convenience-outlet branch is not attributable to any of the seven outlets beneath it**, which is RM-020 and RM-021 seen from the energy side. **phase38 and phase39 are both applied and
-read back (2026-09-12).** The one to read is **RM-074**, which came out of the reporting work by
-accident and is the most consequential thing in this audit: every table in the schema had been
-granting `authenticated` the full privilege set since phase4 — not by anyone's decision, but
-because that is what a Supabase project's default privileges do and a `grant` is additive. RLS
-covers most of it; **it does not filter `TRUNCATE`**, and the table exposed was `commands`, the
-audit trail deliberately exempt from every retention pass. It is now an equality invariant checked
-for every RLS table by `rehearse.sh`, so a table added next year is covered without anyone
-remembering. The measurement that matters: all 23 tables now refuse `anon` on a privilege error
-where they previously returned `200 []`. **CI had been red for six pushes and is green again** (RM-072q): lint
-failed first, so for that whole stretch CI ran neither the build nor any test suite.
-**RM-075 hardens the backup** — 19 tables where there were 10, page keys covering whole primary
-keys, restore order checked against the migrations — and along the way corrected RM-042's
-evidence (its outlet rows disagree, because the legacy table predates RM-047b's correction) and
-four stale claims that the space tree was empty. **The first real retention passes ran on 2026-09-15
-18:39 UTC and 2026-09-16 00:39 UTC**, and every pruned row was checked against a raw export taken
-beforehand: 180 device-hours, no mismatch, nothing left behind. See §0.
-**EX-170 corrects the deploy note.** `CLAUDE.md` and the Pi brief named two services to restart
-after a `server/` or `shared/` change, and there are three: `ibems-ingest` was left out. Measured
-the same day, read-only, the Pi's ingest daemon was still running `shared/sites/` modules replaced
-four days earlier. The restart map is now derived from the unit files and their imports, and
-checked (`test/service-restart-map.test.mjs`). **Ingest was restarted at 12:40 and read back** —
-a clean start, nothing due, no minute of readings lost — and no daemon now holds a module older
-than its file.
-
-**Previously audited:** 2026-09-10 — **RM-070 and RM-071**. RM-071 is a UI/UX overhaul of the
-Automation page: rules now read as IF/THEN blocks, and auditing for it turned up a one-character CSS
-typo that had been silently disabling the 44px touch-target rule **app-wide**, including on the
-dialog that gates arming unattended load shedding. See the RM-071 section below; the measurement is
-the part worth reading.
-
-**Previously audited:** 2026-09-09 — **RM-059 to RM-069**, two parallel lines of work on the same
-pages, merged. **RM-062 is the one to read**: the Automation page claimed hardware dispatch was
-closed when it has been open, on the page that arms unattended load shedding. It was found twice
-independently, from different directions — once by measuring the live Pi
-(`HARDWARE_DISPATCH_ENABLED=true`, `dispatch=OPEN` at boot) and once by reading §0's own
-instruction to arm shedding *from that page*. RM-062's three-state sentence is the one that
-shipped, because "not confirmed yet" is a different fact from "closed" and the alternative
-collapsed them.
-
-RM-059 to RM-065 were a UI/UX pass over Devices and Automation. RM-061 came straight from the
-operator looking at what RM-059 shipped: Details and Edit beside each other were the wrong shape,
-and the fix was not to restyle them but to notice that one device had three doors — one
-**Manage** button, one panel, three tabs. RM-060 started from a fault reported in words rather
-than a ticket: on a schedule row you cannot tell which clock turns the device on and which turns
-it off, worst on the kiosk where the column captions are `display: none` below 720px. RM-059
-moved the Devices panels into a floating layer and turned up three defects on the way — an
-enabled button wearing disabled styling at 2.3-2.6:1, a lapsed stylesheet invariant, and row
-actions with no touch-target minimum on a touchscreen kiosk. RM-063 cut what the load-shed panel
-says; RM-065 gave a schedule a Clear control and removed the ambient trigger.
-
-RM-066 to RM-069 rebuilt what those pages could EXPRESS. A device could hold exactly one
-schedule, enforced in the database, so writing a second window silently replaced the first; and
-the page could not name a socket at all, so an outlet's two relays could never be scheduled
-apart. Schedules are a stackable per-socket list now (RM-066), load-shed tiers follow (RM-067),
-the aircon policy stops bounding the commanded setpoint and becomes the coldest permitted ROOM
-temperature (RM-068), and RM-069 is the closed-loop controller that redefinition was needed for
-— the thing RM-065 deferred when it removed the slider, noting that wiring it "stays a decision,
-not a task". It is setpoint-only: it never powers a unit on or off, which is that concern
-answered rather than overridden.
-
-**Audited at commit:** `5d9ebbf` merged with `4713ef7`
-
-**2026-09-01, and it changes what §0 says.** The headline claim below — that there is no
-unblocked coding task left — was **wrong**, and it was wrong because the fault report that
-contradicted it had been read as a network problem. A physical test reported an outlet toggle
-failing with something like "bridge not reachable", outlet rows flapping between stale and live
-while Node-RED showed the same devices connected throughout, and the Control page appearing to
-block ON/OFF. All three were reproduced against the live Pi and were **one constant**:
-`STALE_AFTER_MS` was 30 s for every device, while an outlet is polled once a minute by design.
-See **EX-133** through **EX-140**. Two of those (EX-139, EX-140) are built and dry-run against
-the live flow but **not applied** — they need a flow write. Two new backlog items were recorded
-rather than fixed: **FI-019** (the bridge listens on every interface) and **FI-020** (a switch's
-freshness is unmeasurable).
-The lesson worth keeping is not about staleness. It is that "every unticked item is blocked on
-something outside the code" was believed for a fortnight while a working outlet was being
-reported as unreachable — because the misreport named the wrong subsystem and nobody re-measured.
-**Landed since that audit, not re-audited:** a long session on 2026-08-31 — RM-006c's tier
-editor, FI-018 (baseline report), FI-008 (contrast guard), FI-006 (totals expiry), FI-007 (badge
-contrast), FI-002 (`npm run preflight`), RM-033's `npm run site:sql`, and the installer rehearsal
-including its apply path. Each was verified on its own terms: suites on the workstation and the
-Pi, CI, neutered guards, and a live read-back where one was possible. **The file below has not
-been re-read against the tree since `b31caa2`**, so entries older than that date carry the
-authority of that audit and no more. Saying which is which is cheaper than an audit that did not
-happen.
-
-> **PICKING THIS UP FRESH? Read §0 first, then this paragraph.** Every unticked item below is
-> blocked on something outside the code: a person at the office, hardware that is not on the
-> network, an operator decision, or elapsed time. There is no unblocked coding task left in
-> Track B, and **since 2026-09-16 none anywhere**: FI-011 shipped, and FI-009 was closed after
-> reading the code it names rather than reasoning about it again. Do not go looking for work in the
-> code; the useful work now is on the building.
-**Audit method:** static read of the working tree, plus **on-site inspection at CARE office** —
-live SSH, a Wi-Fi survey from the Pi's own radio, and packet-level capture of the devices' Tuya
-discovery broadcasts. The 2026-08-25 evening re-audit ran *on the Pi*: a passive listen on the
-discovery ports, the cloud's per-device MAC joined against the Pi's ARP table, and the live flow
-read back through the admin API.
-The 2026-08-26 evening pass ran from a **remote** session, with every network check executed on
-the Pi over the tailnet — ARP and a UDP broadcast mean nothing anywhere else. It re-verified
-RM-026 twice and corrected three §0 claims that had gone stale, two of them within the same
-day: see RM-026, RM-020 and EX-101. It also closed the gap in EX-130 — an internet outage had
-been removing control of a device fleet that is entirely local, for scheduled and auto-shed commands
-as well as manual ones — and settled RM-026's integration shape.
-The Phase 10-13 entries below were added from a workstation with no database access — see
-§5 Q8 for exactly what that leaves unverified.
-The 2026-08-26 late pass was a **planning** pass, not a measurement one: no live check was
-re-run, so nothing above its date should be re-dated on its authority. It added §2's **Track B**
-(RM-027 – RM-034), the replication refactor, after an audit of what the codebase assumes about
-being one building in one room. It also renumbered four entries — the Auth & security block
-held a second EX-100 – EX-103, colliding with the alerts/command/chart/notification entries of
-the same numbers, and is now EX-108 – EX-111. Every cross-reference in this file pointed at the
-other four and none needed changing.
-
-> This repository is **public**. No tokens, keys, passwords, hostnames, IP addresses, or
-> Supabase project identifiers may appear in this file. Where a deployment detail matters,
-> describe it generically ("the Pi", "the tailnet address").
-
----
+**Last audited:** 2026-10-27 — **RM-164 built: reports you can annotate and shape. A note beside each day and for
+the report, Energy by use revised (Aircon takes half of C.O Yellow), and the export's sections grouped with a
+preview. On GitHub only: the edge is still off the mesh, and notes wait for phase56 (§0).**
+- **Still waiting on the edge (RM-163):** `git pull` for the Wi-Fi rule (RM-163i); the kiosk note and the still
+  rule's deploy (RM-163g). The edge kept logging locally all along (E-256).
 
 ## 0. Triage — what to do next
+
+### 2026-10-27 — notes on the Reports page, and the revised Energy by use (RM-164): built, waiting on two steps
+
+1. **Paste `supabase/phase56_report_notes.sql`** in the Supabase SQL editor (it is safe to run twice). Until then
+   the notes fields say they need it and cannot be typed in; everything else works.
+2. **Try it on a workstation**, since the edge is unreachable: `npm run dev`, sign in with an account, open Reports →
+   Monthly → September 2026. Type a note on a day and in *Notes for this report*; each says *Saved*. Then
+   *Export → Preview*: the note is in the day table (Detailed) or the noted-days list (Simple), and Energy by use
+   reads Aircon = the aircon meter + half of C.O Yellow, Others = the other half, both marked as estimates.
+3. **On the edge, once it is back:** `git pull`, `npm run build`, then
+   `sudo systemctl restart ibems-ingest ibems-proxy ibems-scheduler` — the site's `circuits.mjs` is under `shared/`,
+   which they import (no daemon reads the apportionment today, so this is the safe form, not a fix). The weekly
+   backup carries `report_notes` from its next run.
+4. `supabase/rehearse.sh` has a phase56 block; run it on the edge from a `/tmp` copy when convenient.
 
 ### 2026-10-14 — logging without internet (RM-163): deployed; the Wi-Fi rule waits for the device network's internet
 
@@ -5132,6 +4602,40 @@ rule never flagged them. The day reports for 7 to 13 Oct were generated at 09:50
       addresses pinged, `deviceProbeAddresses`). On 14 Oct it reverted to the office SSID for want of internet and
       backed off two hours with every device dark (E-258). The revert to the previous network still requires the
       internet. — 3 tests in `server/wifiPreference.test.mjs`. Deploys with a `git pull` (a oneshot).
+
+### Reports you can annotate and shape — RM-164 (2026-10-27)
+
+The operator exported September and asked for a report that explains itself (E-259): a note beside each day, the
+director's aircon counted as Aircon, and an easier way to choose what the document holds, with a preview.
+
+- [x] **RM-164a** *Built.* Notes stored per site: `supabase/phase56_report_notes.sql` (`report_notes`, keyed
+      site, kind — day, week, month, year — and start; 2,000 characters; select/insert/update for signed-in
+      accounts only, no delete). `src/lib/supabaseReportNotes.ts` reads a period's notes in one request and upserts
+      one at a time; a missing table reads as "apply phase56", not an error. `src/stores/reportNotesStore.ts`
+      keeps a save state per note and the typed text on failure, so *Try again* resends it. In the weekly backup
+      (`server/backup.mjs`). — `test/phase56-report-notes.test.mjs` (3), store (6), a rehearsal block.
+- [x] **RM-164b** *Built.* Energy by use revised: Lighting = L.O Red + L.O Yellow; Aircon = the aircon meter +
+      half of C.O Yellow; Others = the other half (`circuits.mjs` share 1/2, was 2/3). `loadShareSegments` moves
+      each declared share and marks both uses as estimates on the page and in the PDF; an unusable C.O Yellow
+      figure leaves both unknown. Energy by circuit is unchanged; the baseline comparison keeps whole branches
+      (`{ apportion: false }`), as it was fitted, and says so. — `circuitCharts.test.ts` (3 new), apportionment and
+      PDF tests moved to the half.
+- [x] **RM-164c** *Built.* On the Overview, a week or month lists its days (`DayNotesTable`): energy, highest
+      demand, a *High*/*Low* mark for a day well off its kind's median (`src/lib/unusualDays.ts`: weekdays against
+      weekdays, weekends against weekends, 1.5x and 0.5x, four days at least), and a note field that saves when
+      left. `ReportNotesBox` holds the report's own remarks. Read-only on a local sign-in and before phase56.
+      — `DayNotesTable.test.tsx` (5), `unusualDays.test.ts` (3), `ReportsPage.energy.test.tsx` (2 new).
+- [x] **RM-164d** *Built.* The documents: two new sections, *Notes for this report* and *Notes for each day*. A
+      Detailed PDF's day table gains a Notes column; a Simple one lists the noted days under the chart. The
+      building-by-day CSV gains a Notes column. A projected baseline carries no notes. — `docDefinition.test.ts`
+      (5), `buildReport.test.ts` (2), `reportCsv.test.ts` (1).
+- [x] **RM-164e** *Built.* The export drawer's sections are grouped (summary and notes, energy, circuits), each
+      with *All* and *None*; sections added since a remembered choice start ticked; *Preview* builds the same PDF
+      into a tab opened by the press itself (`previewReportPdf`) and saves nothing, closing the tab if it fails.
+      The checklist stays in the drawer rather than a side panel: one press away, and the page keeps its width
+      for the charts. — `ExportDrawer.test.tsx` (5 new).
+- [ ] **RM-164f** Operator: paste phase56, try notes and the preview on `npm run dev` (§0); deploy to the edge
+      with `git pull` + `npm run build` once it is reachable.
 
 ### The log back under the Free plan — RM-158 (2026-10-03)
 

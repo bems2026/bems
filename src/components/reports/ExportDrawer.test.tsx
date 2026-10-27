@@ -114,7 +114,7 @@ describe('ExportDrawer', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Download CSV' }));
     await waitFor(() =>
-      expect(onExport).toHaveBeenCalledWith('daily-csv', expect.any(Array), expect.any(Function), expect.any(AbortSignal), expect.any(String))
+      expect(onExport).toHaveBeenCalledWith('daily-csv', expect.any(Array), expect.any(Function), expect.any(AbortSignal), expect.any(String), undefined)
     );
   });
 
@@ -172,5 +172,54 @@ describe('ExportDrawer', () => {
     expect(detail).toBe('simple');
     expect(sections).not.toContain('heatmap');
     expect(sections).toContain('circuitEnergy');
+  });
+  // RM-164
+  it('groups the sections, and "None" unticks a whole group but never a locked section', async () => {
+    const { onExport } = draw();
+    expect(screen.getByRole('group', { name: 'Circuits' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Include none of Summary and notes' }));
+    expect(screen.getByRole('checkbox', { name: 'Key figures' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'How much was recorded' })).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Generate PDF' }));
+    await waitFor(() => expect(onExport).toHaveBeenCalled());
+    const sections = vi.mocked(onExport).mock.calls[0][1];
+    expect(sections).toContain('coverage');
+    expect(sections).not.toContain('keyFigures');
+    expect(sections).not.toContain('reportNotes');
+  });
+
+  it('offers both notes sections, ticked, even to a choice remembered before they existed', () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ format: 'pdf', sections: ['keyFigures', 'dailyEnergy'], detail: 'simple' }));
+    draw();
+    expect(screen.getByRole('checkbox', { name: 'Notes for this report' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Notes for each day' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Energy by use' })).not.toBeChecked();
+  });
+
+  it('keeps a notes section unticked once the reader has unticked it', () => {
+    draw();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Notes for each day' }));
+    cleanup();
+    draw();
+    expect(screen.getByRole('checkbox', { name: 'Notes for each day' })).not.toBeChecked();
+  });
+
+  it('previews the PDF in a tab opened by the press itself, and saves nothing', async () => {
+    const tab = { closed: false, close: vi.fn() } as unknown as Window;
+    vi.spyOn(window, 'open').mockReturnValue(tab);
+    const { onExport } = draw();
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    await waitFor(() => expect(onExport).toHaveBeenCalled());
+    expect(window.open).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(onExport).mock.calls[0][5]).toBe(tab);
+  });
+
+  it('closes the preview tab when the preview fails, and says why', async () => {
+    const tab = { closed: false, close: vi.fn() } as unknown as Window;
+    vi.spyOn(window, 'open').mockReturnValue(tab);
+    draw({ onExport: vi.fn(async () => { throw new Error('The report has not finished loading.'); }) });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('not finished loading');
+    expect(tab.close).toHaveBeenCalled();
   });
 });

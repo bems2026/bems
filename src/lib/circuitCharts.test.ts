@@ -128,6 +128,38 @@ describe('loadShareSegments', () => {
     expect(hit?.kwh).toBeNull();
     expect(hit?.excluded).toMatch(/could have drawn/);
   });
+
+  // RM-164 (2026-10-27), the operator's revision: Lighting = L.O Red + L.O Yellow; Aircon = CARE ACU + half of
+  // C.O Yellow (the director's office aircon, revised from two thirds); Others = the other half.
+  it('moves the declared share of C.O Yellow to Aircon and says it is an estimate', () => {
+    const kwh: Record<string, number> = { mtr_lo_red: 2, mtr_arec_acu: 85.69, mtr_co_yellow: 157.57, mtr_lo_yellow: 18.89 };
+    const segments = loadShareSegments(Object.entries(kwh).map(([id, e]) => row(id, e)));
+    const by = Object.fromEntries(segments.map((s) => [s.id, s]));
+    expect(by.lighting.kwh).toBeCloseTo(20.89, 6);
+    expect(by.aircon.kwh).toBeCloseTo(85.69 + 157.57 / 2, 6);
+    expect(by.other.kwh).toBeCloseTo(157.57 / 2, 6);
+    expect(by.aircon.estimateNote).toMatch(/half of C\.O Yellow/);
+    expect(by.other.estimateNote).toMatch(/half of C\.O Yellow/);
+    expect(by.lighting.estimateNote).toBeUndefined();
+    expect(segments.reduce((a, s) => a + (s.kwh ?? 0), 0)).toBeCloseTo(2 + 85.69 + 157.57 + 18.89, 6);
+  });
+
+  it('a C.O Yellow figure that cannot be used leaves both shares it feeds unknown, not guessed', () => {
+    const rows = [row('mtr_lo_red', 2), row('mtr_arec_acu', 80), row('mtr_co_yellow', 500, { period: 'week', peak_power_w: 100 }), row('mtr_lo_yellow', 5)];
+    const by = Object.fromEntries(loadShareSegments(rows).map((s) => [s.id, s]));
+    expect(by.aircon.kwh).toBeNull();
+    expect(by.other.kwh).toBeNull();
+    expect(by.lighting.kwh).toBe(7);
+  });
+
+  it('keeps every branch whole for the baseline comparison, which was fitted per circuit load', () => {
+    const kwh: Record<string, number> = { mtr_lo_red: 2, mtr_arec_acu: 85.69, mtr_co_yellow: 157.57, mtr_lo_yellow: 18.89 };
+    const segments = loadShareSegments(Object.entries(kwh).map(([id, e]) => row(id, e)), { apportion: false });
+    const by = Object.fromEntries(segments.map((s) => [s.id, s]));
+    expect(by.aircon.kwh).toBeCloseTo(85.69, 6);
+    expect(by.other.kwh).toBeCloseTo(157.57, 6);
+    expect(by.aircon.estimateNote).toBeUndefined();
+  });
 });
 
 describe('circuitHourPoints — RM-124', () => {

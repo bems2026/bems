@@ -74,6 +74,8 @@ export function AgainstBaseline({ c, period, label }: { c: BaselineComparison; p
         </p>
       ) : null}
       <ReportTable label={`By use, against the baseline, ${label}`} columns={byUse} rows={c.byLoad} rowKey={(r) => r.load} />
+      {/* RM-164: "Energy by use" now counts half of C.O Yellow as Aircon; the baseline was fitted per branch, so not here. */}
+      <p className="reports-note">By branch, as the baseline was built: C.O Yellow counts whole under Others here, not split as in Energy by use.</p>
       {c.days && c.days.length > 1 ? (
         <details className="report-table-card">
           <summary className="report-recorded__summary">Day by day</summary>

@@ -271,3 +271,12 @@ describe('the daily CSV of a projected baseline — RM-154', () => {
     expect(csv.split('\r\n')[1]).toBe('2026-09-21,12.28,1.884,,projected');
   });
 });
+
+describe('dailyCsv notes — RM-164', () => {
+  it('adds a Notes column, blank on a day without one', () => {
+    const csv = dailyCsv({ daily: [day(), day({ local_day: '2026-08-18' })], tariffs: [], factors: [], notes: { '2026-08-18': 'Seminar, both aircons' } });
+    expect(lines(csv)[0]).toBe('Date,Energy (kWh),Peak demand (kW),Readings coverage (%),Day status,Notes');
+    expect(lines(csv)[1]).toBe('2026-08-17,14.68,1.768,100,complete,');
+    expect(lines(csv)[2]).toBe('2026-08-18,14.68,1.768,100,complete,"Seminar, both aircons"');
+  });
+});

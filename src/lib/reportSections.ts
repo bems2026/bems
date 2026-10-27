@@ -24,7 +24,9 @@ export type ReportSectionId =
   | 'coverage'
   | 'keyFigures'
   | 'costCarbon'
+  | 'reportNotes'
   | 'dailyEnergy'
+  | 'dayNotes'
   | 'hourlyEnergy'
   | 'useShare'
   | 'circuitEnergy'
@@ -65,7 +67,10 @@ export const REPORT_SECTIONS: readonly ReportSection[] = [
   },
   { id: 'keyFigures', label: 'Key figures', detail: 'both' },
   { id: 'costCarbon', label: 'Cost and emissions, with their sources', detail: 'both' },
+  // RM-164: the operator's own words — the report's remarks, and a note beside each day.
+  { id: 'reportNotes', label: 'Notes for this report', detail: 'both' },
   { id: 'dailyEnergy', label: 'Energy per day', detail: 'both', periods: ['week', 'month'] },
+  { id: 'dayNotes', label: 'Notes for each day', detail: 'both', periods: ['week', 'month'] },
   { id: 'hourlyEnergy', label: 'Energy per hour', detail: 'both', periods: ['day'] },
   { id: 'useShare', label: 'Energy by use', detail: 'both' },
   { id: 'circuitEnergy', label: 'Energy per day, by circuit', detail: 'both', periods: ['week', 'month'] },

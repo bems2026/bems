@@ -3,6 +3,7 @@ import { CIRCUITS } from '@shared/siteConfig.mjs';
 import { branchOptions, scopeMeterIds, type LoadId, type ReportScope } from './circuitBreakdown';
 import { coverageOf, type PeriodDeviceReport } from './supabaseReports';
 import { usableEnergy } from './boundedEnergy';
+import { shareWords } from './apportionment';
 import { REMOVED_NOTEWORTHY_KWH } from './boundedEnergy';
 import type { CircuitTrend, DeviceDayRow } from './circuitSeries';
 import type { HourEnergyRow } from './reportSeries';
@@ -121,19 +122,62 @@ export function trendChartInput(trend: CircuitTrend, refs: readonly CircuitRef[]
  * impossible figure among its meters is left out of the split and says why (RM-090), rather than being
  * drawn smaller than it was.
  */
-export function loadShareSegments(rows: readonly PeriodDeviceReport[]): (CircuitSegment & { id: LoadId; colourIndex: number })[] {
+interface Contribution {
+  meterId: string;
+  share: number;
+}
+
+interface ApportionedCircuit {
+  name: string;
+  load?: LoadId;
+  meter_device_id?: string;
+  apportionment?: readonly { label: string; load: LoadId; share: number }[];
+}
+
+/**
+ * "Energy by use": the building's meters summed by what their branches carry.
+ *
+ * RM-164 (2026-10-27), the operator's revision: a branch's declared `apportionment` (the share of it another
+ * use draws, in `shared/sites/<id>/circuits.mjs`) now moves that share of the branch's measured energy into
+ * the use it names. On this site: Aircon = CARE ACU + half of C.O Yellow (the director's office aircon),
+ * Others = the other half. The share is an estimate, not a measurement, so both uses it touches carry
+ * `estimateNote`, which the chart, the page's table and the PDF print. A branch figure that cannot be used
+ * leaves every use it feeds unknown rather than guessed. Energy by circuit is untouched by any of this.
+ */
+export function loadShareSegments(
+  rows: readonly PeriodDeviceReport[],
+  /** False keeps every branch whole in its own category — the baseline comparison, fitted per circuit load. */
+  { apportion = true }: { apportion?: boolean } = {},
+): (CircuitSegment & { id: LoadId; colourIndex: number; estimateNote?: string })[] {
   const byMeter = new Map(rows.map((r) => [r.device_id, r]));
+  const contributions = new Map<LoadId, Contribution[]>(
+    (LOADS as readonly LoadId[]).map((load) => [load, scopeMeterIds({ kind: 'load', load }).map((meterId) => ({ meterId, share: 1 }))]),
+  );
+  const notes = new Map<LoadId, string[]>();
+  const note = (load: LoadId, text: string) => notes.set(load, [...(notes.get(load) ?? []), text]);
+  for (const circuit of CIRCUITS as readonly ApportionedCircuit[]) {
+    if (!apportion || !circuit.apportionment?.length || !circuit.meter_device_id) continue;
+    const own = contributions.get(circuit.load ?? 'other')?.find((c) => c.meterId === circuit.meter_device_id);
+    if (!own) continue; // not a building meter: nothing of it is in the split to move
+    for (const a of circuit.apportionment) {
+      own.share -= a.share;
+      contributions.get(a.load)?.push({ meterId: circuit.meter_device_id, share: a.share });
+      note(a.load, `includes ${shareWords(a.share)} of ${circuit.name} (${a.label}), an estimate`);
+      note(circuit.load ?? 'other', `${shareWords(1 - a.share)} of ${circuit.name}; the rest is counted as ${LOAD_LABELS[a.load]} (an estimate)`);
+    }
+  }
   return (LOADS as readonly LoadId[]).flatMap((load) => {
-    const meters = scopeMeterIds({ kind: 'load', load });
-    if (meters.length === 0) return [];
+    const parts = (contributions.get(load) ?? []).filter((c) => c.share > 0);
+    if (parts.length === 0) return [];
     const label = LOAD_LABELS[load] as string;
     const colourIndex = (LOADS as readonly string[]).indexOf(load);
-    const present = meters.map((m) => byMeter.get(m)).filter((r): r is PeriodDeviceReport => r !== undefined);
-    if (present.some((r) => r.energy_kwh !== null && usableEnergy(r) === null)) {
-      return [{ id: load, label, kwh: null, excluded: 'a meter on it stored more than it could have drawn', colourIndex }];
+    const estimateNote = notes.get(load)?.join('; ');
+    const present = parts.map((c) => ({ c, r: byMeter.get(c.meterId) })).filter((x): x is { c: Contribution; r: PeriodDeviceReport } => x.r !== undefined);
+    if (present.some(({ r }) => r.energy_kwh !== null && usableEnergy(r) === null)) {
+      return [{ id: load, label, kwh: null, excluded: 'a meter on it stored more than it could have drawn', colourIndex, ...(estimateNote ? { estimateNote } : {}) }];
     }
-    const values = present.map(usableEnergy).filter((v): v is number => v !== null);
-    return [{ id: load, label, kwh: values.length > 0 ? values.reduce((a, v) => a + v, 0) : null, colourIndex }];
+    const values = present.map(({ c, r }) => { const v = usableEnergy(r); return v === null ? null : v * c.share; }).filter((v): v is number => v !== null);
+    return [{ id: load, label, kwh: values.length > 0 ? values.reduce((a, v) => a + v, 0) : null, colourIndex, ...(estimateNote ? { estimateNote } : {}) }];
   });
 }
 
