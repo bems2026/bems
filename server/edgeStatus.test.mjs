@@ -47,3 +47,22 @@ test('no file, a broken one, or one older than three ticks reads as unknown', ()
   writeEdgeStatus(old, base);
   assert.deepEqual(readEdgeStatus(old, Date.parse(base.at) + STALE_AFTER_MS + 1), { state: 'unknown' });
 });
+
+test('RM-165: one timed-out batch on a slow link is not "no internet" while an upload went through recently', async () => {
+  // 28 Oct, 14:29: after a restart the batch size starts large and times out on the slow link, while the
+  // previous minutes' uploads had gone through. The page must not say the site has no internet.
+  const { cloudReachable, RECENT_OK_MS } = await import('./edgeStatus.mjs');
+  const now = Date.parse('2026-10-28T06:29:10Z');
+  assert.equal(cloudReachable({ reachable: false, okAt: '2026-10-28T06:25:00Z' }, now), true);
+  assert.equal(cloudReachable({ reachable: false, okAt: new Date(now - RECENT_OK_MS - 1).toISOString() }, now), false);
+  assert.equal(cloudReachable({ reachable: false, okAt: null }, now), false);
+  assert.equal(cloudReachable({ reachable: true, okAt: null }, now), true);
+});
+
+test('RM-165: the last good and failed uploads are carried across a restart', async () => {
+  const { previousSeen } = await import('./edgeStatus.mjs');
+  const file = join(dir, 'prev.json');
+  writeEdgeStatus(file, { ...base, cloudReachable: true, lastUploadOkAt: '2026-10-28T06:20:00.000Z' });
+  assert.deepEqual(previousSeen(file), { reachable: null, okAt: '2026-10-28T06:20:00.000Z', failAt: base.lastUploadFailAt });
+  assert.deepEqual(previousSeen(join(dir, 'none.json')), { reachable: null, okAt: null, failAt: null });
+});

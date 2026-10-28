@@ -38,7 +38,7 @@ import { openArchive } from './archiveDb.mjs';
 import { drainArchive, uploadDue, uploadIntervalFrom, nextUploadBatch, UPLOAD_BATCH } from './archiveUpload.mjs';
 import { noteLateUpload, readLate, writeLate } from './lateData.mjs';
 import { createFreezeWatch, freezeMessage } from './freezeWatch.mjs';
-import { writeEdgeStatus } from './edgeStatus.mjs';
+import { cloudReachable, previousSeen, writeEdgeStatus } from './edgeStatus.mjs';
 import { estimateHold, hasOwnLifetimeRegister } from './heldEnergy.mjs';
 import { createEstimateOutbox } from './estimateOutbox.mjs';
 import { createClockWatch } from './clockWatch.mjs';
@@ -126,7 +126,7 @@ let lastUploadMs = null;
  * proxy to serve (`server/edgeStatus.mjs`). Only an upload attempt changes it: a deferred tick learns nothing.
  */
 const EDGE_STATUS_PATH = process.env.EDGE_STATUS_PATH || path.join(__dirname, 'data', 'ingest-status.json');
-const cloudSeen = { reachable: null, okAt: null, failAt: null };
+const cloudSeen = previousSeen(EDGE_STATUS_PATH);
 /** 2026-10-14: halved after an upload that timed out on a slow link, doubled back after one that went
  * through quickly. See `nextUploadBatch` in archiveUpload.mjs. */
 let uploadBatch = UPLOAD_BATCH;
@@ -655,7 +655,7 @@ function noteEdgeStatus(synced, result) {
   }
   try {
     writeEdgeStatus(EDGE_STATUS_PATH, {
-      at, cloudReachable: cloudSeen.reachable === true, paused: paused(), waiting: pendingCount(),
+      at, cloudReachable: cloudReachable(cloudSeen), paused: paused(), waiting: pendingCount(),
       lastUploadOkAt: cloudSeen.okAt, lastUploadFailAt: cloudSeen.failAt, frozen: freezeWatch.current(),
     });
   } catch (err) {

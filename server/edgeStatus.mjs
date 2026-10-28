@@ -48,3 +48,27 @@ export function readEdgeStatus(file, nowMs = Date.now(), staleAfterMs = STALE_AF
     frozen: Array.isArray(s.frozen) ? s.frozen.map((f) => ({ device_id: f.deviceId, frozen_since: f.frozenSince })) : [],
   };
 }
+
+/**
+ * RM-165, measured on the day it shipped: after a restart the upload batch starts large and times out on a slow
+ * link while the minutes before had gone through. An upload that went through within this long means the site has
+ * internet, whatever one batch did.
+ */
+export const RECENT_OK_MS = 15 * 60_000;
+
+/** @param {{ reachable: boolean|null, okAt: string|null }} seen */
+export function cloudReachable(seen, nowMs = Date.now()) {
+  if (seen.reachable === true) return true;
+  const okMs = Date.parse(seen.okAt ?? '');
+  return Number.isFinite(okMs) && nowMs - okMs <= RECENT_OK_MS;
+}
+
+/** What the last run of ingest had learned, so a restart does not forget the last good upload. */
+export function previousSeen(file) {
+  try {
+    const s = JSON.parse(readFileSync(file, 'utf8'));
+    return { reachable: null, okAt: s.lastUploadOkAt ?? null, failAt: s.lastUploadFailAt ?? null };
+  } catch {
+    return { reachable: null, okAt: null, failAt: null };
+  }
+}

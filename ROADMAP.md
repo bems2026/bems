@@ -4668,7 +4668,9 @@ by the outage should be deployed.
       — `server/freezeWatch.test.mjs` (3 new).
 - [x] **RM-165b** *Built.* The edge says whether it reaches the cloud: ingest writes `server/data/ingest-status.json`
       each tick (`server/edgeStatus.mjs`), the proxy serves it at `GET /api/edge/status` and in `/api/archive/status`.
-      Older than three ticks reads `unknown`. — `server/edgeStatus.test.mjs` (3), `server/proxy.test.mjs` (1).
+      Older than three ticks reads `unknown`. An upload that went through in the last 15 minutes counts as online,
+      and survives a restart: on the day it shipped, the restart's first large batch timed out on the slow link and
+      read as "no internet". — `server/edgeStatus.test.mjs` (5), `server/proxy.test.mjs` (1).
 - [x] **RM-165c** *Built.* The bell carries held meters (one row per meter and hold, stepped holds and the bridge's
       flag merged, the date shown when a hold crosses midnight) and the site's internet (*No internet at the site*,
       then *Back online, catching up*). The energy cards' paragraphs are gone: the meter's row carries a warning mark
