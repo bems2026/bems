@@ -190,6 +190,12 @@ describe('deviceDailyCsv — devices, one row per day (RM-098)', () => {
     expect(lines(csv)[1]).toBe('2026-09-09,a,name a,Lights B,Lighting,,,,,0,1440,0,no data,,');
   });
 
+  it('RM-165: adds a column for a held meter estimate only when there is one, and says so in the note', () => {
+    const csv = deviceDailyCsv({ ...base, rows: [day('a', '2026-10-20', { energy_kwh: 3.494, estimated_kwh: 3.494, counter_kwh: 0 })] });
+    expect(lines(csv)[0]).toContain('Energy (kWh),Of which estimated while held (kWh),Counter jump');
+    expect(lines(csv)[1]).toMatch(/^2026-10-20,a,name a,Lights B,Lighting,3\.494,3\.494,,.*,includes an estimate: the meter held its reading$/);
+  });
+
   it('says what a counter jump took out of a day', () => {
     const csv = deviceDailyCsv({ ...base, rows: [day('a', '2026-09-08', { energy_kwh: 0.713, counter_kwh: 77.502, removed_kwh: 76.789, clipped_hours: 1, online_minutes: 1434 })] });
     expect(lines(csv)[1]).toBe('2026-09-08,a,name a,Lights B,Lighting,0.713,76.789,612,51,1434,1440,100,complete,minute readings,counter jump removed');

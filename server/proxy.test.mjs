@@ -1840,6 +1840,29 @@ test('GET /api/archive/status says what the edge holds, and an edge with no arch
   }
 });
 
+test('RM-165: GET /api/archive/status carries what ingest last learned about the cloud', async () => {
+  const dir = fs.mkdtempSync(join(os.tmpdir(), 'edge-status-proxy-'));
+  const file = join(dir, 'ingest-status.json');
+  fs.writeFileSync(file, JSON.stringify({
+    at: new Date().toISOString(), cloudReachable: false, waiting: 566184,
+    lastUploadOkAt: null, lastUploadFailAt: new Date().toISOString(),
+    frozen: [{ deviceId: 'mtr_lo_red', frozenSince: '2026-10-14T13:21:17+08:00' }],
+  }));
+  const { proxyUrl, cleanup } = await setup({ EDGE_STATUS_PATH: file });
+  try {
+    const body = await (await fetch(`${proxyUrl}/api/archive/status`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } })).json();
+    assert.equal(body.upload.state, 'offline');
+    assert.equal(body.upload.waiting, 566184);
+    assert.deepEqual(body.upload.frozen, [{ device_id: 'mtr_lo_red', frozen_since: '2026-10-14T13:21:17+08:00' }]);
+    const light = await (await fetch(`${proxyUrl}/api/edge/status`, { headers: { Authorization: `Bearer ${VALID_TOKEN}` } })).json();
+    assert.equal(light.state, 'offline', 'the light route the page polls says the same');
+    assert.equal(light.waiting, 566184);
+  } finally {
+    cleanup();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ---------------------------------------------------------------------------------------------
 // RM-148, Stage 6 — the journal keeps what is worth keeping
 // ---------------------------------------------------------------------------------------------

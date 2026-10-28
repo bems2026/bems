@@ -59,6 +59,8 @@ export const BACKUP_TABLES = [
   { table: 'site_ui_prefs', order: 'site_id' },
   // RM-164: the operator's notes on days and reports — typed by people, so nothing can regenerate them.
   { table: 'report_notes', order: 'site_id,kind,start' },
+  // RM-165: held-meter estimates. Regenerable from the archive by the backfill, but small, and the reports read them.
+  { table: 'energy_estimates', order: 'site_id,device_id,local_day,held_from' },
   { table: 'schedules', order: 'id' },
   { table: 'dsm_thresholds', order: 'id' },
   { table: 'acu_rules', order: 'id' },

@@ -13,6 +13,11 @@ import { useDeviceConnectivity } from '@/hooks/useDeviceConnectivity';
 import { fleetStuck, isFleetStuck } from '@/lib/deviceConnectivity';
 import { useAnchoredPopover } from '@/components/ui/useAnchoredPopover';
 import { isSeen, LIVE_SEEN_MS, readSeen, writeSeen, type SeenMap } from '@/lib/alertSeen';
+import { useBranchEnergy } from '@/lib/useBranchEnergy';
+import { describeFrozen, frozenHeadline } from '@/lib/branchEnergy';
+import { useEdgeStatusStore } from '@/stores/edgeStatusStore';
+import { useAlertsPanelStore } from '@/stores/alertsPanelStore';
+import { linkNotice } from '@/lib/edgeLink';
 
 /**
  * One row in the bell. Every source is shaped into this before rendering, so the list and its
@@ -78,10 +83,15 @@ export function AlertsPopover() {
   const troubleEpisodes = useCapabilityTroubleStore((s) => s.episodes);
   const { rows: connectivity } = useDeviceConnectivity(24);
   const cloudRecoveries = useCommandStore((s) => s.cloudRecoveries);
-  const [open, setOpen] = useState(false);
+  const frozen = useBranchEnergy('today').frozen;
+  const edgeStatus = useEdgeStatusStore((s) => s.status);
+  // RM-165: in a store, so a card's "held" tag can open the panel.
+  const open = useAlertsPanelStore((s) => s.open);
+  const setOpen = useAlertsPanelStore((s) => s.setOpen);
+  const toggleOpen = useAlertsPanelStore((s) => s.toggle);
   const [seen, setSeen] = useState<SeenMap>(() => readSeen());
   const [lastAction, setLastAction] = useState<{ key: string; before: SeenMap[string] | undefined; label: string; title: string } | null>(null);
-  const dismiss = useCallback(() => setOpen(false), []);
+  const dismiss = useCallback(() => setOpen(false), [setOpen]);
   // Portaled and viewport-clamped, like every other popover in the app. `align: 'end'` keeps it
   // opening inward from the nav. Taller than it was, but never past 80% of the screen.
   const maxHeight = typeof window === 'undefined' ? 560 : Math.min(560, Math.round(window.innerHeight * 0.8));
@@ -217,16 +227,48 @@ export function AlertsPopover() {
     [incidents, nameOf, deviceOf, now],
   );
 
+  /**
+   * RM-165: a circuit meter repeating one reading, one row per meter and hold (`branchEnergySplit` merges a
+   * stepped hold and the bridge's flag). These were paragraphs inside the energy cards, three for one meter on
+   * 2026-10-28, pushing the Overview's layout about; the cards now carry a "held" tag that opens this.
+   */
+  const heldItems = useMemo(
+    () =>
+      frozen.map((f) => {
+        const device = deviceOf(f.id);
+        const item: AlertItem & { active: boolean } = {
+          id: `held:${f.id}`,
+          stamp: f.ongoing ? new Date(f.fromMs).toISOString() : new Date(f.toMs).toISOString(),
+          severity: 'warning',
+          title: frozenHeadline(f),
+          body: describeFrozen(f),
+          source: 'Meter check',
+          circuit: device?.description ?? null,
+          deviceId: f.id,
+          active: f.ongoing,
+        };
+        return item;
+      }),
+    [frozen, deviceOf],
+  );
+
+  /** RM-165: the site's internet, as ingest on the edge last found it: down, or back and catching up. */
+  const linkItems: AlertItem[] = useMemo(() => {
+    const n = linkNotice(edgeStatus);
+    if (!n) return [];
+    return [{ id: `link:${n.kind}`, stamp: n.stamp, severity: n.severity, title: n.title, body: n.body, source: 'Edge link' }];
+  }, [edgeStatus]);
+
   const attention = useMemo(
     () =>
-      [...fleetItems, ...cloudItems, ...staleItems, ...anomalyItems, ...incidentItems.filter((i) => i.active)]
+      [...fleetItems, ...linkItems, ...cloudItems, ...staleItems, ...anomalyItems, ...heldItems.filter((i) => i.active), ...incidentItems.filter((i) => i.active)]
         .filter((item) => !isSeen(seen, item.id, item.stamp, now, item.ttlMs))
         .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]),
-    [fleetItems, cloudItems, staleItems, anomalyItems, incidentItems, seen, now],
+    [fleetItems, linkItems, cloudItems, staleItems, anomalyItems, heldItems, incidentItems, seen, now],
   );
   const earlier = useMemo(
-    () => incidentItems.filter((i) => !i.active && !isSeen(seen, `ended:${i.id}`, i.stamp, now)),
-    [incidentItems, seen, now],
+    () => [...heldItems, ...incidentItems].filter((i) => !i.active && !isSeen(seen, `ended:${i.id}`, i.stamp, now)),
+    [heldItems, incidentItems, seen, now],
   );
 
   const mark = (key: string, stamp: string, label: string, title: string) => {
@@ -306,7 +348,7 @@ export function AlertsPopover() {
         className="nav-icon-btn"
         aria-label={`Alerts${attention.length ? `, ${attention.length} need${attention.length === 1 ? 's' : ''} attention` : ''}`}
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggleOpen}
       >
         <Bell size={16} aria-hidden="true" />
         {attention.length > 0 && (

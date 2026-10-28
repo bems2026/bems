@@ -3,9 +3,9 @@ title: User interface
 purpose: Use, administer and troubleshoot the web application and its kiosk (L5)
 audience: [operator, administrator, integrator]
 status: Draft
-last_verified: 2026-10-27
+last_verified: 2026-10-28
 applies_to: repo f0c7267
-evidence: [E-004, E-023, E-025, E-026, E-060, E-061, E-065, E-066, E-071, E-076, E-082, E-110, E-111, E-115, E-152, E-163, E-165, E-168, E-169, E-170, E-172, E-173, E-174, E-175, E-176, E-177, E-179, E-180, E-181, E-182, E-183, E-184, E-185, E-217, E-230, E-232, E-233, E-234, E-247, E-254, E-259]
+evidence: [E-004, E-023, E-025, E-026, E-060, E-061, E-065, E-066, E-071, E-076, E-082, E-110, E-111, E-115, E-152, E-163, E-165, E-168, E-169, E-170, E-172, E-173, E-174, E-175, E-176, E-177, E-179, E-180, E-181, E-182, E-183, E-184, E-185, E-217, E-230, E-232, E-233, E-234, E-247, E-254, E-259, E-260]
 ---
 
 # User interface
@@ -217,7 +217,7 @@ command: schedules, auto-shed and the aircon loop, with the time and the status.
 off, and its note names the tier and the limit that was breached (`auto-shed <tier>: <breach>`) [E-185]. To restore,
 switch the load back on from Control once the demand is understood.
 
-**Interpret an alert.** The bell in the header gathers five kinds [E-185]:
+**Interpret an alert.** The bell in the header gathers these kinds [E-185, E-260]:
 
 - a device whose reading went stale;
 - unusual power, flagged by the ingest daemon only when two statistical tests agree [E-076], at a level the device
@@ -225,7 +225,12 @@ switch the load back on from Control once the demand is understood.
 - a fleet-level row when many devices stopped together. It carries the remedy: restart Node-RED before suspecting
   hardware;
 - a device whose command only landed through the vendor cloud;
-- what a device reported about itself: a fault, a power reading above the limit set on the meter, or no network.
+- what a device reported about itself: a fault, a power reading above the limit set on the meter, or no network;
+- a circuit meter whose reading is held: one row per meter and hold, with when it began. The energy cards mark the
+  meter's row with a small warning sign that opens the bell, rather than printing the notice in the card;
+- the site's internet, as the edge last found it: *No internet at the site* while it logs on its own, with the rows
+  waiting to upload, then *Back online, catching up* until it is within a regular upload. A chip beside the live pill
+  says the same (*Offline logging*, *Syncing N*) and opens the bell. The live pill itself measures only the edge.
 
 The bell has two lists (RM-152) [E-230]:
 

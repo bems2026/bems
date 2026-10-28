@@ -4,7 +4,8 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { InfoHint } from '@/components/ui/InfoHint';
 import type { Totals } from '@/lib/types';
 import { formatKwh, formatNumber } from '@/lib/format';
-import { describeFrozen, frozenHeadline, describeShortfalls, type EnergyPeriod } from '@/lib/branchEnergy';
+import { describeShortfalls, holdFor, type EnergyPeriod } from '@/lib/branchEnergy';
+import { HeldTag } from '@/components/common/HeldTag';
 import { useBranchEnergy } from '@/lib/useBranchEnergy';
 
 const PERIODS: { id: EnergyPeriod; label: string; tile: string; totalsKey: keyof Totals }[] = [
@@ -94,15 +95,6 @@ export function EnergySection() {
             </span>
           </p>
         )}
-        {period === 'today' &&
-          frozen.map((f) => (
-            <p className="energy-disagreement" role="status" key={`${f.id}-${f.fromMs}`}>
-              <AlertTriangle size={15} aria-hidden="true" />
-              <span>
-                <strong>{frozenHeadline(f)}</strong> {describeFrozen(f)}
-              </span>
-            </p>
-          ))}
         {shortfall && (
           <p className="energy-disagreement" role="status">
             <AlertTriangle size={15} aria-hidden="true" />
@@ -121,7 +113,8 @@ export function EnergySection() {
           rows.map((b) => (
             <div className={`analytics-energy-row${b.stale ? ' analytics-energy-row--stale' : ''}`} key={b.id}>
               <span className="analytics-energy-row__name">
-                {b.name}
+                <span className="row-name-text">{b.name}</span>
+                {holdFor(frozen, b.id) && <HeldTag hold={holdFor(frozen, b.id)!} />}
                 {b.stale && <span className="sr-only"> (last reading expired; this is its last reported count)</span>}
               </span>
               <span className="analytics-energy-row__track" aria-hidden="true">

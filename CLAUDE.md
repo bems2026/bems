@@ -101,14 +101,20 @@ mock, because it once stopped the live bridge.
   every device going offline, which reads as a network fault. Back up `~/.node-red/flows.json`
   before any flow write, and see `node-red-bridge/live-flow-baseline.json` for what the values
   should be.
-- **A CT meter that answers is not necessarily measuring — and only a power cycle revives a stuck one.**
-  During the week without internet (2026-10-07 to 14) all four CT meters went on answering every poll,
-  online and holding sessions, with one cached reading each for 2.5 to 6 days, voltage included; two sat at
-  0 W, which the older freeze rules exempt. A `REFRESH` (DP_REFRESH) poll did not move them, nor did a
-  Node-RED restart; power-cycling the meters' supply did (E-256, E-257). The still rule now flags a meter
-  holding every value for 12 h at any power, ingest marks the archive back to the freeze's start and alerts
-  once (ADR-0017). Do not diagnose a frozen meter as a network or Node-RED fault, and do not trust the
-  Google Sheets log as a second opinion: it reads the same flow context.
+- **A CT meter that answers is not necessarily measuring — and it is the internet, not a power cycle, that
+  revives a held one.** While the site network has no internet the four CT meters go on answering every poll,
+  online and holding sessions, with one cached reading each, voltage included (7 to 14 October, and 15 to 28
+  October 2026). A `REFRESH` (DP_REFRESH) poll does not move them, nor does a Node-RED restart, and on 2026-10-28
+  the operator confirmed that power-cycling them while offline had not helped either. All four resumed by
+  themselves within minutes of the internet returning (11:33 to 11:41), untouched; on 14 October a power cycle
+  and the internet's return had coincided, which is why E-256/E-257 credited the power cycle (E-260). **Their
+  lifetime registers keep counting through a hold** (CARE ACU stepped 152.97 -> 185.95 kWh on resuming), so
+  ingest estimates the held energy from the step and the reports carry it labelled as estimated (RM-165,
+  `server/heldEnergy.mjs`) — except the dual-channel meter (C.O Yellow, L.O Yellow), whose one lifetime figure
+  for both clamps is not a count. The still rule flags a meter holding every value for 12 h at any power,
+  ingest marks the archive back to the freeze's start and alerts once (ADR-0017). Do not diagnose a frozen
+  meter as a network or Node-RED fault, and do not trust the Google Sheets log as a second opinion: it reads
+  the same flow context.
 - **A device that looks physically unreachable may just be a stuck Node-RED node. Restart
   Node-RED before suspecting hardware.** On 2026-08-24 `l6` was diagnosed as an RF/range or
   stale-address problem — `EHOSTUNREACH …:6668` at every protocol version, ARP `FAILED`, and a

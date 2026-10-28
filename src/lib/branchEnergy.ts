@@ -147,6 +147,37 @@ function frozenFromReading(id: string, name: string, reading: Reading | undefine
   return { id, name, fromMs: since, toMs: nowMs, ongoing: true, heldW: reading.power_w, heldV, phantomKwh: (reading.power_w * (nowMs - countedFrom)) / W_MS_PER_KWH };
 }
 
+/** Holds this close together are one hold: a single live-looking minute between two is not a recovery. */
+const MERGE_GAP_MS = 10 * 60_000;
+
+/**
+ * RM-165: one meter's holds, as one notice per hold. On 2026-10-28 CARE ACU showed three for one hold: a run that
+ * ended when the held figure stepped 15.5 -> 15.8 W, the run after it, and the bridge's flag for the same hold
+ * since 14 October. Overlapping or adjacent holds merge, from the earliest start; the held figure is the latest
+ * one's; and no minute is counted twice in `phantomKwh`.
+ */
+function mergeHolds(holds: FrozenBranch[], dayStart: number): FrozenBranch[] {
+  const out: FrozenBranch[] = [];
+  for (const h of [...holds].sort((a, b) => a.fromMs - b.fromMs)) {
+    const last = out[out.length - 1];
+    if (!last || h.fromMs > last.toMs + MERGE_GAP_MS) {
+      out.push(h);
+      continue;
+    }
+    const newFrom = Math.max(h.fromMs, last.toMs, dayStart);
+    const extra = h.toMs > newFrom ? (h.heldW * (h.toMs - newFrom)) / W_MS_PER_KWH : 0;
+    const later = h.toMs >= last.toMs;
+    out[out.length - 1] = {
+      ...last,
+      toMs: Math.max(last.toMs, h.toMs),
+      ongoing: last.ongoing || h.ongoing,
+      phantomKwh: last.phantomKwh + extra,
+      ...(later ? { heldW: h.heldW, heldV: h.heldV } : {}),
+    };
+  }
+  return out;
+}
+
 export function branchEnergySplit(input: BranchEnergyInput): BranchEnergySplit {
   const { devices, readings, totals, historyByDevice, period, nowMs, meterIds = BUILDING_METER_IDS as readonly string[] } = input;
   const byId = new Map(devices.map((d) => [d.id, d]));
@@ -158,11 +189,11 @@ export function branchEnergySplit(input: BranchEnergyInput): BranchEnergySplit {
     const device = byId.get(id);
     if (!device) continue;
     const shared = voltageIsShared(device);
-    const found = frozenToday(id, device.display_name, historyByDevice[id] ?? [], nowMs, shared);
-    // The history already shows an ongoing freeze when it is loaded; the bridge's flag names the same
-    // freeze, so it is only used when the history does not.
+    const runs = frozenToday(id, device.display_name, historyByDevice[id] ?? [], nowMs, shared);
+    // The bridge's flag names the same hold the history shows, often from an earlier start than 24 hours of
+    // history can: merged, it is one notice from the flag's start (RM-165).
     const flagged = frozenFromReading(id, device.display_name, readings[id], nowMs, shared);
-    if (flagged && !found.some((f) => f.ongoing)) found.push(flagged);
+    const found = mergeHolds(flagged ? [...runs, flagged] : runs, siteDayStartMs(nowMs));
     frozen.push(...found);
     phantomById.set(id, found.reduce((sum, f) => sum + f.phantomKwh, 0));
     const reading = readings[id];
@@ -201,10 +232,19 @@ function siteClock(ms: number): string {
   return new Date(ms).toLocaleTimeString(undefined, { hourCycle: 'h23', hour: '2-digit', minute: '2-digit', timeZone: SITE.timezone as string });
 }
 
+/** A building moment, with its day when it is not on the same site day as `other` (RM-165): "11:26 to
+ * 09:49" hid a midnight. */
+function siteStamp(ms: number, other: number): string {
+  if (siteDayStartMs(ms) === siteDayStartMs(other)) return siteClock(ms);
+  const day = new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: SITE.timezone as string });
+  return `${day} ${siteClock(ms)}`;
+}
+
 function formatDuration(ms: number): string {
   const minutes = Math.round(ms / 60_000);
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
+  if (h >= 24) return `${Math.floor(h / 24)} d ${h % 24} h`;
   return h > 0 ? `${h} h ${m} min` : `${m} min`;
 }
 
@@ -218,6 +258,11 @@ function formatDuration(ms: number): string {
  * The headline names the branch; the detail does not repeat it.
  */
 
+/** RM-165: the hold a branch row is tagged with: the one still going on, else the latest. */
+export function holdFor(frozen: FrozenBranch[], id: string): FrozenBranch | undefined {
+  return frozen.filter((f) => f.id === id).sort((a, b) => Number(b.ongoing) - Number(a.ongoing) || b.toMs - a.toMs)[0];
+}
+
 /** The headline for a held reading, identical wherever it is shown. */
 export function frozenHeadline(f: FrozenBranch): string {
   return f.ongoing ? `${f.name}'s reading is held.` : `${f.name}'s reading was held.`;
@@ -228,9 +273,9 @@ export function describeFrozen(f: FrozenBranch): string {
   const held = f.heldV !== undefined ? `${f.heldW} W at ${f.heldV} V` : `${f.heldW} W`;
   const duration = formatDuration(f.toMs - f.fromMs);
   if (f.ongoing) {
-    return `It has repeated exactly ${held} since ${siteClock(f.fromMs)} (${duration} so far) while reporting online, so that figure is not a live measurement. The energy shown is the meter's own register, not the held power; if the meter itself has stopped, energy used since then is not counted yet.`;
+    return `It has repeated exactly ${held} since ${siteStamp(f.fromMs, f.toMs)} (${duration} so far) while reporting online, so that figure is not a live measurement. The energy shown is the meter's own register, not the held power; if the meter itself has stopped, energy used since then is not counted yet.`;
   }
-  return `It repeated exactly ${held} from ${siteClock(f.fromMs)} to ${siteClock(f.toMs)} (${duration}) while reporting online, so that figure was not a live measurement. The energy shown is the meter's own register, not the held power.`;
+  return `It repeated exactly ${held} from ${siteStamp(f.fromMs, f.toMs)} to ${siteStamp(f.toMs, f.fromMs)} (${duration}) while reporting online, so that figure was not a live measurement. The energy shown is the meter's own register, not the held power.`;
 }
 
 /** The shortfall notice, identical wherever it is shown. */

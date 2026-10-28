@@ -2,7 +2,7 @@
 title: ADR-0017 — Logging is the edge's: it keeps every minute, marks what it cannot trust, and the cloud and reports follow
 status: Accepted
 date: 2026-10-14
-evidence: [E-254, E-255, E-256, E-257]
+evidence: [E-254, E-255, E-256, E-257, E-260]
 ---
 
 # ADR-0017 — Logging is the edge's: it keeps every minute, marks what it cannot trust, and the cloud and reports follow
@@ -71,6 +71,20 @@ record) and ADR-0015 (the request budget).
   - archive backups from the correction;
   - the clock-save timer, which must be installed by hand.
 - **Rows the cloud already had when a freeze was found are sent again.** The upload is an upsert, so this is safe.
+
+## Amendment, 2026-10-28 (RM-165)
+
+- **The cure was the internet, not the power cycle.** On 28 Oct all four meters resumed within minutes of the
+  internet returning, untouched; power-cycling them while it was down had not helped. On 14 Oct the two had
+  coincided [E-260]. The operator's notice now says so, and a held meter is not a site visit.
+- **The held energy is not lost.** Each single-channel meter's lifetime register kept counting and stepped up on
+  resuming. Ingest spreads the step, less what the recovery day's own register counts, over the held days by the
+  meter's usual weekday and weekend use, and the reports carry it as a labelled estimate (`energy_estimates`,
+  phase57). The dual-channel meter's lifetime figure is not a count, so its holds stay a gap.
+- **One freeze, one notice.** A flag that drops and returns within ten minutes is the same freeze: no "moving again"
+  and "frozen" pair for a minute's stale arrival.
+- **The page says when the site has no internet.** Ingest writes what it last learned about the cloud; the bell and
+  a chip beside the live pill say "no internet, logging on the edge, N waiting", then "catching up".
 
 ## What would change this answer
 

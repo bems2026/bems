@@ -42,6 +42,8 @@ export interface DeviceDayRow {
   online_minutes: number;
   expected_minutes: number;
   resolution: string | null;
+  /** RM-165: kWh of `energy_kwh` estimated for a held meter (`energyEstimates.ts`); absent when none. */
+  estimated_kwh?: number;
 }
 
 export type DeviceDaily = { available: true; rows: DeviceDayRow[] } | { available: false };

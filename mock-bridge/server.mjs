@@ -44,6 +44,10 @@
  *                      metered device misses five samples, as in a Node-RED restart), `frozen` (the
  *                      first building meter repeats one reading exactly for four hours), `spike`
  *                      (the second building meter reports 1,000,000 kW for one sample).
+ *   --edge=<state>[:<waiting>]  what GET /api/edge/status says about the site's internet (RM-165): online |
+ *                      offline | paused | unknown, with that many rows waiting to upload. `--edge=offline:566184`
+ *                      previews the 15-28 October outage's chip and bell notice; `--edge=online:205799` the
+ *                      catch-up after it. Absent, the route is not served, as on a proxy older than RM-165.
  *   --poll-cadence=<s> metered devices report only every <s> seconds, instead of continuously.
  *                      Reproduces the real bridge, where nothing asks an outlet anything except
  *                      `outletPollPlan`'s 60 s poller — so `--poll-cadence=60` is the live Pi's
@@ -89,6 +93,8 @@ const ACU_CLOUD_ROUTE = val('acu-cloud', 'unconfigured');
 // and one newly paired device heard on the network with no key yet. See `deviceSourcesListing`.
 const ONBOARDING = flag('onboarding');
 const FAULTS = val('faults', '') ? val('faults', '').split(',').filter(Boolean) : [];
+// RM-165: --edge=<state>[:<waiting>], see the header.
+const EDGE = val('edge', '');
 const CMD_DROP = val('cmd-drop', '');
 // How often a metered device is treated as having reported, in seconds. 0 (the default) keeps
 // the historical always-fresh behaviour. See `arrivalAt` below for why this is needed at all —
@@ -782,6 +788,17 @@ const server = http.createServer((req, res) => {
 
     case '/api/readings/latest':
       return send(res, 200, latest());
+
+    case '/api/edge/status': {
+      if (!EDGE) return send(res, 404, { error: 'not_found' });
+      const [state, waiting] = EDGE.split(':');
+      const now = new Date().toISOString();
+      return send(res, 200, {
+        state, at: now, waiting: waiting === undefined ? 0 : Number(waiting),
+        last_upload_ok_at: state === 'offline' ? '2026-10-15T01:00:00.000Z' : now,
+        last_upload_fail_at: state === 'online' ? null : now, frozen: [],
+      });
+    }
 
     case '/api/tuya/devices':
       return send(res, 200, deviceSourcesListing());

@@ -74,6 +74,7 @@ import { touchSignal } from './configSignal.mjs';
 import { DEGRADED_NET_STATES } from '../shared/troubleStates.mjs';
 import { createLocalFirstAudit, isRefusal, recoverInflight } from './auditQueue.mjs';
 import { openArchive } from './archiveDb.mjs';
+import { readEdgeStatus } from './edgeStatus.mjs';
 import { RAW_RETENTION_DAYS } from '../shared/retention.mjs';
 import { bufferCount } from './ingestBuffer.mjs';
 import { buildCloudDispatch } from './cloudDispatchConfig.mjs';
@@ -525,12 +526,16 @@ function cloudBacklog() {
   return value;
 }
 
+/** RM-165: ingest's own view of the cloud (`server/edgeStatus.mjs`); this process only reads it. */
+const EDGE_STATUS_PATH = process.env.EDGE_STATUS_PATH || join(dirname(fileURLToPath(import.meta.url)), 'data', 'ingest-status.json');
+
 function handleArchiveStatus(res) {
+  const upload = readEdgeStatus(EDGE_STATUS_PATH);
   try {
     const s = readArchive((a) => a.stats());
-    return sendJson(res, 200, { available: true, oldest: s.oldest, newest: s.newest, readings: s.readings, bytes: s.bytes, hot_days: RAW_RETENTION_DAYS });
+    return sendJson(res, 200, { available: true, oldest: s.oldest, newest: s.newest, readings: s.readings, bytes: s.bytes, hot_days: RAW_RETENTION_DAYS, upload });
   } catch (err) {
-    return sendJson(res, 200, { available: false, reason: String(err?.message ?? err).split(' — ')[0], hot_days: RAW_RETENTION_DAYS });
+    return sendJson(res, 200, { available: false, reason: String(err?.message ?? err).split(' — ')[0], hot_days: RAW_RETENTION_DAYS, upload });
   }
 }
 
@@ -1217,6 +1222,11 @@ const server = http.createServer(async (req, res) => {
       // can send only its captured library. With one, every state is sendable over the LAN.
       acu_local_ir_protocol: SITE.aircon?.ir_protocol ?? null,
     });
+  }
+  // RM-165: what ingest last learned about the cloud, alone: the page polls this every minute, and the archive's
+  // status counts its rows, which is too much work for that.
+  if (req.method === 'GET' && url.pathname === '/api/edge/status') {
+    return sendJson(res, 200, readEdgeStatus(EDGE_STATUS_PATH));
   }
   if (req.method === 'GET' && url.pathname === '/api/archive/status') {
     return handleArchiveStatus(res);

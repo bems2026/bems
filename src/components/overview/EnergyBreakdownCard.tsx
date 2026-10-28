@@ -2,7 +2,8 @@ import { AlertTriangle, ChartPie } from 'lucide-react';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { CardLink } from '@/components/ui/CardLink';
 import { formatKwh, formatNumber } from '@/lib/format';
-import { describeFrozen, frozenHeadline, describeShortfalls } from '@/lib/branchEnergy';
+import { describeShortfalls, holdFor } from '@/lib/branchEnergy';
+import { HeldTag } from '@/components/common/HeldTag';
 import { useBranchEnergy } from '@/lib/useBranchEnergy';
 
 /**
@@ -23,7 +24,8 @@ import { useBranchEnergy } from '@/lib/useBranchEnergy';
  * The comparison against `_totals.energy_kwh_today_integrated`, the legacy integration of the same
  * circuits, is still made. RM-077 removes from it whatever the integrator counted from a meter that
  * had frozen, and names the freeze instead — L.O Red was accused of "100 % missing" energy on
- * 2026-09-12 when its meter had simply repeated one reading for fifteen hours.
+ * 2026-09-12 when its meter had simply repeated one reading for fifteen hours. Since RM-165 the freeze is
+ * named in the alerts bell, and the row carries a `HeldTag` that opens it.
  */
 export function EnergyBreakdownCard() {
   const { rows, totalKwh, disagreement, shortfalls, frozen } = useBranchEnergy('today');
@@ -67,14 +69,6 @@ export function EnergyBreakdownCard() {
               </span>
             </p>
           )}
-          {frozen.map((f) => (
-            <p className="energy-disagreement" role="status" key={`${f.id}-${f.fromMs}`}>
-              <AlertTriangle size={15} aria-hidden="true" />
-              <span>
-                <strong>{frozenHeadline(f)}</strong> {describeFrozen(f)}
-              </span>
-            </p>
-          ))}
           {shortfall && (
             <p className="energy-disagreement" role="status">
               <AlertTriangle size={15} aria-hidden="true" />
@@ -86,7 +80,8 @@ export function EnergyBreakdownCard() {
           {rows.map((b) => (
             <div className={`breakdown-row${b.stale ? ' breakdown-row--stale' : ''}`} key={b.id}>
               <span className="breakdown-row__name">
-                {b.name}
+                <span className="row-name-text">{b.name}</span>
+                {holdFor(frozen, b.id) && <HeldTag hold={holdFor(frozen, b.id)!} />}
                 {b.stale && <span className="sr-only"> (last reading expired; this is its last reported count)</span>}
               </span>
               <span className="breakdown-row__track" aria-hidden="true">

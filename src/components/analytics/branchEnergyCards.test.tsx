@@ -1,8 +1,10 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
-import { render, cleanup, act } from '@testing-library/react';
+import { render, cleanup, act, fireEvent, screen } from '@testing-library/react';
 import { EnergySection } from './EnergySection';
 import { EnergyBreakdownCard } from '@/components/overview/EnergyBreakdownCard';
 import { useDeviceStore } from '@/stores/deviceStore';
+import { AlertsPopover } from '@/components/layout/AlertsPopover';
+import { useAlertsPanelStore } from '@/stores/alertsPanelStore';
 import type { Device, HistoryPoint, Reading } from '@/lib/types';
 
 /*
@@ -74,6 +76,7 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   useDeviceStore.setState({ devices: [], latestReadings: {}, totals: null, history: {} });
+  useAlertsPanelStore.setState({ open: false });
 });
 
 describe('Energy Breakdown and By branch — one derivation', () => {
@@ -93,12 +96,26 @@ describe('Energy Breakdown and By branch — one derivation', () => {
   it.each([
     ['Overview', () => <EnergyBreakdownCard />],
     ['Analytics', () => <EnergySection />],
-  ])('%s names the held reading once, and does not say energy went missing', (_page, ui) => {
+  ])('%s tags the held branch and leaves the notice to the bell (RM-165)', (_page, ui) => {
     frozenEvening();
-    mount(ui());
-    const text = document.body.textContent ?? '';
+    mount(
+      <>
+        {ui()}
+        <AlertsPopover />
+      </>,
+    );
+    const row = [...document.querySelectorAll('.breakdown-row, .analytics-energy-row')].find((r) => r.textContent?.includes('L.O Red'));
+    const tag = row?.querySelector('button.held-tag');
+    expect(tag?.textContent).toBe('was held');
+    expect(tag?.getAttribute('aria-label')).toBe("L.O Red's reading was held. Open alerts for the details.");
+    // No paragraph in the card: the 2026-10-28 Overview carried eight and lost its layout.
+    expect(document.querySelectorAll('.energy-disagreement')).toHaveLength(0);
+    act(() => {
+      fireEvent.click(tag!);
+    });
+    const text = screen.getByRole('dialog', { name: 'Alerts' }).textContent ?? '';
     // RM-136's wording: the READING was held; the meter is not accused of not measuring.
-    expect(text).toContain("L.O Red's reading was held. It repeated exactly 19.1 W at 228.2 V from 06:00 to 20:59 (14 h 59 min)");
+    expect(text).toContain("L.O Red's reading was held.It repeated exactly 19.1 W at 228.2 V from 06:00 to 20:59 (14 h 59 min)");
     expect(text).not.toMatch(/reporting less than it measured|not measuring|stopped updating/);
   });
 });

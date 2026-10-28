@@ -10485,3 +10485,63 @@ button.space-plan__pin {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* RM-165: a branch row's held-reading mark (HeldTag). It opens the alerts bell, which carries the notice. The
+   name cell becomes a flex row so the name truncates beside the mark and the row keeps its columns. */
+.breakdown-row__name:has(.held-tag),
+.analytics-energy-row__name:has(.held-tag) {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.row-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.held-tag {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--warn);
+  cursor: pointer;
+}
+.held-tag:focus-visible {
+  outline: 2px solid var(--warn);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
+/* RM-165: the site's internet, beside the live pill (TopNav's LinkChip). */
+.nav-link-chip {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: var(--fs-xxs);
+  font-weight: 600;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+  cursor: pointer;
+  background: var(--warn-soft);
+  /* The nav sits over the page, where plain --warn on its soft fill is 4.47:1; this is the page's amber. */
+  color: var(--warn-on-page);
+}
+.nav-link-chip--catching-up,
+.nav-link-chip--paused {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.nav-link-chip:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+@media (max-width: 640px) {
+  .nav-link-chip {
+    max-width: 132px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

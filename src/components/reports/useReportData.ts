@@ -24,6 +24,7 @@ import {
 import { getEmissionFactors, getTariffs, type FactorEntry, type TariffEntry } from '@/lib/supabaseTariffs';
 import { fetchScheduleContext } from '@/lib/supabaseConfig';
 import { getCircuitTrend, getDeviceDailyEnergy, type CircuitTrend, type DeviceDaily } from '@/lib/circuitSeries';
+import { estimatesOrNone, withEstimatedDays, withEstimatedPeriod } from '@/lib/energyEstimates';
 import { buildingMeters, measuredDeviceIds } from '@/lib/circuitBreakdown';
 import { createLimiter, createReportCache, retryTransient, withTimeout, type ReportCache, type RetryOptions } from '@/lib/reportLoader';
 import { nextChangeAt, pendingPeriods, type PendingPeriod } from '@/lib/pendingPeriods';
@@ -378,12 +379,22 @@ export function useReportData(period: ReportPeriod, options?: ReportDataOptions,
   const selectedIndex = list === null || selected === null ? -1 : list.findIndex((row) => startOf(row) === selected);
   const previousStart = list !== null && selectedIndex >= 0 && list[selectedIndex + 1] ? startOf(list[selectedIndex + 1]) : null;
 
+  // RM-165: a held meter's estimated energy is added where the two energy reads land, so every figure built
+  // from them carries it, labelled (`src/lib/energyEstimates.ts`).
   const loadDevices = useCallback(
-    (signal: AbortSignal) => getDevicePeriodReports(period, requireStart(selected), { signal }),
+    async (signal: AbortSignal) => {
+      const start = requireStart(selected);
+      const [rows, estimates] = await Promise.all([getDevicePeriodReports(period, start, { signal }), estimatesOrNone(period, start, { signal })]);
+      return withEstimatedPeriod(rows, estimates);
+    },
     [period, selected]
   );
   const loadPreviousDevices = useCallback(
-    (signal: AbortSignal) => getDevicePeriodReports(period, requireStart(previousStart), { signal }),
+    async (signal: AbortSignal) => {
+      const start = requireStart(previousStart);
+      const [rows, estimates] = await Promise.all([getDevicePeriodReports(period, start, { signal }), estimatesOrNone(period, start, { signal })]);
+      return withEstimatedPeriod(rows, estimates);
+    },
     [period, previousStart]
   );
   const loadDaily = useCallback((signal: AbortSignal) => getDailySeries(period, requireStart(selected), { signal }), [period, selected]);
@@ -410,7 +421,14 @@ export function useReportData(period: ReportPeriod, options?: ReportDataOptions,
   // Every device that measures power, read once per period and narrowed in the browser, so changing the
   // scope never asks the database again.
   const loadDeviceDaily = useCallback(
-    (signal: AbortSignal) => getDeviceDailyEnergy(period, requireStart(selected), measuredDeviceIds(), { signal }),
+    async (signal: AbortSignal): Promise<DeviceDaily> => {
+      const start = requireStart(selected);
+      const [daily, estimates] = await Promise.all([
+        getDeviceDailyEnergy(period, start, measuredDeviceIds(), { signal }),
+        estimatesOrNone(period, start, { signal }),
+      ]);
+      return daily.available ? { available: true, rows: withEstimatedDays(daily.rows, estimates) } : daily;
+    },
     [period, selected]
   );
   const loadTrend = useCallback(

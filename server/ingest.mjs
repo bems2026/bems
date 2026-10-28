@@ -38,6 +38,9 @@ import { openArchive } from './archiveDb.mjs';
 import { drainArchive, uploadDue, uploadIntervalFrom, nextUploadBatch, UPLOAD_BATCH } from './archiveUpload.mjs';
 import { noteLateUpload, readLate, writeLate } from './lateData.mjs';
 import { createFreezeWatch, freezeMessage } from './freezeWatch.mjs';
+import { writeEdgeStatus } from './edgeStatus.mjs';
+import { estimateHold, hasOwnLifetimeRegister } from './heldEnergy.mjs';
+import { createEstimateOutbox } from './estimateOutbox.mjs';
 import { createClockWatch } from './clockWatch.mjs';
 import { execFileSync } from 'node:child_process';
 import { readingsForCloud } from './cloudCapabilities.mjs';
@@ -118,6 +121,12 @@ const paused = () => fs.existsSync(PAUSE_PATH);
  */
 const UPLOAD_EVERY_MS = uploadIntervalFrom(process.env.INGEST_UPLOAD_MS);
 let lastUploadMs = null;
+/**
+ * RM-165: what this process last learned about the cloud, written once a tick to `EDGE_STATUS_PATH` for the
+ * proxy to serve (`server/edgeStatus.mjs`). Only an upload attempt changes it: a deferred tick learns nothing.
+ */
+const EDGE_STATUS_PATH = process.env.EDGE_STATUS_PATH || path.join(__dirname, 'data', 'ingest-status.json');
+const cloudSeen = { reachable: null, okAt: null, failAt: null };
 /** 2026-10-14: halved after an upload that timed out on a slow link, doubled back after one that went
  * through quickly. See `nextUploadBatch` in archiveUpload.mjs. */
 let uploadBatch = UPLOAD_BATCH;
@@ -398,6 +407,40 @@ function noteLate(synced) {
  */
 const freezeWatch = createFreezeWatch();
 let resendIds = [];
+/**
+ * RM-165: a meter that resumes has counted what it held (E-260), and the step goes to `energy_estimates` from
+ * here (`server/heldEnergy.mjs`). Files under data/, like every queue this process keeps.
+ */
+const estimates = createEstimateOutbox({
+  pending: process.env.ESTIMATES_PENDING_PATH || path.join(__dirname, 'data', 'energy-estimates-pending.ndjson'),
+  record: process.env.ESTIMATES_RECORD_PATH || path.join(__dirname, 'data', 'energy-estimates.ndjson'),
+});
+function estimateEndedHold(c, device) {
+  if (!archive || device?.class !== 'meter') return;
+  if (!hasOwnLifetimeRegister(device)) {
+    console.log(`[ibems-ingest] ${c.deviceId}: no estimate for the hold since ${c.frozenSince} (its lifetime register is both clamps' sum)`);
+    return;
+  }
+  try {
+    const { rows, step } = estimateHold(archive, {
+      siteId: SITE.id, deviceId: c.deviceId, frozenSince: c.frozenSince, endedAtMs: Date.parse(c.clearedAt), offsetMinutes: Number(SITE.utc_offset_minutes),
+    });
+    if (rows.length) {
+      estimates.add(rows);
+      console.log(`[ibems-ingest] ${c.deviceId}: ${step.kwh.toFixed(3)} kWh held since ${c.frozenSince} estimated over ${rows.length} day(s) from its register's ${step.stepKwh.toFixed(3)} kWh step`);
+    } else {
+      console.log(`[ibems-ingest] ${c.deviceId}: no estimate for the hold since ${c.frozenSince} (${step.reason}${step.stepKwh !== undefined ? `, register step ${step.stepKwh}` : ''})`);
+    }
+  } catch (err) {
+    console.error(`[ibems-ingest] ${c.deviceId}: could not estimate the held energy: ${err?.message ?? err}`);
+  }
+}
+/** RM-165: pending estimates go up after an upload that went through. phase57 not applied keeps them waiting. */
+async function sendEstimates() {
+  const r = await estimates.flush((rows) => supabase.upsert('energy_estimates', rows, { onConflict: 'site_id,device_id,local_day,held_from' }));
+  if (r.sent) console.log(`[ibems-ingest] sent ${r.sent} held-energy estimate row(s)`);
+  else if (r.error) console.error(`[ibems-ingest] held-energy estimates wait (${estimates.count()} row(s)): ${r.error}`);
+}
 async function noteFreezes(readings) {
   let events;
   try {
@@ -422,9 +465,11 @@ async function noteFreezes(readings) {
     const msg = freezeMessage({ name: device?.display_name ?? s.deviceId, frozenSince: s.frozenSince, isMeter: device?.class === 'meter' });
     try { await notifier.notify(msg.title, msg.body, msg.priority); } catch { /* offline: the journal line stands */ }
   }
-  for (const id of events.cleared) {
-    console.log(`[ibems-ingest] ${id}: readings moving again`);
+  for (const c of events.cleared) {
+    const id = c.deviceId;
+    console.log(`[ibems-ingest] ${id}: readings moving again (held since ${c.frozenSince})`);
     const device = DEVICE_REGISTRY.find((d) => d.id === id);
+    estimateEndedHold(c, device);
     try { await notifier.notify(`${device?.display_name ?? id}: readings moving again`, 'Its readings change again; minutes from here are counted as measured.', 'default'); } catch { /* as above */ }
   }
 }
@@ -599,6 +644,25 @@ async function updateHealth(ok, lastError = null, rejections = []) {
   }
 }
 
+/** RM-165: the tick's view of the cloud, for the page. Best-effort: a status the page cannot read says unknown. */
+function noteEdgeStatus(synced, result) {
+  const at = new Date().toISOString();
+  const attempted = synced ? !synced.deferred : result.ok === false && result.stage !== 'bridge' && result.stage !== 'payload';
+  if (attempted) {
+    const ok = synced ? synced.ok === true : false;
+    cloudSeen.reachable = ok;
+    if (ok) cloudSeen.okAt = at; else cloudSeen.failAt = at;
+  }
+  try {
+    writeEdgeStatus(EDGE_STATUS_PATH, {
+      at, cloudReachable: cloudSeen.reachable === true, paused: paused(), waiting: pendingCount(),
+      lastUploadOkAt: cloudSeen.okAt, lastUploadFailAt: cloudSeen.failAt, frozen: freezeWatch.current(),
+    });
+  } catch (err) {
+    console.error(`[ibems-ingest] could not write the edge status (${EDGE_STATUS_PATH}): ${err?.message ?? err}`);
+  }
+}
+
 async function tick() {
   let synced = null;
   noteClock();
@@ -640,7 +704,7 @@ async function tick() {
           synced = await drainArchive({ archive, send: sendToCloud, batchSize: uploadBatch, ...batchUpload(rejections, { withHealth: false }) });
           noteUploadBatch(synced);
           noteLate(synced);
-          if (synced.ok) await resendFlagged();
+          if (synced.ok) { await resendFlagged(); await sendEstimates(); }
           return synced;
         }
         // An attempt, not a success, starts the next interval: during an outage the retry then comes
@@ -651,7 +715,7 @@ async function tick() {
         noteBatchUpload(synced);
         noteUploadBatch(synced);
         noteLate(synced);
-        if (synced.ok) await resendFlagged();
+        if (synced.ok) { await resendFlagged(); await sendEstimates(); }
         return synced;
       },
     } : {}),
@@ -664,6 +728,7 @@ async function tick() {
   if (synced?.rejected) {
     console.error(`[ibems-ingest] ${synced.rejected} row(s) refused by Supabase for good and quarantined in the archive (upload_rejects)`);
   }
+  noteEdgeStatus(synced, result);
 
   // Judged only on a cycle that actually reached the bridge. A bridge outage means we have no
   // idea what the devices are doing, and reporting that as "every device dropped" would be the

@@ -122,6 +122,8 @@ export function deviceCsv({
       device_name: nameOf(r.device_id),
       branch: branchOf(r.device_id),
       energy_kwh: energy,
+      // RM-165: how much of that a held meter's estimate makes up.
+      estimated_kwh: r.estimated_kwh ? round(r.estimated_kwh, 3) : null,
       share_pct: total !== null && total > 0 && energy !== null ? round((energy / total) * 100, 1) : null,
       peak_power_w: r.peak_power_w,
       avg_power_w: r.avg_power_w,
@@ -140,6 +142,8 @@ export function deviceCsv({
     { key: 'device_name', header: 'Device' },
     { key: 'branch', header: 'Branch' },
     { key: 'energy_kwh', header: 'Energy (kWh)' },
+    // RM-165: only when a held meter's estimate is in the period, so an ordinary export keeps its columns.
+    ...(flat.some((r) => r.estimated_kwh !== null) ? [{ key: 'estimated_kwh' as const, header: 'Of which estimated while held (kWh)' }] : []),
     { key: 'share_pct', header: 'Share of building (%)' },
     { key: 'peak_power_w', header: 'Peak power (W)' },
     { key: 'avg_power_w', header: 'Average power (W)' },
@@ -181,7 +185,8 @@ export function deviceDailyCsv({
   const sorted = [...rows].sort((a, b) => a.local_day.localeCompare(b.local_day) || a.device_id.localeCompare(b.device_id));
 
   const flat = sorted.map((r) => {
-    const recorded = r.online_minutes > 0 && r.energy_kwh !== null;
+    // RM-165: a held day the meter left no row for still carries its estimate.
+    const recorded = (r.online_minutes > 0 || (r.estimated_kwh ?? 0) > 0) && r.energy_kwh !== null;
     const c = coverageOf(r.online_minutes, r.expected_minutes);
     return {
       date: r.local_day.slice(0, 10),
@@ -190,6 +195,7 @@ export function deviceDailyCsv({
       circuit: circuitOf(r.device_id),
       use: useOf(r.device_id),
       energy: recorded ? round(Number(r.energy_kwh), 3) : null,
+      estimated: r.estimated_kwh ? round(r.estimated_kwh, 3) : null,
       removed: r.removed_kwh !== null && Number(r.removed_kwh) > 0.001 ? round(Number(r.removed_kwh), 3) : null,
       peak: recorded ? round(r.peak_power_w, 0) : null,
       average: recorded ? round(r.avg_power_w, 0) : null,
@@ -198,7 +204,7 @@ export function deviceDailyCsv({
       recorded_pct: c ? Math.round(c.ratio * 100) : null,
       status: !recorded ? 'no data' : c?.band === 'complete' ? 'complete' : 'partial',
       made_from: r.resolution ? (MADE_FROM[r.resolution] ?? r.resolution) : null,
-      note: r.removed_kwh !== null && Number(r.removed_kwh) > 0.001 ? 'counter jump removed' : null,
+      note: [r.removed_kwh !== null && Number(r.removed_kwh) > 0.001 ? 'counter jump removed' : null, r.estimated_kwh ? 'includes an estimate: the meter held its reading' : null].filter(Boolean).join('; ') || null,
     };
   });
 
@@ -209,6 +215,7 @@ export function deviceDailyCsv({
     { key: 'circuit', header: 'Circuit' },
     { key: 'use', header: 'Use' },
     { key: 'energy', header: 'Energy (kWh)' },
+    ...(flat.some((r) => r.estimated !== null) ? [{ key: 'estimated' as const, header: 'Of which estimated while held (kWh)' }] : []),
     { key: 'removed', header: 'Counter jump not counted (kWh)' },
     { key: 'peak', header: 'Highest power (W)' },
     { key: 'average', header: 'Average power (W)' },

@@ -95,8 +95,11 @@ The device network's mobile uplink ran out of data for a week. What the system d
 What a person does:
 
 1. Top up the uplink. Nothing on the Pi needs touching, and its Wi-Fi must not be changed.
-2. If an alert names a frozen meter: **power-cycle the meter's supply.** A refresh request and a Node-RED restart do
-   not revive it; a power cycle did, on 2026-10-14.
+2. If an alert names a held meter while the internet is down: **wait for the internet.** The meters resume by
+   themselves within minutes of it returning; a refresh request, a Node-RED restart and a power cycle while it is
+   down do not revive them (2026-10-28, E-260). Their registers keep counting, so the held energy is estimated on
+   resuming and shown as such in the reports. A meter still held an hour after the internet returned is a fault:
+   then power-cycle its supply.
 3. If the Pi restarted during the outage, it resumed within a minute of the cut (the clock-save timer, if installed)
    and re-times what it logged once the internet returns. A battery RTC module removes even that minute.
 

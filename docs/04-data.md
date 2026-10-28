@@ -3,9 +3,9 @@ title: Data and storage
 purpose: Understand, size and query the relational store, its ingestion and retention (L4)
 audience: [integrator, administrator]
 status: Draft
-last_verified: 2026-10-27
+last_verified: 2026-10-28
 applies_to: repo dfe41a0 + RM-159, RM-160
-evidence: [E-042, E-058, E-064, E-065, E-066, E-070, E-078, E-080, E-081, E-082, E-083, E-084, E-085, E-086, E-088, E-089, E-090, E-111, E-121, E-122, E-124, E-126, E-134, E-137, E-138, E-142, E-149, E-157, E-161, E-162, E-163, E-164, E-165, E-166, E-167, E-168, E-193, E-218, E-219, E-220, E-221, E-222, E-224, E-225, E-227, E-235, E-241, E-242, E-243, E-244, E-245, E-247, E-255, E-256, E-257, E-259]
+evidence: [E-042, E-058, E-064, E-065, E-066, E-070, E-078, E-080, E-081, E-082, E-083, E-084, E-085, E-086, E-088, E-089, E-090, E-111, E-121, E-122, E-124, E-126, E-134, E-137, E-138, E-142, E-149, E-157, E-161, E-162, E-163, E-164, E-165, E-166, E-167, E-168, E-193, E-218, E-219, E-220, E-221, E-222, E-224, E-225, E-227, E-235, E-241, E-242, E-243, E-244, E-245, E-247, E-255, E-256, E-257, E-259, E-260]
 ---
 
 # Data and storage
@@ -55,6 +55,7 @@ Celsius. Row counts are from the pilot on 2026-09-23 [E-080].
 | `period_reports`, `period_building_reports` | one device (or the building), one day, week or month | `period`, `period_start`; `energy_kwh`, `peak_power_w`, `online_sample_count`, `expected_sample_count` | report generation, inside ingest | Reports, **with their coverage** |
 | `monthly_reports`, `monthly_building_reports` | the same, monthly (older form) | as above | report generation | Kept for continuity |
 | `report_notes` | one note: a day's, or a week's or month's report remarks | `kind` (`day`, `week`, `month`, `year`), `start`, `note` (up to 2,000 characters), `updated_by` | the app, signed in with an account | Notes on the Reports page and in its exports [E-259] |
+| `energy_estimates` | one held meter's estimated kWh for one day of one hold | `device_id`, `local_day`, `held_from`, `held_to`, `kwh`, `basis` | the edge's ingest daemon, or `npm run held-energy:backfill`, as the service role | The Reports page adds it to the circuit's day, labelled as estimated [E-260] |
 | `energy_tariffs`, `emission_factors` | one rate, effective from a date | `currency`, `rate_per_kwh`; `kg_co2e_per_kwh`; `source` (required) | the app | Cost and emissions on reports [E-166] |
 | `ingestion_health` | the ingest daemon's heartbeat | `last_success_at`, `buffered_row_count`, `last_error`, `scrub_rejected_count` | ingest, every cycle | Monitoring the monitor [E-085] |
 

@@ -39,6 +39,7 @@ losing the rollups costs the entire history.
 | `period_reports`, `period_building_reports` | What the Reports page reads, and the record of what was reported. A report regenerated later reflects the data as it stands later, which can differ — RM-047b's outlet correction is exactly such a case. |
 | `energy_tariffs`, `emission_factors` | An operator-entered rate and the source it cites. The provenance behind every peso and kilogram in a report exists nowhere else. |
 | `report_notes` | What people wrote about a day or a report. Typed by hand; nothing can regenerate it. |
+| `energy_estimates` | A held meter's estimated energy (RM-165). The backfill can rebuild it from the archive, but it is small and the reports read it. |
 | `sites`, `site_ui_prefs`, `socket_config`, `space_nodes`, `acu_rules` | Hand-entered site configuration: the building's identity and policy, what each socket feeds, the space tree, and the aircon rules. |
 
 **The two lists are checked, not maintained.** `server/backupCoverage.test.mjs` reads every

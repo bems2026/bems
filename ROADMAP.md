@@ -1,12 +1,32 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-10-27 — **RM-164 built: reports you can annotate and shape. A note beside each day and for
-the report, Energy by use revised (Aircon takes half of C.O Yellow), and the export's sections grouped with a
-preview. On GitHub only: the edge is still off the mesh, and notes wait for phase56 (§0).**
-- **Still waiting on the edge (RM-163):** `git pull` for the Wi-Fi rule (RM-163i); the kiosk note and the still
-  rule's deploy (RM-163g). The edge kept logging locally all along (E-256).
+**Last audited:** 2026-10-28 — **RM-165: online or offline, one picture. The edge is back on the mesh with
+internet; RM-163i and RM-164 are deployed. The meters resumed with the internet, not a power cycle, and their
+registers kept counting, so the held energy is recovered as a labelled estimate. Held meters and the site's
+internet are in the alerts bell, the energy cards keep a small mark, and ingest no longer flaps (§0).**
+- **Waiting on the operator:** paste phase56 (notes) and phase57 (estimates); then `held-energy:backfill -- --apply`.
 
 ## 0. Triage — what to do next
+
+### 2026-10-28 — the site's internet, the held meters and the halted deploys (RM-165): deployed, two pastes left
+
+The edge rejoined the mesh with internet at 11:33. Measured read-only (E-260): the four meters resumed by themselves
+within minutes, the operator having touched none of them, and their lifetime registers stepped up by what they had
+counted while held. About 566,000 rows waited at 10:30, 206,000 at 13:44, draining.
+
+1. **Done today on the edge:** `git pull` to `c0bdb3c` (RM-163i, RM-164), `npm run build`, the three-service
+   restart; preflight's only warnings were the vendor account, 19 of 20 reporting, and the upload backlog. Then
+   RM-165 the same way (see the commit).
+2. **Paste `supabase/phase57_energy_estimates.sql`** (and phase56, if not yet) in the Supabase SQL editor. Both are
+   safe to run twice.
+3. **Then queue the estimates for the two holds already ended:** on the edge, `npm run held-energy:backfill` (a dry
+   run; it lists each hold, its register step and the days), then `npm run held-energy:backfill -- --apply`. The dry
+   run on 28 Oct found CARE ACU 6.65 kWh (11 to 14 Oct) and 32.50 kWh (14 to 28 Oct), L.O Red 0.33 and 1.42 kWh;
+   C.O Yellow and L.O Yellow are not estimated (their one lifetime figure is both clamps'). Ingest uploads the rows
+   after its next upload that goes through; until phase57 is pasted they wait in `server/data/`.
+4. **Read back over the next hour:** no "moving again"/"frozen" pairs in the journal; `GET /api/edge/status` says
+   `online` with `waiting` falling; the chip beside the live pill reads *Syncing N* until caught up, then goes.
+5. **RM-163g's last item:** once the backlog is up, read that 7 to 13 Oct were rebuilt.
 
 ### 2026-10-27 — notes on the Reports page, and the revised Energy by use (RM-164): built, waiting on two steps
 
@@ -4634,8 +4654,43 @@ director's aircon counted as Aircon, and an easier way to choose what the docume
       into a tab opened by the press itself (`previewReportPdf`) and saves nothing, closing the tab if it fails.
       The checklist stays in the drawer rather than a side panel: one press away, and the page keeps its width
       for the charts. — `ExportDrawer.test.tsx` (5 new).
-- [ ] **RM-164f** Operator: paste phase56, try notes and the preview on `npm run dev` (§0); deploy to the edge
-      with `git pull` + `npm run build` once it is reachable.
+- [ ] **RM-164f** Operator: paste phase56, try notes and the preview (§0). *Deployed to the edge 2026-10-28.*
+
+### Online or offline, one picture — RM-165 (2026-10-28)
+
+The operator, after the internet returned (E-260): the held meters' notices broke the Overview and belonged in the
+alerts; the app should be seamless with or without internet, and the transition between them; and what was halted
+by the outage should be deployed.
+
+- [x] **RM-165a** *Built.* One freeze, one notice: `createFreezeWatch` clears a device only after its flag has stayed
+      away ten minutes, so a minute's stale arrival no longer sends "moving again" and "frozen" (about twenty pairs
+      on 27 and 28 Oct). The meters' notice names the cure measured on 28 Oct: the internet, not a power cycle.
+      — `server/freezeWatch.test.mjs` (3 new).
+- [x] **RM-165b** *Built.* The edge says whether it reaches the cloud: ingest writes `server/data/ingest-status.json`
+      each tick (`server/edgeStatus.mjs`), the proxy serves it at `GET /api/edge/status` and in `/api/archive/status`.
+      Older than three ticks reads `unknown`. — `server/edgeStatus.test.mjs` (3), `server/proxy.test.mjs` (1).
+- [x] **RM-165c** *Built.* The bell carries held meters (one row per meter and hold, stepped holds and the bridge's
+      flag merged, the date shown when a hold crosses midnight) and the site's internet (*No internet at the site*,
+      then *Back online, catching up*). The energy cards' paragraphs are gone: the meter's row carries a warning mark
+      that opens the bell (`HeldTag`, `alertsPanelStore`), and a chip beside the live pill reads *Offline logging* or
+      *Syncing N* (`edgeStatusStore`, `edgeLink.ts`). Contrast 4.90 and 5.27 (light), 7.31 and 8.16 (dark).
+      — `AlertsPopover.test.tsx` (3), `TopNav.test.tsx` (2), `branchEnergy.test.ts` (3), `edgeLink.test.ts` (5),
+      `branchEnergyCards.test.tsx` (reworked); the mock's `--edge=<state>[:<waiting>]`.
+- [x] **RM-165d** *Built.* Held energy recovered: `server/heldEnergy.mjs` takes a single-channel meter's
+      lifetime-register step on resuming, less the recovery day's own count, from where the register stopped, and
+      spreads it over the held days by the meter's usual weekday and weekend use; refuses a fall or a step faster
+      than 10 kW; never the dual-channel meter. Ingest estimates each hold as it ends and queues the rows
+      (`server/estimateOutbox.mjs`), uploading them after an upload that goes through; `npm run
+      held-energy:backfill` does the ended holds once. — `server/heldEnergy.test.mjs` (11),
+      `server/estimateOutbox.test.mjs` (1).
+- [x] **RM-165e** *Built.* `supabase/phase57_energy_estimates.sql` (read by signed-in accounts, written by the edge
+      only), a rehearsal block and the weekly backup. The Reports page adds the estimates where its two energy reads
+      land (`src/lib/energyEstimates.ts`), so charts, totals, Energy by use, the PDF and the CSV carry them; the page
+      and the PDF say how much is estimated and why, each device row says its share, and the CSVs gain a column
+      only when there is one. A failed read leaves the report as it was. — `energyEstimates.test.ts` (7),
+      `buildReport.test.ts` (2), `reportCsv.test.ts` (1), `test/phase57-energy-estimates.test.mjs` (4).
+- [ ] **RM-165f** Operator: paste phase57 (§0), then the backfill's `--apply`; watch the next outage for the chip
+      and the bell.
 
 ### The log back under the Free plan — RM-158 (2026-10-03)
 

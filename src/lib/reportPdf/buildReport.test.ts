@@ -462,3 +462,17 @@ describe('notes in the document — RM-164', () => {
     expect(r.dayNotes).toEqual([]);
   });
 });
+
+describe('buildPdfReport — RM-165, a held meter\'s estimated energy', () => {
+  it('says on the row how much is estimated, and why once with the caveats', () => {
+    const report = buildPdfReport(input({ rows: [device('meter_a', { energy_kwh: 92.5, estimated_kwh: 32.5 }), device('dev_a', { energy_kwh: null })], nameOf: (id) => (id === 'meter_a' ? 'CARE ACU' : id) }));
+    expect(report.deviceRows.find((r) => r.name === 'CARE ACU')?.note).toBe('includes 32.50 kWh estimated (meter held)');
+    expect(report.caveats[0].lead).toBe('Estimated energy.');
+    expect(report.caveats[0].body).toMatch(/^32\.50 kWh of this is estimated: CARE ACU held its last reading while the site had no internet/);
+  });
+
+  it('adds nothing when no figure is estimated', () => {
+    const report = buildPdfReport(input());
+    expect(report.caveats.map((c) => c.lead)).not.toContain('Estimated energy.');
+  });
+});

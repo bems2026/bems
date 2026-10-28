@@ -252,6 +252,46 @@ describe('branchEnergySplit — 2026-09-22, a held reading the page could not se
  * figure was not a live measurement, and the energy shown is the register's, not the held power — and it
  * says only that. It names the branch once: the headline carries the name, the detail does not repeat it.
  */
+describe('branchEnergySplit — RM-165, one held meter is one notice', () => {
+  /*
+   * 2026-10-28, CARE ACU, with the site's internet down since the 15th: the page showed three paragraphs for
+   * one meter — a run that ended when its held figure stepped 15.5 -> 15.8 W, the run after it, and the
+   * bridge's flag for the same hold, which started on 14 October.
+   */
+  it('merges a stepped hold and the bridge flag into one, from the earliest start, counted once', () => {
+    const now = local('2026-10-28T11:26:00');
+    const history = {
+      mtr_arec_acu: [
+        ...samples('2026-10-28T00:00:00', 589, () => ({ power_w: 15.5, voltage: 223.4, current: 0.07 })),
+        ...samples('2026-10-28T09:50:00', 95, () => ({ power_w: 15.8, voltage: 227.7, current: 0.071 })),
+        ...samples('2026-10-28T11:25:00', 1, () => ({ power_w: 15.9, voltage: 227.1, current: 0.072 })),
+      ],
+    };
+    const readings = {
+      mtr_arec_acu: reading('mtr_arec_acu', 0, { power_w: 15.8, voltage: 227.7, measurement_frozen: true, frozen_since: '2026-10-14T13:22:01+08:00' }, new Date(now - 20_000).toISOString()),
+    };
+    const split = branchEnergySplit({ devices: DEVICES, readings, totals: null, historyByDevice: history, period: 'today', nowMs: now });
+    expect(split.frozen).toHaveLength(1);
+    expect(split.frozen[0]).toMatchObject({ id: 'mtr_arec_acu', ongoing: true, fromMs: local('2026-10-14T13:22:01'), toMs: now, heldW: 15.8 });
+    // Today only, and no minute twice: at most the held watts over the hours since midnight.
+    expect(split.frozen[0].phantomKwh).toBeLessThanOrEqual((15.8 * (now - local('2026-10-28T00:00:00'))) / 3.6e9 + 1e-9);
+  });
+
+  it('keeps two holds apart when the meter read live between them for more than ten minutes', () => {
+    const now = local('2026-09-13T20:00:00');
+    const history = {
+      mtr_lo_red: [
+        ...samples('2026-09-13T06:00:00', 200, () => held),
+        ...samples('2026-09-13T09:20:00', 60, (i) => live(i, 13)),
+        ...samples('2026-09-13T10:20:00', 200, () => ({ power_w: 21.1, voltage: 229.9, current: 0.6 })),
+        ...samples('2026-09-13T13:40:00', 30, (i) => live(i, 13)),
+      ],
+    };
+    const split = branchEnergySplit({ devices: DEVICES, readings: { mtr_lo_red: reading('mtr_lo_red', 0.01) }, totals: null, historyByDevice: history, period: 'today', nowMs: now });
+    expect(split.frozen).toHaveLength(2);
+  });
+});
+
 describe('frozenHeadline and describeFrozen', () => {
   const ended = {
     id: 'mtr_lo_red',
@@ -279,6 +319,15 @@ describe('frozenHeadline and describeFrozen', () => {
 
   it('names the branch once — the headline carries it, the detail does not repeat it', () => {
     expect(describeFrozen(ended)).not.toContain('L.O Red');
+  });
+
+  it('RM-165: names the day when a hold crosses midnight, and counts long holds in days', () => {
+    const f = { id: 'a', name: 'CARE ACU', fromMs: local('2026-10-27T11:26:00'), toMs: local('2026-10-28T09:49:00'), ongoing: false, heldW: 15.5, heldV: 223.4, phantomKwh: 0 };
+    // The reader's own date format; the clock is the building's.
+    const date = (s: string) => new Date(local(s)).toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'Asia/Manila' });
+    expect(describeFrozen(f)).toContain(`from ${date('2026-10-27T12:00:00')} 11:26 to ${date('2026-10-28T12:00:00')} 09:49 (22 h 23 min)`);
+    const long = { ...f, fromMs: local('2026-10-14T13:22:00'), toMs: local('2026-10-28T11:26:00'), ongoing: true };
+    expect(describeFrozen(long)).toContain(`since ${date('2026-10-14T12:00:00')} 13:22 (13 d 22 h so far)`);
   });
 
   it('describes an ongoing hold in the present tense, and says what a meter that has itself stopped would mean', () => {

@@ -61,6 +61,7 @@ import { useReportData, type Section } from './useReportData';
 import { readySection, useBaselineReport } from './useBaselineReport';
 import type { HourEnergyRow } from '@/lib/reportSeries';
 import { conservedBuilding, conservedDaily, counterNote, differingDays } from '@/lib/periodEnergy';
+import { estimatedTotal, estimateSentence } from '@/lib/energyEstimates';
 import { carbonOf, costOf, type DayEnergy } from '@/lib/energyCost';
 import { circuitDayPoints, circuitHourPoints, circuitRefs, loadShareSegments, trendChartInput } from '@/lib/circuitCharts';
 import { apportionedEstimates, estimateDayPoints, estimateHourPoints } from '@/lib/apportionment';
@@ -327,6 +328,12 @@ export function ReportsPage() {
     () => (previous ? conservedBuilding(previous, report.previousDevices.data) : null),
     [previous, report.previousDevices.data]
   );
+  /** RM-165: how much of the period's figure is a held meter's estimate, said once under the figures. */
+  const estimateNote = useMemo(() => {
+    if (showBaseline || !rows) return null;
+    const meters = new Set(BUILDING_METER_IDS as readonly string[]);
+    return estimateSentence(estimatedTotal(rows.filter((r) => meters.has(r.device_id))), nameOf);
+  }, [showBaseline, rows, nameOf]);
   const energyPending = devicesSection.status === 'loading' || (previous !== null && report.previousDevices.status === 'loading');
 
   /**
@@ -769,6 +776,11 @@ export function ReportsPage() {
             {counterCheck ? (
               <p className="reports-note report-counter-check" role="note">
                 {counterCheck}
+              </p>
+            ) : null}
+            {estimateNote ? (
+              <p className="reports-note report-estimate-note" role="note">
+                {estimateNote}
               </p>
             ) : null}
             {/* What else the period recorded, as one line of small figures rather than a card. */}

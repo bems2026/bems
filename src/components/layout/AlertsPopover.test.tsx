@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, within, act } from '@testing-library/react';
 import { AlertsPopover } from './AlertsPopover';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useAnomaliesStore } from '@/stores/anomaliesStore';
@@ -7,6 +7,8 @@ import { useCommandStore } from '@/stores/commandStore';
 import { useCapabilityTroubleStore } from '@/stores/capabilityTroubleStore';
 import type { CapabilityEpisode } from '@/lib/capabilityEpisodes';
 import type { Device } from '@/lib/types';
+import { useEdgeStatusStore } from '@/stores/edgeStatusStore';
+import { useAlertsPanelStore } from '@/stores/alertsPanelStore';
 
 // The bell reads fleet connectivity through this hook; the real one talks to Supabase.
 const connectivity = vi.hoisted(() => ({ rows: {} as Record<string, unknown> }));
@@ -53,6 +55,8 @@ afterEach(() => {
   connectivity.rows = {};
   useCommandStore.setState({ pending: {}, cloudRecoveries: {} });
   useCapabilityTroubleStore.setState({ episodes: [], status: 'idle' });
+  useEdgeStatusStore.setState({ status: null });
+  useAlertsPanelStore.setState({ open: false });
 });
 
 describe('AlertsPopover — staleness and anomalies', () => {
@@ -302,5 +306,47 @@ describe('AlertsPopover — what the device reported', () => {
     openBell();
     expect(screen.getByRole('link', { name: 'Open device' })).toHaveAttribute('href', '#devices/mtr_co_yellow');
     expect(screen.getByText('Device id: mtr_co_yellow')).toBeInTheDocument();
+  });
+});
+
+describe('AlertsPopover — RM-165, held meters and the site link', () => {
+  const acu: Device = { id: 'mtr_arec_acu', display_name: 'CARE ACU', class: 'meter', room: null, dps_map: 'type_a', status: 'active' };
+
+  it('carries a held meter as one warning, with the date its hold began', () => {
+    useDeviceStore.setState({
+      devices: [acu],
+      latestReadings: {
+        mtr_arec_acu: {
+          device_id: 'mtr_arec_acu', ts: new Date().toISOString(), online: true, state: null, power_w: 15.8, voltage: 227.7,
+          measurement_frozen: true, frozen_since: new Date(Date.now() - 14 * 86_400_000).toISOString(),
+        },
+      },
+    });
+    render(<AlertsPopover />);
+    expect(screen.getByRole('button', { name: /Alerts, 1 needs attention/ })).toBeTruthy();
+    openBell();
+    const rows = rowsMatching(/CARE ACU's reading is held/);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].textContent).toMatch(/Meter check/);
+    expect(rows[0].textContent).toMatch(/\d+ d \d+ h so far/);
+  });
+
+  it('says the site has no internet and what waits, and says nothing once caught up', () => {
+    useEdgeStatusStore.setState({ status: { state: 'offline', waiting: 566184, lastUploadOkAt: '2026-10-15T01:00:00.000Z', lastUploadFailAt: null, frozen: [] } });
+    render(<AlertsPopover />);
+    openBell();
+    expect(rowsMatching(/No internet at the site/)[0].textContent).toMatch(/566,184 readings wait to upload/);
+    cleanup();
+    useEdgeStatusStore.setState({ status: { state: 'online', waiting: 40, lastUploadOkAt: null, lastUploadFailAt: null, frozen: [] } });
+    render(<AlertsPopover />);
+    openBell();
+    expect(rowsMatching(/No internet|catching up/i)).toHaveLength(0);
+  });
+
+  it('opens from anywhere through the panel store, as a card held tag does', () => {
+    render(<AlertsPopover />);
+    expect(screen.queryByRole('dialog', { name: 'Alerts' })).toBeNull();
+    act(() => useAlertsPanelStore.getState().setOpen(true));
+    expect(screen.getByRole('dialog', { name: 'Alerts' })).toBeTruthy();
   });
 });

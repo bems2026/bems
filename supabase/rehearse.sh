@@ -2740,6 +2740,35 @@ begin
 end $$;
 SQL
 
+# ---- phase57: energy a held meter counted, as an estimate (RM-165) ---------------------------------------
+echo "== phase57: re-applying twice, then a day's estimate, an impossible one and the grants =="
+psql -1 < "$HERE/phase57_energy_estimates.sql" >/dev/null
+psql -1 < "$HERE/phase57_energy_estimates.sql" >/dev/null
+psql -v ON_ERROR_STOP=1 <<'SQL'
+do $$
+declare site text := (select id from sites limit 1);
+begin
+  insert into energy_estimates (site_id, device_id, local_day, held_from, held_to, kwh, basis)
+    values (site, 'mtr_arec_acu', '2026-10-20', '2026-10-14T05:22:01Z', '2026-10-28T03:41:04Z', 2.731, 'rehearsal');
+  insert into energy_estimates (site_id, device_id, local_day, held_from, held_to, kwh, basis)
+    values (site, 'mtr_arec_acu', '2026-10-20', '2026-10-14T05:22:01Z', '2026-10-28T03:41:04Z', 2.8, 'again')
+    on conflict (site_id, device_id, local_day, held_from) do update set kwh = excluded.kwh;
+  assert (select kwh from energy_estimates where site_id = site and local_day = '2026-10-20') = 2.8,
+    'phase57: an upsert on (site_id, device_id, local_day, held_from) replaces the part';
+  begin
+    insert into energy_estimates (site_id, device_id, local_day, held_from, held_to, kwh, basis)
+      values (site, 'mtr_co_yellow', '2026-10-20', '2026-10-14T05:21:00Z', '2026-10-28T03:41:04Z', 1000, 'no');
+    assert false, 'phase57: more than a branch can draw in a day should have been refused';
+  exception when check_violation then
+    null;
+  end;
+  assert has_table_privilege('authenticated', 'energy_estimates', 'select'), 'phase57: a signed-in user reads';
+  assert not has_table_privilege('authenticated', 'energy_estimates', 'insert'), 'phase57: only the edge writes';
+  assert not has_table_privilege('anon', 'energy_estimates', 'select'), 'phase57: not anon';
+  delete from energy_estimates where site_id = site;
+end $$;
+SQL
+
 echo
 echo "== REHEARSAL PASSED =="
 echo "Every migration applied in order against PostgreSQL 16, and every function behaved as"

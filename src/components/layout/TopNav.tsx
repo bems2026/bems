@@ -9,6 +9,9 @@ import type { ConnStatus } from '@/lib/bridgeClient';
 import { useEffect, useRef } from 'react';
 import { useNowTick } from '@/lib/useNowTick';
 import { SITE } from '@shared/siteConfig.mjs';
+import { useEdgeStatusStore } from '@/stores/edgeStatusStore';
+import { useAlertsPanelStore } from '@/stores/alertsPanelStore';
+import { linkNotice } from '@/lib/edgeLink';
 
 const LIVE_LABEL: Record<ConnStatus, string> = {
   connected: 'LIVE',
@@ -112,11 +115,34 @@ export function TopNav({ activeId }: { activeId: string }) {
           <span className="nav-live-dot" aria-hidden="true" />
           {LIVE_LABEL[wsStatus]}
         </span>
+        <LinkChip />
         <ThemeToggle />
         <AlertsPopover />
         <AccountMenu activeId={activeId} />
       </div>
     </nav>
+  );
+}
+
+/**
+ * RM-165: the site's internet, beside the live pill. The pill measures the proxy, which answers with or without
+ * the internet, so from 15 to 28 October the page looked live while the edge logged on its own and 566,000 rows
+ * waited. Shown only while offline, paused or catching up; it opens the bell, which says why.
+ */
+function LinkChip() {
+  const notice = linkNotice(useEdgeStatusStore((s) => s.status));
+  const setOpen = useAlertsPanelStore((s) => s.setOpen);
+  if (!notice) return null;
+  return (
+    <button
+      type="button"
+      className={`nav-link-chip nav-link-chip--${notice.kind}`}
+      aria-label={`${notice.title}. Open alerts.`}
+      title={notice.title}
+      onClick={() => setOpen(true)}
+    >
+      {notice.chip}
+    </button>
   );
 }
 

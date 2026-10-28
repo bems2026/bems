@@ -25,6 +25,7 @@ import { LOAD_LABELS } from '@shared/circuits.mjs';
 import { BASELINE_LEDE, BASELINE_OWN_WINDOW, BASELINE_TITLE } from '@shared/reportProse.mjs';
 import { loadShareSegments } from '@/lib/circuitCharts';
 import { unusualEventsCaveat } from '@/lib/anomalies';
+import { estimatedTotal, estimateSentence } from '@/lib/energyEstimates';
 import {
   baselineAssumptionItems,
   chartDesc,
@@ -311,7 +312,8 @@ export function buildPdfReport(input: PdfReportInput): PdfReport {
       peakW: f(r.peak_power_w, 0),
       avgW: f(r.avg_power_w, 0),
       coverage: c ? `${Math.round(c.ratio * 100)}%` : '—',
-      note: flag ? energyFlagText(flag) : null,
+      // RM-165: a held meter's estimate is in the figure, and the row says how much.
+      note: [flag ? energyFlagText(flag) : null, r.estimated_kwh ? `includes ${r.estimated_kwh.toFixed(2)} kWh estimated (meter held)` : null].filter(Boolean).join('; ') || null,
     };
   };
 
@@ -322,6 +324,8 @@ export function buildPdfReport(input: PdfReportInput): PdfReport {
   const thin = summary === null || summary.usable_minutes < BASELINE_MIN_SAMPLES || observedDays < BASELINE_MIN_DAYS;
 
   const meters = new Set(input.meterIds);
+  // RM-165: how much of the building's figure a held meter's estimate makes up, said once with the caveats.
+  const estimated = estimateSentence(estimatedTotal(rows.filter((r) => meters.has(r.device_id))), nameOf);
   const { untracked } = buildBreakdown(rows, nameOf);
 
   let comparison: PdfReport['comparison'] = null;
@@ -560,6 +564,6 @@ export function buildPdfReport(input: PdfReportInput): PdfReport {
           },
     comparison,
     projected,
-    caveats: PLAIN_NOT_SAID,
+    caveats: estimated ? [{ lead: 'Estimated energy.', body: estimated }, ...PLAIN_NOT_SAID] : PLAIN_NOT_SAID,
   };
 }

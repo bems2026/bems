@@ -159,6 +159,8 @@ export interface PeriodDeviceReport {
    * before phase53 is applied; null for every row it did not restate.
    */
   energy_kwh_before?: number | null;
+  /** RM-165: kWh of `energy_kwh` estimated for a held meter (`energyEstimates.ts`), added by the page; absent when none. */
+  estimated_kwh?: number;
 }
 
 export interface PeriodBuildingReport {
