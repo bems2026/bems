@@ -5,6 +5,8 @@ import type { Reading } from '@/lib/types';
 
 const fresh = new Date().toISOString();
 const old = new Date(Date.now() - 60_000).toISOString();
+/** RM-165: dimming follows the bridge's connection, so the 'stale' fixtures are disconnected ones. */
+const gone = new Date(Date.now() - 12 * 60_000).toISOString();
 
 describe('lightMaterialState', () => {
   it('is dim/muted with no reading at all — unknown, not off', () => {
@@ -13,8 +15,8 @@ describe('lightMaterialState', () => {
     expect(s.opacity).toBeLessThan(1);
   });
 
-  it('is dim/muted when the reading is stale, even if it last said "on"', () => {
-    const r: Reading = { device_id: 'l3', ts: old, online: true, state: 'on' };
+  it('is dim/muted when the device is not connected, even if it last said "on"', () => {
+    const r: Reading = { device_id: 'l3', ts: gone, online: true, state: 'on' };
     const s = lightMaterialState(r);
     expect(s.color).toBe(TOKENS.muted2);
   });
@@ -50,7 +52,7 @@ describe('outletSocketMaterialState', () => {
   });
 
   it('is muted for both sockets when the reading is stale', () => {
-    const stale: Reading = { ...co1, ts: old };
+    const stale: Reading = { ...co1, ts: old, online: false };
     expect(outletSocketMaterialState(stale, 1).color).toBe(TOKENS.muted2);
     expect(outletSocketMaterialState(stale, 2).color).toBe(TOKENS.muted2);
   });
@@ -67,7 +69,9 @@ describe('isOn', () => {
   });
 
   it('false for stale, off, and no-reading-at-all', () => {
-    expect(isOn(lightMaterialState({ device_id: 'l3', ts: old, online: true, state: 'on' }))).toBe(false);
+    expect(isOn(lightMaterialState({ device_id: 'l3', ts: old, online: false, state: 'on' }))).toBe(false);
+    // RM-165: connected but a minute quiet is still lit, as Node-RED would show it.
+    expect(isOn(lightMaterialState({ device_id: 'l3', ts: old, online: true, state: 'on' }))).toBe(true);
     expect(isOn(lightMaterialState({ device_id: 'l3', ts: fresh, online: true, state: 'off' }))).toBe(false);
     expect(isOn(lightMaterialState(undefined))).toBe(false);
   });

@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 import { useDeviceStore } from '@/stores/deviceStore';
-import { isReadingStale, staleWindowLabel } from '@/lib/staleness';
+import { isDisconnected, staleWindowLabel } from '@/lib/staleness';
 import { useNowTick } from '@/lib/useNowTick';
 
 interface StaleDataBadgeProps {
@@ -61,7 +61,9 @@ export function StaleDataBadge({ deviceId, label, children, className, variant =
   // is the difference between a dozen timers on the Control page and none of its own.
   useNowTick();
 
-  const stale = isReadingStale(reading);
+  // RM-165: flagged when the bridge reports no connection, as Node-RED shows it; a connected device whose value is
+  // merely late is not flagged (the Devices table gives its age). The totals row keeps its time check.
+  const stale = isDisconnected(reading);
   const subject = label ?? (deviceId ? 'This device' : 'Building totals');
 
   return (
@@ -72,9 +74,9 @@ export function StaleDataBadge({ deviceId, label, children, className, variant =
           className={`stale-flag${variant === 'dot' ? ' stale-flag--dot' : ''}`}
           role="status"
           aria-live="polite"
-          aria-label={`${subject}: no reading in the last ${staleWindowLabel(reading)}`}
+          aria-label={deviceId ? `${subject}: not connected` : `${subject}: no reading in the last ${staleWindowLabel(reading)}`}
         >
-          {variant === 'dot' ? null : 'stale'}
+          {variant === 'dot' ? null : deviceId ? 'offline' : 'stale'}
         </span>
       )}
     </div>

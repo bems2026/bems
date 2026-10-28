@@ -1,7 +1,7 @@
 import { useDeviceStore } from '@/stores/deviceStore';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
 import { controlView, isCommandable } from '@/lib/socketView';
-import { isReadingStale } from '@/lib/staleness';
+import { isDisconnected } from '@/lib/staleness';
 import type { SocketIndex } from '@/lib/types';
 
 /**
@@ -27,7 +27,8 @@ export function useRelayState(deviceId: string, socket?: SocketIndex) {
     on,
     /** Refused while in flight, with no state to toggle from, or when the bridge says offline. */
     disabled: busy || unknown || !isCommandable(reading),
-    stale: isReadingStale(reading),
+    /** RM-165: not connected, as Node-RED shows it — not merely a late value. */
+    stale: isDisconnected(reading),
     /** "switching…" / "no reading yet" / "on" / "off" — one spelling, shared. */
     label: unknown ? 'no reading yet' : busy ? 'switching…' : on ? 'on' : 'off',
   };

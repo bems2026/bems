@@ -212,7 +212,10 @@ export function branchEnergySplit(input: BranchEnergyInput): BranchEnergySplit {
   const totalPhantom = [...phantomById.values()].reduce((a, b) => a + b, 0);
   const integratedTotal = totals?.[INTEGRATED_KEY[period]];
   const trustedTotal = typeof integratedTotal === 'number' && Number.isFinite(integratedTotal) ? Math.max(0, integratedTotal - totalPhantom) : integratedTotal;
-  const disagreement = totalKwh === null ? null : energyDisagreement(totalKwh, trustedTotal);
+  // RM-165: not across a hold. A held meter's register catches up on resuming with what it counted while held,
+  // which the integration never saw (it had the held power, taken out above as phantom): on 28 Oct 2026 that read
+  // "3.32 against 1.91 kWh, 1.7x". On a day a meter was held the two are not comparable, so nothing is said.
+  const disagreement = totalKwh === null || frozen.length > 0 ? null : energyDisagreement(totalKwh, trustedTotal);
 
   const shortfalls = branchShortfalls(
     rows.map((r) => {
@@ -290,5 +293,18 @@ export function describeShortfalls(shortfalls: BranchShortfall[], frozen: Frozen
   return {
     headline,
     detail: `${parts.join('; ')}. A branch cannot have used less than its own meter recorded, so this is energy going missing between the meter and this page.`,
+  };
+}
+
+/**
+ * The disagreement notice, identical wherever it is shown — RM-165 moved it from the energy cards into the alerts
+ * bell, where the cards' mark points. `when` is the period in words: "today", "this week".
+ */
+export function describeDisagreement(d: EnergyDisagreement, when: string): { headline: string; detail: string } {
+  return {
+    headline: 'Two measurements of the same circuits disagree.',
+    detail:
+      `The branches add up to ${formatKwh(d.branchSum)} ${when}, while the building's own power integration over those same circuits gives ${formatKwh(d.total)}` +
+      `${d.ratio !== null ? ` — ${d.ratio.toFixed(1)}x less` : ''}. They are measured differently and need not match exactly, but a gap this size means one of the two is wrong.`,
   };
 }

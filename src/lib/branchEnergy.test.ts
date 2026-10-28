@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { BUILDING_METER_IDS } from '@shared/registry.mjs';
 import { branchEnergySplit, describeFrozen, frozenHeadline, siteDayStartMs } from './branchEnergy';
-import type { Device, HistoryPoint, Reading } from './types';
+import type { Device, HistoryPoint, Reading, Totals } from './types';
 
 /*
  * RM-077 and RM-078. The fixtures are L.O Red's own readings from the `readings` table, read back
@@ -338,5 +338,30 @@ describe('frozenHeadline and describeFrozen', () => {
     expect(text).toContain('8 h 53 min');
     expect(text).toMatch(/is not a live measurement/);
     expect(text).toMatch(/if the meter itself has stopped/);
+  });
+});
+
+describe('describeDisagreement — RM-165, one wording for the bell and the cards', async () => {
+  const { describeDisagreement } = await import('./branchEnergy');
+  it('says both figures, the multiple, and that one of the two is wrong', () => {
+    const d = describeDisagreement({ branchSum: 3.32, total: 1.91, excessKwh: 1.41, ratio: 1.7 }, 'today');
+    expect(d.headline).toBe('Two measurements of the same circuits disagree.');
+    expect(d.detail).toMatch(/^The branches add up to 3\.32 kWh today, while the building's own power integration over those same circuits gives 1\.91 kWh — 1\.7x less\./);
+  });
+});
+
+describe('branchEnergySplit — RM-165, no comparison across a hold', () => {
+  it('does not call the branches and the building integration disagreeing on a day a meter was held', () => {
+    // 28 Oct 2026: CARE ACU held from the 14th to 11:41; on resuming its daily register counted the morning at once,
+    // while the integration had only the held power, taken out as phantom. "3.32 against 1.91, 1.7x" was the hold.
+    const now = local('2026-10-28T14:00:00');
+    const readings = {
+      mtr_arec_acu: reading('mtr_arec_acu', 2.5, { power_w: 527, energy_kwh_today_integrated: 1.0, measurement_frozen: true, frozen_since: '2026-10-14T13:22:01+08:00' }, new Date(now - 20_000).toISOString()),
+      mtr_lo_red: reading('mtr_lo_red', 0.82, { energy_kwh_today_integrated: 0.8 }, new Date(now - 20_000).toISOString()),
+    };
+    const totals = { device_id: '_totals', ts: new Date(now - 20_000).toISOString(), energy_kwh_today: 3.32, energy_kwh_week: 3.32, energy_kwh_month: 3.32, total_power_w: 600, avg_voltage: 220, energy_kwh_today_integrated: 1.91 } as Totals;
+    const split = branchEnergySplit({ devices: DEVICES, readings, totals, historyByDevice: {}, period: 'today', nowMs: now });
+    expect(split.frozen).toHaveLength(1);
+    expect(split.disagreement).toBeNull();
   });
 });

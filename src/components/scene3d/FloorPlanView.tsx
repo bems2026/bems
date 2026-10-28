@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Lightbulb, Plug, type LucideIcon } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
-import { isReadingStale } from '@/lib/staleness';
+import { isDisconnected } from '@/lib/staleness';
 import { LIGHT_PLAN } from './geometry';
 import type { Reading } from '@/lib/types';
 
@@ -108,7 +108,7 @@ function LightingPlan({ readings }: { readings: Record<string, Reading> }) {
     <PlanFrame title="Lighting (L1–L7)" icon={Lightbulb}>
       {LIGHT_LAYOUT.map(({ id, row }) => {
         const reading = readings[id];
-        const stale = isReadingStale(reading);
+        const stale = isDisconnected(reading);
         const on = reading?.state === 'on';
         const fill = stale ? 'var(--muted-2)' : on ? ON_FILL : 'var(--bg-surface-2)';
         const rectY = LIGHT_PLAN.rowPy(row) - S / 2;
@@ -143,7 +143,7 @@ function OutletPlan({ readings }: { readings: Record<string, Reading> }) {
     <PlanFrame title="Convenience Outlets (CO1–CO7)" icon={Plug}>
       {OUTLET_LAYOUT.map(({ id, x, y }, i) => {
         const reading = readings[id];
-        const stale = isReadingStale(reading);
+        const stale = isDisconnected(reading);
         const s1 = reading?.socket_states?.[1] === 'on';
         const s2 = reading?.socket_states?.[2] === 'on';
         const num = i + 1;

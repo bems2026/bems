@@ -168,3 +168,39 @@ describe('staleWindowLabel', () => {
     expect(staleWindowMs(legacy)).toBe(30_000);
   });
 });
+
+/*
+ * RM-165 (2026-10-28). The operator: "devices are connected in Node-RED but in the app their status is stale, and on
+ * the Control page they still turn on and off". The bridge's `online` IS Node-RED's session state (the tuya node's
+ * health, with a ten-minute backstop for a session that vanished without a FIN); the app called a device stale once
+ * its last value was 150 s old, so between 2.5 and 10 minutes the two disagreed — and without internet the devices
+ * answer polls slowly enough to sit there. Connection now follows the bridge; an old value on a connected device is
+ * "quiet", not a fault.
+ */
+describe('connectionOf and isDisconnected — the bridge decides, the app agrees', async () => {
+  const { connectionOf, isDisconnected } = await import('./staleness');
+  const at = (ageMs: number, online = true): Reading => ({ device_id: 'co3', ts: new Date(now - ageMs).toISOString(), online, state: 'on', stale_after_ms: 150_000 });
+
+  it('is live while fresh, quiet while connected but late, offline when the bridge says so', () => {
+    expect(connectionOf(at(30_000), now)).toBe('live');
+    expect(connectionOf(at(4 * 60_000), now)).toBe('quiet');
+    expect(connectionOf(at(1000, false), now)).toBe('offline');
+    expect(connectionOf(undefined, now)).toBe('offline');
+  });
+
+  it('a connected device four minutes quiet is not disconnected, though its value is stale', () => {
+    expect(isReadingStale(at(4 * 60_000), now)).toBe(true);
+    expect(isDisconnected(at(4 * 60_000), now)).toBe(false);
+  });
+
+  it('a reading nothing has refreshed past the bridge’s own ten-minute backstop is disconnected, even if it last said online', () => {
+    // The bridge itself, or the link to it, stopped: the store keeps the last row, which still says online.
+    expect(isDisconnected(at(12 * 60_000), now)).toBe(true);
+    expect(isDisconnected(at(10 * 60_000), now)).toBe(false);
+  });
+
+  it('the _totals row, which has no online field, keeps the time check', () => {
+    const totals = { device_id: '_totals', ts: old, energy_kwh_today: 1, energy_kwh_week: 1, energy_kwh_month: 1, total_power_w: 1, avg_voltage: 220 } as Totals;
+    expect(isDisconnected(totals, now)).toBe(true);
+  });
+});

@@ -1,6 +1,7 @@
 import { isStale } from './bridgeClient';
 import { TIMING } from './timing';
 import type { Reading, Totals } from './types';
+import { STALE_READING_MS } from '@shared/buildLatest.mjs';
 
 /**
  * A device (or the `_totals` row) is stale for two independent reasons, either of which
@@ -36,6 +37,42 @@ export function isReadingStale(reading: Reading | Totals | null | undefined, now
   const budget = 'stale_after_ms' in reading ? reading.stale_after_ms : undefined;
   return isStale(Date.parse(reading.ts), nowMs, budget);
 }
+
+/**
+ * Whether the device is connected, as the bridge decides it — RM-165.
+ *
+ * The bridge's `online` IS Node-RED's session state: the tuya node's own health flag, forced false once nothing
+ * has arrived for `STALE_READING_MS` (ten minutes), which catches a session that vanished without a FIN. Until
+ * 2026-10-28 every status in the app asked `isReadingStale` instead, which trips once a value is 150 s old: while
+ * the site had no internet the devices answered polls slowly enough to sit between the two, so Node-RED showed
+ * them connected, the app showed them stale, and Control still switched them. The two now agree.
+ *
+ *   live    connected, and its value is within its own budget;
+ *   quiet   connected, its last value older than that: shown with its age, never as a fault;
+ *   offline the bridge reports no connection, or nothing has refreshed the row past the bridge's own backstop
+ *           (the bridge or the link to it stopped, and the store still holds a row that last said online).
+ *
+ * Statuses, alerts, dimming and controls ask this. What a VALUE may be trusted for (a figure, a command's
+ * confirmation) still asks `isReadingStale` and `isReadingExpired`.
+ */
+export type Connection = 'live' | 'quiet' | 'offline';
+
+export function connectionOf(reading: Reading | Totals | null | undefined, nowMs: number = Date.now()): Connection {
+  if (isDisconnected(reading, nowMs)) return 'offline';
+  return isReadingStale(reading, nowMs) ? 'quiet' : 'live';
+}
+
+export function isDisconnected(reading: Reading | Totals | null | undefined, nowMs: number = Date.now()): boolean {
+  if (!reading) return true;
+  // `_totals` is not a device and has no connection of its own: its timestamp is all there is.
+  if (!('online' in reading)) return isReadingStale(reading, nowMs);
+  if (reading.online === false) return true;
+  const ts = Date.parse(reading.ts);
+  return !Number.isFinite(ts) || nowMs - ts > STALE_READING_MS + BACKSTOP_MARGIN_MS;
+}
+
+/** One bridge sample past its backstop, so the app never calls offline what the bridge still calls online. */
+const BACKSTOP_MARGIN_MS = 60_000;
 
 /**
  * The staleness budget that actually applies to a reading, in ms.

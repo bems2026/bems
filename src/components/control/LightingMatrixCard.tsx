@@ -1,9 +1,7 @@
 import { useMemo } from 'react';
 import { Lightbulb, Power, PowerOff } from 'lucide-react';
-import { useDeviceStore } from '@/stores/deviceStore';
 import { useDevicesFor } from '@/hooks/useDevicesFor';
 import { useCommandStore } from '@/stores/commandStore';
-import { staleWindowLabel } from '@/lib/staleness';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { useRelayState } from '@/hooks/useRelayState';
@@ -126,7 +124,6 @@ export function LightingMatrixCard() {
 }
 
 function LightRow({ device, cells }: { device: Device; cells?: { x: number; y: number }[] }) {
-  const reading = useDeviceStore((s) => s.latestReadings[device.id]);
   const send = useCommandStore((s) => s.send);
   const log = useControlLog((s) => s.log);
 
@@ -145,7 +142,7 @@ function LightRow({ device, cells }: { device: Device; cells?: { x: number; y: n
     ? `${device.display_name}: switching…`
     : unavailable
       ? `${device.display_name}: unavailable — no reading, or offline`
-      : `${device.display_name}: ${on ? 'on' : 'off'}${stale ? ` (no reading in the last ${staleWindowLabel(reading)})` : ''} — click to switch the row ${on ? 'off' : 'on'}`;
+      : `${device.display_name}: ${on ? 'on' : 'off'}${stale ? ' (not connected)' : ''} — click to switch the row ${on ? 'off' : 'on'}`;
 
   // Not gated on `stale` — see `RelayToggle`. Gating the handler but not the control is what
   // made a click on an enabled button do nothing silently.

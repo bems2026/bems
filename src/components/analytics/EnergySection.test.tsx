@@ -12,6 +12,15 @@ import {
 import { useDeviceStore } from '@/stores/deviceStore';
 import type { Device, Reading, Totals } from '@/lib/types';
 
+/** RM-165: the card's energy-check notice is a mark carrying the whole sentence on hover; the bell carries it in full. */
+const energyMark = () => {
+  const el = document.querySelector('.energy-check-mark');
+  if (!el) throw new Error('no energy-check mark');
+  return el as HTMLElement;
+};
+const queryEnergyMark = () => document.querySelector('.energy-check-mark');
+
+
 const meter = (id: string, name: string): Device => ({
   id,
   display_name: name,
@@ -237,10 +246,10 @@ describe('EnergySection — branch/total disagreement', () => {
     renderSection();
     fireEvent.click(screen.getByRole('button', { name: 'Week' }));
 
-    const notice = screen.getByRole('status');
-    expect(notice).toHaveTextContent('99.55 kWh');
-    expect(notice).toHaveTextContent('18.40 kWh');
-    expect(notice).toHaveTextContent('5.4');
+    const notice = energyMark();
+    expect(notice.getAttribute('title')).toContain('99.55 kWh');
+    expect(notice.getAttribute('title')).toContain('18.40 kWh');
+    expect(notice.getAttribute('title')).toContain('5.4');
     // The rows are still drawn — this says the two disagree, it does not decide which is right.
     expect(document.querySelectorAll('.analytics-energy-row')).toHaveLength(2);
   });
@@ -267,11 +276,11 @@ describe('EnergySection — branch/total disagreement', () => {
     });
     renderSection();
     // Today: 20.00 against 5.09 — 3.9x, and it says so.
-    expect(screen.getByRole('status')).toHaveTextContent('5.09 kWh');
+    expect(energyMark().getAttribute('title')).toContain('5.09 kWh');
 
     // The same 20.00 against the week's own 18.40 is +8.7%, inside what two derivations do.
     fireEvent.click(screen.getByRole('button', { name: 'Week' }));
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(queryEnergyMark()).toBeNull();
   });
 
   it('stays quiet when the branches sum to less than the building total', () => {
@@ -280,7 +289,7 @@ describe('EnergySection — branch/total disagreement', () => {
       latestReadings: { mtr_co_yellow: reading('mtr_co_yellow', 1.652), mtr_lo_red: reading('mtr_lo_red', 3.094) },
     });
     renderSection();
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(queryEnergyMark()).toBeNull();
   });
 
   /*
@@ -296,10 +305,10 @@ describe('EnergySection — branch/total disagreement', () => {
       },
     });
     renderSection();
-    const notice = screen.getByRole('status');
-    expect(notice).toHaveTextContent('C.O Yellow');
-    expect(notice).toHaveTextContent('2.65 kWh');
-    expect(notice).toHaveTextContent('2.99 kWh');
+    const notice = energyMark();
+    expect(notice.getAttribute('title')).toContain('C.O Yellow');
+    expect(notice.getAttribute('title')).toContain('2.65 kWh');
+    expect(notice.getAttribute('title')).toContain('2.99 kWh');
     // The healthy branch is not named — 1.653 against 1.656 is 0.2%.
     expect(notice).not.toHaveTextContent('L.O Red');
   });
@@ -316,9 +325,9 @@ describe('EnergySection — branch/total disagreement', () => {
       },
     });
     renderSection();
-    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(energyMark()).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Week' }));
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(queryEnergyMark()).toBeNull();
   });
 
   it('stays quiet when every branch agrees with its own measurement', () => {
@@ -331,7 +340,7 @@ describe('EnergySection — branch/total disagreement', () => {
       },
     });
     renderSection();
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(queryEnergyMark()).toBeNull();
   });
 
   it('stays quiet when the bridge sends no per-branch second opinion at all', () => {
@@ -341,7 +350,7 @@ describe('EnergySection — branch/total disagreement', () => {
       latestReadings: { mtr_co_yellow: reading('mtr_co_yellow', 2.652), mtr_lo_red: reading('mtr_lo_red', 1.653) },
     });
     renderSection();
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(queryEnergyMark()).toBeNull();
   });
 
   it('stays quiet when the building never counted the period it would compare against', () => {
@@ -356,7 +365,7 @@ describe('EnergySection — branch/total disagreement', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Week' }));
     // The tile for that period says so, and the split says nothing at all.
     expect(screen.getByText('No data')).toBeInTheDocument();
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(queryEnergyMark()).toBeNull();
   });
 });
 

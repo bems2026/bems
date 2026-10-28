@@ -4,7 +4,7 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { primaryOfClass } from '@/lib/siteDevices';
 import { useCommandStore, targetKey } from '@/stores/commandStore';
 import { controlView } from '@/lib/socketView';
-import { isReadingStale } from '@/lib/staleness';
+import { isDisconnected } from '@/lib/staleness';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useConfirm } from '@/components/ui/useConfirm';
 import { InfoHint } from '@/components/ui/InfoHint';
@@ -97,7 +97,7 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
   const unknown = view.kind === 'unknown';
   // Doesn't gate Send, unlike the relay controls — an IR blast has no confirmation path either way,
   // so staleness here means "the room readout may be out of date", not "sending would silently fail".
-  const stale = isReadingStale(reading);
+  const stale = isDisconnected(reading);
   const on = !unknown && view.value === 'on';
   const lastSent = commandedSummary(reading);
 
@@ -105,7 +105,7 @@ export function IrCommandCenterCard({ simulated = false }: { simulated?: boolean
   const name = device?.display_name ?? 'Aircon';
   /** The chip's tone follows the page's one state rule (see `PlanLegend`): green only for on, amber
    * for the two states that warn — an old reading, a command in flight — and neutral otherwise. */
-  const statusText = unknown ? 'no reading yet' : stale ? 'stale' : busy ? 'switching…' : on ? 'on' : 'off';
+  const statusText = unknown ? 'no reading yet' : stale ? 'offline' : busy ? 'switching…' : on ? 'on' : 'off';
   const statusTone = unknown ? '' : stale || busy ? ' badge--warn' : on ? ' badge--good' : '';
 
   const dispatch = (action: 'on' | 'off') => {

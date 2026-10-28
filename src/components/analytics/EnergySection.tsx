@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { AlertTriangle, BatteryCharging } from 'lucide-react';
+import { BatteryCharging } from 'lucide-react';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { InfoHint } from '@/components/ui/InfoHint';
 import type { Totals } from '@/lib/types';
 import { formatKwh, formatNumber } from '@/lib/format';
-import { describeShortfalls, holdFor, type EnergyPeriod } from '@/lib/branchEnergy';
+import { describeDisagreement, describeShortfalls, holdFor, type EnergyPeriod } from '@/lib/branchEnergy';
+import { AlertMark } from '@/components/common/AlertMark';
 import { HeldTag } from '@/components/common/HeldTag';
 import { useBranchEnergy } from '@/lib/useBranchEnergy';
 
@@ -82,27 +83,15 @@ export function EnergySection() {
               </button>
             ))}
           </div>
-          {totalKwh !== null && <span className="analytics-energy-split__sum mono">{formatKwh(totalKwh)}</span>}
+          {totalKwh !== null && (
+            <span className="analytics-energy-split__sum mono">
+              {formatKwh(totalKwh)}
+              {/* RM-165: today's checks are notices in the alerts bell; a week's or month's is said on the mark. */}
+              {disagreement && <AlertMark {...describeDisagreement(disagreement, `for ${active.tile.toLowerCase()}`)} inBell={period === 'today'} />}
+              {shortfall && <AlertMark headline={shortfall.headline} detail={shortfall.detail} inBell={period === 'today'} />}
+            </span>
+          )}
         </div>
-        {disagreement && (
-          <p className="energy-disagreement" role="status">
-            <AlertTriangle size={15} aria-hidden="true" />
-            <span>
-              <strong>Two measurements of the same circuits disagree.</strong> The branches below add up to {formatKwh(disagreement.branchSum)} for
-              {' '}{active.tile.toLowerCase()}, while the building's own power integration over those same circuits gives {formatKwh(disagreement.total)}
-              {disagreement.ratio !== null && ` — ${disagreement.ratio.toFixed(1)}x less`}. They are measured differently and need not match exactly, but
-              a gap this size means one of the two is wrong.
-            </span>
-          </p>
-        )}
-        {shortfall && (
-          <p className="energy-disagreement" role="status">
-            <AlertTriangle size={15} aria-hidden="true" />
-            <span>
-              <strong>{shortfall.headline}</strong> {shortfall.detail}
-            </span>
-          </p>
-        )}
         {rows.length === 0 ? (
           <p className="analytics-energy-empty">
             {period === 'today'

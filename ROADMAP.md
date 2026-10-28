@@ -4691,8 +4691,19 @@ by the outage should be deployed.
       and the PDF say how much is estimated and why, each device row says its share, and the CSVs gain a column
       only when there is one. A failed read leaves the report as it was. — `energyEstimates.test.ts` (7),
       `buildReport.test.ts` (2), `reportCsv.test.ts` (1), `test/phase57-energy-estimates.test.mjs` (4).
-- [ ] **RM-165f** Operator: paste phase57 (§0), then the backfill's `--apply`; watch the next outage for the chip
+- [ ] **RM-165f** Operator: paste phase57 (§0); the backfill's `--apply` ran 2026-10-28 (38 rows queued); watch the next outage for the chip
       and the bell.
+- [x] **RM-165g** *Built.* Connection follows Node-RED. The operator: devices connected in Node-RED read stale in the
+      app, and still switched from Control. The bridge's `online` is the tuya node's session (with a 600 s backstop);
+      the app called a device stale once its value was 150 s old, and without internet the devices answer slowly
+      enough to sit between the two. `connectionOf`/`isDisconnected` (`src/lib/staleness.ts`) now decide every status,
+      flag, dimming, control and the bell's *not connected*; a connected device with a late value reads CONNECTED with
+      its age. Values (figures, a command's confirmation) still ask `isReadingStale`. — `staleness.test.ts` (4),
+      `AlertsPopover.test.tsx` (2), badge/control/3D tests moved to the rule.
+- [x] **RM-165h** *Built.* The energy checks are in the bell too: *two measurements disagree* and *a branch reports
+      less than it measured* leave both energy cards, which keep a warning mark beside the total (`AlertMark`; a week's
+      or month's says it on the mark). Not raised on a day a meter was held: on 28 Oct "3.32 against 1.91 kWh, 1.7x"
+      was CARE ACU's register catching up on resuming. — `branchEnergy.test.ts` (2), `branchEnergyCards.test.tsx` (1).
 
 ### The log back under the Free plan — RM-158 (2026-10-03)
 

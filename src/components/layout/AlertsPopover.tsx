@@ -6,7 +6,7 @@ import { useAnomaliesStore } from '@/stores/anomaliesStore';
 import { useCapabilityTroubleStore } from '@/stores/capabilityTroubleStore';
 import { describeIncident, episodeWhen, toIncidents, type AlertSeverity, type CapabilityEpisode } from '@/lib/capabilityEpisodes';
 import { useCommandStore } from '@/stores/commandStore';
-import { isReadingStale, staleWindowLabel } from '@/lib/staleness';
+import { isDisconnected } from '@/lib/staleness';
 import { latestAnomalyPerDevice, isAnomalyCurrent } from '@/lib/anomalies';
 import { useNowTick } from '@/lib/useNowTick';
 import { useDeviceConnectivity } from '@/hooks/useDeviceConnectivity';
@@ -14,7 +14,7 @@ import { fleetStuck, isFleetStuck } from '@/lib/deviceConnectivity';
 import { useAnchoredPopover } from '@/components/ui/useAnchoredPopover';
 import { isSeen, LIVE_SEEN_MS, readSeen, writeSeen, type SeenMap } from '@/lib/alertSeen';
 import { useBranchEnergy } from '@/lib/useBranchEnergy';
-import { describeFrozen, frozenHeadline } from '@/lib/branchEnergy';
+import { describeDisagreement, describeFrozen, describeShortfalls, frozenHeadline } from '@/lib/branchEnergy';
 import { useEdgeStatusStore } from '@/stores/edgeStatusStore';
 import { useAlertsPanelStore } from '@/stores/alertsPanelStore';
 import { linkNotice } from '@/lib/edgeLink';
@@ -83,7 +83,7 @@ export function AlertsPopover() {
   const troubleEpisodes = useCapabilityTroubleStore((s) => s.episodes);
   const { rows: connectivity } = useDeviceConnectivity(24);
   const cloudRecoveries = useCommandStore((s) => s.cloudRecoveries);
-  const frozen = useBranchEnergy('today').frozen;
+  const { frozen, disagreement, shortfalls } = useBranchEnergy('today');
   const edgeStatus = useEdgeStatusStore((s) => s.status);
   // RM-165: in a store, so a card's "held" tag can open the panel.
   const open = useAlertsPanelStore((s) => s.open);
@@ -113,14 +113,15 @@ export function AlertsPopover() {
   const staleItems: AlertItem[] = useMemo(
     () =>
       devices
-        .filter((d) => isReadingStale(latestReadings[d.id]))
+        // RM-165: the bridge's connection, as Node-RED shows it — not a late value on a connected device.
+        .filter((d) => isDisconnected(latestReadings[d.id]))
         .map((d) => ({
           id: d.id,
           stamp: 'live',
           ttlMs: LIVE_SEEN_MS,
           severity: 'warning' as const,
-          title: `${d.display_name}: not reporting`,
-          body: `No reading in the last ${staleWindowLabel(latestReadings[d.id])}.`,
+          title: `${d.display_name}: not connected`,
+          body: 'The bridge has no connection to it: Node-RED reports it disconnected, or nothing has arrived from it for ten minutes.',
           source: 'Watchdog',
           circuit: d.description ?? null,
           deviceId: d.id,
@@ -252,6 +253,23 @@ export function AlertsPopover() {
     [frozen, deviceOf],
   );
 
+  /**
+   * RM-165: today's energy checks — the branches against the building's own integration, and a branch short of its
+   * own power. They were paragraphs in the Overview's and Analytics' energy cards; the cards now carry a mark.
+   */
+  const energyItems: AlertItem[] = useMemo(() => {
+    const items: AlertItem[] = [];
+    if (disagreement) {
+      const d = describeDisagreement(disagreement, 'today');
+      items.push({ id: 'energy-check:disagreement', stamp: 'live', ttlMs: LIVE_SEEN_MS, severity: 'notice', title: d.headline, body: d.detail, source: 'Energy check' });
+    }
+    if (shortfalls.length > 0) {
+      const d = describeShortfalls(shortfalls, frozen);
+      items.push({ id: 'energy-check:shortfall', stamp: 'live', ttlMs: LIVE_SEEN_MS, severity: 'notice', title: d.headline, body: d.detail, source: 'Energy check' });
+    }
+    return items;
+  }, [disagreement, shortfalls, frozen]);
+
   /** RM-165: the site's internet, as ingest on the edge last found it: down, or back and catching up. */
   const linkItems: AlertItem[] = useMemo(() => {
     const n = linkNotice(edgeStatus);
@@ -261,10 +279,10 @@ export function AlertsPopover() {
 
   const attention = useMemo(
     () =>
-      [...fleetItems, ...linkItems, ...cloudItems, ...staleItems, ...anomalyItems, ...heldItems.filter((i) => i.active), ...incidentItems.filter((i) => i.active)]
+      [...fleetItems, ...linkItems, ...cloudItems, ...staleItems, ...anomalyItems, ...heldItems.filter((i) => i.active), ...energyItems, ...incidentItems.filter((i) => i.active)]
         .filter((item) => !isSeen(seen, item.id, item.stamp, now, item.ttlMs))
         .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]),
-    [fleetItems, linkItems, cloudItems, staleItems, anomalyItems, heldItems, incidentItems, seen, now],
+    [fleetItems, linkItems, cloudItems, staleItems, anomalyItems, heldItems, energyItems, incidentItems, seen, now],
   );
   const earlier = useMemo(
     () => [...heldItems, ...incidentItems].filter((i) => !i.active && !isSeen(seen, `ended:${i.id}`, i.stamp, now)),

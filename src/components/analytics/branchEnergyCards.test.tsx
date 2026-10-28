@@ -5,7 +5,7 @@ import { EnergyBreakdownCard } from '@/components/overview/EnergyBreakdownCard';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { AlertsPopover } from '@/components/layout/AlertsPopover';
 import { useAlertsPanelStore } from '@/stores/alertsPanelStore';
-import type { Device, HistoryPoint, Reading } from '@/lib/types';
+import type { Device, HistoryPoint, Reading, Totals } from '@/lib/types';
 
 /*
  * RM-077 and RM-078, on the two cards the operator compared.
@@ -117,5 +117,35 @@ describe('Energy Breakdown and By branch — one derivation', () => {
     // RM-136's wording: the READING was held; the meter is not accused of not measuring.
     expect(text).toContain("L.O Red's reading was held.It repeated exactly 19.1 W at 228.2 V from 06:00 to 20:59 (14 h 59 min)");
     expect(text).not.toMatch(/reporting less than it measured|not measuring|stopped updating/);
+  });
+});
+
+describe('Energy Breakdown and By branch — RM-165, energy checks in the bell', () => {
+  it('keeps the disagreement out of both cards and carries it in the bell', () => {
+    // 2026-10-28: "Two measurements of the same circuits disagree… 3.32 kWh… 1.91 kWh — 1.7x less" sat inside
+    // both cards. Now each card carries a mark, and the bell the notice.
+    useDeviceStore.setState({
+      devices: DEVICES,
+      latestReadings: {
+        mtr_co_yellow: reading('mtr_co_yellow', 1.5, 1.5),
+        mtr_lo_red: reading('mtr_lo_red', 0.3, 0.3),
+        mtr_arec_acu: reading('mtr_arec_acu', 1.2, 1.2),
+        mtr_lo_yellow: reading('mtr_lo_yellow', 0.32, 0.32),
+      },
+      totals: { device_id: '_totals', ts: new Date(NOW - 30_000).toISOString(), energy_kwh_today: 3.32, energy_kwh_week: 3.32, energy_kwh_month: 3.32, total_power_w: 500, avg_voltage: 220, energy_kwh_today_integrated: 1.91 } as Totals,
+    });
+    mount(
+      <>
+        <EnergyBreakdownCard />
+        <EnergySection />
+        <AlertsPopover />
+      </>,
+    );
+    expect(document.querySelectorAll('.energy-disagreement')).toHaveLength(0);
+    expect(document.querySelectorAll('.energy-check-mark')).toHaveLength(2);
+    act(() => {
+      fireEvent.click(document.querySelector('.energy-check-mark') as HTMLElement);
+    });
+    expect(screen.getByRole('dialog', { name: 'Alerts' }).textContent).toContain('Two measurements of the same circuits disagree.The branches add up to 3.32 kWh today');
   });
 });

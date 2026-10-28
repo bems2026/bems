@@ -42,7 +42,7 @@ import { RoomShapeEditor } from './RoomShapeEditor';
 import { LightingGridEditor, type LampGrid } from './LightingGridEditor';
 import { PlanPresetPicker } from './PlanPresetPicker';
 import { resolveDisplayName } from '@/lib/deviceConfig';
-import { isReadingStale } from '@/lib/staleness';
+import { isDisconnected } from '@/lib/staleness';
 import { InfoHint } from '@/components/ui/InfoHint';
 import type { Device } from '@/lib/types';
 
@@ -288,7 +288,7 @@ export function SpacePlanView({ editable = false }: { editable?: boolean }) {
                   device={device}
                   name={nameOf(device.id)}
                   point={point}
-                  stale={isReadingStale(readings[device.id])}
+                  stale={isDisconnected(readings[device.id])}
                   selected={armed === device.id}
                   // Not selectable while lamps are being painted. A frame click has to mean
                   // exactly one thing, and enforcing that where a device can be armed is
@@ -416,7 +416,7 @@ export function SpacePlanView({ editable = false }: { editable?: boolean }) {
               <ul className="space-plan__list">
                 {unpositioned.map((device) => (
                   <li key={device.id} className="space-plan__list-item">
-                    <StatusDot stale={isReadingStale(readings[device.id])} />
+                    <StatusDot stale={isDisconnected(readings[device.id])} />
                     <span>{nameOf(device.id)}</span>
                     {canPlace && (
                       <button
@@ -524,7 +524,7 @@ function PlacementIndex({
           <ul className="space-plan__list">
             {group.ids.map((id) => (
               <li key={id} className="space-plan__list-item">
-                <StatusDot stale={isReadingStale(readings[id])} />
+                <StatusDot stale={isDisconnected(readings[id])} />
                 <span>{nameOf(id)}</span>
               </li>
             ))}

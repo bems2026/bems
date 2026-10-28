@@ -1,4 +1,4 @@
-import { isReadingStale } from '@/lib/staleness';
+import { isDisconnected } from '@/lib/staleness';
 import type { Reading } from '@/lib/types';
 import { TOKENS } from './tokens';
 
@@ -16,7 +16,7 @@ export interface MaterialState {
  * appearing in a different order in `/api/devices` can't shift a light or outlet to the
  * wrong appearance.
  *
- * Stale/offline dims and desaturates using the same `isReadingStale()` the 2D
+ * Stale/offline dims and desaturates using the same `isDisconnected()` the 2D
  * `FloorPlanView` and `StaleDataBadge` use — one freshness rule, not a second one invented
  * for the 3D scene.
  */
@@ -33,13 +33,13 @@ const STALE_OPACITY = 0.4;
 const STALE_EMISSIVE = 0.05;
 
 export function lightMaterialState(reading: Reading | undefined): MaterialState {
-  if (isReadingStale(reading)) return { color: TOKENS.muted2, emissiveIntensity: STALE_EMISSIVE, opacity: STALE_OPACITY };
+  if (isDisconnected(reading)) return { color: TOKENS.muted2, emissiveIntensity: STALE_EMISSIVE, opacity: STALE_OPACITY };
   const on = reading?.state === 'on';
   return on ? { color: TOKENS.accent, emissiveIntensity: 1.2, opacity: 1 } : { color: TOKENS.bgSurface2, emissiveIntensity: 0.03, opacity: 1 };
 }
 
 export function outletSocketMaterialState(reading: Reading | undefined, socket: 1 | 2): MaterialState {
-  if (isReadingStale(reading)) return { color: TOKENS.muted2, emissiveIntensity: STALE_EMISSIVE, opacity: STALE_OPACITY };
+  if (isDisconnected(reading)) return { color: TOKENS.muted2, emissiveIntensity: STALE_EMISSIVE, opacity: STALE_OPACITY };
   const on = reading?.socket_states?.[socket] === 'on';
   return on ? { color: TOKENS.accent, emissiveIntensity: 0.9, opacity: 1 } : { color: TOKENS.bgSurface2, emissiveIntensity: 0.02, opacity: 1 };
 }

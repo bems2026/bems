@@ -4,6 +4,15 @@ import { EnergyBreakdownCard } from './EnergyBreakdownCard';
 import { useDeviceStore } from '@/stores/deviceStore';
 import type { Device, Reading, Totals } from '@/lib/types';
 
+/** RM-165: the card's energy-check notice is a mark carrying the whole sentence on hover; the bell carries it in full. */
+const energyMark = () => {
+  const el = document.querySelector('.energy-check-mark');
+  if (!el) throw new Error('no energy-check mark');
+  return el as HTMLElement;
+};
+const queryEnergyMark = () => document.querySelector('.energy-check-mark');
+
+
 const meter = (id: string, name: string): Device => ({
   id,
   display_name: name,
@@ -82,7 +91,7 @@ describe('EnergyBreakdownCard', () => {
     // The live case: 4.746 against 5.086, the branches 6.7% under.
     useDeviceStore.setState({ devices: METERS, latestReadings: LIVE, totals: totals() });
     render(<EnergyBreakdownCard />);
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(queryEnergyMark()).toBeNull();
   });
 
   it('says so when the branches sum to more than the building total can explain', () => {
@@ -93,9 +102,9 @@ describe('EnergyBreakdownCard', () => {
       totals: totals(),
     });
     render(<EnergyBreakdownCard />);
-    const notice = screen.getByRole('status');
-    expect(notice).toHaveTextContent('81.95 kWh');
-    expect(notice).toHaveTextContent('5.09 kWh');
+    const notice = energyMark();
+    expect(notice.getAttribute('title')).toContain('81.95 kWh');
+    expect(notice.getAttribute('title')).toContain('5.09 kWh');
   });
 
   it('has nothing to compare against before the first totals frame, and does not assume', () => {
@@ -105,7 +114,7 @@ describe('EnergyBreakdownCard', () => {
       totals: null,
     });
     render(<EnergyBreakdownCard />);
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(queryEnergyMark()).toBeNull();
     // The split itself still renders — the comparison is missing, not the data.
     expect(document.querySelectorAll('.breakdown-row')).toHaveLength(4);
   });
@@ -117,7 +126,7 @@ describe('EnergyBreakdownCard', () => {
       totals: totals({ energy_kwh_today_integrated: null }),
     });
     render(<EnergyBreakdownCard />);
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(queryEnergyMark()).toBeNull();
   });
 
   it('stays quiet against a bridge too old to send the independent figure', () => {
@@ -131,7 +140,7 @@ describe('EnergyBreakdownCard', () => {
       totals: older,
     });
     render(<EnergyBreakdownCard />);
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(queryEnergyMark()).toBeNull();
   });
 
   /*
@@ -152,10 +161,10 @@ describe('EnergyBreakdownCard', () => {
       totals: totals({ energy_kwh_today: 4.746, energy_kwh_today_integrated: 5.088 }),
     });
     render(<EnergyBreakdownCard />);
-    const notice = screen.getByRole('status');
-    expect(notice).toHaveTextContent('CARE ACU');
-    expect(notice).toHaveTextContent('2.65 kWh');
-    expect(notice).toHaveTextContent('2.99 kWh');
+    const notice = energyMark();
+    expect(notice.getAttribute('title')).toContain('CARE ACU');
+    expect(notice.getAttribute('title')).toContain('2.65 kWh');
+    expect(notice.getAttribute('title')).toContain('2.99 kWh');
     expect(notice).not.toHaveTextContent('L.O Red');
   });
 
@@ -172,13 +181,13 @@ describe('EnergyBreakdownCard', () => {
       totals: totals({ energy_kwh_today: 6.655, energy_kwh_today_integrated: 6.63 }),
     });
     render(<EnergyBreakdownCard />);
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(queryEnergyMark()).toBeNull();
   });
 
   it('waits rather than charting an empty split', () => {
     useDeviceStore.setState({ devices: METERS, latestReadings: {}, totals: totals() });
     render(<EnergyBreakdownCard />);
     expect(screen.getByText(/Waiting for branch meter readings/)).toBeInTheDocument();
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(queryEnergyMark()).toBeNull();
   });
 });

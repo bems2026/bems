@@ -5,7 +5,7 @@ import { useDeviceStore } from '@/stores/deviceStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useDeviceConfigStore } from '@/stores/deviceConfigStore';
 import { hasSwitchableState } from '@/lib/deviceClass';
-import { isReadingStale, measured } from '@/lib/staleness';
+import { connectionOf, measured } from '@/lib/staleness';
 import { countOnline } from '@/components/overview/overviewMath';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { InfoHint } from '@/components/ui/InfoHint';
@@ -33,20 +33,19 @@ function deviceFromHash(): string | null {
   return route === 'devices' && sub ? decodeURIComponent(sub) : null;
 }
 
-type CommState = 'no-data' | 'offline' | 'stale' | 'live';
+type CommState = 'no-data' | 'offline' | 'quiet' | 'live';
 
+/** RM-165: the bridge's connection, as Node-RED shows it (`connectionOf`); a late value is QUIET, not a fault. */
 function commState(reading: Reading | undefined): CommState {
   if (!reading) return 'no-data';
-  if (reading.online === false) return 'offline';
-  if (isReadingStale(reading)) return 'stale';
-  return 'live';
+  return connectionOf(reading);
 }
 
-const COMM_LABEL: Record<CommState, string> = { 'no-data': 'NO DATA', offline: 'OFFLINE', stale: 'STALE', live: 'LIVE' };
+const COMM_LABEL: Record<CommState, string> = { 'no-data': 'NO DATA', offline: 'OFFLINE', quiet: 'CONNECTED', live: 'LIVE' };
 const COMM_CLASS: Record<CommState, string> = {
   'no-data': 'devices-table__comm--muted',
   offline: 'devices-table__comm--bad',
-  stale: 'devices-table__comm--warn',
+  quiet: 'devices-table__comm--good',
   live: 'devices-table__comm--good',
 };
 
@@ -201,12 +200,12 @@ export function DevicesView() {
       </div>
       <SegmentPresenceNote />
       <p className="devices-watchdog-note">
-        Stale after its own reporting window
+        Connection follows Node-RED
         <InfoHint label="Watchdog and metadata details">
-          A device is flagged stale once its reading hasn't advanced within its own reporting window, or the bridge reports it offline outright — see <code>isReadingStale</code>.
-          That window is the bridge's own number and differs by device: 30 seconds for a light switch, 2.5 minutes for an outlet or a branch meter, which the bridge polls
-          once a minute rather than continuously. One global 30 seconds used to be applied to all of them, so every outlet read stale for half of every minute while it was
-          working perfectly. Room,
+          A device is OFFLINE when the bridge reports no connection to it — Node-RED's own session state — or when nothing has arrived from it for ten minutes. A device
+          that is connected but whose last reading is older than its own reporting window (30 seconds for a light switch, 2.5 minutes for an outlet or a branch meter)
+          reads CONNECTED rather than LIVE, with its age under Last seen: without internet the devices answer more slowly, and calling that a fault made the app
+          disagree with Node-RED while the controls still worked (RM-165). Room,
           category, load-shed group, and notes are recorded per device via each row's Edit button, not read from the live flow — the bridge itself still reports every
           device's <code>room</code> as unset.
         </InfoHint>

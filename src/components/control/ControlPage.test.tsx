@@ -172,7 +172,7 @@ describe('ControlPage', () => {
     render(<ControlPage />);
     const row = screen.getByText('Light Switch 1').closest('.control-list-row') as HTMLElement;
     expect(within(row).getByRole('switch')).toBeDisabled();
-    expect(within(row).getByText('stale')).toBeInTheDocument();
+    expect(within(row).getByText('offline')).toBeInTheDocument();
     fireEvent.click(within(row).getByRole('switch'));
     expect(bridgeClient.sendCommand).not.toHaveBeenCalled();
   });

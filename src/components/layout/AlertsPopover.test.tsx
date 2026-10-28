@@ -81,7 +81,7 @@ describe('AlertsPopover — staleness and anomalies', () => {
 
     render(<AlertsPopover />);
     openBell();
-    expect(screen.getByText('Outlet 3: not reporting')).toBeInTheDocument();
+    expect(screen.getByText('Outlet 3: not connected')).toBeInTheDocument();
     expect(screen.queryByText('Outlet 3: unusual power')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Alerts, 1 needs attention')).toBeInTheDocument(); // not 2
   });
@@ -199,7 +199,7 @@ describe('AlertsPopover cloud fallback', () => {
     const cloudRow = screen.getByText(/answered only through the vendor cloud/).closest('li') as HTMLElement;
     fireEvent.click(within(cloudRow).getByRole('button', { name: 'Mark as seen' }));
     expect(rowsMatching(/vendor cloud/)).toHaveLength(0);
-    expect(screen.getByText('Outlet 3: not reporting')).toBeInTheDocument();
+    expect(screen.getByText('Outlet 3: not connected')).toBeInTheDocument();
   });
 });
 
@@ -348,5 +348,25 @@ describe('AlertsPopover — RM-165, held meters and the site link', () => {
     expect(screen.queryByRole('dialog', { name: 'Alerts' })).toBeNull();
     act(() => useAlertsPanelStore.getState().setOpen(true));
     expect(screen.getByRole('dialog', { name: 'Alerts' })).toBeTruthy();
+  });
+});
+
+describe('AlertsPopover — RM-165, connection as Node-RED shows it', () => {
+  it('raises nothing for a device the bridge still reports connected, however late its last reading', () => {
+    // 2026-10-28: without internet the outlets answered slowly; Node-RED showed them connected, the bell said
+    // "not reporting", and Control still switched them.
+    useDeviceStore.setState({
+      devices: [outlet],
+      latestReadings: { co3: { device_id: 'co3', ts: new Date(Date.now() - 4 * 60_000).toISOString(), online: true, state: 'on', stale_after_ms: 150_000 } },
+    });
+    render(<AlertsPopover />);
+    expect(screen.getByRole('button', { name: 'Alerts' })).toBeTruthy();
+  });
+
+  it('says a device is not connected when the bridge does', () => {
+    useDeviceStore.setState({ devices: [outlet], latestReadings: { co3: { device_id: 'co3', ts: new Date().toISOString(), online: false, state: 'off' } } });
+    render(<AlertsPopover />);
+    openBell();
+    expect(rowsMatching(/Outlet 3: not connected/)[0].textContent).toMatch(/Node-RED reports it disconnected/);
   });
 });

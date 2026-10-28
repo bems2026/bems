@@ -19,7 +19,7 @@ describe('StaleDataBadge', () => {
     );
     expect(screen.getByText('content').parentElement).toHaveClass('stale-wrap--stale');
     const flag = screen.getByRole('status');
-    expect(flag).toHaveAccessibleName('Outlet 3: no reading in the last 30 seconds');
+    expect(flag).toHaveAccessibleName('Outlet 3: not connected');
   });
 
   it('falls back to a generic subject when no label is given', () => {
@@ -28,7 +28,7 @@ describe('StaleDataBadge', () => {
         <span>content</span>
       </StaleDataBadge>,
     );
-    expect(screen.getByRole('status')).toHaveAccessibleName('This device: no reading in the last 30 seconds');
+    expect(screen.getByRole('status')).toHaveAccessibleName('This device: not connected');
   });
 
   it('is not stale for a fresh, online device reading, and has no live region at all', () => {
@@ -94,7 +94,7 @@ describe('the compact variant, for a floor plan', () => {
     render(<StaleDataBadge deviceId="co1" label="Outlet 1" variant="dot"><span>puck</span></StaleDataBadge>);
     const flag = screen.getByRole('status');
     expect(flag).toHaveAttribute('aria-label', expect.stringContaining('Outlet 1'));
-    expect(flag).toHaveAttribute('aria-label', expect.stringContaining('no reading in the last'));
+    expect(flag).toHaveAttribute('aria-label', expect.stringContaining('not connected'));
   });
 
   it('renders no visible word, so it cannot cover the pin it describes', () => {
@@ -112,7 +112,7 @@ describe('the compact variant, for a floor plan', () => {
     // The lists and the alerts popover keep the flag they have. A monitoring dashboard should
     // say "stale" out loud wherever saying it does not cost the reader the thing being described.
     render(<StaleDataBadge deviceId="co1" label="Outlet 1"><span>row</span></StaleDataBadge>);
-    expect(screen.getByRole('status')).toHaveTextContent('stale');
+    expect(screen.getByRole('status')).toHaveTextContent('offline');
     expect(screen.getByRole('status').className).not.toMatch(/--dot/);
   });
 

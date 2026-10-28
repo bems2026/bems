@@ -1,8 +1,9 @@
-import { AlertTriangle, ChartPie } from 'lucide-react';
+import { ChartPie } from 'lucide-react';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { CardLink } from '@/components/ui/CardLink';
-import { formatKwh, formatNumber } from '@/lib/format';
-import { describeShortfalls, holdFor } from '@/lib/branchEnergy';
+import { formatNumber } from '@/lib/format';
+import { describeDisagreement, describeShortfalls, holdFor } from '@/lib/branchEnergy';
+import { AlertMark } from '@/components/common/AlertMark';
 import { HeldTag } from '@/components/common/HeldTag';
 import { useBranchEnergy } from '@/lib/useBranchEnergy';
 
@@ -57,26 +58,10 @@ export function EnergyBreakdownCard() {
           <div className="breakdown-total">
             <span className="breakdown-total__value mono">{formatNumber(totalKwh, 2)}</span>
             <span className="breakdown-total__unit">kWh today</span>
+            {/* RM-165: the energy checks are notices in the alerts bell; the card keeps a mark that opens it. */}
+            {disagreement && <AlertMark {...describeDisagreement(disagreement, 'today')} />}
+            {shortfall && <AlertMark headline={shortfall.headline} detail={shortfall.detail} />}
           </div>
-          {disagreement && (
-            <p className="energy-disagreement" role="status">
-              <AlertTriangle size={15} aria-hidden="true" />
-              <span>
-                <strong>Two measurements of the same circuits disagree.</strong> These branches add up to {formatKwh(disagreement.branchSum)} today,
-                while the building's own power integration over those same circuits gives {formatKwh(disagreement.total)}
-                {disagreement.ratio !== null && ` — ${disagreement.ratio.toFixed(1)}x less`}. They are measured differently and need not match
-                exactly, but a gap this size means one of the two is wrong.
-              </span>
-            </p>
-          )}
-          {shortfall && (
-            <p className="energy-disagreement" role="status">
-              <AlertTriangle size={15} aria-hidden="true" />
-              <span>
-                <strong>{shortfall.headline}</strong> {shortfall.detail}
-              </span>
-            </p>
-          )}
           {rows.map((b) => (
             <div className={`breakdown-row${b.stale ? ' breakdown-row--stale' : ''}`} key={b.id}>
               <span className="breakdown-row__name">
