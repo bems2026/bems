@@ -11,10 +11,10 @@ shorter backoff, and the timer no longer interrupts a connection in progress (§
 The edge was on the fallback network with 0 of 20 devices online. The device AP threw it off 484 times from 2 Nov
 23:15, mostly for inactivity, then from 4 Nov 01:17 failed its handshake with the key that had worked at 01:06 (E-261).
 
-1. **On the edge:** `git pull`, then install the power-save file (`npm run preflight` names the command,
-   `host_wifi_powersave`). `ibems-wifi-prefer` is a oneshot, so it needs no restart.
-2. **If the handshake still fails:** power-cycle the device AP. The edge returns by itself within about 25 minutes at
-   most (the 20-minute backoff, then the five-minute tick).
+1. **Done on the edge at 08:49:** pulled `2987fe3`, power-save file installed (power save reads off). A move then failed the
+   same way, and the edge returned to the fallback by itself: the handshake failure does not depend on power save.
+2. **Waiting on site:** power-cycle the device AP, and confirm its Wi-Fi password was not changed. The edge returns by
+   itself within about 25 minutes at most (the 20-minute backoff, then the five-minute tick).
 3. **Operator's decision:** an Ethernet or USB Wi-Fi uplink for the edge, so that remote access and logging stop sharing one radio.
 
 ### 2026-10-28 — the site's internet, the held meters and the halted deploys (RM-165): deployed, two pastes left
@@ -4671,8 +4671,8 @@ director's aircon counted as Aircon, and an easier way to choose what the docume
       `scripts/install.sh`, checked by preflight's `host_wifi_powersave`). — `test/preflight.test.mjs` (1).
 - [x] **RM-166b** *Built.* `decideWifiMove` leaves NetworkManager alone while it is already activating the preferred
       profile, and the backoff after a failed move is 20 minutes, not two hours. — `server/wifiPreference.test.mjs` (2).
-- [ ] **RM-166c** Whether power save was the cause is measured after the next stretch on the device network: the
-      journal's `reason=4` count should stop. The AP's handshake failures may need it power-cycled, on site.
+- [ ] **RM-166c** The AP refuses the handshake with power save off too (4 Nov, 08:49), so it needs attention on site. Once the
+      edge is back on it, whether power save caused the inactivity drops is measured: `reason=4` should stop.
 
 ### Online or offline, one picture — RM-165 (2026-10-28)
 
