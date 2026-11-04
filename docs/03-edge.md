@@ -3,9 +3,9 @@ title: Edge computing
 purpose: Build, configure and operate the local server that runs the control logic (L3)
 audience: [integrator, installer]
 status: Draft
-last_verified: 2026-10-09
+last_verified: 2026-11-04
 applies_to: repo b8af936 · edge checkout fcb1ff6
-evidence: [E-010, E-011, E-012, E-013, E-014, E-015, E-016, E-017, E-018, E-019, E-020, E-021, E-022, E-023, E-024, E-025, E-026, E-027, E-028, E-029, E-030, E-035, E-036, E-038, E-042, E-044, E-046, E-047, E-050, E-051, E-052, E-056, E-062, E-066, E-067, E-078, E-079, E-082, E-085, E-086, E-110, E-111, E-118, E-119, E-124, E-128, E-129, E-130, E-131, E-132, E-133, E-134, E-135, E-136, E-138, E-139, E-140, E-141, E-142, E-143, E-144, E-145, E-214, E-215, E-218, E-225, E-226, E-254]
+evidence: [E-010, E-011, E-012, E-013, E-014, E-015, E-016, E-017, E-018, E-019, E-020, E-021, E-022, E-023, E-024, E-025, E-026, E-027, E-028, E-029, E-030, E-035, E-036, E-038, E-042, E-044, E-046, E-047, E-050, E-051, E-052, E-056, E-062, E-066, E-067, E-078, E-079, E-082, E-085, E-086, E-110, E-111, E-118, E-119, E-124, E-128, E-129, E-130, E-131, E-132, E-133, E-134, E-135, E-136, E-138, E-139, E-140, E-141, E-142, E-143, E-144, E-145, E-214, E-215, E-218, E-225, E-226, E-254, E-261]
 ---
 
 # Edge computing
@@ -157,6 +157,7 @@ Everything below is on the edge and **not declared in the repository**, so a reb
 | Node-RED bound to loopback | `settings.js` `uiHost` | yes (`bridge_not_exposed`) |
 | Persistent, bounded journal | `/etc/systemd/journald.conf.d/50-ibems-persistent.conf` | yes (`host_journal`) |
 | The recovery timers | `/etc/systemd/system/ibems-*.timer` | yes (`host_timers`) |
+| Wi-Fi power save off | `/etc/NetworkManager/conf.d/50-ibems-wifi.conf` | yes (`host_wifi_powersave`) |
 | A static address on every device node | the device tabs | yes (`host_addresses`) |
 | Every device node polled | the device tabs | yes (`flow_polls`) |
 | Discovery timeout and protocol version per node | the device tabs | no. Use `npm run local-probe:pi` against the baseline. |

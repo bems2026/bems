@@ -413,6 +413,18 @@ export function assessDeployment(obs) {
   );
 
   /**
+   * Wi-Fi power save is off — RM-166. With it on, the device AP threw the Pi off for inactivity 464 times in two days
+   * (2026-11-02 to 04), and each drop left every device dark until the Pi returned from its fallback network.
+   */
+  add(
+    'host_wifi_powersave',
+    'Wi-Fi power save is off',
+    typeof host.wifiPowersaveOff !== 'boolean' ? LEVELS.UNCHECKED : host.wifiPowersaveOff ? LEVELS.OK : LEVELS.WARN,
+    typeof host.wifiPowersaveOff !== 'boolean' ? 'not checked' : host.wifiPowersaveOff ? 'set off for every Wi-Fi profile' : 'not set: the Raspberry Pi default leaves it on',
+    'sudo install -D -m 0644 server/networkmanager-ibems.conf /etc/NetworkManager/conf.d/50-ibems-wifi.conf && sudo systemctl reload NetworkManager. It applies at the next activation, so it does not drop the connection.',
+  );
+
+  /**
    * The recovery timers are armed — RM-131. `ibems-wifi-prefer` returns the Pi to the device SSID
    * after a boot that beat the access point; `ibems-lan-map` remembers who announced from where;
    * `ibems-fleet-recover` restarts Node-RED when a device is reachable but its node has given up.
@@ -895,6 +907,12 @@ if (process.argv[1] && process.argv[1].endsWith('preflight.mjs')) {
       host.journal.onDisk = existsSync(`/var/log/journal/${machineId}/system.journal`);
     } catch {
       host.journal = { storage: null, onDisk: null };
+    }
+
+    try {
+      host.wifiPowersaveOff = /^wifi\.powersave\s*=\s*2\s*$/m.test(readFileSync('/etc/NetworkManager/conf.d/50-ibems-wifi.conf', 'utf8'));
+    } catch {
+      host.wifiPowersaveOff = false;
     }
 
     // The timers are whatever `server/` ships, so a new one is checked without being listed here.

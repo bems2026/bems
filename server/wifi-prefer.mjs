@@ -138,7 +138,7 @@ if (VERBOSE) {
 }
 
 const decision = decideWifiMove({
-  savedWifi: saved, visible, currentSsid: nowSsid,
+  savedWifi: saved, visible, currentSsid: nowSsid, activeProfile: currentProfile(),
   now: Date.now(), lastFailureAt: state.lastFailureAt ?? null,
 });
 

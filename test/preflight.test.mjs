@@ -25,6 +25,7 @@ const healthy = () => ({
   broker: { lanExposed: false, exposedOn: null },
   services: { nodered: 'active', 'ibems-ingest': 'active' },
   host: {
+    wifiPowersaveOff: true,
     journal: { storage: 'persistent', onDisk: true },
     timers: { 'ibems-wifi-prefer.timer': 'active', 'ibems-lan-map.timer': 'active', 'ibems-fleet-recover.timer': 'active' },
     addresses: { pinned: 6, total: 6, lanMapDevices: 6, lanMapFreshestMs: 4 * 60_000 },
@@ -275,6 +276,18 @@ test('a recovery timer that is not running is a warning that names it and the ru
   assert.match(check.fix, /enable --now/);
   obs.host.timers = {};
   assert.equal(find(assessDeployment(obs), 'host_timers').level, LEVELS.UNCHECKED);
+});
+
+test('Wi-Fi power save left on is a warning that names the file to install', () => {
+  const obs = healthy();
+  obs.host.wifiPowersaveOff = false;
+  const check = find(assessDeployment(obs), 'host_wifi_powersave');
+  assert.equal(check.level, LEVELS.WARN);
+  assert.match(check.fix, /networkmanager-ibems\.conf/);
+  obs.host.wifiPowersaveOff = true;
+  assert.equal(find(assessDeployment(obs), 'host_wifi_powersave').level, LEVELS.OK);
+  delete obs.host.wifiPowersaveOff;
+  assert.equal(find(assessDeployment(obs), 'host_wifi_powersave').level, LEVELS.UNCHECKED);
 });
 
 test('a node without a static address is a warning that counts them and points at the LAN map', () => {

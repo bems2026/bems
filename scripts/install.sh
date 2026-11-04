@@ -292,6 +292,16 @@ else
   act "restart systemd-journald" sudo systemctl restart systemd-journald
 fi
 
+# Wi-Fi power save off (RM-166). No credentials and no network change: it applies at the next activation, so this
+# keeps the promise above that this script never touches Wi-Fi connections.
+NM_DROPIN=/etc/NetworkManager/conf.d/50-ibems-wifi.conf
+if [ -f "$NM_DROPIN" ]; then
+  ok "Wi-Fi power save already off — left untouched"
+else
+  act "install server/networkmanager-ibems.conf as $NM_DROPIN"     sudo install -D -m 0644 "$HERE/server/networkmanager-ibems.conf" "$NM_DROPIN"
+  act "reload NetworkManager's configuration" sudo systemctl reload NetworkManager
+fi
+
 # =============================================================================
 step "8. Start the services"
 # =============================================================================

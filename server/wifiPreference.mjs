@@ -28,8 +28,12 @@ export const ACTION = { NONE: 'none', SWITCH: 'switch' };
 /** Signal below this is not worth losing a working connection over. nmcli reports 0-100. */
 export const DEFAULT_MIN_SIGNAL = 35;
 
-/** After a failed attempt, leave it alone this long. Stops a broken AP causing hourly churn. */
-export const DEFAULT_BACKOFF_MS = 2 * 60 * 60 * 1000;
+/**
+ * After a failed attempt, leave it alone this long, so a broken AP does not cause churn every tick. It was two
+ * hours until 2026-11-04: off the device network every device is dark and nothing is logged, while a failed attempt
+ * costs under two minutes of remote access.
+ */
+export const DEFAULT_BACKOFF_MS = 20 * 60 * 1000;
 
 const none = (reason) => ({ action: ACTION.NONE, reason });
 
@@ -37,6 +41,7 @@ const none = (reason) => ({ action: ACTION.NONE, reason });
  * @param savedWifi     [{ name, ssid, autoconnect, priority }] — saved Wi-Fi profiles
  * @param visible       Map or object of ssid -> signal (0-100), from a scan
  * @param currentSsid   the SSID currently associated, or null when unassociated
+ * @param activeProfile the profile NetworkManager holds active or is activating, or null
  * @param now           epoch ms
  * @param lastFailureAt epoch ms of the last failed attempt, or null
  */
@@ -44,6 +49,7 @@ export function decideWifiMove({
   savedWifi = [],
   visible = {},
   currentSsid = null,
+  activeProfile = null,
   now = Date.now(),
   lastFailureAt = null,
   minSignal = DEFAULT_MIN_SIGNAL,
@@ -61,6 +67,12 @@ export function decideWifiMove({
   // Nothing to do is the common case and must be cheap and obvious.
   if (currentSsid && currentSsid === preferred.ssid) {
     return none(`already on the preferred network (${preferred.ssid})`);
+  }
+
+  // Between association and a lease there is no SSID to read, and restarting the profile here kills NetworkManager's
+  // own attempt (2026-11-04, 01:17:05, 'new-activation'). If it fails, it moves on, and the next tick decides.
+  if (!currentSsid && activeProfile === preferred.name) {
+    return none(`NetworkManager is already connecting to the preferred network (${preferred.ssid})`);
   }
 
   // A tie means the operator expressed no preference between them. Moving on a tie would pick

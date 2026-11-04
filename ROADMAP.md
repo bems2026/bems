@@ -1,12 +1,21 @@
 # iBEMS — Feature State & Roadmap
 
-**Last audited:** 2026-10-28 — **RM-165: online or offline, one picture. The edge is back on the mesh with
-internet; RM-163i and RM-164 are deployed. The meters resumed with the internet, not a power cycle, and their
-registers kept counting, so the held energy is recovered as a labelled estimate. Held meters and the site's
-internet are in the alerts bell, the energy cards keep a small mark, and ingest no longer flaps (§0).**
-- **Waiting on the operator:** paste phase56 (notes) and phase57 (estimates); then `held-energy:backfill -- --apply`.
+**Last audited:** 2026-11-04 — **RM-166: the edge kept losing the device network. The AP threw it off 484 times in two
+days, then refused its handshake, leaving every device dark on the fallback network (E-261). Wi-Fi power save off, a
+shorter backoff, and the timer no longer interrupts a connection in progress (§0).**
 
 ## 0. Triage — what to do next
+
+### 2026-11-04 — the edge off the device network (RM-166)
+
+The edge was on the fallback network with 0 of 20 devices online. The device AP threw it off 484 times from 2 Nov
+23:15, mostly for inactivity, then from 4 Nov 01:17 failed its handshake with the key that had worked at 01:06 (E-261).
+
+1. **On the edge:** `git pull`, then install the power-save file (`npm run preflight` names the command,
+   `host_wifi_powersave`). `ibems-wifi-prefer` is a oneshot, so it needs no restart.
+2. **If the handshake still fails:** power-cycle the device AP. The edge returns by itself within about 25 minutes at
+   most (the 20-minute backoff, then the five-minute tick).
+3. **Operator's decision:** an Ethernet or USB Wi-Fi uplink for the edge, so that remote access and logging stop sharing one radio.
 
 ### 2026-10-28 — the site's internet, the held meters and the halted deploys (RM-165): deployed, two pastes left
 
@@ -4655,6 +4664,15 @@ director's aircon counted as Aircon, and an easier way to choose what the docume
       The checklist stays in the drawer rather than a side panel: one press away, and the page keeps its width
       for the charts. — `ExportDrawer.test.tsx` (5 new).
 - [ ] **RM-164f** Operator: paste phase56, try notes and the preview (§0). *Deployed to the edge 2026-10-28.*
+
+### The edge stays on the device network — RM-166 (2026-11-04)
+
+- [x] **RM-166a** *Built.* Wi-Fi power save off on every profile (`server/networkmanager-ibems.conf`, installed by
+      `scripts/install.sh`, checked by preflight's `host_wifi_powersave`). — `test/preflight.test.mjs` (1).
+- [x] **RM-166b** *Built.* `decideWifiMove` leaves NetworkManager alone while it is already activating the preferred
+      profile, and the backoff after a failed move is 20 minutes, not two hours. — `server/wifiPreference.test.mjs` (2).
+- [ ] **RM-166c** Whether power save was the cause is measured after the next stretch on the device network: the
+      journal's `reason=4` count should stop. The AP's handshake failures may need it power-cycled, on site.
 
 ### Online or offline, one picture — RM-165 (2026-10-28)
 

@@ -92,6 +92,20 @@ test('acts when the Pi is associated to nothing at all', () => {
   assert.equal(d.action, ACTION.SWITCH);
 });
 
+/*
+ * 2026-11-04, 01:17:05: the device AP kept dropping the Pi, NetworkManager was already re-activating that profile
+ * (it had reached DHCP), and this timer saw "no SSID" and restarted it, killing the attempt ('new-activation').
+ */
+test('leaves NetworkManager alone while it is already bringing the preferred network up', () => {
+  const d = decideWifiMove({ savedWifi: SAVED, visible: { 'device-ap': 80 }, currentSsid: null, activeProfile: 'device-ap' });
+  assert.equal(d.action, ACTION.NONE);
+  assert.match(d.reason, /already connecting/);
+});
+
+test('the backoff is short enough that a recovered device network is not left dark for hours', () => {
+  assert.ok(DEFAULT_BACKOFF_MS <= 20 * 60_000);
+});
+
 test('refuses when no autoconnect profiles exist, rather than guessing', () => {
   const d = decideWifiMove({ savedWifi: [{ ...DEVICE, autoconnect: false }], visible: { 'device-ap': 100 } });
   assert.equal(d.action, ACTION.NONE);
